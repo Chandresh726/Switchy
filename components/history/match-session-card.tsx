@@ -296,7 +296,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
           ) : null}
           <span className="flex items-center gap-1.5">
             <Sparkles className="h-3.5 w-3.5 text-yellow-500" />
-            <span className={`font-medium ${successRate >= 80 ? "text-emerald-400" : successRate >= 50 ? "text-yellow-500" : "text-red-400"}`}>
+            <span className={`font-medium ${successRate >= 75 ? "text-emerald-400" : successRate >= 50 ? "text-yellow-500" : "text-red-400"}`}>
               {successRate}%
             </span> Match Rate
           </span>

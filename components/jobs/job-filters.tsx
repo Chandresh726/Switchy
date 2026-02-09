@@ -41,9 +41,10 @@ const EMPLOYMENT_TYPE_OPTIONS = [
 
 const SCORE_OPTIONS = [
   { value: "", label: "Any Score" },
-  { value: "80", label: "80%+" },
+  { value: "75", label: "75%+" },
   { value: "60", label: "60%+" },
-  { value: "40", label: "40%+" },
+  { value: "45", label: "45%+" },
+  { value: "30", label: "30%+" },
 ];
 
 const SORT_OPTIONS = [

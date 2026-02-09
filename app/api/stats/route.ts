@@ -12,15 +12,17 @@ export async function GET() {
       appliedResult,
       newJobsResult,
       viewedJobsResult,
+      savedJobsResult,
       jobsWithScoreResult,
       lastSession,
     ] = await Promise.all([
       db.select({ count: count() }).from(jobs),
       db.select({ count: count() }).from(companies),
-      db.select({ count: count() }).from(jobs).where(gte(jobs.matchScore, 80)),
+      db.select({ count: count() }).from(jobs).where(gte(jobs.matchScore, 75)),
       db.select({ count: count() }).from(jobs).where(eq(jobs.status, "applied")),
       db.select({ count: count() }).from(jobs).where(eq(jobs.status, "new")),
       db.select({ count: count() }).from(jobs).where(eq(jobs.status, "viewed")),
+      db.select({ count: count() }).from(jobs).where(eq(jobs.status, "interested")),
       db.select({ count: count() }).from(jobs).where(isNotNull(jobs.matchScore)),
       db.select().from(scrapeSessions).orderBy(desc(scrapeSessions.startedAt)).limit(1),
     ]);
@@ -32,6 +34,7 @@ export async function GET() {
       appliedJobs: appliedResult[0].count,
       newJobs: newJobsResult[0].count,
       viewedJobs: viewedJobsResult[0].count,
+      savedJobs: savedJobsResult[0].count,
       jobsWithScore: jobsWithScoreResult[0].count,
       lastScan: lastSession[0] || null,
     });

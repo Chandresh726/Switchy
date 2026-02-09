@@ -25,18 +25,18 @@ export function MatchBadge({ score, size = "md", showLabel = false }: MatchBadge
   }
 
   const getScoreColor = (score: number) => {
-    if (score >= 90) return "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
-    if (score >= 75) return "bg-green-500/10 text-green-400 border-green-500/30";
-    if (score >= 60) return "bg-yellow-500/10 text-yellow-400 border-yellow-500/30";
-    if (score >= 40) return "bg-orange-500/10 text-orange-400 border-orange-500/30";
+    if (score >= 75) return "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
+    if (score >= 60) return "bg-green-500/10 text-green-400 border-green-500/30";
+    if (score >= 45) return "bg-yellow-500/10 text-yellow-400 border-yellow-500/30";
+    if (score >= 30) return "bg-orange-500/10 text-orange-400 border-orange-500/30";
     return "bg-red-500/10 text-red-400 border-red-500/30";
   };
 
   const getScoreLabel = (score: number) => {
-    if (score >= 90) return "Excellent";
     if (score >= 75) return "Strong";
     if (score >= 60) return "Good";
-    if (score >= 40) return "Partial";
+    if (score >= 45) return "Moderate";
+    if (score >= 30) return "Fair";
     return "Weak";
   };
 
