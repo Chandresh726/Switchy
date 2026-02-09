@@ -201,3 +201,26 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const sessionId = searchParams.get("sessionId");
+
+    if (sessionId) {
+      // Delete specific session
+      await db.delete(matchSessions).where(eq(matchSessions.id, sessionId));
+      return NextResponse.json({ success: true });
+    } else {
+      // Delete all sessions
+      await db.delete(matchSessions);
+      return NextResponse.json({ success: true });
+    }
+  } catch (error) {
+    console.error("Failed to delete match history:", error);
+    return NextResponse.json(
+      { error: "Failed to delete match history" },
+      { status: 500 }
+    );
+  }
+}

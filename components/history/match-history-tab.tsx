@@ -128,7 +128,7 @@ export function MatchHistoryTab() {
     <div className="space-y-6">
       {/* Summary Stats */}
       {stats && stats.totalSessions > 0 && (
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
             <p className="text-2xl font-semibold text-white">{stats.totalSessions}</p>
             <p className="text-sm text-zinc-400">Total Sessions</p>
@@ -150,8 +150,8 @@ export function MatchHistoryTab() {
 
       {/* Sessions grouped by date */}
       {Array.from(groupedSessions.entries()).map(([date, dateSessions]) => (
-        <div key={date}>
-          <h3 className="mb-3 text-sm font-medium text-zinc-400">{date}</h3>
+        <div key={date} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-500 sticky top-0 bg-black/50 backdrop-blur-sm py-2 z-10">{date}</h3>
           <div className="space-y-3">
             {dateSessions.map((session) => (
               <MatchSessionCard key={session.id} session={session} />

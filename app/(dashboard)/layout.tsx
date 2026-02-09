@@ -12,7 +12,7 @@ export default function DashboardLayout({
       <div className="flex h-screen bg-zinc-950">
         <Sidebar />
         <main className="flex-1 overflow-auto">
-          <div className="h-full p-6">{children}</div>
+          <div className="min-h-full p-6">{children}</div>
         </main>
       </div>
       <Toaster />

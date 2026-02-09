@@ -269,7 +269,7 @@ export function JobList() {
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex flex-col">
       {/* Tabs */}
       <div className="mb-4 flex items-center gap-1 border-b border-zinc-800">
         <button
@@ -331,7 +331,7 @@ export function JobList() {
       />
 
       {/* Job List and Pagination - scrollable together */}
-      <div className="mt-4 flex-1 space-y-3 overflow-auto">
+      <div className="mt-4 space-y-3">
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
@@ -367,7 +367,7 @@ export function JobList() {
 
             {/* Pagination - inside scrollable area */}
             {totalCount > 0 && (
-              <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-zinc-800 pt-4 pb-6">
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-4 border-t border-zinc-800 pt-3">
                 {/* Items per page */}
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-zinc-400">Show:</span>

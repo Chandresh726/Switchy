@@ -138,8 +138,8 @@ export function SessionList() {
 
       {/* Sessions grouped by date */}
       {Array.from(groupedSessions.entries()).map(([date, dateSessions]) => (
-        <div key={date}>
-          <h3 className="mb-3 text-sm font-medium text-zinc-400">{date}</h3>
+        <div key={date} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-500 sticky top-0 bg-black/50 backdrop-blur-sm py-2 z-10">{date}</h3>
           <div className="space-y-3">
             {dateSessions.map((session) => (
               <SessionCard key={session.id} session={session} />

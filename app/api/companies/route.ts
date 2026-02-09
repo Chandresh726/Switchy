@@ -13,18 +13,6 @@ function detectPlatform(url: string): string | null {
   if (urlLower.includes("lever.co") || urlLower.includes("jobs.lever")) {
     return "lever";
   }
-  if (urlLower.includes("workday.com") || urlLower.includes("myworkdayjobs")) {
-    return "workday";
-  }
-  if (urlLower.includes("ashbyhq.com")) {
-    return "ashby";
-  }
-  if (urlLower.includes("smartrecruiters.com")) {
-    return "smartrecruiters";
-  }
-  if (urlLower.includes("linkedin.com/jobs")) {
-    return "linkedin";
-  }
 
   return "custom";
 }
@@ -49,7 +37,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, careersUrl, logoUrl, description, location, industry, size, scrapeFrequency, platform: manualPlatform, boardToken } = body;
+    const { name, careersUrl, logoUrl, scrapeFrequency, platform: manualPlatform, boardToken } = body;
 
     if (!name || !careersUrl) {
       return NextResponse.json(
@@ -78,10 +66,6 @@ export async function POST(request: NextRequest) {
         logoUrl,
         platform,
         boardToken: boardToken || null,
-        description,
-        location,
-        industry,
-        size,
         scrapeFrequency: scrapeFrequency || 6,
         isActive: true,
       })

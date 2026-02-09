@@ -10,7 +10,32 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { RefreshCw, Database, Trash2, Save, Loader2, Cpu, Zap, Sparkles, Settings2, Eraser } from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import {
+  RefreshCw,
+  Database,
+  Trash2,
+  Save,
+  Loader2,
+  Cpu,
+  Zap,
+  Sparkles,
+  Settings2,
+  Eraser,
+  AlertTriangle,
+  Server,
+  Activity,
+  Info,
+} from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import {
@@ -24,6 +49,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
 
 // Matcher models
 const MODELS = [
@@ -183,405 +209,414 @@ export default function SettingsPage() {
   });
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-semibold text-white">Settings</h1>
-        <p className="mt-1 text-zinc-400">Configure your Switchy preferences</p>
+        <p className="mt-1 text-zinc-400">Configure your Switchy preferences and manage data</p>
       </div>
 
-      {/* Matcher Settings - Two Column Layout */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-        <div className="flex items-center gap-2 mb-1">
-          <Cpu className="h-5 w-5 text-emerald-500" />
-          <h2 className="text-lg font-medium text-white">Matcher Settings</h2>
-        </div>
-        <p className="text-sm text-zinc-400 mb-6">
-          Configure AI job matching behavior
-        </p>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Left Column - Model Selection */}
-          <div className="space-y-4">
-            <div>
-              <Label className="text-zinc-300 text-sm font-medium">AI Model</Label>
-              <p className="text-xs text-zinc-500 mt-0.5 mb-3">
-                Select the model used for matching jobs to your profile
-              </p>
-              <Select value={matcherModel} onValueChange={setMatcherModel}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select model" />
-                </SelectTrigger>
-                <SelectContent>
-                  {MODELS.map((model) => (
-                    <SelectItem key={model.id} value={model.id}>
-                      <div className="flex items-center gap-2">
-                        <span>{model.label}</span>
-                        <span className="text-zinc-500 text-xs">({model.description})</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                id="auto-match"
-                checked={autoMatchAfterScrape}
-                onChange={(e) => setAutoMatchAfterScrape(e.target.checked)}
-                className="h-4 w-4 rounded border-zinc-700 bg-zinc-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-zinc-900"
-              />
-              <div>
-                <Label htmlFor="auto-match" className="text-zinc-300 text-sm font-medium cursor-pointer">
-                  Auto-match after scrape
-                </Label>
-                <p className="text-xs text-zinc-500">
-                  Automatically run matcher on new jobs
-                </p>
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Left Column: Configuration (Spans 2 columns) */}
+        <div className="space-y-6 lg:col-span-2">
+          {/* Matcher Configuration */}
+          <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Cpu className="h-5 w-5 text-emerald-500" />
+                <CardTitle>Matching Engine</CardTitle>
               </div>
-            </div>
-          </div>
-
-          {/* Right Column - Bulk Settings */}
-          <div className="space-y-4">
-            <div>
-              <div className="flex items-center gap-3 mb-3">
-                <input
-                  type="checkbox"
-                  id="bulk-enabled"
-                  checked={bulkEnabled}
-                  onChange={(e) => setBulkEnabled(e.target.checked)}
-                  className="h-4 w-4 rounded border-zinc-700 bg-zinc-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-zinc-900"
-                />
-                <div>
-                  <Label htmlFor="bulk-enabled" className="text-zinc-300 text-sm font-medium cursor-pointer">
-                    Enable Bulk Matching
-                  </Label>
+              <CardDescription>
+                Configure how the AI matches jobs to your profile
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Primary Settings */}
+              <div className="grid gap-6">
+                <div className="space-y-3">
+                  <Label htmlFor="model-select">AI Model</Label>
+                  <Select value={matcherModel} onValueChange={setMatcherModel}>
+                    <SelectTrigger id="model-select" className="w-full bg-zinc-950/50 border-zinc-800">
+                      <SelectValue placeholder="Select model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MODELS.map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{model.label}</span>
+                            <span className="text-zinc-600 text-xs">•</span>
+                            <span className="text-xs text-zinc-400">{model.description}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <p className="text-xs text-zinc-500">
-                    Process multiple jobs per API call
+                    The AI model used to analyze job descriptions against your profile.
                   </p>
                 </div>
-              </div>
-            </div>
 
-            <div className={!bulkEnabled ? "opacity-50" : ""}>
-              <Label htmlFor="batch-size" className="text-zinc-300 text-sm font-medium">
-                Batch Size
-              </Label>
-              <p className="text-xs text-zinc-500 mt-0.5 mb-2">
-                Jobs per API call (1-10). Lower = more reliable.
+                <div className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-950/30 p-4">
+                  <input
+                    type="checkbox"
+                    id="auto-match"
+                    checked={autoMatchAfterScrape}
+                    onChange={(e) => setAutoMatchAfterScrape(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-zinc-700 bg-zinc-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-zinc-900"
+                  />
+                  <div>
+                    <Label htmlFor="auto-match" className="cursor-pointer font-medium">
+                      Auto-match after scrape
+                    </Label>
+                    <p className="text-xs text-zinc-500 mt-1">
+                      Automatically trigger the matching process immediately after discovering new jobs.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <Separator className="bg-zinc-800" />
+
+              {/* Performance Settings */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <Label className="text-base">Performance & Limits</Label>
+                    <p className="text-xs text-zinc-500">
+                      Fine-tune API usage and concurrency
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowAdvanced(!showAdvanced)}
+                    className="h-8 text-xs text-zinc-400 hover:text-white"
+                  >
+                    <Settings2 className="mr-2 h-3.5 w-3.5" />
+                    {showAdvanced ? "Simple View" : "Advanced View"}
+                  </Button>
+                </div>
+
+                <div className="grid gap-6">
+                   <div className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-950/30 p-4">
+                    <input
+                      type="checkbox"
+                      id="bulk-enabled"
+                      checked={bulkEnabled}
+                      onChange={(e) => setBulkEnabled(e.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-zinc-700 bg-zinc-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-zinc-900"
+                    />
+                    <div>
+                      <Label htmlFor="bulk-enabled" className="cursor-pointer font-medium">
+                        Bulk Matching
+                      </Label>
+                      <p className="text-xs text-zinc-500 mt-1">
+                        Process multiple jobs in a single API call to save time and reduce requests.
+                      </p>
+                    </div>
+                  </div>
+
+                  {(showAdvanced || bulkEnabled) && (
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                       <div className={cn("space-y-2", !bulkEnabled && "opacity-50 grayscale")}>
+                         <Label htmlFor="batch-size" className="text-xs text-zinc-400">Batch Size</Label>
+                         <Input
+                           id="batch-size"
+                           type="number"
+                           min={1}
+                           max={10}
+                           value={batchSize}
+                           onChange={(e) => setBatchSize(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
+                           className="bg-zinc-950/50 border-zinc-800"
+                           disabled={!bulkEnabled}
+                         />
+                       </div>
+
+                       {showAdvanced && (
+                         <>
+                           <div className="space-y-2">
+                             <Label htmlFor="max-retries" className="text-xs text-zinc-400">Max Retries</Label>
+                             <Input
+                               id="max-retries"
+                               type="number"
+                               min={1}
+                               max={5}
+                               value={maxRetries}
+                               onChange={(e) => setMaxRetries(Math.min(5, Math.max(1, parseInt(e.target.value) || 1)))}
+                               className="bg-zinc-950/50 border-zinc-800"
+                             />
+                           </div>
+                           <div className="space-y-2">
+                             <Label htmlFor="timeout" className="text-xs text-zinc-400">Timeout (sec)</Label>
+                             <Input
+                               id="timeout"
+                               type="number"
+                               min={5}
+                               max={120}
+                               value={Math.round(timeoutMs / 1000)}
+                               onChange={(e) => setTimeoutMs(Math.min(120000, Math.max(5000, (parseInt(e.target.value) || 5) * 1000)))}
+                               className="bg-zinc-950/50 border-zinc-800"
+                             />
+                           </div>
+                           <div className="space-y-2">
+                             <Label htmlFor="concurrency" className="text-xs text-zinc-400">Concurrency</Label>
+                             <Input
+                               id="concurrency"
+                               type="number"
+                               min={1}
+                               max={10}
+                               value={concurrencyLimit}
+                               onChange={(e) => setConcurrencyLimit(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
+                               className="bg-zinc-950/50 border-zinc-800"
+                             />
+                           </div>
+                           <div className="space-y-2 md:col-span-2 lg:col-span-1">
+                             <Label htmlFor="circuit-breaker" className="text-xs text-zinc-400">Circuit Breaker</Label>
+                             <Input
+                               id="circuit-breaker"
+                               type="number"
+                               min={3}
+                               max={50}
+                               value={circuitBreakerThreshold}
+                               onChange={(e) => setCircuitBreakerThreshold(Math.min(50, Math.max(3, parseInt(e.target.value) || 10)))}
+                               className="bg-zinc-950/50 border-zinc-800"
+                             />
+                           </div>
+                         </>
+                       )}
+                     </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+            <CardFooter className="flex items-center justify-between border-t border-zinc-800 bg-zinc-900/50 px-6 py-4 rounded-b-xl">
+              <p className="text-xs text-zinc-500">
+                {settingsSaved ? (
+                  <span className="flex items-center text-emerald-400 gap-1.5">
+                    <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                    Changes saved successfully
+                  </span>
+                ) : Object.keys(localEdits).length > 0 ? (
+                  <span className="text-yellow-400">Unsaved changes</span>
+                ) : (
+                  "Settings are up to date"
+                )}
               </p>
-              <Input
-                id="batch-size"
-                type="number"
-                min={1}
-                max={10}
-                value={batchSize}
-                onChange={(e) => setBatchSize(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
-                className="w-24"
-                disabled={!bulkEnabled}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="max-retries" className="text-zinc-300 text-sm font-medium">
-                Max Retries
-              </Label>
-              <p className="text-xs text-zinc-500 mt-0.5 mb-2">
-                Retry attempts per job on failure (1-10)
-              </p>
-              <Input
-                id="max-retries"
-                type="number"
-                min={1}
-                max={10}
-                value={maxRetries}
-                onChange={(e) => setMaxRetries(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
-                className="w-24"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Advanced Settings Section */}
-        <div className="mt-6 pt-4 border-t border-zinc-800">
-          <button
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-300 transition-colors"
-          >
-            <Settings2 className="h-4 w-4" />
-            {showAdvanced ? "Hide" : "Show"} Advanced Settings
-          </button>
-
-          {showAdvanced && (
-            <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div>
-                <Label htmlFor="concurrency-limit" className="text-zinc-300 text-sm font-medium">
-                  Concurrency Limit
-                </Label>
-                <p className="text-xs text-zinc-500 mt-0.5 mb-2">
-                  Parallel jobs at once (1-10)
-                </p>
-                <Input
-                  id="concurrency-limit"
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={concurrencyLimit}
-                  onChange={(e) => setConcurrencyLimit(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
-                  className="w-24"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="timeout-ms" className="text-zinc-300 text-sm font-medium">
-                  Request Timeout
-                </Label>
-                <p className="text-xs text-zinc-500 mt-0.5 mb-2">
-                  Timeout in seconds (5-120)
-                </p>
-                <Input
-                  id="timeout-ms"
-                  type="number"
-                  min={5}
-                  max={120}
-                  value={Math.round(timeoutMs / 1000)}
-                  onChange={(e) => setTimeoutMs(Math.min(120000, Math.max(5000, (parseInt(e.target.value) || 5) * 1000)))}
-                  className="w-24"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="circuit-breaker" className="text-zinc-300 text-sm font-medium">
-                  Circuit Breaker Threshold
-                </Label>
-                <p className="text-xs text-zinc-500 mt-0.5 mb-2">
-                  Failures before pause (3-50)
-                </p>
-                <Input
-                  id="circuit-breaker"
-                  type="number"
-                  min={3}
-                  max={50}
-                  value={circuitBreakerThreshold}
-                  onChange={(e) => setCircuitBreakerThreshold(Math.min(50, Math.max(3, parseInt(e.target.value) || 10)))}
-                  className="w-24"
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Save Button */}
-        <div className="mt-6 pt-4 border-t border-zinc-800 flex items-center gap-3">
-          <Button
-            onClick={() => saveSettingsMutation.mutate()}
-            disabled={saveSettingsMutation.isPending || settingsLoading}
-          >
-            {saveSettingsMutation.isPending ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <Save />
-            )}
-            {saveSettingsMutation.isPending ? "Saving..." : "Save Settings"}
-          </Button>
-
-          {settingsSaved && (
-            <span className="text-sm text-emerald-400">
-              Settings saved successfully!
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Actions Grid - Three Columns */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Job Refresh */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-          <div className="flex items-center gap-2 mb-1">
-            <RefreshCw className="h-5 w-5 text-blue-500" />
-            <h2 className="text-lg font-medium text-white">Job Scraping</h2>
-          </div>
-          <p className="text-sm text-zinc-400 mb-4">
-            Manually refresh jobs from all tracked companies
-          </p>
-
-          <Button
-            onClick={() => refreshMutation.mutate()}
-            disabled={refreshMutation.isPending}
-          >
-            <RefreshCw className={refreshMutation.isPending ? "animate-spin" : ""} />
-            {refreshMutation.isPending ? "Refreshing..." : "Refresh All Jobs"}
-          </Button>
-
-          {refreshMutation.isSuccess && (
-            <p className="mt-2 text-sm text-emerald-400">
-              Jobs refreshed successfully!
-            </p>
-          )}
-        </div>
-
-        {/* Match Unmatched Jobs */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-          <div className="flex items-center gap-2 mb-1">
-            <Sparkles className="h-5 w-5 text-purple-500" />
-            <h2 className="text-lg font-medium text-white">Match Unmatched Jobs</h2>
-          </div>
-          <p className="text-sm text-zinc-400 mb-4">
-            Run AI matcher on jobs that don&apos;t have a score yet
-            {unmatchedData && unmatchedData.count > 0 && (
-              <span className="text-purple-400 ml-1">
-                ({unmatchedData.count} job{unmatchedData.count > 1 ? "s" : ""} pending)
-              </span>
-            )}
-          </p>
-
-          <Button
-            onClick={() => matchUnmatchedMutation.mutate()}
-            disabled={matchUnmatchedMutation.isPending || (unmatchedData?.count ?? 0) === 0}
-            variant={unmatchedData && unmatchedData.count > 0 ? "default" : "outline"}
-          >
-            <Sparkles className={matchUnmatchedMutation.isPending ? "animate-pulse" : ""} />
-            {matchUnmatchedMutation.isPending ? "Matching..." : "Match Unmatched Jobs"}
-          </Button>
-
-          {matchUnmatchedMutation.isSuccess && matchUnmatchedMutation.data && (
-            <p className="mt-2 text-sm text-emerald-400">
-              Matched {matchUnmatchedMutation.data.matched} of {matchUnmatchedMutation.data.total} jobs
-              {matchUnmatchedMutation.data.failed > 0 && (
-                <span className="text-red-400 ml-1">
-                  ({matchUnmatchedMutation.data.failed} failed)
-                </span>
-              )}
-            </p>
-          )}
-        </div>
-
-        {/* Clear Match Data */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-          <div className="flex items-center gap-2 mb-1">
-            <Eraser className="h-5 w-5 text-orange-500" />
-            <h2 className="text-lg font-medium text-white">Clear Match Data</h2>
-          </div>
-          <p className="text-sm text-zinc-400 mb-4">
-            Remove all match scores and history. Jobs are kept.
-          </p>
-
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" className="text-orange-400 hover:text-orange-300 hover:border-orange-400/50">
-                <Eraser className="h-4 w-4" />
-                Clear Match Data
+              <Button
+                onClick={() => saveSettingsMutation.mutate()}
+                disabled={saveSettingsMutation.isPending || settingsLoading || Object.keys(localEdits).length === 0}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white min-w-[120px]"
+              >
+                {saveSettingsMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                {saveSettingsMutation.isPending ? "Saving..." : "Save Changes"}
               </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Clear Match Data</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Are you sure you want to clear all match data? This will remove
-                  match scores, reasons, and history from all jobs. The jobs
-                  themselves will not be deleted. This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  className="bg-orange-600 hover:bg-orange-700"
-                  onClick={() => clearMatchDataMutation.mutate()}
+            </CardFooter>
+          </Card>
+
+          {/* Danger Zone */}
+          <Card className="border-red-900/20 bg-red-950/5 overflow-hidden rounded-xl">
+            <CardHeader className="border-b border-red-900/10 pb-4">
+               <div className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-500" />
+                <CardTitle className="text-red-500">Danger Zone</CardTitle>
+              </div>
+              <CardDescription className="text-red-400/60">
+                Destructive actions that cannot be undone
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+               <div className="grid divide-y divide-red-900/10">
+                 {/* Clear Match Data Row */}
+                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-6 hover:bg-red-950/10 transition-colors">
+                   <div className="space-y-1">
+                     <h4 className="text-sm font-medium text-zinc-200">Delete Match History</h4>
+                     <p className="text-xs text-zinc-500 max-w-sm">
+                       Permanently removes all match scores and AI reasoning. Job listings are preserved.
+                     </p>
+                   </div>
+                   <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="outline" size="sm" className="border-red-900/30 text-red-400 hover:bg-red-950/30 hover:text-red-300 hover:border-red-900/50">
+                          <Eraser className="mr-2 h-4 w-4" />
+                          Delete Scores & History
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete All Match History?</AlertDialogTitle>
+                          <AlertDialogDescription className="space-y-2" asChild>
+                            <div>
+                              <p>This action will permanently delete:</p>
+                              <ul className="list-disc list-inside text-zinc-400 ml-2">
+                                <li>All AI match scores and confidence levels</li>
+                                <li>Generated match reasoning and analysis</li>
+                                <li>Historical records of match runs</li>
+                              </ul>
+                              <p className="mt-2 font-medium text-zinc-300">
+                                Your scraped job listings and company data will NOT be deleted.
+                              </p>
+                            </div>
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-red-600 hover:bg-red-700 text-white"
+                            onClick={() => clearMatchDataMutation.mutate()}
+                          >
+                            Yes, Delete History
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                 </div>
+
+                 {/* Clear All Jobs Row */}
+                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-6 hover:bg-red-950/10 transition-colors">
+                   <div className="space-y-1">
+                     <h4 className="text-sm font-medium text-zinc-200">Delete All Jobs</h4>
+                     <p className="text-xs text-zinc-500 max-w-sm">
+                       Permanently removes all scraped jobs and their associated data. Companies remain tracked.
+                     </p>
+                   </div>
+                   <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="outline" size="sm" className="border-red-900/30 text-red-400 hover:bg-red-950/30 hover:text-red-300 hover:border-red-900/50">
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete Jobs
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete All Jobs</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete all jobs? This will remove all
+                            scraped job postings from all companies. This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-red-600 hover:bg-red-700"
+                            onClick={() => clearJobsMutation.mutate()}
+                          >
+                            Yes, Delete All
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                 </div>
+               </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right Column: Actions & Info */}
+        <div className="space-y-6">
+          {/* Quick Actions */}
+          <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4 text-blue-500" />
+                <CardTitle className="text-base">Operations</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <div className="space-y-2">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start border-zinc-800 hover:bg-zinc-800/50 hover:text-white"
+                  onClick={() => refreshMutation.mutate()}
+                  disabled={refreshMutation.isPending}
                 >
-                  Clear Match Data
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+                  <RefreshCw className={cn("mr-2 h-4 w-4", refreshMutation.isPending && "animate-spin")} />
+                  {refreshMutation.isPending ? "Refreshing..." : "Refresh Jobs"}
+                </Button>
+                {refreshMutation.isSuccess && (
+                  <p className="text-xs text-emerald-400 text-center animate-in fade-in slide-in-from-top-1">
+                    Jobs refreshed successfully
+                  </p>
+                )}
+              </div>
 
-          {clearMatchDataMutation.isSuccess && (
-            <p className="mt-2 text-sm text-emerald-400">
-              Cleared match data from {clearMatchDataMutation.data?.jobsCleared || 0} jobs!
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Second Row of Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Clear Jobs */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-          <div className="flex items-center gap-2 mb-1">
-            <Trash2 className="h-5 w-5 text-red-500" />
-            <h2 className="text-lg font-medium text-white">Clear Job Data</h2>
-          </div>
-          <p className="text-sm text-zinc-400 mb-4">
-            Delete all scraped jobs. Companies will be kept.
-          </p>
-
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" className="text-red-400 hover:text-red-300 hover:border-red-400/50">
-                <Trash2 className="h-4 w-4" />
-                Clear All Jobs
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Clear All Jobs</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Are you sure you want to delete all jobs? This will remove all
-                  scraped job postings from all companies. The companies
-                  themselves will not be deleted. This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  variant="destructive"
-                  onClick={() => clearJobsMutation.mutate()}
+              <div className="space-y-2">
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-full justify-start border-zinc-800 hover:bg-zinc-800/50 hover:text-white",
+                    unmatchedData && unmatchedData.count > 0 && "border-purple-500/30 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10"
+                  )}
+                  onClick={() => matchUnmatchedMutation.mutate()}
+                  disabled={matchUnmatchedMutation.isPending || (unmatchedData?.count ?? 0) === 0}
                 >
-                  Delete All Jobs
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+                  <Sparkles className={cn("mr-2 h-4 w-4", matchUnmatchedMutation.isPending && "animate-pulse")} />
+                  {matchUnmatchedMutation.isPending ? "Matching..." : "Match Unmatched"}
+                  {unmatchedData && unmatchedData.count > 0 && (
+                    <Badge variant="secondary" className="ml-auto bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 border-none h-5">
+                      {unmatchedData.count}
+                    </Badge>
+                  )}
+                </Button>
+                {matchUnmatchedMutation.isSuccess && matchUnmatchedMutation.data && (
+                  <p className="text-xs text-emerald-400 text-center animate-in fade-in slide-in-from-top-1">
+                    Matched {matchUnmatchedMutation.data.matched} jobs
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
 
-          {clearJobsMutation.isSuccess && (
-            <p className="mt-2 text-sm text-emerald-400">
-              All jobs cleared successfully!
-            </p>
-          )}
-        </div>
+          {/* System Info */}
+          <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <Server className="h-4 w-4 text-zinc-400" />
+                <CardTitle className="text-base">System Info</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Version</Label>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="font-mono text-zinc-400 border-zinc-800">v0.1.0</Badge>
+                  <span className="text-xs text-zinc-600">Beta</span>
+                </div>
+              </div>
 
-        {/* Database Info */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-          <div className="flex items-center gap-2 mb-1">
-            <Database className="h-5 w-5 text-zinc-400" />
-            <h2 className="text-lg font-medium text-white">Database</h2>
-          </div>
-          <p className="text-sm text-zinc-400 mb-4">
-            Your data is stored locally in SQLite
-          </p>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Database</Label>
+                <div className="flex items-center gap-2 rounded-md bg-zinc-950/50 border border-zinc-800 px-3 py-2">
+                  <Database className="h-3.5 w-3.5 text-zinc-500" />
+                  <code className="text-xs text-zinc-400">data/switchy.db</code>
+                </div>
+              </div>
 
-          <div className="flex items-center gap-2 text-sm text-zinc-500 bg-zinc-800/50 px-3 py-2 rounded-md w-fit">
-            <Database className="h-4 w-4" />
-            <code>data/switchy.db</code>
-          </div>
-        </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Platforms</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  <Badge variant="secondary" className="bg-zinc-800 text-zinc-400 hover:bg-zinc-700">Greenhouse</Badge>
+                  <Badge variant="secondary" className="bg-zinc-800 text-zinc-400 hover:bg-zinc-700">Lever</Badge>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-        {/* About */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-          <div className="flex items-center gap-2 mb-1">
-            <Zap className="h-5 w-5 text-yellow-500" />
-            <h2 className="text-lg font-medium text-white">About Switchy</h2>
-          </div>
-          <p className="text-sm text-zinc-400 mb-4">
-            Local job hunting app with AI-powered matching
-          </p>
-
-          <div className="space-y-1 text-sm text-zinc-500">
-            <p>Version: <span className="text-zinc-400">0.1.0</span></p>
-            <p>Platforms: <span className="text-zinc-400">Greenhouse, Lever</span></p>
-          </div>
+          {/* Tips Card */}
+          <Card className="border-blue-900/20 bg-blue-950/5 rounded-xl">
+             <CardContent className="p-4 flex gap-3">
+               <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+               <div className="space-y-1">
+                 <p className="text-sm font-medium text-blue-400">Pro Tip</p>
+                 <p className="text-xs text-blue-300/70 leading-relaxed">
+                   Enable "Bulk Matching" to significantly speed up processing when you have many new jobs.
+                 </p>
+               </div>
+             </CardContent>
+          </Card>
         </div>
       </div>
     </div>

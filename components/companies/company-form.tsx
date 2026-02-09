@@ -15,10 +15,6 @@ interface Company {
   logoUrl: string | null;
   platform: string | null;
   boardToken: string | null;
-  description: string | null;
-  location: string | null;
-  industry: string | null;
-  size: string | null;
   isActive: boolean;
   lastScrapedAt: string | null;
   scrapeFrequency: number;
@@ -30,21 +26,10 @@ interface CompanyFormProps {
   onCancel?: () => void;
 }
 
-const COMPANY_SIZES = [
-  { value: "", label: "Select size..." },
-  { value: "startup", label: "Startup (1-50)" },
-  { value: "small", label: "Small (51-200)" },
-  { value: "medium", label: "Medium (201-1000)" },
-  { value: "large", label: "Large (1001-5000)" },
-  { value: "enterprise", label: "Enterprise (5000+)" },
-];
-
 const PLATFORMS = [
   { value: "", label: "Auto-detect" },
   { value: "greenhouse", label: "Greenhouse" },
   { value: "lever", label: "Lever" },
-  { value: "workday", label: "Workday" },
-  { value: "ashby", label: "Ashby" },
   { value: "custom", label: "Custom" },
 ];
 
@@ -56,10 +41,6 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
     name: "",
     careersUrl: "",
     logoUrl: "",
-    description: "",
-    location: "",
-    industry: "",
-    size: "",
     scrapeFrequency: 6,
     platform: "",
     boardToken: "",
@@ -74,10 +55,6 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
         name: company.name,
         careersUrl: company.careersUrl,
         logoUrl: company.logoUrl || "",
-        description: company.description || "",
-        location: company.location || "",
-        industry: company.industry || "",
-        size: company.size || "",
         scrapeFrequency: company.scrapeFrequency || 6,
         platform: company.platform || "",
         boardToken: company.boardToken || "",
@@ -85,10 +62,6 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
       // Show advanced if any advanced fields are filled
       if (
         company.logoUrl ||
-        company.description ||
-        company.location ||
-        company.industry ||
-        company.size ||
         company.boardToken
       ) {
         setShowAdvanced(true);
@@ -144,10 +117,6 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
       setDetectedPlatform("Greenhouse");
     } else if (urlLower.includes("lever.co") || urlLower.includes("jobs.lever")) {
       setDetectedPlatform("Lever");
-    } else if (urlLower.includes("workday.com") || urlLower.includes("myworkdayjobs")) {
-      setDetectedPlatform("Workday");
-    } else if (urlLower.includes("ashbyhq.com")) {
-      setDetectedPlatform("Ashby");
     } else if (url.length > 10) {
       setDetectedPlatform("Custom");
     } else {
@@ -203,7 +172,7 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
             )}
           </div>
           <p className="text-xs text-zinc-500">
-            We support Greenhouse, Lever, Workday, Ashby, and custom career pages
+            We support Greenhouse, Lever, and custom career pages
           </p>
         </div>
       </div>
@@ -291,39 +260,13 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
         <div className="space-y-4 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="location">Location</Label>
+              <Label htmlFor="logoUrl">Logo URL</Label>
               <Input
-                id="location"
-                value={formData.location}
-                onChange={(e) => setFormData((prev) => ({ ...prev, location: e.target.value }))}
-                placeholder="San Francisco, CA"
+                id="logoUrl"
+                value={formData.logoUrl}
+                onChange={(e) => setFormData((prev) => ({ ...prev, logoUrl: e.target.value }))}
+                placeholder="https://..."
               />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="industry">Industry</Label>
-              <Input
-                id="industry"
-                value={formData.industry}
-                onChange={(e) => setFormData((prev) => ({ ...prev, industry: e.target.value }))}
-                placeholder="Technology"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="size">Company Size</Label>
-              <select
-                id="size"
-                value={formData.size}
-                onChange={(e) => setFormData((prev) => ({ ...prev, size: e.target.value }))}
-                className="h-8 w-full rounded border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100"
-              >
-                {COMPANY_SIZES.map((size) => (
-                  <option key={size.value} value={size.value}>
-                    {size.label}
-                  </option>
-                ))}
-              </select>
             </div>
 
             <div className="space-y-2">
@@ -339,27 +282,6 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
                 }
               />
             </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="logoUrl">Logo URL</Label>
-            <Input
-              id="logoUrl"
-              value={formData.logoUrl}
-              onChange={(e) => setFormData((prev) => ({ ...prev, logoUrl: e.target.value }))}
-              placeholder="https://..."
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="description">Notes</Label>
-            <Textarea
-              id="description"
-              value={formData.description}
-              onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
-              rows={2}
-              placeholder="Why are you interested in this company?"
-            />
           </div>
         </div>
       )}

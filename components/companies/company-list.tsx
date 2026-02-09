@@ -41,10 +41,6 @@ interface Company {
   logoUrl: string | null;
   platform: string | null;
   boardToken: string | null;
-  description: string | null;
-  location: string | null;
-  industry: string | null;
-  size: string | null;
   isActive: boolean;
   lastScrapedAt: string | null;
   scrapeFrequency: number;
@@ -54,8 +50,6 @@ interface Company {
 const PLATFORM_COLORS: Record<string, string> = {
   greenhouse: "bg-green-500/10 text-green-400 border-green-500/20",
   lever: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  workday: "bg-orange-500/10 text-orange-400 border-orange-500/20",
-  ashby: "bg-purple-500/10 text-purple-400 border-purple-500/20",
   custom: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
 };
 
@@ -70,6 +64,19 @@ function truncateUrl(url: string, maxLength: number = 30): string {
   } catch {
     return url.length > maxLength ? url.substring(0, maxLength - 3) + "..." : url;
   }
+}
+
+function getRelativeTime(dateString: string | null): string {
+  if (!dateString) return "Never";
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (diffInSeconds < 60) return "Just now";
+  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+  if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d ago`;
+  return date.toLocaleDateString();
 }
 
 function ToggleSwitch({
@@ -221,7 +228,9 @@ export function CompanyList() {
         {companies.map((company) => (
           <div
             key={company.id}
-            className="group rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700"
+            className={`group rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:border-zinc-700 ${
+              !company.isActive ? "opacity-60 grayscale" : ""
+            }`}
           >
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
@@ -238,12 +247,6 @@ export function CompanyList() {
                 )}
                 <div>
                   <h3 className="font-medium text-white">{company.name}</h3>
-                  {company.location && (
-                    <p className="flex items-center gap-1 text-xs text-zinc-400">
-                      <MapPin className="h-3 w-3" />
-                      {company.location}
-                    </p>
-                  )}
                 </div>
               </div>
 
@@ -257,78 +260,72 @@ export function CompanyList() {
                     <MoreVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuItem
                     onClick={() => refreshMutation.mutate(company.id)}
                     disabled={refreshMutation.isPending}
+                    className="cursor-pointer"
                   >
                     <RefreshCw className="mr-2 h-4 w-4" />
-                    Refresh Jobs
+                    <span className="truncate">Refresh Jobs</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => matchJobsMutation.mutate(company.id)}
                     disabled={matchJobsMutation.isPending}
-                    className="text-purple-400 focus:text-purple-400"
+                    className="text-purple-400 focus:text-purple-400 cursor-pointer"
                   >
                     <Sparkles className="mr-2 h-4 w-4" />
-                    Refresh Matching
+                    <span className="truncate">Refresh Matching</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => setDeleteJobsCompanyId(company.id)}
-                    className="text-orange-400 focus:text-orange-400"
+                    className="text-orange-400 focus:text-orange-400 cursor-pointer"
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
-                    Delete All Jobs
+                    <span className="truncate">Delete All Jobs</span>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setEditingCompany(company)}>
+                  <DropdownMenuItem
+                    onClick={() => setEditingCompany(company)}
+                    className="cursor-pointer"
+                  >
                     <Pencil className="mr-2 h-4 w-4" />
-                    Edit
+                    <span className="truncate">Edit</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => deleteMutation.mutate(company.id)}
-                    className="text-red-400 focus:text-red-400"
+                    className="text-red-400 focus:text-red-400 cursor-pointer"
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
-                    Delete
+                    <span className="truncate">Delete</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
 
-            {/* Career URL Link */}
-            <a
-              href={company.careersUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-2 flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 hover:underline"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <ExternalLink className="h-3 w-3" />
-              {truncateUrl(company.careersUrl)}
-            </a>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap gap-2">
+                {company.platform && (
+                  <Badge
+                    variant="outline"
+                    className={PLATFORM_COLORS[company.platform] || PLATFORM_COLORS.custom}
+                  >
+                    {company.platform}
+                  </Badge>
+                )}
+              </div>
 
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {company.platform && (
-                <Badge
-                  variant="outline"
-                  className={PLATFORM_COLORS[company.platform] || PLATFORM_COLORS.custom}
-                >
-                  {company.platform}
-                </Badge>
-              )}
-              {company.industry && (
-                <Badge variant="outline" className="border-zinc-700 text-zinc-400">
-                  {company.industry}
-                </Badge>
-              )}
+              <a
+                href={company.careersUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ExternalLink className="h-3 w-3" />
+                {truncateUrl(company.careersUrl)}
+              </a>
             </div>
-
-            {company.description && (
-              <p className="mt-3 text-xs text-zinc-400 line-clamp-2">
-                {company.description}
-              </p>
-            )}
 
             <div className="mt-4 flex items-center justify-between border-t border-zinc-800 pt-3 text-xs text-zinc-500">
               <div className="flex items-center gap-2">
@@ -343,11 +340,17 @@ export function CompanyList() {
                   {company.isActive ? "Active" : "Paused"}
                 </span>
               </div>
-              <span>
-                {company.lastScrapedAt
-                  ? `Updated ${new Date(company.lastScrapedAt).toLocaleDateString()}`
-                  : "Never scraped"}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="flex items-center gap-1" title="Scrape frequency">
+                  <RefreshCw className="h-3 w-3" />
+                  Every {company.scrapeFrequency}h
+                </span>
+                <span>
+                  {company.lastScrapedAt
+                    ? `Scraped ${getRelativeTime(company.lastScrapedAt)}`
+                    : "Never scraped"}
+                </span>
+              </div>
             </div>
           </div>
         ))}

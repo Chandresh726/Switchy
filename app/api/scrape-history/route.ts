@@ -96,3 +96,26 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const sessionId = searchParams.get("sessionId");
+
+    if (sessionId) {
+      // Delete specific session
+      await db.delete(scrapeSessions).where(eq(scrapeSessions.id, sessionId));
+      return NextResponse.json({ success: true });
+    } else {
+      // Delete all sessions
+      await db.delete(scrapeSessions);
+      return NextResponse.json({ success: true });
+    }
+  } catch (error) {
+    console.error("Failed to delete scrape history:", error);
+    return NextResponse.json(
+      { error: "Failed to delete scrape history" },
+      { status: 500 }
+    );
+  }
+}

@@ -7,7 +7,6 @@ export const profile = sqliteTable("profile", {
   name: text("name").notNull(),
   email: text("email"),
   phone: text("phone"),
-  location: text("location"),
   preferredCountry: text("preferred_country"),
   preferredCity: text("preferred_city"),
   linkedinUrl: text("linkedin_url"),
@@ -35,10 +34,8 @@ export const experience = sqliteTable("experience", {
   profileId: integer("profile_id").references(() => profile.id, { onDelete: "cascade" }),
   company: text("company").notNull(),
   title: text("title").notNull(),
-  location: text("location"),
   startDate: text("start_date").notNull(),
   endDate: text("end_date"), // null = current
-  description: text("description"),
   highlights: text("highlights"), // JSON array stored as text
 });
 
@@ -61,12 +58,8 @@ export const companies = sqliteTable("companies", {
   name: text("name").notNull(),
   careersUrl: text("careers_url").notNull(),
   logoUrl: text("logo_url"),
-  platform: text("platform"), // "greenhouse", "lever", "workday", "custom"
+  platform: text("platform"), // "greenhouse", "lever", "custom"
   boardToken: text("board_token"), // Manual board token for platforms like Greenhouse (when URL doesn't contain it)
-  description: text("description"),
-  location: text("location"),
-  industry: text("industry"),
-  size: text("size"), // "startup", "small", "medium", "large", "enterprise"
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   lastScrapedAt: integer("last_scraped_at", { mode: "timestamp" }),
   scrapeFrequency: integer("scrape_frequency").default(6), // hours between scrapes
@@ -80,10 +73,8 @@ export const jobs = sqliteTable("jobs", {
   companyId: integer("company_id").references(() => companies.id, { onDelete: "cascade" }).notNull(),
   externalId: text("external_id"), // for deduplication
   title: text("title").notNull(),
-  description: text("description"),
   cleanDescription: text("clean_description"), // AI-cleaned plain text description
   url: text("url").notNull(),
-  location: text("location"),
   locationType: text("location_type"), // "remote", "hybrid", "onsite"
   salary: text("salary"),
   department: text("department"),

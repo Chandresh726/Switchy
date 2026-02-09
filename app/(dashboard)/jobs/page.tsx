@@ -4,7 +4,7 @@ import { JobList } from "@/components/jobs/job-list";
 
 export default function JobsPage() {
   return (
-    <div className="h-full">
+    <div>
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-white">Jobs</h1>
