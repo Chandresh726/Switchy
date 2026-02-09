@@ -62,6 +62,7 @@ export const companies = sqliteTable("companies", {
   careersUrl: text("careers_url").notNull(),
   logoUrl: text("logo_url"),
   platform: text("platform"), // "greenhouse", "lever", "workday", "custom"
+  boardToken: text("board_token"), // Manual board token for platforms like Greenhouse (when URL doesn't contain it)
   description: text("description"),
   location: text("location"),
   industry: text("industry"),
@@ -145,6 +146,18 @@ export const scrapingLogs = sqliteTable("scraping_logs", {
   matcherJobsTotal: integer("matcher_jobs_total"),
   matcherJobsCompleted: integer("matcher_jobs_completed"),
   matcherDuration: integer("matcher_duration"),
+  matcherErrorCount: integer("matcher_error_count").default(0),
+});
+
+// Matcher Errors - Track individual job matcher failures for debugging
+export const matcherErrors = sqliteTable("matcher_errors", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  jobId: integer("job_id").references(() => jobs.id, { onDelete: "cascade" }).notNull(),
+  scrapingLogId: integer("scraping_log_id").references(() => scrapingLogs.id, { onDelete: "set null" }),
+  attemptNumber: integer("attempt_number").notNull(), // 1-based retry count
+  errorType: text("error_type").notNull(), // "network", "validation", "rate_limit", "json_parse", "unknown"
+  errorMessage: text("error_message").notNull(),
+  occurredAt: integer("occurred_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
 // Settings - App configuration key-value store
@@ -152,6 +165,36 @@ export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value"),
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
+// Match Sessions - Track batch match operations
+export const matchSessions = sqliteTable("match_sessions", {
+  id: text("id").primaryKey(), // UUID
+  triggerSource: text("trigger_source").notNull(), // "manual" | "auto_scrape" | "company_refresh"
+  companyId: integer("company_id").references(() => companies.id, { onDelete: "set null" }), // nullable, for company-specific matches
+  status: text("status").notNull().default("in_progress"), // "in_progress" | "completed" | "failed"
+  jobsTotal: integer("jobs_total").default(0),
+  jobsCompleted: integer("jobs_completed").default(0),
+  jobsSucceeded: integer("jobs_succeeded").default(0),
+  jobsFailed: integer("jobs_failed").default(0),
+  errorCount: integer("error_count").default(0),
+  startedAt: integer("started_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+});
+
+// Match Logs - Per-job match results with history
+export const matchLogs = sqliteTable("match_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sessionId: text("session_id").references(() => matchSessions.id, { onDelete: "cascade" }),
+  jobId: integer("job_id").references(() => jobs.id, { onDelete: "cascade" }),
+  status: text("status").notNull(), // "success" | "failed"
+  score: real("score"), // Match score if successful
+  attemptCount: integer("attempt_count").default(1),
+  errorType: text("error_type"), // "network" | "validation" | "rate_limit" | "json_parse" | "no_object" | "unknown"
+  errorMessage: text("error_message"),
+  duration: integer("duration"), // milliseconds
+  modelUsed: text("model_used"),
+  completedAt: integer("completed_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
 // Relations
@@ -202,7 +245,7 @@ export const jobRequirementsRelations = relations(jobRequirements, ({ one }) => 
   }),
 }));
 
-export const scrapingLogsRelations = relations(scrapingLogs, ({ one }) => ({
+export const scrapingLogsRelations = relations(scrapingLogs, ({ one, many }) => ({
   company: one(companies, {
     fields: [scrapingLogs.companyId],
     references: [companies.id],
@@ -211,10 +254,41 @@ export const scrapingLogsRelations = relations(scrapingLogs, ({ one }) => ({
     fields: [scrapingLogs.sessionId],
     references: [scrapeSessions.id],
   }),
+  matcherErrors: many(matcherErrors),
+}));
+
+export const matcherErrorsRelations = relations(matcherErrors, ({ one }) => ({
+  job: one(jobs, {
+    fields: [matcherErrors.jobId],
+    references: [jobs.id],
+  }),
+  scrapingLog: one(scrapingLogs, {
+    fields: [matcherErrors.scrapingLogId],
+    references: [scrapingLogs.id],
+  }),
 }));
 
 export const scrapeSessionsRelations = relations(scrapeSessions, ({ many }) => ({
   logs: many(scrapingLogs),
+}));
+
+export const matchSessionsRelations = relations(matchSessions, ({ one, many }) => ({
+  company: one(companies, {
+    fields: [matchSessions.companyId],
+    references: [companies.id],
+  }),
+  logs: many(matchLogs),
+}));
+
+export const matchLogsRelations = relations(matchLogs, ({ one }) => ({
+  session: one(matchSessions, {
+    fields: [matchLogs.sessionId],
+    references: [matchSessions.id],
+  }),
+  job: one(jobs, {
+    fields: [matchLogs.jobId],
+    references: [jobs.id],
+  }),
 }));
 
 // Type exports
@@ -238,3 +312,9 @@ export type ScrapeSession = typeof scrapeSessions.$inferSelect;
 export type NewScrapeSession = typeof scrapeSessions.$inferInsert;
 export type Setting = typeof settings.$inferSelect;
 export type NewSetting = typeof settings.$inferInsert;
+export type MatcherError = typeof matcherErrors.$inferSelect;
+export type NewMatcherError = typeof matcherErrors.$inferInsert;
+export type MatchSession = typeof matchSessions.$inferSelect;
+export type NewMatchSession = typeof matchSessions.$inferInsert;
+export type MatchLog = typeof matchLogs.$inferSelect;
+export type NewMatchLog = typeof matchLogs.$inferInsert;

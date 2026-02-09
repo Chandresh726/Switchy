@@ -13,13 +13,25 @@ import {
   Pencil,
   RefreshCw,
   Trash2,
+  Sparkles,
 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useState } from "react";
 
 interface Company {
@@ -28,6 +40,7 @@ interface Company {
   careersUrl: string;
   logoUrl: string | null;
   platform: string | null;
+  boardToken: string | null;
   description: string | null;
   location: string | null;
   industry: string | null;
@@ -91,6 +104,7 @@ function ToggleSwitch({
 export function CompanyList() {
   const queryClient = useQueryClient();
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
+  const [deleteJobsCompanyId, setDeleteJobsCompanyId] = useState<number | null>(null);
 
   const { data: companies = [], isLoading } = useQuery<Company[]>({
     queryKey: ["companies"],
@@ -140,6 +154,32 @@ export function CompanyList() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
+    },
+  });
+
+  const deleteJobsMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/companies/${id}/jobs`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete jobs");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      setDeleteJobsCompanyId(null);
+    },
+  });
+
+  const matchJobsMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/companies/${id}/match`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed to match jobs");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["match-history"] });
     },
   });
 
@@ -225,6 +265,22 @@ export function CompanyList() {
                     <RefreshCw className="mr-2 h-4 w-4" />
                     Refresh Jobs
                   </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => matchJobsMutation.mutate(company.id)}
+                    disabled={matchJobsMutation.isPending}
+                    className="text-purple-400 focus:text-purple-400"
+                  >
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Refresh Matching
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setDeleteJobsCompanyId(company.id)}
+                    className="text-orange-400 focus:text-orange-400"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete All Jobs
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => setEditingCompany(company)}>
                     <Pencil className="mr-2 h-4 w-4" />
                     Edit
@@ -296,6 +352,28 @@ export function CompanyList() {
           </div>
         ))}
       </div>
+
+      {/* Delete Jobs Confirmation Dialog */}
+      <AlertDialog open={deleteJobsCompanyId !== null} onOpenChange={(open) => !open && setDeleteJobsCompanyId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete All Jobs</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete all jobs for this company? This will remove all
+              scraped job postings but keep the company. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-orange-600 hover:bg-orange-700"
+              onClick={() => deleteJobsCompanyId && deleteJobsMutation.mutate(deleteJobsCompanyId)}
+            >
+              Delete All Jobs
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

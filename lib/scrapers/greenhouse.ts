@@ -1,4 +1,4 @@
-import { AbstractScraper, ScraperResult } from "./base-scraper";
+import { AbstractScraper, ScraperResult, ScrapeOptions } from "./base-scraper";
 
 interface GreenhouseJob {
   id: number;
@@ -48,15 +48,16 @@ export class GreenhouseScraper extends AbstractScraper {
     return null;
   }
 
-  async scrape(url: string): Promise<ScraperResult> {
+  async scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult> {
     try {
-      const boardToken = this.extractBoardToken(url);
+      // Use manual board token if provided, otherwise extract from URL
+      const boardToken = options?.boardToken || this.extractBoardToken(url);
 
       if (!boardToken) {
         return {
           success: false,
           jobs: [],
-          error: "Could not extract board token from URL",
+          error: "Could not extract board token from URL. Please provide the board token manually.",
         };
       }
 

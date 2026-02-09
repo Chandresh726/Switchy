@@ -1,4 +1,4 @@
-import { AbstractScraper, ScraperResult } from "./base-scraper";
+import { AbstractScraper, ScraperResult, ScrapeOptions } from "./base-scraper";
 
 interface LeverJob {
   id: string;
@@ -42,15 +42,16 @@ export class LeverScraper extends AbstractScraper {
     return null;
   }
 
-  async scrape(url: string): Promise<ScraperResult> {
+  async scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult> {
     try {
-      const companySlug = this.extractCompanySlug(url);
+      // Use manual board token if provided, otherwise extract from URL
+      const companySlug = options?.boardToken || this.extractCompanySlug(url);
 
       if (!companySlug) {
         return {
           success: false,
           jobs: [],
-          error: "Could not extract company slug from URL",
+          error: "Could not extract company slug from URL. Please provide the board token manually.",
         };
       }
 

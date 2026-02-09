@@ -1,9 +1,9 @@
 import { db } from "@/lib/db";
-import { companies, jobs, scrapingLogs, scrapeSessions, profile } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { companies, jobs, scrapingLogs, scrapeSessions, profile, settings } from "@/lib/db/schema";
+import { eq, inArray } from "drizzle-orm";
 import { scraperRegistry } from "@/lib/scrapers/registry";
 import { batchDeduplicateJobs } from "./deduplicator";
-import { batchCalculateJobMatches } from "@/lib/ai/matcher";
+import { batchCalculateJobMatches, matchJobsWithTracking, getMatcherSettings } from "@/lib/ai/matcher";
 
 // Country/location mappings for filtering
 const COUNTRY_MAPPINGS: Record<string, string[]> = {
@@ -138,13 +138,30 @@ export async function fetchJobsForCompany(
     };
   }
 
-  const { sessionId, triggerSource } = options;
+  let { sessionId, triggerSource } = options;
+
+  // Create a session if one wasn't provided (single company refresh)
+  const isStandaloneRefresh = !sessionId;
+  if (isStandaloneRefresh) {
+    sessionId = crypto.randomUUID();
+    await db.insert(scrapeSessions).values({
+      id: sessionId,
+      triggerSource: triggerSource || "manual",
+      status: "in_progress",
+      companiesTotal: 1,
+      companiesCompleted: 0,
+      totalJobsFound: 0,
+      totalJobsAdded: 0,
+      totalJobsFiltered: 0,
+    });
+  }
 
   try {
     // Scrape jobs from the company's careers page
     const scraperResult = await scraperRegistry.scrape(
       company.careersUrl,
-      company.platform || undefined
+      company.platform || undefined,
+      { boardToken: company.boardToken || undefined }
     );
 
     if (!scraperResult.success) {
@@ -163,6 +180,17 @@ export async function fetchJobsForCompany(
         duration: Date.now() - startTime,
         completedAt: new Date(),
       }).returning({ id: scrapingLogs.id });
+
+      // Update session if this was a standalone refresh
+      if (isStandaloneRefresh && sessionId) {
+        await db.update(scrapeSessions)
+          .set({
+            status: "failed",
+            companiesCompleted: 1,
+            completedAt: new Date(),
+          })
+          .where(eq(scrapeSessions.id, sessionId));
+      }
 
       return {
         companyId,
@@ -254,91 +282,107 @@ export async function fetchJobsForCompany(
       .set({ lastScrapedAt: new Date(), updatedAt: new Date() })
       .where(eq(companies.id, companyId));
 
-    // Trigger async matching for new jobs with progress tracking
+    // Log the scrape result
     let logId: number | undefined;
+    const [log] = await db.insert(scrapingLogs).values({
+      companyId,
+      sessionId,
+      triggerSource,
+      platform: company.platform,
+      status: "success",
+      jobsFound: scraperResult.jobs.length,
+      jobsAdded,
+      jobsUpdated: duplicates.length,
+      jobsFiltered: jobsFilteredOut,
+      duration: Date.now() - startTime,
+      completedAt: new Date(),
+      matcherStatus: insertedJobIds.length > 0 ? "pending" : null,
+      matcherJobsTotal: insertedJobIds.length > 0 ? insertedJobIds.length : null,
+      matcherJobsCompleted: 0,
+    }).returning({ id: scrapingLogs.id });
+    logId = log?.id;
+
+    // Trigger async matching for new jobs if auto-match is enabled
     if (insertedJobIds.length > 0) {
-      console.log(`[Matcher] Starting bulk match for ${insertedJobIds.length} jobs...`);
+      // Check if auto-match after scrape is enabled
+      const matcherSettings = await getMatcherSettings();
 
-      // Insert log first to get logId for matcher tracking
-      const [log] = await db.insert(scrapingLogs).values({
-        companyId,
-        sessionId,
-        triggerSource,
-        platform: company.platform,
-        status: "success",
-        jobsFound: scraperResult.jobs.length,
-        jobsAdded,
-        jobsUpdated: duplicates.length,
-        jobsFiltered: jobsFilteredOut,
-        duration: Date.now() - startTime,
-        completedAt: new Date(),
-        matcherStatus: "pending",
-        matcherJobsTotal: insertedJobIds.length,
-        matcherJobsCompleted: 0,
-      }).returning({ id: scrapingLogs.id });
-      logId = log?.id;
+      if (matcherSettings.autoMatchAfterScrape) {
+        console.log(`[Matcher] Auto-match enabled, starting match for ${insertedJobIds.length} jobs...`);
 
-      // Update matcher status to in_progress
-      if (logId) {
-        await db.update(scrapingLogs)
-          .set({ matcherStatus: "in_progress" })
-          .where(eq(scrapingLogs.id, logId));
-      }
-
-      const matcherStartTime = Date.now();
-      batchCalculateJobMatches(insertedJobIds, async (completed, total) => {
-        console.log(`[Matcher] Progress: ${completed}/${total} jobs matched`);
-        // Update matcher progress in the log
+        // Update matcher status to in_progress
         if (logId) {
           await db.update(scrapingLogs)
-            .set({ matcherJobsCompleted: completed })
+            .set({ matcherStatus: "in_progress" })
             .where(eq(scrapingLogs.id, logId));
         }
-      })
-        .then(async (results) => {
-          const successCount = Array.from(results.values()).filter(
-            (r) => !(r instanceof Error)
-          ).length;
-          console.log(`[Matcher] Completed: ${successCount}/${results.size} jobs matched successfully`);
-          // Update matcher status to completed
-          if (logId) {
-            await db.update(scrapingLogs)
-              .set({
-                matcherStatus: "completed",
-                matcherJobsCompleted: successCount,
-                matcherDuration: Date.now() - matcherStartTime,
-              })
-              .where(eq(scrapingLogs.id, logId));
+
+        const matcherStartTime = Date.now();
+
+        // Use matchJobsWithTracking for full session tracking
+        matchJobsWithTracking(
+          insertedJobIds,
+          "auto_scrape",
+          companyId,
+          async (completed, total, succeeded, failed) => {
+            console.log(`[Matcher] Progress: ${completed}/${total} jobs (${succeeded} succeeded, ${failed} failed)`);
+            // Update matcher progress in the log
+            if (logId) {
+              await db.update(scrapingLogs)
+                .set({ matcherJobsCompleted: completed })
+                .where(eq(scrapingLogs.id, logId));
+            }
           }
+        )
+          .then(async (result) => {
+            console.log(`[Matcher] Completed: ${result.succeeded}/${result.total} jobs matched successfully`);
+            // Update matcher status to completed
+            if (logId) {
+              await db.update(scrapingLogs)
+                .set({
+                  matcherStatus: result.failed === result.total ? "failed" : "completed",
+                  matcherJobsCompleted: result.succeeded,
+                  matcherErrorCount: result.failed,
+                  matcherDuration: Date.now() - matcherStartTime,
+                })
+                .where(eq(scrapingLogs.id, logId));
+            }
+          })
+          .catch(async (err) => {
+            console.error("[Matcher] Background matching failed:", err);
+            // Update matcher status to failed
+            if (logId) {
+              await db.update(scrapingLogs)
+                .set({
+                  matcherStatus: "failed",
+                  matcherDuration: Date.now() - matcherStartTime,
+                })
+                .where(eq(scrapingLogs.id, logId));
+            }
+          });
+      } else {
+        console.log(`[Matcher] Auto-match disabled, skipping matching for ${insertedJobIds.length} new jobs`);
+        // Update log to indicate matcher was skipped
+        if (logId) {
+          await db.update(scrapingLogs)
+            .set({ matcherStatus: null, matcherJobsTotal: null })
+            .where(eq(scrapingLogs.id, logId));
+        }
+      }
+    }
+
+    // Update session if this was a standalone refresh
+    if (isStandaloneRefresh && sessionId) {
+      await db.update(scrapeSessions)
+        .set({
+          status: "completed",
+          companiesCompleted: 1,
+          totalJobsFound: scraperResult.jobs.length,
+          totalJobsAdded: jobsAdded,
+          totalJobsFiltered: jobsFilteredOut,
+          completedAt: new Date(),
         })
-        .catch(async (err) => {
-          console.error("[Matcher] Background matching failed:", err);
-          // Update matcher status to failed
-          if (logId) {
-            await db.update(scrapingLogs)
-              .set({
-                matcherStatus: "failed",
-                matcherDuration: Date.now() - matcherStartTime,
-              })
-              .where(eq(scrapingLogs.id, logId));
-          }
-        });
-    } else {
-      // No new jobs to match, just log the scrape result
-      const [log] = await db.insert(scrapingLogs).values({
-        companyId,
-        sessionId,
-        triggerSource,
-        platform: company.platform,
-        status: "success",
-        jobsFound: scraperResult.jobs.length,
-        jobsAdded,
-        jobsUpdated: duplicates.length,
-        jobsFiltered: jobsFilteredOut,
-        duration: Date.now() - startTime,
-        completedAt: new Date(),
-      }).returning({ id: scrapingLogs.id });
-      logId = log?.id;
+        .where(eq(scrapeSessions.id, sessionId));
     }
 
     return {
@@ -371,6 +415,17 @@ export async function fetchJobsForCompany(
       duration: Date.now() - startTime,
       completedAt: new Date(),
     }).returning({ id: scrapingLogs.id });
+
+    // Update session if this was a standalone refresh
+    if (isStandaloneRefresh && sessionId) {
+      await db.update(scrapeSessions)
+        .set({
+          status: "failed",
+          companiesCompleted: 1,
+          completedAt: new Date(),
+        })
+        .where(eq(scrapeSessions.id, sessionId));
+    }
 
     return {
       companyId,

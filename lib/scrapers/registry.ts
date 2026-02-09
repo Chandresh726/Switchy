@@ -1,4 +1,4 @@
-import { BaseScraper, ScraperResult } from "./base-scraper";
+import { BaseScraper, ScraperResult, ScrapeOptions } from "./base-scraper";
 import { GreenhouseScraper } from "./greenhouse";
 import { LeverScraper } from "./lever";
 
@@ -24,12 +24,12 @@ class ScraperRegistry {
     return null;
   }
 
-  async scrape(url: string, platform?: string): Promise<ScraperResult> {
+  async scrape(url: string, platform?: string, options?: ScrapeOptions): Promise<ScraperResult> {
     // If platform is specified, find that specific scraper
     if (platform) {
       const scraper = this.scrapers.find((s) => s.platform === platform);
       if (scraper) {
-        return scraper.scrape(url);
+        return scraper.scrape(url, options);
       }
       return {
         success: false,
@@ -48,7 +48,7 @@ class ScraperRegistry {
       };
     }
 
-    return scraper.scrape(url);
+    return scraper.scrape(url, options);
   }
 
   getSupportedPlatforms(): string[] {

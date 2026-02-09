@@ -119,7 +119,7 @@ export function SessionCard({ session }: SessionCardProps) {
           </div>
         </div>
 
-        <Link href={`/scrape-history/${session.id}`}>
+        <Link href={`/history/${session.id}`}>
           <Button variant="ghost" size="sm" className="text-zinc-400 hover:text-white">
             Details
             <ChevronRight className="ml-1 h-4 w-4" />

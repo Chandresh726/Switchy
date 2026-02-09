@@ -21,7 +21,7 @@ const mainNavigation = [
 ];
 
 const bottomNavigation = [
-  { name: "Scrape History", href: "/scrape-history", icon: History },
+  { name: "History", href: "/history", icon: History },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 

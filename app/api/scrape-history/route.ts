@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
           matcherJobsTotal: scrapingLogs.matcherJobsTotal,
           matcherJobsCompleted: scrapingLogs.matcherJobsCompleted,
           matcherDuration: scrapingLogs.matcherDuration,
+          matcherErrorCount: scrapingLogs.matcherErrorCount,
         })
         .from(scrapingLogs)
         .leftJoin(companies, eq(scrapingLogs.companyId, companies.id))
@@ -69,7 +70,7 @@ export async function GET(request: NextRequest) {
       .select({
         totalSessions: sql<number>`count(*)`,
         successRate: sql<number>`ROUND(CAST(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(COUNT(*), 0) * 100, 1)`,
-        avgDuration: sql<number>`ROUND(AVG((julianday(completed_at) - julianday(started_at)) * 86400 * 1000), 0)`,
+        avgDuration: sql<number>`ROUND(AVG((completed_at - started_at) * 1000), 0)`,
       })
       .from(scrapeSessions);
 

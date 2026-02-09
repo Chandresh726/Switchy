@@ -36,6 +36,7 @@ interface SessionLog {
   matcherJobsTotal: number | null;
   matcherJobsCompleted: number | null;
   matcherDuration: number | null;
+  matcherErrorCount: number | null;
 }
 
 interface ScrapeSession {
@@ -136,7 +137,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
     return (
       <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-center">
         <p className="text-sm text-red-400">Failed to load session details</p>
-        <Link href="/scrape-history">
+        <Link href="/history">
           <Button variant="ghost" className="mt-2">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to History
@@ -157,7 +158,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
   return (
     <div className="space-y-6">
       {/* Back Button */}
-      <Link href="/scrape-history">
+      <Link href="/history">
         <Button variant="ghost" className="text-zinc-400 hover:text-white -ml-2">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to History
@@ -288,6 +289,11 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
                       <span>
                         {log.matcherJobsCompleted || 0}/{log.matcherJobsTotal} matched
                       </span>
+                      {log.matcherErrorCount && log.matcherErrorCount > 0 && (
+                        <span className="text-red-400">
+                          {log.matcherErrorCount} error{log.matcherErrorCount > 1 ? "s" : ""}
+                        </span>
+                      )}
                       {log.matcherDuration && (
                         <span>{formatDuration(log.matcherDuration)}</span>
                       )}

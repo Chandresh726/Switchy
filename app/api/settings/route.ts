@@ -8,6 +8,14 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   matcher_model: "gemini-3-flash",
   matcher_bulk_enabled: "true",
   matcher_batch_size: "2",
+  matcher_max_retries: "3",
+  matcher_concurrency_limit: "3",
+  matcher_timeout_ms: "30000",
+  matcher_backoff_base_delay: "2000",
+  matcher_backoff_max_delay: "32000",
+  matcher_circuit_breaker_threshold: "10",
+  matcher_circuit_breaker_reset_timeout: "60000",
+  matcher_auto_match_after_scrape: "true",
 };
 
 // GET - fetch all settings
@@ -64,7 +72,7 @@ export async function POST(request: Request) {
           );
         }
         updates.push({ key, value: String(num) });
-      } else if (key === "matcher_bulk_enabled") {
+      } else if (key === "matcher_bulk_enabled" || key === "matcher_auto_match_after_scrape") {
         updates.push({ key, value: value === true || value === "true" ? "true" : "false" });
       } else if (key === "matcher_model") {
         if (typeof value !== "string" || value.trim().length === 0) {
@@ -74,6 +82,69 @@ export async function POST(request: Request) {
           );
         }
         updates.push({ key, value: String(value).trim() });
+      } else if (key === "matcher_max_retries") {
+        const num = parseInt(String(value), 10);
+        if (isNaN(num) || num < 1 || num > 10) {
+          return NextResponse.json(
+            { error: "matcher_max_retries must be a number between 1 and 10" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: String(num) });
+      } else if (key === "matcher_concurrency_limit") {
+        const num = parseInt(String(value), 10);
+        if (isNaN(num) || num < 1 || num > 10) {
+          return NextResponse.json(
+            { error: "matcher_concurrency_limit must be a number between 1 and 10" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: String(num) });
+      } else if (key === "matcher_timeout_ms") {
+        const num = parseInt(String(value), 10);
+        if (isNaN(num) || num < 5000 || num > 120000) {
+          return NextResponse.json(
+            { error: "matcher_timeout_ms must be a number between 5000 and 120000" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: String(num) });
+      } else if (key === "matcher_backoff_base_delay") {
+        const num = parseInt(String(value), 10);
+        if (isNaN(num) || num < 500 || num > 10000) {
+          return NextResponse.json(
+            { error: "matcher_backoff_base_delay must be a number between 500 and 10000" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: String(num) });
+      } else if (key === "matcher_backoff_max_delay") {
+        const num = parseInt(String(value), 10);
+        if (isNaN(num) || num < 5000 || num > 120000) {
+          return NextResponse.json(
+            { error: "matcher_backoff_max_delay must be a number between 5000 and 120000" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: String(num) });
+      } else if (key === "matcher_circuit_breaker_threshold") {
+        const num = parseInt(String(value), 10);
+        if (isNaN(num) || num < 3 || num > 50) {
+          return NextResponse.json(
+            { error: "matcher_circuit_breaker_threshold must be a number between 3 and 50" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: String(num) });
+      } else if (key === "matcher_circuit_breaker_reset_timeout") {
+        const num = parseInt(String(value), 10);
+        if (isNaN(num) || num < 10000 || num > 300000) {
+          return NextResponse.json(
+            { error: "matcher_circuit_breaker_reset_timeout must be a number between 10000 and 300000" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: String(num) });
       }
     }
 

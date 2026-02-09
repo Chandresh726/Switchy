@@ -35,7 +35,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, careersUrl, logoUrl, description, location, industry, size, isActive, scrapeFrequency } = body;
+    const { name, careersUrl, logoUrl, description, location, industry, size, isActive, scrapeFrequency, platform, boardToken } = body;
 
     const [updated] = await db
       .update(companies)
@@ -49,6 +49,8 @@ export async function PUT(
         size,
         isActive,
         scrapeFrequency,
+        platform,
+        boardToken,
         updatedAt: new Date(),
       })
       .where(eq(companies.id, parseInt(id)))
@@ -88,6 +90,8 @@ export async function PATCH(
     if (body.size !== undefined) updateData.size = body.size;
     if (body.isActive !== undefined) updateData.isActive = body.isActive;
     if (body.scrapeFrequency !== undefined) updateData.scrapeFrequency = body.scrapeFrequency;
+    if (body.platform !== undefined) updateData.platform = body.platform;
+    if (body.boardToken !== undefined) updateData.boardToken = body.boardToken;
 
     const [updated] = await db
       .update(companies)

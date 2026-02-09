@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { RefreshCw, Database, Trash2, Save, Loader2, Cpu, Zap } from "lucide-react";
+import { RefreshCw, Database, Trash2, Save, Loader2, Cpu, Zap, Sparkles, Settings2, Eraser } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import {
@@ -36,12 +36,22 @@ interface MatcherSettings {
   matcher_model: string;
   matcher_bulk_enabled: string;
   matcher_batch_size: string;
+  matcher_max_retries: string;
+  matcher_concurrency_limit: string;
+  matcher_timeout_ms: string;
+  matcher_circuit_breaker_threshold: string;
+  matcher_auto_match_after_scrape: string;
 }
 
 interface LocalEdits {
   matcherModel?: string;
   bulkEnabled?: boolean;
   batchSize?: number;
+  maxRetries?: number;
+  concurrencyLimit?: number;
+  timeoutMs?: number;
+  circuitBreakerThreshold?: number;
+  autoMatchAfterScrape?: boolean;
 }
 
 export default function SettingsPage() {
@@ -49,6 +59,7 @@ export default function SettingsPage() {
 
   const [localEdits, setLocalEdits] = useState<LocalEdits>({});
   const [settingsSaved, setSettingsSaved] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const { data: settings, isLoading: settingsLoading } = useQuery<MatcherSettings>({
     queryKey: ["settings"],
@@ -65,14 +76,24 @@ export default function SettingsPage() {
       matcherModel: localEdits.matcherModel ?? serverModel,
       bulkEnabled: localEdits.bulkEnabled ?? (settings?.matcher_bulk_enabled !== "false"),
       batchSize: localEdits.batchSize ?? parseInt(settings?.matcher_batch_size || "2", 10),
+      maxRetries: localEdits.maxRetries ?? parseInt(settings?.matcher_max_retries || "3", 10),
+      concurrencyLimit: localEdits.concurrencyLimit ?? parseInt(settings?.matcher_concurrency_limit || "3", 10),
+      timeoutMs: localEdits.timeoutMs ?? parseInt(settings?.matcher_timeout_ms || "30000", 10),
+      circuitBreakerThreshold: localEdits.circuitBreakerThreshold ?? parseInt(settings?.matcher_circuit_breaker_threshold || "10", 10),
+      autoMatchAfterScrape: localEdits.autoMatchAfterScrape ?? (settings?.matcher_auto_match_after_scrape !== "false"),
     };
   }, [settings, localEdits]);
 
-  const { matcherModel, bulkEnabled, batchSize } = derivedValues;
+  const { matcherModel, bulkEnabled, batchSize, maxRetries, concurrencyLimit, timeoutMs, circuitBreakerThreshold, autoMatchAfterScrape } = derivedValues;
 
   const setMatcherModel = (value: string) => setLocalEdits(prev => ({ ...prev, matcherModel: value }));
   const setBulkEnabled = (value: boolean) => setLocalEdits(prev => ({ ...prev, bulkEnabled: value }));
   const setBatchSize = (value: number) => setLocalEdits(prev => ({ ...prev, batchSize: value }));
+  const setMaxRetries = (value: number) => setLocalEdits(prev => ({ ...prev, maxRetries: value }));
+  const setConcurrencyLimit = (value: number) => setLocalEdits(prev => ({ ...prev, concurrencyLimit: value }));
+  const setTimeoutMs = (value: number) => setLocalEdits(prev => ({ ...prev, timeoutMs: value }));
+  const setCircuitBreakerThreshold = (value: number) => setLocalEdits(prev => ({ ...prev, circuitBreakerThreshold: value }));
+  const setAutoMatchAfterScrape = (value: boolean) => setLocalEdits(prev => ({ ...prev, autoMatchAfterScrape: value }));
 
   const refreshMutation = useMutation({
     mutationFn: async () => {
@@ -98,6 +119,19 @@ export default function SettingsPage() {
     },
   });
 
+  const clearMatchDataMutation = useMutation<{ jobsCleared: number }>({
+    mutationFn: async () => {
+      const res = await fetch("/api/jobs/match-data", { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to clear match data");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["match-history"] });
+      queryClient.invalidateQueries({ queryKey: ["unmatched-jobs-count"] });
+    },
+  });
+
   const saveSettingsMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/settings", {
@@ -107,6 +141,11 @@ export default function SettingsPage() {
           matcher_model: matcherModel,
           matcher_bulk_enabled: bulkEnabled,
           matcher_batch_size: batchSize,
+          matcher_max_retries: maxRetries,
+          matcher_concurrency_limit: concurrencyLimit,
+          matcher_timeout_ms: timeoutMs,
+          matcher_circuit_breaker_threshold: circuitBreakerThreshold,
+          matcher_auto_match_after_scrape: autoMatchAfterScrape,
         }),
       });
       if (!res.ok) throw new Error("Failed to save settings");
@@ -117,6 +156,29 @@ export default function SettingsPage() {
       setLocalEdits({});
       setSettingsSaved(true);
       setTimeout(() => setSettingsSaved(false), 3000);
+    },
+  });
+
+  // Query for unmatched jobs count
+  const { data: unmatchedData } = useQuery<{ count: number }>({
+    queryKey: ["unmatched-jobs-count"],
+    queryFn: async () => {
+      const res = await fetch("/api/jobs/match-unmatched");
+      if (!res.ok) throw new Error("Failed to fetch unmatched count");
+      return res.json();
+    },
+  });
+
+  const matchUnmatchedMutation = useMutation<{ total: number; matched: number; failed: number; sessionId?: string }>({
+    mutationFn: async () => {
+      const res = await fetch("/api/jobs/match-unmatched", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to match jobs");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["unmatched-jobs-count"] });
+      queryClient.invalidateQueries({ queryKey: ["match-history"] });
     },
   });
 
@@ -162,6 +224,24 @@ export default function SettingsPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="auto-match"
+                checked={autoMatchAfterScrape}
+                onChange={(e) => setAutoMatchAfterScrape(e.target.checked)}
+                className="h-4 w-4 rounded border-zinc-700 bg-zinc-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-zinc-900"
+              />
+              <div>
+                <Label htmlFor="auto-match" className="text-zinc-300 text-sm font-medium cursor-pointer">
+                  Auto-match after scrape
+                </Label>
+                <p className="text-xs text-zinc-500">
+                  Automatically run matcher on new jobs
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Right Column - Bulk Settings */}
@@ -204,7 +284,94 @@ export default function SettingsPage() {
                 disabled={!bulkEnabled}
               />
             </div>
+
+            <div>
+              <Label htmlFor="max-retries" className="text-zinc-300 text-sm font-medium">
+                Max Retries
+              </Label>
+              <p className="text-xs text-zinc-500 mt-0.5 mb-2">
+                Retry attempts per job on failure (1-10)
+              </p>
+              <Input
+                id="max-retries"
+                type="number"
+                min={1}
+                max={10}
+                value={maxRetries}
+                onChange={(e) => setMaxRetries(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
+                className="w-24"
+              />
+            </div>
           </div>
+        </div>
+
+        {/* Advanced Settings Section */}
+        <div className="mt-6 pt-4 border-t border-zinc-800">
+          <button
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-300 transition-colors"
+          >
+            <Settings2 className="h-4 w-4" />
+            {showAdvanced ? "Hide" : "Show"} Advanced Settings
+          </button>
+
+          {showAdvanced && (
+            <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div>
+                <Label htmlFor="concurrency-limit" className="text-zinc-300 text-sm font-medium">
+                  Concurrency Limit
+                </Label>
+                <p className="text-xs text-zinc-500 mt-0.5 mb-2">
+                  Parallel jobs at once (1-10)
+                </p>
+                <Input
+                  id="concurrency-limit"
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={concurrencyLimit}
+                  onChange={(e) => setConcurrencyLimit(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
+                  className="w-24"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="timeout-ms" className="text-zinc-300 text-sm font-medium">
+                  Request Timeout
+                </Label>
+                <p className="text-xs text-zinc-500 mt-0.5 mb-2">
+                  Timeout in seconds (5-120)
+                </p>
+                <Input
+                  id="timeout-ms"
+                  type="number"
+                  min={5}
+                  max={120}
+                  value={Math.round(timeoutMs / 1000)}
+                  onChange={(e) => setTimeoutMs(Math.min(120000, Math.max(5000, (parseInt(e.target.value) || 5) * 1000)))}
+                  className="w-24"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="circuit-breaker" className="text-zinc-300 text-sm font-medium">
+                  Circuit Breaker Threshold
+                </Label>
+                <p className="text-xs text-zinc-500 mt-0.5 mb-2">
+                  Failures before pause (3-50)
+                </p>
+                <Input
+                  id="circuit-breaker"
+                  type="number"
+                  min={3}
+                  max={50}
+                  value={circuitBreakerThreshold}
+                  onChange={(e) => setCircuitBreakerThreshold(Math.min(50, Math.max(3, parseInt(e.target.value) || 10)))}
+                  className="w-24"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Save Button */}
@@ -229,8 +396,8 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Actions Grid - Two Columns */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Actions Grid - Three Columns */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Job Refresh */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
           <div className="flex items-center gap-2 mb-1">
@@ -256,6 +423,90 @@ export default function SettingsPage() {
           )}
         </div>
 
+        {/* Match Unmatched Jobs */}
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <Sparkles className="h-5 w-5 text-purple-500" />
+            <h2 className="text-lg font-medium text-white">Match Unmatched Jobs</h2>
+          </div>
+          <p className="text-sm text-zinc-400 mb-4">
+            Run AI matcher on jobs that don&apos;t have a score yet
+            {unmatchedData && unmatchedData.count > 0 && (
+              <span className="text-purple-400 ml-1">
+                ({unmatchedData.count} job{unmatchedData.count > 1 ? "s" : ""} pending)
+              </span>
+            )}
+          </p>
+
+          <Button
+            onClick={() => matchUnmatchedMutation.mutate()}
+            disabled={matchUnmatchedMutation.isPending || (unmatchedData?.count ?? 0) === 0}
+            variant={unmatchedData && unmatchedData.count > 0 ? "default" : "outline"}
+          >
+            <Sparkles className={matchUnmatchedMutation.isPending ? "animate-pulse" : ""} />
+            {matchUnmatchedMutation.isPending ? "Matching..." : "Match Unmatched Jobs"}
+          </Button>
+
+          {matchUnmatchedMutation.isSuccess && matchUnmatchedMutation.data && (
+            <p className="mt-2 text-sm text-emerald-400">
+              Matched {matchUnmatchedMutation.data.matched} of {matchUnmatchedMutation.data.total} jobs
+              {matchUnmatchedMutation.data.failed > 0 && (
+                <span className="text-red-400 ml-1">
+                  ({matchUnmatchedMutation.data.failed} failed)
+                </span>
+              )}
+            </p>
+          )}
+        </div>
+
+        {/* Clear Match Data */}
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <Eraser className="h-5 w-5 text-orange-500" />
+            <h2 className="text-lg font-medium text-white">Clear Match Data</h2>
+          </div>
+          <p className="text-sm text-zinc-400 mb-4">
+            Remove all match scores and history. Jobs are kept.
+          </p>
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" className="text-orange-400 hover:text-orange-300 hover:border-orange-400/50">
+                <Eraser className="h-4 w-4" />
+                Clear Match Data
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Clear Match Data</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to clear all match data? This will remove
+                  match scores, reasons, and history from all jobs. The jobs
+                  themselves will not be deleted. This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-orange-600 hover:bg-orange-700"
+                  onClick={() => clearMatchDataMutation.mutate()}
+                >
+                  Clear Match Data
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {clearMatchDataMutation.isSuccess && (
+            <p className="mt-2 text-sm text-emerald-400">
+              Cleared match data from {clearMatchDataMutation.data?.jobsCleared || 0} jobs!
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Second Row of Actions */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Clear Jobs */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
           <div className="flex items-center gap-2 mb-1">
@@ -300,10 +551,7 @@ export default function SettingsPage() {
             </p>
           )}
         </div>
-      </div>
 
-      {/* Info Grid - Two Columns */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Database Info */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
           <div className="flex items-center gap-2 mb-1">

@@ -49,7 +49,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, careersUrl, logoUrl, description, location, industry, size, scrapeFrequency } = body;
+    const { name, careersUrl, logoUrl, description, location, industry, size, scrapeFrequency, platform: manualPlatform, boardToken } = body;
 
     if (!name || !careersUrl) {
       return NextResponse.json(
@@ -58,7 +58,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const platform = detectPlatform(careersUrl);
+    // Use manual platform if provided, otherwise auto-detect
+    const platform = manualPlatform || detectPlatform(careersUrl);
+    const detectedFromUrl = detectPlatform(careersUrl);
+
+    // Validate boardToken is provided when manually selecting greenhouse/lever with custom URL
+    if (manualPlatform && manualPlatform !== "custom" && detectedFromUrl !== manualPlatform && !boardToken) {
+      return NextResponse.json(
+        { error: `boardToken is required when manually selecting ${manualPlatform} platform with a custom URL` },
+        { status: 400 }
+      );
+    }
 
     const [newCompany] = await db
       .insert(companies)
@@ -67,6 +77,7 @@ export async function POST(request: NextRequest) {
         careersUrl,
         logoUrl,
         platform,
+        boardToken: boardToken || null,
         description,
         location,
         industry,

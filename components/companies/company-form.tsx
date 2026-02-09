@@ -14,6 +14,7 @@ interface Company {
   careersUrl: string;
   logoUrl: string | null;
   platform: string | null;
+  boardToken: string | null;
   description: string | null;
   location: string | null;
   industry: string | null;
@@ -38,6 +39,15 @@ const COMPANY_SIZES = [
   { value: "enterprise", label: "Enterprise (5000+)" },
 ];
 
+const PLATFORMS = [
+  { value: "", label: "Auto-detect" },
+  { value: "greenhouse", label: "Greenhouse" },
+  { value: "lever", label: "Lever" },
+  { value: "workday", label: "Workday" },
+  { value: "ashby", label: "Ashby" },
+  { value: "custom", label: "Custom" },
+];
+
 export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) {
   const queryClient = useQueryClient();
   const isEditing = !!company;
@@ -51,8 +61,11 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
     industry: "",
     size: "",
     scrapeFrequency: 6,
+    platform: "",
+    boardToken: "",
   });
   const [detectedPlatform, setDetectedPlatform] = useState<string | null>(null);
+  const [manualPlatformOverride, setManualPlatformOverride] = useState(false);
 
   // Pre-fill form when editing
   useEffect(() => {
@@ -66,6 +79,8 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
         industry: company.industry || "",
         size: company.size || "",
         scrapeFrequency: company.scrapeFrequency || 6,
+        platform: company.platform || "",
+        boardToken: company.boardToken || "",
       });
       // Show advanced if any advanced fields are filled
       if (
@@ -73,9 +88,14 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
         company.description ||
         company.location ||
         company.industry ||
-        company.size
+        company.size ||
+        company.boardToken
       ) {
         setShowAdvanced(true);
+      }
+      // Set manual override if boardToken exists
+      if (company.boardToken) {
+        setManualPlatformOverride(true);
       }
       handleUrlChange(company.careersUrl);
     }
@@ -176,7 +196,7 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
               required
               placeholder="https://jobs.lever.co/acme"
             />
-            {detectedPlatform && (
+            {detectedPlatform && !manualPlatformOverride && (
               <span className="absolute right-2 top-1/2 -translate-y-1/2 rounded bg-emerald-500/20 px-2 py-0.5 text-xs text-emerald-400">
                 {detectedPlatform}
               </span>
@@ -187,6 +207,70 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
           </p>
         </div>
       </div>
+
+      {/* Platform Override Section */}
+      {detectedPlatform === "Custom" && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 space-y-3">
+          <div className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              id="manualPlatform"
+              checked={manualPlatformOverride}
+              onChange={(e) => {
+                setManualPlatformOverride(e.target.checked);
+                if (!e.target.checked) {
+                  setFormData((prev) => ({ ...prev, platform: "", boardToken: "" }));
+                }
+              }}
+              className="mt-1 h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-emerald-500 focus:ring-emerald-500"
+            />
+            <div>
+              <Label htmlFor="manualPlatform" className="text-amber-400 cursor-pointer">
+                This company uses a known ATS (Greenhouse/Lever)
+              </Label>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Enable this if the company has a custom career page but uses Greenhouse or Lever for applications
+              </p>
+            </div>
+          </div>
+
+          {manualPlatformOverride && (
+            <div className="grid gap-4 sm:grid-cols-2 pt-2">
+              <div className="space-y-2">
+                <Label htmlFor="platform">Platform</Label>
+                <select
+                  id="platform"
+                  value={formData.platform}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, platform: e.target.value }))}
+                  className="h-8 w-full rounded border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100"
+                >
+                  {PLATFORMS.map((platform) => (
+                    <option key={platform.value} value={platform.value}>
+                      {platform.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="boardToken">
+                  Board Token {(formData.platform === "greenhouse" || formData.platform === "lever") && "*"}
+                </Label>
+                <Input
+                  id="boardToken"
+                  value={formData.boardToken}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, boardToken: e.target.value }))}
+                  placeholder="e.g., acme"
+                  required={formData.platform === "greenhouse" || formData.platform === "lever"}
+                />
+                <p className="text-xs text-zinc-500">
+                  Find this in the apply URL: boards.greenhouse.io/<strong>acme</strong>/jobs/123
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Advanced Options Toggle */}
       <button

@@ -17,15 +17,19 @@ export interface ScraperResult {
   error?: string;
 }
 
+export interface ScrapeOptions {
+  boardToken?: string; // Manual board token for platforms like Greenhouse
+}
+
 export interface BaseScraper {
   platform: string;
-  scrape(url: string): Promise<ScraperResult>;
+  scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult>;
   validate(url: string): boolean;
 }
 
 export abstract class AbstractScraper implements BaseScraper {
   abstract platform: string;
-  abstract scrape(url: string): Promise<ScraperResult>;
+  abstract scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult>;
   abstract validate(url: string): boolean;
 
   protected normalizeLocation(location: string | undefined): {
