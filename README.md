@@ -1,36 +1,159 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## Switchy
 
-## Getting Started
+Switchy is a local-first job scraping, matching, and tracking tool built with **Next.js 16 (App Router)**, **React 19**, **Drizzle ORM**, and **SQLite**. It can:
 
-First, run the development server:
+- Discover roles from platforms like **Greenhouse** and **Lever**
+- Store jobs in a local SQLite database
+- Parse resumes and match them to jobs using **Anthropic (Claude)** or **Google Gemini**
+- Let you tune matching behavior (bulk matching, concurrency, timeouts, etc.) from a rich settings UI
+
+This app is designed to run **locally on your machine**; no hosted backend is required.
+
+---
+
+## Tech Stack
+
+- **Framework**: Next.js 16 (App Router, RSC)
+- **Language**: TypeScript
+- **Database**: SQLite via `better-sqlite3` and **Drizzle ORM**
+- **UI**: shadcn/ui, Tailwind CSS v4, Lucide icons
+- **State / Data**: React Query, Zustand
+- **AI Providers**:
+  - Anthropic via `@ai-sdk/anthropic`
+  - Google Gemini via `@ai-sdk/google` or `ai-sdk-provider-gemini-cli`
+
+---
+
+## Prerequisites
+
+- **Node.js**: v20+ recommended
+- **pnpm**: used as the package manager (a `pnpm-lock.yaml` is committed)
+- Ability to install native modules (for `better-sqlite3`)
+
+Optional (for AI features):
+- **Anthropic API key** (Claude)
+- **Google Gemini API key** or **Gemini CLI** (`gemini auth login`) for OAuth-based auth
+
+---
+
+## Installation
+
+Clone the repository and install dependencies:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+This will install all app and dev dependencies defined in `package.json`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Local Database
 
-## Learn More
+Switchy uses a local SQLite database (by default referenced as `data/switchy.db`).
 
-To learn more about Next.js, take a look at the following resources:
+- The `data/` directory is **gitignored** so your personal data and any stored API keys will **not** be pushed to GitHub.
+- Migrations are managed via **Drizzle** (see `drizzle.config.ts` and the `drizzle/` folder).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+To apply migrations (example):
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+pnpm drizzle-kit generate
+# and/or, depending on your workflow
+pnpm drizzle-kit migrate
+```
 
-## Deploy on Vercel
+Adjust the exact commands above to match how you prefer to run Drizzle; the config file in this repo determines the actual DB connection.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Running the App
+
+Start the development server:
+
+```bash
+pnpm dev
+```
+
+Then open `http://localhost:3000` in your browser.
+
+Key areas of the app:
+
+- `/(dashboard)` routes: main dashboard, job list, and settings
+- `/settings`: configure AI provider, concurrency, batch size, and other matching parameters
+- `data/switchy.db`: local SQLite DB used by the app (created on first run)
+
+---
+
+## Configuring AI Providers
+
+All AI-related configuration is stored in the **settings** table in the local database and edited through the **Settings** page in the UI. There are no real API keys committed to the repo.
+
+From the **Settings** page you can:
+
+- Choose **AI provider**:
+  - `Anthropic (Claude)` using an Anthropic API key
+  - `Google (Gemini)` using either:
+    - An API key from Google AI Studio
+    - OAuth-based auth / Gemini CLI from your local machine
+- Set:
+  - `matcher_model` and resume parser model
+  - Bulk matching on/off, batch size
+  - Max retries, concurrency
+  - Timeouts and circuit breaker thresholds
+
+**Security note:** Your API keys and any OAuth tokens are stored locally in the SQLite DB and are never committed to git (the `data/` folder is ignored).
+
+---
+
+## Environment & Secrets
+
+This project is configured to avoid leaking secrets:
+
+- `.env*` files are **ignored** by git via `.gitignore`
+- The `data/` folder is **ignored**, so any runtime data and secrets stored in the DB stay local
+- `.cursor/`, `.claude/`, `.vscode`, and `.idea` are ignored to avoid committing editor/IDE state
+- No real API keys or passwords are hardcoded in the source
+
+If you want to document required environment variables for deployments, you can add an `.env.example` file with placeholder values (this example file is safe to commit as long as it has no real secrets).
+
+---
+
+## Production / Deployment
+
+This app is primarily intended for **local use** with a local SQLite DB.
+
+If you choose to deploy:
+
+- Use a managed SQL database (or remote SQLite) instead of a local file.
+- Make sure **real API keys** are passed via environment variables in your hosting provider.
+- Confirm that `data/` and any local-only directories stay out of your deployment artifacts.
+
+Build the app:
+
+```bash
+pnpm build
+pnpm start
+```
+
+---
+
+## Security & GitHub Readiness
+
+This repository is configured to be safe to publish:
+
+- `.env*`, `data/`, and editor/IDE directories are ignored in `.gitignore`
+- There are **no committed secrets** or private keys in the codebase
+- The SQLite database and any tokens it contains are **local-only**
+
+Before making the repo public:
+
+- Double-check you have not manually added any secret values into source files or committed an `.env` file.
+- Optionally add a `LICENSE` file (MIT, Apache-2.0, etc.) to clarify how others can use this project.
+
+---
+
+## License
+
+No explicit open-source license has been chosen yet.  
+If you intend to open-source this project, add a `LICENSE` file (for example, MIT) to clarify usage terms.
