@@ -46,12 +46,14 @@ export async function getGeminiStatus(): Promise<GeminiStatus> {
     const fileContent = await fs.readFile(credsPath, "utf-8");
     const creds = JSON.parse(fileContent);
 
-    // Check expiry
-    if (creds.expiry_date && creds.expiry_date > Date.now()) {
+    // Check for valid credentials
+    // We accept if there is a refresh token (provider will handle refresh)
+    // OR if the access token is still valid.
+    if (creds.refresh_token || (creds.expiry_date && creds.expiry_date > Date.now())) {
       status.authenticated = true;
       status.message = "Authenticated and valid.";
     } else {
-      status.message = "Credentials expired.";
+      status.message = "Credentials missing or expired.";
     }
   } catch (error: any) {
     status.message = `Error checking credentials: ${error.message}`;
