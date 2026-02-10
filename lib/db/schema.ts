@@ -19,6 +19,18 @@ export const profile = sqliteTable("profile", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
+// Resumes - Uploaded resumes and their parsed data
+export const resumes = sqliteTable("resumes", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  profileId: integer("profile_id").references(() => profile.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  filePath: text("file_path").notNull(),
+  parsedData: text("parsed_data").notNull(), // JSON string
+  version: integer("version").notNull(),
+  isCurrent: integer("is_current", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
 // Skills - User skills with proficiency levels
 export const skills = sqliteTable("skills", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -196,6 +208,14 @@ export const profileRelations = relations(profile, ({ many }) => ({
   skills: many(skills),
   experience: many(experience),
   education: many(education),
+  resumes: many(resumes),
+}));
+
+export const resumesRelations = relations(resumes, ({ one }) => ({
+  profile: one(profile, {
+    fields: [resumes.profileId],
+    references: [profile.id],
+  }),
 }));
 
 export const skillsRelations = relations(skills, ({ one }) => ({
@@ -312,3 +332,5 @@ export type MatchSession = typeof matchSessions.$inferSelect;
 export type NewMatchSession = typeof matchSessions.$inferInsert;
 export type MatchLog = typeof matchLogs.$inferSelect;
 export type NewMatchLog = typeof matchLogs.$inferInsert;
+export type Resume = typeof resumes.$inferSelect;
+export type NewResume = typeof resumes.$inferInsert;

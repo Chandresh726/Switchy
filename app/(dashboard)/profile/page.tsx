@@ -6,8 +6,20 @@ import { SkillsEditor } from "@/components/profile/skills-editor";
 import { ExperienceList } from "@/components/profile/experience-list";
 import { ResumeUpload } from "@/components/profile/resume-upload";
 import { useState } from "react";
-import { FileText, ChevronDown, ChevronUp } from "lucide-react";
+import { FileText, ChevronDown, ChevronUp, History, Download, Calendar, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 interface ResumeData {
   name: string;
@@ -43,22 +55,68 @@ interface ResumeData {
   }>;
 }
 
+interface Resume {
+  id: number;
+  fileName: string;
+  version: number;
+  createdAt: string;
+  isCurrent: boolean;
+}
+
 export default function ProfilePage() {
   const [parsedResumeData, setParsedResumeData] = useState<ResumeData | null>(null);
   const [showResumeUpload, setShowResumeUpload] = useState(true);
+  const [pendingResumeData, setPendingResumeData] = useState<ResumeData | null>(null);
+  const [showOverwriteDialog, setShowOverwriteDialog] = useState(false);
 
-  const { data: profile } = useQuery({
+  const { data: profile, refetch } = useQuery({
     queryKey: ["profile"],
     queryFn: async () => {
       const res = await fetch("/api/profile");
       if (!res.ok) throw new Error("Failed to fetch profile");
-      return res.json();
+      const data = await res.json();
+      return data;
     },
   });
 
-  const handleResumeParsed = (data: ResumeData) => {
-    setParsedResumeData(data);
-    setShowResumeUpload(false);
+  const handleResumeParsed = (data: ResumeData, autofill: boolean) => {
+    // If autofill is OFF, just show success message and refresh the list
+    if (!autofill) {
+      toast.success("Resume saved to history");
+      refetch();
+      return;
+    }
+
+    // If autofill is ON
+    const hasExistingData = profile && (
+      profile.name ||
+      profile.summary ||
+      (profile.skills && profile.skills.length > 0) ||
+      (profile.experience && profile.experience.length > 0)
+    );
+
+    if (hasExistingData) {
+      // Prompt user before overwriting
+      setPendingResumeData(data);
+      setShowOverwriteDialog(true);
+    } else {
+      // Empty profile, just fill it
+      setParsedResumeData(data);
+      setShowResumeUpload(false);
+      toast.success("Profile auto-filled from resume");
+      refetch();
+    }
+  };
+
+  const confirmOverwrite = () => {
+    if (pendingResumeData) {
+      setParsedResumeData(pendingResumeData);
+      setShowResumeUpload(false);
+      setShowOverwriteDialog(false);
+      setPendingResumeData(null);
+      toast.success("Profile updated with resume data");
+      refetch();
+    }
   };
 
   // Determine if this is a new user (no profile or empty profile)
@@ -73,6 +131,31 @@ export default function ProfilePage() {
           Manage your professional profile for AI-powered job matching
         </p>
       </div>
+
+      <AlertDialog open={showOverwriteDialog} onOpenChange={setShowOverwriteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Overwrite existing profile?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your profile already has data. Do you want to overwrite it with the information extracted from this resume?
+              This will update your basic info, skills, and experience.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setShowOverwriteDialog(false);
+              setPendingResumeData(null);
+              toast.info("Resume saved, but profile was not updated");
+              refetch();
+            }}>
+              Keep Existing
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={confirmOverwrite}>
+              Overwrite Profile
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Resume Upload Section */}
       {(isNewUser || showResumeUpload) && (
@@ -116,6 +199,64 @@ export default function ProfilePage() {
               Resume parsed! Found {parsedResumeData.skills.length} skills and{" "}
               {parsedResumeData.experience.length} work experiences. Review and save below.
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* Resume History */}
+      {profile?.resumes && profile.resumes.length > 0 && (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+          <div className="mb-4 flex items-center gap-2">
+            <History className="h-5 w-5 text-zinc-400" />
+            <h2 className="text-lg font-medium text-white">Resume History</h2>
+          </div>
+          <div className="space-y-3">
+            {profile.resumes.map((resume: Resume) => (
+              <div
+                key={resume.id}
+                className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900 p-3 transition-colors hover:border-zinc-700"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded bg-zinc-800">
+                    <FileText className="h-4 w-4 text-zinc-400" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-zinc-200">{resume.fileName}</p>
+                      {resume.isCurrent && (
+                        <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-500">
+                          <CheckCircle className="h-3 w-3" />
+                          Current
+                        </span>
+                      )}
+                      <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
+                        v{resume.version}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-zinc-500">
+                      <Calendar className="h-3 w-3" />
+                      <span>
+                        {new Date(resume.createdAt).toLocaleDateString(undefined, {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/*
+                  TODO: Implement download functionality
+                  For now we just show a button that doesn't do anything or links to a placeholder
+                */}
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                  <Download className="h-4 w-4 text-zinc-400" />
+                </Button>
+              </div>
+            ))}
           </div>
         </div>
       )}

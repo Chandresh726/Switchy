@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { profile, skills, experience, education } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { profile, skills, experience, education, resumes } from "@/lib/db/schema";
+import { eq, desc } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET() {
@@ -13,10 +13,11 @@ export async function GET() {
 
     const profileData = profiles[0];
 
-    const [skillsData, experienceData, educationData] = await Promise.all([
+    const [skillsData, experienceData, educationData, resumesData] = await Promise.all([
       db.select().from(skills).where(eq(skills.profileId, profileData.id)),
       db.select().from(experience).where(eq(experience.profileId, profileData.id)),
       db.select().from(education).where(eq(education.profileId, profileData.id)),
+      db.select().from(resumes).where(eq(resumes.profileId, profileData.id)).orderBy(desc(resumes.version)),
     ]);
 
     return NextResponse.json({
@@ -24,6 +25,7 @@ export async function GET() {
       skills: skillsData,
       experience: experienceData,
       education: educationData,
+      resumes: resumesData,
     });
   } catch (error) {
     console.error("Failed to fetch profile:", error);
