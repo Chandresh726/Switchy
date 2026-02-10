@@ -2,7 +2,7 @@ import { generateObject, generateText } from "ai";
 import { z } from "zod";
 import { inArray, eq, isNull } from "drizzle-orm";
 import PQueue from "p-queue";
-import { getModel } from "./client";
+import { getAIClient } from "./client";
 import {
   JOB_MATCHING_SYSTEM_PROMPT,
   JOB_MATCHING_USER_PROMPT,
@@ -396,7 +396,7 @@ export interface MatchOptions {
 export async function calculateJobMatch(jobId: number, options?: MatchOptions): Promise<MatchResult> {
   // Fetch matcher settings
   const matcherSettings = await getMatcherSettings();
-  const aiModel = getModel(matcherSettings.model);
+  const aiModel = await getAIClient(matcherSettings.model);
 
   // Fetch job details
   const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId));
@@ -420,9 +420,9 @@ export async function calculateJobMatch(jobId: number, options?: MatchOptions): 
     db.select().from(experience).where(eq(experience.profileId, userProfile.id)),
   ]);
 
-  const jobRequirements = extractRequirements(job.description);
+  const jobRequirements = extractRequirements(job.cleanDescription);
 
-  const userPrompt = JOB_MATCHING_USER_PROMPT(job.title, job.description || "", jobRequirements, {
+  const userPrompt = JOB_MATCHING_USER_PROMPT(job.title, job.cleanDescription || "", jobRequirements, {
     summary: userProfile.summary || undefined,
     skills: userSkills.map((s) => ({
       name: s.name,
@@ -620,7 +620,7 @@ export async function matchJobsWithTracking(
   }
 
   const userProfile = profiles[0];
-  const aiModel = getModel(matcherSettings.model);
+  const aiModel = await getAIClient(matcherSettings.model);
 
   // Fetch skills and experience once
   const [userSkills, userExperience] = await Promise.all([
@@ -700,10 +700,10 @@ export async function matchJobsWithTracking(
         attemptCount = attempt;
 
         try {
-          const jobRequirements = extractRequirements(job.description);
+          const jobRequirements = extractRequirements(job.cleanDescription);
           const userPrompt = JOB_MATCHING_USER_PROMPT(
             job.title,
-            job.description || "",
+            job.cleanDescription || "",
             jobRequirements,
             candidateProfile
           );
@@ -867,7 +867,7 @@ export async function bulkCalculateJobMatches(
 
   // Fetch matcher settings
   const matcherSettings = await getMatcherSettings();
-  const aiModel = getModel(matcherSettings.model);
+  const aiModel = await getAIClient(matcherSettings.model);
   const BATCH_SIZE = matcherSettings.batchSize;
 
   console.log(`[Matcher] Starting with settings: model=${matcherSettings.model}, bulkEnabled=${matcherSettings.bulkEnabled}, batchSize=${BATCH_SIZE}, maxRetries=${matcherSettings.maxRetries}`);
@@ -944,8 +944,8 @@ export async function bulkCalculateJobMatches(
           return {
             id: job.id,
             title: job.title,
-            description: job.description || "",
-            requirements: extractRequirements(job.description),
+            description: job.cleanDescription || "",
+            requirements: extractRequirements(job.cleanDescription),
           };
         })
         .filter((j): j is JobForMatching => j !== null);

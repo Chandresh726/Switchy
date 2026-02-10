@@ -16,6 +16,12 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   matcher_circuit_breaker_threshold: "10",
   matcher_circuit_breaker_reset_timeout: "60000",
   matcher_auto_match_after_scrape: "true",
+  ai_provider: "anthropic",
+  anthropic_api_key: "",
+  google_auth_mode: "api_key",
+  google_api_key: "",
+  google_client_id: "",
+  google_client_secret: "",
 };
 
 // GET - fetch all settings
@@ -145,6 +151,27 @@ export async function POST(request: Request) {
           );
         }
         updates.push({ key, value: String(num) });
+      } else if (key === "ai_provider") {
+        if (value !== "anthropic" && value !== "google") {
+          return NextResponse.json(
+            { error: "ai_provider must be either 'anthropic' or 'google'" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: String(value) });
+      } else if (key === "google_auth_mode") {
+        if (value !== "api_key" && value !== "oauth") {
+          return NextResponse.json(
+            { error: "google_auth_mode must be either 'api_key' or 'oauth'" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: String(value) });
+      } else if (
+        ["anthropic_api_key", "google_api_key", "google_client_id", "google_client_secret"].includes(key)
+      ) {
+        // Allow empty strings
+        updates.push({ key, value: String(value || "") });
       }
     }
 

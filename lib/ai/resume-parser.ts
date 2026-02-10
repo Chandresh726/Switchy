@@ -1,6 +1,9 @@
 import { generateText } from "ai";
 import { z } from "zod";
-import { model } from "./client";
+import { getAIClient } from "./client";
+import { db } from "@/lib/db";
+import { settings } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 
 const ResumeDataSchema = z.object({
   name: z.string(),
@@ -114,6 +117,13 @@ function extractJSON(text: string): unknown {
 }
 
 export async function parseResume(resumeText: string): Promise<ResumeData> {
+  // Fetch configured model from settings or default to gemini-3-flash
+  const modelSetting = await db.query.settings.findFirst({
+    where: eq(settings.key, "matcher_model"),
+  });
+  const modelId = modelSetting?.value || "gemini-3-flash";
+  const model = await getAIClient(modelId);
+
   const { text } = await generateText({
     model,
     system: RESUME_PARSING_SYSTEM_PROMPT,

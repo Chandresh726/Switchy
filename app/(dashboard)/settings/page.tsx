@@ -27,7 +27,6 @@ import {
   Save,
   Loader2,
   Cpu,
-  Zap,
   Sparkles,
   Settings2,
   Eraser,
@@ -35,9 +34,13 @@ import {
   Server,
   Activity,
   Info,
+  Key,
+  Globe,
+  CheckCircle2,
+  LogOut
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, Suspense } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,6 +53,9 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { useSearchParams, useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 // Matcher models
 const MODELS = [
@@ -67,6 +73,14 @@ interface MatcherSettings {
   matcher_timeout_ms: string;
   matcher_circuit_breaker_threshold: string;
   matcher_auto_match_after_scrape: string;
+  // AI Provider Settings
+  ai_provider?: string;
+  anthropic_api_key?: string;
+  google_auth_mode?: string;
+  google_api_key?: string;
+  google_client_id?: string;
+  google_client_secret?: string;
+  google_oauth_tokens?: string; // Presence indicates connection
 }
 
 interface LocalEdits {
@@ -78,14 +92,45 @@ interface LocalEdits {
   timeoutMs?: number;
   circuitBreakerThreshold?: number;
   autoMatchAfterScrape?: boolean;
+  // AI Provider Edits
+  aiProvider?: string;
+  anthropicApiKey?: string;
+  googleAuthMode?: string;
+  googleApiKey?: string;
+  googleClientId?: string;
+  googleClientSecret?: string;
 }
 
-export default function SettingsPage() {
+function SettingsContent() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
   const [localEdits, setLocalEdits] = useState<LocalEdits>({});
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Handle OAuth callbacks
+  useEffect(() => {
+    const error = searchParams.get("error");
+    const success = searchParams.get("success");
+
+    if (error) {
+      toast.error("Authentication Error", {
+        description: error.replace(/_/g, " "),
+      });
+      // Clean up URL
+      router.replace("/settings");
+    }
+
+    if (success === "google_connected") {
+      toast.success("Google Account Connected", {
+        description: "You can now use Gemini models via OAuth.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["settings"] });
+      router.replace("/settings");
+    }
+  }, [searchParams, router, queryClient]);
 
   const { data: settings, isLoading: settingsLoading } = useQuery<MatcherSettings>({
     queryKey: ["settings"],
@@ -107,11 +152,24 @@ export default function SettingsPage() {
       timeoutMs: localEdits.timeoutMs ?? parseInt(settings?.matcher_timeout_ms || "30000", 10),
       circuitBreakerThreshold: localEdits.circuitBreakerThreshold ?? parseInt(settings?.matcher_circuit_breaker_threshold || "10", 10),
       autoMatchAfterScrape: localEdits.autoMatchAfterScrape ?? (settings?.matcher_auto_match_after_scrape !== "false"),
+      // Provider
+      aiProvider: localEdits.aiProvider ?? (settings?.ai_provider || "anthropic"),
+      anthropicApiKey: localEdits.anthropicApiKey ?? (settings?.anthropic_api_key || ""),
+      googleAuthMode: localEdits.googleAuthMode ?? (settings?.google_auth_mode || "api_key"),
+      googleApiKey: localEdits.googleApiKey ?? (settings?.google_api_key || ""),
+      googleClientId: localEdits.googleClientId ?? (settings?.google_client_id || ""),
+      googleClientSecret: localEdits.googleClientSecret ?? (settings?.google_client_secret || ""),
+      isGoogleConnected: !!settings?.google_oauth_tokens,
     };
   }, [settings, localEdits]);
 
-  const { matcherModel, bulkEnabled, batchSize, maxRetries, concurrencyLimit, timeoutMs, circuitBreakerThreshold, autoMatchAfterScrape } = derivedValues;
+  const {
+    matcherModel, bulkEnabled, batchSize, maxRetries, concurrencyLimit, timeoutMs,
+    circuitBreakerThreshold, autoMatchAfterScrape, aiProvider, anthropicApiKey,
+    googleAuthMode, googleApiKey, googleClientId, googleClientSecret, isGoogleConnected
+  } = derivedValues;
 
+  // Setters
   const setMatcherModel = (value: string) => setLocalEdits(prev => ({ ...prev, matcherModel: value }));
   const setBulkEnabled = (value: boolean) => setLocalEdits(prev => ({ ...prev, bulkEnabled: value }));
   const setBatchSize = (value: number) => setLocalEdits(prev => ({ ...prev, batchSize: value }));
@@ -120,6 +178,12 @@ export default function SettingsPage() {
   const setTimeoutMs = (value: number) => setLocalEdits(prev => ({ ...prev, timeoutMs: value }));
   const setCircuitBreakerThreshold = (value: number) => setLocalEdits(prev => ({ ...prev, circuitBreakerThreshold: value }));
   const setAutoMatchAfterScrape = (value: boolean) => setLocalEdits(prev => ({ ...prev, autoMatchAfterScrape: value }));
+  const setAiProvider = (value: string) => setLocalEdits(prev => ({ ...prev, aiProvider: value }));
+  const setAnthropicApiKey = (value: string) => setLocalEdits(prev => ({ ...prev, anthropicApiKey: value }));
+  const setGoogleAuthMode = (value: string) => setLocalEdits(prev => ({ ...prev, googleAuthMode: value }));
+  const setGoogleApiKey = (value: string) => setLocalEdits(prev => ({ ...prev, googleApiKey: value }));
+  const setGoogleClientId = (value: string) => setLocalEdits(prev => ({ ...prev, googleClientId: value }));
+  const setGoogleClientSecret = (value: string) => setLocalEdits(prev => ({ ...prev, googleClientSecret: value }));
 
   const refreshMutation = useMutation({
     mutationFn: async () => {
@@ -129,7 +193,9 @@ export default function SettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries();
+      toast.success("Jobs refreshed successfully");
     },
+    onError: () => toast.error("Failed to refresh jobs"),
   });
 
   const clearJobsMutation = useMutation({
@@ -142,6 +208,7 @@ export default function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["companies"] });
       queryClient.invalidateQueries({ queryKey: ["stats"] });
+      toast.success("All jobs deleted");
     },
   });
 
@@ -155,6 +222,7 @@ export default function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["match-history"] });
       queryClient.invalidateQueries({ queryKey: ["unmatched-jobs-count"] });
+      toast.success("Match history cleared");
     },
   });
 
@@ -172,6 +240,12 @@ export default function SettingsPage() {
           matcher_timeout_ms: timeoutMs,
           matcher_circuit_breaker_threshold: circuitBreakerThreshold,
           matcher_auto_match_after_scrape: autoMatchAfterScrape,
+          ai_provider: aiProvider,
+          anthropic_api_key: anthropicApiKey,
+          google_auth_mode: googleAuthMode,
+          google_api_key: googleApiKey,
+          google_client_id: googleClientId,
+          google_client_secret: googleClientSecret,
         }),
       });
       if (!res.ok) throw new Error("Failed to save settings");
@@ -182,7 +256,9 @@ export default function SettingsPage() {
       setLocalEdits({});
       setSettingsSaved(true);
       setTimeout(() => setSettingsSaved(false), 3000);
+      toast.success("Settings saved");
     },
+    onError: () => toast.error("Failed to save settings"),
   });
 
   // Query for unmatched jobs count
@@ -201,11 +277,13 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error("Failed to match jobs");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["unmatched-jobs-count"] });
       queryClient.invalidateQueries({ queryKey: ["match-history"] });
+      toast.success(`Matched ${data.matched} jobs`);
     },
+    onError: () => toast.error("Failed to start matching"),
   });
 
   return (
@@ -219,6 +297,210 @@ export default function SettingsPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Left Column: Configuration (Spans 2 columns) */}
         <div className="space-y-6 lg:col-span-2">
+
+          {/* AI Provider Configuration */}
+          <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Globe className="h-5 w-5 text-blue-500" />
+                <CardTitle>AI Provider</CardTitle>
+              </div>
+              <CardDescription>
+                Choose which AI service to use for job matching
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-3">
+                 <Label>Provider</Label>
+                 <Select value={aiProvider} onValueChange={setAiProvider}>
+                    <SelectTrigger className="w-full bg-zinc-950/50 border-zinc-800">
+                      <SelectValue placeholder="Select provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="anthropic">Anthropic (Claude)</SelectItem>
+                      <SelectItem value="google">Google (Gemini)</SelectItem>
+                    </SelectContent>
+                 </Select>
+              </div>
+
+              {aiProvider === "anthropic" && (
+                <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+                   <Label htmlFor="anthropic-key">Anthropic API Key</Label>
+                   <div className="relative">
+                     <Key className="absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
+                     <Input
+                        id="anthropic-key"
+                        type="password"
+                        placeholder="sk-ant-..."
+                        value={anthropicApiKey}
+                        onChange={(e) => setAnthropicApiKey(e.target.value)}
+                        className="pl-9 bg-zinc-950/50 border-zinc-800 font-mono"
+                     />
+                   </div>
+                   <p className="text-xs text-zinc-500">
+                     Required for Claude models. Your key is stored locally.
+                   </p>
+                </div>
+              )}
+
+              {aiProvider === "google" && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-top-2">
+                  <div className="space-y-3">
+                    <Label>Authentication Method</Label>
+                    <RadioGroup
+                      value={googleAuthMode}
+                      onValueChange={setGoogleAuthMode}
+                      className="flex flex-col space-y-1"
+                    >
+                      <div className="flex items-center space-x-3 space-y-0 rounded-md border border-zinc-800 bg-zinc-950/30 p-3">
+                         <RadioGroupItem value="api_key" id="mode-api-key" />
+                         <div className="space-y-1">
+                           <Label htmlFor="mode-api-key" className="font-medium cursor-pointer">API Key</Label>
+                           <p className="text-xs text-zinc-500">Use a standard Google AI Studio API key</p>
+                         </div>
+                      </div>
+                      <div className="flex items-center space-x-3 space-y-0 rounded-md border border-zinc-800 bg-zinc-950/30 p-3">
+                         <RadioGroupItem value="oauth" id="mode-oauth" />
+                         <div className="space-y-1">
+                           <Label htmlFor="mode-oauth" className="font-medium cursor-pointer">OAuth / Gemini CLI</Label>
+                           <p className="text-xs text-zinc-500">Sign in with your Google Account (Recommended for local use)</p>
+                         </div>
+                      </div>
+                    </RadioGroup>
+                  </div>
+
+                  {googleAuthMode === "api_key" && (
+                    <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+                       <Label htmlFor="google-key">Google API Key</Label>
+                       <div className="relative">
+                         <Key className="absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
+                         <Input
+                            id="google-key"
+                            type="password"
+                            placeholder="AIza..."
+                            value={googleApiKey}
+                            onChange={(e) => setGoogleApiKey(e.target.value)}
+                            className="pl-9 bg-zinc-950/50 border-zinc-800 font-mono"
+                         />
+                       </div>
+                    </div>
+                  )}
+
+                  {googleAuthMode === "oauth" && (
+                    <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                       <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-4 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            {isGoogleConnected ? (
+                              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-500">
+                                <CheckCircle2 className="h-5 w-5" />
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-zinc-800 text-zinc-400">
+                                <LogOut className="h-5 w-5" />
+                              </div>
+                            )}
+                            <div>
+                              <p className="font-medium text-sm">
+                                {isGoogleConnected ? "Connected to Google" : "Not Connected"}
+                              </p>
+                              <p className="text-xs text-zinc-500">
+                                {isGoogleConnected
+                                  ? "Your app allows using Gemini models."
+                                  : "Sign in to enable Gemini models."}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2">
+                            {isGoogleConnected && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={async () => {
+                                  try {
+                                    const res = await fetch("/api/auth/google/disconnect", { method: "POST" });
+                                    if (!res.ok) throw new Error("Failed to disconnect");
+                                    queryClient.invalidateQueries({ queryKey: ["settings"] });
+                                    toast.success("Disconnected from Google");
+                                  } catch (error) {
+                                    toast.error("Failed to disconnect");
+                                  }
+                                }}
+                                className="border-red-900/30 text-red-400 hover:bg-red-950/30 hover:text-red-300 hover:border-red-900/50"
+                              >
+                                Sign Out
+                              </Button>
+                            )}
+                            <Button
+                              variant={isGoogleConnected ? "outline" : "default"}
+                              size="sm"
+                              onClick={() => {
+                                 // Save current settings first to ensure Client ID is persisted if manually entered
+                                 if (googleClientId) {
+                                    saveSettingsMutation.mutate();
+                                 }
+                                 // Redirect to auth flow
+                                 window.location.href = "/api/auth/google/init";
+                              }}
+                              className={cn(
+                                  isGoogleConnected
+                                  ? "border-zinc-700 hover:bg-zinc-800"
+                                  : "bg-blue-600 hover:bg-blue-500 text-white"
+                              )}
+                            >
+                              {isGoogleConnected ? "Reconnect" : "Sign in with Google"}
+                            </Button>
+                          </div>
+                       </div>
+
+                       <div className="pt-2">
+                         <Button
+                           variant="ghost"
+                           size="sm"
+                           type="button"
+                           onClick={() => setShowAdvanced(!showAdvanced)}
+                           className="text-xs text-zinc-500 h-auto p-0 hover:text-zinc-300"
+                         >
+                           {showAdvanced ? "Hide Advanced OAuth Settings" : "Show Advanced OAuth Settings"}
+                         </Button>
+
+                         {showAdvanced && (
+                           <div className="mt-4 grid gap-4 p-4 border border-zinc-800 rounded-lg bg-zinc-950/30">
+                              <div className="space-y-2">
+                                <Label htmlFor="client-id" className="text-xs">Client ID</Label>
+                                <Input
+                                  id="client-id"
+                                  value={googleClientId}
+                                  onChange={(e) => setGoogleClientId(e.target.value)}
+                                  placeholder="Auto-detected from Gemini CLI if installed"
+                                  className="bg-zinc-950/50 border-zinc-800 text-xs font-mono"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="client-secret" className="text-xs">Client Secret</Label>
+                                <Input
+                                  id="client-secret"
+                                  type="password"
+                                  value={googleClientSecret}
+                                  onChange={(e) => setGoogleClientSecret(e.target.value)}
+                                  placeholder="Auto-detected from Gemini CLI if installed"
+                                  className="bg-zinc-950/50 border-zinc-800 text-xs font-mono"
+                                />
+                              </div>
+                              <p className="text-xs text-zinc-500">
+                                Leave these blank to attempt auto-detection from @google/gemini-cli.
+                              </p>
+                           </div>
+                         )}
+                       </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+
           {/* Matcher Configuration */}
           <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
             <CardHeader>
@@ -252,7 +534,7 @@ export default function SettingsPage() {
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-zinc-500">
-                    The AI model used to analyze job descriptions against your profile.
+                    The specific model version to use for inference.
                   </p>
                 </div>
 
@@ -620,5 +902,13 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-zinc-400">Loading settings...</div>}>
+      <SettingsContent />
+    </Suspense>
   );
 }

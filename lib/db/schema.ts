@@ -7,6 +7,7 @@ export const profile = sqliteTable("profile", {
   name: text("name").notNull(),
   email: text("email"),
   phone: text("phone"),
+  location: text("location"),
   preferredCountry: text("preferred_country"),
   preferredCity: text("preferred_city"),
   linkedinUrl: text("linkedin_url"),
@@ -34,8 +35,10 @@ export const experience = sqliteTable("experience", {
   profileId: integer("profile_id").references(() => profile.id, { onDelete: "cascade" }),
   company: text("company").notNull(),
   title: text("title").notNull(),
+  location: text("location"),
   startDate: text("start_date").notNull(),
   endDate: text("end_date"), // null = current
+  description: text("description"),
   highlights: text("highlights"), // JSON array stored as text
 });
 
