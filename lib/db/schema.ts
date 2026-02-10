@@ -88,8 +88,10 @@ export const jobs = sqliteTable("jobs", {
   companyId: integer("company_id").references(() => companies.id, { onDelete: "cascade" }).notNull(),
   externalId: text("external_id"), // for deduplication
   title: text("title").notNull(),
+  description: text("description"), // Raw HTML or unprocessed description
   cleanDescription: text("clean_description"), // AI-cleaned plain text description
   url: text("url").notNull(),
+  location: text("location"),
   locationType: text("location_type"), // "remote", "hybrid", "onsite"
   salary: text("salary"),
   department: text("department"),

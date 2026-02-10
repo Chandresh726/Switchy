@@ -97,9 +97,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // if (locationSearch) {
-    //   conditions.push(like(jobs.location, `%${locationSearch}%`));
-    // }
+    if (locationSearch) {
+      conditions.push(like(jobs.location, `%${locationSearch}%`));
+    }
 
     // Build the where clause
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;

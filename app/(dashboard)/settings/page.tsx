@@ -58,13 +58,60 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 import { GeminiStatusDisplay } from "./gemini-status";
 
-// Matcher models
-const MODELS = [
-  { id: "gemini-3-pro-preview", label: "Gemini 3 Pro", description: "Most capable model (Preview)" },
-  { id: "gemini-3-flash-preview", label: "Gemini 3 Flash", description: "Fastest model (Preview)" },
-  { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", description: "Balanced performance" },
-  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", description: "Cost effective" },
+// Matcher models, grouped by provider
+const ANTHROPIC_MODELS = [
+  {
+    id: "claude-3-sonnet-20240229",
+    label: "Claude 3 Sonnet",
+    description: "Balanced quality and speed",
+  },
+  {
+    id: "claude-3-haiku-20240307",
+    label: "Claude 3 Haiku",
+    description: "Fast and cost effective",
+  },
+  {
+    id: "claude-3-opus-20240229",
+    label: "Claude 3 Opus",
+    description: "Highest quality (slower, higher cost)",
+  },
 ];
+
+const GOOGLE_MODELS = [
+  {
+    id: "gemini-3-pro-preview",
+    label: "Gemini 3 Pro",
+    description: "Most capable model (Preview)",
+  },
+  {
+    id: "gemini-3-flash-preview",
+    label: "Gemini 3 Flash",
+    description: "Fastest model (Preview)",
+  },
+  {
+    id: "gemini-2.5-pro",
+    label: "Gemini 2.5 Pro",
+    description: "Balanced performance",
+  },
+  {
+    id: "gemini-2.5-flash",
+    label: "Gemini 2.5 Flash",
+    description: "Cost effective",
+  },
+];
+
+type AIProvider = "anthropic" | "google";
+
+function getModelsForProvider(provider: string) {
+  return provider === "google" ? GOOGLE_MODELS : ANTHROPIC_MODELS;
+}
+
+function getDefaultModelForProvider(provider: string) {
+  const models = getModelsForProvider(provider);
+  // Default to Gemini 3 Flash for Google (index 1) and Claude 3 Sonnet for Anthropic (index 0)
+  const fallback = provider === "google" ? GOOGLE_MODELS[1]?.id : ANTHROPIC_MODELS[0]?.id;
+  return models[0]?.id || fallback || "gemini-3-flash-preview";
+}
 
 interface MatcherSettings {
   matcher_model: string;
@@ -146,8 +193,15 @@ function SettingsContent() {
   });
 
   const derivedValues = useMemo(() => {
-    const serverModel = settings?.matcher_model || "gemini-3-flash-preview";
-    const serverResumeModel = settings?.resume_parser_model || "gemini-3-flash-preview";
+    const currentProvider: AIProvider =
+      ((localEdits.aiProvider as AIProvider) ??
+        (settings?.ai_provider as AIProvider) ??
+        "anthropic");
+
+    const defaultModel = getDefaultModelForProvider(currentProvider);
+    const serverModel = settings?.matcher_model || defaultModel;
+    const serverResumeModel = settings?.resume_parser_model || defaultModel;
+
     return {
       matcherModel: localEdits.matcherModel ?? serverModel,
       resumeParserModel: localEdits.resumeParserModel ?? serverResumeModel,
@@ -155,11 +209,17 @@ function SettingsContent() {
       batchSize: localEdits.batchSize ?? parseInt(settings?.matcher_batch_size || "2", 10),
       maxRetries: localEdits.maxRetries ?? parseInt(settings?.matcher_max_retries || "3", 10),
       concurrencyLimit: localEdits.concurrencyLimit ?? parseInt(settings?.matcher_concurrency_limit || "3", 10),
-      timeoutMs: localEdits.timeoutMs ?? parseInt(settings?.matcher_timeout_ms || "30000", 10),
-      circuitBreakerThreshold: localEdits.circuitBreakerThreshold ?? parseInt(settings?.matcher_circuit_breaker_threshold || "10", 10),
-      autoMatchAfterScrape: localEdits.autoMatchAfterScrape ?? (settings?.matcher_auto_match_after_scrape !== "false"),
+      timeoutMs:
+        localEdits.timeoutMs ??
+        parseInt(settings?.matcher_timeout_ms || "30000", 10),
+      circuitBreakerThreshold:
+        localEdits.circuitBreakerThreshold ??
+        parseInt(settings?.matcher_circuit_breaker_threshold || "10", 10),
+      autoMatchAfterScrape:
+        localEdits.autoMatchAfterScrape ??
+        (settings?.matcher_auto_match_after_scrape !== "false"),
       // Provider
-      aiProvider: localEdits.aiProvider ?? (settings?.ai_provider || "anthropic"),
+      aiProvider: currentProvider,
       anthropicApiKey: localEdits.anthropicApiKey ?? (settings?.anthropic_api_key || ""),
       googleAuthMode: localEdits.googleAuthMode ?? (settings?.google_auth_mode || "api_key"),
       googleApiKey: localEdits.googleApiKey ?? (settings?.google_api_key || ""),
@@ -179,13 +239,33 @@ function SettingsContent() {
   const setMatcherModel = (value: string) => setLocalEdits(prev => ({ ...prev, matcherModel: value }));
   const setResumeParserModel = (value: string) => setLocalEdits(prev => ({ ...prev, resumeParserModel: value }));
   const setBulkEnabled = (value: boolean) => setLocalEdits(prev => ({ ...prev, bulkEnabled: value }));
-  const setBatchSize = (value: number) => setLocalEdits(prev => ({ ...prev, batchSize: value }));
-  const setMaxRetries = (value: number) => setLocalEdits(prev => ({ ...prev, maxRetries: value }));
-  const setConcurrencyLimit = (value: number) => setLocalEdits(prev => ({ ...prev, concurrencyLimit: value }));
-  const setTimeoutMs = (value: number) => setLocalEdits(prev => ({ ...prev, timeoutMs: value }));
-  const setCircuitBreakerThreshold = (value: number) => setLocalEdits(prev => ({ ...prev, circuitBreakerThreshold: value }));
-  const setAutoMatchAfterScrape = (value: boolean) => setLocalEdits(prev => ({ ...prev, autoMatchAfterScrape: value }));
-  const setAiProvider = (value: string) => setLocalEdits(prev => ({ ...prev, aiProvider: value }));
+  const setBatchSize = (value: number) =>
+    setLocalEdits((prev) => ({ ...prev, batchSize: value }));
+  const setMaxRetries = (value: number) =>
+    setLocalEdits((prev) => ({ ...prev, maxRetries: value }));
+  const setConcurrencyLimit = (value: number) =>
+    setLocalEdits((prev) => ({ ...prev, concurrencyLimit: value }));
+  const setTimeoutMs = (value: number) =>
+    setLocalEdits((prev) => ({ ...prev, timeoutMs: value }));
+  const setCircuitBreakerThreshold = (value: number) =>
+    setLocalEdits((prev) => ({ ...prev, circuitBreakerThreshold: value }));
+  const setAutoMatchAfterScrape = (value: boolean) =>
+    setLocalEdits((prev) => ({ ...prev, autoMatchAfterScrape: value }));
+  const setAiProvider = (value: string) =>
+    setLocalEdits((prev) => {
+      const models = getModelsForProvider(value);
+      const defaultModelId = getDefaultModelForProvider(value);
+
+      const ensureModelForProvider = (current?: string) =>
+        current && models.some((m) => m.id === current) ? current : defaultModelId;
+
+      return {
+        ...prev,
+        aiProvider: value,
+        matcherModel: ensureModelForProvider(prev.matcherModel),
+        resumeParserModel: ensureModelForProvider(prev.resumeParserModel),
+      };
+    });
   const setAnthropicApiKey = (value: string) => setLocalEdits(prev => ({ ...prev, anthropicApiKey: value }));
   const setGoogleAuthMode = (value: string) => setLocalEdits(prev => ({ ...prev, googleAuthMode: value }));
   const setGoogleApiKey = (value: string) => setLocalEdits(prev => ({ ...prev, googleApiKey: value }));
@@ -426,7 +506,7 @@ function SettingsContent() {
                       <SelectValue placeholder="Select model" />
                     </SelectTrigger>
                     <SelectContent>
-                      {MODELS.map((model) => (
+                      {getModelsForProvider(aiProvider).map((model) => (
                         <SelectItem key={model.id} value={model.id}>
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{model.label}</span>
@@ -772,7 +852,7 @@ function SettingsContent() {
                     <SelectValue placeholder="Select model" />
                   </SelectTrigger>
                   <SelectContent>
-                    {MODELS.map((model) => (
+                    {getModelsForProvider(aiProvider).map((model) => (
                       <SelectItem key={model.id} value={model.id}>
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{model.label}</span>

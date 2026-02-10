@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 
 // Default settings values
 const DEFAULT_SETTINGS: Record<string, string> = {
+  // Keep original Gemini defaults and make Google (Gemini) the default provider
   matcher_model: "gemini-3-flash-preview",
   resume_parser_model: "gemini-3-flash-preview",
   matcher_bulk_enabled: "true",
@@ -17,7 +18,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   matcher_circuit_breaker_threshold: "10",
   matcher_circuit_breaker_reset_timeout: "60000",
   matcher_auto_match_after_scrape: "true",
-  ai_provider: "anthropic",
+  ai_provider: "google",
   anthropic_api_key: "",
   google_auth_mode: "api_key",
   google_api_key: "",
