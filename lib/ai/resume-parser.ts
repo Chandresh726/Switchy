@@ -117,11 +117,11 @@ function extractJSON(text: string): unknown {
 }
 
 export async function parseResume(resumeText: string): Promise<ResumeData> {
-  // Fetch configured model from settings or default to gemini-3-flash
+  // Fetch configured model from settings or default to gemini-3-flash-preview
   const modelSetting = await db.query.settings.findFirst({
-    where: eq(settings.key, "matcher_model"),
+    where: eq(settings.key, "resume_parser_model"),
   });
-  const modelId = modelSetting?.value || "gemini-3-flash";
+  const modelId = modelSetting?.value || "gemini-3-flash-preview";
   const model = await getAIClient(modelId);
 
   const { text } = await generateText({

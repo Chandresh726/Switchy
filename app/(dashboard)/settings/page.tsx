@@ -36,8 +36,7 @@ import {
   Info,
   Key,
   Globe,
-  CheckCircle2,
-  LogOut
+  Terminal,
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo, useEffect, Suspense } from "react";
@@ -57,15 +56,19 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
+import { GeminiStatusDisplay } from "./gemini-status";
+
 // Matcher models
 const MODELS = [
-  { id: "gemini-3-flash", label: "Gemini 3 Flash", description: "Fast and efficient" },
-  { id: "gemini-3-pro-high", label: "Gemini 3 Pro High", description: "Best quality" },
-  { id: "gemini-3-pro-low", label: "Gemini 3 Pro Low", description: "Balanced" },
+  { id: "gemini-3-pro-preview", label: "Gemini 3 Pro", description: "Most capable model (Preview)" },
+  { id: "gemini-3-flash-preview", label: "Gemini 3 Flash", description: "Fastest model (Preview)" },
+  { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", description: "Balanced performance" },
+  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", description: "Cost effective" },
 ];
 
 interface MatcherSettings {
   matcher_model: string;
+  resume_parser_model: string;
   matcher_bulk_enabled: string;
   matcher_batch_size: string;
   matcher_max_retries: string;
@@ -85,6 +88,7 @@ interface MatcherSettings {
 
 interface LocalEdits {
   matcherModel?: string;
+  resumeParserModel?: string;
   bulkEnabled?: boolean;
   batchSize?: number;
   maxRetries?: number;
@@ -142,9 +146,11 @@ function SettingsContent() {
   });
 
   const derivedValues = useMemo(() => {
-    const serverModel = settings?.matcher_model || "gemini-3-flash";
+    const serverModel = settings?.matcher_model || "gemini-3-flash-preview";
+    const serverResumeModel = settings?.resume_parser_model || "gemini-3-flash-preview";
     return {
       matcherModel: localEdits.matcherModel ?? serverModel,
+      resumeParserModel: localEdits.resumeParserModel ?? serverResumeModel,
       bulkEnabled: localEdits.bulkEnabled ?? (settings?.matcher_bulk_enabled !== "false"),
       batchSize: localEdits.batchSize ?? parseInt(settings?.matcher_batch_size || "2", 10),
       maxRetries: localEdits.maxRetries ?? parseInt(settings?.matcher_max_retries || "3", 10),
@@ -164,13 +170,14 @@ function SettingsContent() {
   }, [settings, localEdits]);
 
   const {
-    matcherModel, bulkEnabled, batchSize, maxRetries, concurrencyLimit, timeoutMs,
+    matcherModel, resumeParserModel, bulkEnabled, batchSize, maxRetries, concurrencyLimit, timeoutMs,
     circuitBreakerThreshold, autoMatchAfterScrape, aiProvider, anthropicApiKey,
     googleAuthMode, googleApiKey, googleClientId, googleClientSecret, isGoogleConnected
   } = derivedValues;
 
   // Setters
   const setMatcherModel = (value: string) => setLocalEdits(prev => ({ ...prev, matcherModel: value }));
+  const setResumeParserModel = (value: string) => setLocalEdits(prev => ({ ...prev, resumeParserModel: value }));
   const setBulkEnabled = (value: boolean) => setLocalEdits(prev => ({ ...prev, bulkEnabled: value }));
   const setBatchSize = (value: number) => setLocalEdits(prev => ({ ...prev, batchSize: value }));
   const setMaxRetries = (value: number) => setLocalEdits(prev => ({ ...prev, maxRetries: value }));
@@ -233,6 +240,7 @@ function SettingsContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           matcher_model: matcherModel,
+          resume_parser_model: resumeParserModel,
           matcher_bulk_enabled: bulkEnabled,
           matcher_batch_size: batchSize,
           matcher_max_retries: maxRetries,
@@ -388,111 +396,7 @@ function SettingsContent() {
 
                   {googleAuthMode === "oauth" && (
                     <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
-                       <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-4 flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            {isGoogleConnected ? (
-                              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-500">
-                                <CheckCircle2 className="h-5 w-5" />
-                              </div>
-                            ) : (
-                              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-zinc-800 text-zinc-400">
-                                <LogOut className="h-5 w-5" />
-                              </div>
-                            )}
-                            <div>
-                              <p className="font-medium text-sm">
-                                {isGoogleConnected ? "Connected to Google" : "Not Connected"}
-                              </p>
-                              <p className="text-xs text-zinc-500">
-                                {isGoogleConnected
-                                  ? "Your app allows using Gemini models."
-                                  : "Sign in to enable Gemini models."}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex gap-2">
-                            {isGoogleConnected && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={async () => {
-                                  try {
-                                    const res = await fetch("/api/auth/google/disconnect", { method: "POST" });
-                                    if (!res.ok) throw new Error("Failed to disconnect");
-                                    queryClient.invalidateQueries({ queryKey: ["settings"] });
-                                    toast.success("Disconnected from Google");
-                                  } catch (error) {
-                                    toast.error("Failed to disconnect");
-                                  }
-                                }}
-                                className="border-red-900/30 text-red-400 hover:bg-red-950/30 hover:text-red-300 hover:border-red-900/50"
-                              >
-                                Sign Out
-                              </Button>
-                            )}
-                            <Button
-                              variant={isGoogleConnected ? "outline" : "default"}
-                              size="sm"
-                              onClick={() => {
-                                 // Save current settings first to ensure Client ID is persisted if manually entered
-                                 if (googleClientId) {
-                                    saveSettingsMutation.mutate();
-                                 }
-                                 // Redirect to auth flow
-                                 window.location.href = "/api/auth/google/init";
-                              }}
-                              className={cn(
-                                  isGoogleConnected
-                                  ? "border-zinc-700 hover:bg-zinc-800"
-                                  : "bg-blue-600 hover:bg-blue-500 text-white"
-                              )}
-                            >
-                              {isGoogleConnected ? "Reconnect" : "Sign in with Google"}
-                            </Button>
-                          </div>
-                       </div>
-
-                       <div className="pt-2">
-                         <Button
-                           variant="ghost"
-                           size="sm"
-                           type="button"
-                           onClick={() => setShowAdvanced(!showAdvanced)}
-                           className="text-xs text-zinc-500 h-auto p-0 hover:text-zinc-300"
-                         >
-                           {showAdvanced ? "Hide Advanced OAuth Settings" : "Show Advanced OAuth Settings"}
-                         </Button>
-
-                         {showAdvanced && (
-                           <div className="mt-4 grid gap-4 p-4 border border-zinc-800 rounded-lg bg-zinc-950/30">
-                              <div className="space-y-2">
-                                <Label htmlFor="client-id" className="text-xs">Client ID</Label>
-                                <Input
-                                  id="client-id"
-                                  value={googleClientId}
-                                  onChange={(e) => setGoogleClientId(e.target.value)}
-                                  placeholder="Auto-detected from Gemini CLI if installed"
-                                  className="bg-zinc-950/50 border-zinc-800 text-xs font-mono"
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="client-secret" className="text-xs">Client Secret</Label>
-                                <Input
-                                  id="client-secret"
-                                  type="password"
-                                  value={googleClientSecret}
-                                  onChange={(e) => setGoogleClientSecret(e.target.value)}
-                                  placeholder="Auto-detected from Gemini CLI if installed"
-                                  className="bg-zinc-950/50 border-zinc-800 text-xs font-mono"
-                                />
-                              </div>
-                              <p className="text-xs text-zinc-500">
-                                Leave these blank to attempt auto-detection from @google/gemini-cli.
-                              </p>
-                           </div>
-                         )}
-                       </div>
+                      <GeminiStatusDisplay />
                     </div>
                   )}
                 </div>
@@ -675,7 +579,7 @@ function SettingsContent() {
               <p className="text-xs text-zinc-500">
                 {settingsSaved ? (
                   <span className="flex items-center text-emerald-400 gap-1.5">
-                    <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                     Changes saved successfully
                   </span>
                 ) : Object.keys(localEdits).length > 0 ? (
@@ -848,6 +752,38 @@ function SettingsContent() {
                     Matched {matchUnmatchedMutation.data.matched} jobs
                   </p>
                 )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* System Info */}
+          <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <Terminal className="h-4 w-4 text-purple-500" />
+                <CardTitle className="text-base">Resume Parser</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                <Label htmlFor="resume-model-select">Parser Model</Label>
+                <Select value={resumeParserModel} onValueChange={setResumeParserModel}>
+                  <SelectTrigger id="resume-model-select" className="w-full bg-zinc-950/50 border-zinc-800">
+                    <SelectValue placeholder="Select model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MODELS.map((model) => (
+                      <SelectItem key={model.id} value={model.id}>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{model.label}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-zinc-500">
+                  Model used for extracting data from resumes.
+                </p>
               </div>
             </CardContent>
           </Card>

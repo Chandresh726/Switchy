@@ -1,12 +1,9 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { OAuth2Client } from "google-auth-library";
+import { createGeminiProvider } from "ai-sdk-provider-gemini-cli";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
-import { eq, inArray } from "drizzle-orm";
-
-// Cache for the OAuth client to avoid re-instantiating constantly
-let oauthClient: OAuth2Client | null = null;
+import { inArray } from "drizzle-orm";
 
 async function getSettingsMap(keys: string[]) {
   const results = await db
@@ -23,7 +20,7 @@ async function getSettingsMap(keys: string[]) {
 
 /**
  * Get a configured AI model instance based on application settings.
- * Supports Anthropic (API Key) and Google Gemini (API Key or OAuth).
+ * Supports Anthropic (API Key) and Google Gemini (API Key or CLI).
  */
 export async function getAIClient(modelId: string) {
   const settingKeys = [
@@ -31,10 +28,6 @@ export async function getAIClient(modelId: string) {
     "anthropic_api_key",
     "google_auth_mode",
     "google_api_key",
-    "google_oauth_tokens",
-    "google_client_id",
-    "google_client_secret",
-    "google_project_id"
   ];
 
   const config = await getSettingsMap(settingKeys);
@@ -56,70 +49,13 @@ export async function getAIClient(modelId: string) {
       return google(modelId);
     }
 
-    // Mode: OAuth (CLI or Web)
+    // Mode: OAuth (CLI)
     if (authMode === "oauth") {
-      const tokensStr = config.get("google_oauth_tokens");
-      const clientId = config.get("google_client_id");
-      const clientSecret = config.get("google_client_secret");
-      const projectId = config.get("google_project_id");
-
-      if (!tokensStr || !clientId || !clientSecret) {
-        throw new Error("Google OAuth credentials or tokens are missing");
-      }
-
-      const tokens = JSON.parse(tokensStr);
-
-      // Initialize or reuse OAuth client
-      if (!oauthClient) {
-        oauthClient = new OAuth2Client(
-          clientId,
-          clientSecret,
-          "http://localhost:3000/api/auth/google/callback"
-        );
-      }
-
-      // Set credentials
-      oauthClient.setCredentials(tokens);
-
-      // Force token refresh if needed and get a valid access token
-      try {
-        const { token } = await oauthClient.getAccessToken();
-
-        if (!token) {
-           throw new Error("Failed to retrieve valid access token from Google");
-        }
-
-        // Check if tokens were refreshed and save them if so
-        // Note: oauthClient.credentials will update automatically
-        if (oauthClient.credentials.access_token !== tokens.access_token) {
-           await db.update(settings)
-             .set({ value: JSON.stringify(oauthClient.credentials), updatedAt: new Date() })
-             .where(eq(settings.key, "google_oauth_tokens"));
-        }
-
-        // Create provider using the access token
-        // The Vercel AI SDK Google provider allows custom headers/fetch.
-        // For Gemini API via OAuth (Vertex AI or Generative Language API with User Auth),
-        // we generally need to provide the project ID if using the Cloud platform scope.
-        // x-goog-user-project is required for quota attribution when using user credentials.
-
-        const google = createGoogleGenerativeAI({
-           apiKey: "no-key-needed", // Placeholder
-           headers: {
-             "Authorization": `Bearer ${token}`,
-             // Remove conflicting API key header if SDK adds it
-             "x-goog-api-key": undefined as any,
-             // Add user project header for quota attribution
-             ...(projectId ? { "x-goog-user-project": projectId } : {})
-           }
-        });
-
-        return google(modelId);
-
-      } catch (error) {
-        console.error("Error refreshing Google token:", error);
-        throw new Error("Failed to authenticate with Google. Please reconnect in settings.");
-      }
+      // Use the ai-sdk-provider-gemini-cli which leverages the system's
+      // authenticated 'gemini' CLI tool.
+      // Requires running `gemini auth login` on the host machine.
+      const google = createGeminiProvider();
+      return google(modelId);
     }
   }
 

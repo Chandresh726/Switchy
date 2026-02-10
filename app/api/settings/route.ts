@@ -5,7 +5,8 @@ import { eq } from "drizzle-orm";
 
 // Default settings values
 const DEFAULT_SETTINGS: Record<string, string> = {
-  matcher_model: "gemini-3-flash",
+  matcher_model: "gemini-3-flash-preview",
+  resume_parser_model: "gemini-3-flash-preview",
   matcher_bulk_enabled: "true",
   matcher_batch_size: "2",
   matcher_max_retries: "3",
@@ -80,10 +81,10 @@ export async function POST(request: Request) {
         updates.push({ key, value: String(num) });
       } else if (key === "matcher_bulk_enabled" || key === "matcher_auto_match_after_scrape") {
         updates.push({ key, value: value === true || value === "true" ? "true" : "false" });
-      } else if (key === "matcher_model") {
+      } else if (key === "matcher_model" || key === "resume_parser_model") {
         if (typeof value !== "string" || value.trim().length === 0) {
           return NextResponse.json(
-            { error: "matcher_model must be a non-empty string" },
+            { error: `${key} must be a non-empty string` },
             { status: 400 }
           );
         }

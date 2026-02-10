@@ -253,7 +253,7 @@ async function logMatcherError(
 
 // Default matcher settings
 const DEFAULT_MATCHER_SETTINGS = {
-  matcher_model: "gemini-3-flash",
+  matcher_model: "gemini-3-flash-preview",
   matcher_bulk_enabled: true,
   matcher_batch_size: 2,
   matcher_max_retries: 3,
