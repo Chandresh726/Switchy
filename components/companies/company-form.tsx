@@ -28,6 +28,7 @@ const PLATFORMS = [
   { value: "", label: "Auto-detect" },
   { value: "greenhouse", label: "Greenhouse" },
   { value: "lever", label: "Lever" },
+  { value: "ashby", label: "Ashby" },
   { value: "custom", label: "Custom" },
 ];
 
@@ -47,12 +48,14 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
   const handleUrlChange = (url: string) => {
     setFormData((prev) => ({ ...prev, careersUrl: url }));
 
-    // Auto-detect platform
+    // Auto-detect platform (basic heuristics)
     const urlLower = url.toLowerCase();
     if (urlLower.includes("greenhouse.io") || urlLower.includes("boards.greenhouse")) {
       setDetectedPlatform("Greenhouse");
     } else if (urlLower.includes("lever.co") || urlLower.includes("jobs.lever")) {
       setDetectedPlatform("Lever");
+    } else if (urlLower.includes("ashbyhq.com") || urlLower.includes("jobs.ashbyhq.com")) {
+      setDetectedPlatform("Ashby");
     } else if (url.length > 10) {
       setDetectedPlatform("Custom");
     } else {
@@ -165,7 +168,7 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
             )}
           </div>
           <p className="text-xs text-zinc-500">
-            We support Greenhouse, Lever, and custom career pages
+            We support Greenhouse, Lever, Ashby, and custom career pages
           </p>
         </div>
       </div>
@@ -200,10 +203,10 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
             />
             <div>
               <Label htmlFor="manualPlatform" className="text-amber-400 cursor-pointer">
-                This company uses a known ATS (Greenhouse/Lever)
+                This company uses a known ATS (Greenhouse/Lever/Ashby)
               </Label>
               <p className="text-xs text-zinc-400 mt-0.5">
-                Enable this if the company has a custom career page but uses Greenhouse or Lever for applications
+                Enable this if the company has a custom career page but uses Greenhouse or Lever or Ashby for applications
               </p>
             </div>
           </div>
@@ -228,7 +231,7 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
 
               <div className="space-y-2">
                 <Label htmlFor="boardToken">
-                  Board Token {(formData.platform === "greenhouse" || formData.platform === "lever") && "*"}
+                  Board Token {(formData.platform === "greenhouse" || formData.platform === "lever" || formData.platform === "ashby") && "*"}
                 </Label>
                 <Input
                   id="boardToken"
@@ -240,7 +243,8 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
                   data-form-type="other"
                 />
                 <p className="text-xs text-zinc-500">
-                  Find this in the apply URL: boards.greenhouse.io/<strong>acme</strong>/jobs/123
+                  For Greenhouse/Lever, this is the company slug in the apply URL (e.g. boards.greenhouse.io/<strong>acme</strong>/jobs/123).
+                  For Ashby, use the jobs page name from jobs.ashbyhq.com/<strong>Ashby</strong>.
                 </p>
               </div>
             </div>

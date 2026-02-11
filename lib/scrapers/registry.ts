@@ -1,6 +1,7 @@
 import { BaseScraper, ScraperResult, ScrapeOptions } from "./base-scraper";
 import { GreenhouseScraper } from "./greenhouse";
 import { LeverScraper } from "./lever";
+import { AshbyScraper } from "./ashby";
 
 class ScraperRegistry {
   private scrapers: BaseScraper[] = [];
@@ -9,6 +10,7 @@ class ScraperRegistry {
     // Register scrapers in order of priority
     this.register(new GreenhouseScraper());
     this.register(new LeverScraper());
+    this.register(new AshbyScraper());
   }
 
   register(scraper: BaseScraper): void {
@@ -44,7 +46,8 @@ class ScraperRegistry {
       return {
         success: false,
         jobs: [],
-        error: "No scraper found for this URL. Supported platforms: Greenhouse, Lever",
+        error:
+          "No scraper found for this URL. Supported platforms: Greenhouse, Lever, Ashby",
       };
     }
 
