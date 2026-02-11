@@ -238,7 +238,7 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
                   value={formData.boardToken}
                   onChange={(e) => setFormData((prev) => ({ ...prev, boardToken: e.target.value }))}
                   placeholder="e.g., acme"
-                  required={formData.platform === "greenhouse" || formData.platform === "lever"}
+                  required={formData.platform === "greenhouse" || formData.platform === "lever" || formData.platform === "ashby"}
                   autoComplete="off"
                   data-form-type="other"
                 />
