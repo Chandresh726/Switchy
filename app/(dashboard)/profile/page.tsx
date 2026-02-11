@@ -54,9 +54,16 @@ export default function ProfilePage() {
     },
   });
 
-  const handleResumeParsed = (data: ResumeData) => {
+  const handleResumeParsed = (data: ResumeData, autofill: boolean) => {
     setParsedResumeData(data);
     toast.success("Resume uploaded. Review the extracted data below.");
+
+    // Trigger autofill if the user has enabled it
+    if (autofill) {
+      // The data is already being passed to ProfileForm, SkillsEditor, and ExperienceList
+      // through parsedResumeData state, which triggers their initialData props
+      console.log("[Profile] Autofill enabled - form fields populated from resume");
+    }
   };
 
   const handleDeleteResume = async (id: number) => {

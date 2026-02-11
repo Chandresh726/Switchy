@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { Building2, Calendar, Loader2, MapPin, Pencil, Plus, Save, Trash2, X, Sparkles, Briefcase } from "lucide-react";
 import { toast } from "sonner";
 
@@ -214,7 +214,6 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
     enabled: !!profileId,
   });
 
-  const hasUnsavedChanges = useMemo(() => pendingExperiences.length > 0, [pendingExperiences]);
 
   const addMutation = useMutation({
     mutationFn: async (exp: ExperienceFormData) => {

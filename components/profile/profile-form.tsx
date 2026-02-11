@@ -65,7 +65,6 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
       };
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData(data);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setOriginalData(data);
     }
   }, [profile]);

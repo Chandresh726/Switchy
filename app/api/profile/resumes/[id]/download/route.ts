@@ -67,11 +67,20 @@ export async function GET(
         break;
     }
 
+    // Sanitize filename for Content-Disposition header to prevent header injection
+    const sanitizeFilename = (filename: string): string => {
+      // Remove CR/LF and double-quote characters
+      return filename.replace(/[\r\n"]/g, '');
+    };
+
+    const safeFilename = sanitizeFilename(resume.fileName) || 'resume';
+    const rfc5987Filename = encodeURIComponent(resume.fileName).replace(/['()]/g, escape);
+
     // Return the file with appropriate headers for download
     return new NextResponse(fileBuffer, {
       headers: {
         'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename="${resume.fileName}"`,
+        'Content-Disposition': `attachment; filename="${safeFilename}"; filename*=UTF-8''${rfc5987Filename}`,
       },
     });
   } catch (error) {

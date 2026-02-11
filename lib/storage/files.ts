@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
-import { getUploadsDir, getUploadTypeDir, getUploadFilePath } from "../state/paths";
+import { getUploadTypeDir, getUploadFilePath } from "../state/paths";
 
 export async function saveFile(
   file: File,
