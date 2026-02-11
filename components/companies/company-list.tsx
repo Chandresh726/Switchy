@@ -48,6 +48,7 @@ interface Company {
 const PLATFORM_COLORS: Record<string, string> = {
   greenhouse: "bg-green-500/10 text-green-400 border-green-500/20",
   lever: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  ashby: "bg-purple-500/10 text-purple-400 border-purple-500/20",
   custom: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
 };
 
