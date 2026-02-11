@@ -9,21 +9,12 @@ import { extractJSON } from "../json-parser";
 export const USE_GENERATE_OBJECT = false;
 
 /**
- * JSON prompt suffix for generateText fallback
- * Instructs the model to return only valid JSON
+ * JSON prompt base suffix for generateText fallback
+ * Generic instruction - schema-specific shape appended dynamically
  */
-export const JSON_PROMPT_SUFFIX = `
+const JSON_PROMPT_BASE_SUFFIX = `
 
-CRITICAL: You MUST respond with ONLY a valid JSON object. No markdown, no code blocks, no explanations, no text before or after.
-
-The JSON object MUST have this exact structure:
-{
-  "score": <number 0-100>,
-  "reasons": ["reason1", "reason2", ...],
-  "matchedSkills": ["skill1", "skill2", ...],
-  "missingSkills": ["skill1", "skill2", ...],
-  "recommendations": ["recommendation1", ...]
-}`;
+CRITICAL: You MUST respond with ONLY a valid JSON object matching the schema below. No markdown, no code blocks, no explanations, no text before or after.`;
 
 /**
  * Options for generating structured output
@@ -50,6 +41,96 @@ export interface GenerationResult<T> {
   data: T;
   method: "generateObject" | "generateText";
   raw?: string;
+}
+
+/**
+ * Generate a human-readable JSON shape description from a Zod schema
+ * This helps the LLM understand the expected structure
+ */
+function generateSchemaDescription(schema: z.ZodType): string {
+  try {
+    const def = (schema as unknown as { _def: Record<string, unknown> })._def;
+
+    if (!def) {
+      return "Any valid JSON object";
+    }
+
+    // Handle different schema types
+    if (def.typeName === "ZodObject") {
+      const shapeFn = def.shape as () => Record<string, z.ZodType>;
+      const shape = shapeFn();
+      const entries = Object.entries(shape);
+      const fields = entries.map(([key, value]) => {
+        return `  "${key}": ${describeZodType(value)}`;
+      });
+      return `{\n${fields.join(",\n")}\n}`;
+    }
+
+    if (def.typeName === "ZodArray") {
+      const element = def.element as z.ZodType;
+      return `Array of: ${generateSchemaDescription(element)}`;
+    }
+
+    return describeZodType(schema);
+  } catch {
+    return "Any valid JSON object";
+  }
+}
+
+/**
+ * Describe a single Zod type in human-readable form
+ */
+function describeZodType(type: z.ZodType): string {
+  const def = (type as unknown as { _def: Record<string, unknown> })._def;
+
+  switch (def.typeName) {
+    case "ZodString":
+      return "<string>";
+    case "ZodNumber": {
+      const checks = def.checks as Array<{ kind: string; value: number }> | undefined;
+      const min = checks?.find((c) => c.kind === "min")?.value;
+      const max = checks?.find((c) => c.kind === "max")?.value;
+      if (min !== undefined && max !== undefined) {
+        return `<number ${min}-${max}>`;
+      }
+      return "<number>";
+    }
+    case "ZodBoolean":
+      return "<boolean>";
+    case "ZodArray": {
+      const element = def.element as z.ZodType;
+      const elementDesc = describeZodType(element);
+      // Remove angle brackets for cleaner array representation
+      const cleanDesc = elementDesc.replace(/^<|>$/g, "");
+      return `[${cleanDesc}, ...]`;
+    }
+    case "ZodObject": {
+      const shapeFn = def.shape as () => Record<string, z.ZodType>;
+      const shape = shapeFn();
+      const entries = Object.entries(shape);
+      const fields = entries.map(([key, value]) => `"${key}": ${describeZodType(value)}`);
+      return `{ ${fields.join(", ")} }`;
+    }
+    case "ZodOptional":
+      return `${describeZodType(def.innerType as z.ZodType)} (optional)`;
+    case "ZodNullable":
+      return `${describeZodType(def.innerType as z.ZodType)} | null`;
+    case "ZodEnum":
+      return `<enum: ${(def.values as string[]).join(" | ")}>`;
+    default:
+      return "<any>";
+  }
+}
+
+/**
+ * Build schema-specific prompt suffix
+ */
+function buildSchemaPrompt(schema: z.ZodType): string {
+  const schemaDescription = generateSchemaDescription(schema);
+  return `${JSON_PROMPT_BASE_SUFFIX}
+
+Expected JSON structure:
+${schemaDescription}`;
 }
 
 /**
@@ -140,7 +221,7 @@ async function generateWithText<T extends z.ZodType>(
 ): Promise<GenerationResult<z.infer<T>>> {
   const { text } = await generateText({
     model,
-    system: system + JSON_PROMPT_SUFFIX,
+    system: system + buildSchemaPrompt(schema),
     prompt: prompt + "\n\nRespond with ONLY JSON object:",
     ...providerOptions,
   });

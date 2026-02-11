@@ -179,8 +179,33 @@ async function updateJobWithMatchResult(
 }
 
 /**
- * Log matcher error to database for tracking
+ * Sanitize error message to remove PII and sensitive data
  */
+function sanitizeErrorMessage(message: string): string {
+  let sanitized = message;
+
+  // Strip email addresses
+  sanitized = sanitized.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, "[EMAIL_REDACTED]");
+
+  // Strip API keys/tokens (long hex/base64 strings: 32+ alphanumeric characters)
+  sanitized = sanitized.replace(/\b[a-fA-F0-9]{32,}\b/g, "[API_KEY_REDACTED]");
+  sanitized = sanitized.replace(/\b[A-Za-z0-9+/]{32,}={0,2}\b/g, "[TOKEN_REDACTED]");
+
+  // Strip Bearer tokens
+  sanitized = sanitized.replace(/Bearer\s+\S+/gi, "Bearer [TOKEN_REDACTED]");
+
+  // Strip long numeric sequences (16+ digits - could be credit cards, API keys)
+  sanitized = sanitized.replace(/\b\d{16,}\b/g, "[NUMERIC_REDACTED]");
+
+  // Strip request-like JSON payloads that might contain sensitive keys
+  sanitized = sanitized.replace(
+    /\{[^}]*["'](api_key|token|key|secret|password|auth)["'][^}]*\}/gi,
+    "[JSON_PAYLOAD_REDACTED]"
+  );
+
+  // Truncate to 1000 characters
+  return sanitized.slice(0, 1000);
+}
 async function logMatcherError(
   jobId: number,
   attemptNumber: number,
@@ -189,13 +214,17 @@ async function logMatcherError(
 ): Promise<void> {
   try {
     const errorType = categorizeError(error);
+    const sanitizedMessage = sanitizeErrorMessage(error.message);
+
+    // Log original error to console only (not DB)
+    console.error(`[Matcher] Job ${jobId} attempt ${attemptNumber} error:`, error.message);
 
     await db.insert(matcherErrors).values({
       jobId,
       scrapingLogId: scrapingLogId || null,
       attemptNumber,
       errorType,
-      errorMessage: error.message.slice(0, 1000),
+      errorMessage: sanitizedMessage,
     });
   } catch (dbError) {
     console.error("[Matcher] Failed to log error to database:", dbError);

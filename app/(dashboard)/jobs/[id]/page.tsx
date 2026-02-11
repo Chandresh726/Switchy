@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MatchBadge } from "@/components/jobs/match-badge";
 import { ApplyButton } from "@/components/jobs/apply-button";
+import { MarkdownRenderer } from "@/components/jobs/markdown-renderer";
+import { sanitizeHtmlContent } from "@/lib/jobs/description-processor";
 import {
   Building2,
   Calendar,
@@ -25,6 +27,7 @@ interface Job {
   id: number;
   title: string;
   description: string | null;
+  descriptionFormat: "markdown" | "plain" | "html";
   url: string;
   location: string | null;
   locationType: string | null;
@@ -390,9 +393,19 @@ export default function JobDetailPage() {
       {job.description && (
         <div className="pb-8">
           <h2 className="mb-4 text-lg font-medium text-white">Job Description</h2>
-          <p className="whitespace-pre-wrap text-sm text-zinc-300 leading-relaxed">
-            {job.description}
-          </p>
+          {job.descriptionFormat === "html" ? (
+            <div
+              className="text-sm text-zinc-300 prose prose-invert prose-sm max-w-none"
+              dangerouslySetInnerHTML={{ __html: sanitizeHtmlContent(job.description) }}
+            />
+          ) : job.descriptionFormat === "plain" ? (
+            <p className="text-sm text-zinc-300 whitespace-pre-wrap">{job.description}</p>
+          ) : (
+            <MarkdownRenderer
+              content={job.description}
+              className="text-sm text-zinc-300"
+            />
+          )}
         </div>
       )}
     </div>

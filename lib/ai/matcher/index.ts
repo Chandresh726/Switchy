@@ -5,7 +5,7 @@ export * from "./types";
 export { getMatcherSettings, parseMatcherSetting, validateMatcherSettings } from "./settings";
 
 // Re-export generation utilities
-export { generateStructured, generateSimpleText, USE_GENERATE_OBJECT, JSON_PROMPT_SUFFIX } from "./generation";
+export { generateStructured, generateSimpleText, USE_GENERATE_OBJECT } from "./generation";
 
 // Re-export single job matching
 export { calculateJobMatch } from "./single";

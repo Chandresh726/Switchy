@@ -230,6 +230,14 @@ function SettingsContent() {
         openrouterApiKey: undefined,
         cerebrasApiKey: undefined,
       }));
+      // Clear local model edits since they've been persisted with the provider change
+      setMatcherLocalEdits((prev) => ({
+        ...prev,
+        matcherModel: undefined,
+        resumeParserModel: undefined,
+        matcherReasoningEffort: undefined,
+        resumeParserReasoningEffort: undefined,
+      }));
     },
     onError: () => {
       toast.error("Failed to save AI provider settings");
@@ -238,17 +246,26 @@ function SettingsContent() {
 
   const setAiProvider = (value: string) => {
     setProviderLocalEdits((prev) => ({ ...prev, aiProvider: value }));
-    
+
     // When provider changes, update models to the new provider's defaults
     const newProvider = value as AIProvider;
     const defaultModel = getDefaultModelForProvider(newProvider);
-    setMatcherLocalEdits(prev => ({ 
-      ...prev, 
+    const defaultReasoningEffort = getDefaultReasoningEffort();
+    setMatcherLocalEdits(prev => ({
+      ...prev,
       matcherModel: defaultModel,
-      resumeParserModel: defaultModel 
+      resumeParserModel: defaultModel,
+      matcherReasoningEffort: defaultReasoningEffort,
+      resumeParserReasoningEffort: defaultReasoningEffort
     }));
-    
-    providerSettingsMutation.mutate({ ai_provider: value });
+
+    providerSettingsMutation.mutate({
+      ai_provider: value,
+      matcher_model: defaultModel,
+      resume_parser_model: defaultModel,
+      matcher_reasoning_effort: defaultReasoningEffort,
+      resume_parser_reasoning_effort: defaultReasoningEffort,
+    });
   };
 
   const setAnthropicApiKey = (value: string) => {
