@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -141,6 +142,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   const statusConfig = STATUS_CONFIG[session.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.in_progress;
   const StatusIcon = statusConfig.icon;
@@ -353,7 +355,8 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
                     {failedLogs.map((log) => (
                       <div
                         key={log.id}
-                        className="rounded border border-red-500/20 bg-red-500/5 p-3 text-xs"
+                        onClick={() => log.jobId && router.push(`/jobs/${log.jobId}`)}
+                        className={`rounded border border-red-500/20 bg-red-500/5 p-3 text-xs cursor-pointer transition-colors hover:bg-red-500/10 hover:border-red-500/30 ${!log.jobId ? 'pointer-events-none opacity-50' : ''}`}
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className="font-medium text-white">
@@ -387,7 +390,8 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
                     {successLogs.map((log) => (
                       <div
                         key={log.id}
-                        className="rounded border border-emerald-500/10 bg-emerald-500/5 p-2.5 text-xs transition-colors hover:bg-emerald-500/10 hover:border-emerald-500/20"
+                        onClick={() => log.jobId && router.push(`/jobs/${log.jobId}`)}
+                        className={`rounded border border-emerald-500/10 bg-emerald-500/5 p-2.5 text-xs transition-colors hover:bg-emerald-500/10 hover:border-emerald-500/20 cursor-pointer ${!log.jobId ? 'pointer-events-none opacity-50' : ''}`}
                       >
                         <span className="text-zinc-200 font-medium truncate block mb-1.5" title={log.jobTitle || ""}>
                           {log.jobTitle || `Job #${log.jobId}`}

@@ -8,12 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Cpu, Settings2, Save, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AIProvider, getModelsForProvider } from "./constants";
+import { AIProvider, getModelsForProvider, modelSupportsReasoning, REASONING_EFFORT_OPTIONS, ReasoningEffort } from "./constants";
 import { useState } from "react";
 
 interface MatcherSectionProps {
   matcherModel: string;
   onMatcherModelChange: (value: string) => void;
+  matcherReasoningEffort: ReasoningEffort;
+  onMatcherReasoningEffortChange: (value: ReasoningEffort) => void;
   aiProvider: AIProvider;
   autoMatchAfterScrape: boolean;
   onAutoMatchAfterScrapeChange: (value: boolean) => void;
@@ -38,6 +40,8 @@ interface MatcherSectionProps {
 export function MatcherSection({
   matcherModel,
   onMatcherModelChange,
+  matcherReasoningEffort,
+  onMatcherReasoningEffortChange,
   aiProvider,
   autoMatchAfterScrape,
   onAutoMatchAfterScrapeChange,
@@ -60,6 +64,8 @@ export function MatcherSection({
 }: MatcherSectionProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  const supportsReasoning = modelSupportsReasoning(matcherModel, aiProvider);
+
   return (
     <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
       <CardHeader>
@@ -76,24 +82,41 @@ export function MatcherSection({
         <div className="grid gap-6">
           <div className="space-y-3">
             <Label htmlFor="model-select">AI Model</Label>
-            <Select value={matcherModel} onValueChange={onMatcherModelChange}>
-              <SelectTrigger id="model-select" className="w-full bg-zinc-950/50 border-zinc-800">
-                <SelectValue placeholder="Select model" />
-              </SelectTrigger>
-              <SelectContent>
-                {getModelsForProvider(aiProvider).map((model) => (
-                  <SelectItem key={model.id} value={model.id}>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{model.label}</span>
-                      <span className="text-zinc-600 text-xs">•</span>
-                      <span className="text-xs text-zinc-400">{model.description}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex gap-2">
+              <Select value={matcherModel} onValueChange={onMatcherModelChange}>
+                <SelectTrigger id="model-select" className="flex-1 bg-zinc-950/50 border-zinc-800">
+                  <SelectValue placeholder="Select model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {getModelsForProvider(aiProvider).map((model) => (
+                    <SelectItem key={model.id} value={model.id}>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{model.label}</span>
+                        <span className="text-zinc-600 text-xs">•</span>
+                        <span className="text-xs text-zinc-400">{model.description}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {supportsReasoning && (
+                <Select value={matcherReasoningEffort} onValueChange={onMatcherReasoningEffortChange}>
+                  <SelectTrigger className="w-32 bg-zinc-950/50 border-zinc-800">
+                    <SelectValue placeholder="Effort" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REASONING_EFFORT_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
             <p className="text-xs text-zinc-500">
               The specific model version to use for inference.
+              {supportsReasoning && " Reasoning effort controls the depth of AI analysis."}
             </p>
           </div>
 

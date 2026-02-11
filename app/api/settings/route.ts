@@ -8,6 +8,8 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   // Keep original Gemini defaults and make Google (Gemini) the default provider
   matcher_model: "gemini-3-flash-preview",
   resume_parser_model: "gemini-3-flash-preview",
+  matcher_reasoning_effort: "medium",
+  resume_parser_reasoning_effort: "medium",
   matcher_bulk_enabled: "true",
   matcher_batch_size: "2",
   matcher_max_retries: "3",
@@ -103,6 +105,14 @@ export async function POST(request: Request) {
           );
         }
         updates.push({ key, value: String(value).trim() });
+      } else if (key === "matcher_reasoning_effort" || key === "resume_parser_reasoning_effort") {
+        if (!["low", "medium", "high"].includes(String(value))) {
+          return NextResponse.json(
+            { error: `${key} must be one of: low, medium, high` },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: String(value) });
       } else if (key === "matcher_max_retries") {
         const num = parseInt(String(value), 10);
         if (isNaN(num) || num < 1 || num > 10) {

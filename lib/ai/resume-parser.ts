@@ -1,9 +1,10 @@
 import { generateText } from "ai";
 import { z } from "zod";
-import { getAIClient } from "./client";
+import { getAIClient, getAIGenerationOptions } from "./client";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { extractJSON } from "./json-parser";
 
 const ResumeDataSchema = z.object({
   name: z.string(),
@@ -107,22 +108,19 @@ IMPORTANT: You must respond with ONLY a valid JSON object in the following forma
   ]
 }`;
 
-function extractJSON(text: string): unknown {
-  // Try to extract JSON from the response
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    return JSON.parse(jsonMatch[0]);
-  }
-  throw new Error("No valid JSON found in response");
-}
-
 export async function parseResume(resumeText: string): Promise<ResumeData> {
   // Fetch configured model from settings or default to gemini-3-flash-preview
   const modelSetting = await db.query.settings.findFirst({
     where: eq(settings.key, "resume_parser_model"),
   });
+  const reasoningEffortSetting = await db.query.settings.findFirst({
+    where: eq(settings.key, "resume_parser_reasoning_effort"),
+  });
   const modelId = modelSetting?.value || "gemini-3-flash-preview";
-  const model = await getAIClient(modelId);
+  const reasoningEffort = reasoningEffortSetting?.value || "medium";
+  
+  const model = await getAIClient(modelId, reasoningEffort);
+  const providerOptions = await getAIGenerationOptions(modelId, reasoningEffort);
 
   const { text } = await generateText({
     model,
@@ -134,6 +132,7 @@ ${resumeText}
 ---
 
 Extract all relevant information including contact details, skills, work experience, and education.${JSON_FORMAT_INSTRUCTIONS}`,
+    ...providerOptions,
   });
 
   // Parse and validate the JSON response

@@ -1,18 +1,36 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createCerebras } from "@ai-sdk/cerebras";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { createGeminiProvider } from "ai-sdk-provider-gemini-cli";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { inArray } from "drizzle-orm";
+import type { LanguageModel } from "ai";
+import {
+  providerRegistry,
+  type AIProvider,
+  type AIClientSettings,
+  type ModelConfig,
+  type ProviderConfig,
+  AIError,
+} from "./providers";
 
-async function getSettingsMap(keys: string[]) {
-  const results = await db
-    .select()
-    .from(settings)
-    .where(inArray(settings.key, keys));
+/**
+ * Required setting keys for AI client configuration
+ */
+const AI_SETTING_KEYS = [
+  "ai_provider",
+  "anthropic_api_key",
+  "google_auth_mode",
+  "google_api_key",
+  "openrouter_api_key",
+  "cerebras_api_key",
+  "openai_api_key",
+] as const;
+
+/**
+ * Fetch settings from database
+ */
+async function getSettingsMap(
+  keys: readonly string[]
+): Promise<Map<string, string>> {
+  const results = await db.select().from(settings).where(inArray(settings.key, keys));
 
   const map = new Map<string, string>();
   for (const row of results) {
@@ -22,94 +40,172 @@ async function getSettingsMap(keys: string[]) {
 }
 
 /**
- * Get a configured AI model instance based on application settings.
- * Supports Anthropic (API Key) and Google Gemini (API Key or CLI).
+ * Parse AI client settings from database
  */
-export async function getAIClient(modelId: string) {
-  const settingKeys = [
-    "ai_provider",
-    "anthropic_api_key",
-    "google_auth_mode",
-    "google_api_key",
-    "openrouter_api_key",
-    "cerebras_api_key",
-    "openai_api_key",
-  ];
+async function parseAIClientSettings(): Promise<AIClientSettings> {
+  const config = await getSettingsMap(AI_SETTING_KEYS);
 
-  const config = await getSettingsMap(settingKeys);
-  const provider = config.get("ai_provider") || "anthropic";
-  const normalizedProvider =
-    provider === "google"
-      ? config.get("google_auth_mode") === "oauth"
+  const provider = (config.get("ai_provider") || "anthropic") as AIProvider;
+
+  // Normalize provider based on Google auth mode
+  let normalizedProvider: AIProvider = provider;
+  if (provider === "google") {
+    normalizedProvider =
+      config.get("google_auth_mode") === "oauth"
         ? "gemini_cli_oauth"
-        : "gemini_api_key"
-      : provider;
+        : "gemini_api_key";
+  }
 
-  const requireApiKey = (key: string | undefined, label: string) => {
-    if (!key) {
-      throw new Error(`${label} API Key is missing in settings`);
-    }
-    return key;
+  return {
+    aiProvider: normalizedProvider,
+    anthropicApiKey: config.get("anthropic_api_key"),
+    googleAuthMode:
+      (config.get("google_auth_mode") as "oauth" | "api_key") || "api_key",
+    googleApiKey: config.get("google_api_key"),
+    openrouterApiKey: config.get("openrouter_api_key"),
+    cerebrasApiKey: config.get("cerebras_api_key"),
+    openaiApiKey: config.get("openai_api_key"),
+  };
+}
+
+/**
+ * Get API key for a specific provider
+ */
+function getApiKeyForProvider(
+  settings: AIClientSettings,
+  provider: AIProvider
+): string | undefined {
+  switch (provider) {
+    case "anthropic":
+      return settings.anthropicApiKey;
+    case "gemini_api_key":
+      return settings.googleApiKey;
+    case "openai":
+      return settings.openaiApiKey;
+    case "openrouter":
+      return settings.openrouterApiKey;
+    case "cerebras":
+      return settings.cerebrasApiKey;
+    case "gemini_cli_oauth":
+      return undefined; // No API key needed for OAuth
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Get a configured AI client instance
+ * Legacy function - delegates to getAIClientV2
+ */
+export async function getAIClient(
+  modelId: string,
+  reasoningEffort?: string
+): Promise<LanguageModel> {
+  return getAIClientV2({
+    modelId,
+    reasoningEffort: reasoningEffort as "low" | "medium" | "high" | undefined,
+  });
+}
+
+/**
+ * Get a configured AI client instance with full configuration options
+ * This is the new preferred API
+ */
+export interface GetAIClientOptions {
+  modelId: string;
+  reasoningEffort?: "low" | "medium" | "high";
+}
+
+export async function getAIClientV2(
+  options: GetAIClientOptions
+): Promise<LanguageModel> {
+  const clientSettings = await parseAIClientSettings();
+  const provider = providerRegistry.get(clientSettings.aiProvider);
+
+  if (!provider) {
+    throw new AIError(
+      "provider_not_found",
+      `Provider "${clientSettings.aiProvider}" is not registered`
+    );
+  }
+
+  const apiKey = getApiKeyForProvider(clientSettings, provider.id);
+
+  const modelConfig: ModelConfig = {
+    modelId: options.modelId,
+    reasoningEffort: options.reasoningEffort,
   };
 
-  // ---------------------------------------------------------
-  // Google Gemini Provider (API Key)
-  // ---------------------------------------------------------
-  if (normalizedProvider === "gemini_api_key") {
-    const apiKey = requireApiKey(config.get("google_api_key"), "Gemini");
-    const google = createGoogleGenerativeAI({ apiKey });
-    return google(modelId);
-  }
+  const providerConfig: ProviderConfig = {
+    apiKey,
+  };
 
-  // ---------------------------------------------------------
-  // Google Gemini Provider (CLI OAuth)
-  // ---------------------------------------------------------
-  if (normalizedProvider === "gemini_cli_oauth") {
-    const google = createGeminiProvider();
-    return google(modelId);
-  }
-
-  // ---------------------------------------------------------
-  // OpenAI Provider
-  // ---------------------------------------------------------
-  if (normalizedProvider === "openai") {
-    const apiKey = requireApiKey(config.get("openai_api_key"), "OpenAI");
-    const openai = createOpenAI({ apiKey });
-    return openai(modelId);
-  }
-
-  // ---------------------------------------------------------
-  // OpenRouter Provider
-  // ---------------------------------------------------------
-  if (normalizedProvider === "openrouter") {
-    const apiKey = requireApiKey(config.get("openrouter_api_key"), "OpenRouter");
-    const openrouter = createOpenRouter({ apiKey });
-    return openrouter.chat(modelId);
-  }
-
-  // ---------------------------------------------------------
-  // Cerebras Provider
-  // ---------------------------------------------------------
-  if (normalizedProvider === "cerebras") {
-    const apiKey = requireApiKey(config.get("cerebras_api_key"), "Cerebras");
-    const cerebras = createCerebras({ apiKey });
-    return cerebras(modelId);
-  }
-
-  // ---------------------------------------------------------
-  // Anthropic Provider (Default)
-  // ---------------------------------------------------------
-  const apiKey = config.get("anthropic_api_key");
-  if (normalizedProvider === "anthropic" && !apiKey) {
-    throw new Error("Anthropic API Key is missing in settings");
-  }
-  // If no key provided, we might be in a dev env or using the proxy (legacy).
-  // But for this refactor, we enforce the key if provider is explicitly anthropic.
-  // We'll fallback to a dummy key if strictly needed for build, but runtime will fail.
-
-  const anthropic = createAnthropic({
-    apiKey: apiKey || "dummy-key-for-build",
+  return provider.createModel({
+    config: modelConfig,
+    providerConfig,
   });
-
-  return anthropic(modelId);
 }
+
+/**
+ * Get generation options for the current AI provider
+ * These options should be spread into generateText/generateObject calls
+ */
+export async function getAIGenerationOptions(
+  modelId: string,
+  reasoningEffort?: string
+): Promise<Record<string, unknown> | undefined> {
+  const clientSettings = await parseAIClientSettings();
+  const provider = providerRegistry.get(clientSettings.aiProvider);
+
+  if (!provider) {
+    return undefined;
+  }
+
+  return provider.getGenerationOptions({
+    modelId,
+    reasoningEffort: reasoningEffort as "low" | "medium" | "high",
+  });
+}
+
+/**
+ * Check if the current model supports reasoning effort
+ */
+export async function modelSupportsReasoningEffort(
+  modelId: string
+): Promise<boolean> {
+  const clientSettings = await parseAIClientSettings();
+  const provider = providerRegistry.get(clientSettings.aiProvider);
+
+  if (!provider) {
+    return false;
+  }
+
+  return provider.supportsReasoningEffort(modelId);
+}
+
+/**
+ * Legacy synchronous check for reasoning effort support
+ * Note: This doesn't account for provider-specific support
+ */
+export function modelSupportsReasoningEffortSync(modelId: string): boolean {
+  const reasoningModels = [
+    "gemini-3-",
+    "gpt-5.2",
+    "gpt-5-mini",
+    "gpt-oss-120b",
+    "qwen-3-32b",
+    "zai-glm-4.7",
+  ];
+  return reasoningModels.some((model) => modelId.includes(model));
+}
+
+/**
+ * Get the currently configured AI provider ID
+ */
+export async function getCurrentProvider(): Promise<AIProvider | undefined> {
+  const settings = await parseAIClientSettings();
+  return settings.aiProvider;
+}
+
+// Re-export provider types for convenience
+export type { AIProvider, AIClientSettings, ModelConfig } from "./providers";

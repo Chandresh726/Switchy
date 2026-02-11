@@ -17,12 +17,17 @@ import { SystemInfo } from "@/components/settings/system-info";
 import {
   AIProvider,
   getModelsForProvider,
-  getDefaultModelForProvider
+  getDefaultModelForProvider,
+  modelSupportsReasoning,
+  getDefaultReasoningEffort,
+  ReasoningEffort
 } from "@/components/settings/constants";
 
 interface MatcherSettings {
   matcher_model: string;
   resume_parser_model: string;
+  matcher_reasoning_effort: string;
+  resume_parser_reasoning_effort: string;
   matcher_bulk_enabled: string;
   matcher_batch_size: string;
   matcher_max_retries: string;
@@ -44,9 +49,11 @@ interface MatcherSettings {
   openai_api_key?: string;
 }
 
-interface LocalEdits {
+interface MatcherLocalEdits {
   matcherModel?: string;
   resumeParserModel?: string;
+  matcherReasoningEffort?: ReasoningEffort;
+  resumeParserReasoningEffort?: ReasoningEffort;
   bulkEnabled?: boolean;
   batchSize?: number;
   maxRetries?: number;
@@ -54,8 +61,9 @@ interface LocalEdits {
   timeoutMs?: number;
   circuitBreakerThreshold?: number;
   autoMatchAfterScrape?: boolean;
-  globalScrapeFrequency?: number;
-  // AI Provider Edits
+}
+
+interface ProviderLocalEdits {
   aiProvider?: string;
   anthropicApiKey?: string;
   googleApiKey?: string;
@@ -66,12 +74,18 @@ interface LocalEdits {
   googleClientSecret?: string;
 }
 
+interface ScraperLocalEdits {
+  globalScrapeFrequency?: number;
+}
+
 function SettingsContent() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const [localEdits, setLocalEdits] = useState<LocalEdits>({});
+  const [matcherLocalEdits, setMatcherLocalEdits] = useState<MatcherLocalEdits>({});
+  const [providerLocalEdits, setProviderLocalEdits] = useState<ProviderLocalEdits>({});
+  const [scraperLocalEdits, setScraperLocalEdits] = useState<ScraperLocalEdits>({});
   const [matcherSettingsSaved, setMatcherSettingsSaved] = useState(false);
   const [scraperSettingsSaved, setScraperSettingsSaved] = useState(false);
 
@@ -116,81 +130,87 @@ function SettingsContent() {
           : "gemini_api_key"
         : storedProvider;
     const currentProvider: AIProvider =
-      ((localEdits.aiProvider as AIProvider) ??
+      ((providerLocalEdits.aiProvider as AIProvider) ??
         normalizedProvider ??
         "anthropic");
 
     const defaultModel = getDefaultModelForProvider(currentProvider);
     const serverModel = settings?.matcher_model || defaultModel;
     const serverResumeModel = settings?.resume_parser_model || defaultModel;
+    const serverMatcherReasoningEffort = (settings?.matcher_reasoning_effort as ReasoningEffort) || getDefaultReasoningEffort();
+    const serverResumeParserReasoningEffort = (settings?.resume_parser_reasoning_effort as ReasoningEffort) || getDefaultReasoningEffort();
 
     return {
-      matcherModel: localEdits.matcherModel ?? serverModel,
-      resumeParserModel: localEdits.resumeParserModel ?? serverResumeModel,
-      bulkEnabled: localEdits.bulkEnabled ?? (settings?.matcher_bulk_enabled !== "false"),
-      batchSize: localEdits.batchSize ?? parseInt(settings?.matcher_batch_size || "2", 10),
-      maxRetries: localEdits.maxRetries ?? parseInt(settings?.matcher_max_retries || "3", 10),
-      concurrencyLimit: localEdits.concurrencyLimit ?? parseInt(settings?.matcher_concurrency_limit || "3", 10),
+      matcherModel: matcherLocalEdits.matcherModel ?? serverModel,
+      resumeParserModel: matcherLocalEdits.resumeParserModel ?? serverResumeModel,
+      matcherReasoningEffort: matcherLocalEdits.matcherReasoningEffort ?? serverMatcherReasoningEffort,
+      resumeParserReasoningEffort: matcherLocalEdits.resumeParserReasoningEffort ?? serverResumeParserReasoningEffort,
+      bulkEnabled: matcherLocalEdits.bulkEnabled ?? (settings?.matcher_bulk_enabled !== "false"),
+      batchSize: matcherLocalEdits.batchSize ?? parseInt(settings?.matcher_batch_size || "2", 10),
+      maxRetries: matcherLocalEdits.maxRetries ?? parseInt(settings?.matcher_max_retries || "3", 10),
+      concurrencyLimit: matcherLocalEdits.concurrencyLimit ?? parseInt(settings?.matcher_concurrency_limit || "3", 10),
       timeoutMs:
-        localEdits.timeoutMs ??
+        matcherLocalEdits.timeoutMs ??
         parseInt(settings?.matcher_timeout_ms || "30000", 10),
       circuitBreakerThreshold:
-        localEdits.circuitBreakerThreshold ??
+        matcherLocalEdits.circuitBreakerThreshold ??
         parseInt(settings?.matcher_circuit_breaker_threshold || "10", 10),
       autoMatchAfterScrape:
-        localEdits.autoMatchAfterScrape ??
+        matcherLocalEdits.autoMatchAfterScrape ??
         (settings?.matcher_auto_match_after_scrape !== "false"),
       globalScrapeFrequency:
-        localEdits.globalScrapeFrequency ??
+        scraperLocalEdits.globalScrapeFrequency ??
         parseInt(settings?.global_scrape_frequency || "6", 10),
       // Provider
       aiProvider: currentProvider,
-      anthropicApiKey: localEdits.anthropicApiKey ?? (settings?.anthropic_api_key || ""),
-      googleApiKey: localEdits.googleApiKey ?? (settings?.google_api_key || ""),
-      openaiApiKey: localEdits.openaiApiKey ?? (settings?.openai_api_key || ""),
-      openrouterApiKey: localEdits.openrouterApiKey ?? (settings?.openrouter_api_key || ""),
-      cerebrasApiKey: localEdits.cerebrasApiKey ?? (settings?.cerebras_api_key || ""),
-      // googleClientId: localEdits.googleClientId ?? (settings?.google_client_id || ""),
-      // googleClientSecret: localEdits.googleClientSecret ?? (settings?.google_client_secret || ""),
+      anthropicApiKey: providerLocalEdits.anthropicApiKey ?? (settings?.anthropic_api_key || ""),
+      googleApiKey: providerLocalEdits.googleApiKey ?? (settings?.google_api_key || ""),
+      openaiApiKey: providerLocalEdits.openaiApiKey ?? (settings?.openai_api_key || ""),
+      openrouterApiKey: providerLocalEdits.openrouterApiKey ?? (settings?.openrouter_api_key || ""),
+      cerebrasApiKey: providerLocalEdits.cerebrasApiKey ?? (settings?.cerebras_api_key || ""),
     };
-  }, [settings, localEdits]);
+  }, [settings, matcherLocalEdits, providerLocalEdits, scraperLocalEdits]);
 
   const {
-    matcherModel, resumeParserModel, bulkEnabled, batchSize, maxRetries, concurrencyLimit, timeoutMs,
+    matcherModel, resumeParserModel, matcherReasoningEffort, resumeParserReasoningEffort, bulkEnabled, batchSize, maxRetries, concurrencyLimit, timeoutMs,
     circuitBreakerThreshold, autoMatchAfterScrape, globalScrapeFrequency, aiProvider, anthropicApiKey,
     googleApiKey, openaiApiKey, openrouterApiKey, cerebrasApiKey
   } = derivedValues;
 
-  const scraperHasUnsavedChanges = localEdits.globalScrapeFrequency !== undefined;
+  const scraperHasUnsavedChanges = scraperLocalEdits.globalScrapeFrequency !== undefined;
   const matcherHasUnsavedChanges =
-    localEdits.matcherModel !== undefined ||
-    localEdits.resumeParserModel !== undefined ||
-    localEdits.bulkEnabled !== undefined ||
-    localEdits.batchSize !== undefined ||
-    localEdits.maxRetries !== undefined ||
-    localEdits.concurrencyLimit !== undefined ||
-    localEdits.timeoutMs !== undefined ||
-    localEdits.circuitBreakerThreshold !== undefined ||
-    localEdits.autoMatchAfterScrape !== undefined;
+    matcherLocalEdits.matcherModel !== undefined ||
+    matcherLocalEdits.resumeParserModel !== undefined ||
+    matcherLocalEdits.matcherReasoningEffort !== undefined ||
+    matcherLocalEdits.resumeParserReasoningEffort !== undefined ||
+    matcherLocalEdits.bulkEnabled !== undefined ||
+    matcherLocalEdits.batchSize !== undefined ||
+    matcherLocalEdits.maxRetries !== undefined ||
+    matcherLocalEdits.concurrencyLimit !== undefined ||
+    matcherLocalEdits.timeoutMs !== undefined ||
+    matcherLocalEdits.circuitBreakerThreshold !== undefined ||
+    matcherLocalEdits.autoMatchAfterScrape !== undefined;
 
-  // Setters
-  const setMatcherModel = (value: string) => setLocalEdits(prev => ({ ...prev, matcherModel: value }));
-  const setResumeParserModel = (value: string) => setLocalEdits(prev => ({ ...prev, resumeParserModel: value }));
-  const setBulkEnabled = (value: boolean) => setLocalEdits(prev => ({ ...prev, bulkEnabled: value }));
+  // Setters for Matcher settings
+  const setMatcherModel = (value: string) => setMatcherLocalEdits(prev => ({ ...prev, matcherModel: value }));
+  const setResumeParserModel = (value: string) => setMatcherLocalEdits(prev => ({ ...prev, resumeParserModel: value }));
+  const setMatcherReasoningEffort = (value: ReasoningEffort) => setMatcherLocalEdits(prev => ({ ...prev, matcherReasoningEffort: value }));
+  const setResumeParserReasoningEffort = (value: ReasoningEffort) => setMatcherLocalEdits(prev => ({ ...prev, resumeParserReasoningEffort: value }));
+  const setBulkEnabled = (value: boolean) => setMatcherLocalEdits(prev => ({ ...prev, bulkEnabled: value }));
   const setBatchSize = (value: number) =>
-    setLocalEdits((prev) => ({ ...prev, batchSize: value }));
+    setMatcherLocalEdits((prev) => ({ ...prev, batchSize: value }));
   const setMaxRetries = (value: number) =>
-    setLocalEdits((prev) => ({ ...prev, maxRetries: value }));
+    setMatcherLocalEdits((prev) => ({ ...prev, maxRetries: value }));
   const setConcurrencyLimit = (value: number) =>
-    setLocalEdits((prev) => ({ ...prev, concurrencyLimit: value }));
+    setMatcherLocalEdits((prev) => ({ ...prev, concurrencyLimit: value }));
   const setTimeoutMs = (value: number) =>
-    setLocalEdits((prev) => ({ ...prev, timeoutMs: value }));
+    setMatcherLocalEdits((prev) => ({ ...prev, timeoutMs: value }));
   const setCircuitBreakerThreshold = (value: number) =>
-    setLocalEdits((prev) => ({ ...prev, circuitBreakerThreshold: value }));
+    setMatcherLocalEdits((prev) => ({ ...prev, circuitBreakerThreshold: value }));
   const setAutoMatchAfterScrape = (value: boolean) =>
-    setLocalEdits((prev) => ({ ...prev, autoMatchAfterScrape: value }));
+    setMatcherLocalEdits((prev) => ({ ...prev, autoMatchAfterScrape: value }));
   const setGlobalScrapeFrequency = (value: number) =>
-    setLocalEdits((prev) => ({ ...prev, globalScrapeFrequency: value }));
+    setScraperLocalEdits((prev) => ({ ...prev, globalScrapeFrequency: value }));
   const providerSettingsMutation = useMutation({
     mutationFn: async (updates: Partial<MatcherSettings>) => {
       const res = await fetch("/api/settings", {
@@ -203,6 +223,15 @@ function SettingsContent() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
+      setProviderLocalEdits((prev) => ({
+        ...prev,
+        aiProvider: undefined,
+        anthropicApiKey: undefined,
+        googleApiKey: undefined,
+        openaiApiKey: undefined,
+        openrouterApiKey: undefined,
+        cerebrasApiKey: undefined,
+      }));
     },
     onError: () => {
       toast.error("Failed to save AI provider settings");
@@ -210,46 +239,42 @@ function SettingsContent() {
   });
 
   const setAiProvider = (value: string) => {
-    setLocalEdits((prev) => {
-      const models = getModelsForProvider(value);
-      const defaultModelId = getDefaultModelForProvider(value);
-
-      const ensureModelForProvider = (current?: string) =>
-        current && models.some((m) => m.id === current) ? current : defaultModelId;
-
-      return {
-        ...prev,
-        aiProvider: value,
-        matcherModel: ensureModelForProvider(prev.matcherModel),
-        resumeParserModel: ensureModelForProvider(prev.resumeParserModel),
-      };
-    });
-
+    setProviderLocalEdits((prev) => ({ ...prev, aiProvider: value }));
+    
+    // When provider changes, update models to the new provider's defaults
+    const newProvider = value as AIProvider;
+    const defaultModel = getDefaultModelForProvider(newProvider);
+    setMatcherLocalEdits(prev => ({ 
+      ...prev, 
+      matcherModel: defaultModel,
+      resumeParserModel: defaultModel 
+    }));
+    
     providerSettingsMutation.mutate({ ai_provider: value });
   };
 
   const setAnthropicApiKey = (value: string) => {
-    setLocalEdits(prev => ({ ...prev, anthropicApiKey: value }));
+    setProviderLocalEdits(prev => ({ ...prev, anthropicApiKey: value }));
     providerSettingsMutation.mutate({ anthropic_api_key: value });
   };
 
   const setGoogleApiKey = (value: string) => {
-    setLocalEdits(prev => ({ ...prev, googleApiKey: value }));
+    setProviderLocalEdits(prev => ({ ...prev, googleApiKey: value }));
     providerSettingsMutation.mutate({ google_api_key: value });
   };
 
   const setOpenaiApiKey = (value: string) => {
-    setLocalEdits(prev => ({ ...prev, openaiApiKey: value }));
+    setProviderLocalEdits(prev => ({ ...prev, openaiApiKey: value }));
     providerSettingsMutation.mutate({ openai_api_key: value });
   };
 
   const setOpenrouterApiKey = (value: string) => {
-    setLocalEdits(prev => ({ ...prev, openrouterApiKey: value }));
+    setProviderLocalEdits(prev => ({ ...prev, openrouterApiKey: value }));
     providerSettingsMutation.mutate({ openrouter_api_key: value });
   };
 
   const setCerebrasApiKey = (value: string) => {
-    setLocalEdits(prev => ({ ...prev, cerebrasApiKey: value }));
+    setProviderLocalEdits(prev => ({ ...prev, cerebrasApiKey: value }));
     providerSettingsMutation.mutate({ cerebras_api_key: value });
   };
 
@@ -302,6 +327,8 @@ function SettingsContent() {
         body: JSON.stringify({
           matcher_model: matcherModel,
           resume_parser_model: resumeParserModel,
+          matcher_reasoning_effort: matcherReasoningEffort,
+          resume_parser_reasoning_effort: resumeParserReasoningEffort,
           matcher_bulk_enabled: bulkEnabled,
           matcher_batch_size: batchSize,
           matcher_max_retries: maxRetries,
@@ -316,10 +343,12 @@ function SettingsContent() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
-      setLocalEdits((prev) => ({
+      setMatcherLocalEdits((prev) => ({
         ...prev,
         matcherModel: undefined,
         resumeParserModel: undefined,
+        matcherReasoningEffort: undefined,
+        resumeParserReasoningEffort: undefined,
         bulkEnabled: undefined,
         batchSize: undefined,
         maxRetries: undefined,
@@ -349,7 +378,7 @@ function SettingsContent() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
-      setLocalEdits((prev) => ({
+      setScraperLocalEdits((prev) => ({
         ...prev,
         globalScrapeFrequency: undefined,
       }));
@@ -415,6 +444,8 @@ function SettingsContent() {
           <MatcherSection
             matcherModel={matcherModel}
             onMatcherModelChange={setMatcherModel}
+            matcherReasoningEffort={matcherReasoningEffort}
+            onMatcherReasoningEffortChange={setMatcherReasoningEffort}
             aiProvider={aiProvider}
             autoMatchAfterScrape={autoMatchAfterScrape}
             onAutoMatchAfterScrapeChange={setAutoMatchAfterScrape}
@@ -467,6 +498,8 @@ function SettingsContent() {
           <ResumeParserSection
             resumeParserModel={resumeParserModel}
             onResumeParserModelChange={setResumeParserModel}
+            resumeParserReasoningEffort={resumeParserReasoningEffort}
+            onResumeParserReasoningEffortChange={setResumeParserReasoningEffort}
             aiProvider={aiProvider}
           />
 
