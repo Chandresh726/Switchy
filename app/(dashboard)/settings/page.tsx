@@ -286,7 +286,12 @@ function SettingsContent() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries();
-      toast.success("Jobs refreshed successfully");
+      toast.success("Jobs refreshed successfully", {
+        action: {
+          label: "Details",
+          onClick: () => router.push("/history")
+        }
+      });
     },
     onError: () => toast.error("Failed to refresh jobs"),
   });
@@ -409,7 +414,12 @@ function SettingsContent() {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["unmatched-jobs-count"] });
       queryClient.invalidateQueries({ queryKey: ["match-history"] });
-      toast.success(`Matched ${data.matched} jobs`);
+      toast.success(`Matched ${data.matched} jobs`, {
+        action: {
+          label: "Details",
+          onClick: () => router.push("/history")
+        }
+      });
     },
     onError: () => toast.error("Failed to start matching"),
   });

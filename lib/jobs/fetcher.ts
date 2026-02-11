@@ -267,6 +267,7 @@ export async function fetchJobsForCompany(
           locationType: job.locationType,
           department: job.department,
           description: job.description,
+          descriptionFormat: job.descriptionFormat ?? "plain",
           salary: job.salary,
           employmentType: job.employmentType,
           postedDate: job.postedDate,

@@ -10,7 +10,7 @@ import {
   JOB_MATCHING_USER_PROMPT,
 } from "../prompts";
 import { generateStructured } from "./generation";
-import { extractRequirements, htmlToText, getJobDescriptionForMatching } from "./utils";
+import { extractRequirements, htmlToText } from "./utils";
 import { getMatcherSettings } from "./settings";
 import { calculateJobMatch } from "./single";
 import {
@@ -215,7 +215,7 @@ async function failAllJobsNoProfile(
  */
 async function processJobWithTracking(
   jobId: number,
-  jobsMap: Map<number, { id: number; title: string; description: string | null; cleanDescription: string | null }>,
+  jobsMap: Map<number, { id: number; title: string; description: string | null }>,
   profileData: NonNullable<Awaited<ReturnType<typeof fetchProfileData>>>,
   aiModel: Awaited<ReturnType<typeof getAIClient>>,
   providerOptions: Record<string, unknown> | undefined,
@@ -262,7 +262,7 @@ async function processJobWithTracking(
       );
 
       // Success - update job and log
-      await updateJobWithResult(job.id, job.description, job.cleanDescription, result);
+      await updateJobWithResult(job.id, result);
       await logMatchSuccess(sessionId, jobId, result.score, attemptCount, Date.now() - startTime, settings.model);
 
       return { success: true };
@@ -307,14 +307,14 @@ async function processJobWithTracking(
  * Execute a single match attempt
  */
 async function executeMatchAttempt(
-  job: { id: number; title: string; description: string | null; cleanDescription: string | null },
+  job: { id: number; title: string; description: string | null },
   profileData: NonNullable<Awaited<ReturnType<typeof fetchProfileData>>>,
   aiModel: Awaited<ReturnType<typeof getAIClient>>,
   providerOptions: Record<string, unknown> | undefined,
   settings: Awaited<ReturnType<typeof getMatcherSettings>>,
   circuitBreaker: ReturnType<typeof getMatcherCircuitBreaker>
 ): Promise<MatchResult> {
-  const sourceDescription = getJobDescriptionForMatching(job);
+  const sourceDescription = job.description || "";
   const jobRequirements = extractRequirements(htmlToText(sourceDescription));
 
   const userPrompt = JOB_MATCHING_USER_PROMPT(job.title, sourceDescription, jobRequirements, {
@@ -354,15 +354,10 @@ async function executeMatchAttempt(
  */
 async function updateJobWithResult(
   jobId: number,
-  description: string | null,
-  cleanDescription: string | null,
   result: MatchResult
 ): Promise<void> {
-  const sourceDescription = description || cleanDescription || "";
-
   await db.update(jobs).set({
     matchScore: result.score,
-    cleanDescription: htmlToText(sourceDescription),
     matchReasons: JSON.stringify(result.reasons),
     matchedSkills: JSON.stringify(result.matchedSkills),
     missingSkills: JSON.stringify(result.missingSkills),

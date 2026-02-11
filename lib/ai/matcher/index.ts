@@ -22,7 +22,7 @@ export {
 } from "./tracking";
 
 // Re-export utilities
-export { extractRequirements, htmlToText, getJobDescriptionForMatching, chunkArray } from "./utils";
+export { extractRequirements, htmlToText, chunkArray } from "./utils";
 
 // Re-export error handling
 export { categorizeError, isRetryableError, createMatcherError } from "./errors";

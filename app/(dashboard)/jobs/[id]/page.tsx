@@ -21,39 +21,10 @@ import {
   CheckCircle,
 } from "lucide-react";
 
-/**
- * Convert HTML to readable text with proper formatting
- */
-function htmlToText(html: string): string {
-  const text = html
-    .replace(/<\/(p|div|h[1-6]|li|br|tr)>/gi, "\n\n")
-    .replace(/<(p|div|h[1-6]|li|tr)[^>]*>/gi, "")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<li[^>]*>/gi, "• ")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&#x27;/g, "'")
-    .replace(/&#x2F;/g, "/")
-    .replace(/&apos;/g, "'")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n[ \t]+/g, "\n")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
-  return text;
-}
-
 interface Job {
   id: number;
   title: string;
   description: string | null;
-  cleanDescription: string | null;
   url: string;
   location: string | null;
   locationType: string | null;
@@ -416,11 +387,11 @@ export default function JobDetailPage() {
       )}
 
       {/* Description */}
-      {(job.cleanDescription || job.description) && (
+      {job.description && (
         <div className="pb-8">
           <h2 className="mb-4 text-lg font-medium text-white">Job Description</h2>
           <p className="whitespace-pre-wrap text-sm text-zinc-300 leading-relaxed">
-            {job.cleanDescription || htmlToText(job.description || "")}
+            {job.description}
           </p>
         </div>
       )}

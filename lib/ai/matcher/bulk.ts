@@ -8,7 +8,7 @@ import {
   BULK_JOB_MATCHING_USER_PROMPT,
 } from "../prompts";
 import { generateStructured } from "./generation";
-import { extractRequirements, htmlToText, getJobDescriptionForMatching, chunkArray } from "./utils";
+import { extractRequirements, htmlToText, chunkArray } from "./utils";
 import { getMatcherSettings } from "./settings";
 import {
   type MatchResult,
@@ -183,7 +183,7 @@ async function fetchProfileData(): Promise<{
  */
 async function processBatch(
   batch: number[],
-  jobsMap: Map<number, { id: number; title: string; description: string | null; cleanDescription: string | null }>,
+  jobsMap: Map<number, { id: number; title: string; description: string | null }>,
   profileData: NonNullable<Awaited<ReturnType<typeof fetchProfileData>>>,
   aiModel: Awaited<ReturnType<typeof getAIClient>>,
   providerOptions: Record<string, unknown> | undefined,
@@ -196,7 +196,7 @@ async function processBatch(
     .map((jobId) => {
       const job = jobsMap.get(jobId);
       if (!job) return null;
-      const sourceDescription = getJobDescriptionForMatching(job);
+      const sourceDescription = job.description || "";
       return {
         id: job.id,
         title: job.title,
@@ -300,16 +300,12 @@ async function processBatch(
  */
 async function updateJobWithBulkResult(
   result: BulkMatchResult,
-  jobsMap: Map<number, { description: string | null; cleanDescription: string | null }>
+  jobsMap: Map<number, { description: string | null }>
 ): Promise<void> {
-  const job = jobsMap.get(result.jobId);
-  const cleanDesc = job ? htmlToText(getJobDescriptionForMatching(job)) : null;
-
   await db
     .update(jobs)
     .set({
       matchScore: result.score,
-      cleanDescription: cleanDesc,
       matchReasons: JSON.stringify(result.reasons),
       matchedSkills: JSON.stringify(result.matchedSkills),
       missingSkills: JSON.stringify(result.missingSkills),

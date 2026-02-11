@@ -8,7 +8,7 @@ import {
   JOB_MATCHING_SYSTEM_PROMPT,
   JOB_MATCHING_USER_PROMPT,
 } from "../prompts";
-import { extractRequirements, htmlToText, getJobDescriptionForMatching } from "./utils";
+import { extractRequirements, htmlToText } from "./utils";
 import { generateStructured } from "./generation";
 import {
   type MatchResult,
@@ -57,7 +57,7 @@ export async function calculateJobMatch(
     db.select().from(experience).where(eq(experience.profileId, userProfile.id)),
   ]);
 
-  const sourceDescription = getJobDescriptionForMatching(job);
+  const sourceDescription = job.description || "";
   const jobRequirements = extractRequirements(htmlToText(sourceDescription));
 
   const userPrompt = JOB_MATCHING_USER_PROMPT(
@@ -104,7 +104,7 @@ export async function calculateJobMatch(
   );
 
   // Update job with match results
-  await updateJobWithMatchResult(jobId, sourceDescription, matchResult);
+  await updateJobWithMatchResult(jobId, matchResult);
 
   return matchResult;
 }
@@ -163,14 +163,12 @@ async function executeMatchWithResilience(
  */
 async function updateJobWithMatchResult(
   jobId: number,
-  sourceDescription: string,
   result: MatchResult
 ): Promise<void> {
   await db
     .update(jobs)
     .set({
       matchScore: result.score,
-      cleanDescription: htmlToText(sourceDescription),
       matchReasons: JSON.stringify(result.reasons),
       matchedSkills: JSON.stringify(result.matchedSkills),
       missingSkills: JSON.stringify(result.missingSkills),

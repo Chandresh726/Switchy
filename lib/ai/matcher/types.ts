@@ -135,7 +135,6 @@ export interface JobData {
   id: number;
   title: string;
   description: string | null;
-  cleanDescription: string | null;
 }
 
 /**

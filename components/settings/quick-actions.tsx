@@ -51,11 +51,6 @@ export function QuickActions({
             <RefreshCw className={cn("mr-2 h-4 w-4", isRefreshing && "animate-spin")} />
             {isRefreshing ? "Refreshing..." : "Refresh Jobs"}
           </Button>
-          {isRefreshSuccess && (
-            <p className="text-xs text-emerald-400 text-center animate-in fade-in slide-in-from-top-1">
-              Jobs refreshed successfully
-            </p>
-          )}
         </div>
 
         <div className="space-y-2">
@@ -76,11 +71,6 @@ export function QuickActions({
               </Badge>
             )}
           </Button>
-          {isMatchSuccess && matchedCount !== undefined && (
-            <p className="text-xs text-emerald-400 text-center animate-in fade-in slide-in-from-top-1">
-              Matched {matchedCount} jobs
-            </p>
-          )}
         </div>
       </CardContent>
     </Card>

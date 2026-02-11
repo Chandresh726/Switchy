@@ -99,6 +99,7 @@ export class LeverScraper extends AbstractScraper {
         department: job.categories?.team || job.categories?.department,
         employmentType: job.categories?.commitment,
         description: job.descriptionPlain,
+        descriptionFormat: "plain" as const,
         postedDate: job.createdAt ? new Date(job.createdAt) : undefined,
       };
     });

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MatchBadge } from "./match-badge";
 import { ApplyButton } from "./apply-button";
+import { MarkdownRenderer } from "./markdown-renderer";
 import {
   Building2,
   Calendar,
@@ -18,45 +19,11 @@ import {
   Loader2,
 } from "lucide-react";
 
-/**
- * Convert HTML to readable text with proper formatting
- */
-function htmlToText(html: string): string {
-  // First, add line breaks before block elements to preserve structure
-  const text = html
-    // Add double newlines before major block elements
-    .replace(/<\/(p|div|h[1-6]|li|br|tr)>/gi, "\n\n")
-    .replace(/<(p|div|h[1-6]|li|tr)[^>]*>/gi, "")
-    .replace(/<br\s*\/?>/gi, "\n")
-    // Handle list items
-    .replace(/<li[^>]*>/gi, "• ")
-    // Remove all remaining HTML tags
-    .replace(/<[^>]+>/g, "")
-    // Decode HTML entities
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&#x27;/g, "'")
-    .replace(/&#x2F;/g, "/")
-    .replace(/&apos;/g, "'")
-    // Clean up whitespace
-    .replace(/[ \t]+/g, " ")           // Multiple spaces/tabs to single space
-    .replace(/\n[ \t]+/g, "\n")        // Remove leading spaces on lines
-    .replace(/[ \t]+\n/g, "\n")        // Remove trailing spaces on lines
-    .replace(/\n{3,}/g, "\n\n")        // Max 2 consecutive newlines
-    .trim();
-
-  return text;
-}
-
 interface Job {
   id: number;
   title: string;
   description: string | null;
-  cleanDescription: string | null;
+  descriptionFormat: "markdown" | "plain" | "html";
   url: string;
   location: string | null;
   locationType: string | null;
@@ -312,12 +279,13 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
           </div>
 
           {/* Description */}
-          {(job.cleanDescription || job.description) && (
+          {job.description && (
             <div>
               <h3 className="mb-3 text-lg font-medium text-white">Description</h3>
-              <p className="whitespace-pre-wrap text-sm text-zinc-300 leading-relaxed">
-                {job.cleanDescription || htmlToText(job.description || "")}
-              </p>
+              <MarkdownRenderer
+                content={job.description}
+                className="text-sm text-zinc-300"
+              />
             </div>
           )}
         </div>

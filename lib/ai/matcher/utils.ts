@@ -59,17 +59,6 @@ export function htmlToText(html: string): string {
 }
 
 /**
- * Get job description for matching
- * Prefers raw scraped description, falls back to clean description
- */
-export function getJobDescriptionForMatching(job: {
-  description: string | null;
-  cleanDescription: string | null;
-}): string {
-  return job.description || job.cleanDescription || "";
-}
-
-/**
  * Split array into chunks of specified size
  */
 export function chunkArray<T>(array: T[], size: number): T[][] {

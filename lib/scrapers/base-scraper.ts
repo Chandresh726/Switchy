@@ -6,6 +6,7 @@ export interface ScrapedJob {
   locationType?: "remote" | "hybrid" | "onsite";
   department?: string;
   description?: string;
+  descriptionFormat?: "markdown" | "plain" | "html";
   salary?: string;
   employmentType?: string;
   postedDate?: Date;

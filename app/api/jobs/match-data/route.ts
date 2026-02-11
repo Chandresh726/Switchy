@@ -23,7 +23,6 @@ export async function DELETE() {
         matchedSkills: null,
         missingSkills: null,
         recommendations: null,
-        cleanDescription: null,
         updatedAt: new Date(),
       });
 

@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
       conditions.push(
         or(
           like(jobs.title, `%${search}%`),
-          like(jobs.cleanDescription, `%${search}%`)
+          like(jobs.description, `%${search}%`)
         )
       );
     }
