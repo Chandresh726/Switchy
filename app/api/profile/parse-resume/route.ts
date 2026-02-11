@@ -74,32 +74,39 @@ export async function POST(request: NextRequest) {
     }
 
     // Atomically determine version, clear isCurrent, and insert new resume
-    const resumeRecord = await db.transaction(async (tx) => {
-      // Determine version number
-      const lastResume = await tx.query.resumes.findFirst({
-        where: eq(resumes.profileId, currentProfile.id),
-        orderBy: [desc(resumes.version)],
-      });
+    const resumeRecord = db.transaction((tx) => {
+      // Determine version number using core query API
+      const lastResume = tx
+        .select({ version: resumes.version })
+        .from(resumes)
+        .where(eq(resumes.profileId, currentProfile.id))
+        .orderBy(desc(resumes.version))
+        .get();
 
       const nextVersion = (lastResume?.version || 0) + 1;
 
       // Mark all previous resumes as not current
       if (nextVersion > 1) {
-        await tx
+        tx
           .update(resumes)
           .set({ isCurrent: false })
-          .where(eq(resumes.profileId, currentProfile.id));
+          .where(eq(resumes.profileId, currentProfile.id))
+          .run();
       }
 
       // Save resume record
-      const [record] = await tx.insert(resumes).values({
-        profileId: currentProfile.id,
-        fileName: file.name,
-        filePath: savedFile.path,
-        parsedData: JSON.stringify(parsedData),
-        version: nextVersion,
-        isCurrent: true, // Mark as current by default for now
-      }).returning();
+      const record = tx
+        .insert(resumes)
+        .values({
+          profileId: currentProfile.id,
+          fileName: file.name,
+          filePath: savedFile.path,
+          parsedData: JSON.stringify(parsedData),
+          version: nextVersion,
+          isCurrent: true,
+        })
+        .returning()
+        .get();
 
       return record;
     });

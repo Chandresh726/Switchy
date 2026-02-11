@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { companies, jobs, scrapingLogs, scrapeSessions, profile } from "@/lib/db/schema";
+import { companies, jobs, scrapingLogs, scrapeSessions, settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { scraperRegistry } from "@/lib/scrapers/registry";
 import { batchDeduplicateJobs } from "./deduplicator";
@@ -90,6 +90,26 @@ function matchesPreferredCountry(
     const regex = new RegExp(`\\b${variant}\\b`, "i");
     return regex.test(locationLower);
   });
+}
+
+/**
+ * Check if a job location matches the preferred city.
+ * Returns true if:
+ * - No preferred city is specified
+ * - Location contains the preferred city name (case-insensitive)
+ */
+function matchesPreferredCity(
+  location: string | undefined,
+  preferredCity: string
+): boolean {
+  if (!preferredCity) return true; // No city filter = allow all
+  if (!location) return false;
+
+  const locationLower = location.toLowerCase().trim();
+  const cityLower = preferredCity.toLowerCase().trim();
+
+  // Check if location contains the city name
+  return locationLower.includes(cityLower);
 }
 
 export interface FetchResult {
@@ -234,21 +254,36 @@ export async function fetchJobsForCompany(
       newJobs.some((nj) => nj.externalId === j.externalId)
     );
 
-    // Filter by preferred country if set in profile
-    const [userProfile] = await db.select().from(profile).limit(1);
-    const preferredCountry = userProfile?.preferredCountry;
+    // Filter by preferred country and city if set in settings
+    const filterCountrySetting = await db.select().from(settings).where(eq(settings.key, "scraper_filter_country"));
+    const filterCitySetting = await db.select().from(settings).where(eq(settings.key, "scraper_filter_city"));
+    const filterCountry = filterCountrySetting[0]?.value || "";
+    const filterCity = filterCitySetting[0]?.value || "";
     let jobsFilteredOut = 0;
+    let countryFilteredOut = 0;
+    let cityFilteredOut = 0;
 
-    if (preferredCountry) {
+    if (filterCountry || filterCity) {
       const originalCount = newJobsToInsert.length;
-      newJobsToInsert = newJobsToInsert.filter((job) =>
-        matchesPreferredCountry(job.location, preferredCountry)
-      );
+
+      newJobsToInsert = newJobsToInsert.filter((job) => {
+        const matchesCountry = !filterCountry || matchesPreferredCountry(job.location, filterCountry);
+        const matchesCity = matchesPreferredCity(job.location, filterCity);
+
+        if (!matchesCountry) countryFilteredOut++;
+        if (matchesCountry && !matchesCity) cityFilteredOut++;
+
+        return matchesCountry && matchesCity;
+      });
+
       jobsFilteredOut = originalCount - newJobsToInsert.length;
 
       if (jobsFilteredOut > 0) {
+        const filterReasons = [];
+        if (filterCountry) filterReasons.push(`country: ${filterCountry}`);
+        if (filterCity) filterReasons.push(`city: ${filterCity}`);
         console.log(
-          `[Filter] Filtered out ${jobsFilteredOut}/${originalCount} jobs not matching preferred country: ${preferredCountry}`
+          `[Filter] Filtered out ${jobsFilteredOut}/${originalCount} jobs not matching preferred ${filterReasons.join(', ')} (country: ${countryFilteredOut}, city: ${cityFilteredOut})`
         );
       }
     }

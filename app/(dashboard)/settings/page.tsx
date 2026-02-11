@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 
 import { AIProviderSection } from "@/components/settings/ai-provider-section";
 import { MatcherSection } from "@/components/settings/matcher-section";
-import { ScraperSection } from "@/components/settings/scraper-section";
+import { ScraperSettings } from "@/components/settings/scraper-settings";
 import { DangerZone } from "@/components/settings/danger-zone";
 import { QuickActions } from "@/components/settings/quick-actions";
 import { ResumeParserSection } from "@/components/settings/resume-parser-section";
@@ -34,6 +34,8 @@ interface MatcherSettings {
   matcher_circuit_breaker_threshold: string;
   matcher_auto_match_after_scrape: string;
   global_scrape_frequency: string;
+  scraper_filter_country?: string;
+  scraper_filter_city?: string;
   // AI Provider Settings
   ai_provider?: string;
   anthropic_api_key?: string;
@@ -74,6 +76,8 @@ interface ProviderLocalEdits {
 
 interface ScraperLocalEdits {
   globalScrapeFrequency?: number;
+  filterCountry?: string;
+  filterCity?: string;
 }
 
 function SettingsContent() {
@@ -159,6 +163,8 @@ function SettingsContent() {
       globalScrapeFrequency:
         scraperLocalEdits.globalScrapeFrequency ??
         parseInt(settings?.global_scrape_frequency || "6", 10),
+      filterCountry: scraperLocalEdits.filterCountry ?? (settings?.scraper_filter_country || "India"),
+      filterCity: scraperLocalEdits.filterCity ?? (settings?.scraper_filter_city || ""),
       // Provider
       aiProvider: currentProvider,
       anthropicApiKey: providerLocalEdits.anthropicApiKey ?? (settings?.anthropic_api_key || ""),
@@ -171,11 +177,14 @@ function SettingsContent() {
 
   const {
     matcherModel, resumeParserModel, matcherReasoningEffort, resumeParserReasoningEffort, bulkEnabled, batchSize, maxRetries, concurrencyLimit, timeoutMs,
-    circuitBreakerThreshold, autoMatchAfterScrape, globalScrapeFrequency, aiProvider, anthropicApiKey,
+    circuitBreakerThreshold, autoMatchAfterScrape, globalScrapeFrequency, filterCountry, filterCity, aiProvider, anthropicApiKey,
     googleApiKey, openaiApiKey, openrouterApiKey, cerebrasApiKey
   } = derivedValues;
 
-  const scraperHasUnsavedChanges = scraperLocalEdits.globalScrapeFrequency !== undefined;
+  const scraperHasUnsavedChanges =
+    scraperLocalEdits.globalScrapeFrequency !== undefined ||
+    scraperLocalEdits.filterCountry !== undefined ||
+    scraperLocalEdits.filterCity !== undefined;
   const matcherHasUnsavedChanges =
     matcherLocalEdits.matcherModel !== undefined ||
     matcherLocalEdits.resumeParserModel !== undefined ||
@@ -209,6 +218,10 @@ function SettingsContent() {
     setMatcherLocalEdits((prev) => ({ ...prev, autoMatchAfterScrape: value }));
   const setGlobalScrapeFrequency = (value: number) =>
     setScraperLocalEdits((prev) => ({ ...prev, globalScrapeFrequency: value }));
+  const setFilterCountry = (value: string) =>
+    setScraperLocalEdits((prev) => ({ ...prev, filterCountry: value }));
+  const setFilterCity = (value: string) =>
+    setScraperLocalEdits((prev) => ({ ...prev, filterCity: value }));
   const providerSettingsMutation = useMutation({
     mutationFn: async (updates: Partial<MatcherSettings>) => {
       const res = await fetch("/api/settings", {
@@ -406,6 +419,8 @@ function SettingsContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           global_scrape_frequency: globalScrapeFrequency,
+          scraper_filter_country: filterCountry,
+          scraper_filter_city: filterCity,
         }),
       });
       if (!res.ok) throw new Error("Failed to save scraper settings");
@@ -416,6 +431,8 @@ function SettingsContent() {
       setScraperLocalEdits((prev) => ({
         ...prev,
         globalScrapeFrequency: undefined,
+        filterCountry: undefined,
+        filterCity: undefined,
       }));
       setScraperSettingsSaved(true);
       setTimeout(() => setScraperSettingsSaved(false), 3000);
@@ -520,9 +537,13 @@ function SettingsContent() {
 
         {/* Right Column: Actions & Info */}
         <div className="space-y-6">
-          <ScraperSection
+          <ScraperSettings
             globalScrapeFrequency={globalScrapeFrequency}
             onGlobalScrapeFrequencyChange={setGlobalScrapeFrequency}
+            filterCountry={filterCountry}
+            filterCity={filterCity}
+            onFilterCountryChange={setFilterCountry}
+            onFilterCityChange={setFilterCity}
             onSave={() => scraperSettingsMutation.mutate()}
             isSaving={scraperSettingsMutation.isPending}
             hasUnsavedChanges={scraperHasUnsavedChanges}
