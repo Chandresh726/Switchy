@@ -32,7 +32,7 @@ export function SystemInfo() {
           <Label className="text-xs text-zinc-500">Database</Label>
           <div className="flex items-center gap-2 rounded-md bg-zinc-950/50 border border-zinc-800 px-3 py-2">
             <Database className="h-3.5 w-3.5 text-zinc-500" />
-            <code className="text-xs text-zinc-400">data/switchy.db</code>
+            <code className="text-xs text-zinc-400">~/.switchy/switchy.db</code>
           </div>
         </div>
 
