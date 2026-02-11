@@ -30,6 +30,8 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   openrouter_api_key: "",
   cerebras_api_key: "",
   openai_api_key: "",
+  scraper_filter_country: "India",
+  scraper_filter_city: "",
 };
 
 // GET - fetch all settings
@@ -202,6 +204,9 @@ export async function POST(request: Request) {
           );
         }
         updates.push({ key, value: String(value) });
+      } else if (key === "scraper_filter_country" || key === "scraper_filter_city") {
+        // Allow any string value for location filters
+        updates.push({ key, value: String(value || "") });
       } else if (
         [
           "anthropic_api_key",

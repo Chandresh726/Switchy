@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { companies, jobs, scrapingLogs, scrapeSessions, profile } from "@/lib/db/schema";
+import { companies, jobs, scrapingLogs, scrapeSessions, settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { scraperRegistry } from "@/lib/scrapers/registry";
 import { batchDeduplicateJobs } from "./deduplicator";
@@ -234,21 +234,21 @@ export async function fetchJobsForCompany(
       newJobs.some((nj) => nj.externalId === j.externalId)
     );
 
-    // Filter by preferred country if set in profile
-    const [userProfile] = await db.select().from(profile).limit(1);
-    const preferredCountry = userProfile?.preferredCountry;
+    // Filter by preferred country if set in settings
+    const filterCountrySetting = await db.select().from(settings).where(eq(settings.key, "scraper_filter_country"));
+    const filterCountry = filterCountrySetting[0]?.value || "";
     let jobsFilteredOut = 0;
 
-    if (preferredCountry) {
+    if (filterCountry) {
       const originalCount = newJobsToInsert.length;
       newJobsToInsert = newJobsToInsert.filter((job) =>
-        matchesPreferredCountry(job.location, preferredCountry)
+        matchesPreferredCountry(job.location, filterCountry)
       );
       jobsFilteredOut = originalCount - newJobsToInsert.length;
 
       if (jobsFilteredOut > 0) {
         console.log(
-          `[Filter] Filtered out ${jobsFilteredOut}/${originalCount} jobs not matching preferred country: ${preferredCountry}`
+          `[Filter] Filtered out ${jobsFilteredOut}/${originalCount} jobs not matching preferred country: ${filterCountry}`
         );
       }
     }
