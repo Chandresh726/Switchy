@@ -14,19 +14,20 @@ export class AnthropicProvider extends BaseProvider {
   /**
    * Anthropic models currently do not support reasoning effort parameter
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   supportsReasoningEffort(_modelId: string): boolean {
     return false;
   }
 
   protected createLanguageModel(
-    config: ModelConfig,
+    _config: ModelConfig,
     providerConfig: ProviderConfig
   ): LanguageModel {
     const anthropic = createAnthropic({
       apiKey: providerConfig.apiKey,
     });
 
-    return anthropic(config.modelId);
+    return anthropic(_config.modelId);
   }
 }
 

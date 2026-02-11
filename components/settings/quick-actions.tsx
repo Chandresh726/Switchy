@@ -14,23 +14,17 @@ import { cn } from "@/lib/utils";
 interface QuickActionsProps {
   onRefresh: () => void;
   isRefreshing: boolean;
-  isRefreshSuccess: boolean;
   onMatchUnmatched: () => void;
   isMatching: boolean;
-  isMatchSuccess: boolean;
   unmatchedCount: number;
-  matchedCount?: number;
 }
 
 export function QuickActions({
   onRefresh,
   isRefreshing,
-  isRefreshSuccess,
   onMatchUnmatched,
   isMatching,
-  isMatchSuccess,
   unmatchedCount,
-  matchedCount,
 }: QuickActionsProps) {
   return (
     <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">

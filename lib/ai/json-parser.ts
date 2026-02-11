@@ -92,7 +92,7 @@ export function findBalancedJSON(text: string, openChar: string, closeChar: stri
  */
 export function cleanJSONString(str: string): string {
   return str
-    .replace(/[\x00-\x1F\x7F]/g, " ") // Remove control characters
+    .replace(/[\u0000-\u001F\u007F]/g, " ") // Remove control characters
     .replace(/,\s*([\]}])/g, "$1") // Remove trailing commas
     .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3') // Quote unquoted keys
     .trim();

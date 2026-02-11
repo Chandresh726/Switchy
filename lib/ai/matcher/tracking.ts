@@ -12,13 +12,10 @@ import {
 import { generateStructured } from "./generation";
 import { extractRequirements, htmlToText } from "./utils";
 import { getMatcherSettings } from "./settings";
-import { calculateJobMatch } from "./single";
 import {
   type MatchResult,
-  type MatchOptions,
   type MatchSessionResult,
   type MatchProgressCallback,
-  type BulkMatchResult,
   MatchResultSchema,
 } from "./types";
 import { categorizeError } from "./errors";
@@ -87,77 +84,91 @@ export async function matchJobsWithTracking(
     }).where(eq(matchSessions.id, sessionId));
   };
 
-  // Fetch profile data once
-  const profileData = await fetchProfileData();
-  if (!profileData) {
-    // No profile - fail all jobs
-    await failAllJobsNoProfile(sessionId, jobIds, matcherSettings.model);
+  try {
+    // Fetch profile data once
+    const profileData = await fetchProfileData();
+    if (!profileData) {
+      // No profile - fail all jobs with proper error count
+      await failAllJobsNoProfile(sessionId, jobIds, matcherSettings.model);
+      await db.update(matchSessions).set({
+        status: "failed",
+        jobsCompleted: jobIds.length,
+        jobsFailed: jobIds.length,
+        errorCount: jobIds.length,
+        completedAt: new Date(),
+      }).where(eq(matchSessions.id, sessionId));
+
+      return { sessionId, total: jobIds.length, succeeded: 0, failed: jobIds.length };
+    }
+
+    // Fetch all jobs
+    const allJobs = await db.select().from(jobs).where(inArray(jobs.id, jobIds));
+    const jobsMap = new Map(allJobs.map((j) => [j.id, j]));
+
+    // Get circuit breaker and AI model
+    const circuitBreaker = getMatcherCircuitBreaker();
+    const aiModel = await getAIClient(matcherSettings.model, matcherSettings.reasoningEffort);
+    const providerOptions = await getAIGenerationOptions(
+      matcherSettings.model,
+      matcherSettings.reasoningEffort
+    );
+
+    // Process each job in the queue
+    const jobPromises = jobIds.map((jobId) =>
+      queue.add(async () => {
+        const result = await processJobWithTracking(
+          jobId,
+          jobsMap,
+          profileData,
+          aiModel,
+          providerOptions,
+          matcherSettings,
+          circuitBreaker,
+          sessionId
+        );
+
+        if (result.success) {
+          succeeded++;
+        } else {
+          failed++;
+        }
+        completed++;
+        await updateSessionProgress();
+        onProgress?.(completed, jobIds.length, succeeded, failed);
+      })
+    );
+
+    // Wait for all jobs to complete
+    await Promise.all(jobPromises);
+
+    // Update session with final stats
+    const finalStatus = failed === jobIds.length ? "failed" : "completed";
     await db.update(matchSessions).set({
-      status: "failed",
-      jobsCompleted: jobIds.length,
-      jobsFailed: jobIds.length,
+      status: finalStatus,
+      jobsCompleted: completed,
+      jobsSucceeded: succeeded,
+      jobsFailed: failed,
+      errorCount: failed,
       completedAt: new Date(),
     }).where(eq(matchSessions.id, sessionId));
 
-    return { sessionId, total: jobIds.length, succeeded: 0, failed: jobIds.length };
+    console.log(
+      `[Matcher] Session ${sessionId} completed: ${succeeded} succeeded, ${failed} failed out of ${jobIds.length} jobs`
+    );
+
+    return { sessionId, total: jobIds.length, succeeded, failed };
+  } catch (error) {
+    // On any error, mark session as failed
+    console.error(`[Matcher] Session ${sessionId} failed:`, error);
+    await db.update(matchSessions).set({
+      status: "failed",
+      jobsCompleted: completed || jobIds.length,
+      jobsFailed: failed || jobIds.length,
+      errorCount: failed || jobIds.length,
+      completedAt: new Date(),
+    }).where(eq(matchSessions.id, sessionId));
+    throw error;
   }
-
-  // Fetch all jobs
-  const allJobs = await db.select().from(jobs).where(inArray(jobs.id, jobIds));
-  const jobsMap = new Map(allJobs.map((j) => [j.id, j]));
-
-  // Get circuit breaker and AI model
-  const circuitBreaker = getMatcherCircuitBreaker();
-  const aiModel = await getAIClient(matcherSettings.model, matcherSettings.reasoningEffort);
-  const providerOptions = await getAIGenerationOptions(
-    matcherSettings.model,
-    matcherSettings.reasoningEffort
-  );
-
-  // Process each job in the queue
-  const jobPromises = jobIds.map((jobId) =>
-    queue.add(async () => {
-      const result = await processJobWithTracking(
-        jobId,
-        jobsMap,
-        profileData,
-        aiModel,
-        providerOptions,
-        matcherSettings,
-        circuitBreaker,
-        sessionId
-      );
-
-      if (result.success) {
-        succeeded++;
-      } else {
-        failed++;
-      }
-      completed++;
-      await updateSessionProgress();
-      onProgress?.(completed, jobIds.length, succeeded, failed);
-    })
-  );
-
-  // Wait for all jobs to complete
-  await Promise.all(jobPromises);
-
-  // Update session with final stats
-  const finalStatus = failed === jobIds.length ? "failed" : "completed";
-  await db.update(matchSessions).set({
-    status: finalStatus,
-    jobsCompleted: completed,
-    jobsSucceeded: succeeded,
-    jobsFailed: failed,
-    errorCount: failed,
-    completedAt: new Date(),
-  }).where(eq(matchSessions.id, sessionId));
-
-  console.log(
-    `[Matcher] Session ${sessionId} completed: ${succeeded} succeeded, ${failed} failed out of ${jobIds.length} jobs`
-  );
-
-  return { sessionId, total: jobIds.length, succeeded, failed };
 }
 
 /**
@@ -194,7 +205,6 @@ async function failAllJobsNoProfile(
   modelUsed: string
 ): Promise<void> {
   const error = new Error("No profile found. Please create a profile first.");
-  const startTime = Date.now();
 
   for (const jobId of jobIds) {
     await db.insert(matchLogs).values({
@@ -257,8 +267,7 @@ async function processJobWithTracking(
         profileData,
         aiModel,
         providerOptions,
-        settings,
-        circuitBreaker
+        settings
       );
 
       // Success - update job and log
@@ -311,8 +320,7 @@ async function executeMatchAttempt(
   profileData: NonNullable<Awaited<ReturnType<typeof fetchProfileData>>>,
   aiModel: Awaited<ReturnType<typeof getAIClient>>,
   providerOptions: Record<string, unknown> | undefined,
-  settings: Awaited<ReturnType<typeof getMatcherSettings>>,
-  circuitBreaker: ReturnType<typeof getMatcherCircuitBreaker>
+  settings: Awaited<ReturnType<typeof getMatcherSettings>>
 ): Promise<MatchResult> {
   const sourceDescription = job.description || "";
   const jobRequirements = extractRequirements(htmlToText(sourceDescription));

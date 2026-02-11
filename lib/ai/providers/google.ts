@@ -23,6 +23,7 @@ export class GoogleProvider extends BaseProvider {
    */
   getGenerationOptions(
     config: ModelConfig,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _providerConfig: ProviderConfig
   ): Record<string, unknown> | undefined {
     if (!config.reasoningEffort || !this.supportsReasoningEffort(config.modelId)) {
@@ -40,10 +41,10 @@ export class GoogleProvider extends BaseProvider {
 
   protected createLanguageModel(
     config: ModelConfig,
-    providerConfig: ProviderConfig
+    _providerConfig: ProviderConfig
   ): LanguageModel {
     const google = createGoogleGenerativeAI({
-      apiKey: providerConfig.apiKey,
+      apiKey: _providerConfig.apiKey,
     });
 
     return google(config.modelId);

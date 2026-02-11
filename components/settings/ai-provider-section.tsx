@@ -14,17 +14,19 @@ interface AIProviderSectionProps {
   onAiProviderChange: (value: string) => void;
   anthropicApiKey: string;
   onAnthropicApiKeyChange: (value: string) => void;
+  onAnthropicApiKeyBlur?: () => void;
   googleApiKey: string;
   onGoogleApiKeyChange: (value: string) => void;
+  onGoogleApiKeyBlur?: () => void;
   openaiApiKey: string;
   onOpenaiApiKeyChange: (value: string) => void;
+  onOpenaiApiKeyBlur?: () => void;
   openrouterApiKey: string;
   onOpenrouterApiKeyChange: (value: string) => void;
+  onOpenrouterApiKeyBlur?: () => void;
   cerebrasApiKey: string;
   onCerebrasApiKeyChange: (value: string) => void;
-  // Although not used in the UI currently for input, keeping props consistent with state if needed later
-  // googleClientId?: string;
-  // googleClientSecret?: string;
+  onCerebrasApiKeyBlur?: () => void;
 }
 
 export function AIProviderSection({
@@ -32,14 +34,19 @@ export function AIProviderSection({
   onAiProviderChange,
   anthropicApiKey,
   onAnthropicApiKeyChange,
+  onAnthropicApiKeyBlur,
   googleApiKey,
   onGoogleApiKeyChange,
+  onGoogleApiKeyBlur,
   openaiApiKey,
   onOpenaiApiKeyChange,
+  onOpenaiApiKeyBlur,
   openrouterApiKey,
   onOpenrouterApiKeyChange,
+  onOpenrouterApiKeyBlur,
   cerebrasApiKey,
   onCerebrasApiKeyChange,
+  onCerebrasApiKeyBlur,
 }: AIProviderSectionProps) {
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
 
@@ -48,7 +55,8 @@ export function AIProviderSection({
     label: string,
     placeholder: string,
     value: string,
-    onChange: (value: string) => void
+    onChange: (value: string) => void,
+    onBlur?: () => void
   ) => {
     const isVisible = !!visibleKeys[id];
 
@@ -63,6 +71,7 @@ export function AIProviderSection({
             placeholder={placeholder}
             value={value}
             onChange={(e) => onChange(e.target.value)}
+            onBlur={onBlur}
             className="pl-9 pr-10 bg-zinc-950/50 border-zinc-800 font-mono"
           />
           <button
@@ -114,7 +123,8 @@ export function AIProviderSection({
               "Anthropic API Key",
               "sk-ant-...",
               anthropicApiKey,
-              onAnthropicApiKeyChange
+              onAnthropicApiKeyChange,
+              onAnthropicApiKeyBlur
             )}
             <p className="text-xs text-zinc-500">
               Required for Claude models. Your key is stored locally.
@@ -128,7 +138,8 @@ export function AIProviderSection({
             "Gemini API Key",
             "AIza...",
             googleApiKey,
-            onGoogleApiKeyChange
+            onGoogleApiKeyChange,
+            onGoogleApiKeyBlur
           )
         )}
 
@@ -144,7 +155,8 @@ export function AIProviderSection({
             "OpenRouter API Key",
             "or-...",
             openrouterApiKey,
-            onOpenrouterApiKeyChange
+            onOpenrouterApiKeyChange,
+            onOpenrouterApiKeyBlur
           )
         )}
 
@@ -154,7 +166,8 @@ export function AIProviderSection({
             "OpenAI API Key",
             "sk-...",
             openaiApiKey,
-            onOpenaiApiKeyChange
+            onOpenaiApiKeyChange,
+            onOpenaiApiKeyBlur
           )
         )}
 
@@ -164,7 +177,8 @@ export function AIProviderSection({
             "Cerebras API Key",
             "cbrs_...",
             cerebrasApiKey,
-            onCerebrasApiKeyChange
+            onCerebrasApiKeyChange,
+            onCerebrasApiKeyBlur
           )
         )}
       </CardContent>

@@ -4,19 +4,19 @@ export const ANTHROPIC_MODELS = [
     id: "claude-opus-4-6",
     label: "Claude Opus 4.6",
     description: "Most capable model",
-    supportsReasoning: false,
+    supportsReasoning: true,
   },
   {
     id: "claude-sonnet-4-5",
     label: "Claude Sonnet 4.5",
     description: "Balanced performance",
-    supportsReasoning: false,
+    supportsReasoning: true,
   },
   {
     id: "claude-haiku-4-5",
     label: "Claude Haiku 4.5",
     description: "Fast and cost effective",
-    supportsReasoning: false,
+    supportsReasoning: true,
   },
 ];
 
@@ -32,18 +32,6 @@ export const GEMINI_API_KEY_MODELS = [
     label: "Gemini 3 Flash",
     description: "Fastest model (Preview)",
     supportsReasoning: true,
-  },
-  {
-    id: "gemini-2.5-pro",
-    label: "Gemini 2.5 Pro",
-    description: "Balanced performance",
-    supportsReasoning: false,
-  },
-  {
-    id: "gemini-2.5-flash",
-    label: "Gemini 2.5 Flash",
-    description: "Cost effective",
-    supportsReasoning: false,
   },
 ];
 
@@ -135,9 +123,9 @@ export const CEREBRAS_MODELS = [
     supportsReasoning: true,
   },
   {
-    id: "qwen-3-32b",
-    label: "Qwen 3 32B",
-    description: "Reasoning-capable model",
+    id: "qwen-3-235b-a22b-instruct-2507",
+    label: "Qwen 3 235B A22B Instruct",
+    description: "Reasoning-capable preview model",
     supportsReasoning: true,
   },
   {
@@ -145,12 +133,6 @@ export const CEREBRAS_MODELS = [
     label: "ZAI GLM 4.7",
     description: "Reasoning-capable model",
     supportsReasoning: true,
-  },
-  {
-    id: "llama-3.3-70b",
-    label: "Llama 3.3 70B",
-    description: "High quality responses",
-    supportsReasoning: false,
   },
   {
     id: "llama3.1-8b",

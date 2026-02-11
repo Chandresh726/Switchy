@@ -30,6 +30,7 @@ export class OpenRouterProvider extends BaseProvider {
    */
   getGenerationOptions(
     config: ModelConfig,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _providerConfig: ProviderConfig
   ): Record<string, unknown> | undefined {
     if (!config.reasoningEffort || !this.supportsReasoningEffort(config.modelId)) {
@@ -47,10 +48,10 @@ export class OpenRouterProvider extends BaseProvider {
 
   protected createLanguageModel(
     config: ModelConfig,
-    providerConfig: ProviderConfig
+    _providerConfig: ProviderConfig
   ): LanguageModel {
     const openrouter = createOpenRouter({
-      apiKey: providerConfig.apiKey,
+      apiKey: _providerConfig.apiKey,
     });
 
     return openrouter.chat(config.modelId);

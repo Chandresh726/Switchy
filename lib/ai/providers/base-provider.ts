@@ -66,7 +66,9 @@ export abstract class BaseProvider implements AIProviderInterface {
    * Override in subclasses to provide options like reasoningEffort
    */
   getGenerationOptions(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _config: ModelConfig,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _providerConfig: ProviderConfig
   ): Record<string, unknown> | undefined {
     return undefined;

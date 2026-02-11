@@ -355,7 +355,16 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
                     {failedLogs.map((log) => (
                       <div
                         key={log.id}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={log.jobId ? `View job details for ${log.jobTitle || `Job #${log.jobId}`}` : "Job details unavailable"}
                         onClick={() => log.jobId && router.push(`/jobs/${log.jobId}`)}
+                        onKeyDown={(e) => {
+                          if ((e.key === "Enter" || e.key === " ") && log.jobId) {
+                            e.preventDefault();
+                            router.push(`/jobs/${log.jobId}`);
+                          }
+                        }}
                         className={`rounded border border-red-500/20 bg-red-500/5 p-3 text-xs cursor-pointer transition-colors hover:bg-red-500/10 hover:border-red-500/30 ${!log.jobId ? 'pointer-events-none opacity-50' : ''}`}
                       >
                         <div className="flex items-center justify-between mb-1">
@@ -390,7 +399,16 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
                     {successLogs.map((log) => (
                       <div
                         key={log.id}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={log.jobId ? `View job details for ${log.jobTitle || `Job #${log.jobId}`}` : "Job details unavailable"}
                         onClick={() => log.jobId && router.push(`/jobs/${log.jobId}`)}
+                        onKeyDown={(e) => {
+                          if ((e.key === "Enter" || e.key === " ") && log.jobId) {
+                            e.preventDefault();
+                            router.push(`/jobs/${log.jobId}`);
+                          }
+                        }}
                         className={`rounded border border-emerald-500/10 bg-emerald-500/5 p-2.5 text-xs transition-colors hover:bg-emerald-500/10 hover:border-emerald-500/20 cursor-pointer ${!log.jobId ? 'pointer-events-none opacity-50' : ''}`}
                       >
                         <span className="text-zinc-200 font-medium truncate block mb-1.5" title={log.jobTitle || ""}>

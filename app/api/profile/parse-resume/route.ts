@@ -73,31 +73,36 @@ export async function POST(request: NextRequest) {
       currentProfile = newProfile;
     }
 
-    // Determine version number
-    const lastResume = await db.query.resumes.findFirst({
-      where: eq(resumes.profileId, currentProfile.id),
-      orderBy: [desc(resumes.version)],
+    // Atomically determine version, clear isCurrent, and insert new resume
+    const resumeRecord = await db.transaction(async (tx) => {
+      // Determine version number
+      const lastResume = await tx.query.resumes.findFirst({
+        where: eq(resumes.profileId, currentProfile.id),
+        orderBy: [desc(resumes.version)],
+      });
+
+      const nextVersion = (lastResume?.version || 0) + 1;
+
+      // Mark all previous resumes as not current
+      if (nextVersion > 1) {
+        await tx
+          .update(resumes)
+          .set({ isCurrent: false })
+          .where(eq(resumes.profileId, currentProfile.id));
+      }
+
+      // Save resume record
+      const [record] = await tx.insert(resumes).values({
+        profileId: currentProfile.id,
+        fileName: file.name,
+        filePath: savedFile.path,
+        parsedData: JSON.stringify(parsedData),
+        version: nextVersion,
+        isCurrent: true, // Mark as current by default for now
+      }).returning();
+
+      return record;
     });
-
-    const nextVersion = (lastResume?.version || 0) + 1;
-
-    // Mark all previous resumes as not current
-    if (nextVersion > 1) {
-      await db
-        .update(resumes)
-        .set({ isCurrent: false })
-        .where(eq(resumes.profileId, currentProfile.id));
-    }
-
-    // Save resume record
-    const [resumeRecord] = await db.insert(resumes).values({
-      profileId: currentProfile.id,
-      fileName: file.name,
-      filePath: savedFile.path,
-      parsedData: JSON.stringify(parsedData),
-      version: nextVersion,
-      isCurrent: true, // Mark as current by default for now
-    }).returning();
 
     return NextResponse.json({
       parsedData,

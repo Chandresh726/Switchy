@@ -139,7 +139,7 @@ export async function fetchJobsForCompany(
   }
 
   let sessionId = options.sessionId;
-  const triggerSource = options.triggerSource;
+  const triggerSource = options.triggerSource ?? "manual";
 
   // Create a session if one wasn't provided (single company refresh)
   const isStandaloneRefresh = !sessionId;

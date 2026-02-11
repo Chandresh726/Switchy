@@ -24,6 +24,7 @@ export class GeminiCLIProvider extends BaseProvider {
    */
   getGenerationOptions(
     config: ModelConfig,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _providerConfig: ProviderConfig
   ): Record<string, unknown> | undefined {
     if (!config.reasoningEffort || !this.supportsReasoningEffort(config.modelId)) {
@@ -40,11 +41,12 @@ export class GeminiCLIProvider extends BaseProvider {
   }
 
   protected createLanguageModel(
-    config: ModelConfig,
+    _config: ModelConfig,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _providerConfig: ProviderConfig
   ): LanguageModel {
     const google = createGeminiProvider();
-    return google(config.modelId);
+    return google(_config.modelId);
   }
 }
 

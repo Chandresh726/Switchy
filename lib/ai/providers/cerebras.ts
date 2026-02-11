@@ -15,11 +15,7 @@ export class CerebrasProvider extends BaseProvider {
    * Cerebras models that support reasoning effort
    */
   supportsReasoningEffort(modelId: string): boolean {
-    const reasoningModels = [
-      "gpt-oss-120b",
-      "qwen-3-32b",
-      "zai-glm-4.7",
-    ];
+    const reasoningModels = ["gpt-oss-120b"];
     return reasoningModels.some((model) => modelId.includes(model));
   }
 
@@ -28,6 +24,7 @@ export class CerebrasProvider extends BaseProvider {
    */
   getGenerationOptions(
     config: ModelConfig,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _providerConfig: ProviderConfig
   ): Record<string, unknown> | undefined {
     if (!config.reasoningEffort || !this.supportsReasoningEffort(config.modelId)) {
@@ -45,10 +42,10 @@ export class CerebrasProvider extends BaseProvider {
 
   protected createLanguageModel(
     config: ModelConfig,
-    providerConfig: ProviderConfig
+    _providerConfig: ProviderConfig
   ): LanguageModel {
     const cerebras = createCerebras({
-      apiKey: providerConfig.apiKey,
+      apiKey: _providerConfig.apiKey,
     });
 
     return cerebras(config.modelId);

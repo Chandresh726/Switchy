@@ -146,7 +146,24 @@ export async function PUT(request: NextRequest) {
     for (const item of body) {
       if (!item.name || !item.careersUrl) continue;
 
-      const platform = item.platform || detectPlatform(item.careersUrl);
+      const manualPlatform = item.platform;
+      const detectedFromUrl = detectPlatform(item.careersUrl);
+      const platform = manualPlatform || detectedFromUrl;
+
+      // Validate boardToken is provided when manually selecting greenhouse/lever with custom URL
+      if (
+        manualPlatform &&
+        manualPlatform !== "custom" &&
+        detectedFromUrl !== manualPlatform &&
+        !item.boardToken
+      ) {
+        // Skip items with inconsistent platform override without boardToken
+        console.warn(
+          `[Companies Sync] Skipping ${item.name}: boardToken required when manually selecting ${manualPlatform} platform with a custom URL`
+        );
+        continue;
+      }
+
       const [existing] = await db
         .select()
         .from(companies)

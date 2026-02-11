@@ -88,6 +88,8 @@ export async function POST(request: Request) {
         updates.push({ key, value: String(num) });
       } else if (key === "matcher_auto_match_after_scrape") {
         updates.push({ key, value: value === true || value === "true" ? "true" : "false" });
+      } else if (key === "matcher_bulk_enabled") {
+        updates.push({ key, value: value === true || value === "true" ? "true" : "false" });
       } else if (key === "global_scrape_frequency") {
         const num = parseInt(String(value), 10);
         if (isNaN(num) || num < 1 || num > 168) {

@@ -37,6 +37,7 @@ import { calculateJobMatch } from "./single";
 export async function bulkCalculateJobMatches(
   jobIds: number[],
   onProgress?: (completed: number, total: number) => void,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: MatchOptions
 ): Promise<Map<number, MatchResult | Error>> {
   const results = new Map<number, MatchResult | Error>();
@@ -59,7 +60,7 @@ export async function bulkCalculateJobMatches(
 
   // If bulk matching is disabled, process jobs individually
   if (!matcherSettings.bulkEnabled) {
-    return processJobsIndividually(jobIds, onProgress, options);
+    return processJobsIndividually(jobIds, onProgress);
   }
 
   // Fetch profile data once
@@ -84,8 +85,7 @@ export async function bulkCalculateJobMatches(
       aiModel,
       providerOptions,
       matcherSettings,
-      results,
-      options?.scrapingLogId
+      results
     );
 
     completed += batch.length;
@@ -98,7 +98,7 @@ export async function bulkCalculateJobMatches(
   }
 
   // Retry failed jobs individually
-  await retryFailedJobs(results, jobIds, onProgress, options);
+  await retryFailedJobs(results, jobIds, onProgress);
 
   // Log final stats
   const successCount = Array.from(results.values()).filter((r) => !(r instanceof Error)).length;
@@ -115,8 +115,7 @@ export async function bulkCalculateJobMatches(
  */
 async function processJobsIndividually(
   jobIds: number[],
-  onProgress?: (completed: number, total: number) => void,
-  options?: MatchOptions
+  onProgress?: (completed: number, total: number) => void
 ): Promise<Map<number, MatchResult | Error>> {
   const results = new Map<number, MatchResult | Error>();
 
@@ -125,7 +124,7 @@ async function processJobsIndividually(
 
   for (const jobId of jobIds) {
     try {
-      const result = await calculateJobMatch(jobId, options);
+      const result = await calculateJobMatch(jobId);
       results.set(jobId, result);
     } catch (error) {
       console.error(`[Matcher] Individual match failed for job ${jobId}:`, error);
@@ -188,8 +187,7 @@ async function processBatch(
   aiModel: Awaited<ReturnType<typeof getAIClient>>,
   providerOptions: Record<string, unknown> | undefined,
   settings: Awaited<ReturnType<typeof getMatcherSettings>>,
-  results: Map<number, MatchResult | Error>,
-  scrapingLogId?: number | null
+  results: Map<number, MatchResult | Error>
 ): Promise<void> {
   // Prepare jobs for this batch
   const jobsForMatching: JobForMatching[] = batch
@@ -270,7 +268,7 @@ async function processBatch(
 
     // Update each job in the database
     for (const result of batchResults) {
-      await updateJobWithBulkResult(result, jobsMap);
+      await updateJobWithBulkResult(result);
       results.set(result.jobId, {
         score: result.score,
         reasons: result.reasons,
@@ -299,8 +297,7 @@ async function processBatch(
  * Update job with bulk match result
  */
 async function updateJobWithBulkResult(
-  result: BulkMatchResult,
-  jobsMap: Map<number, { description: string | null }>
+  result: BulkMatchResult
 ): Promise<void> {
   await db
     .update(jobs)
@@ -321,8 +318,7 @@ async function updateJobWithBulkResult(
 async function retryFailedJobs(
   results: Map<number, MatchResult | Error>,
   allJobIds: number[],
-  onProgress?: (completed: number, total: number) => void,
-  options?: MatchOptions
+  onProgress?: (completed: number, total: number) => void
 ): Promise<void> {
   const failedJobIds = Array.from(results.entries())
     .filter(([, result]) => result instanceof Error)
@@ -336,7 +332,7 @@ async function retryFailedJobs(
 
   for (const jobId of failedJobIds) {
     try {
-      const result = await calculateJobMatch(jobId, options);
+      const result = await calculateJobMatch(jobId);
       results.set(jobId, result);
       console.log(`[Matcher] Individual retry succeeded for job ${jobId}`);
     } catch (error) {

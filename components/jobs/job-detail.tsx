@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { MatchBadge } from "./match-badge";
 import { ApplyButton } from "./apply-button";
 import { MarkdownRenderer } from "./markdown-renderer";
+import { sanitizeHtmlContent } from "@/lib/jobs/description-processor";
 import {
   Building2,
   Calendar,
@@ -282,10 +283,19 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
           {job.description && (
             <div>
               <h3 className="mb-3 text-lg font-medium text-white">Description</h3>
-              <MarkdownRenderer
-                content={job.description}
-                className="text-sm text-zinc-300"
-              />
+              {job.descriptionFormat === "html" ? (
+                <div
+                  className="text-sm text-zinc-300 prose prose-invert prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtmlContent(job.description) }}
+                />
+              ) : job.descriptionFormat === "plain" ? (
+                <p className="text-sm text-zinc-300 whitespace-pre-wrap">{job.description}</p>
+              ) : (
+                <MarkdownRenderer
+                  content={job.description}
+                  className="text-sm text-zinc-300"
+                />
+              )}
             </div>
           )}
         </div>

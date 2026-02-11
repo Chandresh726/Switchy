@@ -26,6 +26,7 @@ export class OpenAIProvider extends BaseProvider {
    */
   getGenerationOptions(
     config: ModelConfig,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _providerConfig: ProviderConfig
   ): Record<string, unknown> | undefined {
     if (!config.reasoningEffort || !this.supportsReasoningEffort(config.modelId)) {
@@ -43,10 +44,10 @@ export class OpenAIProvider extends BaseProvider {
 
   protected createLanguageModel(
     config: ModelConfig,
-    providerConfig: ProviderConfig
+    _providerConfig: ProviderConfig
   ): LanguageModel {
     const openai = createOpenAI({
-      apiKey: providerConfig.apiKey,
+      apiKey: _providerConfig.apiKey,
     });
 
     return openai(config.modelId);

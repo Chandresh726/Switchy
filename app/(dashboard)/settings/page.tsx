@@ -16,9 +16,7 @@ import { ResumeParserSection } from "@/components/settings/resume-parser-section
 import { SystemInfo } from "@/components/settings/system-info";
 import {
   AIProvider,
-  getModelsForProvider,
   getDefaultModelForProvider,
-  modelSupportsReasoning,
   getDefaultReasoningEffort,
   ReasoningEffort
 } from "@/components/settings/constants";
@@ -255,27 +253,42 @@ function SettingsContent() {
 
   const setAnthropicApiKey = (value: string) => {
     setProviderLocalEdits(prev => ({ ...prev, anthropicApiKey: value }));
-    providerSettingsMutation.mutate({ anthropic_api_key: value });
+  };
+
+  const saveAnthropicApiKey = () => {
+    providerSettingsMutation.mutate({ anthropic_api_key: anthropicApiKey });
   };
 
   const setGoogleApiKey = (value: string) => {
     setProviderLocalEdits(prev => ({ ...prev, googleApiKey: value }));
-    providerSettingsMutation.mutate({ google_api_key: value });
+  };
+
+  const saveGoogleApiKey = () => {
+    providerSettingsMutation.mutate({ google_api_key: googleApiKey });
   };
 
   const setOpenaiApiKey = (value: string) => {
     setProviderLocalEdits(prev => ({ ...prev, openaiApiKey: value }));
-    providerSettingsMutation.mutate({ openai_api_key: value });
+  };
+
+  const saveOpenaiApiKey = () => {
+    providerSettingsMutation.mutate({ openai_api_key: openaiApiKey });
   };
 
   const setOpenrouterApiKey = (value: string) => {
     setProviderLocalEdits(prev => ({ ...prev, openrouterApiKey: value }));
-    providerSettingsMutation.mutate({ openrouter_api_key: value });
+  };
+
+  const saveOpenrouterApiKey = () => {
+    providerSettingsMutation.mutate({ openrouter_api_key: openrouterApiKey });
   };
 
   const setCerebrasApiKey = (value: string) => {
     setProviderLocalEdits(prev => ({ ...prev, cerebrasApiKey: value }));
-    providerSettingsMutation.mutate({ cerebras_api_key: value });
+  };
+
+  const saveCerebrasApiKey = () => {
+    providerSettingsMutation.mutate({ cerebras_api_key: cerebrasApiKey });
   };
 
   const refreshMutation = useMutation({
@@ -441,14 +454,19 @@ function SettingsContent() {
             onAiProviderChange={setAiProvider}
             anthropicApiKey={anthropicApiKey}
             onAnthropicApiKeyChange={setAnthropicApiKey}
+            onAnthropicApiKeyBlur={saveAnthropicApiKey}
             googleApiKey={googleApiKey}
             onGoogleApiKeyChange={setGoogleApiKey}
+            onGoogleApiKeyBlur={saveGoogleApiKey}
             openaiApiKey={openaiApiKey}
             onOpenaiApiKeyChange={setOpenaiApiKey}
+            onOpenaiApiKeyBlur={saveOpenaiApiKey}
             openrouterApiKey={openrouterApiKey}
             onOpenrouterApiKeyChange={setOpenrouterApiKey}
+            onOpenrouterApiKeyBlur={saveOpenrouterApiKey}
             cerebrasApiKey={cerebrasApiKey}
             onCerebrasApiKeyChange={setCerebrasApiKey}
+            onCerebrasApiKeyBlur={saveCerebrasApiKey}
           />
 
           <MatcherSection
@@ -497,12 +515,9 @@ function SettingsContent() {
           <QuickActions
             onRefresh={() => refreshMutation.mutate()}
             isRefreshing={refreshMutation.isPending}
-            isRefreshSuccess={refreshMutation.isSuccess}
             onMatchUnmatched={() => matchUnmatchedMutation.mutate()}
             isMatching={matchUnmatchedMutation.isPending}
-            isMatchSuccess={matchUnmatchedMutation.isSuccess}
             unmatchedCount={unmatchedData?.count ?? 0}
-            matchedCount={matchUnmatchedMutation.data?.matched}
           />
 
           <ResumeParserSection
