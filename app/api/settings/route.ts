@@ -18,12 +18,16 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   matcher_circuit_breaker_threshold: "10",
   matcher_circuit_breaker_reset_timeout: "60000",
   matcher_auto_match_after_scrape: "true",
-  ai_provider: "google",
+  global_scrape_frequency: "6",
+  ai_provider: "gemini_api_key",
   anthropic_api_key: "",
   google_auth_mode: "api_key",
   google_api_key: "",
   google_client_id: "",
   google_client_secret: "",
+  openrouter_api_key: "",
+  cerebras_api_key: "",
+  openai_api_key: "",
 };
 
 // GET - fetch all settings
@@ -80,8 +84,17 @@ export async function POST(request: Request) {
           );
         }
         updates.push({ key, value: String(num) });
-      } else if (key === "matcher_bulk_enabled" || key === "matcher_auto_match_after_scrape") {
+      } else if (key === "matcher_auto_match_after_scrape") {
         updates.push({ key, value: value === true || value === "true" ? "true" : "false" });
+      } else if (key === "global_scrape_frequency") {
+        const num = parseInt(String(value), 10);
+        if (isNaN(num) || num < 1 || num > 168) {
+          return NextResponse.json(
+            { error: "global_scrape_frequency must be a number between 1 and 168" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: String(num) });
       } else if (key === "matcher_model" || key === "resume_parser_model") {
         if (typeof value !== "string" || value.trim().length === 0) {
           return NextResponse.json(
@@ -154,9 +167,17 @@ export async function POST(request: Request) {
         }
         updates.push({ key, value: String(num) });
       } else if (key === "ai_provider") {
-        if (value !== "anthropic" && value !== "google") {
+        if (
+          value !== "anthropic" &&
+          value !== "gemini_api_key" &&
+          value !== "gemini_cli_oauth" &&
+          value !== "openrouter" &&
+          value !== "cerebras" &&
+          value !== "openai" &&
+          value !== "google"
+        ) {
           return NextResponse.json(
-            { error: "ai_provider must be either 'anthropic' or 'google'" },
+            { error: "ai_provider must be a supported provider" },
             { status: 400 }
           );
         }
@@ -170,7 +191,15 @@ export async function POST(request: Request) {
         }
         updates.push({ key, value: String(value) });
       } else if (
-        ["anthropic_api_key", "google_api_key", "google_client_id", "google_client_secret"].includes(key)
+        [
+          "anthropic_api_key",
+          "google_api_key",
+          "google_client_id",
+          "google_client_secret",
+          "openrouter_api_key",
+          "cerebras_api_key",
+          "openai_api_key",
+        ].includes(key)
       ) {
         // Allow empty strings
         updates.push({ key, value: String(value || "") });

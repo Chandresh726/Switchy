@@ -25,7 +25,7 @@ import {
  * Convert HTML to readable text with proper formatting
  */
 function htmlToText(html: string): string {
-  let text = html
+  const text = html
     .replace(/<\/(p|div|h[1-6]|li|br|tr)>/gi, "\n\n")
     .replace(/<(p|div|h[1-6]|li|tr)[^>]*>/gi, "")
     .replace(/<br\s*\/?>/gi, "\n")
@@ -179,6 +179,7 @@ export default function JobDetailPage() {
       <div className="mb-6 border-b border-zinc-800 pb-6">
         <div className="flex items-start gap-4">
           {job.company.logoUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
             <img
               src={job.company.logoUrl}
               alt={job.company.name}

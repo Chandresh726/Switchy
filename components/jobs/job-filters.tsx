@@ -217,7 +217,7 @@ export function JobFilters({
   companies,
 }: JobFiltersProps) {
   // Ensure companyIds is always an array
-  const companyIds = filters.companyIds || [];
+  const companyIds = useMemo(() => filters.companyIds || [], [filters.companyIds]);
 
   // Calculate active filter chips
   const activeFilters = useMemo(() => {

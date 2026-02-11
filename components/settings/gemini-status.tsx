@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, CheckCircle2, AlertCircle, Terminal, RefreshCw } from "lucide-react";
 import { getGeminiStatus, type GeminiStatus } from "@/app/actions/gemini";
-import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 export function GeminiStatusDisplay() {
@@ -92,7 +91,7 @@ export function GeminiStatusDisplay() {
             className="h-7 text-xs border-yellow-900/30 text-yellow-400 hover:bg-yellow-950/20"
           >
             <RefreshCw className="mr-2 h-3 w-3" />
-            I've Authenticated
+            I&apos;ve Authenticated
           </Button>
         </div>
       </div>

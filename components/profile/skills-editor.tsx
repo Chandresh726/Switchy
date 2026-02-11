@@ -60,6 +60,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
   // Set pending skills when initialSkills changes (from resume parsing)
   useEffect(() => {
     if (initialSkills && initialSkills.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPendingSkills(initialSkills);
     }
   }, [initialSkills]);

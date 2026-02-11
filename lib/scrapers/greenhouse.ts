@@ -64,7 +64,7 @@ export class GreenhouseScraper extends AbstractScraper {
       // Greenhouse has a JSON API at /embed/job_board/jobs.json
       const apiUrl = `https://boards-api.greenhouse.io/v1/boards/${boardToken}/jobs?content=true`;
 
-      const response = await fetch(apiUrl, {
+      const response = await this.fetchWithRetry(apiUrl, {
         headers: {
           Accept: "application/json",
           "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
@@ -74,7 +74,7 @@ export class GreenhouseScraper extends AbstractScraper {
       if (!response.ok) {
         // Try alternative API endpoint
         const altApiUrl = `https://boards.greenhouse.io/${boardToken}/embed/job_board/jobs.json`;
-        const altResponse = await fetch(altApiUrl, {
+        const altResponse = await this.fetchWithRetry(altApiUrl, {
           headers: {
             Accept: "application/json",
             "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",

@@ -32,7 +32,7 @@ This app is designed to run **locally on your machine**; no hosted backend is re
 
 Optional (for AI features):
 - **Anthropic API key** (Claude)
-- **Google Gemini API key** or **Gemini CLI** (`gemini auth login`) for OAuth-based auth
+- **Google Gemini API key** or **Gemini CLI** for OAuth-based auth
 
 ---
 
@@ -55,23 +55,43 @@ Switchy uses a local SQLite database (by default referenced as `data/switchy.db`
 - The `data/` directory is **gitignored** so your personal data and any stored API keys will **not** be pushed to GitHub.
 - Migrations are managed via **Drizzle** (see `drizzle.config.ts` and the `drizzle/` folder).
 
-To apply migrations (example):
+### DB commands (via `package.json` scripts)
+
+The project exposes a small set of database helpers:
 
 ```bash
-pnpm drizzle-kit generate
-# and/or, depending on your workflow
-pnpm drizzle-kit migrate
+# Generate Drizzle SQL migrations from the TypeScript schema
+pnpm db:generate
+
+# Apply pending migrations to the local SQLite DB
+pnpm db:migrate
+
+# Open Drizzle Studio to inspect the DB locally
+pnpm db:studio
 ```
 
-Adjust the exact commands above to match how you prefer to run Drizzle; the config file in this repo determines the actual DB connection.
+Typical local workflow:
+
+1. Make schema changes in `lib/db/schema.ts`
+2. Run `pnpm db:generate` to create migrations in `drizzle/`
+3. Run `pnpm db:migrate` to apply them to `data/switchy.db`
+
+The `data/` directory is created automatically on first run (see `lib/db/index.ts`), and all DB files remain local and gitignored.
 
 ---
 
-## Running the App
+## Running the App (Development)
 
-Start the development server:
+For day‑to‑day local development:
 
 ```bash
+# 1. Install dependencies (first time only)
+pnpm install
+
+# 2. Make sure migrations are applied
+pnpm db:migrate
+
+# 3. Start the Next.js dev server
 pnpm dev
 ```
 
@@ -82,6 +102,11 @@ Key areas of the app:
 - `/(dashboard)` routes: main dashboard, job list, and settings
 - `/settings`: configure AI provider, concurrency, batch size, and other matching parameters
 - `data/switchy.db`: local SQLite DB used by the app (created on first run)
+
+During development you can also:
+
+- Run `pnpm lint` to check for lint errors
+- Run `pnpm db:studio` to inspect and edit the local DB
 
 ---
 
@@ -119,22 +144,33 @@ If you want to document required environment variables for deployments, you can 
 
 ---
 
-## Production / Deployment
+## Production / Deployment & Prod‑like Local Runs
 
-This app is primarily intended for **local use** with a local SQLite DB.
+This app is primarily intended for **local use** with a local SQLite DB, but you can run a production build locally or deploy it.
+
+### Production‑like build locally
+
+```bash
+# Ensure DB is migrated
+pnpm db:migrate
+
+# Build the Next.js app
+pnpm build
+
+# Run the production server
+pnpm start
+```
+
+This starts a production Next.js server on `http://localhost:3000` using the same SQLite DB at `data/switchy.db`.
+
+### Deploying Switchy
 
 If you choose to deploy:
 
 - Use a managed SQL database (or remote SQLite) instead of a local file.
 - Make sure **real API keys** are passed via environment variables in your hosting provider.
 - Confirm that `data/` and any local-only directories stay out of your deployment artifacts.
-
-Build the app:
-
-```bash
-pnpm build
-pnpm start
-```
+- Mirror your Drizzle workflow (generate + migrate) in your CI/CD or deployment scripts.
 
 ---
 

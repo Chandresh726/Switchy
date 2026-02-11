@@ -11,7 +11,6 @@ Your job is to:
 4. Provide specific reasons for the score
 5. List matched and missing skills
 6. Give actionable recommendations
-7. Convert the job description to clean, readable plain text (remove ALL HTML tags, decode entities, preserve paragraph structure with newlines)
 
 IMPORTANT SCORING RULES - Be strict and realistic:
 
@@ -98,7 +97,6 @@ For EACH job, you must:
 4. Provide specific reasons for the score
 5. List matched and missing skills
 6. Give actionable recommendations
-7. Convert the job description to clean, readable plain text (remove ALL HTML tags, decode entities, preserve paragraph structure with newlines)
 
 IMPORTANT SCORING RULES - Be strict and realistic:
 
@@ -188,7 +186,6 @@ Analyze each job and respond with ONLY a valid JSON array:
   {
     "jobId": <number>,
     "score": <number 0-100>,
-    "cleanDescription": "<plain text job description with newlines, NO HTML tags>",
     "reasons": ["reason1", "reason2"],
     "matchedSkills": ["skill1", "skill2"],
     "missingSkills": ["skill1", "skill2"],

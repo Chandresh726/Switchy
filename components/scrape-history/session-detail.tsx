@@ -98,14 +98,6 @@ function formatDateTime(date: Date | null): string {
   });
 }
 
-function calculateSessionDuration(startedAt: Date | null, completedAt: Date | null): string {
-  if (!startedAt) return "-";
-  const end = completedAt ? new Date(completedAt) : new Date();
-  const start = new Date(startedAt);
-  const diffMs = end.getTime() - start.getTime();
-  return formatDuration(diffMs);
-}
-
 interface SessionDetailProps {
   sessionId: string;
 }
@@ -265,6 +257,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
                   <div className="flex items-start gap-4">
                     <div className="mt-1">
                       {log.companyLogoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={log.companyLogoUrl}
                           alt={log.companyName || "Company"}

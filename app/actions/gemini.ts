@@ -25,7 +25,7 @@ export async function getGeminiStatus(): Promise<GeminiStatus> {
     // Try to find 'gemini' in path
     await execAsync("command -v gemini");
     status.installed = true;
-  } catch (error) {
+  } catch {
     status.message = "Gemini CLI not found in PATH.";
     return status;
   }
@@ -55,8 +55,9 @@ export async function getGeminiStatus(): Promise<GeminiStatus> {
     } else {
       status.message = "Credentials missing or expired.";
     }
-  } catch (error: any) {
-    status.message = `Error checking credentials: ${error.message}`;
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    status.message = `Error checking credentials: ${errorMessage}`;
   }
 
   return status;

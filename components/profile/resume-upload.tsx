@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Upload, FileText, Loader2, X, Check, AlertCircle } from "lucide-react";
+import { Upload, Loader2, Check, AlertCircle } from "lucide-react";
 
 interface ResumeData {
   name: string;

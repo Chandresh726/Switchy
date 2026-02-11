@@ -21,7 +21,9 @@ import {
   matchSessions,
   matchLogs,
 } from "@/lib/db/schema";
-import { getMatcherCircuitBreaker, resetMatcherCircuitBreaker, CircuitState } from "./circuit-breaker";
+import { getMatcherCircuitBreaker, resetMatcherCircuitBreaker } from "./circuit-breaker";
+import { extractJSON } from "./json-parser";
+import { retryWithBackoff, withTimeout } from "@/lib/utils/resilience";
 
 // Setting to control whether to use generateObject or skip straight to generateText
 // Set to false if your model/proxy doesn't support structured output
@@ -35,7 +37,6 @@ CRITICAL: You MUST respond with ONLY a valid JSON object. No markdown, no code b
 The JSON object MUST have this exact structure:
 {
   "score": <number 0-100>,
-  "cleanDescription": "<plain text job description>",
   "reasons": ["reason1", "reason2", ...],
   "matchedSkills": ["skill1", "skill2", ...],
   "missingSkills": ["skill1", "skill2", ...],
@@ -44,7 +45,6 @@ The JSON object MUST have this exact structure:
 
 const MatchResultSchema = z.object({
   score: z.number().min(0).max(100),
-  cleanDescription: z.string().optional(),
   reasons: z.array(z.string()),
   matchedSkills: z.array(z.string()),
   missingSkills: z.array(z.string()),
@@ -55,7 +55,6 @@ const MatchResultSchema = z.object({
 const BulkMatchItemSchema = z.object({
   jobId: z.number(),
   score: z.number().min(0).max(100),
-  cleanDescription: z.string().optional(),
   reasons: z.array(z.string()),
   matchedSkills: z.array(z.string()),
   missingSkills: z.array(z.string()),
@@ -98,133 +97,6 @@ function categorizeError(error: Error): ErrorType {
   }
 
   return "unknown";
-}
-
-/**
- * Improved JSON extraction from text response
- * Tries multiple strategies to find valid JSON
- */
-function extractJSON(text: string): unknown {
-  // Strategy 1: Try markdown code blocks first
-  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (codeBlockMatch) {
-    try {
-      return JSON.parse(codeBlockMatch[1].trim());
-    } catch {
-      // Continue to other methods
-    }
-  }
-
-  // Strategy 2: Find balanced JSON objects
-  const objectMatches = findBalancedJSON(text, "{", "}");
-  for (const match of objectMatches) {
-    try {
-      return JSON.parse(match);
-    } catch {
-      // Try cleaning common issues
-      try {
-        const cleaned = cleanJSONString(match);
-        return JSON.parse(cleaned);
-      } catch {
-        // Continue to next match
-      }
-    }
-  }
-
-  // Strategy 3: Find balanced JSON arrays
-  const arrayMatches = findBalancedJSON(text, "[", "]");
-  for (const match of arrayMatches) {
-    try {
-      return JSON.parse(match);
-    } catch {
-      try {
-        const cleaned = cleanJSONString(match);
-        return JSON.parse(cleaned);
-      } catch {
-        // Continue to next match
-      }
-    }
-  }
-
-  // Strategy 4: Try parsing the entire text
-  try {
-    return JSON.parse(text);
-  } catch {
-    // Last resort: try cleaning and parsing
-    try {
-      const cleaned = cleanJSONString(text);
-      return JSON.parse(cleaned);
-    } catch {
-      // Provide helpful error message
-      const preview = text.length > 100 ? text.substring(0, 100) + "..." : text;
-      throw new Error(`Could not extract valid JSON from response. Preview: ${preview}`);
-    }
-  }
-}
-
-/**
- * Find balanced JSON structures in text
- */
-function findBalancedJSON(text: string, openChar: string, closeChar: string): string[] {
-  const results: string[] = [];
-  let depth = 0;
-  let startIndex = -1;
-
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === openChar) {
-      if (depth === 0) {
-        startIndex = i;
-      }
-      depth++;
-    } else if (text[i] === closeChar) {
-      depth--;
-      if (depth === 0 && startIndex !== -1) {
-        results.push(text.substring(startIndex, i + 1));
-        startIndex = -1;
-      }
-    }
-  }
-
-  return results;
-}
-
-/**
- * Clean common JSON issues
- */
-function cleanJSONString(str: string): string {
-  return str
-    .replace(/[\x00-\x1F\x7F]/g, " ") // Remove control characters
-    .replace(/,\s*([\]}])/g, "$1") // Remove trailing commas
-    .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3') // Quote unquoted keys
-    .trim();
-}
-
-/**
- * Timeout wrapper for async operations
- */
-async function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  operation: string = "Operation"
-): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout>;
-
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => {
-      const error = new Error(`${operation} timed out after ${timeoutMs}ms`);
-      error.name = "TimeoutError";
-      reject(error);
-    }, timeoutMs);
-  });
-
-  try {
-    const result = await Promise.race([promise, timeoutPromise]);
-    clearTimeout(timeoutId!);
-    return result;
-  } catch (error) {
-    clearTimeout(timeoutId!);
-    throw error;
-  }
 }
 
 /**
@@ -319,65 +191,69 @@ export async function getMatcherSettings(): Promise<MatcherSettings> {
   };
 }
 
-/**
- * Retry function with exponential backoff and jitter
- */
-async function retryWithBackoff<T>(
-  fn: () => Promise<T>,
-  options: {
-    maxRetries: number;
-    baseDelay: number;
-    maxDelay: number;
-    jobId?: number;
-    scrapingLogId?: number | null;
-    onRetry?: (attempt: number, delay: number, error: Error) => void;
-  }
-): Promise<T> {
-  const { maxRetries, baseDelay, maxDelay, jobId, scrapingLogId, onRetry } = options;
-  let lastError: Error = new Error("Unknown error");
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-
-      // Log error for each attempt
-      if (jobId) {
-        await logMatcherError(jobId, attempt, lastError, scrapingLogId);
-      }
-
-      if (attempt === maxRetries) {
-        // Final attempt failed
-        break;
-      }
-
-      // Exponential backoff with jitter: baseDelay * 2^attempt + random jitter
-      const exponentialDelay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxDelay);
-      const jitter = Math.random() * 1000; // Up to 1s of random jitter
-      const delay = exponentialDelay + jitter;
-
-      console.log(`[Matcher] Attempt ${attempt}/${maxRetries} failed, retrying in ${Math.round(delay)}ms: ${lastError.message}`);
-      onRetry?.(attempt, delay, lastError);
-
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-  }
-
-  throw lastError;
-}
-
 function extractRequirements(description: string | null): string[] {
   if (!description) return [];
   try {
-    const matches = description.match(/[-•]\s*(.+)/g);
-    if (matches) {
-      return matches.map((m) => m.replace(/^[-•]\s*/, "").trim());
+    // Extract "bullet-like" lines.
+    // Examples:
+    // - Must have X
+    // • Nice to have Y
+    // 1. Strong in Z
+    const lines = description.split(/\r?\n/);
+    const reqs = lines
+      .map((l) => l.trim())
+      .map((l) => {
+        const m = l.match(/^(?:[-*•]|\d+[.)])\s+(.+?)\s*$/);
+        return m?.[1]?.trim() ?? "";
+      })
+      .filter(Boolean);
+
+    if (reqs.length > 0) {
+      const seen = new Set<string>();
+      return reqs.filter((r) => {
+        const key = r.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     }
   } catch {
     // Ignore parsing errors
   }
   return [];
+}
+
+/**
+ * Lightweight HTML -> readable text conversion for backend requirement extraction.
+ * (The matcher can still receive HTML; this is just to derive a requirements list.)
+ */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<\/(p|div|h[1-6]|li|br|tr)>/gi, "\n\n")
+    .replace(/<(p|div|h[1-6]|li|tr)[^>]*>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#x2F;/g, "/")
+    .replace(/&apos;/g, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function getJobDescriptionForMatching(job: { description: string | null; cleanDescription: string | null }): string {
+  // Prefer raw scraped description (often HTML and has the real content).
+  // Fall back to cleanDescription if raw isn't present.
+  return job.description || job.cleanDescription || "";
 }
 
 function chunkArray<T>(array: T[], size: number): T[][] {
@@ -420,9 +296,10 @@ export async function calculateJobMatch(jobId: number, options?: MatchOptions): 
     db.select().from(experience).where(eq(experience.profileId, userProfile.id)),
   ]);
 
-  const jobRequirements = extractRequirements(job.cleanDescription);
+  const sourceDescription = getJobDescriptionForMatching(job);
+  const jobRequirements = extractRequirements(htmlToText(sourceDescription));
 
-  const userPrompt = JOB_MATCHING_USER_PROMPT(job.title, job.cleanDescription || "", jobRequirements, {
+  const userPrompt = JOB_MATCHING_USER_PROMPT(job.title, sourceDescription, jobRequirements, {
     summary: userProfile.summary || undefined,
     skills: userSkills.map((s) => ({
       name: s.name,
@@ -506,11 +383,14 @@ export async function calculateJobMatch(jobId: number, options?: MatchOptions): 
       maxRetries: matcherSettings.maxRetries,
       baseDelay: matcherSettings.backoffBaseDelay,
       maxDelay: matcherSettings.backoffMaxDelay,
-      jobId,
-      scrapingLogId: options?.scrapingLogId,
       onRetry: (attempt, delay) => {
         console.log(`[Matcher] Job ${jobId}: Retry ${attempt} scheduled after ${Math.round(delay)}ms`);
       },
+      logError: async (attempt, error) => {
+        if (jobId) {
+          await logMatcherError(jobId, attempt, error, options?.scrapingLogId);
+        }
+      }
     }
   );
 
@@ -519,7 +399,7 @@ export async function calculateJobMatch(jobId: number, options?: MatchOptions): 
     .update(jobs)
     .set({
       matchScore: result.score,
-      cleanDescription: result.cleanDescription || null,
+      cleanDescription: htmlToText(sourceDescription),
       matchReasons: JSON.stringify(result.reasons),
       matchedSkills: JSON.stringify(result.matchedSkills),
       missingSkills: JSON.stringify(result.missingSkills),
@@ -700,10 +580,11 @@ export async function matchJobsWithTracking(
         attemptCount = attempt;
 
         try {
-          const jobRequirements = extractRequirements(job.cleanDescription);
+          const sourceDescription = getJobDescriptionForMatching(job);
+          const jobRequirements = extractRequirements(htmlToText(sourceDescription));
           const userPrompt = JOB_MATCHING_USER_PROMPT(
             job.title,
-            job.cleanDescription || "",
+            sourceDescription,
             jobRequirements,
             candidateProfile
           );
@@ -764,7 +645,7 @@ export async function matchJobsWithTracking(
           // Success - update job
           await db.update(jobs).set({
             matchScore: result.score,
-            cleanDescription: result.cleanDescription || null,
+            cleanDescription: htmlToText(sourceDescription),
             matchReasons: JSON.stringify(result.reasons),
             matchedSkills: JSON.stringify(result.matchedSkills),
             missingSkills: JSON.stringify(result.missingSkills),
@@ -941,11 +822,12 @@ export async function bulkCalculateJobMatches(
         .map((jobId) => {
           const job = jobsMap.get(jobId);
           if (!job) return null;
+          const sourceDescription = getJobDescriptionForMatching(job);
           return {
             id: job.id,
             title: job.title,
-            description: job.cleanDescription || "",
-            requirements: extractRequirements(job.cleanDescription),
+            description: sourceDescription,
+            requirements: extractRequirements(htmlToText(sourceDescription)),
           };
         })
         .filter((j): j is JobForMatching => j !== null);
@@ -1021,11 +903,14 @@ export async function bulkCalculateJobMatches(
       // Update each job in the database
       for (const result of batchResults) {
         try {
+          const job = jobsMap.get(result.jobId);
+          const cleanDesc = job ? htmlToText(getJobDescriptionForMatching(job)) : null;
+
           await db
             .update(jobs)
             .set({
               matchScore: result.score,
-              cleanDescription: result.cleanDescription || null,
+              cleanDescription: cleanDesc,
               matchReasons: JSON.stringify(result.reasons),
               matchedSkills: JSON.stringify(result.matchedSkills),
               missingSkills: JSON.stringify(result.missingSkills),
@@ -1036,7 +921,6 @@ export async function bulkCalculateJobMatches(
 
           results.set(result.jobId, {
             score: result.score,
-            cleanDescription: result.cleanDescription,
             reasons: result.reasons,
             matchedSkills: result.matchedSkills,
             missingSkills: result.missingSkills,

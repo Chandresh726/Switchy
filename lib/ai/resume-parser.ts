@@ -7,13 +7,13 @@ import { eq } from "drizzle-orm";
 
 const ResumeDataSchema = z.object({
   name: z.string(),
-  email: z.string().optional(),
-  phone: z.string().optional(),
-  location: z.string().optional(),
-  linkedinUrl: z.string().optional(),
-  githubUrl: z.string().optional(),
-  portfolioUrl: z.string().optional(),
-  summary: z.string().optional(),
+  email: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  location: z.string().nullable().optional(),
+  linkedinUrl: z.string().nullable().optional(),
+  githubUrl: z.string().nullable().optional(),
+  portfolioUrl: z.string().nullable().optional(),
+  summary: z.string().nullable().optional(),
   skills: z.array(
     z.object({
       name: z.string(),
@@ -25,10 +25,10 @@ const ResumeDataSchema = z.object({
     z.object({
       company: z.string(),
       title: z.string(),
-      location: z.string().optional(),
+      location: z.string().nullable().optional(),
       startDate: z.string(),
-      endDate: z.string().optional(),
-      description: z.string().optional(),
+      endDate: z.string().nullable().optional(),
+      description: z.string().nullable().optional(),
       highlights: z.array(z.string()).optional(),
     })
   ),
@@ -37,11 +37,11 @@ const ResumeDataSchema = z.object({
       z.object({
         institution: z.string(),
         degree: z.string(),
-        field: z.string().optional(),
-        startDate: z.string().optional(),
-        endDate: z.string().optional(),
-        gpa: z.string().optional(),
-        honors: z.string().optional(),
+        field: z.string().nullable().optional(),
+        startDate: z.string().nullable().optional(),
+        endDate: z.string().nullable().optional(),
+        gpa: z.string().nullable().optional(),
+        honors: z.string().nullable().optional(),
       })
     )
     .optional(),

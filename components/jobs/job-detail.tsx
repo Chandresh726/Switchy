@@ -15,7 +15,6 @@ import {
   Check,
   AlertCircle,
   Lightbulb,
-  ExternalLink,
   Loader2,
 } from "lucide-react";
 
@@ -24,7 +23,7 @@ import {
  */
 function htmlToText(html: string): string {
   // First, add line breaks before block elements to preserve structure
-  let text = html
+  const text = html
     // Add double newlines before major block elements
     .replace(/<\/(p|div|h[1-6]|li|br|tr)>/gi, "\n\n")
     .replace(/<(p|div|h[1-6]|li|tr)[^>]*>/gi, "")
@@ -146,6 +145,7 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-start gap-4">
               {job.company.logoUrl ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
                 <img
                   src={job.company.logoUrl}
                   alt={job.company.name}

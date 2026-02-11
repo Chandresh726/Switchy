@@ -35,7 +35,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, careersUrl, logoUrl, isActive, scrapeFrequency, platform, boardToken } = body;
+    const { name, careersUrl, logoUrl, isActive, platform, boardToken } = body;
 
     const [updated] = await db
       .update(companies)
@@ -44,7 +44,6 @@ export async function PUT(
         careersUrl,
         logoUrl,
         isActive,
-        scrapeFrequency,
         platform,
         boardToken,
         updatedAt: new Date(),
@@ -81,7 +80,6 @@ export async function PATCH(
     if (body.careersUrl !== undefined) updateData.careersUrl = body.careersUrl;
     if (body.logoUrl !== undefined) updateData.logoUrl = body.logoUrl;
     if (body.isActive !== undefined) updateData.isActive = body.isActive;
-    if (body.scrapeFrequency !== undefined) updateData.scrapeFrequency = body.scrapeFrequency;
     if (body.platform !== undefined) updateData.platform = body.platform;
     if (body.boardToken !== undefined) updateData.boardToken = body.boardToken;
 
