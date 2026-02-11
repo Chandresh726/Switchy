@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseResume } from "@/lib/ai/resume-parser";
 import { extractText } from "unpdf";
+import { saveFile } from "@/lib/storage/files";
+import { db } from "@/lib/db";
+import { profile, resumes } from "@/lib/db/schema";
+import { eq, desc } from "drizzle-orm";
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,6 +14,9 @@ export async function POST(request: NextRequest) {
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
+
+    // Save file to disk
+    const savedFile = await saveFile(file, "resumes");
 
     // Get file extension
     const fileName = file.name.toLowerCase();
@@ -53,7 +60,54 @@ export async function POST(request: NextRequest) {
     // Parse resume with AI
     const parsedData = await parseResume(resumeText);
 
-    return NextResponse.json(parsedData);
+    // Get or create profile
+    let currentProfile = await db.query.profile.findFirst();
+
+    if (!currentProfile) {
+      const [newProfile] = await db.insert(profile).values({
+        name: parsedData.name || "New User",
+        email: parsedData.email,
+        phone: parsedData.phone,
+        summary: parsedData.summary,
+      }).returning();
+      currentProfile = newProfile;
+    }
+
+    // Atomically determine version, clear isCurrent, and insert new resume
+    const resumeRecord = await db.transaction(async (tx) => {
+      // Determine version number
+      const lastResume = await tx.query.resumes.findFirst({
+        where: eq(resumes.profileId, currentProfile.id),
+        orderBy: [desc(resumes.version)],
+      });
+
+      const nextVersion = (lastResume?.version || 0) + 1;
+
+      // Mark all previous resumes as not current
+      if (nextVersion > 1) {
+        await tx
+          .update(resumes)
+          .set({ isCurrent: false })
+          .where(eq(resumes.profileId, currentProfile.id));
+      }
+
+      // Save resume record
+      const [record] = await tx.insert(resumes).values({
+        profileId: currentProfile.id,
+        fileName: file.name,
+        filePath: savedFile.path,
+        parsedData: JSON.stringify(parsedData),
+        version: nextVersion,
+        isCurrent: true, // Mark as current by default for now
+      }).returning();
+
+      return record;
+    });
+
+    return NextResponse.json({
+      parsedData,
+      resumeRecord
+    });
   } catch (error) {
     console.error("Failed to parse resume:", error);
     return NextResponse.json(

@@ -5,36 +5,22 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1770545625192,
-      "tag": "0000_cloudy_hex",
+      "when": 1770742303719,
+      "tag": "0000_superb_susan_delgado",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "6",
-      "when": 1770611440466,
-      "tag": "0001_noisy_meteorite",
+      "when": 1770810211817,
+      "tag": "0001_complex_runaways",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "6",
-      "when": 1770613503818,
-      "tag": "0002_friendly_susan_delgado",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1770700000000,
-      "tag": "0003_add_match_history",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1770641793356,
-      "tag": "0004_closed_falcon",
+      "when": 1770811420699,
+      "tag": "0002_lovely_black_bolt",
       "breakpoints": true
     }
   ]

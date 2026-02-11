@@ -94,7 +94,7 @@ export function JobList() {
   // Load filters from localStorage on mount
   useEffect(() => {
     const savedFilters = loadFiltersFromStorage();
-    setFilters(savedFilters);
+    setFilters(savedFilters); // eslint-disable-line react-hooks/set-state-in-effect
     setDebouncedSearch(savedFilters.search);
     setDebouncedLocationSearch(savedFilters.locationSearch);
     setDebouncedDepartment(savedFilters.department);
@@ -108,10 +108,21 @@ export function JobList() {
     }
   }, [filters, isInitialized]);
 
-  // Reset to page 1 when filters or tab change
-  useEffect(() => {
+  // Handle filter changes and reset pagination
+  const handleFiltersChange = (newFilters: Filters) => {
+    setFilters(newFilters);
     setCurrentPage(1);
-  }, [filters, activeTab, pageSize]);
+  };
+
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab);
+    setCurrentPage(1);
+  };
+
+  const handlePageSizeChange = (size: number) => {
+    setPageSize(size);
+    setCurrentPage(1);
+  };
 
   // Debounce text inputs
   useEffect(() => {
@@ -273,7 +284,7 @@ export function JobList() {
       {/* Tabs */}
       <div className="mb-4 flex items-center gap-1 border-b border-zinc-800">
         <button
-          onClick={() => setActiveTab("all")}
+          onClick={() => handleTabChange("all")}
           className={`px-4 py-2 text-sm font-medium transition-colors ${
             activeTab === "all"
               ? "border-b-2 border-emerald-500 text-white"
@@ -283,7 +294,7 @@ export function JobList() {
           All Jobs
         </button>
         <button
-          onClick={() => setActiveTab("saved")}
+          onClick={() => handleTabChange("saved")}
           className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
             activeTab === "saved"
               ? "border-b-2 border-emerald-500 text-white"
@@ -298,7 +309,7 @@ export function JobList() {
           )}
         </button>
         <button
-          onClick={() => setActiveTab("applied")}
+          onClick={() => handleTabChange("applied")}
           className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
             activeTab === "applied"
               ? "border-b-2 border-emerald-500 text-white"
@@ -325,7 +336,7 @@ export function JobList() {
       {/* Filters - hide status filter when on Applied/Saved tab */}
       <JobFilters
         filters={filters}
-        onFiltersChange={setFilters}
+        onFiltersChange={handleFiltersChange}
         companies={companies}
         hideStatusFilter={activeTab !== "all"}
       />
@@ -373,7 +384,7 @@ export function JobList() {
                   <span className="text-sm text-zinc-400">Show:</span>
                   <select
                     value={pageSize}
-                    onChange={(e) => setPageSize(parseInt(e.target.value))}
+                    onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
                     className="h-8 rounded border border-zinc-700 bg-zinc-900 px-2 text-sm text-zinc-100"
                   >
                     <option value={10}>10</option>

@@ -52,6 +52,138 @@ const emptyForm: ExperienceFormData = {
   description: "",
 };
 
+function ExperienceForm({
+  onSubmit,
+  onCancel,
+  isEdit,
+  isPending,
+  formData,
+  setFormData,
+}: {
+  onSubmit: (e: React.FormEvent) => void;
+  onCancel: () => void;
+  isEdit: boolean;
+  isPending: boolean;
+  formData: ExperienceFormData;
+  setFormData: React.Dispatch<React.SetStateAction<ExperienceFormData>>;
+}) {
+  return (
+    <form
+      onSubmit={onSubmit}
+      className="space-y-4 rounded-lg border border-zinc-700 bg-zinc-900 p-4"
+    >
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-medium text-white">
+          {isEdit ? "Edit Experience" : "Add Experience"}
+        </h4>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={onCancel}
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="title">Job Title *</Label>
+          <Input
+            id="title"
+            value={formData.title}
+            onChange={(e) =>
+              setFormData((prev) => ({ ...prev, title: e.target.value }))
+            }
+            required
+            placeholder="Senior Software Engineer"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="company">Company *</Label>
+          <Input
+            id="company"
+            value={formData.company}
+            onChange={(e) =>
+              setFormData((prev) => ({ ...prev, company: e.target.value }))
+            }
+            required
+            placeholder="Acme Inc"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="location">Location</Label>
+          <Input
+            id="location"
+            value={formData.location}
+            onChange={(e) =>
+              setFormData((prev) => ({ ...prev, location: e.target.value }))
+            }
+            placeholder="San Francisco, CA"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-2">
+            <Label htmlFor="startDate">Start Date *</Label>
+            <Input
+              id="startDate"
+              value={formData.startDate}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, startDate: e.target.value }))
+              }
+              required
+              placeholder="Jan 2022"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="endDate">End Date</Label>
+            <Input
+              id="endDate"
+              value={formData.endDate}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, endDate: e.target.value }))
+              }
+              placeholder="Present"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="description">Description</Label>
+        <Textarea
+          id="description"
+          value={formData.description}
+          onChange={(e) =>
+            setFormData((prev) => ({ ...prev, description: e.target.value }))
+          }
+          rows={3}
+          placeholder="Describe your role and responsibilities..."
+        />
+      </div>
+
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={isPending}>
+          {isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : isEdit ? (
+            <Save className="h-4 w-4" />
+          ) : (
+            <Plus className="h-4 w-4" />
+          )}
+          {isEdit ? "Save Changes" : "Add Experience"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 export function ExperienceList({ profileId, initialExperience }: ExperienceListProps) {
   const queryClient = useQueryClient();
   const [isAdding, setIsAdding] = useState(false);
@@ -63,7 +195,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
   // Set pending experiences when initialExperience changes (from resume parsing)
   useEffect(() => {
     if (initialExperience && initialExperience.length > 0) {
-      setPendingExperiences(initialExperience);
+      setPendingExperiences(initialExperience); // eslint-disable-line react-hooks/set-state-in-effect
     }
   }, [initialExperience]);
 
@@ -227,132 +359,6 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
     );
   }
 
-  const ExperienceForm = ({
-    onSubmit,
-    onCancel,
-    isEdit,
-    isPending
-  }: {
-    onSubmit: (e: React.FormEvent) => void;
-    onCancel: () => void;
-    isEdit: boolean;
-    isPending: boolean;
-  }) => (
-    <form
-      onSubmit={onSubmit}
-      className="space-y-4 rounded-lg border border-zinc-700 bg-zinc-900 p-4"
-    >
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium text-white">
-          {isEdit ? "Edit Experience" : "Add Experience"}
-        </h4>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          onClick={onCancel}
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="title">Job Title *</Label>
-          <Input
-            id="title"
-            value={formData.title}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, title: e.target.value }))
-            }
-            required
-            placeholder="Senior Software Engineer"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="company">Company *</Label>
-          <Input
-            id="company"
-            value={formData.company}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, company: e.target.value }))
-            }
-            required
-            placeholder="Acme Inc"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="location">Location</Label>
-          <Input
-            id="location"
-            value={formData.location}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, location: e.target.value }))
-            }
-            placeholder="San Francisco, CA"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-2">
-            <Label htmlFor="startDate">Start Date *</Label>
-            <Input
-              id="startDate"
-              value={formData.startDate}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, startDate: e.target.value }))
-              }
-              required
-              placeholder="Jan 2022"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="endDate">End Date</Label>
-            <Input
-              id="endDate"
-              value={formData.endDate}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, endDate: e.target.value }))
-              }
-              placeholder="Present"
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="description">Description</Label>
-        <Textarea
-          id="description"
-          value={formData.description}
-          onChange={(e) =>
-            setFormData((prev) => ({ ...prev, description: e.target.value }))
-          }
-          rows={3}
-          placeholder="Describe your role and responsibilities..."
-        />
-      </div>
-
-      <div className="flex justify-end gap-2">
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={isPending}>
-          {isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : isEdit ? (
-            <Save className="h-4 w-4" />
-          ) : (
-            <Plus className="h-4 w-4" />
-          )}
-          {isEdit ? "Save Changes" : "Add Experience"}
-        </Button>
-      </div>
-    </form>
-  );
-
   return (
     <div className="space-y-4">
       {/* Pending experiences from resume */}
@@ -410,6 +416,8 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
           onCancel={cancelEditing}
           isEdit={true}
           isPending={updateMutation.isPending}
+          formData={formData}
+          setFormData={setFormData}
         />
       )}
 
@@ -475,6 +483,8 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
           }}
           isEdit={false}
           isPending={addMutation.isPending}
+          formData={formData}
+          setFormData={setFormData}
         />
       ) : !editingId ? (
         <Button variant="outline" className="w-full" onClick={() => setIsAdding(true)}>

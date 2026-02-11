@@ -15,7 +15,7 @@ export async function DELETE() {
     await db.delete(matchSessions);
 
     // Clear match fields from all jobs
-    const result = await db
+    await db
       .update(jobs)
       .set({
         matchScore: null,
@@ -23,7 +23,6 @@ export async function DELETE() {
         matchedSkills: null,
         missingSkills: null,
         recommendations: null,
-        cleanDescription: null,
         updatedAt: new Date(),
       });
 

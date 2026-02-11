@@ -1,9 +1,9 @@
 import { db } from "@/lib/db";
-import { companies, jobs, scrapingLogs, scrapeSessions, profile, settings } from "@/lib/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { companies, jobs, scrapingLogs, scrapeSessions, profile } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import { scraperRegistry } from "@/lib/scrapers/registry";
 import { batchDeduplicateJobs } from "./deduplicator";
-import { batchCalculateJobMatches, matchJobsWithTracking, getMatcherSettings } from "@/lib/ai/matcher";
+import { matchJobsWithTracking, getMatcherSettings } from "@/lib/ai/matcher";
 
 // Country/location mappings for filtering
 const COUNTRY_MAPPINGS: Record<string, string[]> = {
@@ -138,7 +138,8 @@ export async function fetchJobsForCompany(
     };
   }
 
-  let { sessionId, triggerSource } = options;
+  let sessionId = options.sessionId;
+  const triggerSource = options.triggerSource ?? "manual";
 
   // Create a session if one wasn't provided (single company refresh)
   const isStandaloneRefresh = !sessionId;
@@ -266,6 +267,7 @@ export async function fetchJobsForCompany(
           locationType: job.locationType,
           department: job.department,
           description: job.description,
+          descriptionFormat: job.descriptionFormat ?? "plain",
           salary: job.salary,
           employmentType: job.employmentType,
           postedDate: job.postedDate,
@@ -283,7 +285,6 @@ export async function fetchJobsForCompany(
       .where(eq(companies.id, companyId));
 
     // Log the scrape result
-    let logId: number | undefined;
     const [log] = await db.insert(scrapingLogs).values({
       companyId,
       sessionId,
@@ -300,7 +301,7 @@ export async function fetchJobsForCompany(
       matcherJobsTotal: insertedJobIds.length > 0 ? insertedJobIds.length : null,
       matcherJobsCompleted: 0,
     }).returning({ id: scrapingLogs.id });
-    logId = log?.id;
+    const logId: number | undefined = log?.id;
 
     // Trigger async matching for new jobs if auto-match is enabled
     if (insertedJobIds.length > 0) {
@@ -487,6 +488,7 @@ export async function fetchJobsForAllCompanies(
     results.push(result);
 
     // Update session progress
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const successCount = results.filter(r => r.success).length;
     const totalJobsFound = results.reduce((sum, r) => sum + r.jobsFound, 0);
     const totalJobsAdded = results.reduce((sum, r) => sum + r.jobsAdded, 0);

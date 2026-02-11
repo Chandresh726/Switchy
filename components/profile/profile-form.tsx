@@ -55,6 +55,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
   // Update form when profile data is loaded
   useEffect(() => {
     if (profile) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData({
         name: profile.name || "",
         email: profile.email || "",
@@ -74,6 +75,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
   // Apply initialData when provided (from resume parsing)
   useEffect(() => {
     if (initialData) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData((prev) => ({
         ...prev,
         name: initialData.name || prev.name,

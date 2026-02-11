@@ -7,6 +7,7 @@ export const profile = sqliteTable("profile", {
   name: text("name").notNull(),
   email: text("email"),
   phone: text("phone"),
+  location: text("location"),
   preferredCountry: text("preferred_country"),
   preferredCity: text("preferred_city"),
   linkedinUrl: text("linkedin_url"),
@@ -16,6 +17,18 @@ export const profile = sqliteTable("profile", {
   summary: text("summary"),
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
+// Resumes - Uploaded resumes and their parsed data
+export const resumes = sqliteTable("resumes", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  profileId: integer("profile_id").references(() => profile.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  filePath: text("file_path").notNull(),
+  parsedData: text("parsed_data").notNull(), // JSON string
+  version: integer("version").notNull(),
+  isCurrent: integer("is_current", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
 // Skills - User skills with proficiency levels
@@ -34,8 +47,10 @@ export const experience = sqliteTable("experience", {
   profileId: integer("profile_id").references(() => profile.id, { onDelete: "cascade" }),
   company: text("company").notNull(),
   title: text("title").notNull(),
+  location: text("location"),
   startDate: text("start_date").notNull(),
   endDate: text("end_date"), // null = current
+  description: text("description"),
   highlights: text("highlights"), // JSON array stored as text
 });
 
@@ -73,8 +88,10 @@ export const jobs = sqliteTable("jobs", {
   companyId: integer("company_id").references(() => companies.id, { onDelete: "cascade" }).notNull(),
   externalId: text("external_id"), // for deduplication
   title: text("title").notNull(),
-  cleanDescription: text("clean_description"), // AI-cleaned plain text description
+  description: text("description"), // Job description (markdown or plain text)
+  descriptionFormat: text("description_format").notNull().default("plain"), // "markdown", "plain", "html"
   url: text("url").notNull(),
+  location: text("location"),
   locationType: text("location_type"), // "remote", "hybrid", "onsite"
   salary: text("salary"),
   department: text("department"),
@@ -193,6 +210,14 @@ export const profileRelations = relations(profile, ({ many }) => ({
   skills: many(skills),
   experience: many(experience),
   education: many(education),
+  resumes: many(resumes),
+}));
+
+export const resumesRelations = relations(resumes, ({ one }) => ({
+  profile: one(profile, {
+    fields: [resumes.profileId],
+    references: [profile.id],
+  }),
 }));
 
 export const skillsRelations = relations(skills, ({ one }) => ({
@@ -309,3 +334,5 @@ export type MatchSession = typeof matchSessions.$inferSelect;
 export type NewMatchSession = typeof matchSessions.$inferInsert;
 export type MatchLog = typeof matchLogs.$inferSelect;
 export type NewMatchLog = typeof matchLogs.$inferInsert;
+export type Resume = typeof resumes.$inferSelect;
+export type NewResume = typeof resumes.$inferInsert;

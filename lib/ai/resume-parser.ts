@@ -1,16 +1,20 @@
 import { generateText } from "ai";
 import { z } from "zod";
-import { model } from "./client";
+import { getAIClient, getAIGenerationOptions } from "./client";
+import { db } from "@/lib/db";
+import { settings } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+import { extractJSON } from "./json-parser";
 
 const ResumeDataSchema = z.object({
   name: z.string(),
-  email: z.string().optional(),
-  phone: z.string().optional(),
-  location: z.string().optional(),
-  linkedinUrl: z.string().optional(),
-  githubUrl: z.string().optional(),
-  portfolioUrl: z.string().optional(),
-  summary: z.string().optional(),
+  email: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  location: z.string().nullable().optional(),
+  linkedinUrl: z.string().nullable().optional(),
+  githubUrl: z.string().nullable().optional(),
+  portfolioUrl: z.string().nullable().optional(),
+  summary: z.string().nullable().optional(),
   skills: z.array(
     z.object({
       name: z.string(),
@@ -22,10 +26,10 @@ const ResumeDataSchema = z.object({
     z.object({
       company: z.string(),
       title: z.string(),
-      location: z.string().optional(),
+      location: z.string().nullable().optional(),
       startDate: z.string(),
-      endDate: z.string().optional(),
-      description: z.string().optional(),
+      endDate: z.string().nullable().optional(),
+      description: z.string().nullable().optional(),
       highlights: z.array(z.string()).optional(),
     })
   ),
@@ -34,11 +38,11 @@ const ResumeDataSchema = z.object({
       z.object({
         institution: z.string(),
         degree: z.string(),
-        field: z.string().optional(),
-        startDate: z.string().optional(),
-        endDate: z.string().optional(),
-        gpa: z.string().optional(),
-        honors: z.string().optional(),
+        field: z.string().nullable().optional(),
+        startDate: z.string().nullable().optional(),
+        endDate: z.string().nullable().optional(),
+        gpa: z.string().nullable().optional(),
+        honors: z.string().nullable().optional(),
       })
     )
     .optional(),
@@ -104,16 +108,20 @@ IMPORTANT: You must respond with ONLY a valid JSON object in the following forma
   ]
 }`;
 
-function extractJSON(text: string): unknown {
-  // Try to extract JSON from the response
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    return JSON.parse(jsonMatch[0]);
-  }
-  throw new Error("No valid JSON found in response");
-}
-
 export async function parseResume(resumeText: string): Promise<ResumeData> {
+  // Fetch configured model from settings or default to gemini-3-flash-preview
+  const modelSetting = await db.query.settings.findFirst({
+    where: eq(settings.key, "resume_parser_model"),
+  });
+  const reasoningEffortSetting = await db.query.settings.findFirst({
+    where: eq(settings.key, "resume_parser_reasoning_effort"),
+  });
+  const modelId = modelSetting?.value || "gemini-3-flash-preview";
+  const reasoningEffort = reasoningEffortSetting?.value || "medium";
+  
+  const model = await getAIClient(modelId, reasoningEffort);
+  const providerOptions = await getAIGenerationOptions(modelId, reasoningEffort);
+
   const { text } = await generateText({
     model,
     system: RESUME_PARSING_SYSTEM_PROMPT,
@@ -124,6 +132,7 @@ ${resumeText}
 ---
 
 Extract all relevant information including contact details, skills, work experience, and education.${JSON_FORMAT_INSTRUCTIONS}`,
+    ...providerOptions,
   });
 
   // Parse and validate the JSON response

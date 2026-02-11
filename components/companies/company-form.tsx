@@ -4,9 +4,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { useState, useEffect } from "react";
-import { Loader2, Plus, X, ChevronDown, ChevronUp, Save } from "lucide-react";
+import { Loader2, Plus, X, Save } from "lucide-react";
 
 interface Company {
   id: number;
@@ -17,7 +16,6 @@ interface Company {
   boardToken: string | null;
   isActive: boolean;
   lastScrapedAt: string | null;
-  scrapeFrequency: number;
 }
 
 interface CompanyFormProps {
@@ -36,36 +34,43 @@ const PLATFORMS = [
 export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) {
   const queryClient = useQueryClient();
   const isEditing = !!company;
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     careersUrl: "",
     logoUrl: "",
-    scrapeFrequency: 6,
     platform: "",
     boardToken: "",
   });
   const [detectedPlatform, setDetectedPlatform] = useState<string | null>(null);
   const [manualPlatformOverride, setManualPlatformOverride] = useState(false);
 
+  const handleUrlChange = (url: string) => {
+    setFormData((prev) => ({ ...prev, careersUrl: url }));
+
+    // Auto-detect platform
+    const urlLower = url.toLowerCase();
+    if (urlLower.includes("greenhouse.io") || urlLower.includes("boards.greenhouse")) {
+      setDetectedPlatform("Greenhouse");
+    } else if (urlLower.includes("lever.co") || urlLower.includes("jobs.lever")) {
+      setDetectedPlatform("Lever");
+    } else if (url.length > 10) {
+      setDetectedPlatform("Custom");
+    } else {
+      setDetectedPlatform(null);
+    }
+  };
+
   // Pre-fill form when editing
   useEffect(() => {
     if (company) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData({
         name: company.name,
         careersUrl: company.careersUrl,
         logoUrl: company.logoUrl || "",
-        scrapeFrequency: company.scrapeFrequency || 6,
         platform: company.platform || "",
         boardToken: company.boardToken || "",
       });
-      // Show advanced if any advanced fields are filled
-      if (
-        company.logoUrl ||
-        company.boardToken
-      ) {
-        setShowAdvanced(true);
-      }
       // Set manual override if boardToken exists
       if (company.boardToken) {
         setManualPlatformOverride(true);
@@ -108,29 +113,13 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
 
   const mutation = isEditing ? updateMutation : createMutation;
 
-  const handleUrlChange = (url: string) => {
-    setFormData((prev) => ({ ...prev, careersUrl: url }));
-
-    // Auto-detect platform
-    const urlLower = url.toLowerCase();
-    if (urlLower.includes("greenhouse.io") || urlLower.includes("boards.greenhouse")) {
-      setDetectedPlatform("Greenhouse");
-    } else if (urlLower.includes("lever.co") || urlLower.includes("jobs.lever")) {
-      setDetectedPlatform("Lever");
-    } else if (url.length > 10) {
-      setDetectedPlatform("Custom");
-    } else {
-      setDetectedPlatform(null);
-    }
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     mutation.mutate(formData);
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium text-white">
           {isEditing ? "Edit Company" : "Add Company"}
@@ -152,6 +141,8 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
             onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
             required
             placeholder="Acme Inc"
+            autoComplete="off"
+            data-form-type="other"
           />
         </div>
 
@@ -164,6 +155,8 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
               onChange={(e) => handleUrlChange(e.target.value)}
               required
               placeholder="https://jobs.lever.co/acme"
+              autoComplete="off"
+              data-form-type="other"
             />
             {detectedPlatform && !manualPlatformOverride && (
               <span className="absolute right-2 top-1/2 -translate-y-1/2 rounded bg-emerald-500/20 px-2 py-0.5 text-xs text-emerald-400">
@@ -175,6 +168,18 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
             We support Greenhouse, Lever, and custom career pages
           </p>
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="logoUrl">Logo URL (Optional)</Label>
+        <Input
+          id="logoUrl"
+          value={formData.logoUrl}
+          onChange={(e) => setFormData((prev) => ({ ...prev, logoUrl: e.target.value }))}
+          placeholder="https://..."
+          autoComplete="off"
+          data-form-type="other"
+        />
       </div>
 
       {/* Platform Override Section */}
@@ -231,6 +236,8 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
                   onChange={(e) => setFormData((prev) => ({ ...prev, boardToken: e.target.value }))}
                   placeholder="e.g., acme"
                   required={formData.platform === "greenhouse" || formData.platform === "lever"}
+                  autoComplete="off"
+                  data-form-type="other"
                 />
                 <p className="text-xs text-zinc-500">
                   Find this in the apply URL: boards.greenhouse.io/<strong>acme</strong>/jobs/123
@@ -238,51 +245,6 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Advanced Options Toggle */}
-      <button
-        type="button"
-        onClick={() => setShowAdvanced(!showAdvanced)}
-        className="flex w-full items-center gap-2 text-sm text-zinc-400 hover:text-zinc-300"
-      >
-        {showAdvanced ? (
-          <ChevronUp className="h-4 w-4" />
-        ) : (
-          <ChevronDown className="h-4 w-4" />
-        )}
-        Advanced Options
-      </button>
-
-      {/* Advanced Fields */}
-      {showAdvanced && (
-        <div className="space-y-4 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="logoUrl">Logo URL</Label>
-              <Input
-                id="logoUrl"
-                value={formData.logoUrl}
-                onChange={(e) => setFormData((prev) => ({ ...prev, logoUrl: e.target.value }))}
-                placeholder="https://..."
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="scrapeFrequency">Refresh Frequency (hours)</Label>
-              <Input
-                id="scrapeFrequency"
-                type="number"
-                min={1}
-                max={168}
-                value={formData.scrapeFrequency}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, scrapeFrequency: parseInt(e.target.value) || 6 }))
-                }
-              />
-            </div>
-          </div>
         </div>
       )}
 

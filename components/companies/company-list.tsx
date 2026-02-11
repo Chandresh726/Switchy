@@ -8,7 +8,6 @@ import {
   Building2,
   ExternalLink,
   Loader2,
-  MapPin,
   MoreVertical,
   Pencil,
   RefreshCw,
@@ -43,7 +42,6 @@ interface Company {
   boardToken: string | null;
   isActive: boolean;
   lastScrapedAt: string | null;
-  scrapeFrequency: number;
   createdAt: string;
 }
 
@@ -235,6 +233,7 @@ export function CompanyList() {
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
                 {company.logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={company.logoUrl}
                     alt={company.name}
@@ -341,10 +340,6 @@ export function CompanyList() {
                 </span>
               </div>
               <div className="flex items-center gap-3">
-                <span className="flex items-center gap-1" title="Scrape frequency">
-                  <RefreshCw className="h-3 w-3" />
-                  Every {company.scrapeFrequency}h
-                </span>
                 <span>
                   {company.lastScrapedAt
                     ? `Scraped ${getRelativeTime(company.lastScrapedAt)}`

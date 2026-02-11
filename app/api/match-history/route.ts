@@ -1,38 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { matchSessions, matchLogs, jobs, companies } from "@/lib/db/schema";
-import { eq, desc, sql, count } from "drizzle-orm";
-
-interface MatchSessionWithStats {
-  id: string;
-  triggerSource: string;
-  companyId: number | null;
-  companyName: string | null;
-  status: string;
-  jobsTotal: number | null;
-  jobsCompleted: number | null;
-  jobsSucceeded: number | null;
-  jobsFailed: number | null;
-  errorCount: number | null;
-  startedAt: Date | null;
-  completedAt: Date | null;
-}
-
-interface MatchLogWithJob {
-  id: number;
-  sessionId: string | null;
-  jobId: number | null;
-  jobTitle: string | null;
-  companyName: string | null;
-  status: string;
-  score: number | null;
-  attemptCount: number | null;
-  errorType: string | null;
-  errorMessage: string | null;
-  duration: number | null;
-  modelUsed: string | null;
-  completedAt: Date | null;
-}
+import { eq, desc, count } from "drizzle-orm";
 
 /**
  * GET /api/match-history

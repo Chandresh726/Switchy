@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Upload, FileText, Loader2, X, Check, AlertCircle } from "lucide-react";
+import { Upload, Loader2, Check, AlertCircle } from "lucide-react";
 
 interface ResumeData {
   name: string;
@@ -38,8 +38,11 @@ interface ResumeData {
   }>;
 }
 
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+
 interface ResumeUploadProps {
-  onParsed: (data: ResumeData) => void;
+  onParsed: (data: ResumeData, autofill: boolean) => void;
   disabled?: boolean;
 }
 
@@ -49,6 +52,7 @@ export function ResumeUpload({ onParsed, disabled }: ResumeUploadProps) {
   const [fileName, setFileName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [autofill, setAutofill] = useState(true);
 
   const handleFile = useCallback(
     async (file: File) => {
@@ -71,16 +75,20 @@ export function ResumeUpload({ onParsed, disabled }: ResumeUploadProps) {
           throw new Error(data.error || "Failed to parse resume");
         }
 
-        const parsedData: ResumeData = await response.json();
+        const result = await response.json();
+        // The API now returns { parsedData, resumeRecord }
+        // We only care about parsedData here for the form filling
+        const parsedData: ResumeData = result.parsedData || result;
+
         setSuccess(true);
-        onParsed(parsedData);
+        onParsed(parsedData, autofill);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to parse resume");
       } finally {
         setIsUploading(false);
       }
     },
-    [onParsed]
+    [onParsed, autofill]
   );
 
   const handleDrop = useCallback(
@@ -184,6 +192,18 @@ export function ResumeUpload({ onParsed, disabled }: ResumeUploadProps) {
       <p className="text-center text-xs text-zinc-500">
         Your resume will be parsed by AI to auto-fill your profile. You can edit all fields before saving.
       </p>
+
+      <div className="flex items-center justify-center space-x-2">
+        <Switch
+          id="autofill-mode"
+          checked={autofill}
+          onCheckedChange={setAutofill}
+          disabled={isUploading || disabled}
+        />
+        <Label htmlFor="autofill-mode" className="text-sm font-medium text-zinc-300">
+          Autofill profile with parsed data
+        </Label>
+      </div>
     </div>
   );
 }

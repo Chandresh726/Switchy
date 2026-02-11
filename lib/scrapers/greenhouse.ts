@@ -1,4 +1,5 @@
 import { AbstractScraper, ScraperResult, ScrapeOptions } from "./base-scraper";
+import { processDescription, containsHtml, decodeHtmlEntities } from "@/lib/jobs/description-processor";
 
 interface GreenhouseJob {
   id: number;
@@ -64,7 +65,7 @@ export class GreenhouseScraper extends AbstractScraper {
       // Greenhouse has a JSON API at /embed/job_board/jobs.json
       const apiUrl = `https://boards-api.greenhouse.io/v1/boards/${boardToken}/jobs?content=true`;
 
-      const response = await fetch(apiUrl, {
+      const response = await this.fetchWithRetry(apiUrl, {
         headers: {
           Accept: "application/json",
           "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
@@ -74,7 +75,7 @@ export class GreenhouseScraper extends AbstractScraper {
       if (!response.ok) {
         // Try alternative API endpoint
         const altApiUrl = `https://boards.greenhouse.io/${boardToken}/embed/job_board/jobs.json`;
-        const altResponse = await fetch(altApiUrl, {
+        const altResponse = await this.fetchWithRetry(altApiUrl, {
           headers: {
             Accept: "application/json",
             "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
@@ -107,6 +108,26 @@ export class GreenhouseScraper extends AbstractScraper {
   private parseJobs(data: GreenhouseResponse, boardToken: string): ScraperResult {
     const jobs = data.jobs.map((job) => {
       const { location, locationType } = this.normalizeLocation(job.location?.name);
+      
+      // Check if the content is already markdown or contains HTML
+      let description: string | undefined;
+      let descriptionFormat: "markdown" | "plain" = "plain";
+      
+      if (job.content) {
+        // First decode HTML entities that might be in the content
+        const decodedContent = decodeHtmlEntities(job.content);
+        
+        // If content contains HTML tags, process as HTML and convert to markdown
+        if (containsHtml(decodedContent)) {
+          const result = processDescription(decodedContent, "html");
+          description = result.text ?? undefined;
+          descriptionFormat = result.format;
+        } else {
+          // Content appears to be plain text or markdown already
+          description = decodedContent;
+          descriptionFormat = "markdown";
+        }
+      }
 
       return {
         externalId: this.generateExternalId(this.platform, boardToken, job.id),
@@ -115,7 +136,8 @@ export class GreenhouseScraper extends AbstractScraper {
         location,
         locationType,
         department: job.departments?.[0]?.name,
-        description: job.content,
+        description,
+        descriptionFormat,
         postedDate: job.updated_at ? new Date(job.updated_at) : undefined,
       };
     });

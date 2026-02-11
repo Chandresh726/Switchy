@@ -115,6 +115,7 @@ export function JobCard({ job }: JobCardProps) {
         <div className="flex items-start gap-3">
           {/* Company Logo */}
           {job.company.logoUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
             <img
               src={job.company.logoUrl}
               alt={job.company.name}

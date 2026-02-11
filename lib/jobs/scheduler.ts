@@ -14,7 +14,7 @@ interface SchedulerStatus {
   cronExpression: string;
 }
 
-const DEFAULT_CRON = "0 */6 * * *"; // Every 6 hours
+const DEFAULT_CRON = "0 * * * *"; // Every hour
 
 export function getSchedulerStatus(): SchedulerStatus {
   return {
@@ -56,7 +56,20 @@ export async function runScheduledRefresh(): Promise<void> {
   console.log("[Scheduler] Starting scheduled refresh");
 
   try {
-    // Find companies that need refreshing based on their individual schedules
+    // Get global scrape frequency from settings
+    const frequencySetting = await db
+      .select()
+      .from(settings)
+      .where(eq(settings.key, "global_scrape_frequency"))
+      .limit(1);
+
+    const scrapeFrequencyHours = frequencySetting.length > 0
+      ? parseInt(frequencySetting[0].value || "6", 10)
+      : 6;
+
+    console.log(`[Scheduler] Using global scrape frequency: ${scrapeFrequencyHours} hours`);
+
+    // Find companies that need refreshing based on global schedule
     const now = new Date();
     const companiesNeedingRefresh = await db
       .select()
@@ -67,7 +80,7 @@ export async function runScheduledRefresh(): Promise<void> {
           // Companies with no lastScrapedAt OR where enough time has passed
           lte(
             companies.lastScrapedAt,
-            new Date(now.getTime() - 6 * 60 * 60 * 1000) // Default 6 hours
+            new Date(now.getTime() - scrapeFrequencyHours * 60 * 60 * 1000)
           )
         )
       );

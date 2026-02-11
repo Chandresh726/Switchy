@@ -58,7 +58,7 @@ export class LeverScraper extends AbstractScraper {
       // Lever has a JSON API at /v0/postings/company
       const apiUrl = `https://api.lever.co/v0/postings/${companySlug}?mode=json`;
 
-      const response = await fetch(apiUrl, {
+      const response = await this.fetchWithRetry(apiUrl, {
         headers: {
           Accept: "application/json",
           "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
@@ -99,6 +99,7 @@ export class LeverScraper extends AbstractScraper {
         department: job.categories?.team || job.categories?.department,
         employmentType: job.categories?.commitment,
         description: job.descriptionPlain,
+        descriptionFormat: "plain" as const,
         postedDate: job.createdAt ? new Date(job.createdAt) : undefined,
       };
     });

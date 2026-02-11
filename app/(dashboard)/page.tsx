@@ -7,7 +7,6 @@ import {
   Star,
   TrendingUp,
   Clock,
-  MapPin,
   RefreshCw,
   CheckCircle2,
   AlertCircle,
@@ -15,13 +14,11 @@ import {
   Zap,
   ArrowRight,
   Send,
-  Play,
   Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 import { MatchBadge } from "@/components/jobs/match-badge";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 
 interface ScrapeSession {
   id: string;
@@ -99,38 +96,44 @@ function StatCard({
   href?: string;
 }) {
   const content = (
-    <div className="flex items-start justify-between h-full">
-      <div>
+    <div className="flex h-full items-center justify-between">
+      <div className="flex flex-col justify-center px-6 py-4">
         <p className="text-sm font-medium text-zinc-400">{title}</p>
         <div className="mt-2 flex items-baseline gap-2">
           <span className="text-3xl font-semibold text-white tracking-tight">{value}</span>
           {subtitle && <span className="text-xs text-zinc-500 font-medium">{subtitle}</span>}
         </div>
       </div>
-      <div className={`rounded-lg p-2.5 ${color.replace("text-", "bg-").replace("500", "500/10")} ${color}`}>
-        <Icon className="h-5 w-5" />
+      <div className="pr-6">
+        <div
+          className={`flex h-12 w-12 items-center justify-center rounded-lg ${color
+            .replace("text-", "bg-")
+            .replace("500", "500/10")} ${color}`}
+        >
+          <Icon className="h-7 w-7" />
+        </div>
       </div>
     </div>
   );
 
+  const containerClasses = "relative block h-full overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50 transition-all hover:border-zinc-700 hover:bg-zinc-900";
+
   if (href) {
     return (
-      <Link
-        href={href}
-        className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 transition-all hover:border-zinc-700 hover:bg-zinc-900"
-      >
+      <Link href={href} className={`group ${containerClasses}`}>
         {content}
       </Link>
     );
   }
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+    <div className={containerClasses}>
       {content}
     </div>
   );
 }
 
+/* eslint-disable @next/next/no-img-element */
 function JobRow({ job, type = "default" }: { job: Job; type?: "default" | "applied" }) {
   return (
     <Link
@@ -241,7 +244,7 @@ export default function DashboardPage() {
             Dashboard
           </h1>
           <p className="mt-1 text-zinc-400">
-            Welcome back, {userName}. Here's what's happening with your job search.
+            Welcome back, {userName}. Here&apos;s what&apos;s happening with your job search.
           </p>
         </div>
       </div>
@@ -279,6 +282,53 @@ export default function DashboardPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Main Content Column (2/3 width) */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Getting Started (Conditional) */}
+          {(!profile?.name || (stats?.totalCompanies ?? 0) === 0) && (
+            <div className="rounded-xl border border-zinc-800 bg-gradient-to-br from-zinc-900 to-zinc-950 p-6 mb-6">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="text-base font-medium text-white mb-1">Getting Started</h2>
+                  <p className="text-sm text-zinc-400 mb-4">Complete these steps to start finding your dream job.</p>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Link
+                  href="/profile"
+                  className="flex items-center gap-4 rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:bg-zinc-800 hover:border-zinc-700"
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-300 font-medium text-sm border border-zinc-700">1</div>
+                  <div>
+                    <p className="text-sm font-medium text-white">Upload Resume</p>
+                    <p className="text-xs text-zinc-500">To match skills</p>
+                  </div>
+                </Link>
+
+                <Link
+                  href="/companies"
+                  className="flex items-center gap-4 rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:bg-zinc-800 hover:border-zinc-700"
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-300 font-medium text-sm border border-zinc-700">2</div>
+                  <div>
+                    <p className="text-sm font-medium text-white">Add Companies</p>
+                    <p className="text-xs text-zinc-500">To track jobs</p>
+                  </div>
+                </Link>
+
+                <Link
+                  href="/jobs"
+                  className="flex items-center gap-4 rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:bg-zinc-800 hover:border-zinc-700"
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-300 font-medium text-sm border border-zinc-700">3</div>
+                  <div>
+                    <p className="text-sm font-medium text-white">Review Matches</p>
+                    <p className="text-xs text-zinc-500">And apply</p>
+                  </div>
+                </Link>
+              </div>
+            </div>
+          )}
+
           {/* High Match Jobs */}
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
             <div className="flex items-center justify-between mb-4">
@@ -454,7 +504,7 @@ export default function DashboardPage() {
                 <span className="text-sm text-zinc-400">Saved Jobs</span>
                 <div className="flex items-center gap-2">
                   <Star className="h-3.5 w-3.5 text-purple-500" />
-                  <span className="text-sm font-medium text-white">{stats?.savedJobs ?? 0}</span>
+                  <span className="text-sm font-medium text-white">{stats?.savedJobs || "-"}</span>
                 </div>
               </div>
 
@@ -462,7 +512,7 @@ export default function DashboardPage() {
                 <span className="text-sm text-zinc-400">Viewed Jobs</span>
                 <div className="flex items-center gap-2">
                   <Eye className="h-3.5 w-3.5 text-zinc-500" />
-                  <span className="text-sm font-medium text-white">{stats?.viewedJobs ?? 0}</span>
+                  <span className="text-sm font-medium text-white">{stats?.viewedJobs || "-"}</span>
                 </div>
               </div>
 
@@ -470,11 +520,11 @@ export default function DashboardPage() {
                 <span className="text-sm text-zinc-400">Scored Jobs</span>
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-3.5 w-3.5 text-zinc-500" />
-                  <span className="text-sm font-medium text-white">{stats?.jobsWithScore ?? 0}</span>
+                  <span className="text-sm font-medium text-white">{stats?.jobsWithScore || "-"}</span>
                 </div>
               </div>
 
-              {stats?.totalJobs && stats.totalJobs > 0 && stats.highMatchJobs > 0 && (
+              {stats?.totalJobs && stats.totalJobs > 0 && stats.highMatchJobs > 0 ? (
                 <div className="mt-4 p-3 rounded-lg bg-gradient-to-br from-amber-500/10 to-transparent border border-amber-500/20">
                   <p className="text-xs text-zinc-300 leading-relaxed">
                     <span className="font-semibold text-amber-400 text-sm">
@@ -483,35 +533,9 @@ export default function DashboardPage() {
                     of your tracked jobs are a high match for your profile.
                   </p>
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
-
-          {/* Getting Started (Conditional) */}
-          {(!profile?.name || (stats?.totalCompanies ?? 0) === 0) && (
-            <div className="rounded-xl border border-zinc-800 bg-gradient-to-br from-zinc-900 to-zinc-950 p-6">
-              <h2 className="text-base font-medium text-white mb-3">Getting Started</h2>
-              <ul className="space-y-3">
-                <li className="flex gap-3 text-sm text-zinc-400">
-                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[10px] font-medium text-zinc-300">1</div>
-                  <span>Upload your resume in Profile</span>
-                </li>
-                <li className="flex gap-3 text-sm text-zinc-400">
-                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[10px] font-medium text-zinc-300">2</div>
-                  <span>Add companies to track</span>
-                </li>
-                <li className="flex gap-3 text-sm text-zinc-400">
-                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[10px] font-medium text-zinc-300">3</div>
-                  <span>Review matches & apply</span>
-                </li>
-              </ul>
-              <Link href="/settings">
-                <Button className="w-full mt-4" size="sm">
-                  Go to Settings
-                </Button>
-              </Link>
-            </div>
-          )}
         </div>
       </div>
     </div>
