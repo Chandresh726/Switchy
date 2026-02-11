@@ -1,13 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
-
-const UPLOADS_DIR = path.join(process.cwd(), "data", "uploads");
-
-// Ensure uploads directory exists
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
+import { getUploadsDir, getUploadTypeDir, getUploadFilePath } from "../state/paths";
 
 export async function saveFile(
   file: File,
@@ -17,10 +11,7 @@ export async function saveFile(
   const buffer = Buffer.from(bytes);
 
   // Create subdirectory for type
-  const typeDir = path.join(UPLOADS_DIR, type);
-  if (!fs.existsSync(typeDir)) {
-    fs.mkdirSync(typeDir, { recursive: true });
-  }
+  const typeDir = getUploadTypeDir(type);
 
   // Generate unique filename
   const ext = path.extname(file.name);
@@ -30,8 +21,8 @@ export async function saveFile(
   // Write file
   fs.writeFileSync(filePath, buffer);
 
-  // Return relative path from data directory
-  const relativePath = path.join("uploads", type, filename);
+  // Return relative path from uploads directory
+  const relativePath = path.join(type, filename);
 
   return {
     path: relativePath,
@@ -40,7 +31,7 @@ export async function saveFile(
 }
 
 export async function deleteFile(relativePath: string): Promise<void> {
-  const fullPath = path.join(process.cwd(), "data", relativePath);
+  const fullPath = getUploadFilePath(relativePath);
 
   if (fs.existsSync(fullPath)) {
     fs.unlinkSync(fullPath);
@@ -48,5 +39,5 @@ export async function deleteFile(relativePath: string): Promise<void> {
 }
 
 export function getFilePath(relativePath: string): string {
-  return path.join(process.cwd(), "data", relativePath);
+  return getUploadFilePath(relativePath);
 }

@@ -1,17 +1,11 @@
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema";
-import path from "path";
-import fs from "fs";
+import { ensureStateDir, getDbPath } from "../state/paths";
 
-// Ensure data directory exists
-const dataDir = path.join(process.cwd(), "data");
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
-
-const dbPath = path.join(dataDir, "switchy.db");
-const sqlite = new Database(dbPath);
+// Ensure state directory exists before connecting to database
+ensureStateDir();
+const sqlite = new Database(getDbPath());
 
 // Enable WAL mode for better performance
 sqlite.pragma("journal_mode = WAL");
