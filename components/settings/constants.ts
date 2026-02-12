@@ -63,7 +63,7 @@ export const OPENROUTER_MODELS = [
     id: "openai/gpt-oss-120b:free",
     label: "GPT-OSS 120B (Free)",
     description: "Reasoning-capable model (Free tier)",
-    supportsReasoning: true,
+    supportsReasoning: false,
   },
   {
     id: "deepseek/deepseek-r1-0528:free",
@@ -75,7 +75,7 @@ export const OPENROUTER_MODELS = [
     id: "z-ai/glm-4.5-air:free",
     label: "GLM-4.5 Air",
     description: "Z-AI's GLM-4.5 Air model (Free tier)",
-    supportsReasoning: false,
+    supportsReasoning: true,
   },
   {
     id: "arcee-ai/trinity-large-preview:free",
