@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Timer, Save, Loader2, X, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ScrapeCountdown } from "./scrape-countdown";
 
 interface ScraperSettingsProps {
   globalScrapeFrequency: number;
@@ -76,7 +77,7 @@ export function ScraperSettings({
         {/* Frequency */}
         <div className="space-y-3">
           <Label htmlFor="scrape-frequency">Scrape Frequency</Label>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
             <Input
               id="scrape-frequency"
               type="number"
@@ -87,6 +88,7 @@ export function ScraperSettings({
               className="bg-zinc-950/50 border-zinc-800 max-w-[100px]"
             />
             <span className="text-sm text-zinc-500">hours</span>
+            <ScrapeCountdown className="ml-auto" />
           </div>
         </div>
 

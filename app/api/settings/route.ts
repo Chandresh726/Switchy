@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { restartScheduler } from "@/lib/jobs/scheduler";
 
 // Default settings values
 const DEFAULT_SETTINGS: Record<string, string> = {
@@ -71,6 +72,8 @@ export async function POST(request: Request) {
       );
     }
 
+    // Track if frequency was updated to restart scheduler
+    let frequencyUpdated = false;
     const updates: { key: string; value: string }[] = [];
 
     for (const [key, value] of Object.entries(body)) {
@@ -102,6 +105,7 @@ export async function POST(request: Request) {
           );
         }
         updates.push({ key, value: String(num) });
+        frequencyUpdated = true;
       } else if (key === "matcher_model" || key === "resume_parser_model") {
         if (typeof value !== "string" || value.trim().length === 0) {
           return NextResponse.json(
@@ -260,6 +264,17 @@ export async function POST(request: Request) {
           .where(eq(settings.key, key));
       } else {
         await db.insert(settings).values({ key, value, updatedAt: new Date() });
+      }
+    }
+
+    // Restart scheduler if frequency was updated
+    if (frequencyUpdated) {
+      try {
+        await restartScheduler();
+        console.log("[Settings API] Scheduler restarted due to frequency change");
+      } catch (error) {
+        console.error("[Settings API] Failed to restart scheduler:", error);
+        // Don't fail the request if scheduler restart fails
       }
     }
 
