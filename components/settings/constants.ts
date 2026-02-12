@@ -69,7 +69,7 @@ export const OPENROUTER_MODELS = [
     id: "deepseek/deepseek-r1-0528:free",
     label: "DeepSeek R1",
     description: "DeepSeek's reasoning model (Free tier)",
-    supportsReasoning: false,
+    supportsReasoning: true,
   },
   {
     id: "z-ai/glm-4.5-air:free",

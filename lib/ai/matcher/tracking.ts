@@ -340,10 +340,10 @@ function getRootError(error: Error): Error {
   
   // Check for nested errors in message patterns like "Failed after 3 attempts. Last error: ..."
   const message = error.message;
-  const lastErrorMatch = message.match(/Last error:\s*(.+?)(?:\.|$)/i);
+  const lastErrorMatch = message.match(/Last error:\s*(.+)(?:\.|$)/i);
   if (lastErrorMatch) {
     // Create a new error with the extracted message to maintain consistency
-    return new Error(lastErrorMatch[1].trim());
+    return new Error(lastErrorMatch[1].trim().replace(/\.$/, ''));
   }
   
   // Return original error if no nested error found
