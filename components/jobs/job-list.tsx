@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { JobCard } from "./job-card";
 import { JobFilters } from "./job-filters";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Briefcase, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -148,12 +148,18 @@ export function JobList() {
   const [debouncedLocationSearch, setDebouncedLocationSearch] = useState("");
   const [debouncedDepartment, setDebouncedDepartment] = useState("");
 
+  // Ref to track if initialization has occurred (prevents re-parsing on URL changes)
+  const hasInitializedRef = useRef(false);
+
   // Pagination state
   const [pageSize, setPageSize] = useState(25);
   const [currentPage, setCurrentPage] = useState(1);
 
   // Load filters from URL params and localStorage on mount
   useEffect(() => {
+    // Prevent re-parsing on subsequent URL changes after initial load
+    if (hasInitializedRef.current) return;
+
     const urlFilters = parseFiltersFromSearchParams(searchParams);
     const urlTab = parseTabFromSearchParams(searchParams);
     const storageFilters = loadFiltersFromStorage();
@@ -171,6 +177,7 @@ export function JobList() {
       setDebouncedDepartment(finalFilters.department);
       setIsInitialized(true);
       setIsInitialLoad(false);
+      hasInitializedRef.current = true;
     }, 0);
   }, [searchParams]);
 

@@ -118,7 +118,8 @@ export class GreenhouseScraper extends AbstractScraper {
       
       // Combine original location with metadata location for comprehensive data
       const originalLocation = job.location?.name || "";
-      const combinedLocation = metadataLocation ? `${originalLocation}, ${metadataLocation}` : originalLocation;
+      const locationParts = [originalLocation, metadataLocation].filter(Boolean);
+      const combinedLocation = locationParts.join(", ");
       
       const { location, locationType } = this.normalizeLocation(combinedLocation);
       

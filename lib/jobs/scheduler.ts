@@ -243,13 +243,18 @@ export async function triggerManualRefresh(): Promise<{
     return { started: false, message: "Refresh already in progress" };
   }
 
-  // Update last run time immediately for countdown accuracy
-  const now = new Date();
-  lastRunTime = now;
-  nextScheduledRun = new Date(now.getTime() + currentFrequencyHours * 60 * 60 * 1000);
-
   // Don't await - let it run in background
-  runScheduledRefresh().catch(console.error);
+  runScheduledRefresh()
+    .then(() => {
+      // Update timing variables only after successful completion
+      const now = new Date();
+      lastRunTime = now;
+      nextScheduledRun = new Date(now.getTime() + currentFrequencyHours * 60 * 60 * 1000);
+    })
+    .catch((error) => {
+      console.error("[Scheduler] Manual refresh failed:", error);
+      // Don't update lastRunTime/nextScheduledRun on failure - they remain unchanged
+    });
 
   return { started: true, message: "Refresh started" };
 }

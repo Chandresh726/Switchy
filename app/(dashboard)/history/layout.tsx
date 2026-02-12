@@ -29,7 +29,8 @@ export default function HistoryLayout({
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Determine active tab from pathname
-  const isScrapeTab = pathname?.startsWith("/history/scrape") ?? false;
+  // Handle base /history path explicitly - default to scrape tab
+  const isScrapeTab = pathname === "/history" || (pathname?.startsWith("/history/scrape") ?? false);
   const isMatchTab = pathname?.startsWith("/history/match") ?? false;
   const activeTab = isMatchTab ? "match" : "scrape";
 
