@@ -107,7 +107,7 @@ export function ScraperSettings({
         <div className="space-y-4 pt-4 border-t border-zinc-800">
           <Label htmlFor="filter-title-keywords">Job Title Keywords</Label>
           <p className="text-xs text-zinc-500 -mt-2">
-            Add keywords to filter jobs by title (e.g., Engineer, Developer). Jobs matching any keyword will be included.
+            Add keywords to filter jobs by title (e.g., Engineer).
           </p>
           <Input
             id="filter-title-keywords"
