@@ -75,13 +75,14 @@ export class CircuitBreaker {
    */
   recordSuccess(): void {
     this.successCount++;
-    this.halfOpenCalls++;
 
     if (this.state === CircuitState.HALF_OPEN) {
+      this.halfOpenCalls++;
       // After enough successes in half-open, close the circuit
       if (this.halfOpenCalls >= this.options.halfOpenMaxCalls) {
         this.state = CircuitState.CLOSED;
         this.failureCount = 0;
+        this.halfOpenCalls = 0;
         console.log("[CircuitBreaker] Circuit CLOSED - Service recovered");
       }
     } else if (this.state === CircuitState.CLOSED) {
@@ -96,9 +97,9 @@ export class CircuitBreaker {
   recordFailure(error?: Error): void {
     this.failureCount++;
     this.lastFailureTime = Date.now();
-    this.halfOpenCalls++;
 
     if (this.state === CircuitState.HALF_OPEN) {
+      this.halfOpenCalls++;
       // Any failure in half-open reopens the circuit
       this.state = CircuitState.OPEN;
       console.log(

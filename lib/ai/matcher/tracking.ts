@@ -242,6 +242,9 @@ async function processJobWithTracking(
   }
 
   // Check circuit breaker
+  const cbState = circuitBreaker.getState();
+  console.log(`[Matcher] Job ${jobId}: Circuit breaker state=${cbState}, canExecute=${circuitBreaker.canExecute()}`);
+  
   if (!circuitBreaker.canExecute()) {
     await logMatchFailure(
       sessionId,
@@ -255,9 +258,10 @@ async function processJobWithTracking(
     return { success: false };
   }
 
-  let attemptCount = 0;
-
   // Retry loop
+  let attemptCount = 0;
+  let lastError: Error = new Error("Unknown error");
+
   for (let attempt = 1; attempt <= settings.maxRetries; attempt++) {
     attemptCount = attempt;
 
@@ -276,8 +280,13 @@ async function processJobWithTracking(
 
       return { success: true };
     } catch (error) {
-      const errorObj = error instanceof Error ? error : new Error(String(error));
-      circuitBreaker.recordFailure(errorObj);
+      lastError = error instanceof Error ? error : new Error(String(error));
+      circuitBreaker.recordFailure(lastError);
+      
+      const actualMessage = extractActualErrorMessage(lastError);
+      const stats = circuitBreaker.getStats();
+      console.log(`[Matcher] Job ${jobId} attempt ${attempt} failed: ${actualMessage}`);
+      console.log(`[Matcher] Circuit breaker stats: state=${stats.state}, failures=${stats.failureCount}, successes=${stats.successCount}`);
 
       if (attempt < settings.maxRetries) {
         // Calculate delay with jitter
@@ -296,15 +305,15 @@ async function processJobWithTracking(
     }
   }
 
-  // All retries failed
-  const lastError = new Error("All retries exhausted");
+  // All retries failed - use the actual last error
   const errorType = categorizeError(lastError);
+  const actualErrorMessage = extractActualErrorMessage(lastError);
   await logMatchFailure(
     sessionId,
     jobId,
     Date.now() - startTime,
     errorType,
-    lastError.message,
+    actualErrorMessage,
     attemptCount,
     settings.model
   );
@@ -313,8 +322,25 @@ async function processJobWithTracking(
 }
 
 /**
- * Execute a single match attempt
+ * Extract the actual error message from wrapped errors
+ * The AI SDK wraps errors with "Failed after N attempts" but the real error is in the cause
  */
+function extractActualErrorMessage(error: Error): string {
+  // Check for error cause first (standard Error.cause property)
+  if (error.cause instanceof Error) {
+    return extractActualErrorMessage(error.cause);
+  }
+  
+  // Check for nested errors in message patterns like "Failed after 3 attempts. Last error: ..."
+  const message = error.message;
+  const lastErrorMatch = message.match(/Last error:\s*(.+?)(?:\.|$)/i);
+  if (lastErrorMatch) {
+    return lastErrorMatch[1].trim();
+  }
+  
+  // Return original message if no nested error found
+  return message;
+}
 async function executeMatchAttempt(
   job: { id: number; title: string; description: string | null },
   profileData: NonNullable<Awaited<ReturnType<typeof fetchProfileData>>>,
