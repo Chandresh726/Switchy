@@ -108,11 +108,17 @@ export class GreenhouseScraper extends AbstractScraper {
 
   private parseJobs(data: GreenhouseResponse, boardToken: string): ScraperResult {
     const jobs = data.jobs.map((job) => {
-      // Extract location from metadata - look for any entry containing location
-      const locationMetadata = job.metadata?.find((m: { name: string; value: string | string[] }) => 
-        m.name.toLowerCase().includes("location") || 
-        m.name.toLowerCase().includes("posting")
-      );
+      // Extract location from metadata - look for location-specific keys only
+      const locationMetadata = job.metadata?.find((m: { name: string; value: string | string[] }) => {
+        const nameLower = m.name.toLowerCase();
+        return (
+          nameLower === "location" ||
+          nameLower === "locations" ||
+          nameLower === "posting location" ||
+          nameLower === "work location" ||
+          nameLower === "office location"
+        );
+      });
       const actualLocations = locationMetadata?.value || [];
       const metadataLocation = Array.isArray(actualLocations) ? actualLocations.join(", ") : (typeof actualLocations === "string" ? actualLocations : "");
       

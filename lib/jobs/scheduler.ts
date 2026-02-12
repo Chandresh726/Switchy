@@ -6,11 +6,12 @@ import { fetchJobsForCompany } from "./fetcher";
 
 let schedulerTask: ScheduledTask | null = null;
 let isRunning = false;
+let schedulerStarting = false;
 
-const DEFAULT_CRON = "0 * * * *"; // Every hour
+const DEFAULT_FREQUENCY_HOURS = 6;
 
-let currentCronExpression = DEFAULT_CRON;
-let currentFrequencyHours = 6;
+let currentCronExpression = generateCronExpression(DEFAULT_FREQUENCY_HOURS);
+let currentFrequencyHours = DEFAULT_FREQUENCY_HOURS;
 
 // Track last run and next scheduled run times
 let lastRunTime: Date | null = null;
@@ -59,7 +60,9 @@ export async function getSchedulerStatus(): Promise<SchedulerStatus> {
 
 // Generate cron expression based on frequency hours
 function generateCronExpression(frequencyHours: number): string {
-  if (frequencyHours <= 0) return DEFAULT_CRON;
+  if (!Number.isFinite(frequencyHours) || frequencyHours <= 0) {
+    frequencyHours = DEFAULT_FREQUENCY_HOURS;
+  }
   
   // For frequencies <= 24 hours, run at appropriate intervals
   // For frequencies > 24 hours, run daily at a specific time
@@ -81,39 +84,62 @@ async function getScrapeFrequencyFromDB(): Promise<number> {
       .where(eq(settings.key, "global_scrape_frequency"))
       .limit(1);
 
-    return frequencySetting.length > 0
-      ? parseInt(frequencySetting[0].value || "6", 10)
-      : 6;
+    if (frequencySetting.length > 0 && frequencySetting[0].value) {
+      const parsed = parseInt(frequencySetting[0].value.trim(), 10);
+      // Validate: must be a finite positive integer
+      if (Number.isFinite(parsed) && Number.isInteger(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+    return DEFAULT_FREQUENCY_HOURS;
   } catch (error) {
     console.error("[Scheduler] Error fetching frequency:", error);
-    return 6;
+    return DEFAULT_FREQUENCY_HOURS;
   }
 }
 
 export async function startScheduler(): Promise<void> {
+  // Guard against concurrent start attempts
+  if (schedulerStarting) {
+    console.log("[Scheduler] Start already in progress");
+    return;
+  }
+  
   if (schedulerTask) {
     console.log("[Scheduler] Already running");
     return;
   }
 
-  // Get frequency from DB and generate appropriate cron
-  currentFrequencyHours = await getScrapeFrequencyFromDB();
-  currentCronExpression = generateCronExpression(currentFrequencyHours);
+  schedulerStarting = true;
 
-  schedulerTask = cron.schedule(currentCronExpression, async () => {
-    await runScheduledRefresh();
-  });
+  try {
+    // Get frequency from DB and generate appropriate cron
+    currentFrequencyHours = await getScrapeFrequencyFromDB();
+    currentCronExpression = generateCronExpression(currentFrequencyHours);
 
-  // Calculate initial next run
-  const status = await getSchedulerStatus();
-  nextScheduledRun = status.nextRun;
+    schedulerTask = cron.schedule(currentCronExpression, async () => {
+      await runScheduledRefresh();
+    });
 
-  console.log(`[Scheduler] Started with cron: ${currentCronExpression} (every ${currentFrequencyHours} hours)`);
+    // Calculate initial next run
+    const status = await getSchedulerStatus();
+    nextScheduledRun = status.nextRun;
+
+    console.log(`[Scheduler] Started with cron: ${currentCronExpression} (every ${currentFrequencyHours} hours)`);
+  } catch (error) {
+    console.error("[Scheduler] Failed to start:", error);
+    // Clear the guard on error so future starts are allowed
+    schedulerStarting = false;
+    throw error;
+  } finally {
+    schedulerStarting = false;
+  }
 }
 
 export async function restartScheduler(): Promise<void> {
   console.log("[Scheduler] Restarting...");
   stopScheduler();
+  // await startScheduler so the guard is respected
   await startScheduler();
   console.log("[Scheduler] Restarted successfully");
 }
