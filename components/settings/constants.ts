@@ -60,21 +60,39 @@ export const OPENAI_MODELS = [
 
 export const OPENROUTER_MODELS = [
   {
-    id: "google/gemini-3-flash-preview",
-    label: "Gemini 3 Flash",
-    description: "Gemini 3 Fastest model (Preview)",
+    id: "openai/gpt-oss-120b:free",
+    label: "GPT-OSS 120B (Free)",
+    description: "Reasoning-capable model (Free tier)",
     supportsReasoning: true,
   },
   {
-    id: "google/gemini-3-pro-preview",
-    label: "Gemini 3 Pro",
-    description: "Gemini 3 Most capable model (Preview)",
-    supportsReasoning: true,
+    id: "deepseek/deepseek-r1-0528:free",
+    label: "DeepSeek R1",
+    description: "DeepSeek's reasoning model (Free tier)",
+    supportsReasoning: false,
+  },
+  {
+    id: "z-ai/glm-4.5-air:free",
+    label: "GLM-4.5 Air",
+    description: "Z-AI's GLM-4.5 Air model (Free tier)",
+    supportsReasoning: false,
+  },
+  {
+    id: "arcee-ai/trinity-large-preview:free",
+    label: "Trinity Large Preview",
+    description: "Arcee AI's Trinity Large model (Free tier)",
+    supportsReasoning: false,
   },
   {
     id: "gpt-oss-120b",
     label: "GPT-OSS 120B",
     description: "Reasoning-capable model",
+    supportsReasoning: true,
+  },
+  {
+    id: "google/gemini-3-flash-preview",
+    label: "Gemini 3 Flash",
+    description: "Gemini 3 Fastest model (Preview)",
     supportsReasoning: true,
   },
   {

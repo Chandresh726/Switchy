@@ -274,7 +274,8 @@ async function processJobWithTracking(
         settings
       );
 
-      // Success - update job and log
+      // Success - record success, update job and log
+      circuitBreaker.recordSuccess();
       await updateJobWithResult(job.id, result);
       await logMatchSuccess(sessionId, jobId, result.score, attemptCount, Date.now() - startTime, settings.model);
 
@@ -289,6 +290,12 @@ async function processJobWithTracking(
       console.log(`[Matcher] Circuit breaker stats: state=${stats.state}, failures=${stats.failureCount}, successes=${stats.successCount}`);
 
       if (attempt < settings.maxRetries) {
+        // Check circuit breaker state before scheduling another attempt
+        if (!circuitBreaker.canExecute()) {
+          console.log(`[Matcher] Job ${jobId}: Circuit breaker is now open, aborting retries`);
+          break;
+        }
+        
         // Calculate delay with jitter
         const exponentialDelay = Math.min(
           settings.backoffBaseDelay * Math.pow(2, attempt - 1),
@@ -306,8 +313,9 @@ async function processJobWithTracking(
   }
 
   // All retries failed - use the actual last error
-  const errorType = categorizeError(lastError);
-  const actualErrorMessage = extractActualErrorMessage(lastError);
+  const rootError = getRootError(lastError);
+  const errorType = categorizeError(rootError);
+  const actualErrorMessage = extractActualErrorMessage(rootError);
   await logMatchFailure(
     sessionId,
     jobId,
@@ -322,24 +330,33 @@ async function processJobWithTracking(
 }
 
 /**
- * Extract the actual error message from wrapped errors
- * The AI SDK wraps errors with "Failed after N attempts" but the real error is in the cause
+ * Extract the root error from wrapped errors for consistent error handling
  */
-function extractActualErrorMessage(error: Error): string {
+function getRootError(error: Error): Error {
   // Check for error cause first (standard Error.cause property)
   if (error.cause instanceof Error) {
-    return extractActualErrorMessage(error.cause);
+    return getRootError(error.cause);
   }
   
   // Check for nested errors in message patterns like "Failed after 3 attempts. Last error: ..."
   const message = error.message;
   const lastErrorMatch = message.match(/Last error:\s*(.+?)(?:\.|$)/i);
   if (lastErrorMatch) {
-    return lastErrorMatch[1].trim();
+    // Create a new error with the extracted message to maintain consistency
+    return new Error(lastErrorMatch[1].trim());
   }
   
-  // Return original message if no nested error found
-  return message;
+  // Return original error if no nested error found
+  return error;
+}
+
+/**
+ * Extract the actual error message from wrapped errors
+ * The AI SDK wraps errors with "Failed after N attempts" but the real error is in the cause
+ */
+function extractActualErrorMessage(error: Error): string {
+  const rootError = getRootError(error);
+  return rootError.message;
 }
 async function executeMatchAttempt(
   job: { id: number; title: string; description: string | null },

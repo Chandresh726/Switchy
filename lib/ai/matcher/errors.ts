@@ -23,7 +23,7 @@ export function categorizeError(error: Error): ErrorType {
   if (message.includes("rate limit") || message.includes("429") || message.includes("too many requests") || message.includes("tokens per") || message.includes("token limit") || message.includes("quota")) {
     return "rate_limit";
   }
-  if (message.includes("json") || message.includes("parse") || message.includes("unexpected token") || message.includes("syntax") || message.includes("failed after") || message.includes("attempts")) {
+  if (message.includes("json") || message.includes("parse") || message.includes("unexpected token") || message.includes("syntax")) {
     return "json_parse";
   }
   if (message.includes("validation") || message.includes("zod") || message.includes("invalid") || message.includes("schema")) {
