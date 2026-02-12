@@ -118,9 +118,21 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
   const { data, isLoading, error } = useQuery<SessionDetailResponse>({
     queryKey: ["match-history", sessionId],
     queryFn: async () => {
-      const res = await fetch(`/api/match-history?sessionId=${sessionId}`);
+      const res = await fetch(`/api/match-history?sessionId=${encodeURIComponent(sessionId)}`);
       if (!res.ok) throw new Error("Failed to fetch session details");
-      return res.json();
+      const json = await res.json();
+      // Normalize date fields from ISO strings to Date objects
+      return {
+        session: {
+          ...json.session,
+          startedAt: json.session.startedAt ? new Date(json.session.startedAt) : null,
+          completedAt: json.session.completedAt ? new Date(json.session.completedAt) : null,
+        },
+        logs: json.logs.map((log: MatchLog) => ({
+          ...log,
+          completedAt: log.completedAt ? new Date(log.completedAt) : null,
+        })),
+      };
     },
     refetchInterval: (query) => {
       const session = query.state.data?.session;
@@ -285,30 +297,57 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
               Failed Jobs ({failedLogs.length})
             </h4>
             <div className="space-y-3">
-              {failedLogs.map((log) => (
-                <Link
-                  key={log.id}
-                  href={log.jobId ? `/jobs/${log.jobId}` : "#"}
-                  className={`block rounded-lg border border-red-500/20 bg-red-500/5 p-4 transition-all hover:bg-red-500/10 hover:border-red-500/30 ${!log.jobId ? 'pointer-events-none opacity-50' : ''}`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-white">
-                      {log.jobTitle || `Job #${log.jobId}`}
-                    </span>
-                    <Badge variant="outline" className="border-red-500/30 text-red-400 text-[10px] h-5 px-1.5">
-                      {log.errorType || "error"}
-                    </Badge>
+              {failedLogs.map((log) => {
+                const jobDisplay = log.jobTitle || (log.jobId != null ? `Job #${log.jobId}` : "Untitled Job");
+                const hasJobId = log.jobId != null;
+                return hasJobId ? (
+                  <Link
+                    key={log.id}
+                    href={`/jobs/${log.jobId}`}
+                    className="block rounded-lg border border-red-500/20 bg-red-500/5 p-4 transition-all hover:bg-red-500/10 hover:border-red-500/30"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium text-white">
+                        {jobDisplay}
+                      </span>
+                      <Badge variant="outline" className="border-red-500/30 text-red-400 text-[10px] h-5 px-1.5">
+                        {log.errorType || "error"}
+                      </Badge>
+                    </div>
+                    {log.errorMessage && (
+                      <p className="text-red-300/80 mb-2 font-mono text-[10px] break-all">{log.errorMessage}</p>
+                    )}
+                    <div className="flex gap-4 text-zinc-500 text-xs">
+                      <span>Attempts: {log.attemptCount}</span>
+                      <span>Duration: {formatDurationMs(log.duration)}</span>
+                      {log.modelUsed && <span>Model: {log.modelUsed}</span>}
+                    </div>
+                  </Link>
+                ) : (
+                  <div
+                    key={log.id}
+                    className="block rounded-lg border border-red-500/20 bg-red-500/5 p-4 opacity-50"
+                    aria-disabled="true"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium text-white">
+                        {jobDisplay}
+                      </span>
+                      <Badge variant="outline" className="border-red-500/30 text-red-400 text-[10px] h-5 px-1.5">
+                        {log.errorType || "error"}
+                      </Badge>
+                    </div>
+                    {log.errorMessage && (
+                      <p className="text-red-300/80 mb-2 font-mono text-[10px] break-all">{log.errorMessage}</p>
+                    )}
+                    <div className="flex gap-4 text-zinc-500 text-xs">
+                      <span>Attempts: {log.attemptCount}</span>
+                      <span>Duration: {formatDurationMs(log.duration)}</span>
+                      {log.modelUsed && <span>Model: {log.modelUsed}</span>}
+                    </div>
                   </div>
-                  {log.errorMessage && (
-                    <p className="text-red-300/80 mb-2 font-mono text-[10px] break-all">{log.errorMessage}</p>
-                  )}
-                  <div className="flex gap-4 text-zinc-500 text-xs">
-                    <span>Attempts: {log.attemptCount}</span>
-                    <span>Duration: {formatDurationMs(log.duration)}</span>
-                    {log.modelUsed && <span>Model: {log.modelUsed}</span>}
-                  </div>
-                </Link>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -321,36 +360,69 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
               Successful Jobs ({successLogs.length})
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {successLogs.map((log) => (
-                <Link
-                  key={log.id}
-                  href={log.jobId ? `/jobs/${log.jobId}` : "#"}
-                  className={`block rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-4 transition-all hover:bg-emerald-500/10 hover:border-emerald-500/20 ${!log.jobId ? 'pointer-events-none opacity-50' : ''}`}
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <span className="text-zinc-200 font-medium truncate block" title={log.jobTitle || ""}>
-                      {log.jobTitle || `Job #${log.jobId}`}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <Sparkles className="h-3.5 w-3.5 text-emerald-500" />
-                      <span className="text-emerald-400 font-mono text-lg">
-                        {log.score?.toFixed(0)}
+              {successLogs.map((log) => {
+                const jobDisplay = log.jobTitle || (log.jobId != null ? `Job #${log.jobId}` : "Untitled Job");
+                const hasJobId = log.jobId != null;
+                return hasJobId ? (
+                  <Link
+                    key={log.id}
+                    href={`/jobs/${log.jobId}`}
+                    className="block rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-4 transition-all hover:bg-emerald-500/10 hover:border-emerald-500/20"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <span className="text-zinc-200 font-medium truncate block" title={log.jobTitle || ""}>
+                        {jobDisplay}
                       </span>
-                      <span className="text-zinc-500 text-xs">match score</span>
                     </div>
-                    <span className="text-zinc-600 text-xs">
-                      {formatDurationMs(log.duration)}
-                    </span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles className="h-3.5 w-3.5 text-emerald-500" />
+                        <span className="text-emerald-400 font-mono text-lg">
+                          {log.score?.toFixed(0)}
+                        </span>
+                        <span className="text-zinc-500 text-xs">match score</span>
+                      </div>
+                      <span className="text-zinc-600 text-xs">
+                        {formatDurationMs(log.duration)}
+                      </span>
+                    </div>
+                    {log.modelUsed && (
+                      <div className="mt-2 text-xs text-zinc-500">
+                        Model: {log.modelUsed}
+                      </div>
+                    )}
+                  </Link>
+                ) : (
+                  <div
+                    key={log.id}
+                    className="block rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-4 opacity-50"
+                    aria-disabled="true"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <span className="text-zinc-200 font-medium truncate block" title={log.jobTitle || ""}>
+                        {jobDisplay}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles className="h-3.5 w-3.5 text-emerald-500" />
+                        <span className="text-emerald-400 font-mono text-lg">
+                          {log.score?.toFixed(0)}
+                        </span>
+                        <span className="text-zinc-500 text-xs">match score</span>
+                      </div>
+                      <span className="text-zinc-600 text-xs">
+                        {formatDurationMs(log.duration)}
+                      </span>
+                    </div>
+                    {log.modelUsed && (
+                      <div className="mt-2 text-xs text-zinc-500">
+                        Model: {log.modelUsed}
+                      </div>
+                    )}
                   </div>
-                  {log.modelUsed && (
-                    <div className="mt-2 text-xs text-zinc-500">
-                      Model: {log.modelUsed}
-                    </div>
-                  )}
-                </Link>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
