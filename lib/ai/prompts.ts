@@ -80,7 +80,15 @@ ${
     : "No experience listed"
 }
 
-Please analyze how well this candidate matches the job and provide your assessment.
+Please analyze how well this candidate matches the job and respond with ONLY a valid JSON object:
+
+{
+  "score": <number 0-100>,
+  "reasons": ["reason1", "reason2", ...],
+  "matchedSkills": ["skill1", "skill2", ...],
+  "missingSkills": ["skill1", "skill2", ...],
+  "recommendations": ["recommendation1", "recommendation2", ...]
+}
 `;
 
 // Bulk matching prompts for processing multiple jobs at once
