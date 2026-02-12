@@ -94,5 +94,9 @@ Extract all relevant information including contact details, skills, work experie
     ...providerOptions,
   });
 
+  if (result.output === undefined || result.output === null) {
+    throw new Error("Model did not produce structured output for resume parsing");
+  }
+
   return result.output as ResumeData;
 }

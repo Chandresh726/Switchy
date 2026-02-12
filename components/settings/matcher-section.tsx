@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Cpu, Settings2, Save, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AIProvider, getModelsForProvider, modelSupportsReasoning, REASONING_EFFORT_OPTIONS, ReasoningEffort } from "./constants";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface MatcherSectionProps {
   matcherModel: string;
@@ -39,6 +39,7 @@ interface MatcherSectionProps {
   settingsSaved: boolean;
   onMatchUnmatched: () => void;
   isMatching: boolean;
+  matchProgress?: { completed: number; total: number; succeeded: number; failed: number };
   unmatchedCount: number;
 }
 
@@ -70,11 +71,18 @@ export function MatcherSection({
   settingsSaved,
   onMatchUnmatched,
   isMatching,
+  matchProgress,
   unmatchedCount,
 }: MatcherSectionProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const supportsReasoning = modelSupportsReasoning(matcherModel, aiProvider);
+
+  useEffect(() => {
+    if (aiProvider === "modal" && concurrencyLimit !== 1) {
+      onConcurrencyLimitChange(1);
+    }
+  }, [aiProvider, concurrencyLimit, onConcurrencyLimitChange]);
 
   return (
     <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
@@ -100,10 +108,20 @@ export function MatcherSection({
             disabled={isMatching || unmatchedCount === 0}
           >
             <Sparkles className={cn("mr-2 h-4 w-4", isMatching && "animate-pulse")} />
-            {isMatching ? "Matching..." : "Match Unmatched"}
-            {unmatchedCount > 0 && (
+            {isMatching 
+              ? matchProgress 
+                ? `${matchProgress.completed}/${matchProgress.total} matched` 
+                : "Matching..."
+              : "Match Unmatched"
+            }
+            {!isMatching && unmatchedCount > 0 && (
               <span className="ml-2 bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded text-xs">
                 {unmatchedCount}
+              </span>
+            )}
+            {isMatching && matchProgress && (
+              <span className="ml-2 bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded text-xs">
+                {matchProgress.succeeded}✓ {matchProgress.failed}✕
               </span>
             )}
           </Button>

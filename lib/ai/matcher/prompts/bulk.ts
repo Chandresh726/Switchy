@@ -36,7 +36,7 @@ IMPORTANT SCORING RULES - Be strict and realistic:
 
 Do NOT inflate scores. A candidate with 2 years experience should NOT score above 60 for a role requiring 5+ years, regardless of skill match.
 
-You MUST return a JSON array with one object per job, using the exact job IDs provided.`;
+You MUST return a JSON object with a top-level "results" array containing one object per job, using the exact job IDs provided.`;
 
 export function buildBulkMatchPrompt(
   jobs: MatchJob[],

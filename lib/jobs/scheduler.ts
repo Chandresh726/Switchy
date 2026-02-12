@@ -139,7 +139,7 @@ export async function runScheduledRefresh(): Promise<void> {
   console.log("[Scheduler] Starting scheduled refresh");
 
   try {
-    const result = await fetchJobsForAllCompanies("scheduled");
+    const result = await fetchJobsForAllCompanies("auto_scrape");
 
     await saveLastRun(startTime);
     console.log(

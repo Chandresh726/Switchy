@@ -68,6 +68,25 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
     })
     .filter((j): j is MatchJob => j !== null);
 
+  const missingIds = jobIds.filter((id) => !jobsMap.has(id));
+  if (missingIds.length > 0) {
+    console.warn(`[ExecuteMatch] Missing job IDs: ${missingIds.join(", ")}`);
+  }
+
+  if (matchJobs.length === 0) {
+    const missingResults: StrategyResultMap = new Map(
+      missingIds.map((id) => [
+        id,
+        {
+          error: new Error(`Job with ID ${id} not found`),
+          duration: 0,
+        },
+      ])
+    );
+    const results = await persistResults(missingResults, sessionId, config.model);
+    return results;
+  }
+
   const strategyType = selectStrategy(config, matchJobs.length);
 
   console.log(
@@ -102,6 +121,13 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
       ...strategyContext,
       jobs: matchJobs,
       onProgress,
+    });
+  }
+
+  for (const id of missingIds) {
+    strategyResults.set(id, {
+      error: new Error(`Job with ID ${id} not found`),
+      duration: 0,
     });
   }
 

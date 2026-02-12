@@ -8,7 +8,6 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  ChevronRight,
   Sparkles,
   Loader2,
   Building2,
@@ -124,7 +123,9 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
     ? Math.round(((session.jobsSucceeded || 0) / session.jobsTotal) * 100)
     : 0;
 
-  const handleDelete = async () => {
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     setIsDeleting(true);
     try {
       const res = await fetch(`/api/match-history?sessionId=${session.id}`, {
@@ -144,56 +145,61 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
   };
 
   return (
-    <div className="group rounded-lg border border-zinc-800 bg-zinc-900/50 transition-all hover:border-zinc-700">
-      {/* Main Card Content */}
-      <div className="p-4">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${statusConfig.bgColor}`}>
-              {session.status === "in_progress" ? (
-                <Loader2 className={`h-5 w-5 ${statusConfig.color} animate-spin`} />
-              ) : (
-                <StatusIcon className={`h-5 w-5 ${statusConfig.color}`} />
-              )}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-medium text-white">
-                  {formatDate(session.startedAt)} <span className="text-zinc-500">at</span> {formatTime(session.startedAt)}
-                </h3>
-              </div>
-
-              <div className="flex items-center gap-2 text-sm text-zinc-400 mt-0.5">
-                <span className="flex items-center gap-1">
-                  <Play className="h-3 w-3" />
-                  {TRIGGER_LABELS[session.triggerSource] || session.triggerSource}
-                </span>
-
-                {session.companyName && (
-                  <>
-                    <span className="text-zinc-700">•</span>
-                    <span className="flex items-center gap-1 text-purple-400">
-                      <Building2 className="h-3 w-3" />
-                      {session.companyName}
-                    </span>
-                  </>
+    <Link href={`/history/match/${session.id}`}>
+      <div className="group rounded-lg border border-zinc-800 bg-zinc-900/50 transition-all hover:border-zinc-700 cursor-pointer">
+        {/* Main Card Content */}
+        <div className="p-4">
+          {/* Header */}
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${statusConfig.bgColor}`}>
+                {session.status === "in_progress" ? (
+                  <Loader2 className={`h-5 w-5 ${statusConfig.color} animate-spin`} />
+                ) : (
+                  <StatusIcon className={`h-5 w-5 ${statusConfig.color}`} />
                 )}
               </div>
-            </div>
-          </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-medium text-white">
+                    {formatDate(session.startedAt)} <span className="text-zinc-500">at</span> {formatTime(session.startedAt)}
+                  </h3>
+                </div>
 
-          <div className="flex items-center gap-2">
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </AlertDialogTrigger>
+                <div className="flex items-center gap-2 text-sm text-zinc-400 mt-0.5">
+                  <span className="flex items-center gap-1">
+                    <Play className="h-3 w-3" />
+                    {TRIGGER_LABELS[session.triggerSource] || session.triggerSource}
+                  </span>
+
+                  {session.companyName && (
+                    <>
+                      <span className="text-zinc-700">•</span>
+                      <span className="flex items-center gap-1 text-purple-400">
+                        <Building2 className="h-3 w-3" />
+                        {session.companyName}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete Match Session?</AlertDialogTitle>
@@ -214,12 +220,6 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
-
-            <Link href={`/history/match/${session.id}`}>
-              <Button variant="ghost" size="sm" className="text-zinc-400 hover:text-white h-8">
-                Details <ChevronRight className="ml-1 h-3.5 w-3.5" />
-              </Button>
-            </Link>
           </div>
         </div>
 
@@ -277,5 +277,6 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
         </div>
       </div>
     </div>
+    </Link>
   );
 }

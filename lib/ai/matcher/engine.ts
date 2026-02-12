@@ -17,19 +17,29 @@ export async function createMatchEngine(): Promise<MatchEngine> {
 
   return {
     async matchSingle(jobId: number): Promise<MatchResult> {
-      const results = await executeMatch({
-        config,
-        jobIds: [jobId],
-      });
+      const executeSingle = async () => {
+        const results = await executeMatch({
+          config,
+          jobIds: [jobId],
+        });
 
-      const result = results.get(jobId);
-      if (!result) {
-        throw new Error(`No result for job ${jobId}`);
+        const result = results.get(jobId);
+        if (!result) {
+          throw new Error(`No result for job ${jobId}`);
+        }
+        if (result instanceof Error) {
+          throw result;
+        }
+        return result;
+      };
+
+      if (config.serializeOperations) {
+        return withQueue(config, executeSingle, (position) => {
+          console.log(`[MatchEngine] Single job in queue position ${position}`);
+        });
       }
-      if (result instanceof Error) {
-        throw result;
-      }
-      return result;
+
+      return executeSingle();
     },
 
     async matchBulk(

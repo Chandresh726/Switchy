@@ -22,6 +22,7 @@ export {
   logMatchFailure,
   finalizeMatchSession,
   createProgressTracker,
+  getMatchSessionStatus,
   type ProgressTracker,
 } from "./tracking";
 

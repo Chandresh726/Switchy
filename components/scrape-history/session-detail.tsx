@@ -1,6 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +15,7 @@ import {
   Sparkles,
   AlertCircle,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -109,6 +111,7 @@ interface SessionDetailProps {
 }
 
 export function SessionDetail({ sessionId }: SessionDetailProps) {
+  const router = useRouter();
   const { data, isLoading, error } = useQuery<SessionDetailResponse>({
     queryKey: ["scrape-history", sessionId],
     queryFn: async () => {
@@ -120,6 +123,19 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
       // Refresh every 2 seconds if session is in progress
       const session = query.state.data?.session;
       return session?.status === "in_progress" ? 2000 : false;
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/scrape-history?sessionId=${encodeURIComponent(sessionId)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete session");
+      return res.json();
+    },
+    onSuccess: () => {
+      router.push("/history/scrape");
     },
   });
 
@@ -163,6 +179,16 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
             Back to History
           </Button>
         </Link>
+        <Button
+          variant="outline"
+          size="sm"
+          className="border-red-500/20 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+          onClick={() => deleteMutation.mutate()}
+          disabled={deleteMutation.isPending}
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          {deleteMutation.isPending ? "Deleting..." : "Delete Session"}
+        </Button>
       </div>
 
       {/* Session Overview Card */}

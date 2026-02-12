@@ -4,7 +4,7 @@ export interface RetryOptions {
   maxRetries: number;
   baseDelay: number;
   maxDelay: number;
-  onRetry?: (attempt: number, delay: number, error: Error) => void;
+  onRetry?: (attempt: number, delay: number, error: Error) => number | void;
 }
 
 export async function retryWithBackoff<T>(
@@ -31,9 +31,12 @@ export async function retryWithBackoff<T>(
 
       const exponentialDelay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxDelay);
       const jitter = Math.random() * 1000;
-      const delay = exponentialDelay + jitter;
+      let delay = exponentialDelay + jitter;
 
-      onRetry?.(attempt, delay, lastError);
+      const overrideDelay = onRetry?.(attempt, delay, lastError);
+      if (typeof overrideDelay === "number" && overrideDelay > 0) {
+        delay = Math.min(overrideDelay, maxDelay);
+      }
 
       await new Promise((resolve) => setTimeout(resolve, delay));
     }

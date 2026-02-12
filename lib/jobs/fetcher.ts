@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { scraperRegistry } from "@/lib/scrapers/registry";
 import { batchDeduplicateJobs } from "./deduplicator";
 import { matchWithTracking, getMatcherConfig } from "@/lib/ai/matcher";
+import type { TriggerSource } from "@/lib/ai/matcher/types";
 
 // Country/location mappings for filtering
 const COUNTRY_MAPPINGS: Record<string, string[]> = {
@@ -159,7 +160,7 @@ export interface FetchResult {
 
 export interface FetchOptions {
   sessionId?: string;
-  triggerSource?: "manual" | "scheduled" | "api";
+  triggerSource?: TriggerSource;
 }
 
 export async function fetchJobsForCompany(
@@ -536,7 +537,7 @@ export interface BatchFetchResult {
 }
 
 export async function fetchJobsForAllCompanies(
-  triggerSource: "manual" | "scheduled" | "api" = "manual"
+  triggerSource: TriggerSource = "manual"
 ): Promise<BatchFetchResult> {
   const sessionId = crypto.randomUUID();
   const sessionStartTime = Date.now();

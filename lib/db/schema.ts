@@ -122,7 +122,7 @@ export const jobRequirements = sqliteTable("job_requirements", {
 // Scrape Sessions - Track batch scrape operations
 export const scrapeSessions = sqliteTable("scrape_sessions", {
   id: text("id").primaryKey(), // UUID
-  triggerSource: text("trigger_source").notNull(), // "manual" | "scheduled" | "api"
+  triggerSource: text("trigger_source").notNull(), // "manual" | "auto_scrape" | "company_refresh"
   status: text("status").notNull().default("in_progress"), // "in_progress" | "completed" | "failed"
   companiesTotal: integer("companies_total").default(0),
   companiesCompleted: integer("companies_completed").default(0),
@@ -138,7 +138,7 @@ export const scrapingLogs = sqliteTable("scraping_logs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   companyId: integer("company_id").references(() => companies.id, { onDelete: "cascade" }),
   sessionId: text("session_id").references(() => scrapeSessions.id, { onDelete: "cascade" }),
-  triggerSource: text("trigger_source"), // "manual" | "scheduled" | "api"
+  triggerSource: text("trigger_source"), // "manual" | "auto_scrape" | "company_refresh"
   status: text("status").notNull(), // "success", "error", "partial"
   jobsFound: integer("jobs_found").default(0),
   jobsAdded: integer("jobs_added").default(0),

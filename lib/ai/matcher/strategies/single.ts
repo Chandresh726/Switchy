@@ -14,8 +14,6 @@ export const singleStrategy: SingleStrategy = async (ctx) => {
     candidateProfile
   );
 
-  let baseDelay = config.backoffBaseDelay;
-
   const result = await retryWithBackoff(
     async () => {
       if (!circuitBreaker.canExecute()) {
@@ -39,12 +37,12 @@ export const singleStrategy: SingleStrategy = async (ctx) => {
     },
     {
       maxRetries: config.maxRetries,
-      baseDelay,
+      baseDelay: config.backoffBaseDelay,
       maxDelay: config.backoffMaxDelay,
       onRetry: (attempt, delay, error) => {
         if (error && (isServerError(error) || isRateLimitError(error))) {
-          baseDelay = config.backoffBaseDelay * 3;
-          console.log(`[SingleStrategy] Retry ${attempt}: Server/rate limit error, using 3x base delay`);
+          console.log(`[SingleStrategy] Retry ${attempt}: Server/rate limit error, returning 3x base delay`);
+          return config.backoffBaseDelay * 3;
         }
         console.log(`[SingleStrategy] Job ${job.id} retry ${attempt} scheduled after ${Math.round(delay)}ms`);
       },

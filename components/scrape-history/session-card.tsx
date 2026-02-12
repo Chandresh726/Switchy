@@ -7,7 +7,6 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  ChevronRight,
   Building2,
   Briefcase,
   Filter,
@@ -116,7 +115,9 @@ export function SessionCard({ session }: SessionCardProps) {
     ? Math.round(((session.companiesCompleted || 0) / session.companiesTotal) * 100)
     : 0;
 
-  const handleDelete = async () => {
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     setIsDeleting(true);
     try {
       const res = await fetch(`/api/scrape-history?sessionId=${session.id}`, {
@@ -136,35 +137,40 @@ export function SessionCard({ session }: SessionCardProps) {
   };
 
   return (
-    <div className="group rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:border-zinc-700">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${statusConfig.bgColor}`}>
-            <StatusIcon className={`h-5 w-5 ${statusConfig.color}`} />
+    <Link href={`/history/scrape/${session.id}`}>
+      <div className="group rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:border-zinc-700 cursor-pointer">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${statusConfig.bgColor}`}>
+              <StatusIcon className={`h-5 w-5 ${statusConfig.color}`} />
+            </div>
+            <div>
+              <h3 className="font-medium text-white">
+                {formatDate(session.startedAt)} <span className="text-zinc-500">at</span> {formatTime(session.startedAt)}
+              </h3>
+              <p className="flex items-center gap-1 text-sm text-zinc-400">
+                <Play className="h-3 w-3" />
+                {TRIGGER_LABELS[session.triggerSource] || session.triggerSource}
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="font-medium text-white">
-              {formatDate(session.startedAt)} <span className="text-zinc-500">at</span> {formatTime(session.startedAt)}
-            </h3>
-            <p className="flex items-center gap-1 text-sm text-zinc-400">
-              <Play className="h-3 w-3" />
-              {TRIGGER_LABELS[session.triggerSource] || session.triggerSource}
-            </p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </AlertDialogTrigger>
+          <div className="flex items-center gap-2">
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete Session?</AlertDialogTitle>
@@ -185,12 +191,6 @@ export function SessionCard({ session }: SessionCardProps) {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-
-          <Link href={`/history/scrape/${session.id}`}>
-            <Button variant="ghost" size="sm" className="text-zinc-400 hover:text-white h-8">
-              Details <ChevronRight className="ml-1 h-3.5 w-3.5" />
-            </Button>
-          </Link>
         </div>
       </div>
 
@@ -243,5 +243,6 @@ export function SessionCard({ session }: SessionCardProps) {
         </div>
       </div>
     </div>
+    </Link>
   );
 }

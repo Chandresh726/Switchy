@@ -50,6 +50,10 @@ export async function generateStructured<T extends z.ZodTypeAny>(
     ...providerOptions,
   });
 
+  if (result.output === undefined || result.output === null) {
+    throw new Error("Model did not produce structured output");
+  }
+
   return {
     data: result.output as z.infer<T>,
   };

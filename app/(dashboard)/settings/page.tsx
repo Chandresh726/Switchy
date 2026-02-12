@@ -498,18 +498,45 @@ function SettingsContent() {
     },
   });
 
-  const matchUnmatchedMutation = useMutation<{ total: number; matched: number; failed: number; sessionId?: string }>({
+  const matchUnmatchedMutation = useMutation<{ total: number; matched: number; failed: number; sessionId: string }>({
     mutationFn: async () => {
       const res = await fetch("/api/jobs/match-unmatched", { method: "POST" });
       if (!res.ok) throw new Error("Failed to match jobs");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data.sessionId) {
+        setMatchSessionId(data.sessionId);
+      }
+    },
+  });
+
+  const [matchSessionId, setMatchSessionId] = useState<string | null>(null);
+
+  const { data: matchProgress } = useQuery({
+    queryKey: ["match-progress", matchSessionId],
+    queryFn: async () => {
+      if (!matchSessionId) return null;
+      const res = await fetch(`/api/jobs/match-unmatched?sessionId=${matchSessionId}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data;
+    },
+    enabled: !!matchSessionId && matchUnmatchedMutation.isPending,
+    refetchInterval: () => {
+      if (!matchSessionId || !matchUnmatchedMutation.isPending) return false;
+      return 1000;
+    },
+  });
+
+  useEffect(() => {
+    if (!matchUnmatchedMutation.isPending && matchSessionId && matchProgress?.status === "completed") {
+      setMatchSessionId(null);
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["unmatched-jobs-count"] });
       queryClient.invalidateQueries({ queryKey: ["match-history"] });
-    },
-  });
+    }
+  }, [matchUnmatchedMutation.isPending, matchSessionId, matchProgress, queryClient]);
 
   return (
     <div className="space-y-6">
@@ -582,6 +609,12 @@ function SettingsContent() {
               matchUnmatchedMutation.mutate();
             }}
             isMatching={matchUnmatchedMutation.isPending}
+            matchProgress={matchProgress ? {
+              completed: matchProgress.completed,
+              total: matchProgress.total,
+              succeeded: matchProgress.succeeded,
+              failed: matchProgress.failed,
+            } : undefined}
             unmatchedCount={unmatchedData?.count ?? 0}
           />
 

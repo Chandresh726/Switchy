@@ -90,7 +90,7 @@ export async function updateMatchSession(
     .update(matchSessions)
     .set({
       ...updates,
-      ...(updates.status ? { completedAt: new Date() } : {}),
+      ...(updates.status === "completed" ? { completedAt: new Date() } : {}),
     })
     .where(eq(matchSessions.id, sessionId));
 }
@@ -161,4 +161,23 @@ export async function finalizeMatchSession(
     succeeded,
     failed,
   };
+}
+
+export async function getMatchSessionStatus(sessionId: string) {
+  const [session] = await db
+    .select({
+      id: matchSessions.id,
+      status: matchSessions.status,
+      jobsTotal: matchSessions.jobsTotal,
+      jobsCompleted: matchSessions.jobsCompleted,
+      jobsSucceeded: matchSessions.jobsSucceeded,
+      jobsFailed: matchSessions.jobsFailed,
+      startedAt: matchSessions.startedAt,
+      completedAt: matchSessions.completedAt,
+    })
+    .from(matchSessions)
+    .where(eq(matchSessions.id, sessionId))
+    .limit(1);
+
+  return session || null;
 }

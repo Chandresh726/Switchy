@@ -15,16 +15,16 @@ function validateBatchResponse(batchResults: BulkMatchResult[], batchJobs: Match
   const validatedResults: BulkMatchResult[] = [];
 
   for (const result of batchResults) {
+    if (typeof result.jobId !== "number" || isNaN(result.jobId)) {
+      console.warn(`[BulkStrategy] AI returned invalid jobId: ${result.jobId}, ignoring`);
+      continue;
+    }
     if (!batchJobIds.has(result.jobId)) {
       console.warn(`[BulkStrategy] AI returned jobId ${result.jobId} which was not in the batch, ignoring`);
       continue;
     }
     if (returnedJobIds.has(result.jobId)) {
       console.warn(`[BulkStrategy] AI returned duplicate jobId ${result.jobId}, using first occurrence`);
-      continue;
-    }
-    if (typeof result.jobId !== "number" || isNaN(result.jobId)) {
-      console.warn(`[BulkStrategy] AI returned invalid jobId: ${result.jobId}, ignoring`);
       continue;
     }
     returnedJobIds.add(result.jobId);
@@ -151,8 +151,6 @@ async function processBatch(
 
   const prompt = buildBulkMatchPrompt(batch, candidateProfile);
 
-  let baseDelay = config.backoffBaseDelay;
-
   const result = await retryWithBackoff(
     async () => {
       return withTimeout(
@@ -172,12 +170,12 @@ async function processBatch(
     },
     {
       maxRetries: config.maxRetries,
-      baseDelay,
+      baseDelay: config.backoffBaseDelay,
       maxDelay: config.backoffMaxDelay,
       onRetry: (attempt, delay, error) => {
         if (error && (isServerError(error) || isRateLimitError(error))) {
-          baseDelay = config.backoffBaseDelay * 3;
-          console.log(`[BulkStrategy] Batch retry ${attempt}: Server/rate limit error, using 3x base delay`);
+          console.log(`[BulkStrategy] Batch retry ${attempt}: Server/rate limit error, returning 3x base delay`);
+          return config.backoffBaseDelay * 3;
         }
         console.log(`[BulkStrategy] Batch retry ${attempt} scheduled after ${Math.round(delay)}ms`);
       },
