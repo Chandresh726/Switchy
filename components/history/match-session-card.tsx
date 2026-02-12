@@ -1,24 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   CheckCircle,
   XCircle,
   Clock,
-  ChevronDown,
-  ChevronUp,
+  ChevronRight,
   Sparkles,
-  AlertCircle,
   Loader2,
   Building2,
   Trash2,
   Play,
   Target,
 } from "lucide-react";
+import Link from "next/link";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,26 +45,6 @@ interface MatchSession {
   completedAt: Date | null;
 }
 
-interface MatchLog {
-  id: number;
-  sessionId: string | null;
-  jobId: number | null;
-  jobTitle: string | null;
-  companyName: string | null;
-  status: string;
-  score: number | null;
-  attemptCount: number | null;
-  errorType: string | null;
-  errorMessage: string | null;
-  duration: number | null;
-  modelUsed: string | null;
-  completedAt: Date | null;
-}
-
-interface SessionDetailResponse {
-  session: MatchSession;
-  logs: MatchLog[];
-}
 
 interface MatchSessionCardProps {
   session: MatchSession;
@@ -131,18 +109,9 @@ function formatDate(date: Date | null): string {
   });
 }
 
-function formatDurationMs(ms: number | null): string {
-  if (!ms) return "-";
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
-}
-
 export function MatchSessionCard({ session }: MatchSessionCardProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const queryClient = useQueryClient();
-  const router = useRouter();
 
   const statusConfig = STATUS_CONFIG[session.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.in_progress;
   const StatusIcon = statusConfig.icon;
@@ -154,18 +123,6 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
   const successRate = session.jobsTotal
     ? Math.round(((session.jobsSucceeded || 0) / session.jobsTotal) * 100)
     : 0;
-
-  // Fetch detailed logs when expanded
-  const { data: detailData, isLoading: detailLoading } = useQuery<SessionDetailResponse>({
-    queryKey: ["match-history", session.id],
-    queryFn: async () => {
-      const res = await fetch(`/api/match-history?sessionId=${session.id}`);
-      if (!res.ok) throw new Error("Failed to fetch session details");
-      return res.json();
-    },
-    enabled: isExpanded,
-    refetchInterval: session.status === "in_progress" ? 2000 : false,
-  });
 
   const handleDelete = async () => {
     setIsDeleting(true);
@@ -185,10 +142,6 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
       setIsDeleting(false);
     }
   };
-
-  const logs = detailData?.logs || [];
-  const failedLogs = logs.filter((l) => l.status === "failed");
-  const successLogs = logs.filter((l) => l.status === "success");
 
   return (
     <div className="group rounded-lg border border-zinc-800 bg-zinc-900/50 transition-all hover:border-zinc-700">
@@ -261,6 +214,12 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+
+            <Link href={`/history/match/${session.id}`}>
+              <Button variant="ghost" size="sm" className="text-zinc-400 hover:text-white h-8">
+                Details <ChevronRight className="ml-1 h-3.5 w-3.5" />
+              </Button>
+            </Link>
           </div>
         </div>
 
@@ -316,130 +275,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
             </span>
           </div>
         </div>
-
-        {/* Toggle Details */}
-        <div className="mt-4 pt-3 border-t border-zinc-800">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full text-zinc-400 hover:text-white h-8 justify-between"
-            onClick={() => setIsExpanded(!isExpanded)}
-          >
-            <span>{isExpanded ? "Hide Details" : "View Match Log"}</span>
-            {isExpanded ? (
-              <ChevronUp className="h-3.5 w-3.5" />
-            ) : (
-              <ChevronDown className="h-3.5 w-3.5" />
-            )}
-          </Button>
-        </div>
       </div>
-
-      {/* Expanded Details */}
-      {isExpanded && (
-        <div className="border-t border-zinc-800 bg-zinc-950/30 p-4 rounded-b-lg animate-in slide-in-from-top-2 duration-200">
-          {detailLoading ? (
-            <div className="flex items-center justify-center py-4">
-              <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {/* Failed Jobs Section */}
-              {failedLogs.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-medium uppercase tracking-wider text-red-400 mb-3 flex items-center gap-2">
-                    <AlertCircle className="h-3.5 w-3.5" />
-                    Failed Jobs ({failedLogs.length})
-                  </h4>
-                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
-                    {failedLogs.map((log) => (
-                      <div
-                        key={log.id}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={log.jobId ? `View job details for ${log.jobTitle || `Job #${log.jobId}`}` : "Job details unavailable"}
-                        onClick={() => log.jobId && router.push(`/jobs/${log.jobId}`)}
-                        onKeyDown={(e) => {
-                          if ((e.key === "Enter" || e.key === " ") && log.jobId) {
-                            e.preventDefault();
-                            router.push(`/jobs/${log.jobId}`);
-                          }
-                        }}
-                        className={`rounded border border-red-500/20 bg-red-500/5 p-3 text-xs cursor-pointer transition-colors hover:bg-red-500/10 hover:border-red-500/30 ${!log.jobId ? 'pointer-events-none opacity-50' : ''}`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-medium text-white">
-                            {log.jobTitle || `Job #${log.jobId}`}
-                          </span>
-                          <Badge variant="outline" className="border-red-500/30 text-red-400 text-[10px] h-5 px-1.5">
-                            {log.errorType || "error"}
-                          </Badge>
-                        </div>
-                        {log.errorMessage && (
-                          <p className="text-red-300/80 mb-2 font-mono text-[10px] break-all">{log.errorMessage}</p>
-                        )}
-                        <div className="flex gap-4 text-zinc-500 text-[10px]">
-                          <span>Attempts: {log.attemptCount}</span>
-                          <span>Duration: {formatDurationMs(log.duration)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Success Summary */}
-              {successLogs.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-medium uppercase tracking-wider text-emerald-400 mb-3 flex items-center gap-2">
-                    <CheckCircle className="h-3.5 w-3.5" />
-                    Successful Jobs ({successLogs.length})
-                  </h4>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
-                    {successLogs.map((log) => (
-                      <div
-                        key={log.id}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={log.jobId ? `View job details for ${log.jobTitle || `Job #${log.jobId}`}` : "Job details unavailable"}
-                        onClick={() => log.jobId && router.push(`/jobs/${log.jobId}`)}
-                        onKeyDown={(e) => {
-                          if ((e.key === "Enter" || e.key === " ") && log.jobId) {
-                            e.preventDefault();
-                            router.push(`/jobs/${log.jobId}`);
-                          }
-                        }}
-                        className={`rounded border border-emerald-500/10 bg-emerald-500/5 p-2.5 text-xs transition-colors hover:bg-emerald-500/10 hover:border-emerald-500/20 cursor-pointer ${!log.jobId ? 'pointer-events-none opacity-50' : ''}`}
-                      >
-                        <span className="text-zinc-200 font-medium truncate block mb-1.5" title={log.jobTitle || ""}>
-                          {log.jobTitle || `Job #${log.jobId}`}
-                        </span>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <Sparkles className="h-3 w-3 text-emerald-500" />
-                            <span className="text-emerald-400 font-mono">
-                              {log.score?.toFixed(0)}
-                            </span>
-                          </div>
-                          <span className="text-zinc-600 text-[10px]">
-                            {formatDurationMs(log.duration)}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {logs.length === 0 && (
-                <p className="text-sm text-zinc-500 text-center py-4">
-                  No job logs available for this session
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

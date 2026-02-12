@@ -41,6 +41,7 @@ export function SystemInfo() {
           <div className="flex flex-wrap gap-1.5">
             <Badge variant="secondary" className="bg-zinc-800 text-zinc-400 hover:bg-zinc-700">Greenhouse</Badge>
             <Badge variant="secondary" className="bg-zinc-800 text-zinc-400 hover:bg-zinc-700">Lever</Badge>
+            <Badge variant="secondary" className="bg-zinc-800 text-zinc-400 hover:bg-zinc-700">Ashby</Badge>
           </div>
         </div>
       </CardContent>

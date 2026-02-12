@@ -5,7 +5,8 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Timer, Save, Loader2, X } from "lucide-react";
+import { Timer, Save, Loader2, X, RefreshCw } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ScraperSettingsProps {
   globalScrapeFrequency: number;
@@ -20,6 +21,8 @@ interface ScraperSettingsProps {
   isSaving: boolean;
   hasUnsavedChanges: boolean;
   settingsSaved: boolean;
+  onRefresh: () => void;
+  isRefreshing: boolean;
 }
 
 export function ScraperSettings({
@@ -35,6 +38,8 @@ export function ScraperSettings({
   isSaving,
   hasUnsavedChanges,
   settingsSaved,
+  onRefresh,
+  isRefreshing,
 }: ScraperSettingsProps) {
   const [keywordInput, setKeywordInput] = useState("");
 
@@ -50,9 +55,21 @@ export function ScraperSettings({
   return (
     <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
       <CardHeader>
-        <div className="flex items-center gap-2">
-          <Timer className="h-5 w-5 text-emerald-500" />
-          <CardTitle>Scraper Settings</CardTitle>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Timer className="h-5 w-5 text-emerald-500" />
+            <CardTitle>Scraper Settings</CardTitle>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-zinc-700 hover:bg-zinc-800 hover:text-white"
+            onClick={onRefresh}
+            disabled={isRefreshing}
+          >
+            <RefreshCw className={cn("mr-2 h-4 w-4", isRefreshing && "animate-spin")} />
+            {isRefreshing ? "Refreshing..." : "Refresh Jobs"}
+          </Button>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">

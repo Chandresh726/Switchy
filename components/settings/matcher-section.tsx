@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Cpu, Settings2, Save, Loader2 } from "lucide-react";
+import { Cpu, Settings2, Save, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AIProvider, getModelsForProvider, modelSupportsReasoning, REASONING_EFFORT_OPTIONS, ReasoningEffort } from "./constants";
 import { useState } from "react";
@@ -35,6 +35,9 @@ interface MatcherSectionProps {
   isSaving: boolean;
   hasUnsavedChanges: boolean;
   settingsSaved: boolean;
+  onMatchUnmatched: () => void;
+  isMatching: boolean;
+  unmatchedCount: number;
 }
 
 export function MatcherSection({
@@ -61,6 +64,9 @@ export function MatcherSection({
   isSaving,
   hasUnsavedChanges,
   settingsSaved,
+  onMatchUnmatched,
+  isMatching,
+  unmatchedCount,
 }: MatcherSectionProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -69,13 +75,35 @@ export function MatcherSection({
   return (
     <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
       <CardHeader>
-        <div className="flex items-center gap-2">
-          <Cpu className="h-5 w-5 text-emerald-500" />
-          <CardTitle>Matching Engine</CardTitle>
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Cpu className="h-5 w-5 text-emerald-500" />
+              <CardTitle>Matching Engine</CardTitle>
+            </div>
+            <CardDescription>
+              Configure AI models and processing parameters for job matching
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className={cn(
+              "border-zinc-700 hover:bg-zinc-800 hover:text-white",
+              unmatchedCount > 0 && "border-purple-500/30 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10"
+            )}
+            onClick={onMatchUnmatched}
+            disabled={isMatching || unmatchedCount === 0}
+          >
+            <Sparkles className={cn("mr-2 h-4 w-4", isMatching && "animate-pulse")} />
+            {isMatching ? "Matching..." : "Match Unmatched"}
+            {unmatchedCount > 0 && (
+              <span className="ml-2 bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded text-xs">
+                {unmatchedCount}
+              </span>
+            )}
+          </Button>
         </div>
-        <CardDescription>
-          Configure how the AI matches jobs to your profile
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Primary Settings */}

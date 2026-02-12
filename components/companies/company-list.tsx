@@ -32,6 +32,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useState } from "react";
+import Link from "next/link";
 
 interface Company {
   id: number;
@@ -246,7 +247,13 @@ export function CompanyList() {
                   </div>
                 )}
                 <div>
-                  <h3 className="font-medium text-white">{company.name}</h3>
+                  <Link 
+                    href={`/jobs?companyIds=${company.id}`}
+                    className="font-medium text-white hover:text-emerald-400 transition-colors"
+                    title={`View jobs at ${company.name}`}
+                  >
+                    {company.name}
+                  </Link>
                 </div>
               </div>
 

@@ -11,9 +11,9 @@ import {
   Building2,
   Briefcase,
   Filter,
-  Sparkles,
   Trash2,
   Play,
+  Plus,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -180,7 +180,7 @@ export function SessionCard({ session }: SessionCardProps) {
             </AlertDialogContent>
           </AlertDialog>
 
-          <Link href={`/history/${session.id}`}>
+          <Link href={`/history/scrape/${session.id}`}>
             <Button variant="ghost" size="sm" className="text-zinc-400 hover:text-white h-8">
               Details <ChevronRight className="ml-1 h-3.5 w-3.5" />
             </Button>
@@ -215,8 +215,8 @@ export function SessionCard({ session }: SessionCardProps) {
           <span className="text-zinc-300 font-medium">{session.totalJobsFound || 0}</span> Found
         </span>
         <span className="flex items-center gap-1.5">
-          <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
-          <span className="text-emerald-400 font-medium">+{session.totalJobsAdded || 0}</span> New
+          <Plus className="h-3.5 w-3.5 text-emerald-400" />
+          <span className="text-emerald-400 font-medium">{session.totalJobsAdded || 0}</span> New
         </span>
         <span className="flex items-center gap-1.5">
           <Filter className="h-3.5 w-3.5 text-zinc-400" />
