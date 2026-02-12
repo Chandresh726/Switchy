@@ -22,6 +22,7 @@ const AI_SETTING_KEYS = [
   "openrouter_api_key",
   "cerebras_api_key",
   "openai_api_key",
+  "modal_api_key",
 ] as const;
 
 /**
@@ -65,6 +66,7 @@ async function parseAIClientSettings(): Promise<AIClientSettings> {
     openrouterApiKey: config.get("openrouter_api_key"),
     cerebrasApiKey: config.get("cerebras_api_key"),
     openaiApiKey: config.get("openai_api_key"),
+    modalApiKey: config.get("modal_api_key"),
   };
 }
 
@@ -86,6 +88,8 @@ function getApiKeyForProvider(
       return settings.openrouterApiKey;
     case "cerebras":
       return settings.cerebrasApiKey;
+    case "modal":
+      return settings.modalApiKey;
     case "gemini_cli_oauth":
       return undefined; // No API key needed for OAuth
     default:

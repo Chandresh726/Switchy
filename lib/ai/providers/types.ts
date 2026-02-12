@@ -10,7 +10,8 @@ export type AIProvider =
   | "gemini_cli_oauth"
   | "openrouter"
   | "cerebras"
-  | "google";
+  | "google"
+  | "modal";
 
 /**
  * Reasoning effort levels for models that support it
@@ -118,4 +119,5 @@ export interface AIClientSettings {
   openrouterApiKey?: string;
   cerebrasApiKey?: string;
   openaiApiKey?: string;
+  modalApiKey?: string;
 }

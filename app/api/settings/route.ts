@@ -31,6 +31,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   openrouter_api_key: "",
   cerebras_api_key: "",
   openai_api_key: "",
+  modal_api_key: "",
   scraper_filter_country: "India",
   scraper_filter_city: "",
   scraper_filter_title_keywords: "[]",
@@ -193,7 +194,8 @@ export async function POST(request: Request) {
           value !== "openrouter" &&
           value !== "cerebras" &&
           value !== "openai" &&
-          value !== "google"
+          value !== "google" &&
+          value !== "modal"
         ) {
           return NextResponse.json(
             { error: "ai_provider must be a supported provider" },
@@ -246,6 +248,7 @@ export async function POST(request: Request) {
           "openrouter_api_key",
           "cerebras_api_key",
           "openai_api_key",
+          "modal_api_key",
         ].includes(key)
       ) {
         // Allow empty strings

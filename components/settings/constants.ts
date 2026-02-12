@@ -160,6 +160,15 @@ export const CEREBRAS_MODELS = [
   },
 ];
 
+export const MODAL_MODELS = [
+  {
+    id: "zai-org/GLM-5-FP8",
+    label: "GLM-5 FP8",
+    description: "Frontier open model via Modal",
+    supportsReasoning: true,
+  },
+];
+
 export type AIProvider =
   | "anthropic"
   | "openai"
@@ -167,7 +176,8 @@ export type AIProvider =
   | "gemini_cli_oauth"
   | "openrouter"
   | "cerebras"
-  | "google";
+  | "google"
+  | "modal";
 
 export type ReasoningEffort = "low" | "medium" | "high";
 
@@ -196,6 +206,8 @@ export function getModelsForProvider(provider: string) {
       return OPENROUTER_MODELS;
     case "cerebras":
       return CEREBRAS_MODELS;
+    case "modal":
+      return MODAL_MODELS;
     case "anthropic":
     default:
       return ANTHROPIC_MODELS;

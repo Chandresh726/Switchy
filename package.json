@@ -16,6 +16,7 @@
     "@ai-sdk/cerebras": "^2.0.31",
     "@ai-sdk/google": "^3.0.23",
     "@ai-sdk/openai": "^3.0.26",
+    "@ai-sdk/openai-compatible": "^2.0.29",
     "@base-ui/react": "^1.1.0",
     "@openrouter/ai-sdk-provider": "^2.2.3",
     "@radix-ui/react-switch": "^1.2.6",

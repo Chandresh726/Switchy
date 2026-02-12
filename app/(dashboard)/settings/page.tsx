@@ -45,6 +45,7 @@ interface MatcherSettings {
   openrouter_api_key?: string;
   cerebras_api_key?: string;
   openai_api_key?: string;
+  modal_api_key?: string;
 }
 
 interface MatcherLocalEdits {
@@ -68,6 +69,7 @@ interface ProviderLocalEdits {
   openaiApiKey?: string;
   openrouterApiKey?: string;
   cerebrasApiKey?: string;
+  modalApiKey?: string;
   googleClientId?: string;
   googleClientSecret?: string;
 }
@@ -182,13 +184,14 @@ function SettingsContent() {
       openaiApiKey: providerLocalEdits.openaiApiKey ?? (settings?.openai_api_key || ""),
       openrouterApiKey: providerLocalEdits.openrouterApiKey ?? (settings?.openrouter_api_key || ""),
       cerebrasApiKey: providerLocalEdits.cerebrasApiKey ?? (settings?.cerebras_api_key || ""),
+      modalApiKey: providerLocalEdits.modalApiKey ?? (settings?.modal_api_key || ""),
     };
   }, [settings, matcherLocalEdits, providerLocalEdits, scraperLocalEdits]);
 
   const {
     matcherModel, resumeParserModel, matcherReasoningEffort, resumeParserReasoningEffort, bulkEnabled, batchSize, maxRetries, concurrencyLimit, timeoutMs,
     circuitBreakerThreshold, autoMatchAfterScrape, globalScrapeFrequency, filterCountry, filterCity, filterTitleKeywords, aiProvider, anthropicApiKey,
-    googleApiKey, openaiApiKey, openrouterApiKey, cerebrasApiKey
+    googleApiKey, openaiApiKey, openrouterApiKey, cerebrasApiKey, modalApiKey
   } = derivedValues;
 
   const scraperHasUnsavedChanges =
@@ -255,6 +258,7 @@ function SettingsContent() {
         openaiApiKey: undefined,
         openrouterApiKey: undefined,
         cerebrasApiKey: undefined,
+        modalApiKey: undefined,
       }));
       // Clear local model edits since they've been persisted with the provider change
       setMatcherLocalEdits((prev) => ({
@@ -332,6 +336,14 @@ function SettingsContent() {
 
   const saveCerebrasApiKey = () => {
     providerSettingsMutation.mutate({ cerebras_api_key: cerebrasApiKey });
+  };
+
+  const setModalApiKey = (value: string) => {
+    setProviderLocalEdits(prev => ({ ...prev, modalApiKey: value }));
+  };
+
+  const saveModalApiKey = () => {
+    providerSettingsMutation.mutate({ modal_api_key: modalApiKey });
   };
 
   const refreshMutation = useMutation({
@@ -498,6 +510,9 @@ function SettingsContent() {
             cerebrasApiKey={cerebrasApiKey}
             onCerebrasApiKeyChange={setCerebrasApiKey}
             onCerebrasApiKeyBlur={saveCerebrasApiKey}
+            modalApiKey={modalApiKey}
+            onModalApiKeyChange={setModalApiKey}
+            onModalApiKeyBlur={saveModalApiKey}
           />
 
           <MatcherSection

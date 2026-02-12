@@ -257,10 +257,14 @@ export function MatcherSection({
                         type="number"
                         min={1}
                         max={10}
-                        value={concurrencyLimit}
+                        value={aiProvider === "modal" ? 1 : concurrencyLimit}
                         onChange={(e) => onConcurrencyLimitChange(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
                         className="bg-zinc-950/50 border-zinc-800"
+                        disabled={aiProvider === "modal"}
                       />
+                      {aiProvider === "modal" && (
+                        <p className="text-xs text-amber-400/80">Locked to 1 for Modal (rate limit)</p>
+                      )}
                     </div>
                     <div className="space-y-2 md:col-span-2 lg:col-span-1">
                       <Label htmlFor="circuit-breaker" className="text-xs text-zinc-400">Circuit Breaker</Label>

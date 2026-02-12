@@ -27,6 +27,9 @@ interface AIProviderSectionProps {
   cerebrasApiKey: string;
   onCerebrasApiKeyChange: (value: string) => void;
   onCerebrasApiKeyBlur?: () => void;
+  modalApiKey: string;
+  onModalApiKeyChange: (value: string) => void;
+  onModalApiKeyBlur?: () => void;
 }
 
 export function AIProviderSection({
@@ -47,6 +50,9 @@ export function AIProviderSection({
   cerebrasApiKey,
   onCerebrasApiKeyChange,
   onCerebrasApiKeyBlur,
+  modalApiKey,
+  onModalApiKeyChange,
+  onModalApiKeyBlur,
 }: AIProviderSectionProps) {
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
 
@@ -112,6 +118,7 @@ export function AIProviderSection({
               <SelectItem value="gemini_cli_oauth">Gemini (CLI OAuth)</SelectItem>
               <SelectItem value="openrouter">OpenRouter</SelectItem>
               <SelectItem value="cerebras">Cerebras</SelectItem>
+              <SelectItem value="modal">Modal (GLM-5)</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -180,6 +187,31 @@ export function AIProviderSection({
             onCerebrasApiKeyChange,
             onCerebrasApiKeyBlur
           )
+        )}
+
+        {aiProvider === "modal" && (
+          <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+            {renderKeyInput(
+              "modal-key",
+              "Modal API Key",
+              "Get key at modal.com/glm-5-endpoint",
+              modalApiKey,
+              onModalApiKeyChange,
+              onModalApiKeyBlur
+            )}
+            <p className="text-xs text-zinc-500">
+              Get your free API key at{" "}
+              <a
+                href="https://modal.com/glm-5-endpoint"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 hover:underline"
+              >
+                modal.com/glm-5-endpoint
+              </a>
+              . Limited to 1 concurrent request.
+            </p>
+          </div>
         )}
       </CardContent>
     </Card>

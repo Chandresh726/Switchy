@@ -1,6 +1,7 @@
 import { inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
+import { getCurrentProvider } from "@/lib/ai/client";
 import {
   type MatcherSettings,
   DEFAULT_MATCHER_SETTINGS,
@@ -36,6 +37,9 @@ export async function getMatcherSettings(): Promise<MatcherSettings> {
 
   const settingsMap = new Map(dbSettings.map((s) => [s.key, s.value]));
 
+  const currentProvider = await getCurrentProvider();
+  const isModalProvider = currentProvider === "modal";
+
   return {
     model: settingsMap.get("matcher_model") || DEFAULT_MATCHER_SETTINGS.model,
     reasoningEffort:
@@ -53,7 +57,7 @@ export async function getMatcherSettings(): Promise<MatcherSettings> {
         String(DEFAULT_MATCHER_SETTINGS.maxRetries),
       10
     ),
-    concurrencyLimit: parseInt(
+    concurrencyLimit: isModalProvider ? 1 : parseInt(
       settingsMap.get("matcher_concurrency_limit") ||
         String(DEFAULT_MATCHER_SETTINGS.concurrencyLimit),
       10
