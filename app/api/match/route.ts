@@ -1,22 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { calculateJobMatch, batchCalculateJobMatches } from "@/lib/ai/matcher";
+import { matchSingle, matchBulk } from "@/lib/ai/matcher";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { jobId, jobIds } = body;
 
-    // Single job match
     if (jobId) {
-      const result = await calculateJobMatch(jobId);
+      const result = await matchSingle(jobId);
       return NextResponse.json(result);
     }
 
-    // Batch job matching
     if (jobIds && Array.isArray(jobIds)) {
-      const results = await batchCalculateJobMatches(jobIds);
+      const results = await matchBulk(jobIds);
 
-      // Convert Map to object for JSON response
       const response: Record<string, unknown> = {};
       for (const [id, result] of results) {
         if (result instanceof Error) {

@@ -47,6 +47,12 @@ interface SessionCardProps {
   session: ScrapeSession;
 }
 
+const TRIGGER_LABELS: Record<string, string> = {
+  manual: "Manual",
+  scheduled: "Auto Scrape",
+  api: "API",
+};
+
 const STATUS_CONFIG = {
   completed: {
     icon: CheckCircle,
@@ -141,9 +147,9 @@ export function SessionCard({ session }: SessionCardProps) {
             <h3 className="font-medium text-white">
               {formatDate(session.startedAt)} <span className="text-zinc-500">at</span> {formatTime(session.startedAt)}
             </h3>
-            <p className="flex items-center gap-1 text-sm text-zinc-400 capitalize">
+            <p className="flex items-center gap-1 text-sm text-zinc-400">
               <Play className="h-3 w-3" />
-              {session.triggerSource.replace("_", " ")}
+              {TRIGGER_LABELS[session.triggerSource] || session.triggerSource}
             </p>
           </div>
         </div>

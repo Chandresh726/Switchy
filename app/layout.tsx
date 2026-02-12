@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   title: "Switchy - Job Tracking Platform",
   description: "Track companies, aggregate job openings, and get AI-powered job matches",
   icons: {
-    icon: "/switchy-logo.png",
+    icon: ["/favicon.ico", "/switchy-logo.png"],
   },
 };
 

@@ -57,6 +57,12 @@ interface SessionDetailResponse {
   logs: SessionLog[];
 }
 
+const TRIGGER_LABELS: Record<string, string> = {
+  manual: "Manual",
+  scheduled: "Auto Scrape",
+  api: "API",
+};
+
 const STATUS_CONFIG = {
   success: {
     icon: CheckCircle,
@@ -176,7 +182,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
                   {formatDateTime(session.startedAt)}
                 </span>
                 <span className="text-zinc-700">&bull;</span>
-                <span className="capitalize">{session.triggerSource}</span>
+                <span>{TRIGGER_LABELS[session.triggerSource] || session.triggerSource}</span>
               </div>
             </div>
           </div>

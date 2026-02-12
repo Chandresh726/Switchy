@@ -1,7 +1,3 @@
-/**
- * Extract requirements from a job description
- * Looks for bullet-like lines (starting with -, *, •, or numbered items)
- */
 export function extractRequirements(description: string | null): string[] {
   if (!description) return [];
 
@@ -31,10 +27,6 @@ export function extractRequirements(description: string | null): string[] {
   return [];
 }
 
-/**
- * Lightweight HTML to readable text conversion
- * Strips tags and converts common HTML entities
- */
 export function htmlToText(html: string): string {
   return html
     .replace(/<\/(p|div|h[1-6]|li|br|tr)>/gi, "\n\n")
@@ -58,9 +50,6 @@ export function htmlToText(html: string): string {
     .trim();
 }
 
-/**
- * Split array into chunks of specified size
- */
 export function chunkArray<T>(array: T[], size: number): T[][] {
   const chunks: T[][] = [];
   for (let i = 0; i < array.length; i += size) {

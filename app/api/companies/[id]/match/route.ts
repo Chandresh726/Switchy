@@ -2,16 +2,12 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { jobs, companies } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { matchJobsWithTracking } from "@/lib/ai/matcher";
+import { matchWithTracking } from "@/lib/ai/matcher";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-/**
- * POST /api/companies/[id]/match
- * Triggers matching for all jobs of a specific company
- */
 export async function POST(request: Request, { params }: RouteParams) {
   try {
     const { id } = await params;
@@ -24,7 +20,6 @@ export async function POST(request: Request, { params }: RouteParams) {
       );
     }
 
-    // Check if company exists
     const [company] = await db
       .select()
       .from(companies)
@@ -37,7 +32,6 @@ export async function POST(request: Request, { params }: RouteParams) {
       );
     }
 
-    // Get all jobs for this company
     const companyJobs = await db
       .select({ id: jobs.id })
       .from(jobs)
@@ -58,12 +52,10 @@ export async function POST(request: Request, { params }: RouteParams) {
 
     console.log(`[Company Match] Starting match for ${jobIds.length} jobs from company ${company.name}`);
 
-    // Trigger matching with tracking
-    const result = await matchJobsWithTracking(
-      jobIds,
-      "company_refresh",
-      companyId
-    );
+    const result = await matchWithTracking(jobIds, {
+      triggerSource: "company_refresh",
+      companyId,
+    });
 
     return NextResponse.json({
       success: true,

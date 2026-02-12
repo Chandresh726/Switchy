@@ -1,28 +1,88 @@
-// Re-export all matcher types
-export * from "./types";
+export { createMatchEngine, matchSingle, matchBulk, matchWithTracking, matchUnmatchedJobs, type MatchEngine } from "./engine";
 
-// Re-export settings functionality
-export { getMatcherSettings, parseMatcherSetting, validateMatcherSettings } from "./settings";
+export { getMatcherConfig, getDefaultConfig, getProviderDefaults, validateMatcherConfig } from "./config";
 
-// Re-export generation utilities
-export { generateStructured, generateSimpleText, USE_GENERATE_OBJECT } from "./generation";
-
-// Re-export single job matching
-export { calculateJobMatch } from "./single";
-
-// Re-export bulk matching
-export { bulkCalculateJobMatches, batchCalculateJobMatches } from "./bulk";
-
-// Re-export tracking and session management
 export {
-  matchJobsWithTracking,
-  matchUnmatchedJobs,
-  matchUnmatchedJobsWithTracking,
+  getQueueStatus,
+  getQueuePosition,
+  withQueue,
+  resetQueue,
+  type QueueStatus,
+  type QueuePositionCallback,
+} from "./queue";
+
+export {
+  fetchProfileData,
+  fetchJobsData,
+  updateJobWithMatchResult,
   getUnmatchedJobIds,
+  createMatchSession,
+  updateMatchSession,
+  logMatchSuccess,
+  logMatchFailure,
+  finalizeMatchSession,
+  createProgressTracker,
+  type ProgressTracker,
 } from "./tracking";
 
-// Re-export utilities
+export {
+  CircuitBreaker,
+  CircuitState,
+  createCircuitBreaker,
+  retryWithBackoff,
+  withTimeout,
+  categorizeError,
+  isRetryableError,
+  isServerError,
+  isRateLimitError,
+  createMatcherError,
+  MatcherError,
+  MatcherValidationError,
+  MatcherProviderError,
+  MatcherTimeoutError,
+  type CircuitBreakerOptions,
+  type RetryOptions,
+} from "./resilience";
+
+export {
+  SINGLE_MATCH_SYSTEM_PROMPT,
+  BULK_MATCH_SYSTEM_PROMPT,
+  buildSingleMatchPrompt,
+  buildBulkMatchPrompt,
+} from "./prompts";
+
+export { generateStructured } from "./generation";
+
 export { extractRequirements, htmlToText, chunkArray } from "./utils";
 
-// Re-export error handling
-export { categorizeError, isRetryableError, createMatcherError } from "./errors";
+export type {
+  StrategyProgressCallback,
+} from "./strategies";
+
+export type {
+  MatchResult,
+  BulkMatchResult,
+  MatcherConfig,
+  MatchJob,
+  CandidateProfile,
+  MatchProgress,
+  MatchProgressCallback,
+  MatchOptions,
+  MatchSessionResult,
+  MatchResultMap,
+  StrategyResultMap,
+  MatchStrategy,
+  TriggerSource,
+  MatchPhase,
+  ErrorType,
+  ProfileData,
+  JobData,
+} from "./types";
+
+export {
+  MatchResultSchema,
+  BulkMatchItemSchema,
+  BulkMatchResultSchema,
+  DEFAULT_MATCHER_CONFIG,
+  PROVIDER_DEFAULTS,
+} from "./types";

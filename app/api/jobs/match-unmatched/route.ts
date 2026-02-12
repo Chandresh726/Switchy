@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { getUnmatchedJobIds, matchUnmatchedJobsWithTracking } from "@/lib/ai/matcher";
+import { getUnmatchedJobIds, matchWithTracking } from "@/lib/ai/matcher";
 
-// GET - check how many jobs need matching
 export async function GET() {
   try {
     const unmatchedJobIds = await getUnmatchedJobIds();
@@ -18,15 +17,23 @@ export async function GET() {
   }
 }
 
-// POST - run matcher on all unmatched jobs with session tracking
 export async function POST() {
   try {
-    const result = await matchUnmatchedJobsWithTracking(
-      "manual",
-      (completed, total, succeeded, failed) => {
-        console.log(`[Match Unmatched API] Progress: ${completed}/${total} (${succeeded} succeeded, ${failed} failed)`);
-      }
-    );
+    const unmatchedJobIds = await getUnmatchedJobIds();
+
+    if (unmatchedJobIds.length === 0) {
+      return NextResponse.json({
+        success: true,
+        sessionId: "",
+        total: 0,
+        matched: 0,
+        failed: 0,
+      });
+    }
+
+    const result = await matchWithTracking(unmatchedJobIds, {
+      triggerSource: "manual",
+    });
 
     return NextResponse.json({
       success: true,

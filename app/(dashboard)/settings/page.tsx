@@ -24,24 +24,24 @@ interface MatcherSettings {
   matcher_reasoning_effort: string;
   resume_parser_reasoning_effort: string;
   matcher_bulk_enabled: string;
+  matcher_serialize_operations: string;
   matcher_batch_size: string;
   matcher_max_retries: string;
   matcher_concurrency_limit: string;
   matcher_timeout_ms: string;
   matcher_circuit_breaker_threshold: string;
   matcher_auto_match_after_scrape: string;
-  global_scrape_frequency: string;
+  scheduler_cron: string;
   scraper_filter_country?: string;
   scraper_filter_city?: string;
   scraper_filter_title_keywords?: string;
-  // AI Provider Settings
   ai_provider?: string;
   anthropic_api_key?: string;
   google_auth_mode?: string;
   google_api_key?: string;
   google_client_id?: string;
   google_client_secret?: string;
-  google_oauth_tokens?: string; // Presence indicates connection
+  google_oauth_tokens?: string;
   openrouter_api_key?: string;
   cerebras_api_key?: string;
   openai_api_key?: string;
@@ -50,16 +50,20 @@ interface MatcherSettings {
 
 interface MatcherLocalEdits {
   matcherModel?: string;
-  resumeParserModel?: string;
   matcherReasoningEffort?: ReasoningEffort;
-  resumeParserReasoningEffort?: ReasoningEffort;
   bulkEnabled?: boolean;
+  serializeOperations?: boolean;
   batchSize?: number;
   maxRetries?: number;
   concurrencyLimit?: number;
   timeoutMs?: number;
   circuitBreakerThreshold?: number;
   autoMatchAfterScrape?: boolean;
+}
+
+interface ResumeParserLocalEdits {
+  resumeParserModel?: string;
+  resumeParserReasoningEffort?: ReasoningEffort;
 }
 
 interface ProviderLocalEdits {
@@ -75,7 +79,7 @@ interface ProviderLocalEdits {
 }
 
 interface ScraperLocalEdits {
-  globalScrapeFrequency?: number;
+  schedulerCron?: string;
   filterCountry?: string;
   filterCity?: string;
   filterTitleKeywords?: string[];
@@ -87,6 +91,7 @@ function SettingsContent() {
   const router = useRouter();
 
   const [matcherLocalEdits, setMatcherLocalEdits] = useState<MatcherLocalEdits>({});
+  const [resumeParserLocalEdits, setResumeParserLocalEdits] = useState<ResumeParserLocalEdits>({});
   const [providerLocalEdits, setProviderLocalEdits] = useState<ProviderLocalEdits>({});
   const [scraperLocalEdits, setScraperLocalEdits] = useState<ScraperLocalEdits>({});
   const [matcherSettingsSaved, setMatcherSettingsSaved] = useState(false);
@@ -145,10 +150,11 @@ function SettingsContent() {
 
     return {
       matcherModel: matcherLocalEdits.matcherModel ?? serverModel,
-      resumeParserModel: matcherLocalEdits.resumeParserModel ?? serverResumeModel,
+      resumeParserModel: resumeParserLocalEdits.resumeParserModel ?? serverResumeModel,
       matcherReasoningEffort: matcherLocalEdits.matcherReasoningEffort ?? serverMatcherReasoningEffort,
-      resumeParserReasoningEffort: matcherLocalEdits.resumeParserReasoningEffort ?? serverResumeParserReasoningEffort,
+      resumeParserReasoningEffort: resumeParserLocalEdits.resumeParserReasoningEffort ?? serverResumeParserReasoningEffort,
       bulkEnabled: matcherLocalEdits.bulkEnabled ?? (settings?.matcher_bulk_enabled !== "false"),
+      serializeOperations: matcherLocalEdits.serializeOperations ?? (settings?.matcher_serialize_operations === "true"),
       batchSize: matcherLocalEdits.batchSize ?? parseInt(settings?.matcher_batch_size || "2", 10),
       maxRetries: matcherLocalEdits.maxRetries ?? parseInt(settings?.matcher_max_retries || "3", 10),
       concurrencyLimit: matcherLocalEdits.concurrencyLimit ?? parseInt(settings?.matcher_concurrency_limit || "3", 10),
@@ -161,9 +167,9 @@ function SettingsContent() {
       autoMatchAfterScrape:
         matcherLocalEdits.autoMatchAfterScrape ??
         (settings?.matcher_auto_match_after_scrape !== "false"),
-      globalScrapeFrequency:
-        scraperLocalEdits.globalScrapeFrequency ??
-        parseInt(settings?.global_scrape_frequency || "6", 10),
+      schedulerCron:
+        scraperLocalEdits.schedulerCron ??
+        (settings?.scheduler_cron || "0 */6 * * *"),
       filterCountry: scraperLocalEdits.filterCountry ?? (settings?.scraper_filter_country || "India"),
       filterCity: scraperLocalEdits.filterCity ?? (settings?.scraper_filter_city || ""),
       filterTitleKeywords: (() => {
@@ -186,25 +192,24 @@ function SettingsContent() {
       cerebrasApiKey: providerLocalEdits.cerebrasApiKey ?? (settings?.cerebras_api_key || ""),
       modalApiKey: providerLocalEdits.modalApiKey ?? (settings?.modal_api_key || ""),
     };
-  }, [settings, matcherLocalEdits, providerLocalEdits, scraperLocalEdits]);
+  }, [settings, matcherLocalEdits, resumeParserLocalEdits, providerLocalEdits, scraperLocalEdits]);
 
   const {
-    matcherModel, resumeParserModel, matcherReasoningEffort, resumeParserReasoningEffort, bulkEnabled, batchSize, maxRetries, concurrencyLimit, timeoutMs,
-    circuitBreakerThreshold, autoMatchAfterScrape, globalScrapeFrequency, filterCountry, filterCity, filterTitleKeywords, aiProvider, anthropicApiKey,
+    matcherModel, resumeParserModel, matcherReasoningEffort, resumeParserReasoningEffort, bulkEnabled, serializeOperations, batchSize, maxRetries, concurrencyLimit, timeoutMs,
+    circuitBreakerThreshold, autoMatchAfterScrape, schedulerCron, filterCountry, filterCity, filterTitleKeywords, aiProvider, anthropicApiKey,
     googleApiKey, openaiApiKey, openrouterApiKey, cerebrasApiKey, modalApiKey
   } = derivedValues;
 
   const scraperHasUnsavedChanges =
-    scraperLocalEdits.globalScrapeFrequency !== undefined ||
+    scraperLocalEdits.schedulerCron !== undefined ||
     scraperLocalEdits.filterCountry !== undefined ||
     scraperLocalEdits.filterCity !== undefined ||
     scraperLocalEdits.filterTitleKeywords !== undefined;
   const matcherHasUnsavedChanges =
     matcherLocalEdits.matcherModel !== undefined ||
-    matcherLocalEdits.resumeParserModel !== undefined ||
     matcherLocalEdits.matcherReasoningEffort !== undefined ||
-    matcherLocalEdits.resumeParserReasoningEffort !== undefined ||
     matcherLocalEdits.bulkEnabled !== undefined ||
+    matcherLocalEdits.serializeOperations !== undefined ||
     matcherLocalEdits.batchSize !== undefined ||
     matcherLocalEdits.maxRetries !== undefined ||
     matcherLocalEdits.concurrencyLimit !== undefined ||
@@ -214,10 +219,9 @@ function SettingsContent() {
 
   // Setters for Matcher settings
   const setMatcherModel = (value: string) => setMatcherLocalEdits(prev => ({ ...prev, matcherModel: value }));
-  const setResumeParserModel = (value: string) => setMatcherLocalEdits(prev => ({ ...prev, resumeParserModel: value }));
   const setMatcherReasoningEffort = (value: ReasoningEffort) => setMatcherLocalEdits(prev => ({ ...prev, matcherReasoningEffort: value }));
-  const setResumeParserReasoningEffort = (value: ReasoningEffort) => setMatcherLocalEdits(prev => ({ ...prev, resumeParserReasoningEffort: value }));
   const setBulkEnabled = (value: boolean) => setMatcherLocalEdits(prev => ({ ...prev, bulkEnabled: value }));
+  const setSerializeOperations = (value: boolean) => setMatcherLocalEdits(prev => ({ ...prev, serializeOperations: value }));
   const setBatchSize = (value: number) =>
     setMatcherLocalEdits((prev) => ({ ...prev, batchSize: value }));
   const setMaxRetries = (value: number) =>
@@ -230,8 +234,18 @@ function SettingsContent() {
     setMatcherLocalEdits((prev) => ({ ...prev, circuitBreakerThreshold: value }));
   const setAutoMatchAfterScrape = (value: boolean) =>
     setMatcherLocalEdits((prev) => ({ ...prev, autoMatchAfterScrape: value }));
-  const setGlobalScrapeFrequency = (value: number) =>
-    setScraperLocalEdits((prev) => ({ ...prev, globalScrapeFrequency: value }));
+
+  // Auto-save setters for Resume Parser (independent from Matcher)
+  const setResumeParserModel = (value: string) => {
+    setResumeParserLocalEdits(prev => ({ ...prev, resumeParserModel: value }));
+    resumeParserMutation.mutate({ resume_parser_model: value, resume_parser_reasoning_effort: resumeParserReasoningEffort });
+  };
+  const setResumeParserReasoningEffort = (value: ReasoningEffort) => {
+    setResumeParserLocalEdits(prev => ({ ...prev, resumeParserReasoningEffort: value }));
+    resumeParserMutation.mutate({ resume_parser_model: resumeParserModel, resume_parser_reasoning_effort: value });
+  };
+  const setSchedulerCron = (value: string) =>
+    setScraperLocalEdits((prev) => ({ ...prev, schedulerCron: value }));
   const setFilterCountry = (value: string) =>
     setScraperLocalEdits((prev) => ({ ...prev, filterCountry: value }));
   const setFilterCity = (value: string) =>
@@ -264,10 +278,9 @@ function SettingsContent() {
       setMatcherLocalEdits((prev) => ({
         ...prev,
         matcherModel: undefined,
-        resumeParserModel: undefined,
         matcherReasoningEffort: undefined,
-        resumeParserReasoningEffort: undefined,
       }));
+      setResumeParserLocalEdits({});
     },
     onError: () => {
       toast.error("Failed to save AI provider settings");
@@ -284,9 +297,12 @@ function SettingsContent() {
     setMatcherLocalEdits(prev => ({
       ...prev,
       matcherModel: defaultModel,
-      resumeParserModel: defaultModel,
       matcherReasoningEffort: defaultReasoningEffort,
-      resumeParserReasoningEffort: defaultReasoningEffort
+    }));
+    setResumeParserLocalEdits(prev => ({
+      ...prev,
+      resumeParserModel: defaultModel,
+      resumeParserReasoningEffort: defaultReasoningEffort,
     }));
 
     providerSettingsMutation.mutate({
@@ -383,6 +399,23 @@ function SettingsContent() {
     },
   });
 
+  const resumeParserMutation = useMutation({
+    mutationFn: async (updates: { resume_parser_model?: string; resume_parser_reasoning_effort?: ReasoningEffort }) => {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) throw new Error("Failed to save resume parser settings");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["settings"] });
+      setResumeParserLocalEdits({});
+    },
+    onError: () => toast.error("Failed to save resume parser settings"),
+  });
+
   const matcherSettingsMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/settings", {
@@ -390,10 +423,9 @@ function SettingsContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           matcher_model: matcherModel,
-          resume_parser_model: resumeParserModel,
           matcher_reasoning_effort: matcherReasoningEffort,
-          resume_parser_reasoning_effort: resumeParserReasoningEffort,
           matcher_bulk_enabled: bulkEnabled,
+          matcher_serialize_operations: serializeOperations,
           matcher_batch_size: batchSize,
           matcher_max_retries: maxRetries,
           matcher_concurrency_limit: concurrencyLimit,
@@ -410,10 +442,9 @@ function SettingsContent() {
       setMatcherLocalEdits((prev) => ({
         ...prev,
         matcherModel: undefined,
-        resumeParserModel: undefined,
         matcherReasoningEffort: undefined,
-        resumeParserReasoningEffort: undefined,
         bulkEnabled: undefined,
+        serializeOperations: undefined,
         batchSize: undefined,
         maxRetries: undefined,
         concurrencyLimit: undefined,
@@ -433,7 +464,7 @@ function SettingsContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          global_scrape_frequency: globalScrapeFrequency,
+          scheduler_cron: schedulerCron,
           scraper_filter_country: filterCountry,
           scraper_filter_city: filterCity,
           scraper_filter_title_keywords: JSON.stringify(filterTitleKeywords),
@@ -446,7 +477,7 @@ function SettingsContent() {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
       setScraperLocalEdits((prev) => ({
         ...prev,
-        globalScrapeFrequency: undefined,
+        schedulerCron: undefined,
         filterCountry: undefined,
         filterCity: undefined,
         filterTitleKeywords: undefined,
@@ -525,6 +556,8 @@ function SettingsContent() {
             onAutoMatchAfterScrapeChange={setAutoMatchAfterScrape}
             bulkEnabled={bulkEnabled}
             onBulkEnabledChange={setBulkEnabled}
+            serializeOperations={serializeOperations}
+            onSerializeOperationsChange={setSerializeOperations}
             batchSize={batchSize}
             onBatchSizeChange={setBatchSize}
             maxRetries={maxRetries}
@@ -567,8 +600,8 @@ function SettingsContent() {
         {/* Right Column: Info */}
         <div className="space-y-6">
           <ScraperSettings
-            globalScrapeFrequency={globalScrapeFrequency}
-            onGlobalScrapeFrequencyChange={setGlobalScrapeFrequency}
+            schedulerCron={schedulerCron}
+            onSchedulerCronChange={setSchedulerCron}
             filterCountry={filterCountry}
             filterCity={filterCity}
             onFilterCountryChange={setFilterCountry}

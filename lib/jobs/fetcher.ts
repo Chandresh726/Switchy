@@ -3,7 +3,7 @@ import { companies, jobs, scrapingLogs, scrapeSessions, settings } from "@/lib/d
 import { eq } from "drizzle-orm";
 import { scraperRegistry } from "@/lib/scrapers/registry";
 import { batchDeduplicateJobs } from "./deduplicator";
-import { matchJobsWithTracking, getMatcherSettings } from "@/lib/ai/matcher";
+import { matchWithTracking, getMatcherConfig } from "@/lib/ai/matcher";
 
 // Country/location mappings for filtering
 const COUNTRY_MAPPINGS: Record<string, string[]> = {
@@ -389,10 +389,9 @@ export async function fetchJobsForCompany(
 
     // Trigger async matching for new jobs if auto-match is enabled
     if (insertedJobIds.length > 0) {
-      // Check if auto-match after scrape is enabled
-      const matcherSettings = await getMatcherSettings();
+      const matcherConfig = await getMatcherConfig();
 
-      if (matcherSettings.autoMatchAfterScrape) {
+      if (matcherConfig.autoMatchAfterScrape) {
         console.log(`[Matcher] Auto-match enabled, starting match for ${insertedJobIds.length} jobs...`);
 
         // Update matcher status to in_progress
@@ -404,24 +403,20 @@ export async function fetchJobsForCompany(
 
         const matcherStartTime = Date.now();
 
-        // Use matchJobsWithTracking for full session tracking
-        matchJobsWithTracking(
-          insertedJobIds,
-          "auto_scrape",
+        matchWithTracking(insertedJobIds, {
+          triggerSource: "auto_scrape",
           companyId,
-          async (completed, total, succeeded, failed) => {
-            console.log(`[Matcher] Progress: ${completed}/${total} jobs (${succeeded} succeeded, ${failed} failed)`);
-            // Update matcher progress in the log
+          onProgress: async (progress) => {
+            console.log(`[Matcher] Progress: ${progress.completed}/${progress.total} jobs (${progress.succeeded} succeeded, ${progress.failed} failed)`);
             if (logId) {
               await db.update(scrapingLogs)
-                .set({ matcherJobsCompleted: completed })
+                .set({ matcherJobsCompleted: progress.completed })
                 .where(eq(scrapingLogs.id, logId));
             }
-          }
-        )
+          },
+        })
           .then(async (result) => {
             console.log(`[Matcher] Completed: ${result.succeeded}/${result.total} jobs matched successfully`);
-            // Update matcher status to completed
             if (logId) {
               await db.update(scrapingLogs)
                 .set({
@@ -433,9 +428,8 @@ export async function fetchJobsForCompany(
                 .where(eq(scrapingLogs.id, logId));
             }
           })
-          .catch(async (err) => {
+          .catch(async (err: Error) => {
             console.error("[Matcher] Background matching failed:", err);
-            // Update matcher status to failed
             if (logId) {
               await db.update(scrapingLogs)
                 .set({
@@ -447,7 +441,6 @@ export async function fetchJobsForCompany(
           });
       } else {
         console.log(`[Matcher] Auto-match disabled, skipping matching for ${insertedJobIds.length} new jobs`);
-        // Update log to indicate matcher was skipped
         if (logId) {
           await db.update(scrapingLogs)
             .set({ matcherStatus: null, matcherJobsTotal: null })
