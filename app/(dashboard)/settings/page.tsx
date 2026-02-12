@@ -36,6 +36,7 @@ interface MatcherSettings {
   global_scrape_frequency: string;
   scraper_filter_country?: string;
   scraper_filter_city?: string;
+  scraper_filter_title_keywords?: string;
   // AI Provider Settings
   ai_provider?: string;
   anthropic_api_key?: string;
@@ -78,6 +79,7 @@ interface ScraperLocalEdits {
   globalScrapeFrequency?: number;
   filterCountry?: string;
   filterCity?: string;
+  filterTitleKeywords?: string[];
 }
 
 function SettingsContent() {
@@ -165,6 +167,17 @@ function SettingsContent() {
         parseInt(settings?.global_scrape_frequency || "6", 10),
       filterCountry: scraperLocalEdits.filterCountry ?? (settings?.scraper_filter_country || "India"),
       filterCity: scraperLocalEdits.filterCity ?? (settings?.scraper_filter_city || ""),
+      filterTitleKeywords: (() => {
+        if (scraperLocalEdits.filterTitleKeywords !== undefined) return scraperLocalEdits.filterTitleKeywords;
+        const raw = settings?.scraper_filter_title_keywords;
+        if (!raw) return [];
+        try {
+          const parsed = JSON.parse(raw);
+          return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string").map((v) => String(v).trim()).filter(Boolean) : [];
+        } catch {
+          return [];
+        }
+      })(),
       // Provider
       aiProvider: currentProvider,
       anthropicApiKey: providerLocalEdits.anthropicApiKey ?? (settings?.anthropic_api_key || ""),
@@ -177,14 +190,15 @@ function SettingsContent() {
 
   const {
     matcherModel, resumeParserModel, matcherReasoningEffort, resumeParserReasoningEffort, bulkEnabled, batchSize, maxRetries, concurrencyLimit, timeoutMs,
-    circuitBreakerThreshold, autoMatchAfterScrape, globalScrapeFrequency, filterCountry, filterCity, aiProvider, anthropicApiKey,
+    circuitBreakerThreshold, autoMatchAfterScrape, globalScrapeFrequency, filterCountry, filterCity, filterTitleKeywords, aiProvider, anthropicApiKey,
     googleApiKey, openaiApiKey, openrouterApiKey, cerebrasApiKey
   } = derivedValues;
 
   const scraperHasUnsavedChanges =
     scraperLocalEdits.globalScrapeFrequency !== undefined ||
     scraperLocalEdits.filterCountry !== undefined ||
-    scraperLocalEdits.filterCity !== undefined;
+    scraperLocalEdits.filterCity !== undefined ||
+    scraperLocalEdits.filterTitleKeywords !== undefined;
   const matcherHasUnsavedChanges =
     matcherLocalEdits.matcherModel !== undefined ||
     matcherLocalEdits.resumeParserModel !== undefined ||
@@ -222,6 +236,8 @@ function SettingsContent() {
     setScraperLocalEdits((prev) => ({ ...prev, filterCountry: value }));
   const setFilterCity = (value: string) =>
     setScraperLocalEdits((prev) => ({ ...prev, filterCity: value }));
+  const setFilterTitleKeywords = (value: string[]) =>
+    setScraperLocalEdits((prev) => ({ ...prev, filterTitleKeywords: value }));
   const providerSettingsMutation = useMutation({
     mutationFn: async (updates: Partial<MatcherSettings>) => {
       const res = await fetch("/api/settings", {
@@ -421,6 +437,7 @@ function SettingsContent() {
           global_scrape_frequency: globalScrapeFrequency,
           scraper_filter_country: filterCountry,
           scraper_filter_city: filterCity,
+          scraper_filter_title_keywords: JSON.stringify(filterTitleKeywords),
         }),
       });
       if (!res.ok) throw new Error("Failed to save scraper settings");
@@ -433,6 +450,7 @@ function SettingsContent() {
         globalScrapeFrequency: undefined,
         filterCountry: undefined,
         filterCity: undefined,
+        filterTitleKeywords: undefined,
       }));
       setScraperSettingsSaved(true);
       setTimeout(() => setScraperSettingsSaved(false), 3000);
@@ -544,6 +562,8 @@ function SettingsContent() {
             filterCity={filterCity}
             onFilterCountryChange={setFilterCountry}
             onFilterCityChange={setFilterCity}
+            filterTitleKeywords={filterTitleKeywords}
+            onFilterTitleKeywordsChange={setFilterTitleKeywords}
             onSave={() => scraperSettingsMutation.mutate()}
             isSaving={scraperSettingsMutation.isPending}
             hasUnsavedChanges={scraperHasUnsavedChanges}

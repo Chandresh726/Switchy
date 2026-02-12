@@ -77,7 +77,6 @@ export function ResumeParserSection({
           </div>
           <p className="text-xs text-zinc-500">
             Model used for extracting data from resumes.
-            {supportsReasoning && " Reasoning effort controls analysis depth."}
           </p>
         </div>
       </CardContent>

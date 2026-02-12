@@ -32,6 +32,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   openai_api_key: "",
   scraper_filter_country: "India",
   scraper_filter_city: "",
+  scraper_filter_title_keywords: "[]",
 };
 
 // GET - fetch all settings
@@ -207,6 +208,31 @@ export async function POST(request: Request) {
       } else if (key === "scraper_filter_country" || key === "scraper_filter_city") {
         // Allow any string value for location filters
         updates.push({ key, value: String(value || "") });
+      } else if (key === "scraper_filter_title_keywords") {
+        // Store as JSON array string; accept array or string
+        let normalized: string;
+        if (Array.isArray(value)) {
+          const arr = value.filter((v) => typeof v === "string").map((v) => String(v).trim()).filter(Boolean);
+          normalized = JSON.stringify(arr);
+        } else if (typeof value === "string") {
+          try {
+            const parsed = JSON.parse(value);
+            if (!Array.isArray(parsed)) throw new Error("Not an array");
+            const arr = parsed.filter((v) => typeof v === "string").map((v) => String(v).trim()).filter(Boolean);
+            normalized = JSON.stringify(arr);
+          } catch {
+            return NextResponse.json(
+              { error: "scraper_filter_title_keywords must be a JSON array of strings" },
+              { status: 400 }
+            );
+          }
+        } else {
+          return NextResponse.json(
+            { error: "scraper_filter_title_keywords must be an array or JSON array string" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: normalized });
       } else if (
         [
           "anthropic_api_key",

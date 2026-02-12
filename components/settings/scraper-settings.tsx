@@ -1,10 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Timer, Save, Loader2 } from "lucide-react";
+import { Timer, Save, Loader2, X } from "lucide-react";
 
 interface ScraperSettingsProps {
   globalScrapeFrequency: number;
@@ -13,6 +14,8 @@ interface ScraperSettingsProps {
   filterCity: string;
   onFilterCountryChange: (value: string) => void;
   onFilterCityChange: (value: string) => void;
+  filterTitleKeywords: string[];
+  onFilterTitleKeywordsChange: (value: string[]) => void;
   onSave: () => void;
   isSaving: boolean;
   hasUnsavedChanges: boolean;
@@ -26,11 +29,24 @@ export function ScraperSettings({
   filterCity,
   onFilterCountryChange,
   onFilterCityChange,
+  filterTitleKeywords,
+  onFilterTitleKeywordsChange,
   onSave,
   isSaving,
   hasUnsavedChanges,
   settingsSaved,
 }: ScraperSettingsProps) {
+  const [keywordInput, setKeywordInput] = useState("");
+
+  const handleAddKeyword = () => {
+    const trimmed = keywordInput.trim();
+    if (!trimmed) return;
+    const lower = trimmed.toLowerCase();
+    if (filterTitleKeywords.some((k) => k.toLowerCase() === lower)) return;
+    onFilterTitleKeywordsChange([...filterTitleKeywords, trimmed]);
+    setKeywordInput("");
+  };
+
   return (
     <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
       <CardHeader>
@@ -85,6 +101,47 @@ export function ScraperSettings({
               />
             </div>
           </div>
+        </div>
+
+        {/* Job Title Keywords Filter */}
+        <div className="space-y-4 pt-4 border-t border-zinc-800">
+          <Label htmlFor="filter-title-keywords">Job Title Keywords</Label>
+          <p className="text-xs text-zinc-500 -mt-2">
+            Add keywords to filter jobs by title (e.g., Engineer, Developer). Jobs matching any keyword will be included.
+          </p>
+          <Input
+            id="filter-title-keywords"
+            value={keywordInput}
+            onChange={(e) => setKeywordInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleAddKeyword();
+              }
+            }}
+            placeholder="Type a keyword and press Enter"
+            className="bg-zinc-950/50 border-zinc-800"
+          />
+          {filterTitleKeywords.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {filterTitleKeywords.map((keyword, index) => (
+                <span
+                  key={`${keyword}-${index}`}
+                  className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-1 text-xs text-emerald-400"
+                >
+                  {keyword}
+                  <button
+                    type="button"
+                    onClick={() => onFilterTitleKeywordsChange(filterTitleKeywords.filter((_, i) => i !== index))}
+                    className="rounded-full p-0.5 hover:bg-emerald-500/30"
+                    aria-label={`Remove ${keyword}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </CardContent>
       <CardFooter className="flex items-center justify-between border-t border-zinc-800 bg-zinc-900/50 px-6 py-4 rounded-b-xl">

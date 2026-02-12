@@ -9,6 +9,7 @@ interface GreenhouseJob {
   departments: { name: string }[];
   updated_at: string;
   content?: string;
+  metadata?: { name: string; value: string | string[] }[];
 }
 
 interface GreenhouseResponse {
@@ -107,7 +108,19 @@ export class GreenhouseScraper extends AbstractScraper {
 
   private parseJobs(data: GreenhouseResponse, boardToken: string): ScraperResult {
     const jobs = data.jobs.map((job) => {
-      const { location, locationType } = this.normalizeLocation(job.location?.name);
+      // Extract location from metadata - look for any entry containing location
+      const locationMetadata = job.metadata?.find((m: { name: string; value: string | string[] }) => 
+        m.name.toLowerCase().includes("location") || 
+        m.name.toLowerCase().includes("posting")
+      );
+      const actualLocations = locationMetadata?.value || [];
+      const metadataLocation = Array.isArray(actualLocations) ? actualLocations.join(", ") : (typeof actualLocations === "string" ? actualLocations : "");
+      
+      // Combine original location with metadata location for comprehensive data
+      const originalLocation = job.location?.name || "";
+      const combinedLocation = metadataLocation ? `${originalLocation}, ${metadataLocation}` : originalLocation;
+      
+      const { location, locationType } = this.normalizeLocation(combinedLocation);
       
       // Check if the content is already markdown or contains HTML
       let description: string | undefined;
