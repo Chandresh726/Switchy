@@ -9,7 +9,6 @@ import {
   Settings,
   User,
   LayoutDashboard,
-  RefreshCw,
   History,
 } from "lucide-react";
 
@@ -53,8 +52,7 @@ export function Sidebar() {
   return (
     <aside className="flex h-full w-64 flex-col border-r border-zinc-800 bg-zinc-950">
       {/* Logo */}
-      <div className="flex h-16 items-center gap-2 border-b border-zinc-800 px-6">
-        <RefreshCw className="h-6 w-6 text-emerald-500" />
+      <div className="flex h-16 items-center border-b border-zinc-800 px-6">
         <span className="text-xl font-semibold text-white">Switchy</span>
       </div>
 

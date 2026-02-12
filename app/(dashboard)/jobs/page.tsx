@@ -1,8 +1,10 @@
 "use client";
 
 import { JobList } from "@/components/jobs/job-list";
+import { Suspense } from "react";
+import { Loader2 } from "lucide-react";
 
-export default function JobsPage() {
+function JobsPageContent() {
   return (
     <div>
       {/* Header */}
@@ -14,5 +16,17 @@ export default function JobsPage() {
       {/* Job List */}
       <JobList />
     </div>
+  );
+}
+
+export default function JobsPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+      </div>
+    }>
+      <JobsPageContent />
+    </Suspense>
   );
 }

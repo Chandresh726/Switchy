@@ -151,7 +151,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
     <div className="space-y-6">
       {/* Header Navigation */}
       <div className="flex items-center justify-between">
-        <Link href="/history">
+        <Link href="/history/scrape">
           <Button variant="ghost" className="text-zinc-400 hover:text-white -ml-2 pl-2">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to History

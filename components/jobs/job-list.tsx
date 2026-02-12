@@ -3,16 +3,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { JobCard } from "./job-card";
 import { JobFilters } from "./job-filters";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Briefcase, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useSearchParams, useRouter } from "next/navigation";
 
 const STORAGE_KEY = "switchy-job-filters";
 
 interface Filters {
   search: string;
   status: string;
-  companyId: string;
   companyIds: string[];
   locationType: string[];
   employmentType: string[];
@@ -26,7 +26,6 @@ interface Filters {
 const defaultFilters: Filters = {
   search: "",
   status: "",
-  companyId: "",
   companyIds: [],
   locationType: [],
   employmentType: [],
@@ -49,6 +48,65 @@ function loadFiltersFromStorage(): Filters {
     // Ignore parse errors
   }
   return defaultFilters;
+}
+
+function parseFiltersFromSearchParams(searchParams: URLSearchParams): Filters {
+  const filters: Filters = { ...defaultFilters };
+  
+  const search = searchParams.get("search");
+  const status = searchParams.get("status");
+  const companyId = searchParams.get("companyId");
+  const companyIds = searchParams.get("companyIds");
+  const locationType = searchParams.get("locationType");
+  const employmentType = searchParams.get("employmentType");
+  const minScore = searchParams.get("minScore");
+  const department = searchParams.get("department");
+  const locationSearch = searchParams.get("locationSearch");
+  const sortBy = searchParams.get("sortBy");
+  const sortOrder = searchParams.get("sortOrder");
+  
+  if (search) filters.search = search;
+  if (status) filters.status = status;
+  // Handle both companyId (legacy) and companyIds (preferred)
+  if (companyId) {
+    filters.companyIds = [companyId];
+  } else if (companyIds) {
+    filters.companyIds = companyIds.split(",").filter(Boolean);
+  }
+  if (locationType) filters.locationType = locationType.split(",").filter(Boolean);
+  if (employmentType) filters.employmentType = employmentType.split(",").filter(Boolean);
+  if (minScore) filters.minScore = minScore;
+  if (department) filters.department = department;
+  if (locationSearch) filters.locationSearch = locationSearch;
+  if (sortBy) filters.sortBy = sortBy;
+  if (sortOrder) filters.sortOrder = sortOrder;
+  
+  return filters;
+}
+
+function parseTabFromSearchParams(searchParams: URLSearchParams): TabType {
+  const tab = searchParams.get("tab");
+  return tab === "saved" || tab === "applied" ? tab : "all";
+}
+
+function buildQueryString(filters: Filters, tab: TabType): string {
+  const params = new URLSearchParams();
+  
+  if (tab !== "all") params.set("tab", tab);
+  if (filters.search) params.set("search", filters.search);
+  if (filters.status) params.set("status", filters.status);
+  // Only use companyIds, not companyId
+  if (filters.companyIds.length > 0) params.set("companyIds", filters.companyIds.join(","));
+  if (filters.locationType.length > 0) params.set("locationType", filters.locationType.join(","));
+  if (filters.employmentType.length > 0) params.set("employmentType", filters.employmentType.join(","));
+  if (filters.minScore) params.set("minScore", filters.minScore);
+  if (filters.department) params.set("department", filters.department);
+  if (filters.locationSearch) params.set("locationSearch", filters.locationSearch);
+  if (filters.sortBy) params.set("sortBy", filters.sortBy);
+  if (filters.sortOrder) params.set("sortOrder", filters.sortOrder);
+  
+  const queryString = params.toString();
+  return queryString ? `?${queryString}` : "";
 }
 
 interface Job {
@@ -80,33 +138,76 @@ interface Company {
 type TabType = "all" | "saved" | "applied";
 
 export function JobList() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabType>("all");
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [debouncedLocationSearch, setDebouncedLocationSearch] = useState("");
   const [debouncedDepartment, setDebouncedDepartment] = useState("");
+
+  // Ref to track if initialization has occurred (prevents re-parsing on URL changes)
+  const hasInitializedRef = useRef(false);
 
   // Pagination state
   const [pageSize, setPageSize] = useState(25);
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Load filters from localStorage on mount
+  // Load filters from URL params and localStorage on mount
   useEffect(() => {
-    const savedFilters = loadFiltersFromStorage();
-    setFilters(savedFilters); // eslint-disable-line react-hooks/set-state-in-effect
-    setDebouncedSearch(savedFilters.search);
-    setDebouncedLocationSearch(savedFilters.locationSearch);
-    setDebouncedDepartment(savedFilters.department);
-    setIsInitialized(true);
-  }, []);
+    // Prevent re-parsing on subsequent URL changes after initial load
+    if (hasInitializedRef.current) return;
 
-  // Save filters to localStorage when they change
+    const urlFilters = parseFiltersFromSearchParams(searchParams);
+    const urlTab = parseTabFromSearchParams(searchParams);
+    const storageFilters = loadFiltersFromStorage();
+    
+    // Priority: URL params > localStorage > defaults
+    const finalFilters = { ...defaultFilters, ...storageFilters, ...urlFilters };
+    const finalTab = urlTab;
+    
+    // Defer state updates to avoid React rendering conflicts
+    setTimeout(() => {
+      setFilters(finalFilters);
+      setActiveTab(finalTab);
+      setDebouncedSearch(finalFilters.search);
+      setDebouncedLocationSearch(finalFilters.locationSearch);
+      setDebouncedDepartment(finalFilters.department);
+      setIsInitialized(true);
+      setIsInitialLoad(false);
+      hasInitializedRef.current = true;
+    }, 0);
+  }, [searchParams]);
+
+  // Save filters to localStorage and sync to URL when they change
   useEffect(() => {
     if (isInitialized) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(filters));
     }
   }, [filters, isInitialized]);
+  
+  // Debounced URL update to avoid history spam
+  const updateUrl = useCallback((newFilters: Filters, newTab: TabType) => {
+    const queryString = buildQueryString(newFilters, newTab);
+    const currentUrl = `/jobs${queryString}`;
+    
+    // Only update if the URL is different from current
+    if (typeof window !== 'undefined' && window.location.pathname + window.location.search !== currentUrl) {
+      router.replace(currentUrl, { scroll: false });
+    }
+  }, [router]);
+  
+  // Debounced URL sync
+  useEffect(() => {
+    if (isInitialized && !isInitialLoad) {
+      const timer = setTimeout(() => {
+        updateUrl(filters, activeTab);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [filters, activeTab, isInitialized, isInitialLoad, updateUrl]);
 
   // Handle filter changes and reset pagination
   const handleFiltersChange = (newFilters: Filters) => {
@@ -117,6 +218,10 @@ export function JobList() {
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab);
     setCurrentPage(1);
+    // Immediate URL update for tab changes (no debounce), but not during initial load
+    if (isInitialized && !isInitialLoad) {
+      updateUrl(filters, tab);
+    }
   };
 
   const handlePageSizeChange = (size: number) => {
@@ -167,7 +272,6 @@ export function JobList() {
     const params = new URLSearchParams();
     if (debouncedSearch) params.set("search", debouncedSearch);
     if (effectiveStatus) params.set("status", effectiveStatus);
-    if (filters.companyId) params.set("companyId", filters.companyId);
     if (filters.companyIds && filters.companyIds.length > 0) {
       params.set("companyIds", filters.companyIds.join(","));
     }
@@ -191,7 +295,6 @@ export function JobList() {
   }, [
     debouncedSearch,
     effectiveStatus,
-    filters.companyId,
     filters.companyIds,
     filters.locationType,
     filters.employmentType,
@@ -362,7 +465,7 @@ export function JobList() {
                 ? "Jobs you apply to will appear here"
                 : activeTab === "saved"
                 ? "Click Save on a job to add it here"
-                : filters.search || filters.status || filters.companyId || filters.locationType.length > 0
+                : filters.search || filters.status || filters.companyIds.length > 0 || filters.locationType.length > 0
                 ? "Try adjusting your filters"
                 : "Add companies and refresh jobs from Settings"}
             </p>

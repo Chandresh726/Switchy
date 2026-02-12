@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { restartScheduler } from "@/lib/jobs/scheduler";
 
 // Default settings values
 const DEFAULT_SETTINGS: Record<string, string> = {
@@ -32,6 +33,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   openai_api_key: "",
   scraper_filter_country: "India",
   scraper_filter_city: "",
+  scraper_filter_title_keywords: "[]",
 };
 
 // GET - fetch all settings
@@ -70,6 +72,8 @@ export async function POST(request: Request) {
       );
     }
 
+    // Track if frequency was updated to restart scheduler
+    let frequencyUpdated = false;
     const updates: { key: string; value: string }[] = [];
 
     for (const [key, value] of Object.entries(body)) {
@@ -101,6 +105,7 @@ export async function POST(request: Request) {
           );
         }
         updates.push({ key, value: String(num) });
+        frequencyUpdated = true;
       } else if (key === "matcher_model" || key === "resume_parser_model") {
         if (typeof value !== "string" || value.trim().length === 0) {
           return NextResponse.json(
@@ -207,6 +212,31 @@ export async function POST(request: Request) {
       } else if (key === "scraper_filter_country" || key === "scraper_filter_city") {
         // Allow any string value for location filters
         updates.push({ key, value: String(value || "") });
+      } else if (key === "scraper_filter_title_keywords") {
+        // Store as JSON array string; accept array or string
+        let normalized: string;
+        if (Array.isArray(value)) {
+          const arr = value.filter((v) => typeof v === "string").map((v) => String(v).trim()).filter(Boolean);
+          normalized = JSON.stringify(arr);
+        } else if (typeof value === "string") {
+          try {
+            const parsed = JSON.parse(value);
+            if (!Array.isArray(parsed)) throw new Error("Not an array");
+            const arr = parsed.filter((v) => typeof v === "string").map((v) => String(v).trim()).filter(Boolean);
+            normalized = JSON.stringify(arr);
+          } catch {
+            return NextResponse.json(
+              { error: "scraper_filter_title_keywords must be a JSON array of strings" },
+              { status: 400 }
+            );
+          }
+        } else {
+          return NextResponse.json(
+            { error: "scraper_filter_title_keywords must be an array or JSON array string" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: normalized });
       } else if (
         [
           "anthropic_api_key",
@@ -234,6 +264,17 @@ export async function POST(request: Request) {
           .where(eq(settings.key, key));
       } else {
         await db.insert(settings).values({ key, value, updatedAt: new Date() });
+      }
+    }
+
+    // Restart scheduler if frequency was updated
+    if (frequencyUpdated) {
+      try {
+        await restartScheduler();
+        console.log("[Settings API] Scheduler restarted due to frequency change");
+      } catch (error) {
+        console.error("[Settings API] Failed to restart scheduler:", error);
+        // Don't fail the request if scheduler restart fails
       }
     }
 

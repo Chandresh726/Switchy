@@ -4,14 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Info } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 
 import { AIProviderSection } from "@/components/settings/ai-provider-section";
 import { MatcherSection } from "@/components/settings/matcher-section";
 import { ScraperSettings } from "@/components/settings/scraper-settings";
 import { DangerZone } from "@/components/settings/danger-zone";
-import { QuickActions } from "@/components/settings/quick-actions";
 import { ResumeParserSection } from "@/components/settings/resume-parser-section";
 import { SystemInfo } from "@/components/settings/system-info";
 import {
@@ -36,6 +33,7 @@ interface MatcherSettings {
   global_scrape_frequency: string;
   scraper_filter_country?: string;
   scraper_filter_city?: string;
+  scraper_filter_title_keywords?: string;
   // AI Provider Settings
   ai_provider?: string;
   anthropic_api_key?: string;
@@ -78,6 +76,7 @@ interface ScraperLocalEdits {
   globalScrapeFrequency?: number;
   filterCountry?: string;
   filterCity?: string;
+  filterTitleKeywords?: string[];
 }
 
 function SettingsContent() {
@@ -165,6 +164,17 @@ function SettingsContent() {
         parseInt(settings?.global_scrape_frequency || "6", 10),
       filterCountry: scraperLocalEdits.filterCountry ?? (settings?.scraper_filter_country || "India"),
       filterCity: scraperLocalEdits.filterCity ?? (settings?.scraper_filter_city || ""),
+      filterTitleKeywords: (() => {
+        if (scraperLocalEdits.filterTitleKeywords !== undefined) return scraperLocalEdits.filterTitleKeywords;
+        const raw = settings?.scraper_filter_title_keywords;
+        if (!raw) return [];
+        try {
+          const parsed = JSON.parse(raw);
+          return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string").map((v) => String(v).trim()).filter(Boolean) : [];
+        } catch {
+          return [];
+        }
+      })(),
       // Provider
       aiProvider: currentProvider,
       anthropicApiKey: providerLocalEdits.anthropicApiKey ?? (settings?.anthropic_api_key || ""),
@@ -177,14 +187,15 @@ function SettingsContent() {
 
   const {
     matcherModel, resumeParserModel, matcherReasoningEffort, resumeParserReasoningEffort, bulkEnabled, batchSize, maxRetries, concurrencyLimit, timeoutMs,
-    circuitBreakerThreshold, autoMatchAfterScrape, globalScrapeFrequency, filterCountry, filterCity, aiProvider, anthropicApiKey,
+    circuitBreakerThreshold, autoMatchAfterScrape, globalScrapeFrequency, filterCountry, filterCity, filterTitleKeywords, aiProvider, anthropicApiKey,
     googleApiKey, openaiApiKey, openrouterApiKey, cerebrasApiKey
   } = derivedValues;
 
   const scraperHasUnsavedChanges =
     scraperLocalEdits.globalScrapeFrequency !== undefined ||
     scraperLocalEdits.filterCountry !== undefined ||
-    scraperLocalEdits.filterCity !== undefined;
+    scraperLocalEdits.filterCity !== undefined ||
+    scraperLocalEdits.filterTitleKeywords !== undefined;
   const matcherHasUnsavedChanges =
     matcherLocalEdits.matcherModel !== undefined ||
     matcherLocalEdits.resumeParserModel !== undefined ||
@@ -222,6 +233,8 @@ function SettingsContent() {
     setScraperLocalEdits((prev) => ({ ...prev, filterCountry: value }));
   const setFilterCity = (value: string) =>
     setScraperLocalEdits((prev) => ({ ...prev, filterCity: value }));
+  const setFilterTitleKeywords = (value: string[]) =>
+    setScraperLocalEdits((prev) => ({ ...prev, filterTitleKeywords: value }));
   const providerSettingsMutation = useMutation({
     mutationFn: async (updates: Partial<MatcherSettings>) => {
       const res = await fetch("/api/settings", {
@@ -329,14 +342,7 @@ function SettingsContent() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries();
-      toast.success("Jobs refreshed successfully", {
-        action: {
-          label: "Details",
-          onClick: () => router.push("/history")
-        }
-      });
     },
-    onError: () => toast.error("Failed to refresh jobs"),
   });
 
   const clearJobsMutation = useMutation({
@@ -349,7 +355,6 @@ function SettingsContent() {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["companies"] });
       queryClient.invalidateQueries({ queryKey: ["stats"] });
-      toast.success("All jobs deleted");
     },
   });
 
@@ -363,7 +368,6 @@ function SettingsContent() {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["match-history"] });
       queryClient.invalidateQueries({ queryKey: ["unmatched-jobs-count"] });
-      toast.success("Match history cleared");
     },
   });
 
@@ -407,7 +411,6 @@ function SettingsContent() {
       }));
       setMatcherSettingsSaved(true);
       setTimeout(() => setMatcherSettingsSaved(false), 3000);
-      toast.success("Matcher settings saved");
     },
     onError: () => toast.error("Failed to save matcher settings"),
   });
@@ -421,6 +424,7 @@ function SettingsContent() {
           global_scrape_frequency: globalScrapeFrequency,
           scraper_filter_country: filterCountry,
           scraper_filter_city: filterCity,
+          scraper_filter_title_keywords: JSON.stringify(filterTitleKeywords),
         }),
       });
       if (!res.ok) throw new Error("Failed to save scraper settings");
@@ -433,10 +437,10 @@ function SettingsContent() {
         globalScrapeFrequency: undefined,
         filterCountry: undefined,
         filterCity: undefined,
+        filterTitleKeywords: undefined,
       }));
       setScraperSettingsSaved(true);
       setTimeout(() => setScraperSettingsSaved(false), 3000);
-      toast.success("Scraper settings saved");
     },
     onError: () => toast.error("Failed to save scraper settings"),
   });
@@ -457,18 +461,11 @@ function SettingsContent() {
       if (!res.ok) throw new Error("Failed to match jobs");
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["unmatched-jobs-count"] });
       queryClient.invalidateQueries({ queryKey: ["match-history"] });
-      toast.success(`Matched ${data.matched} jobs`, {
-        action: {
-          label: "Details",
-          onClick: () => router.push("/history")
-        }
-      });
     },
-    onError: () => toast.error("Failed to start matching"),
   });
 
   return (
@@ -527,15 +524,32 @@ function SettingsContent() {
             isSaving={matcherSettingsMutation.isPending}
             hasUnsavedChanges={matcherHasUnsavedChanges}
             settingsSaved={matcherSettingsSaved}
+            onMatchUnmatched={() => {
+              toast.success("Match triggered", {
+                action: {
+                  label: "Details",
+                  onClick: () => router.push("/history/match")
+                }
+              });
+              matchUnmatchedMutation.mutate();
+            }}
+            isMatching={matchUnmatchedMutation.isPending}
+            unmatchedCount={unmatchedData?.count ?? 0}
           />
 
           <DangerZone
-            onClearMatchData={() => clearMatchDataMutation.mutate()}
-            onClearJobs={() => clearJobsMutation.mutate()}
+            onClearMatchData={() => {
+              toast.success("Clear match data triggered");
+              clearMatchDataMutation.mutate();
+            }}
+            onClearJobs={() => {
+              toast.success("Clear jobs triggered");
+              clearJobsMutation.mutate();
+            }}
           />
         </div>
 
-        {/* Right Column: Actions & Info */}
+        {/* Right Column: Info */}
         <div className="space-y-6">
           <ScraperSettings
             globalScrapeFrequency={globalScrapeFrequency}
@@ -544,18 +558,22 @@ function SettingsContent() {
             filterCity={filterCity}
             onFilterCountryChange={setFilterCountry}
             onFilterCityChange={setFilterCity}
+            filterTitleKeywords={filterTitleKeywords}
+            onFilterTitleKeywordsChange={setFilterTitleKeywords}
             onSave={() => scraperSettingsMutation.mutate()}
             isSaving={scraperSettingsMutation.isPending}
             hasUnsavedChanges={scraperHasUnsavedChanges}
             settingsSaved={scraperSettingsSaved}
-          />
-
-          <QuickActions
-            onRefresh={() => refreshMutation.mutate()}
+            onRefresh={() => {
+              toast.success("Refresh triggered", {
+                action: {
+                  label: "Details",
+                  onClick: () => router.push("/history/scrape")
+                }
+              });
+              refreshMutation.mutate();
+            }}
             isRefreshing={refreshMutation.isPending}
-            onMatchUnmatched={() => matchUnmatchedMutation.mutate()}
-            isMatching={matchUnmatchedMutation.isPending}
-            unmatchedCount={unmatchedData?.count ?? 0}
           />
 
           <ResumeParserSection
@@ -567,19 +585,6 @@ function SettingsContent() {
           />
 
           <SystemInfo />
-
-          {/* Tips Card */}
-          <Card className="border-blue-900/20 bg-blue-950/5 rounded-xl">
-             <CardContent className="p-4 flex gap-3">
-               <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
-               <div className="space-y-1">
-                 <p className="text-sm font-medium text-blue-400">Pro Tip</p>
-                 <p className="text-xs text-blue-300/70 leading-relaxed">
-                   Enable &quot;Bulk Matching&quot; to significantly speed up processing when you have many new jobs.
-                 </p>
-               </div>
-             </CardContent>
-          </Card>
         </div>
       </div>
     </div>

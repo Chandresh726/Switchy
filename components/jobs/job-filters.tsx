@@ -7,7 +7,6 @@ import { useMemo, useState, useRef, useEffect } from "react";
 interface JobFilters {
   search: string;
   status: string;
-  companyId: string;
   companyIds: string[];
   locationType: string[];
   employmentType: string[];
@@ -295,7 +294,6 @@ export function JobFilters({
     onFiltersChange({
       search: filters.search,
       status: "",
-      companyId: "",
       companyIds: [],
       locationType: [],
       employmentType: [],

@@ -341,7 +341,7 @@ export default function DashboardPage() {
                   <p className="text-xs text-zinc-400">Jobs with 75%+ match score</p>
                 </div>
               </div>
-              <Link href="/jobs?minScore=75&sortBy=matchScore">
+              <Link href="/jobs?minScore=75&sortBy=matchScore&sortOrder=desc">
                 <Button variant="ghost" size="sm" className="text-zinc-400 hover:text-white h-8">
                   View All
                 </Button>
@@ -375,7 +375,7 @@ export default function DashboardPage() {
                   <p className="text-xs text-zinc-400">Latest jobs from your companies</p>
                 </div>
               </div>
-              <Link href="/jobs?status=new&sortBy=discoveredAt">
+              <Link href="/jobs?status=new&sortBy=discoveredAt&sortOrder=desc">
                 <Button variant="ghost" size="sm" className="text-zinc-400 hover:text-white h-8">
                   View All
                 </Button>
@@ -456,7 +456,7 @@ export default function DashboardPage() {
                 <Send className="h-4 w-4 text-emerald-500" />
                 <h2 className="text-base font-medium text-white">Recent Applications</h2>
               </div>
-              <Link href="/jobs?status=applied">
+              <Link href="/jobs?tab=applied">
                 <Button variant="ghost" size="sm" className="text-zinc-400 hover:text-white h-8 w-8 p-0">
                   <ArrowRight className="h-4 w-4" />
                 </Button>

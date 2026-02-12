@@ -112,6 +112,37 @@ function matchesPreferredCity(
   return locationLower.includes(cityLower);
 }
 
+/** Parse scraper_filter_title_keywords setting into normalized string[] */
+function parseTitleKeywordsFilter(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((v): v is string => typeof v === "string")
+      .map((v) => String(v).trim().toLowerCase())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Check if a job title matches any of the user-defined keywords.
+ * Returns true if:
+ * - No keywords are specified (empty array = no filter)
+ * - OR job title contains any of the keywords (case-insensitive substring match)
+ * Example: "Engineer" matches "Software Engineer", "Engineering Manager", "DevOps Engineer"
+ */
+function matchesTitleKeywords(
+  job: { title?: string },
+  keywords: string[]
+): boolean {
+  if (keywords.length === 0) return true;
+  const title = (job.title ?? "").toLowerCase();
+  return keywords.some((keyword) => title.includes(keyword));
+}
+
 export interface FetchResult {
   companyId: number;
   companyName: string;
@@ -257,11 +288,14 @@ export async function fetchJobsForCompany(
     // Filter by preferred country and city if set in settings
     const filterCountrySetting = await db.select().from(settings).where(eq(settings.key, "scraper_filter_country"));
     const filterCitySetting = await db.select().from(settings).where(eq(settings.key, "scraper_filter_city"));
+    const filterTitleKeywordsSetting = await db.select().from(settings).where(eq(settings.key, "scraper_filter_title_keywords"));
     const filterCountry = filterCountrySetting[0]?.value || "";
     const filterCity = filterCitySetting[0]?.value || "";
+    const filterTitleKeywords = parseTitleKeywordsFilter(filterTitleKeywordsSetting[0]?.value ?? null);
     let jobsFilteredOut = 0;
     let countryFilteredOut = 0;
     let cityFilteredOut = 0;
+    let titleKeywordsFilteredOut = 0;
 
     if (filterCountry || filterCity) {
       const originalCount = newJobsToInsert.length;
@@ -276,14 +310,29 @@ export async function fetchJobsForCompany(
         return matchesCountry && matchesCity;
       });
 
-      jobsFilteredOut = originalCount - newJobsToInsert.length;
+      jobsFilteredOut = newJobsToInsert.length < originalCount ? originalCount - newJobsToInsert.length : 0;
 
       if (jobsFilteredOut > 0) {
         const filterReasons = [];
         if (filterCountry) filterReasons.push(`country: ${filterCountry}`);
         if (filterCity) filterReasons.push(`city: ${filterCity}`);
         console.log(
-          `[Filter] Filtered out ${jobsFilteredOut}/${originalCount} jobs not matching preferred ${filterReasons.join(', ')} (country: ${countryFilteredOut}, city: ${cityFilteredOut})`
+          `[Filter] Filtered out ${jobsFilteredOut}/${originalCount} jobs not matching preferred ${filterReasons.join(", ")} (country: ${countryFilteredOut}, city: ${cityFilteredOut})`
+        );
+      }
+    }
+
+    if (filterTitleKeywords.length > 0) {
+      const originalCount = newJobsToInsert.length;
+      newJobsToInsert = newJobsToInsert.filter((job) => {
+        const keep = matchesTitleKeywords(job, filterTitleKeywords);
+        if (!keep) titleKeywordsFilteredOut++;
+        return keep;
+      });
+      jobsFilteredOut += originalCount - newJobsToInsert.length;
+      if (titleKeywordsFilteredOut > 0) {
+        console.log(
+          `[Filter] Title keywords filter: kept ${newJobsToInsert.length}/${originalCount} jobs (filtered out ${titleKeywordsFilteredOut} not matching keywords: ${filterTitleKeywords.join(", ")})`
         );
       }
     }
