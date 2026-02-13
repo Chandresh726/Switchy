@@ -155,10 +155,10 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
       tabIndex={0}
       onClick={handleCardClick}
       onKeyDown={handleKeyDown}
-      className="group rounded-lg border border-zinc-800 bg-zinc-900/50 transition-all hover:border-zinc-700 cursor-pointer"
+      className="group rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:border-zinc-700 cursor-pointer"
     >
         {/* Main Card Content */}
-        <div className="p-4">
+        <div>
           {/* Header */}
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-start gap-3">
