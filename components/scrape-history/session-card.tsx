@@ -138,7 +138,7 @@ export function SessionCard({ session }: SessionCardProps) {
 
   return (
     <Link href={`/history/scrape/${session.id}`}>
-      <div className="group rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:border-zinc-700 cursor-pointer">
+      <div className="group rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 mb-3 transition-all hover:border-zinc-700 cursor-pointer">
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
