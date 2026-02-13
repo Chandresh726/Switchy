@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,6 @@ import {
   Play,
   Target,
 } from "lucide-react";
-import Link from "next/link";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,6 +28,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
 
 interface MatchSession {
   id: string;
@@ -73,12 +74,6 @@ const STATUS_CONFIG = {
   },
 };
 
-const TRIGGER_LABELS: Record<string, string> = {
-  manual: "Manual",
-  auto_scrape: "Auto Scrape",
-  company_refresh: "Company Refresh",
-};
-
 function formatDuration(startedAt: Date | null, completedAt: Date | null): string {
   if (!startedAt) return "-";
   const end = completedAt ? new Date(completedAt) : new Date();
@@ -111,6 +106,7 @@ function formatDate(date: Date | null): string {
 export function MatchSessionCard({ session }: MatchSessionCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   const statusConfig = STATUS_CONFIG[session.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.in_progress;
   const StatusIcon = statusConfig.icon;
@@ -123,9 +119,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
     ? Math.round(((session.jobsSucceeded || 0) / session.jobsTotal) * 100)
     : 0;
 
-  const handleDelete = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleDelete = async () => {
     setIsDeleting(true);
     try {
       const res = await fetch(`/api/match-history?sessionId=${session.id}`, {
@@ -144,9 +138,25 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
     }
   };
 
+  const handleCardClick = () => {
+    router.push(`/history/match/${session.id}`);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleCardClick();
+    }
+  };
+
   return (
-    <Link href={`/history/match/${session.id}`}>
-      <div className="group rounded-lg border border-zinc-800 bg-zinc-900/50 transition-all hover:border-zinc-700 cursor-pointer">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={handleCardClick}
+      onKeyDown={handleKeyDown}
+      className="group rounded-lg border border-zinc-800 bg-zinc-900/50 transition-all hover:border-zinc-700 cursor-pointer"
+    >
         {/* Main Card Content */}
         <div className="p-4">
           {/* Header */}
@@ -192,10 +202,6 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
                     variant="ghost"
                     size="icon-sm"
                     className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -277,6 +283,5 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
         </div>
       </div>
     </div>
-    </Link>
   );
 }

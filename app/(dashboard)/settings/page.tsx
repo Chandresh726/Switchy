@@ -236,14 +236,10 @@ function SettingsContent() {
     setMatcherLocalEdits((prev) => ({ ...prev, autoMatchAfterScrape: value }));
 
   // Auto-save setters for Resume Parser (independent from Matcher)
-  const setResumeParserModel = (value: string) => {
+  const setResumeParserModel = (value: string) =>
     setResumeParserLocalEdits(prev => ({ ...prev, resumeParserModel: value }));
-    resumeParserMutation.mutate({ resume_parser_model: value, resume_parser_reasoning_effort: resumeParserReasoningEffort });
-  };
-  const setResumeParserReasoningEffort = (value: ReasoningEffort) => {
+  const setResumeParserReasoningEffort = (value: ReasoningEffort) =>
     setResumeParserLocalEdits(prev => ({ ...prev, resumeParserReasoningEffort: value }));
-    resumeParserMutation.mutate({ resume_parser_model: resumeParserModel, resume_parser_reasoning_effort: value });
-  };
   const setSchedulerCron = (value: string) =>
     setScraperLocalEdits((prev) => ({ ...prev, schedulerCron: value }));
   const setFilterCountry = (value: string) =>
@@ -416,6 +412,28 @@ function SettingsContent() {
     onError: () => toast.error("Failed to save resume parser settings"),
   });
 
+  // Auto-save effect for Resume Parser with debounce
+  useEffect(() => {
+    if (
+      resumeParserLocalEdits.resumeParserModel === undefined &&
+      resumeParserLocalEdits.resumeParserReasoningEffort === undefined
+    ) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      resumeParserMutation.mutate({
+        resume_parser_model: resumeParserModel,
+        resume_parser_reasoning_effort: resumeParserReasoningEffort,
+      });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [
+    resumeParserModel,
+    resumeParserReasoningEffort,
+    resumeParserLocalEdits,
+    resumeParserMutation,
+  ]);
+
   const matcherSettingsMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/settings", {
@@ -513,19 +531,28 @@ function SettingsContent() {
 
   const [matchSessionId, setMatchSessionId] = useState<string | null>(null);
 
-  const { data: matchProgress } = useQuery({
+  const { data: matchProgress } = useQuery<{
+    sessionId: string;
+    status: string;
+    total: number;
+    completed: number;
+    succeeded: number;
+    failed: number;
+  } | null>({
     queryKey: ["match-progress", matchSessionId],
     queryFn: async () => {
       if (!matchSessionId) return null;
       const res = await fetch(`/api/jobs/match-unmatched?sessionId=${matchSessionId}`);
       if (!res.ok) return null;
-      const data = await res.json();
-      return data;
+      return res.json();
     },
-    enabled: !!matchSessionId && matchUnmatchedMutation.isPending,
-    refetchInterval: () => {
-      if (!matchSessionId || !matchUnmatchedMutation.isPending) return false;
-      return 1000;
+    enabled: !!matchSessionId,
+    refetchInterval: (query) => {
+      const progress = query.state.data;
+      if (!!matchSessionId && progress?.status !== "completed" && progress?.status !== "failed") {
+        return 1000;
+      }
+      return false;
     },
   });
 

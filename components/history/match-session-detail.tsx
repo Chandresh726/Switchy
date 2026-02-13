@@ -18,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
+import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
 
 interface MatchSession {
   id: string;
@@ -74,12 +75,6 @@ const STATUS_CONFIG = {
     color: "text-blue-400",
     bgColor: "bg-blue-500/10",
   },
-};
-
-const TRIGGER_LABELS: Record<string, string> = {
-  manual: "Manual",
-  auto_scrape: "Auto Scrape",
-  company_refresh: "Company Refresh",
 };
 
 function formatDuration(startedAt: Date | null, completedAt: Date | null): string {
@@ -149,7 +144,10 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
         method: "DELETE",
       });
       if (!res.ok) throw new Error("Failed to delete session");
-      return res.json();
+      if (res.status !== 204) {
+        return res.json();
+      }
+      return null;
     },
     onSuccess: () => {
       router.push("/history/match");

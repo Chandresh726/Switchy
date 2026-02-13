@@ -174,8 +174,8 @@ async function processBatch(
       maxDelay: config.backoffMaxDelay,
       onRetry: (attempt, delay, error) => {
         if (error && (isServerError(error) || isRateLimitError(error))) {
-          console.log(`[BulkStrategy] Batch retry ${attempt}: Server/rate limit error, returning 3x base delay`);
-          return config.backoffBaseDelay * 3;
+          console.log(`[BulkStrategy] Batch retry ${attempt}: Server/rate limit error, returning 3x computed delay`);
+          return Math.min(delay * 3, config.backoffMaxDelay);
         }
         console.log(`[BulkStrategy] Batch retry ${attempt} scheduled after ${Math.round(delay)}ms`);
       },

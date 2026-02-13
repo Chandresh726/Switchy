@@ -65,13 +65,15 @@ export async function createMatchEngine(): Promise<MatchEngine> {
       jobIds: number[],
       options: MatchOptions = {}
     ): Promise<MatchSessionResult> {
-      const { triggerSource = "manual", companyId, onProgress } = options;
+      const { triggerSource = "manual", companyId, sessionId: providedSessionId, onProgress } = options;
 
       if (jobIds.length === 0) {
         return { sessionId: "", total: 0, succeeded: 0, failed: 0 };
       }
 
-      const sessionId = await createMatchSession(jobIds, triggerSource, companyId);
+      const sessionId = providedSessionId
+        ? providedSessionId
+        : await createMatchSession(jobIds, triggerSource, companyId);
       const progressTracker = createProgressTracker(jobIds.length, onProgress);
 
       console.log(

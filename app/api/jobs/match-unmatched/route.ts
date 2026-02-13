@@ -52,6 +52,7 @@ export async function POST() {
 
     matchWithTracking(unmatchedJobIds, {
       triggerSource: "manual",
+      sessionId,
     }).catch((err) => {
       console.error("[Match Unmatched] Background matching failed:", err);
     });
@@ -60,6 +61,8 @@ export async function POST() {
       success: true,
       sessionId,
       total: unmatchedJobIds.length,
+      matched: 0,
+      failed: 0,
     });
   } catch (error) {
     console.error("[Match Unmatched API] POST error:", error);

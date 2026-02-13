@@ -13,24 +13,12 @@ export interface GenerationResult<T> {
   data: T;
 }
 
-interface ZodArrayDef {
-  typeName: "ZodArray";
-  type: z.ZodTypeAny;
+function isArraySchema(schema: z.ZodTypeAny): schema is z.ZodArray<z.ZodTypeAny> {
+  return schema instanceof z.ZodArray;
 }
 
-interface ZodDefWithType {
-  typeName: string;
-  type?: z.ZodTypeAny;
-}
-
-function isArraySchema(schema: z.ZodTypeAny): boolean {
-  const def = schema._def as unknown as ZodDefWithType;
-  return def.typeName === "ZodArray";
-}
-
-function getArrayElementSchema(schema: z.ZodTypeAny): z.ZodTypeAny {
-  const def = schema._def as unknown as ZodArrayDef;
-  return def.type;
+function getArrayElementSchema(schema: z.ZodArray<z.ZodTypeAny>): z.ZodTypeAny {
+  return schema.element;
 }
 
 export async function generateStructured<T extends z.ZodTypeAny>(

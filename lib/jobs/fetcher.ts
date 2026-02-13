@@ -407,12 +407,14 @@ export async function fetchJobsForCompany(
         matchWithTracking(insertedJobIds, {
           triggerSource: "auto_scrape",
           companyId,
-          onProgress: async (progress) => {
+          onProgress: (progress) => {
             console.log(`[Matcher] Progress: ${progress.completed}/${progress.total} jobs (${progress.succeeded} succeeded, ${progress.failed} failed)`);
             if (logId) {
-              await db.update(scrapingLogs)
+              void db
+                .update(scrapingLogs)
                 .set({ matcherJobsCompleted: progress.completed })
-                .where(eq(scrapingLogs.id, logId));
+                .where(eq(scrapingLogs.id, logId))
+                .catch((e) => console.error("[Matcher] Failed to persist progress:", e));
             }
           },
         })
@@ -422,15 +424,16 @@ export async function fetchJobsForCompany(
               await db.update(scrapingLogs)
                 .set({
                   matcherStatus: result.failed === result.total ? "failed" : "completed",
-                  matcherJobsCompleted: result.succeeded,
+                  matcherJobsCompleted: result.total,
                   matcherErrorCount: result.failed,
                   matcherDuration: Date.now() - matcherStartTime,
                 })
                 .where(eq(scrapingLogs.id, logId));
             }
           })
-          .catch(async (err: Error) => {
-            console.error("[Matcher] Background matching failed:", err);
+          .catch(async (err: unknown) => {
+            const error = err instanceof Error ? err : new Error(String(err));
+            console.error("[Matcher] Background matching failed:", error);
             if (logId) {
               await db.update(scrapingLogs)
                 .set({

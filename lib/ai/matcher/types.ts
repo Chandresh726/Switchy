@@ -112,6 +112,7 @@ export type MatchProgressCallback = (progress: MatchProgress) => void;
 export interface MatchOptions {
   triggerSource?: TriggerSource;
   companyId?: number;
+  sessionId?: string;
   onProgress?: MatchProgressCallback;
 }
 

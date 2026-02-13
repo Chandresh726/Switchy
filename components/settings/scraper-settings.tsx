@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -60,15 +60,17 @@ export function ScraperSettings({
 }: ScraperSettingsProps) {
   const [keywordInput, setKeywordInput] = useState("");
 
-  const isPreset = CRON_PRESETS.some((p) => p.value === schedulerCron);
+  const isPreset = useMemo(
+    () => CRON_PRESETS.some((p) => p.value === schedulerCron),
+    [schedulerCron]
+  );
   const selectedPreset = isPreset ? schedulerCron : "__custom__";
-  const [showCustom, setShowCustom] = useState(!isPreset && schedulerCron !== "");
+  const showCustom = !isPreset && schedulerCron !== "";
 
   const handlePresetChange = (value: string) => {
     if (value === "__custom__") {
-      setShowCustom(true);
+      // Keep custom visible, but don't change schedulerCron yet
     } else {
-      setShowCustom(false);
       onSchedulerCronChange(value);
     }
   };

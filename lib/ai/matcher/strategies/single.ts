@@ -41,8 +41,8 @@ export const singleStrategy: SingleStrategy = async (ctx) => {
       maxDelay: config.backoffMaxDelay,
       onRetry: (attempt, delay, error) => {
         if (error && (isServerError(error) || isRateLimitError(error))) {
-          console.log(`[SingleStrategy] Retry ${attempt}: Server/rate limit error, returning 3x base delay`);
-          return config.backoffBaseDelay * 3;
+          console.log(`[SingleStrategy] Retry ${attempt}: Server/rate limit error, returning 3x computed delay`);
+          return Math.min(delay * 3, config.backoffMaxDelay);
         }
         console.log(`[SingleStrategy] Job ${job.id} retry ${attempt} scheduled after ${Math.round(delay)}ms`);
       },

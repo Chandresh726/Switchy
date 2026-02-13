@@ -18,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
+import { TRIGGER_LABELS } from "./constants";
 
 interface SessionLog {
   id: number;
@@ -58,12 +59,6 @@ interface SessionDetailResponse {
   session: ScrapeSession;
   logs: SessionLog[];
 }
-
-const TRIGGER_LABELS: Record<string, string> = {
-  manual: "Manual",
-  scheduled: "Auto Scrape",
-  api: "API",
-};
 
 const STATUS_CONFIG = {
   success: {
@@ -132,7 +127,8 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
         method: "DELETE",
       });
       if (!res.ok) throw new Error("Failed to delete session");
-      return res.json();
+      const text = await res.text();
+      return text ? JSON.parse(text) : null;
     },
     onSuccess: () => {
       router.push("/history/scrape");
