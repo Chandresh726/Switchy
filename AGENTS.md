@@ -30,6 +30,7 @@ pnpm db:studio        # Open Drizzle Studio to inspect data
 - **NEVER run `pnpm dev`** - the dev server is a long-running process not suitable for agent execution
 - For verification, use `pnpm lint` and `pnpm build` only
 - Do not start any long-running processes or servers
+- **NEVER commit or push changes** - unless explicitly instructed by the user
 
 ## Package Manager
 
