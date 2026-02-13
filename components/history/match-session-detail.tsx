@@ -1,6 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,8 +15,10 @@ import {
   Loader2,
   Play,
   Target,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
+import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
 
 interface MatchSession {
   id: string;
@@ -74,12 +77,6 @@ const STATUS_CONFIG = {
   },
 };
 
-const TRIGGER_LABELS: Record<string, string> = {
-  manual: "Manual",
-  auto_scrape: "Auto Scrape",
-  company_refresh: "Company Refresh",
-};
-
 function formatDuration(startedAt: Date | null, completedAt: Date | null): string {
   if (!startedAt) return "-";
   const end = completedAt ? new Date(completedAt) : new Date();
@@ -115,6 +112,7 @@ interface MatchSessionDetailProps {
 }
 
 export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
+  const router = useRouter();
   const { data, isLoading, error } = useQuery<SessionDetailResponse>({
     queryKey: ["match-history", sessionId],
     queryFn: async () => {
@@ -137,6 +135,22 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
     refetchInterval: (query) => {
       const session = query.state.data?.session;
       return session?.status === "in_progress" ? 2000 : false;
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/match-history?sessionId=${encodeURIComponent(sessionId)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete session");
+      if (res.status !== 204) {
+        return res.json();
+      }
+      return null;
+    },
+    onSuccess: () => {
+      router.push("/history/match");
     },
   });
 
@@ -183,6 +197,16 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
             Back to Match History
           </Button>
         </Link>
+        <Button
+          variant="outline"
+          size="sm"
+          className="border-red-500/20 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+          onClick={() => deleteMutation.mutate()}
+          disabled={deleteMutation.isPending}
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          {deleteMutation.isPending ? "Deleting..." : "Delete Session"}
+        </Button>
       </div>
 
       {/* Session Overview Card */}

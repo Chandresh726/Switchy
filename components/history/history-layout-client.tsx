@@ -34,6 +34,9 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
   const isMatchTab = pathname?.startsWith("/history/match") ?? false;
   const activeTab = isMatchTab ? "match" : "scrape";
 
+  // Check if we're on a detail page (has an ID after match or scrape)
+  const isDetailPage = /^\/history\/(match|scrape)\/[^/]+$/.test(pathname ?? "");
+
   const handleClearHistory = async () => {
     setIsDeleting(true);
     try {
@@ -63,73 +66,77 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
 
   return (
     <div className="h-full">
-      {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-white">History</h1>
-          <p className="mt-1 text-zinc-400">
-            View scraping and matching operation history
-          </p>
-        </div>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-red-500/20 text-red-400 hover:bg-red-500/10 hover:text-red-300"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Clear {activeTab === "scrape" ? "Scrape" : "Match"} History
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will permanently delete all{" "}
-                {activeTab === "scrape" ? "scrape" : "match"} history records.
-                This action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleClearHistory}
-                className="bg-red-500 hover:bg-red-600 text-white"
-                disabled={isDeleting}
+      {/* Header - Hide on detail pages */}
+      {!isDetailPage && (
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-white">History</h1>
+            <p className="mt-1 text-zinc-400">
+              View scraping and matching operation history
+            </p>
+          </div>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-red-500/20 text-red-400 hover:bg-red-500/10 hover:text-red-300"
               >
-                {isDeleting ? "Clearing..." : "Yes, clear all"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Clear {activeTab === "scrape" ? "Scrape" : "Match"} History
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete all{" "}
+                  {activeTab === "scrape" ? "scrape" : "match"} history records.
+                  This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleClearHistory}
+                  className="bg-red-500 hover:bg-red-600 text-white"
+                  disabled={isDeleting}
+                >
+                  {isDeleting ? "Clearing..." : "Yes, clear all"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      )}
 
-      {/* Tabs */}
-      <div className="mb-6 flex items-center gap-1 border-b border-zinc-800">
-        <Link
-          href="/history/scrape"
-          className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
-            isScrapeTab
-              ? "text-white border-emerald-500"
-              : "text-zinc-400 border-transparent hover:text-zinc-200"
-          }`}
-        >
-          <History className="h-4 w-4" />
-          Scrape History
-        </Link>
-        <Link
-          href="/history/match"
-          className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
-            isMatchTab
-              ? "text-white border-purple-500"
-              : "text-zinc-400 border-transparent hover:text-zinc-200"
-          }`}
-        >
-          <Sparkles className="h-4 w-4" />
-          Match History
-        </Link>
-      </div>
+      {/* Tabs - Hide on detail pages */}
+      {!isDetailPage && (
+        <div className="mb-6 flex items-center gap-1 border-b border-zinc-800">
+          <Link
+            href="/history/scrape"
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              isScrapeTab
+                ? "text-white border-emerald-500"
+                : "text-zinc-400 border-transparent hover:text-zinc-200"
+            }`}
+          >
+            <History className="h-4 w-4" />
+            Scrape History
+          </Link>
+          <Link
+            href="/history/match"
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              isMatchTab
+                ? "text-white border-purple-500"
+                : "text-zinc-400 border-transparent hover:text-zinc-200"
+            }`}
+          >
+            <Sparkles className="h-4 w-4" />
+            Match History
+          </Link>
+        </div>
+      )}
 
       {/* Tab Content */}
       {children}

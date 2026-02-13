@@ -1,10 +1,9 @@
-import { generateText } from "ai";
+import { generateText, Output } from "ai";
 import { z } from "zod";
 import { getAIClient, getAIGenerationOptions } from "./client";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { extractJSON } from "./json-parser";
 
 const ResumeDataSchema = z.object({
   name: z.string(),
@@ -66,50 +65,7 @@ Guidelines:
 - Leave fields empty/null if information is not present
 - Be thorough but don't hallucinate information not in the resume`;
 
-const JSON_FORMAT_INSTRUCTIONS = `
-
-IMPORTANT: You must respond with ONLY a valid JSON object in the following format, no other text:
-{
-  "name": "Full Name",
-  "email": "email@example.com",
-  "phone": "+1234567890",
-  "location": "City, State",
-  "linkedinUrl": "https://linkedin.com/in/...",
-  "githubUrl": "https://github.com/...",
-  "portfolioUrl": "https://...",
-  "summary": "Professional summary...",
-  "skills": [
-    {"name": "JavaScript", "category": "frontend", "proficiency": 4},
-    ...
-  ],
-  "experience": [
-    {
-      "company": "Company Name",
-      "title": "Job Title",
-      "location": "City, State",
-      "startDate": "2020-01",
-      "endDate": "2023-06",
-      "description": "Job description",
-      "highlights": ["Achievement 1", "Achievement 2"]
-    },
-    ...
-  ],
-  "education": [
-    {
-      "institution": "University Name",
-      "degree": "Bachelor's",
-      "field": "Computer Science",
-      "startDate": "2016-09",
-      "endDate": "2020-05",
-      "gpa": "3.8",
-      "honors": "Cum Laude"
-    },
-    ...
-  ]
-}`;
-
 export async function parseResume(resumeText: string): Promise<ResumeData> {
-  // Fetch configured model from settings or default to gemini-3-flash-preview
   const modelSetting = await db.query.settings.findFirst({
     where: eq(settings.key, "resume_parser_model"),
   });
@@ -118,26 +74,29 @@ export async function parseResume(resumeText: string): Promise<ResumeData> {
   });
   const modelId = modelSetting?.value || "gemini-3-flash-preview";
   const reasoningEffort = reasoningEffortSetting?.value || "medium";
-  
+
   const model = await getAIClient(modelId, reasoningEffort);
   const providerOptions = await getAIGenerationOptions(modelId, reasoningEffort);
 
-  const { text } = await generateText({
-    model,
-    system: RESUME_PARSING_SYSTEM_PROMPT,
-    prompt: `Parse the following resume and extract structured information:
+  const prompt = `Parse the following resume and extract structured information:
 
 ---
 ${resumeText}
 ---
 
-Extract all relevant information including contact details, skills, work experience, and education.${JSON_FORMAT_INSTRUCTIONS}`,
+Extract all relevant information including contact details, skills, work experience, and education.`;
+
+  const result = await generateText({
+    model,
+    output: Output.object({ schema: ResumeDataSchema }),
+    system: RESUME_PARSING_SYSTEM_PROMPT,
+    prompt,
     ...providerOptions,
   });
 
-  // Parse and validate the JSON response
-  const parsed = extractJSON(text);
-  const result = ResumeDataSchema.parse(parsed);
+  if (result.output === undefined || result.output === null) {
+    throw new Error("Model did not produce structured output for resume parsing");
+  }
 
-  return result;
+  return result.output as ResumeData;
 }

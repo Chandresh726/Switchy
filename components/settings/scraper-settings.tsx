@@ -1,17 +1,33 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Timer, Save, Loader2, X, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrapeCountdown } from "./scrape-countdown";
 
+const CRON_PRESETS = [
+  { label: "Every hour", value: "0 * * * *" },
+  { label: "Every 3 hours", value: "0 */3 * * *" },
+  { label: "Every 6 hours", value: "0 */6 * * *" },
+  { label: "Every 12 hours", value: "0 */12 * * *" },
+  { label: "Daily at midnight", value: "0 0 * * *" },
+  { label: "Custom...", value: "__custom__" },
+] as const;
+
 interface ScraperSettingsProps {
-  globalScrapeFrequency: number;
-  onGlobalScrapeFrequencyChange: (value: number) => void;
+  schedulerCron: string;
+  onSchedulerCronChange: (value: string) => void;
   filterCountry: string;
   filterCity: string;
   onFilterCountryChange: (value: string) => void;
@@ -27,8 +43,8 @@ interface ScraperSettingsProps {
 }
 
 export function ScraperSettings({
-  globalScrapeFrequency,
-  onGlobalScrapeFrequencyChange,
+  schedulerCron,
+  onSchedulerCronChange,
   filterCountry,
   filterCity,
   onFilterCountryChange,
@@ -43,6 +59,21 @@ export function ScraperSettings({
   isRefreshing,
 }: ScraperSettingsProps) {
   const [keywordInput, setKeywordInput] = useState("");
+
+  const isPreset = useMemo(
+    () => CRON_PRESETS.some((p) => p.value === schedulerCron),
+    [schedulerCron]
+  );
+  const selectedPreset = isPreset ? schedulerCron : "__custom__";
+  const showCustom = !isPreset && schedulerCron !== "";
+
+  const handlePresetChange = (value: string) => {
+    if (value === "__custom__") {
+      // Keep custom visible, but don't change schedulerCron yet
+    } else {
+      onSchedulerCronChange(value);
+    }
+  };
 
   const handleAddKeyword = () => {
     const trimmed = keywordInput.trim();
@@ -74,25 +105,33 @@ export function ScraperSettings({
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Frequency */}
         <div className="space-y-3">
-          <Label htmlFor="scrape-frequency">Scrape Frequency</Label>
+          <Label>Schedule</Label>
           <div className="flex items-center gap-4 flex-wrap">
-            <Input
-              id="scrape-frequency"
-              type="number"
-              min={1}
-              max={168}
-              value={globalScrapeFrequency}
-              onChange={(e) => onGlobalScrapeFrequencyChange(Math.min(168, Math.max(1, parseInt(e.target.value) || 6)))}
-              className="bg-zinc-950/50 border-zinc-800 max-w-[100px]"
-            />
-            <span className="text-sm text-zinc-500">hours</span>
+            <Select value={selectedPreset} onValueChange={handlePresetChange}>
+              <SelectTrigger className="bg-zinc-950/50 border-zinc-800 w-[180px]">
+                <SelectValue placeholder="Select schedule" />
+              </SelectTrigger>
+              <SelectContent>
+                {CRON_PRESETS.map((preset) => (
+                  <SelectItem key={preset.value} value={preset.value}>
+                    {preset.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {showCustom && (
+              <Input
+                value={schedulerCron}
+                onChange={(e) => onSchedulerCronChange(e.target.value)}
+                placeholder="0 */6 * * *"
+                className="bg-zinc-950/50 border-zinc-800 w-[160px]"
+              />
+            )}
             <ScrapeCountdown className="ml-auto" />
           </div>
         </div>
 
-        {/* Location Filters */}
         <div className="space-y-4 pt-4 border-t border-zinc-800">
           <Label>Location Filter</Label>
           <p className="text-xs text-zinc-500 -mt-2">Only matching jobs are added. Remote jobs always included.</p>
@@ -122,7 +161,6 @@ export function ScraperSettings({
           </div>
         </div>
 
-        {/* Job Title Keywords Filter */}
         <div className="space-y-4 pt-4 border-t border-zinc-800">
           <Label htmlFor="filter-title-keywords">Job Title Keywords</Label>
           <p className="text-xs text-zinc-500 -mt-2">

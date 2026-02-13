@@ -1,19 +1,22 @@
 import { NextResponse } from "next/server";
 import { getSchedulerStatus, startScheduler } from "@/lib/jobs/scheduler";
 
+let hasStarted = false;
+
 export async function GET() {
   try {
-    // Ensure scheduler is started (server-side auto-init)
-    await startScheduler();
+    if (!hasStarted) {
+      await startScheduler();
+      hasStarted = true;
+    }
 
     const status = await getSchedulerStatus();
 
-    // Format dates for JSON serialization
     return NextResponse.json({
       isActive: status.isActive,
+      isRunning: status.isRunning,
       lastRun: status.lastRun?.toISOString() || null,
       nextRun: status.nextRun?.toISOString() || null,
-      frequencyHours: status.frequencyHours,
       cronExpression: status.cronExpression,
     });
   } catch (error) {

@@ -1,8 +1,5 @@
 import { z } from "zod";
 
-/**
- * Match result schema for single job matching
- */
 export const MatchResultSchema = z.object({
   score: z.number().min(0).max(100),
   reasons: z.array(z.string()),
@@ -13,9 +10,6 @@ export const MatchResultSchema = z.object({
 
 export type MatchResult = z.infer<typeof MatchResultSchema>;
 
-/**
- * Schema for bulk match results - single job within array
- */
 export const BulkMatchItemSchema = z.object({
   jobId: z.number(),
   score: z.number().min(0).max(100),
@@ -27,14 +21,10 @@ export const BulkMatchItemSchema = z.object({
 
 export type BulkMatchResult = z.infer<typeof BulkMatchItemSchema>;
 
-/**
- * Schema for bulk match results array
- */
-export const BulkMatchResultSchema = z.array(BulkMatchItemSchema);
+export const BulkMatchResultSchema = z.object({
+  results: z.array(BulkMatchItemSchema),
+});
 
-/**
- * Error type categorization for matcher errors
- */
 export type ErrorType =
   | "network"
   | "validation"
@@ -45,16 +35,19 @@ export type ErrorType =
   | "circuit_breaker"
   | "unknown";
 
-/**
- * Matcher settings from database
- */
-export interface MatcherSettings {
+export type TriggerSource = "manual" | "auto_scrape" | "company_refresh";
+
+export type MatchPhase = "queued" | "matching" | "completed";
+
+export interface MatcherConfig {
   model: string;
   reasoningEffort: string;
   bulkEnabled: boolean;
   batchSize: number;
   maxRetries: number;
   concurrencyLimit: number;
+  serializeOperations: boolean;
+  interRequestDelayMs: number;
   timeoutMs: number;
   backoffBaseDelay: number;
   backoffMaxDelay: number;
@@ -63,16 +56,15 @@ export interface MatcherSettings {
   autoMatchAfterScrape: boolean;
 }
 
-/**
- * Default matcher settings
- */
-export const DEFAULT_MATCHER_SETTINGS: MatcherSettings = {
+export const DEFAULT_MATCHER_CONFIG: MatcherConfig = {
   model: "gemini-3-flash-preview",
   reasoningEffort: "medium",
   bulkEnabled: true,
   batchSize: 2,
   maxRetries: 3,
   concurrencyLimit: 3,
+  serializeOperations: false,
+  interRequestDelayMs: 500,
   timeoutMs: 30000,
   backoffBaseDelay: 2000,
   backoffMaxDelay: 32000,
@@ -81,36 +73,49 @@ export const DEFAULT_MATCHER_SETTINGS: MatcherSettings = {
   autoMatchAfterScrape: true,
 };
 
-/**
- * Options for matching operations
- */
-export interface MatchOptions {
-  scrapingLogId?: number | null;
-  sessionId?: string;
-}
+export const PROVIDER_DEFAULTS: Record<string, Partial<MatcherConfig>> = {
+  modal: {
+    concurrencyLimit: 1,
+    serializeOperations: true,
+    interRequestDelayMs: 1000,
+    timeoutMs: 90000,
+    backoffBaseDelay: 3000,
+    backoffMaxDelay: 60000,
+    circuitBreakerThreshold: 5,
+  },
+};
 
-/**
- * Job data structure for matching prompts
- */
-export interface JobForMatching {
+export interface MatchJob {
   id: number;
   title: string;
   description: string;
   requirements: string[];
 }
 
-/**
- * Candidate profile structure for matching prompts
- */
 export interface CandidateProfile {
   summary?: string;
-  skills: { name: string; proficiency: number; category?: string }[];
-  experience: { title: string; company: string; description?: string }[];
+  skills: Array<{ name: string; proficiency: number; category?: string }>;
+  experience: Array<{ title: string; company: string; description?: string }>;
 }
 
-/**
- * Match session tracking result
- */
+export interface MatchProgress {
+  phase: MatchPhase;
+  queuePosition: number;
+  completed: number;
+  total: number;
+  succeeded: number;
+  failed: number;
+}
+
+export type MatchProgressCallback = (progress: MatchProgress) => void;
+
+export interface MatchOptions {
+  triggerSource?: TriggerSource;
+  companyId?: number;
+  sessionId?: string;
+  onProgress?: MatchProgressCallback;
+}
+
 export interface MatchSessionResult {
   sessionId: string;
   total: number;
@@ -118,49 +123,26 @@ export interface MatchSessionResult {
   failed: number;
 }
 
-/**
- * Progress callback type
- */
-export type MatchProgressCallback = (
-  completed: number,
-  total: number,
-  succeeded?: number,
-  failed?: number
-) => void;
+export type MatchResultMap = Map<number, MatchResult | Error>;
 
-/**
- * Database job schema (partial, for type safety)
- */
+export interface StrategyResultItem {
+  result?: MatchResult;
+  error?: Error;
+  duration: number;
+}
+
+export type StrategyResultMap = Map<number, StrategyResultItem>;
+
+export type MatchStrategy = "single" | "bulk" | "parallel";
+
+export interface ProfileData {
+  profile: { id: number; summary: string | null };
+  skills: Array<{ name: string; proficiency: number; category: string | null }>;
+  experience: Array<{ title: string; company: string; description: string | null }>;
+}
+
 export interface JobData {
   id: number;
   title: string;
-  description: string | null;
-}
-
-/**
- * Database profile schema (partial, for type safety)
- */
-export interface ProfileData {
-  id: number;
-  summary: string | null;
-}
-
-/**
- * Database skill schema (partial, for type safety)
- */
-export interface SkillData {
-  profileId: number;
-  name: string;
-  proficiency: number;
-  category: string | null;
-}
-
-/**
- * Database experience schema (partial, for type safety)
- */
-export interface ExperienceData {
-  profileId: number;
-  title: string;
-  company: string;
   description: string | null;
 }

@@ -1,13 +1,3 @@
-/**
- * Circuit Breaker implementation for the job matcher
- *
- * Prevents overwhelming the AI service when errors are occurring frequently.
- * States:
- * - CLOSED: Normal operation, requests go through
- * - OPEN: Circuit is open, requests fail immediately
- * - HALF_OPEN: Testing if service is recovered
- */
-
 export enum CircuitState {
   CLOSED = "CLOSED",
   OPEN = "OPEN",
@@ -15,9 +5,9 @@ export enum CircuitState {
 }
 
 export interface CircuitBreakerOptions {
-  failureThreshold: number; // Number of failures before opening circuit
-  resetTimeout: number; // Time in ms before attempting recovery
-  halfOpenMaxCalls?: number; // Max calls to allow in half-open state
+  failureThreshold: number;
+  resetTimeout: number;
+  halfOpenMaxCalls?: number;
 }
 
 export class CircuitBreaker {
@@ -148,35 +138,4 @@ export function createCircuitBreaker(options: CircuitBreakerOptions): CircuitBre
     resetTimeout: options.resetTimeout ?? 60000,
     halfOpenMaxCalls: options.halfOpenMaxCalls ?? 3,
   });
-}
-
-let _legacyCircuitBreaker: CircuitBreaker | null = null;
-
-export function getMatcherCircuitBreaker(options?: CircuitBreakerOptions): CircuitBreaker {
-  if (!_legacyCircuitBreaker && options) {
-    _legacyCircuitBreaker = new CircuitBreaker(options);
-  }
-  if (!_legacyCircuitBreaker) {
-    _legacyCircuitBreaker = new CircuitBreaker({
-      failureThreshold: 10,
-      resetTimeout: 60000,
-      halfOpenMaxCalls: 3,
-    });
-  }
-  return _legacyCircuitBreaker;
-}
-
-export function resetMatcherCircuitBreaker(options?: CircuitBreakerOptions): CircuitBreaker {
-  if (options) {
-    _legacyCircuitBreaker = new CircuitBreaker(options);
-  } else if (_legacyCircuitBreaker) {
-    _legacyCircuitBreaker.reset();
-  } else {
-    _legacyCircuitBreaker = new CircuitBreaker({
-      failureThreshold: 10,
-      resetTimeout: 60000,
-      halfOpenMaxCalls: 3,
-    });
-  }
-  return _legacyCircuitBreaker;
 }

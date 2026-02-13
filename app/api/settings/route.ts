@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
+import cron from "node-cron";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { restartScheduler } from "@/lib/jobs/scheduler";
 
-// Default settings values
 const DEFAULT_SETTINGS: Record<string, string> = {
-  // Keep original Gemini defaults and make Google (Gemini) the default provider
   matcher_model: "gemini-3-flash-preview",
   resume_parser_model: "gemini-3-flash-preview",
   matcher_reasoning_effort: "medium",
@@ -15,13 +14,14 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   matcher_batch_size: "2",
   matcher_max_retries: "3",
   matcher_concurrency_limit: "3",
+  matcher_serialize_operations: "false",
   matcher_timeout_ms: "30000",
   matcher_backoff_base_delay: "2000",
   matcher_backoff_max_delay: "32000",
   matcher_circuit_breaker_threshold: "10",
   matcher_circuit_breaker_reset_timeout: "60000",
   matcher_auto_match_after_scrape: "true",
-  global_scrape_frequency: "6",
+  scheduler_cron: "0 */6 * * *",
   ai_provider: "gemini_api_key",
   anthropic_api_key: "",
   google_auth_mode: "api_key",
@@ -73,8 +73,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Track if frequency was updated to restart scheduler
-    let frequencyUpdated = false;
+    // Track if cron was updated to restart scheduler
+    let cronUpdated = false;
     const updates: { key: string; value: string }[] = [];
 
     for (const [key, value] of Object.entries(body)) {
@@ -97,16 +97,18 @@ export async function POST(request: Request) {
         updates.push({ key, value: value === true || value === "true" ? "true" : "false" });
       } else if (key === "matcher_bulk_enabled") {
         updates.push({ key, value: value === true || value === "true" ? "true" : "false" });
-      } else if (key === "global_scrape_frequency") {
-        const num = parseInt(String(value), 10);
-        if (isNaN(num) || num < 1 || num > 168) {
+      } else if (key === "matcher_serialize_operations") {
+        updates.push({ key, value: value === true || value === "true" ? "true" : "false" });
+      } else if (key === "scheduler_cron") {
+        const cronExpr = String(value).trim();
+        if (!cron.validate(cronExpr)) {
           return NextResponse.json(
-            { error: "global_scrape_frequency must be a number between 1 and 168" },
+            { error: "Invalid cron expression" },
             { status: 400 }
           );
         }
-        updates.push({ key, value: String(num) });
-        frequencyUpdated = true;
+        updates.push({ key, value: cronExpr });
+        cronUpdated = true;
       } else if (key === "matcher_model" || key === "resume_parser_model") {
         if (typeof value !== "string" || value.trim().length === 0) {
           return NextResponse.json(
@@ -270,14 +272,13 @@ export async function POST(request: Request) {
       }
     }
 
-    // Restart scheduler if frequency was updated
-    if (frequencyUpdated) {
+    // Restart scheduler if cron was updated
+    if (cronUpdated) {
       try {
         await restartScheduler();
-        console.log("[Settings API] Scheduler restarted due to frequency change");
+        console.log("[Settings API] Scheduler restarted due to cron change");
       } catch (error) {
         console.error("[Settings API] Failed to restart scheduler:", error);
-        // Don't fail the request if scheduler restart fails
       }
     }
 

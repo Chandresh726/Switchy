@@ -11,9 +11,6 @@ import {
   AIError,
 } from "./providers";
 
-/**
- * Required setting keys for AI client configuration
- */
 const AI_SETTING_KEYS = [
   "ai_provider",
   "anthropic_api_key",
@@ -25,26 +22,46 @@ const AI_SETTING_KEYS = [
   "modal_api_key",
 ] as const;
 
-/**
- * Fetch settings from database
- */
-async function getSettingsMap(
-  keys: readonly string[]
-): Promise<Map<string, string>> {
-  const results = await db.select().from(settings).where(inArray(settings.key, keys));
+class SettingsCache {
+  private cache: Map<string, string> | null = null;
+  private timestamp: number = 0;
+  private readonly ttlMs: number;
 
-  const map = new Map<string, string>();
-  for (const row of results) {
-    if (row.value) map.set(row.key, row.value);
+  constructor(ttlMs: number = 60000) {
+    this.ttlMs = ttlMs;
   }
-  return map;
+
+  async get(keys: readonly string[]): Promise<Map<string, string>> {
+    const now = Date.now();
+    if (this.cache && now - this.timestamp < this.ttlMs) {
+      return this.cache;
+    }
+    const results = await db.select().from(settings).where(inArray(settings.key, keys));
+    this.cache = new Map<string, string>();
+    for (const row of results) {
+      if (row.value) this.cache.set(row.key, row.value);
+    }
+    this.timestamp = now;
+    return this.cache;
+  }
+
+  invalidate(): void {
+    this.cache = null;
+    this.timestamp = 0;
+  }
+}
+
+const settingsCache = new SettingsCache(30000);
+
+export function invalidateAISettingsCache(): void {
+  settingsCache.invalidate();
 }
 
 /**
  * Parse AI client settings from database
  */
 async function parseAIClientSettings(): Promise<AIClientSettings> {
-  const config = await getSettingsMap(AI_SETTING_KEYS);
+  const config = await settingsCache.get(AI_SETTING_KEYS);
 
   const provider = (config.get("ai_provider") || "anthropic") as AIProvider;
 

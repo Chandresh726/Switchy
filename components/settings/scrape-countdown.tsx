@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Clock, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SchedulerStatus {
   isActive: boolean;
+  isRunning: boolean;
   lastRun: string | null;
   nextRun: string | null;
-  frequencyHours: number;
   cronExpression: string;
 }
 
@@ -18,123 +18,95 @@ interface ScrapeCountdownProps {
 }
 
 function formatTimeRemaining(ms: number): string {
-  if (ms <= 0) return "Now";
+  if (ms <= 0) return "now";
 
   const seconds = Math.floor((ms / 1000) % 60);
   const minutes = Math.floor((ms / (1000 * 60)) % 60);
   const hours = Math.floor(ms / (1000 * 60 * 60));
 
   if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s`;
-  } else if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  } else {
-    return `${seconds}s`;
+    return `${hours}h ${minutes}m`;
   }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+  return `${seconds}s`;
 }
 
 export function ScrapeCountdown({ className }: ScrapeCountdownProps) {
-  // Fetch scheduler status every 30 seconds to keep countdown accurate
-  const { data: status, isLoading } = useQuery<SchedulerStatus>({
+  const { data: status, isLoading, refetch } = useQuery<SchedulerStatus>({
     queryKey: ["scheduler-status"],
     queryFn: async () => {
       const res = await fetch("/api/scheduler/status");
       if (!res.ok) throw new Error("Failed to fetch scheduler status");
       return res.json();
     },
-    refetchInterval: 30000, // Refetch every 30 seconds
-    staleTime: 10000, // Consider data fresh for 10 seconds
+    refetchInterval: 10000,
+    staleTime: 5000,
   });
 
-  // Calculate remaining time based on server-provided nextRun
-  const calculateRemainingMs = useCallback(() => {
+  const getRemainingMs = useCallback(() => {
     if (!status?.nextRun) return null;
     const nextRun = new Date(status.nextRun).getTime();
-    const now = Date.now();
-    return Math.max(0, nextRun - now);
+    return Math.max(0, nextRun - Date.now());
   }, [status]);
 
-  // Local countdown state - updates every second for smooth UI
   const [remainingMs, setRemainingMs] = useState<number | null>(null);
 
-  // Initialize and update countdown
   useEffect(() => {
-    // Update every second for smooth countdown display
-    const interval = setInterval(() => {
-      setRemainingMs(calculateRemainingMs());
-    }, 1000);
-
-    // Initial calculation via timeout to avoid synchronous setState
-    const timeout = setTimeout(() => {
-      setRemainingMs(calculateRemainingMs());
-    }, 0);
-
-    return () => {
-      clearInterval(interval);
-      clearTimeout(timeout);
+    const update = () => {
+      const ms = getRemainingMs();
+      setRemainingMs(ms);
+      if (ms !== null && ms <= 0 && !status?.isRunning) {
+        refetch();
+      }
     };
-  }, [calculateRemainingMs]);
+    update();
 
-  // Determine visual state
-  const visualState = useMemo(() => {
-    if (!status?.isActive) return "inactive";
-    if (!remainingMs || remainingMs <= 0) return "now";
-    if (remainingMs < 5 * 60 * 1000) return "soon"; // Less than 5 minutes
-    return "normal";
-  }, [status?.isActive, remainingMs]);
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [getRemainingMs, refetch, status?.isRunning]);
 
-  // Content based on state
-  const content = useMemo(() => {
-    if (isLoading) {
-      return {
-        icon: Clock,
-        text: "Loading...",
-        className: "text-zinc-500",
-      };
-    }
+  if (isLoading) {
+    return (
+      <div className={cn("flex items-center gap-2 text-sm text-zinc-500", className)}>
+        <Clock className="h-4 w-4" />
+        <span>Loading...</span>
+      </div>
+    );
+  }
 
-    if (!status?.isActive) {
-      return {
-        icon: AlertCircle,
-        text: "Scheduler inactive",
-        className: "text-yellow-500",
-      };
-    }
+  if (!status?.isActive) {
+    return (
+      <div className={cn("flex items-center gap-2 text-sm text-yellow-500", className)}>
+        <AlertCircle className="h-4 w-4" />
+        <span>Scheduler inactive</span>
+      </div>
+    );
+  }
 
-    if (!status.nextRun) {
-      return {
-        icon: Clock,
-        text: "Waiting for first run",
-        className: "text-zinc-400",
-      };
-    }
+  if (status.isRunning) {
+    return (
+      <div className={cn("flex items-center gap-2 text-sm text-emerald-400", className)}>
+        <Clock className="h-4 w-4 animate-spin" />
+        <span>Scraping now...</span>
+      </div>
+    );
+  }
 
-    return {
-      icon: Clock,
-      text: remainingMs && remainingMs > 0
-        ? `Next scrape in ${formatTimeRemaining(remainingMs)}`
-        : "Scraping now...",
-      className: cn(
-        visualState === "soon" && "text-orange-400 animate-pulse",
-        visualState === "now" && "text-emerald-400",
-        visualState === "normal" && "text-zinc-400"
-      ),
-    };
-  }, [isLoading, status, remainingMs, visualState]);
-
-  const Icon = content.icon;
+  if (remainingMs !== null && remainingMs > 0) {
+    return (
+      <div className={cn("flex items-center gap-2 text-sm text-zinc-400", className)}>
+        <Clock className="h-4 w-4" />
+        <span className="tabular-nums">Next: {formatTimeRemaining(remainingMs)}</span>
+      </div>
+    );
+  }
 
   return (
-    <div
-      className={cn(
-        "flex items-center gap-2 text-sm",
-        content.className,
-        className
-      )}
-      title={status?.isActive ? `Runs ${status.cronExpression}` : "Scheduler is not running"}
-    >
-      <Icon className="h-4 w-4" />
-      <span className="tabular-nums">{content.text}</span>
+    <div className={cn("flex items-center gap-2 text-sm text-zinc-500", className)}>
+      <Clock className="h-4 w-4" />
+      <span>Calculating...</span>
     </div>
   );
 }
