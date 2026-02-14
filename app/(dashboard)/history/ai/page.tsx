@@ -250,6 +250,7 @@ export default function AIHistoryPage() {
   };
 
   const handleCardClick = (content: ContentResponse) => {
+    window.scrollTo({ top: 0, behavior: "instant" });
     setSelectedContent(content);
     setIsDrawerOpen(true);
   };
@@ -258,6 +259,34 @@ export default function AIHistoryPage() {
     setIsDrawerOpen(open);
     if (!open) {
       setSelectedContent(null);
+    }
+  };
+
+  const handleGenerate = async (userPrompt?: string) => {
+    if (!selectedContent) return;
+
+    try {
+      const res = await fetch("/api/ai/content", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobId: selectedContent.jobId,
+          type: selectedContent.type,
+          userPrompt: userPrompt || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to generate");
+      }
+
+      const data = await res.json();
+      setSelectedContent(data.content);
+      queryClient.invalidateQueries({ queryKey: ["ai-history-all"] });
+    } catch (error) {
+      console.error("Generation error:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to generate content");
     }
   };
 
@@ -365,7 +394,7 @@ export default function AIHistoryPage() {
           onOpenChange={handleDrawerOpenChange}
           content={selectedContent}
           isLoading={false}
-          onGenerate={async () => {}}
+          onGenerate={handleGenerate}
           onSaveEdit={handleSaveEdit}
           title={selectedTypeConfig.label}
           description={

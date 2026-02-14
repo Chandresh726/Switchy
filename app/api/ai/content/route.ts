@@ -1,5 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { generateText } from "ai";
+import { eq, desc, asc, and, sql } from "drizzle-orm";
 import { getAIClient, getAIGenerationOptions } from "@/lib/ai/client";
 import { db } from "@/lib/db";
 import { settings, aiGeneratedContent, aiGenerationHistory } from "@/lib/db/schema";
@@ -7,7 +9,6 @@ import { fetchCandidateProfile, fetchJobWithCompany } from "@/lib/ai/writing/uti
 import { COVER_LETTER_SYSTEM_PROMPT, buildCoverLetterPromptFromProfileData, type CoverLetterSettings } from "@/lib/ai/prompts/cover-letter";
 import { REFERRAL_SYSTEM_PROMPT, buildReferralPromptFromProfileData, type ReferralSettings } from "@/lib/ai/prompts/referral";
 import type { ContentResponse } from "@/lib/ai/writing/types";
-import { eq, desc, asc, and, sql } from "drizzle-orm";
 
 async function getSettingsMap(): Promise<Map<string, string>> {
   try {
@@ -280,7 +281,7 @@ export async function POST(request: NextRequest) {
 
     // Generate with retry logic for placeholder detection
     let text: string;
-    const maxRetries = 2;
+    const MAX_RETRIES = 2;
     let retryCount = 0;
     
     while (true) {
@@ -299,8 +300,8 @@ export async function POST(request: NextRequest) {
         break; // No placeholders found, we're good
       }
       
-      if (retryCount >= maxRetries) {
-        console.warn(`[Generate AI Content] Placeholders found after ${maxRetries} retries:`, placeholders);
+      if (retryCount >= MAX_RETRIES) {
+        console.warn(`[Generate AI Content] Placeholders found after ${MAX_RETRIES} retries:`, placeholders);
         // Continue with the text but log the warning
         break;
       }

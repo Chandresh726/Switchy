@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+
 import { Loader2, Copy, Check, X, ChevronLeft, ChevronRight, ArrowUp, Save } from "lucide-react";
 import { toast } from "sonner";
+
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { GeneratedContent } from "@/lib/ai/writing/types";
 
@@ -193,7 +195,7 @@ export function AIContentEditor({
   if (!isOpen) return null;
 
   return (
-    <div className="absolute inset-0 z-50 pointer-events-none">
+    <div className="fixed left-64 right-0 inset-0 z-50 pointer-events-none">
       {/* Overlay - covers entire main content with blur */}
       <div 
         className={cn(

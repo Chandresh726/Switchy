@@ -101,6 +101,7 @@ export function JobAIActions({ jobId, jobTitle, companyName }: JobAIActionsProps
   };
 
   const handleGenerate = async (action: AIAction) => {
+    window.scrollTo({ top: 0, behavior: "instant" });
     setCurrentAction(action);
     setIsOpen(true);
     setGeneratedContent(null);

@@ -205,7 +205,7 @@ export const matchLogs = sqliteTable("match_logs", {
   completedAt: integer("completed_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
-export const aiGeneratedContent = sqliteTable("ai_generated_content", {
+export const aiGeneratedContent = sqliteTable("aiGeneratedContent", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   jobId: integer("job_id").references(() => jobs.id, { onDelete: "cascade" }).notNull(),
   type: text("type").notNull(), // "cover_letter" | "referral"
@@ -214,12 +214,12 @@ export const aiGeneratedContent = sqliteTable("ai_generated_content", {
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 }, (table) => ({
-  jobTypeUnique: unique("ai_generated_content_job_type_unique").on(table.jobId, table.type),
+  jobTypeUnique: unique("aiGeneratedContentJobTypeUnique").on(table.jobId, table.type),
 }));
 
 // AI Generation History - Stores all variants/history of generated content
 const aiGenHistParentVariantRef = () => aiGenerationHistory.id;
-export const aiGenerationHistory = sqliteTable("ai_generation_history", {
+export const aiGenerationHistory = sqliteTable("aiGenerationHistory", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   contentId: integer("content_id").references(() => aiGeneratedContent.id, { onDelete: "cascade" }).notNull(),
   variant: text("variant").notNull(),

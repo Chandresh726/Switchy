@@ -1,6 +1,8 @@
 import { eq, inArray, isNull } from "drizzle-orm";
+
 import { db } from "@/lib/db";
 import { jobs, profile, skills, experience, education, matchSessions, matchLogs } from "@/lib/db/schema";
+
 import type { MatchSessionResult, TriggerSource, ProfileData, JobData } from "../types";
 
 export async function fetchProfileData(): Promise<ProfileData | null> {
@@ -9,18 +11,23 @@ export async function fetchProfileData(): Promise<ProfileData | null> {
 
   const userProfile = profiles[0];
 
-  const [userSkills, userExperience, userEducation] = await Promise.all([
-    db.select().from(skills).where(eq(skills.profileId, userProfile.id)),
-    db.select().from(experience).where(eq(experience.profileId, userProfile.id)),
-    db.select().from(education).where(eq(education.profileId, userProfile.id)),
-  ]);
+  try {
+    const [userSkills, userExperience, userEducation] = await Promise.all([
+      db.select().from(skills).where(eq(skills.profileId, userProfile.id)),
+      db.select().from(experience).where(eq(experience.profileId, userProfile.id)),
+      db.select().from(education).where(eq(education.profileId, userProfile.id)),
+    ]);
 
-  return {
-    profile: userProfile,
-    skills: userSkills,
-    experience: userExperience,
-    education: userEducation,
-  };
+    return {
+      profile: userProfile,
+      skills: userSkills,
+      experience: userExperience,
+      education: userEducation,
+    };
+  } catch (error) {
+    console.error("fetchProfileData: failed to fetch profile data", { userProfileId: userProfile.id, error });
+    throw error;
+  }
 }
 
 export async function fetchJobsData(jobIds: number[]): Promise<Map<number, JobData>> {

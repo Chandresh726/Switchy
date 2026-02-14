@@ -1,13 +1,15 @@
 "use client";
 
+import { useState, useEffect } from "react";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Calendar, GraduationCap, Loader2, Pencil, Plus, Save, Trash2, X, Sparkles } from "lucide-react";
+import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { useState, useEffect } from "react";
-import { Calendar, GraduationCap, Loader2, Pencil, Plus, Save, Trash2, X, Sparkles } from "lucide-react";
-import { toast } from "sonner";
 
 interface Education {
   id: number;
@@ -209,7 +211,6 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
 
   useEffect(() => {
     if (initialEducation && initialEducation.length > 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPendingEducation(initialEducation);
     }
   }, [initialEducation]);
@@ -217,29 +218,39 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
   const { data: educationList = [], isLoading } = useQuery<Education[]>({
     queryKey: ["education", profileId],
     queryFn: async () => {
-      if (!profileId) return [];
-      const res = await fetch(`/api/profile/education?profileId=${profileId}`);
-      if (!res.ok) throw new Error("Failed to fetch education");
-      return res.json();
+      try {
+        if (!profileId) return [];
+        const res = await fetch(`/api/profile/education?profileId=${profileId}`);
+        if (!res.ok) throw new Error("Failed to fetch education");
+        return res.json();
+      } catch (error) {
+        console.error("fetch education:", error);
+        return [];
+      }
     },
     enabled: !!profileId,
   });
 
   const addMutation = useMutation({
     mutationFn: async (edu: EducationFormData) => {
-      const res = await fetch("/api/profile/education", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...edu,
-          profileId,
-          endDate: edu.endDate || null,
-          gpa: edu.gpa || null,
-          honors: edu.honors || null,
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to add education");
-      return res.json();
+      try {
+        const res = await fetch("/api/profile/education", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...edu,
+            profileId,
+            endDate: edu.endDate || null,
+            gpa: edu.gpa || null,
+            honors: edu.honors || null,
+          }),
+        });
+        if (!res.ok) throw new Error("Failed to add education");
+        return res.json();
+      } catch (error) {
+        console.error("add education:", error);
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["education", profileId] });
@@ -250,19 +261,24 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, edu }: { id: number; edu: EducationFormData }) => {
-      const res = await fetch("/api/profile/education", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id,
-          ...edu,
-          endDate: edu.endDate || null,
-          gpa: edu.gpa || null,
-          honors: edu.honors || null,
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to update education");
-      return res.json();
+      try {
+        const res = await fetch("/api/profile/education", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id,
+            ...edu,
+            endDate: edu.endDate || null,
+            gpa: edu.gpa || null,
+            honors: edu.honors || null,
+          }),
+        });
+        if (!res.ok) throw new Error("Failed to update education");
+        return res.json();
+      } catch (error) {
+        console.error("update education:", error);
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["education", profileId] });
@@ -273,22 +289,27 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
 
   const bulkAddMutation = useMutation({
     mutationFn: async (educationToAdd: InitialEducation[]) => {
-      for (const edu of educationToAdd) {
-        const res = await fetch("/api/profile/education", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            institution: edu.institution,
-            degree: edu.degree,
-            field: edu.field || null,
-            startDate: edu.startDate,
-            endDate: edu.endDate || null,
-            gpa: edu.gpa || null,
-            honors: edu.honors || null,
-            profileId,
-          }),
-        });
-        if (!res.ok) throw new Error("Failed to add education");
+      try {
+        for (const edu of educationToAdd) {
+          const res = await fetch("/api/profile/education", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              institution: edu.institution,
+              degree: edu.degree,
+              field: edu.field || null,
+              startDate: edu.startDate,
+              endDate: edu.endDate || null,
+              gpa: edu.gpa || null,
+              honors: edu.honors || null,
+              profileId,
+            }),
+          });
+          if (!res.ok) throw new Error("Failed to add education");
+        }
+      } catch (error) {
+        console.error("bulk add education:", error);
+        throw error;
       }
     },
     onSuccess: () => {
@@ -307,11 +328,16 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/profile/education?id=${id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error("Failed to delete education");
-      return res.json();
+      try {
+        const res = await fetch(`/api/profile/education?id=${id}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) throw new Error("Failed to delete education");
+        return res.json();
+      } catch (error) {
+        console.error("delete education:", error);
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["education", profileId] });

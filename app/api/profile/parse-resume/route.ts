@@ -120,16 +120,22 @@ export async function POST(request: NextRequest) {
         .where(eq(education.profileId, currentProfile.id));
 
       // Filter out education entries that already exist (by institution + degree + field)
+      // Normalize with trim and lowercase for deduplication
       const existingKeys = new Set(
         existingEducation.map(
-          (e) => `${e.institution.toLowerCase()}-${e.degree.toLowerCase()}-${(e.field || "").toLowerCase()}`
+          (e) => `${e.institution.trim().toLowerCase()}-${e.degree.trim().toLowerCase()}-${(e.field || "").trim().toLowerCase()}`
         )
       );
 
-      const newEducation = parsedData.education.filter(
+      // Filter out entries lacking institution or degree before processing
+      const validEducation = parsedData.education.filter(
+        (edu) => edu.institution?.trim() && edu.degree?.trim()
+      );
+
+      const newEducation = validEducation.filter(
         (edu) =>
           !existingKeys.has(
-            `${edu.institution.toLowerCase()}-${edu.degree.toLowerCase()}-${(edu.field || "").toLowerCase()}`
+            `${edu.institution.trim().toLowerCase()}-${edu.degree.trim().toLowerCase()}-${(edu.field || "").trim().toLowerCase()}`
           )
       );
 
@@ -141,7 +147,7 @@ export async function POST(request: NextRequest) {
             institution: edu.institution,
             degree: edu.degree,
             field: edu.field || null,
-            startDate: edu.startDate || "",
+            startDate: edu.startDate || null,
             endDate: edu.endDate || null,
             gpa: edu.gpa || null,
             honors: edu.honors || null,
