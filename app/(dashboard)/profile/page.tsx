@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ProfileForm } from "@/components/profile/profile-form";
 import { SkillsEditor } from "@/components/profile/skills-editor";
 import { ExperienceList } from "@/components/profile/experience-list";
+import { EducationEditor } from "@/components/profile/education-editor";
 import { ResumeManager } from "@/components/profile/resume-manager";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -94,8 +95,9 @@ export default function ProfilePage() {
         <div className="rounded-xl border border-emerald-800/50 bg-emerald-900/20 p-4">
           <div className="flex items-center gap-2 text-sm text-emerald-400">
             <span>
-              Resume parsed! Found {parsedResumeData.skills.length} skills and{" "}
-              {parsedResumeData.experience.length} work experiences. Review and save below.
+              Resume parsed! Found {parsedResumeData.skills.length} skills,{" "}
+              {parsedResumeData.experience.length} work experiences, and{" "}
+              {parsedResumeData.education?.length || 0} education entries. Review and save below.
             </span>
           </div>
         </div>
@@ -129,6 +131,12 @@ export default function ProfilePage() {
       <ExperienceList
         profileId={profile?.id || null}
         initialExperience={parsedResumeData?.experience}
+      />
+
+      {/* Education */}
+      <EducationEditor
+        profileId={profile?.id || null}
+        initialEducation={parsedResumeData?.education}
       />
     </div>
   );

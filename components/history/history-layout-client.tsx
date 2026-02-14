@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { History, Sparkles, Trash2 } from "lucide-react";
+import { History, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -32,16 +32,48 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
   // Handle base /history path explicitly - default to scrape tab
   const isScrapeTab = pathname === "/history" || (pathname?.startsWith("/history/scrape") ?? false);
   const isMatchTab = pathname?.startsWith("/history/match") ?? false;
-  const activeTab = isMatchTab ? "match" : "scrape";
+  const isAITab = pathname?.startsWith("/history/ai") ?? false;
+  const activeTab = isMatchTab ? "match" : isAITab ? "ai" : "scrape";
 
-  // Check if we're on a detail page (has an ID after match or scrape)
-  const isDetailPage = /^\/history\/(match|scrape)\/[^/]+$/.test(pathname ?? "");
+  // Check if we're on a detail page (has an ID after match, scrape, or ai)
+  const isDetailPage = /^\/history\/(match|scrape|ai)\/[^/]+$/.test(pathname ?? "");
+
+  const getTabLabel = () => {
+    switch (activeTab) {
+      case "scrape":
+        return "Scrape";
+      case "match":
+        return "Match";
+      case "ai":
+        return "AI";
+      default:
+        return "Scrape";
+    }
+  };
 
   const handleClearHistory = async () => {
     setIsDeleting(true);
     try {
-      const endpoint =
-        activeTab === "scrape" ? "/api/scrape-history" : "/api/match-history";
+      let endpoint: string;
+      let queryKey: string;
+
+      switch (activeTab) {
+        case "scrape":
+          endpoint = "/api/scrape-history";
+          queryKey = "scrape-history";
+          break;
+        case "match":
+          endpoint = "/api/match-history";
+          queryKey = "match-history";
+          break;
+        case "ai":
+          endpoint = "/api/ai/history";
+          queryKey = "ai-history-all";
+          break;
+        default:
+          endpoint = "/api/scrape-history";
+          queryKey = "scrape-history";
+      }
 
       const res = await fetch(endpoint, {
         method: "DELETE",
@@ -50,12 +82,10 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
       if (!res.ok) throw new Error("Failed to clear history");
 
       queryClient.invalidateQueries({
-        queryKey: [activeTab === "scrape" ? "scrape-history" : "match-history"],
+        queryKey: [queryKey],
       });
 
-      toast.success(
-        `${activeTab === "scrape" ? "Scrape" : "Match"} history cleared successfully`
-      );
+      toast.success(`${getTabLabel()} history cleared successfully`);
     } catch (error) {
       console.error("Failed to clear history:", error);
       toast.error("Failed to clear history");
@@ -83,15 +113,14 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
                 className="border-red-500/20 text-red-400 hover:bg-red-500/10 hover:text-red-300"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
-                Clear {activeTab === "scrape" ? "Scrape" : "Match"} History
+                Clear {getTabLabel()} History
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will permanently delete all{" "}
-                  {activeTab === "scrape" ? "scrape" : "match"} history records.
+                  This will permanently delete all {activeTab === "scrape" ? "scrape" : activeTab === "match" ? "match" : "AI"} history records.
                   This action cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
@@ -134,6 +163,17 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
           >
             <Sparkles className="h-4 w-4" />
             Match History
+          </Link>
+          <Link
+            href="/history/ai"
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              isAITab
+                ? "text-white border-blue-500"
+                : "text-zinc-400 border-transparent hover:text-zinc-200"
+            }`}
+          >
+            <Wand2 className="h-4 w-4" />
+            AI History
           </Link>
         </div>
       )}

@@ -35,7 +35,7 @@ export type ErrorType =
   | "circuit_breaker"
   | "unknown";
 
-export type TriggerSource = "manual" | "auto_scrape" | "company_refresh";
+export type TriggerSource = "manual" | "scheduler" | "company_refresh";
 
 export type MatchPhase = "queued" | "matching" | "completed";
 
@@ -93,9 +93,11 @@ export interface MatchJob {
 }
 
 export interface CandidateProfile {
+  name?: string;
   summary?: string;
   skills: Array<{ name: string; proficiency: number; category?: string }>;
   experience: Array<{ title: string; company: string; description?: string }>;
+  education: Array<{ degree: string; institution: string; field?: string }>;
 }
 
 export interface MatchProgress {
@@ -139,6 +141,7 @@ export interface ProfileData {
   profile: { id: number; summary: string | null };
   skills: Array<{ name: string; proficiency: number; category: string | null }>;
   experience: Array<{ title: string; company: string; description: string | null }>;
+  education: Array<{ institution: string; degree: string; field: string | null }>;
 }
 
 export interface JobData {

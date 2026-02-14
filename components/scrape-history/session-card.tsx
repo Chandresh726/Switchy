@@ -48,7 +48,8 @@ interface SessionCardProps {
 
 const TRIGGER_LABELS: Record<string, string> = {
   manual: "Manual",
-  scheduled: "Auto Scrape",
+  scheduler: "Auto Scheduled",
+  company_refresh: "Company Refresh",
   api: "API",
 };
 

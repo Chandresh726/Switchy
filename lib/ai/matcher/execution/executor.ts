@@ -52,6 +52,11 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
       company: e.company,
       description: e.description || undefined,
     })),
+    education: profileData.education.map((e: { institution: string; degree: string; field: string | null }) => ({
+      institution: e.institution,
+      degree: e.degree,
+      field: e.field || undefined,
+    })),
   };
 
   const matchJobs: MatchJob[] = jobIds
