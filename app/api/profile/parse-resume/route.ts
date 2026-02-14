@@ -3,7 +3,7 @@ import { parseResume } from "@/lib/ai/resume-parser";
 import { extractText } from "unpdf";
 import { saveFile } from "@/lib/storage/files";
 import { db } from "@/lib/db";
-import { profile, resumes } from "@/lib/db/schema";
+import { profile, resumes, education } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 
 export async function POST(request: NextRequest) {
@@ -110,6 +110,45 @@ export async function POST(request: NextRequest) {
 
       return record;
     });
+
+    // Sync education from resume to database (merge strategy)
+    if (parsedData.education && parsedData.education.length > 0 && currentProfile.id) {
+      // Get existing education entries
+      const existingEducation = await db
+        .select()
+        .from(education)
+        .where(eq(education.profileId, currentProfile.id));
+
+      // Filter out education entries that already exist (by institution + degree + field)
+      const existingKeys = new Set(
+        existingEducation.map(
+          (e) => `${e.institution.toLowerCase()}-${e.degree.toLowerCase()}-${(e.field || "").toLowerCase()}`
+        )
+      );
+
+      const newEducation = parsedData.education.filter(
+        (edu) =>
+          !existingKeys.has(
+            `${edu.institution.toLowerCase()}-${edu.degree.toLowerCase()}-${(edu.field || "").toLowerCase()}`
+          )
+      );
+
+      // Insert new education entries
+      if (newEducation.length > 0) {
+        await db.insert(education).values(
+          newEducation.map((edu) => ({
+            profileId: currentProfile.id,
+            institution: edu.institution,
+            degree: edu.degree,
+            field: edu.field || null,
+            startDate: edu.startDate || "",
+            endDate: edu.endDate || null,
+            gpa: edu.gpa || null,
+            honors: edu.honors || null,
+          }))
+        );
+      }
+    }
 
     return NextResponse.json({
       parsedData,

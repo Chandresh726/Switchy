@@ -79,6 +79,15 @@ ${
     : "No experience listed"
 }
 
+**Education:**
+${
+  candidateProfile.education.length > 0
+    ? candidateProfile.education
+        .map((e) => `- ${e.degree}${e.field ? ` in ${e.field}` : ""} at ${e.institution}`)
+        .join("\n")
+    : "No education listed"
+}
+
 Please analyze how well this candidate matches the job and respond with ONLY a valid JSON object:
 
 {

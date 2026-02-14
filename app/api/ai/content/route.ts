@@ -10,14 +10,19 @@ import type { ContentResponse } from "@/lib/ai/writing/types";
 import { eq, desc, asc, and, sql } from "drizzle-orm";
 
 async function getSettingsMap(): Promise<Map<string, string>> {
-  const settingsRecords = await db.select().from(settings);
-  const map = new Map<string, string>();
-  for (const s of settingsRecords) {
-    if (s.value !== null) {
-      map.set(s.key, s.value);
+  try {
+    const settingsRecords = await db.select().from(settings);
+    const map = new Map<string, string>();
+    for (const s of settingsRecords) {
+      if (s.value !== null) {
+        map.set(s.key, s.value);
+      }
     }
+    return map;
+  } catch (error) {
+    console.error("getSettingsMap failed:", error);
+    throw error;
   }
-  return map;
 }
 
 async function getCoverLetterSettings(settingsMap: Map<string, string>): Promise<CoverLetterSettings> {
@@ -212,6 +217,7 @@ export async function POST(request: NextRequest) {
       const existingResults = await db.select()
         .from(aiGeneratedContent)
         .where(and(eq(aiGeneratedContent.jobId, parsedJobId), eq(aiGeneratedContent.type, type)))
+        .orderBy(desc(aiGeneratedContent.updatedAt))
         .limit(1);
 
       if (existingResults[0]) {
@@ -309,9 +315,11 @@ export async function POST(request: NextRequest) {
     const existingResults = await db.select()
       .from(aiGeneratedContent)
       .where(and(eq(aiGeneratedContent.jobId, parsedJobId), eq(aiGeneratedContent.type, type)))
+      .orderBy(desc(aiGeneratedContent.updatedAt))
       .limit(1);
 
     let contentId: number;
+    let savedContent: typeof aiGeneratedContent.$inferSelect | null = null;
 
     if (existingResults[0]) {
       await db.update(aiGeneratedContent)
@@ -323,6 +331,7 @@ export async function POST(request: NextRequest) {
         .where(eq(aiGeneratedContent.id, existingResults[0].id));
 
       contentId = existingResults[0].id;
+      savedContent = { ...existingResults[0], updatedAt: new Date() };
     } else {
       const result = await db.insert(aiGeneratedContent).values({
         jobId: parsedJobId,
@@ -333,6 +342,12 @@ export async function POST(request: NextRequest) {
         updatedAt: new Date(),
       });
       contentId = result.lastInsertRowid as number;
+      
+      const inserted = await db.select()
+        .from(aiGeneratedContent)
+        .where(eq(aiGeneratedContent.id, contentId))
+        .limit(1);
+      savedContent = inserted[0] || null;
     }
 
     await db.insert(aiGenerationHistory).values({
@@ -355,8 +370,8 @@ export async function POST(request: NextRequest) {
         type,
         content: text,
         settingsSnapshot,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt: formatDate(savedContent?.createdAt),
+        updatedAt: formatDate(savedContent?.updatedAt),
         history: newHistoryResults.map((h) => ({
           id: h.id,
           variant: h.variant,

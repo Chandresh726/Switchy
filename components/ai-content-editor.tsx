@@ -108,7 +108,8 @@ export function AIContentEditor({
       setCopied(true);
       toast.success("Copied to clipboard");
       setTimeout(() => setCopied(false), 2000);
-    } catch {
+    } catch (err) {
+      console.error("Failed to copy to clipboard in handleCopy:", err);
       toast.error("Failed to copy");
     }
   };

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, unique } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
 
 // Profile - Single user profile
@@ -213,7 +213,9 @@ export const aiGeneratedContent = sqliteTable("ai_generated_content", {
   settingsSnapshot: text("settings_snapshot"), // JSON - stores tone, length, focus used
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
-});
+}, (table) => ({
+  jobTypeUnique: unique("ai_generated_content_job_type_unique").on(table.jobId, table.type),
+}));
 
 // AI Generation History - Stores all variants/history of generated content
 const aiGenHistParentVariantRef = () => aiGenerationHistory.id;

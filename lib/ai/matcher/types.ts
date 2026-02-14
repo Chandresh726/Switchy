@@ -97,6 +97,7 @@ export interface CandidateProfile {
   summary?: string;
   skills: Array<{ name: string; proficiency: number; category?: string }>;
   experience: Array<{ title: string; company: string; description?: string }>;
+  education: Array<{ degree: string; institution: string; field?: string }>;
 }
 
 export interface MatchProgress {
@@ -140,6 +141,7 @@ export interface ProfileData {
   profile: { id: number; summary: string | null };
   skills: Array<{ name: string; proficiency: number; category: string | null }>;
   experience: Array<{ title: string; company: string; description: string | null }>;
+  education: Array<{ institution: string; degree: string; field: string | null }>;
 }
 
 export interface JobData {

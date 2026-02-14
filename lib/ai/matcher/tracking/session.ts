@@ -1,6 +1,6 @@
 import { eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { jobs, profile, skills, experience, matchSessions, matchLogs } from "@/lib/db/schema";
+import { jobs, profile, skills, experience, education, matchSessions, matchLogs } from "@/lib/db/schema";
 import type { MatchSessionResult, TriggerSource, ProfileData, JobData } from "../types";
 
 export async function fetchProfileData(): Promise<ProfileData | null> {
@@ -9,15 +9,17 @@ export async function fetchProfileData(): Promise<ProfileData | null> {
 
   const userProfile = profiles[0];
 
-  const [userSkills, userExperience] = await Promise.all([
+  const [userSkills, userExperience, userEducation] = await Promise.all([
     db.select().from(skills).where(eq(skills.profileId, userProfile.id)),
     db.select().from(experience).where(eq(experience.profileId, userProfile.id)),
+    db.select().from(education).where(eq(education.profileId, userProfile.id)),
   ]);
 
   return {
     profile: userProfile,
     skills: userSkills,
     experience: userExperience,
+    education: userEducation,
   };
 }
 
