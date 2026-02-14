@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MatchBadge } from "@/components/jobs/match-badge";
 import { ApplyButton } from "@/components/jobs/apply-button";
+import { JobAIActions } from "@/components/jobs/job-ai-actions";
 import { MarkdownRenderer } from "@/components/jobs/markdown-renderer";
 import { sanitizeHtmlContent } from "@/lib/jobs/description-processor";
 import {
@@ -293,6 +294,12 @@ export default function JobDetailPage() {
           </div>
 
           <div className="flex-1" />
+
+          <JobAIActions
+            jobId={job.id}
+            jobTitle={job.title}
+            companyName={job.company.name}
+          />
 
           <ApplyButton
             url={job.url}

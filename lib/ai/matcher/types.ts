@@ -93,6 +93,7 @@ export interface MatchJob {
 }
 
 export interface CandidateProfile {
+  name?: string;
   summary?: string;
   skills: Array<{ name: string; proficiency: number; category?: string }>;
   experience: Array<{ title: string; company: string; description?: string }>;

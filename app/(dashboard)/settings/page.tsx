@@ -11,6 +11,7 @@ import { ScraperSettings } from "@/components/settings/scraper-settings";
 import { DangerZone } from "@/components/settings/danger-zone";
 import { ResumeParserSection } from "@/components/settings/resume-parser-section";
 import { SystemInfo } from "@/components/settings/system-info";
+import { AIWritingSection, type AIWritingSettings } from "@/components/settings/ai-writing-section";
 import {
   AIProvider,
   getDefaultModelForProvider,
@@ -46,6 +47,14 @@ interface MatcherSettings {
   cerebras_api_key?: string;
   openai_api_key?: string;
   modal_api_key?: string;
+  // AI Writing
+  referral_tone?: string;
+  referral_length?: string;
+  cover_letter_tone?: string;
+  cover_letter_length?: string;
+  cover_letter_focus?: string;
+  ai_writing_model?: string;
+  ai_writing_reasoning_effort?: string;
 }
 
 interface MatcherLocalEdits {
@@ -85,6 +94,16 @@ interface ScraperLocalEdits {
   filterTitleKeywords?: string[];
 }
 
+interface AIWritingLocalEdits {
+  referralTone?: string;
+  referralLength?: string;
+  coverLetterTone?: string;
+  coverLetterLength?: string;
+  coverLetterFocus?: string[];
+  aiWritingModel?: string;
+  aiWritingReasoningEffort?: ReasoningEffort;
+}
+
 function SettingsContent() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
@@ -94,8 +113,10 @@ function SettingsContent() {
   const [resumeParserLocalEdits, setResumeParserLocalEdits] = useState<ResumeParserLocalEdits>({});
   const [providerLocalEdits, setProviderLocalEdits] = useState<ProviderLocalEdits>({});
   const [scraperLocalEdits, setScraperLocalEdits] = useState<ScraperLocalEdits>({});
+  const [aiWritingLocalEdits, setAIWritingLocalEdits] = useState<AIWritingLocalEdits>({});
   const [matcherSettingsSaved, setMatcherSettingsSaved] = useState(false);
   const [scraperSettingsSaved, setScraperSettingsSaved] = useState(false);
+  const [aiWritingSettingsSaved, setAIWritingSettingsSaved] = useState(false);
 
   // Handle OAuth callbacks
   useEffect(() => {
@@ -191,13 +212,32 @@ function SettingsContent() {
       openrouterApiKey: providerLocalEdits.openrouterApiKey ?? (settings?.openrouter_api_key || ""),
       cerebrasApiKey: providerLocalEdits.cerebrasApiKey ?? (settings?.cerebras_api_key || ""),
       modalApiKey: providerLocalEdits.modalApiKey ?? (settings?.modal_api_key || ""),
+      // AI Writing
+      aiWritingModel: aiWritingLocalEdits.aiWritingModel ?? (settings?.ai_writing_model || defaultModel),
+      aiWritingReasoningEffort: aiWritingLocalEdits.aiWritingReasoningEffort ?? ((settings?.ai_writing_reasoning_effort as ReasoningEffort) || getDefaultReasoningEffort()),
+      referralTone: aiWritingLocalEdits.referralTone ?? (settings?.referral_tone || "professional"),
+      referralLength: aiWritingLocalEdits.referralLength ?? (settings?.referral_length || "medium"),
+      coverLetterTone: aiWritingLocalEdits.coverLetterTone ?? (settings?.cover_letter_tone || "professional"),
+      coverLetterLength: aiWritingLocalEdits.coverLetterLength ?? (settings?.cover_letter_length || "medium"),
+      coverLetterFocus: aiWritingLocalEdits.coverLetterFocus ?? (() => {
+        const stored = settings?.cover_letter_focus;
+        if (!stored) return ["skills", "experience", "cultural_fit"];
+        try {
+          const parsed = JSON.parse(stored);
+          return Array.isArray(parsed) ? parsed : ["skills", "experience", "cultural_fit"];
+        } catch {
+          return ["skills", "experience", "cultural_fit"];
+        }
+      })(),
     };
-  }, [settings, matcherLocalEdits, resumeParserLocalEdits, providerLocalEdits, scraperLocalEdits]);
+  }, [settings, matcherLocalEdits, resumeParserLocalEdits, providerLocalEdits, scraperLocalEdits, aiWritingLocalEdits]);
 
   const {
     matcherModel, resumeParserModel, matcherReasoningEffort, resumeParserReasoningEffort, bulkEnabled, serializeOperations, batchSize, maxRetries, concurrencyLimit, timeoutMs,
     circuitBreakerThreshold, autoMatchAfterScrape, schedulerCron, filterCountry, filterCity, filterTitleKeywords, aiProvider, anthropicApiKey,
-    googleApiKey, openaiApiKey, openrouterApiKey, cerebrasApiKey, modalApiKey
+    googleApiKey, openaiApiKey, openrouterApiKey, cerebrasApiKey, modalApiKey,
+    aiWritingModel, aiWritingReasoningEffort, referralTone, referralLength,
+    coverLetterTone, coverLetterLength, coverLetterFocus
   } = derivedValues;
 
   const scraperHasUnsavedChanges =
@@ -216,6 +256,15 @@ function SettingsContent() {
     matcherLocalEdits.timeoutMs !== undefined ||
     matcherLocalEdits.circuitBreakerThreshold !== undefined ||
     matcherLocalEdits.autoMatchAfterScrape !== undefined;
+
+  const aiWritingHasUnsavedChanges =
+    aiWritingLocalEdits.referralTone !== undefined ||
+    aiWritingLocalEdits.referralLength !== undefined ||
+    aiWritingLocalEdits.coverLetterTone !== undefined ||
+    aiWritingLocalEdits.coverLetterLength !== undefined ||
+    aiWritingLocalEdits.coverLetterFocus !== undefined ||
+    aiWritingLocalEdits.aiWritingModel !== undefined ||
+    aiWritingLocalEdits.aiWritingReasoningEffort !== undefined;
 
   // Setters for Matcher settings
   const setMatcherModel = (value: string) => setMatcherLocalEdits(prev => ({ ...prev, matcherModel: value }));
@@ -248,6 +297,12 @@ function SettingsContent() {
     setScraperLocalEdits((prev) => ({ ...prev, filterCity: value }));
   const setFilterTitleKeywords = (value: string[]) =>
     setScraperLocalEdits((prev) => ({ ...prev, filterTitleKeywords: value }));
+
+  // AI Writing settings handler
+  const handleAIWritingSettingsChange = (updates: Partial<AIWritingSettings>) => {
+    setAIWritingLocalEdits((prev) => ({ ...prev, ...updates }));
+  };
+
   const providerSettingsMutation = useMutation({
     mutationFn: async (updates: Partial<MatcherSettings>) => {
       const res = await fetch("/api/settings", {
@@ -395,6 +450,24 @@ function SettingsContent() {
     },
   });
 
+  const clearAIContentMutation = useMutation<{
+    success: boolean;
+    contentDeleted: number;
+    historyDeleted: number;
+    message: string;
+  }>({
+    mutationFn: async () => {
+      const res = await fetch("/api/ai/content", { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to clear AI content");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["ai-content"] });
+      toast.success(data.message || "AI generated content deleted successfully");
+    },
+    onError: () => toast.error("Failed to delete AI generated content"),
+  });
+
   const resumeParserMutation = useMutation({
     mutationFn: async (updates: { resume_parser_model?: string; resume_parser_reasoning_effort?: ReasoningEffort }) => {
       const res = await fetch("/api/settings", {
@@ -505,6 +578,45 @@ function SettingsContent() {
     },
     onError: () => toast.error("Failed to save scraper settings"),
   });
+
+  const aiWritingMutation = useMutation({
+    mutationFn: async (updates: Partial<AIWritingSettings>) => {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          referral_tone: updates.referralTone,
+          referral_length: updates.referralLength,
+          cover_letter_tone: updates.coverLetterTone,
+          cover_letter_length: updates.coverLetterLength,
+          cover_letter_focus: updates.coverLetterFocus ? JSON.stringify(updates.coverLetterFocus) : undefined,
+          ai_writing_model: updates.aiWritingModel,
+          ai_writing_reasoning_effort: updates.aiWritingReasoningEffort,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to save AI writing settings");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["settings"] });
+      setAIWritingLocalEdits({});
+      setAIWritingSettingsSaved(true);
+      setTimeout(() => setAIWritingSettingsSaved(false), 3000);
+    },
+    onError: () => toast.error("Failed to save AI writing settings"),
+  });
+
+  const saveAIWritingSettings = () => {
+    aiWritingMutation.mutate({
+      referralTone,
+      referralLength,
+      coverLetterTone,
+      coverLetterLength,
+      coverLetterFocus,
+      aiWritingModel,
+      aiWritingReasoningEffort,
+    });
+  };
 
   // Query for unmatched jobs count
   const { data: unmatchedData } = useQuery<{ count: number }>({
@@ -645,7 +757,28 @@ function SettingsContent() {
             unmatchedCount={unmatchedData?.count ?? 0}
           />
 
+          <AIWritingSection
+            aiWritingSettings={{
+              referralTone,
+              referralLength,
+              coverLetterTone,
+              coverLetterLength,
+              coverLetterFocus,
+              aiWritingModel,
+              aiWritingReasoningEffort,
+            }}
+            onAIWritingSettingsChange={handleAIWritingSettingsChange}
+            aiProvider={aiProvider}
+            onSave={saveAIWritingSettings}
+            isSaving={aiWritingMutation.isPending}
+            hasUnsavedChanges={aiWritingHasUnsavedChanges}
+            settingsSaved={aiWritingSettingsSaved}
+          />
+
           <DangerZone
+            onClearAIContent={() => {
+              clearAIContentMutation.mutate();
+            }}
             onClearMatchData={() => {
               toast.success("Clear match data triggered");
               clearMatchDataMutation.mutate();

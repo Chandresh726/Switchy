@@ -198,11 +198,31 @@ export const matchLogs = sqliteTable("match_logs", {
   status: text("status").notNull(), // "success" | "failed"
   score: real("score"), // Match score if successful
   attemptCount: integer("attempt_count").default(1),
-  errorType: text("error_type"), // "network" | "validation" | "rate_limit" | "json_parse" | "no_object" | "unknown"
+  errorType: text("error_type"),
   errorMessage: text("error_message"),
-  duration: integer("duration"), // milliseconds
+  duration: integer("duration"),
   modelUsed: text("model_used"),
   completedAt: integer("completed_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
+export const aiGeneratedContent = sqliteTable("ai_generated_content", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  jobId: integer("job_id").references(() => jobs.id, { onDelete: "cascade" }).notNull(),
+  type: text("type").notNull(), // "cover_letter" | "referral"
+  content: text("content").notNull(),
+  settingsSnapshot: text("settings_snapshot"), // JSON - stores tone, length, focus used
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
+// AI Generation History - Stores all variants/history of generated content
+export const aiGenerationHistory = sqliteTable("ai_generation_history", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  contentId: integer("content_id").references(() => aiGeneratedContent.id, { onDelete: "cascade" }).notNull(),
+  variant: text("variant").notNull(),
+  userPrompt: text("user_prompt"), // If user asked for modifications
+  parentVariantId: integer("parent_variant_id"), // If derived from another variant
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
 // Relations
@@ -307,6 +327,25 @@ export const matchLogsRelations = relations(matchLogs, ({ one }) => ({
   }),
 }));
 
+export const aiGeneratedContentRelations = relations(aiGeneratedContent, ({ one, many }) => ({
+  job: one(jobs, {
+    fields: [aiGeneratedContent.jobId],
+    references: [jobs.id],
+  }),
+  history: many(aiGenerationHistory),
+}));
+
+export const aiGenerationHistoryRelations = relations(aiGenerationHistory, ({ one }) => ({
+  content: one(aiGeneratedContent, {
+    fields: [aiGenerationHistory.contentId],
+    references: [aiGeneratedContent.id],
+  }),
+  parentVariant: one(aiGenerationHistory, {
+    fields: [aiGenerationHistory.parentVariantId],
+    references: [aiGenerationHistory.id],
+  }),
+}));
+
 // Type exports
 export type Profile = typeof profile.$inferSelect;
 export type NewProfile = typeof profile.$inferInsert;
@@ -336,3 +375,7 @@ export type MatchLog = typeof matchLogs.$inferSelect;
 export type NewMatchLog = typeof matchLogs.$inferInsert;
 export type Resume = typeof resumes.$inferSelect;
 export type NewResume = typeof resumes.$inferInsert;
+export type AIGeneratedContent = typeof aiGeneratedContent.$inferSelect;
+export type NewAIGeneratedContent = typeof aiGeneratedContent.$inferInsert;
+export type AIGenerationHistory = typeof aiGenerationHistory.$inferSelect;
+export type NewAIGenerationHistory = typeof aiGenerationHistory.$inferInsert;

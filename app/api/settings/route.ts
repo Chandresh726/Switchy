@@ -35,6 +35,14 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   scraper_filter_country: "India",
   scraper_filter_city: "",
   scraper_filter_title_keywords: "[]",
+  // AI Writing settings
+  referral_tone: "professional",
+  referral_length: "medium",
+  cover_letter_tone: "professional",
+  cover_letter_length: "medium",
+  cover_letter_focus: '["skills","experience","cultural_fit"]',
+  ai_writing_model: "gemini-3-flash-preview",
+  ai_writing_reasoning_effort: "medium",
 };
 
 // GET - fetch all settings
@@ -255,6 +263,88 @@ export async function POST(request: Request) {
       ) {
         // Allow empty strings
         updates.push({ key, value: String(value || "") });
+      } else if (key === "referral_tone") {
+        if (!["professional", "casual", "friendly", "flexible"].includes(String(value))) {
+          return NextResponse.json(
+            { error: "referral_tone must be one of: professional, casual, friendly, flexible" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: String(value) });
+      } else if (key === "referral_length") {
+        if (!["short", "medium", "long"].includes(String(value))) {
+          return NextResponse.json(
+            { error: "referral_length must be one of: short, medium, long" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: String(value) });
+      } else if (key === "cover_letter_tone") {
+        if (!["professional", "formal", "casual", "flexible"].includes(String(value))) {
+          return NextResponse.json(
+            { error: "cover_letter_tone must be one of: professional, formal, casual, flexible" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: String(value) });
+      } else if (key === "cover_letter_length") {
+        if (!["short", "medium", "long"].includes(String(value))) {
+          return NextResponse.json(
+            { error: "cover_letter_length must be one of: short, medium, long" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: String(value) });
+      } else if (key === "cover_letter_focus") {
+        // Accept either a JSON array string or a single string
+        let normalized: string;
+        if (typeof value === "string") {
+          try {
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed)) {
+              const arr = parsed.filter((v) => typeof v === "string" && ["skills", "experience", "cultural_fit"].includes(v));
+              normalized = JSON.stringify(arr);
+            } else if (["skills", "experience", "cultural_fit", "all"].includes(parsed)) {
+              normalized = parsed;
+            } else {
+              return NextResponse.json(
+                { error: "cover_letter_focus must be an array or one of: skills, experience, cultural_fit, all" },
+                { status: 400 }
+              );
+            }
+          } catch {
+            if (["skills", "experience", "cultural_fit", "all"].includes(value)) {
+              normalized = value;
+            } else {
+              return NextResponse.json(
+                { error: "cover_letter_focus must be one of: skills, experience, cultural_fit, all" },
+                { status: 400 }
+              );
+            }
+          }
+        } else {
+          return NextResponse.json(
+            { error: "cover_letter_focus must be a string or JSON array string" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: normalized });
+      } else if (key === "ai_writing_model") {
+        if (typeof value !== "string" || value.trim().length === 0) {
+          return NextResponse.json(
+            { error: "ai_writing_model must be a non-empty string" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: String(value).trim() });
+      } else if (key === "ai_writing_reasoning_effort") {
+        if (!["low", "medium", "high"].includes(String(value))) {
+          return NextResponse.json(
+            { error: "ai_writing_reasoning_effort must be one of: low, medium, high" },
+            { status: 400 }
+          );
+        }
+        updates.push({ key, value: String(value) });
       }
     }
 
