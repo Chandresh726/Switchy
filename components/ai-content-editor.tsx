@@ -139,9 +139,14 @@ export function AIContentEditor({
     setIsSending(true);
     const prompt = modificationPrompt;
     setModificationPrompt("");
-    await onGenerate(prompt);
-    setIsSending(false);
-    textareaRef.current?.focus();
+    try {
+      await onGenerate(prompt);
+    } catch (error) {
+      console.error("Failed to generate modification:", error);
+    } finally {
+      setIsSending(false);
+      textareaRef.current?.focus();
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

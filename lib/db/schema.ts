@@ -122,7 +122,7 @@ export const jobRequirements = sqliteTable("job_requirements", {
 // Scrape Sessions - Track batch scrape operations
 export const scrapeSessions = sqliteTable("scrape_sessions", {
   id: text("id").primaryKey(), // UUID
-  triggerSource: text("trigger_source").notNull(), // "manual" | "auto_scrape" | "company_refresh"
+  triggerSource: text("trigger_source").notNull(), // "manual" | "scheduler" | "company_refresh"
   status: text("status").notNull().default("in_progress"), // "in_progress" | "completed" | "failed"
   companiesTotal: integer("companies_total").default(0),
   companiesCompleted: integer("companies_completed").default(0),
@@ -138,7 +138,7 @@ export const scrapingLogs = sqliteTable("scraping_logs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   companyId: integer("company_id").references(() => companies.id, { onDelete: "cascade" }),
   sessionId: text("session_id").references(() => scrapeSessions.id, { onDelete: "cascade" }),
-  triggerSource: text("trigger_source"), // "manual" | "auto_scrape" | "company_refresh"
+  triggerSource: text("trigger_source"), // "manual" | "scheduler" | "company_refresh"
   status: text("status").notNull(), // "success", "error", "partial"
   jobsFound: integer("jobs_found").default(0),
   jobsAdded: integer("jobs_added").default(0),
@@ -178,7 +178,7 @@ export const settings = sqliteTable("settings", {
 // Match Sessions - Track batch match operations
 export const matchSessions = sqliteTable("match_sessions", {
   id: text("id").primaryKey(), // UUID
-  triggerSource: text("trigger_source").notNull(), // "manual" | "auto_scrape" | "company_refresh"
+  triggerSource: text("trigger_source").notNull(), // "manual" | "scheduler" | "company_refresh"
   companyId: integer("company_id").references(() => companies.id, { onDelete: "set null" }), // nullable, for company-specific matches
   status: text("status").notNull().default("in_progress"), // "in_progress" | "completed" | "failed"
   jobsTotal: integer("jobs_total").default(0),
@@ -216,12 +216,13 @@ export const aiGeneratedContent = sqliteTable("ai_generated_content", {
 });
 
 // AI Generation History - Stores all variants/history of generated content
+const aiGenHistParentVariantRef = () => aiGenerationHistory.id;
 export const aiGenerationHistory = sqliteTable("ai_generation_history", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   contentId: integer("content_id").references(() => aiGeneratedContent.id, { onDelete: "cascade" }).notNull(),
   variant: text("variant").notNull(),
   userPrompt: text("user_prompt"), // If user asked for modifications
-  parentVariantId: integer("parent_variant_id"), // If derived from another variant
+  parentVariantId: integer("parent_variant_id").references(aiGenHistParentVariantRef, { onDelete: "cascade" }), // If derived from another variant
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 

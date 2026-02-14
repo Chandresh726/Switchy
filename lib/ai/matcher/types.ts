@@ -35,7 +35,7 @@ export type ErrorType =
   | "circuit_breaker"
   | "unknown";
 
-export type TriggerSource = "manual" | "auto_scrape" | "company_refresh";
+export type TriggerSource = "manual" | "scheduler" | "company_refresh";
 
 export type MatchPhase = "queued" | "matching" | "completed";
 

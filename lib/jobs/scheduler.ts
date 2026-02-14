@@ -128,9 +128,60 @@ async function saveLastRun(time: Date): Promise<void> {
   }
 }
 
+const LOCK_TIMEOUT_MS = 5 * 60 * 1000;
+
+async function acquireLock(): Promise<boolean> {
+  try {
+    const now = Date.now();
+    const [existing] = await db
+      .select()
+      .from(settings)
+      .where(eq(settings.key, "scheduler.lock"))
+      .limit(1);
+
+    if (existing && existing.value) {
+      const lockTime = new Date(existing.value).getTime();
+      if (now - lockTime < LOCK_TIMEOUT_MS) {
+        return false;
+      }
+    }
+
+    await db
+      .insert(settings)
+      .values({
+        key: "scheduler.lock",
+        value: new Date().toISOString(),
+      })
+      .onConflictDoUpdate({
+        target: settings.key,
+        set: { value: new Date().toISOString() },
+      });
+
+    return true;
+  } catch (error) {
+    console.error("[Scheduler] Error acquiring lock:", error);
+    return false;
+  }
+}
+
+async function releaseLock(): Promise<void> {
+  try {
+    await db
+      .delete(settings)
+      .where(eq(settings.key, "scheduler.lock"));
+  } catch (error) {
+    console.error("[Scheduler] Error releasing lock:", error);
+  }
+}
+
 export async function runScheduledRefresh(): Promise<void> {
   if (isRunning) {
-    console.log("[Scheduler] Already running, skipping");
+    console.log("[Scheduler] Already running (in-memory), skipping");
+    return;
+  }
+
+  if (!(await acquireLock())) {
+    console.log("[Scheduler] Another instance is running, skipping");
     return;
   }
 
@@ -139,7 +190,7 @@ export async function runScheduledRefresh(): Promise<void> {
   console.log("[Scheduler] Starting scheduled refresh");
 
   try {
-    const result = await fetchJobsForAllCompanies("auto_scrape");
+    const result = await fetchJobsForAllCompanies("scheduler");
 
     await saveLastRun(startTime);
     console.log(
@@ -149,5 +200,6 @@ export async function runScheduledRefresh(): Promise<void> {
     console.error("[Scheduler] Error during refresh:", error);
   } finally {
     isRunning = false;
+    await releaseLock();
   }
 }

@@ -405,7 +405,7 @@ export async function fetchJobsForCompany(
         const matcherStartTime = Date.now();
 
         matchWithTracking(insertedJobIds, {
-          triggerSource: "auto_scrape",
+          triggerSource: "scheduler",
           companyId,
           onProgress: (progress) => {
             console.log(`[Matcher] Progress: ${progress.completed}/${progress.total} jobs (${progress.succeeded} succeeded, ${progress.failed} failed)`);

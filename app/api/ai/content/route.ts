@@ -329,6 +329,8 @@ export async function POST(request: NextRequest) {
         type,
         content: text,
         settingsSnapshot,
+        createdAt: new Date(),
+        updatedAt: new Date(),
       });
       contentId = result.lastInsertRowid as number;
     }
@@ -338,6 +340,7 @@ export async function POST(request: NextRequest) {
       variant: text,
       userPrompt: modificationPrompt || null,
       parentVariantId: null,
+      createdAt: new Date(),
     });
 
     const newHistoryResults = await db.select()
