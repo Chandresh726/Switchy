@@ -175,7 +175,7 @@ export default function CompaniesPage() {
       {view === "list" ? (
         <CompanyList />
       ) : (
-        <div className="flex h-[calc(100vh-12rem)] flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">
+        <div className="flex h-[calc(100vh-9rem)] flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">
           <JsonEditor onSuccess={() => {}} />
         </div>
       )}

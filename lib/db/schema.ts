@@ -175,6 +175,17 @@ export const settings = sqliteTable("settings", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
+// AI Providers - User-configured AI provider instances
+export const aiProviders = sqliteTable("aiProviders", {
+  id: text("id").primaryKey(), // UUID
+  provider: text("provider").notNull(), // "anthropic", "openai", "gemini_api_key", "gemini_cli_oauth", "openrouter", "cerebras", "modal"
+  apiKey: text("api_key"), // Encrypted API key (nullable for OAuth providers)
+  isActive: integer("is_active", { mode: "boolean" }).default(true),
+  isDefault: integer("is_default", { mode: "boolean" }).default(false),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
 // Match Sessions - Track batch match operations
 export const matchSessions = sqliteTable("match_sessions", {
   id: text("id").primaryKey(), // UUID
@@ -382,3 +393,5 @@ export type AIGeneratedContent = typeof aiGeneratedContent.$inferSelect;
 export type NewAIGeneratedContent = typeof aiGeneratedContent.$inferInsert;
 export type AIGenerationHistory = typeof aiGenerationHistory.$inferSelect;
 export type NewAIGenerationHistory = typeof aiGenerationHistory.$inferInsert;
+export type AIProvider = typeof aiProviders.$inferSelect;
+export type NewAIProvider = typeof aiProviders.$inferInsert;

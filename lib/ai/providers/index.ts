@@ -29,3 +29,5 @@ export * from "./openrouter";
 export * from "./cerebras";
 export * from "./gemini-cli";
 export * from "./modal";
+export * from "./models";
+export * from "./metadata";

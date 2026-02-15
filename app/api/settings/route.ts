@@ -7,8 +7,10 @@ import { restartScheduler } from "@/lib/jobs/scheduler";
 
 const DEFAULT_SETTINGS: Record<string, string> = {
   matcher_model: "gemini-3-flash-preview",
-  resume_parser_model: "gemini-3-flash-preview",
+  matcher_provider_id: "",
   matcher_reasoning_effort: "medium",
+  resume_parser_model: "gemini-3-flash-preview",
+  resume_parser_provider_id: "",
   resume_parser_reasoning_effort: "medium",
   matcher_bulk_enabled: "true",
   matcher_batch_size: "2",
@@ -22,26 +24,16 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   matcher_circuit_breaker_reset_timeout: "60000",
   matcher_auto_match_after_scrape: "true",
   scheduler_cron: "0 */6 * * *",
-  ai_provider: "gemini_api_key",
-  anthropic_api_key: "",
-  google_auth_mode: "api_key",
-  google_api_key: "",
-  google_client_id: "",
-  google_client_secret: "",
-  openrouter_api_key: "",
-  cerebras_api_key: "",
-  openai_api_key: "",
-  modal_api_key: "",
   scraper_filter_country: "India",
   scraper_filter_city: "",
   scraper_filter_title_keywords: "[]",
-  // AI Writing settings
   referral_tone: "professional",
   referral_length: "medium",
   cover_letter_tone: "professional",
   cover_letter_length: "medium",
   cover_letter_focus: '["skills","experience","cultural_fit"]',
   ai_writing_model: "gemini-3-flash-preview",
+  ai_writing_provider_id: "",
   ai_writing_reasoning_effort: "medium",
 };
 
@@ -196,31 +188,6 @@ export async function POST(request: Request) {
           );
         }
         updates.push({ key, value: String(num) });
-      } else if (key === "ai_provider") {
-        if (
-          value !== "anthropic" &&
-          value !== "gemini_api_key" &&
-          value !== "gemini_cli_oauth" &&
-          value !== "openrouter" &&
-          value !== "cerebras" &&
-          value !== "openai" &&
-          value !== "google" &&
-          value !== "modal"
-        ) {
-          return NextResponse.json(
-            { error: "ai_provider must be a supported provider" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(value) });
-      } else if (key === "google_auth_mode") {
-        if (value !== "api_key" && value !== "oauth") {
-          return NextResponse.json(
-            { error: "google_auth_mode must be either 'api_key' or 'oauth'" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(value) });
       } else if (key === "scraper_filter_country" || key === "scraper_filter_city") {
         // Allow any string value for location filters
         updates.push({ key, value: String(value || "") });
@@ -249,20 +216,6 @@ export async function POST(request: Request) {
           );
         }
         updates.push({ key, value: normalized });
-      } else if (
-        [
-          "anthropic_api_key",
-          "google_api_key",
-          "google_client_id",
-          "google_client_secret",
-          "openrouter_api_key",
-          "cerebras_api_key",
-          "openai_api_key",
-          "modal_api_key",
-        ].includes(key)
-      ) {
-        // Allow empty strings
-        updates.push({ key, value: String(value || "") });
       } else if (key === "referral_tone") {
         if (!["professional", "casual", "friendly", "flexible"].includes(String(value))) {
           return NextResponse.json(

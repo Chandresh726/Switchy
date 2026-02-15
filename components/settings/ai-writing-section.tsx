@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -8,7 +8,10 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { FileText, MessageCircle, Wand2, Save, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { REASONING_EFFORT_OPTIONS, ReasoningEffort, getModelsForProvider, getDefaultModelForProvider, AIProvider } from "./constants";
+import { getDefaultModelForProvider, getModelsForProvider } from "@/lib/ai/providers/models";
+import { REASONING_EFFORT_OPTIONS } from "@/lib/ai/providers/metadata";
+import type { ReasoningEffort, AIProvider } from "@/lib/ai/providers/types";
+import type { Provider } from "@/lib/types";
 
 export interface AIWritingSettings {
   referralTone: string;
@@ -17,13 +20,17 @@ export interface AIWritingSettings {
   coverLetterLength: string;
   coverLetterFocus: string[];
   aiWritingModel: string;
+  aiWritingProviderId: string;
   aiWritingReasoningEffort: ReasoningEffort;
 }
 
 interface AIWritingSectionProps {
+  availableProviders: Provider[];
+  hasProviders: boolean;
+  aiWritingProviderId: string;
+  onAIWritingProviderIdChange: (value: string) => void;
   aiWritingSettings: AIWritingSettings;
   onAIWritingSettingsChange: (settings: Partial<AIWritingSettings>) => void;
-  aiProvider: AIProvider;
   onSave: () => void;
   isSaving: boolean;
   hasUnsavedChanges: boolean;
@@ -65,19 +72,27 @@ const COVER_LETTER_FOCUS_OPTIONS = [
 const DEFAULT_FOCUS = ["skills", "experience", "cultural_fit"];
 
 export function AIWritingSection({
+  availableProviders,
+  hasProviders,
+  aiWritingProviderId,
+  onAIWritingProviderIdChange,
   aiWritingSettings,
   onAIWritingSettingsChange,
-  aiProvider,
   onSave,
   isSaving,
   hasUnsavedChanges,
   settingsSaved,
 }: AIWritingSectionProps) {
-  const provider = aiProvider || "anthropic";
-  const availableModels = getModelsForProvider(provider);
-  const defaultModel = getDefaultModelForProvider(provider);
+  const currentProvider = availableProviders.find(p => p.id === aiWritingProviderId);
+  const providerType = currentProvider?.provider as AIProvider | undefined;
+  const models = useMemo(() => {
+    if (!providerType) return [];
+    return getModelsForProvider(providerType);
+  }, [providerType]);
+
+  const defaultModel = getDefaultModelForProvider(providerType || "anthropic");
   const currentModel = aiWritingSettings.aiWritingModel || defaultModel;
-  const supportsReasoning = availableModels.find(m => m.id === currentModel)?.supportsReasoning ?? false;
+  const supportsReasoning = models.find(m => m.modelId === currentModel)?.supportsReasoning ?? false;
 
   useEffect(() => {
     if (!aiWritingSettings.aiWritingModel && defaultModel) {
@@ -85,7 +100,7 @@ export function AIWritingSection({
     }
     // Only run when provider changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiProvider]);
+  }, [providerType]);
 
   const toggleFocus = (value: string) => {
     const current = aiWritingSettings.coverLetterFocus || [];
@@ -112,53 +127,67 @@ export function AIWritingSection({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="space-y-3">
-          <Label>AI Model</Label>
-          <div className="flex gap-2">
-            <Select 
-              value={currentModel} 
-              onValueChange={(value) => onAIWritingSettingsChange({ aiWritingModel: value })}
-            >
-              <SelectTrigger className="flex-1 bg-zinc-950/50 border-zinc-800">
-                <SelectValue placeholder="Select model" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableModels.map((model) => (
-                  <SelectItem key={model.id} value={model.id}>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{model.label}</span>
-                      <span className="text-zinc-600 text-xs">•</span>
-                      <span className="text-xs text-zinc-400">{model.description}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {supportsReasoning && (
-              <Select 
-                value={aiWritingSettings.aiWritingReasoningEffort || "medium"} 
-                onValueChange={(value) => onAIWritingSettingsChange({ aiWritingReasoningEffort: value as ReasoningEffort })}
-              >
-                <SelectTrigger className="w-32 bg-zinc-950/50 border-zinc-800">
-                  <SelectValue placeholder="Effort" />
-                </SelectTrigger>
-                <SelectContent>
-                  {REASONING_EFFORT_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-          <p className="text-xs text-zinc-500">
-            Model used for generating referral messages and cover letters.
-            {supportsReasoning && " Reasoning effort controls the depth of AI analysis."}
-          </p>
-        </div>
+        {hasProviders ? (
+          <>
+            <div className="space-y-3">
+              <Label>AI Provider & Model</Label>
+              <div className="flex gap-2">
+                <Select value={aiWritingProviderId} onValueChange={onAIWritingProviderIdChange}>
+                  <SelectTrigger className="w-[180px] bg-zinc-950/50 border-zinc-800">
+                    <SelectValue placeholder="Select provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableProviders.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select 
+                  value={currentModel} 
+                  onValueChange={(value) => onAIWritingSettingsChange({ aiWritingModel: value })}
+                >
+                  <SelectTrigger className="flex-1 bg-zinc-950/50 border-zinc-800">
+                    <SelectValue placeholder="Select model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {models.length === 0 ? (
+                      <SelectItem value="none" disabled>Select a provider first</SelectItem>
+                    ) : (
+                      models.map((model) => (
+                        <SelectItem key={model.modelId} value={model.modelId}>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{model.label}</span>
+                            <span className="text-zinc-600 text-xs">•</span>
+                            <span className="text-xs text-zinc-400">{model.description}</span>
+                          </div>
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {supportsReasoning && (
+                  <Select 
+                    value={aiWritingSettings.aiWritingReasoningEffort || "medium"} 
+                    onValueChange={(value) => onAIWritingSettingsChange({ aiWritingReasoningEffort: value as ReasoningEffort })}
+                  >
+                    <SelectTrigger className="w-32 bg-zinc-950/50 border-zinc-800">
+                      <SelectValue placeholder="Effort" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {REASONING_EFFORT_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            </div>
 
-        <Separator className="bg-zinc-800" />
+            <Separator className="bg-zinc-800" />
 
         <div className="space-y-4">
           <div className="flex items-center gap-2">
@@ -282,10 +311,20 @@ export function AIWritingSection({
               </div>
             </div>
           </div>
-        </CardContent>
+          </>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed border-zinc-800 bg-zinc-950/20">
+            <Wand2 className="h-10 w-10 text-zinc-600 mb-3" />
+            <p className="text-zinc-400 text-sm font-medium">No AI Provider configured</p>
+            <p className="text-zinc-500 text-xs mt-1">Add an AI Provider above to use AI Writing</p>
+          </div>
+        )}
+      </CardContent>
       <CardFooter className="flex items-center justify-between border-t border-zinc-800 bg-zinc-900/50 px-6 py-4 rounded-b-xl">
         <p className="text-xs text-zinc-500">
-          {settingsSaved ? (
+          {!hasProviders ? (
+            "Add a provider to configure AI writing"
+          ) : settingsSaved ? (
             <span className="flex items-center text-emerald-400 gap-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
               Changes saved successfully
@@ -298,7 +337,7 @@ export function AIWritingSection({
         </p>
         <Button
           onClick={onSave}
-          disabled={isSaving || !hasUnsavedChanges}
+          disabled={isSaving || !hasUnsavedChanges || !hasProviders}
           className="bg-emerald-600 hover:bg-emerald-500 text-white min-w-[120px]"
         >
           {isSaving ? (

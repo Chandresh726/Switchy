@@ -1,1 +1,0 @@
-ALTER TABLE `jobs` ADD `description_format` text DEFAULT 'plain' NOT NULL;

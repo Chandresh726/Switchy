@@ -22,6 +22,7 @@ interface Company {
 export function JsonEditor({ onSuccess }: { onSuccess: () => void }) {
   const queryClient = useQueryClient();
   const [jsonValue, setJsonValue] = useState<string>("");
+  const [originalValue, setOriginalValue] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
   const { data: companies, isLoading: isLoadingCompanies } = useQuery<Company[]>({
@@ -46,9 +47,13 @@ export function JsonEditor({ onSuccess }: { onSuccess: () => void }) {
           isActive: isActive !== undefined ? isActive : true,
         })
       );
-      setJsonValue(JSON.stringify(editableCompanies, null, 2));
+      const jsonString = JSON.stringify(editableCompanies, null, 2);
+      setJsonValue(jsonString);
+      setOriginalValue(jsonString);
     }
   }, [companies]);
+
+  const hasChanges = jsonValue !== originalValue;
 
   const saveMutation = useMutation({
     mutationFn: async (data: Company[]) => {
@@ -65,6 +70,7 @@ export function JsonEditor({ onSuccess }: { onSuccess: () => void }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
+      setOriginalValue(jsonValue);
       toast.success("Companies updated successfully");
       onSuccess();
     },
@@ -112,7 +118,7 @@ export function JsonEditor({ onSuccess }: { onSuccess: () => void }) {
         </p>
         <Button
           onClick={handleSave}
-          disabled={saveMutation.isPending}
+          disabled={saveMutation.isPending || !hasChanges}
           size="sm"
           className="h-8"
         >

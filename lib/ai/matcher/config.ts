@@ -2,7 +2,7 @@ import { cache } from "react";
 import { inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
-import { getCurrentProvider } from "@/lib/ai/client";
+import { getProviderById } from "@/lib/ai/client";
 import {
   type MatcherConfig,
   DEFAULT_MATCHER_CONFIG,
@@ -11,6 +11,7 @@ import {
 
 const MATCHER_SETTING_KEYS = [
   "matcher_model",
+  "matcher_provider_id",
   "matcher_reasoning_effort",
   "matcher_bulk_enabled",
   "matcher_batch_size",
@@ -37,7 +38,7 @@ function parseNumber(value: string | null | undefined, defaultValue: number): nu
   return isNaN(parsed) ? defaultValue : parsed;
 }
 
-export const getMatcherConfig = cache(async (): Promise<MatcherConfig> => {
+export const getMatcherConfig = cache(async (): Promise<MatcherConfig & { providerId?: string }> => {
   const dbSettings = await db
     .select()
     .from(settings)
@@ -45,12 +46,20 @@ export const getMatcherConfig = cache(async (): Promise<MatcherConfig> => {
 
   const settingsMap = new Map(dbSettings.map((s) => [s.key, s.value]));
 
-  const currentProvider = await getCurrentProvider();
-  const providerDefaults = currentProvider
-    ? PROVIDER_DEFAULTS[currentProvider] || {}
-    : {};
+  const storedProviderId = settingsMap.get("matcher_provider_id");
+  let currentProvider = "anthropic";
+  
+  if (storedProviderId) {
+    const provider = await getProviderById(storedProviderId);
+    if (provider) {
+      currentProvider = provider.provider;
+    }
+  }
+  
+  const providerDefaults = PROVIDER_DEFAULTS[currentProvider] || {};
 
   return {
+    providerId: storedProviderId || undefined,
     model: settingsMap.get("matcher_model") || DEFAULT_MATCHER_CONFIG.model,
     reasoningEffort:
       settingsMap.get("matcher_reasoning_effort") ||
