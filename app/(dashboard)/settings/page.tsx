@@ -4,24 +4,29 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 
-import { AIProviderSection } from "@/components/settings/ai-provider-section";
 import { MatcherSection } from "@/components/settings/matcher-section";
 import { ScraperSettings } from "@/components/settings/scraper-settings";
 import { DangerZone } from "@/components/settings/danger-zone";
 import { ResumeParserSection } from "@/components/settings/resume-parser-section";
 import { SystemInfo } from "@/components/settings/system-info";
 import { AIWritingSection, type AIWritingSettings } from "@/components/settings/ai-writing-section";
-import {
-  AIProvider,
-  getDefaultModelForProvider,
-  getDefaultReasoningEffort,
-  ReasoningEffort
-} from "@/components/settings/constants";
+import { AIProvidersManager } from "@/components/settings/ai-providers-manager";
+import { Skeleton } from "@/components/ui/skeleton";
+import { getProviderMetadata } from "@/lib/ai/providers/metadata";
+import { getDefaultModelForProvider, getModelsForProvider } from "@/lib/ai/providers/models";
+import type { AIProvider } from "@/lib/ai/providers/types";
+
+type ReasoningEffort = "low" | "medium" | "high";
+
+const getDefaultReasoningEffort = (): ReasoningEffort => "medium";
 
 interface MatcherSettings {
   matcher_model: string;
+  matcher_provider_id: string;
   resume_parser_model: string;
+  resume_parser_provider_id: string;
   matcher_reasoning_effort: string;
   resume_parser_reasoning_effort: string;
   matcher_bulk_enabled: string;
@@ -40,9 +45,6 @@ interface MatcherSettings {
   anthropic_api_key?: string;
   google_auth_mode?: string;
   google_api_key?: string;
-  google_client_id?: string;
-  google_client_secret?: string;
-  google_oauth_tokens?: string;
   openrouter_api_key?: string;
   cerebras_api_key?: string;
   openai_api_key?: string;
@@ -54,11 +56,13 @@ interface MatcherSettings {
   cover_letter_length?: string;
   cover_letter_focus?: string;
   ai_writing_model?: string;
+  ai_writing_provider_id?: string;
   ai_writing_reasoning_effort?: string;
 }
 
 interface MatcherLocalEdits {
   matcherModel?: string;
+  matcherProviderId?: string;
   matcherReasoningEffort?: ReasoningEffort;
   bulkEnabled?: boolean;
   serializeOperations?: boolean;
@@ -72,19 +76,8 @@ interface MatcherLocalEdits {
 
 interface ResumeParserLocalEdits {
   resumeParserModel?: string;
+  resumeParserProviderId?: string;
   resumeParserReasoningEffort?: ReasoningEffort;
-}
-
-interface ProviderLocalEdits {
-  aiProvider?: string;
-  anthropicApiKey?: string;
-  googleApiKey?: string;
-  openaiApiKey?: string;
-  openrouterApiKey?: string;
-  cerebrasApiKey?: string;
-  modalApiKey?: string;
-  googleClientId?: string;
-  googleClientSecret?: string;
 }
 
 interface ScraperLocalEdits {
@@ -101,7 +94,112 @@ interface AIWritingLocalEdits {
   coverLetterLength?: string;
   coverLetterFocus?: string[];
   aiWritingModel?: string;
+  aiWritingProviderId?: string;
   aiWritingReasoningEffort?: ReasoningEffort;
+}
+
+function SettingsPageSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div>
+        <Skeleton className="h-8 w-32" />
+        <Skeleton className="mt-1 h-4 w-72" />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Skeleton className="h-5 w-5 rounded" />
+              <Skeleton className="h-5 w-28" />
+            </div>
+            <Skeleton className="h-4 w-64 mb-4" />
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-zinc-500" />
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Skeleton className="h-5 w-5 rounded" />
+              <Skeleton className="h-5 w-36" />
+            </div>
+            <Skeleton className="h-4 w-80 mb-6" />
+            <div className="space-y-4">
+              <Skeleton className="h-10 w-full" />
+              <div className="flex gap-2">
+                <Skeleton className="h-10 w-48" />
+                <Skeleton className="h-10 flex-1" />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Skeleton className="h-5 w-5 rounded" />
+              <Skeleton className="h-5 w-24" />
+            </div>
+            <Skeleton className="h-4 w-72 mb-6" />
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Skeleton className="h-5 w-5 rounded" />
+              <Skeleton className="h-5 w-28" />
+            </div>
+            <div className="space-y-3">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Skeleton className="h-5 w-5 rounded" />
+              <Skeleton className="h-5 w-28" />
+            </div>
+            <div className="space-y-4">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Skeleton className="h-5 w-5 rounded" />
+              <Skeleton className="h-5 w-28" />
+            </div>
+            <div className="space-y-4">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Skeleton className="h-5 w-5 rounded" />
+              <Skeleton className="h-5 w-20" />
+            </div>
+            <div className="space-y-3">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-4 w-5/6" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function SettingsContent() {
@@ -111,7 +209,6 @@ function SettingsContent() {
 
   const [matcherLocalEdits, setMatcherLocalEdits] = useState<MatcherLocalEdits>({});
   const [resumeParserLocalEdits, setResumeParserLocalEdits] = useState<ResumeParserLocalEdits>({});
-  const [providerLocalEdits, setProviderLocalEdits] = useState<ProviderLocalEdits>({});
   const [scraperLocalEdits, setScraperLocalEdits] = useState<ScraperLocalEdits>({});
   const [aiWritingLocalEdits, setAIWritingLocalEdits] = useState<AIWritingLocalEdits>({});
   const [matcherSettingsSaved, setMatcherSettingsSaved] = useState(false);
@@ -140,7 +237,7 @@ function SettingsContent() {
     }
   }, [searchParams, router, queryClient]);
 
-  const { data: settings } = useQuery<MatcherSettings>({
+  const { data: settings, isLoading: isSettingsLoading } = useQuery<MatcherSettings>({
     queryKey: ["settings"],
     queryFn: async () => {
       const res = await fetch("/api/settings");
@@ -149,31 +246,130 @@ function SettingsContent() {
     },
   });
 
-  const derivedValues = useMemo(() => {
-    const storedProvider = settings?.ai_provider as AIProvider | undefined;
-    const storedGoogleMode = settings?.google_auth_mode;
-    const normalizedProvider =
-      storedProvider === "google"
-        ? storedGoogleMode === "oauth"
-          ? "gemini_cli_oauth"
-          : "gemini_api_key"
-        : storedProvider;
-    const currentProvider: AIProvider =
-      ((providerLocalEdits.aiProvider as AIProvider) ??
-        normalizedProvider ??
-        "anthropic");
+  interface Provider {
+    id: string;
+    provider: string;
+    isActive: boolean;
+    hasApiKey: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+  }
 
-    const defaultModel = getDefaultModelForProvider(currentProvider);
-    const serverModel = settings?.matcher_model || defaultModel;
-    const serverResumeModel = settings?.resume_parser_model || defaultModel;
-    const serverMatcherReasoningEffort = (settings?.matcher_reasoning_effort as ReasoningEffort) || getDefaultReasoningEffort();
-    const serverResumeParserReasoningEffort = (settings?.resume_parser_reasoning_effort as ReasoningEffort) || getDefaultReasoningEffort();
+  const { data: providers = [], isLoading: isProvidersLoading } = useQuery<Provider[]>({
+    queryKey: ["providers"],
+    queryFn: async () => {
+      const res = await fetch("/api/providers");
+      if (!res.ok) throw new Error("Failed to fetch providers");
+      return res.json();
+    },
+  });
+
+  const isInitialLoading = isSettingsLoading || isProvidersLoading;
+
+  const addProviderMutation = useMutation({
+    mutationFn: async ({ provider, apiKey }: { provider: string; apiKey?: string }) => {
+      const res = await fetch("/api/providers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, apiKey }),
+      });
+      if (!res.ok) throw new Error("Failed to add provider");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["providers"] });
+      toast.success("Provider added successfully");
+    },
+    onError: () => toast.error("Failed to add provider"),
+  });
+
+  const deleteProviderMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete provider");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["providers"] });
+      toast.success("Provider deleted successfully");
+    },
+    onError: () => toast.error("Failed to delete provider"),
+  });
+
+  const updateProviderApiKeyMutation = useMutation({
+    mutationFn: async ({ id, apiKey }: { id: string; apiKey?: string }) => {
+      const res = await fetch(`/api/providers/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey }),
+      });
+      if (!res.ok) throw new Error("Failed to update provider API key");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["providers"] });
+      toast.success("Provider API key updated");
+    },
+    onError: () => toast.error("Failed to update provider API key"),
+  });
+
+  const derivedValues = useMemo(() => {
+    const hasProviders = providers.length > 0;
+    const firstProviderId = providers[0]?.id || "";
+    const firstProviderType = hasProviders ? providers[0]?.provider as AIProvider : "anthropic";
+
+    const getProviderType = (providerId: string) => {
+      if (!providerId) return firstProviderType;
+      const provider = providers.find(p => p.id === providerId);
+      return provider ? provider.provider as AIProvider : firstProviderType;
+    };
+
+    const getDefaultForProvider = (providerId: string) => {
+      const providerType = getProviderType(providerId);
+      return getDefaultModelForProvider(providerType);
+    };
+
+    const isValidModelForProvider = (modelId: string, providerId: string) => {
+      const providerType = getProviderType(providerId);
+      const models = getModelsForProvider(providerType);
+      return models.some((m) => m.modelId === modelId);
+    };
+
+    const resolvedMatcherProviderId = hasProviders 
+      ? (matcherLocalEdits.matcherProviderId || settings?.matcher_provider_id || firstProviderId) 
+      : "";
+    const resolvedResumeParserProviderId = hasProviders 
+      ? (resumeParserLocalEdits.resumeParserProviderId || settings?.resume_parser_provider_id || firstProviderId) 
+      : "";
+    const resolvedAIWritingProviderId = hasProviders 
+      ? (aiWritingLocalEdits.aiWritingProviderId || settings?.ai_writing_provider_id || firstProviderId) 
+      : "";
+
+    const getValidModelOrDefault = (
+      localEdit: string | undefined, 
+      savedModel: string | undefined, 
+      providerId: string
+    ) => {
+      if (localEdit) return localEdit;
+      if (savedModel && isValidModelForProvider(savedModel, providerId)) return savedModel;
+      return hasProviders ? getDefaultForProvider(providerId) : "";
+    };
 
     return {
-      matcherModel: matcherLocalEdits.matcherModel ?? serverModel,
-      resumeParserModel: resumeParserLocalEdits.resumeParserModel ?? serverResumeModel,
-      matcherReasoningEffort: matcherLocalEdits.matcherReasoningEffort ?? serverMatcherReasoningEffort,
-      resumeParserReasoningEffort: resumeParserLocalEdits.resumeParserReasoningEffort ?? serverResumeParserReasoningEffort,
+      matcherModel: getValidModelOrDefault(
+        matcherLocalEdits.matcherModel,
+        settings?.matcher_model,
+        resolvedMatcherProviderId
+      ),
+      matcherProviderId: resolvedMatcherProviderId,
+      resumeParserModel: getValidModelOrDefault(
+        resumeParserLocalEdits.resumeParserModel,
+        settings?.resume_parser_model,
+        resolvedResumeParserProviderId
+      ),
+      resumeParserProviderId: resolvedResumeParserProviderId,
+      matcherReasoningEffort: matcherLocalEdits.matcherReasoningEffort ?? ((settings?.matcher_reasoning_effort as ReasoningEffort) || getDefaultReasoningEffort()),
+      resumeParserReasoningEffort: resumeParserLocalEdits.resumeParserReasoningEffort ?? ((settings?.resume_parser_reasoning_effort as ReasoningEffort) || getDefaultReasoningEffort()),
       bulkEnabled: matcherLocalEdits.bulkEnabled ?? (settings?.matcher_bulk_enabled !== "false"),
       serializeOperations: matcherLocalEdits.serializeOperations ?? (settings?.matcher_serialize_operations === "true"),
       batchSize: matcherLocalEdits.batchSize ?? parseInt(settings?.matcher_batch_size || "2", 10),
@@ -204,16 +400,13 @@ function SettingsContent() {
           return [];
         }
       })(),
-      // Provider
-      aiProvider: currentProvider,
-      anthropicApiKey: providerLocalEdits.anthropicApiKey ?? (settings?.anthropic_api_key || ""),
-      googleApiKey: providerLocalEdits.googleApiKey ?? (settings?.google_api_key || ""),
-      openaiApiKey: providerLocalEdits.openaiApiKey ?? (settings?.openai_api_key || ""),
-      openrouterApiKey: providerLocalEdits.openrouterApiKey ?? (settings?.openrouter_api_key || ""),
-      cerebrasApiKey: providerLocalEdits.cerebrasApiKey ?? (settings?.cerebras_api_key || ""),
-      modalApiKey: providerLocalEdits.modalApiKey ?? (settings?.modal_api_key || ""),
       // AI Writing
-      aiWritingModel: aiWritingLocalEdits.aiWritingModel ?? (settings?.ai_writing_model || defaultModel),
+      aiWritingModel: getValidModelOrDefault(
+        aiWritingLocalEdits.aiWritingModel,
+        settings?.ai_writing_model,
+        resolvedAIWritingProviderId
+      ),
+      aiWritingProviderId: resolvedAIWritingProviderId,
       aiWritingReasoningEffort: aiWritingLocalEdits.aiWritingReasoningEffort ?? ((settings?.ai_writing_reasoning_effort as ReasoningEffort) || getDefaultReasoningEffort()),
       referralTone: aiWritingLocalEdits.referralTone ?? (settings?.referral_tone || "professional"),
       referralLength: aiWritingLocalEdits.referralLength ?? (settings?.referral_length || "medium"),
@@ -230,13 +423,12 @@ function SettingsContent() {
         }
       })(),
     };
-  }, [settings, matcherLocalEdits, resumeParserLocalEdits, providerLocalEdits, scraperLocalEdits, aiWritingLocalEdits]);
+  }, [settings, matcherLocalEdits, resumeParserLocalEdits, scraperLocalEdits, aiWritingLocalEdits, providers]);
 
   const {
-    matcherModel, resumeParserModel, matcherReasoningEffort, resumeParserReasoningEffort, bulkEnabled, serializeOperations, batchSize, maxRetries, concurrencyLimit, timeoutMs,
-    circuitBreakerThreshold, autoMatchAfterScrape, schedulerCron, filterCountry, filterCity, filterTitleKeywords, aiProvider, anthropicApiKey,
-    googleApiKey, openaiApiKey, openrouterApiKey, cerebrasApiKey, modalApiKey,
-    aiWritingModel, aiWritingReasoningEffort, referralTone, referralLength,
+    matcherModel, matcherProviderId, resumeParserModel, resumeParserProviderId, matcherReasoningEffort, resumeParserReasoningEffort, bulkEnabled, serializeOperations, batchSize, maxRetries, concurrencyLimit, timeoutMs,
+    circuitBreakerThreshold, autoMatchAfterScrape, schedulerCron, filterCountry, filterCity, filterTitleKeywords,
+    aiWritingModel, aiWritingProviderId, aiWritingReasoningEffort, referralTone, referralLength,
     coverLetterTone, coverLetterLength, coverLetterFocus
   } = derivedValues;
 
@@ -269,20 +461,14 @@ function SettingsContent() {
   // Setters for Matcher settings
   const setMatcherModel = (value: string) => setMatcherLocalEdits(prev => ({ ...prev, matcherModel: value }));
   const setMatcherReasoningEffort = (value: ReasoningEffort) => setMatcherLocalEdits(prev => ({ ...prev, matcherReasoningEffort: value }));
-  const setBulkEnabled = (value: boolean) => setMatcherLocalEdits(prev => ({ ...prev, bulkEnabled: value }));
-  const setSerializeOperations = (value: boolean) => setMatcherLocalEdits(prev => ({ ...prev, serializeOperations: value }));
-  const setBatchSize = (value: number) =>
-    setMatcherLocalEdits((prev) => ({ ...prev, batchSize: value }));
-  const setMaxRetries = (value: number) =>
-    setMatcherLocalEdits((prev) => ({ ...prev, maxRetries: value }));
-  const setConcurrencyLimit = (value: number) =>
-    setMatcherLocalEdits((prev) => ({ ...prev, concurrencyLimit: value }));
-  const setTimeoutMs = (value: number) =>
-    setMatcherLocalEdits((prev) => ({ ...prev, timeoutMs: value }));
-  const setCircuitBreakerThreshold = (value: number) =>
-    setMatcherLocalEdits((prev) => ({ ...prev, circuitBreakerThreshold: value }));
   const setAutoMatchAfterScrape = (value: boolean) =>
     setMatcherLocalEdits((prev) => ({ ...prev, autoMatchAfterScrape: value }));
+  const setBulkEnabled = (value: boolean) => setMatcherLocalEdits(prev => ({ ...prev, bulkEnabled: value }));
+  const setBatchSize = (value: number) => setMatcherLocalEdits(prev => ({ ...prev, batchSize: value }));
+  const setMaxRetries = (value: number) => setMatcherLocalEdits(prev => ({ ...prev, maxRetries: value }));
+  const setConcurrencyLimit = (value: number) => setMatcherLocalEdits(prev => ({ ...prev, concurrencyLimit: value }));
+  const setTimeoutMs = (value: number) => setMatcherLocalEdits(prev => ({ ...prev, timeoutMs: value }));
+  const setCircuitBreakerThreshold = (value: number) => setMatcherLocalEdits(prev => ({ ...prev, circuitBreakerThreshold: value }));
 
   // Auto-save setters for Resume Parser (independent from Matcher)
   const setResumeParserModel = (value: string) =>
@@ -301,116 +487,6 @@ function SettingsContent() {
   // AI Writing settings handler
   const handleAIWritingSettingsChange = (updates: Partial<AIWritingSettings>) => {
     setAIWritingLocalEdits((prev) => ({ ...prev, ...updates }));
-  };
-
-  const providerSettingsMutation = useMutation({
-    mutationFn: async (updates: Partial<MatcherSettings>) => {
-      const res = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
-      });
-      if (!res.ok) throw new Error("Failed to save AI provider settings");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
-      setProviderLocalEdits((prev) => ({
-        ...prev,
-        aiProvider: undefined,
-        anthropicApiKey: undefined,
-        googleApiKey: undefined,
-        openaiApiKey: undefined,
-        openrouterApiKey: undefined,
-        cerebrasApiKey: undefined,
-        modalApiKey: undefined,
-      }));
-      // Clear local model edits since they've been persisted with the provider change
-      setMatcherLocalEdits((prev) => ({
-        ...prev,
-        matcherModel: undefined,
-        matcherReasoningEffort: undefined,
-      }));
-      setResumeParserLocalEdits({});
-    },
-    onError: () => {
-      toast.error("Failed to save AI provider settings");
-    },
-  });
-
-  const setAiProvider = (value: string) => {
-    setProviderLocalEdits((prev) => ({ ...prev, aiProvider: value }));
-
-    // When provider changes, update models to the new provider's defaults
-    const newProvider = value as AIProvider;
-    const defaultModel = getDefaultModelForProvider(newProvider);
-    const defaultReasoningEffort = getDefaultReasoningEffort();
-    setMatcherLocalEdits(prev => ({
-      ...prev,
-      matcherModel: defaultModel,
-      matcherReasoningEffort: defaultReasoningEffort,
-    }));
-    setResumeParserLocalEdits(prev => ({
-      ...prev,
-      resumeParserModel: defaultModel,
-      resumeParserReasoningEffort: defaultReasoningEffort,
-    }));
-
-    providerSettingsMutation.mutate({
-      ai_provider: value,
-      matcher_model: defaultModel,
-      resume_parser_model: defaultModel,
-      matcher_reasoning_effort: defaultReasoningEffort,
-      resume_parser_reasoning_effort: defaultReasoningEffort,
-    });
-  };
-
-  const setAnthropicApiKey = (value: string) => {
-    setProviderLocalEdits(prev => ({ ...prev, anthropicApiKey: value }));
-  };
-
-  const saveAnthropicApiKey = () => {
-    providerSettingsMutation.mutate({ anthropic_api_key: anthropicApiKey });
-  };
-
-  const setGoogleApiKey = (value: string) => {
-    setProviderLocalEdits(prev => ({ ...prev, googleApiKey: value }));
-  };
-
-  const saveGoogleApiKey = () => {
-    providerSettingsMutation.mutate({ google_api_key: googleApiKey });
-  };
-
-  const setOpenaiApiKey = (value: string) => {
-    setProviderLocalEdits(prev => ({ ...prev, openaiApiKey: value }));
-  };
-
-  const saveOpenaiApiKey = () => {
-    providerSettingsMutation.mutate({ openai_api_key: openaiApiKey });
-  };
-
-  const setOpenrouterApiKey = (value: string) => {
-    setProviderLocalEdits(prev => ({ ...prev, openrouterApiKey: value }));
-  };
-
-  const saveOpenrouterApiKey = () => {
-    providerSettingsMutation.mutate({ openrouter_api_key: openrouterApiKey });
-  };
-
-  const setCerebrasApiKey = (value: string) => {
-    setProviderLocalEdits(prev => ({ ...prev, cerebrasApiKey: value }));
-  };
-
-  const saveCerebrasApiKey = () => {
-    providerSettingsMutation.mutate({ cerebras_api_key: cerebrasApiKey });
-  };
-
-  const setModalApiKey = (value: string) => {
-    setProviderLocalEdits(prev => ({ ...prev, modalApiKey: value }));
-  };
-
-  const saveModalApiKey = () => {
-    providerSettingsMutation.mutate({ modal_api_key: modalApiKey });
   };
 
   const refreshMutation = useMutation({
@@ -469,7 +545,7 @@ function SettingsContent() {
   });
 
   const resumeParserMutation = useMutation({
-    mutationFn: async (updates: { resume_parser_model?: string; resume_parser_reasoning_effort?: ReasoningEffort }) => {
+    mutationFn: async (updates: { resume_parser_model?: string; resume_parser_provider_id?: string; resume_parser_reasoning_effort?: ReasoningEffort }) => {
       const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -489,6 +565,7 @@ function SettingsContent() {
   useEffect(() => {
     if (
       resumeParserLocalEdits.resumeParserModel === undefined &&
+      resumeParserLocalEdits.resumeParserProviderId === undefined &&
       resumeParserLocalEdits.resumeParserReasoningEffort === undefined
     ) {
       return;
@@ -496,12 +573,14 @@ function SettingsContent() {
     const timer = setTimeout(() => {
       resumeParserMutation.mutate({
         resume_parser_model: resumeParserModel,
+        resume_parser_provider_id: resumeParserProviderId,
         resume_parser_reasoning_effort: resumeParserReasoningEffort,
       });
     }, 300);
     return () => clearTimeout(timer);
   }, [
     resumeParserModel,
+    resumeParserProviderId,
     resumeParserReasoningEffort,
     resumeParserLocalEdits,
     resumeParserMutation,
@@ -514,6 +593,7 @@ function SettingsContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           matcher_model: matcherModel,
+          matcher_provider_id: matcherProviderId,
           matcher_reasoning_effort: matcherReasoningEffort,
           matcher_bulk_enabled: bulkEnabled,
           matcher_serialize_operations: serializeOperations,
@@ -533,6 +613,7 @@ function SettingsContent() {
       setMatcherLocalEdits((prev) => ({
         ...prev,
         matcherModel: undefined,
+        matcherProviderId: undefined,
         matcherReasoningEffort: undefined,
         bulkEnabled: undefined,
         serializeOperations: undefined,
@@ -591,6 +672,7 @@ function SettingsContent() {
           cover_letter_length: updates.coverLetterLength,
           cover_letter_focus: updates.coverLetterFocus ? JSON.stringify(updates.coverLetterFocus) : undefined,
           ai_writing_model: updates.aiWritingModel,
+          ai_writing_provider_id: updates.aiWritingProviderId,
           ai_writing_reasoning_effort: updates.aiWritingReasoningEffort,
         }),
       });
@@ -614,6 +696,7 @@ function SettingsContent() {
       coverLetterLength,
       coverLetterFocus,
       aiWritingModel,
+      aiWritingProviderId,
       aiWritingReasoningEffort,
     });
   };
@@ -677,6 +760,10 @@ function SettingsContent() {
     }
   }, [matchUnmatchedMutation.isPending, matchSessionId, matchProgress, queryClient]);
 
+  if (isInitialLoading) {
+    return <SettingsPageSkeleton />;
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -689,43 +776,54 @@ function SettingsContent() {
         {/* Left Column: Configuration (Spans 2 columns) */}
         <div className="space-y-6 lg:col-span-2">
 
-          <AIProviderSection
-            aiProvider={aiProvider}
-            onAiProviderChange={setAiProvider}
-            anthropicApiKey={anthropicApiKey}
-            onAnthropicApiKeyChange={setAnthropicApiKey}
-            onAnthropicApiKeyBlur={saveAnthropicApiKey}
-            googleApiKey={googleApiKey}
-            onGoogleApiKeyChange={setGoogleApiKey}
-            onGoogleApiKeyBlur={saveGoogleApiKey}
-            openaiApiKey={openaiApiKey}
-            onOpenaiApiKeyChange={setOpenaiApiKey}
-            onOpenaiApiKeyBlur={saveOpenaiApiKey}
-            openrouterApiKey={openrouterApiKey}
-            onOpenrouterApiKeyChange={setOpenrouterApiKey}
-            onOpenrouterApiKeyBlur={saveOpenrouterApiKey}
-            cerebrasApiKey={cerebrasApiKey}
-            onCerebrasApiKeyChange={setCerebrasApiKey}
-            onCerebrasApiKeyBlur={saveCerebrasApiKey}
-            modalApiKey={modalApiKey}
-            onModalApiKeyChange={setModalApiKey}
-            onModalApiKeyBlur={saveModalApiKey}
+          <AIProvidersManager
+            providers={providers.map((p) => ({
+              ...p,
+              createdAt: new Date(p.createdAt),
+              updatedAt: new Date(p.updatedAt),
+            }))}
+            onAddProvider={async (provider, apiKey) => {
+              await addProviderMutation.mutateAsync({ provider, apiKey });
+            }}
+            onDeleteProvider={async (id) => {
+              await deleteProviderMutation.mutateAsync(id);
+            }}
+            onUpdateProviderApiKey={async (id, apiKey) => {
+              await updateProviderApiKeyMutation.mutateAsync({ id, apiKey });
+            }}
           />
 
           <MatcherSection
+            availableProviders={providers.map((p) => {
+              const meta = getProviderMetadata(p.provider as AIProvider);
+              return {
+                id: p.id,
+                provider: p.provider,
+                name: meta?.displayName || p.provider,
+                isActive: p.isActive,
+              };
+            })}
+            hasProviders={providers.length > 0}
+            matcherProviderId={matcherProviderId}
+            onMatcherProviderIdChange={(id) => {
+              setMatcherLocalEdits((prev) => ({ 
+                ...prev, 
+                matcherProviderId: id,
+                matcherModel: undefined 
+              }));
+            }}
             matcherModel={matcherModel}
             onMatcherModelChange={setMatcherModel}
             matcherReasoningEffort={matcherReasoningEffort}
             onMatcherReasoningEffortChange={setMatcherReasoningEffort}
-            aiProvider={aiProvider}
             autoMatchAfterScrape={autoMatchAfterScrape}
             onAutoMatchAfterScrapeChange={setAutoMatchAfterScrape}
             bulkEnabled={bulkEnabled}
             onBulkEnabledChange={setBulkEnabled}
-            serializeOperations={serializeOperations}
-            onSerializeOperationsChange={setSerializeOperations}
             batchSize={batchSize}
             onBatchSizeChange={setBatchSize}
+            serializeOperations={serializeOperations}
+            onSerializeOperationsChange={(value) => setMatcherLocalEdits(prev => ({ ...prev, serializeOperations: value }))}
             maxRetries={maxRetries}
             onMaxRetriesChange={setMaxRetries}
             concurrencyLimit={concurrencyLimit}
@@ -758,6 +856,20 @@ function SettingsContent() {
           />
 
           <AIWritingSection
+            availableProviders={providers.map((p) => {
+              const meta = getProviderMetadata(p.provider as AIProvider);
+              return {
+                id: p.id,
+                provider: p.provider,
+                name: meta?.displayName || p.provider,
+                isActive: p.isActive,
+              };
+            })}
+            hasProviders={providers.length > 0}
+            aiWritingProviderId={aiWritingProviderId}
+            onAIWritingProviderIdChange={(id) => {
+              setAIWritingLocalEdits((prev) => ({ ...prev, aiWritingProviderId: id }));
+            }}
             aiWritingSettings={{
               referralTone,
               referralLength,
@@ -765,10 +877,10 @@ function SettingsContent() {
               coverLetterLength,
               coverLetterFocus,
               aiWritingModel,
+              aiWritingProviderId,
               aiWritingReasoningEffort,
             }}
             onAIWritingSettingsChange={handleAIWritingSettingsChange}
-            aiProvider={aiProvider}
             onSave={saveAIWritingSettings}
             isSaving={aiWritingMutation.isPending}
             hasUnsavedChanges={aiWritingHasUnsavedChanges}
@@ -818,11 +930,28 @@ function SettingsContent() {
           />
 
           <ResumeParserSection
+            availableProviders={providers.map((p) => {
+              const meta = getProviderMetadata(p.provider as AIProvider);
+              return {
+                id: p.id,
+                provider: p.provider,
+                name: meta?.displayName || p.provider,
+                isActive: p.isActive,
+              };
+            })}
+            hasProviders={providers.length > 0}
+            resumeParserProviderId={resumeParserProviderId}
+            onResumeParserProviderIdChange={(id) => {
+              setResumeParserLocalEdits((prev) => ({ 
+                ...prev, 
+                resumeParserProviderId: id,
+                resumeParserModel: undefined 
+              }));
+            }}
             resumeParserModel={resumeParserModel}
             onResumeParserModelChange={setResumeParserModel}
             resumeParserReasoningEffort={resumeParserReasoningEffort}
             onResumeParserReasoningEffortChange={setResumeParserReasoningEffort}
-            aiProvider={aiProvider}
           />
 
           <SystemInfo />
@@ -834,7 +963,7 @@ function SettingsContent() {
 
 export default function SettingsPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-zinc-400">Loading settings...</div>}>
+    <Suspense fallback={<SettingsPageSkeleton />}>
       <SettingsContent />
     </Suspense>
   );

@@ -1,3 +1,36 @@
+CREATE TABLE `aiGeneratedContent` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`job_id` integer NOT NULL,
+	`type` text NOT NULL,
+	`content` text NOT NULL,
+	`settings_snapshot` text,
+	`created_at` integer,
+	`updated_at` integer,
+	FOREIGN KEY (`job_id`) REFERENCES `jobs`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `aiGeneratedContentJobTypeUnique` ON `aiGeneratedContent` (`job_id`,`type`);--> statement-breakpoint
+CREATE TABLE `aiGenerationHistory` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`content_id` integer NOT NULL,
+	`variant` text NOT NULL,
+	`user_prompt` text,
+	`parent_variant_id` integer,
+	`created_at` integer,
+	FOREIGN KEY (`content_id`) REFERENCES `aiGeneratedContent`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`parent_variant_id`) REFERENCES `aiGenerationHistory`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE TABLE `aiProviders` (
+	`id` text PRIMARY KEY NOT NULL,
+	`provider` text NOT NULL,
+	`api_key` text,
+	`is_active` integer DEFAULT true,
+	`is_default` integer DEFAULT false,
+	`created_at` integer,
+	`updated_at` integer
+);
+--> statement-breakpoint
 CREATE TABLE `companies` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`name` text NOT NULL,
@@ -53,7 +86,7 @@ CREATE TABLE `jobs` (
 	`external_id` text,
 	`title` text NOT NULL,
 	`description` text,
-	`clean_description` text,
+	`description_format` text DEFAULT 'plain' NOT NULL,
 	`url` text NOT NULL,
 	`location` text,
 	`location_type` text,

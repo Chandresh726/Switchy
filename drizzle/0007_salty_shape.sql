@@ -1,1 +1,0 @@
-CREATE UNIQUE INDEX `ai_generated_content_job_type_unique` ON `ai_generated_content` (`job_id`,`type`);

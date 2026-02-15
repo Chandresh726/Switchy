@@ -1,0 +1,75 @@
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { aiProviders } from "@/lib/db/schema";
+import { decryptApiKey } from "@/lib/encryption";
+import { providerRegistry, getModelsForProvider } from "@/lib/ai/providers";
+import type { AIProvider } from "@/lib/ai/providers/types";
+import { eq } from "drizzle-orm";
+
+interface RouteParams {
+  params: Promise<{ id: string }>;
+}
+
+export async function POST(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id } = await params;
+
+    const provider = await db
+      .select()
+      .from(aiProviders)
+      .where(eq(aiProviders.id, id))
+      .limit(1);
+
+    if (provider.length === 0) {
+      return NextResponse.json({ error: "Provider not found" }, { status: 404 });
+    }
+
+    const p = provider[0];
+
+    if (!p.apiKey) {
+      return NextResponse.json({ valid: false, error: "No API key configured" }, { status: 400 });
+    }
+
+    const providerType = p.provider as AIProvider;
+    const providerInstance = providerRegistry.get(providerType);
+
+    if (!providerInstance) {
+      return NextResponse.json({ valid: false, error: "Provider not registered" }, { status: 400 });
+    }
+
+    const decryptedKey = decryptApiKey(p.apiKey);
+    const models = getModelsForProvider(providerType);
+
+    if (models.length === 0) {
+      return NextResponse.json({ valid: false, error: "No models available" }, { status: 400 });
+    }
+
+    try {
+      providerInstance.createModel({
+        config: {
+          modelId: models[0].modelId,
+        },
+        providerConfig: {
+          apiKey: decryptedKey,
+        },
+      });
+
+      return NextResponse.json({
+        valid: true,
+        provider: p.provider,
+        modelsCount: models.length,
+      });
+    } catch (error) {
+      return NextResponse.json(
+        {
+          valid: false,
+          error: error instanceof Error ? error.message : "Failed to create model",
+        },
+        { status: 400 }
+      );
+    }
+  } catch (error) {
+    console.error("Failed to validate provider:", error);
+    return NextResponse.json({ error: "Failed to validate provider" }, { status: 500 });
+  }
+}

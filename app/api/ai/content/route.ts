@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { generateText } from "ai";
 import { eq, desc, asc, and, sql } from "drizzle-orm";
-import { getAIClient, getAIGenerationOptions } from "@/lib/ai/client";
+import { getAIClientV2, getAIGenerationOptions } from "@/lib/ai/client";
 import { db } from "@/lib/db";
 import { settings, aiGeneratedContent, aiGenerationHistory } from "@/lib/db/schema";
 import { fetchCandidateProfile, fetchJobWithCompany } from "@/lib/ai/writing/utils";
@@ -204,8 +204,9 @@ export async function POST(request: NextRequest) {
 
     const aiWritingModel = settingsMap.get("ai_writing_model") || "gemini-3-flash-preview";
     const aiWritingReasoningEffort = settingsMap.get("ai_writing_reasoning_effort") || "medium";
+    const aiWritingProviderId = settingsMap.get("ai_writing_provider_id") || undefined;
 
-    const model = await getAIClient(aiWritingModel, aiWritingReasoningEffort);
+    const model = await getAIClientV2({ modelId: aiWritingModel, reasoningEffort: aiWritingReasoningEffort as "low" | "medium" | "high" | undefined, providerId: aiWritingProviderId });
     const providerOptions = await getAIGenerationOptions(aiWritingModel, aiWritingReasoningEffort);
 
     let systemPrompt: string;

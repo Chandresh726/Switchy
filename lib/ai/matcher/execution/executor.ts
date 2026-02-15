@@ -1,4 +1,4 @@
-import { getAIClient, getAIGenerationOptions } from "@/lib/ai/client";
+import { getAIClientV2, getAIGenerationOptions } from "@/lib/ai/client";
 import { createCircuitBreaker } from "../resilience";
 import type { MatcherConfig, CandidateProfile, MatchJob, MatchResultMap, StrategyResultMap } from "../types";
 import { singleStrategy, bulkStrategy, parallelStrategy, selectStrategy, type StrategyProgressCallback } from "../strategies";
@@ -7,7 +7,7 @@ import { extractRequirements, htmlToText } from "../utils";
 import { categorizeError } from "../resilience";
 
 export interface ExecuteMatchOptions {
-  config: MatcherConfig;
+  config: MatcherConfig & { providerId?: string };
   jobIds: number[];
   sessionId?: string;
   onProgress?: StrategyProgressCallback;
@@ -20,7 +20,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
     return new Map();
   }
 
-  const aiModel = await getAIClient(config.model, config.reasoningEffort);
+  const aiModel = await getAIClientV2({ modelId: config.model, reasoningEffort: config.reasoningEffort as "low" | "medium" | "high" | undefined, providerId: config.providerId });
   const providerOptions = await getAIGenerationOptions(config.model, config.reasoningEffort);
 
   const circuitBreaker = createCircuitBreaker({

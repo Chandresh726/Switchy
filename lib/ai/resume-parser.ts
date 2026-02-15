@@ -1,6 +1,6 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import { getAIClient, getAIGenerationOptions } from "./client";
+import { getAIClientV2, getAIGenerationOptions } from "./client";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -66,16 +66,22 @@ Guidelines:
 - Be thorough but don't hallucinate information not in the resume`;
 
 export async function parseResume(resumeText: string): Promise<ResumeData> {
-  const modelSetting = await db.query.settings.findFirst({
-    where: eq(settings.key, "resume_parser_model"),
-  });
-  const reasoningEffortSetting = await db.query.settings.findFirst({
-    where: eq(settings.key, "resume_parser_reasoning_effort"),
-  });
+  const [modelSetting, reasoningEffortSetting, providerIdSetting] = await Promise.all([
+    db.query.settings.findFirst({
+      where: eq(settings.key, "resume_parser_model"),
+    }),
+    db.query.settings.findFirst({
+      where: eq(settings.key, "resume_parser_reasoning_effort"),
+    }),
+    db.query.settings.findFirst({
+      where: eq(settings.key, "resume_parser_provider_id"),
+    }),
+  ]);
   const modelId = modelSetting?.value || "gemini-3-flash-preview";
   const reasoningEffort = reasoningEffortSetting?.value || "medium";
+  const providerId = providerIdSetting?.value || undefined;
 
-  const model = await getAIClient(modelId, reasoningEffort);
+  const model = await getAIClientV2({ modelId, reasoningEffort: reasoningEffort as "low" | "medium" | "high" | undefined, providerId });
   const providerOptions = await getAIGenerationOptions(modelId, reasoningEffort);
 
   const prompt = `Parse the following resume and extract structured information:
