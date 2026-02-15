@@ -440,6 +440,7 @@ function SettingsContent() {
     scraperLocalEdits.filterTitleKeywords !== undefined;
   const matcherHasUnsavedChanges =
     matcherLocalEdits.matcherModel !== undefined ||
+    matcherLocalEdits.matcherProviderId !== undefined ||
     matcherLocalEdits.matcherReasoningEffort !== undefined ||
     matcherLocalEdits.bulkEnabled !== undefined ||
     matcherLocalEdits.serializeOperations !== undefined ||
@@ -457,6 +458,7 @@ function SettingsContent() {
     aiWritingLocalEdits.coverLetterLength !== undefined ||
     aiWritingLocalEdits.coverLetterFocus !== undefined ||
     aiWritingLocalEdits.aiWritingModel !== undefined ||
+    aiWritingLocalEdits.aiWritingProviderId !== undefined ||
     aiWritingLocalEdits.aiWritingReasoningEffort !== undefined;
 
   // Setters for Matcher settings
@@ -869,7 +871,11 @@ function SettingsContent() {
             hasProviders={providers.length > 0}
             aiWritingProviderId={aiWritingProviderId}
             onAIWritingProviderIdChange={(id) => {
-              setAIWritingLocalEdits((prev) => ({ ...prev, aiWritingProviderId: id }));
+              setAIWritingLocalEdits((prev) => ({ 
+                ...prev, 
+                aiWritingProviderId: id,
+                aiWritingModel: undefined 
+              }));
             }}
             aiWritingSettings={{
               referralTone,

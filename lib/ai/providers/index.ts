@@ -6,6 +6,7 @@ import { openrouterProvider } from "./openrouter";
 import { cerebrasProvider } from "./cerebras";
 import { geminiCLIProvider } from "./gemini-cli";
 import { modalProvider } from "./modal";
+import { groqProvider } from "./groq";
 
 // Create and populate the global provider registry
 export const providerRegistry = new SimpleProviderRegistry();
@@ -18,6 +19,7 @@ providerRegistry.register(openrouterProvider);
 providerRegistry.register(cerebrasProvider);
 providerRegistry.register(geminiCLIProvider);
 providerRegistry.register(modalProvider);
+providerRegistry.register(groqProvider);
 
 // Re-export types and classes
 export * from "./types";
@@ -29,5 +31,6 @@ export * from "./openrouter";
 export * from "./cerebras";
 export * from "./gemini-cli";
 export * from "./modal";
+export * from "./groq";
 export * from "./models";
 export * from "./metadata";

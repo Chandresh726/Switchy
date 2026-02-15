@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CompanyForm } from "./company-form";
+import type { CompanyFilters } from "./company-filters";
 import {
   Building2,
   ExternalLink,
@@ -13,6 +14,7 @@ import {
   RefreshCw,
   Trash2,
   Sparkles,
+  CheckCircle2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -31,7 +33,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 
 interface Company {
@@ -44,6 +46,13 @@ interface Company {
   isActive: boolean;
   lastScrapedAt: string | null;
   createdAt: string;
+}
+
+interface CompanyListProps {
+  filters: CompanyFilters;
+  selectionMode: boolean;
+  selectedIds: number[];
+  onToggleSelection: (id: number) => void;
 }
 
 const PLATFORM_COLORS: Record<string, string> = {
@@ -94,7 +103,10 @@ function ToggleSwitch({
       role="switch"
       aria-checked={checked}
       disabled={disabled}
-      onClick={() => onChange(!checked)}
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange(!checked);
+      }}
       className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900 disabled:cursor-not-allowed disabled:opacity-50 ${
         checked ? "bg-emerald-500" : "bg-zinc-700"
       }`}
@@ -108,7 +120,12 @@ function ToggleSwitch({
   );
 }
 
-export function CompanyList() {
+export function CompanyList({
+  filters,
+  selectionMode,
+  selectedIds,
+  onToggleSelection,
+}: CompanyListProps) {
   const queryClient = useQueryClient();
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [deleteJobsCompanyId, setDeleteJobsCompanyId] = useState<number | null>(null);
@@ -190,6 +207,60 @@ export function CompanyList() {
     },
   });
 
+  const filteredAndSortedCompanies = useMemo(() => {
+    let result = [...companies];
+
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      result = result.filter((c) =>
+        c.name.toLowerCase().includes(searchLower)
+      );
+    }
+
+    if (filters.platforms.length > 0) {
+      result = result.filter((c) =>
+        c.platform && filters.platforms.includes(c.platform)
+      );
+    }
+
+    if (filters.status.length > 0) {
+      const wantActive = filters.status.includes("active");
+      const wantPaused = filters.status.includes("paused");
+      result = result.filter((c) => {
+        if (c.isActive && wantActive) return true;
+        if (!c.isActive && wantPaused) return true;
+        return false;
+      });
+    }
+
+    result.sort((a, b) => {
+      let comparison = 0;
+      switch (filters.sortBy) {
+        case "name":
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case "lastScrapedAt":
+          const aScraped = a.lastScrapedAt ? new Date(a.lastScrapedAt).getTime() : 0;
+          const bScraped = b.lastScrapedAt ? new Date(b.lastScrapedAt).getTime() : 0;
+          comparison = bScraped - aScraped;
+          break;
+        case "createdAt":
+        default:
+          comparison = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          break;
+      }
+      return filters.sortOrder === "asc" ? comparison : -comparison;
+    });
+
+    return result;
+  }, [companies, filters]);
+
+  const handleCardClick = (company: Company) => {
+    if (selectionMode) {
+      onToggleSelection(company.id);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -210,9 +281,20 @@ export function CompanyList() {
     );
   }
 
+  if (filteredAndSortedCompanies.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-700 py-12">
+        <Building2 className="h-12 w-12 text-zinc-600" />
+        <h3 className="mt-4 text-lg font-medium text-white">No matching companies</h3>
+        <p className="mt-1 text-sm text-zinc-400">
+          Try adjusting your filters
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      {/* Edit Form */}
       {editingCompany && (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
           <CompanyForm
@@ -223,143 +305,175 @@ export function CompanyList() {
         </div>
       )}
 
-      {/* Company Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {companies.map((company) => (
-          <div
-            key={company.id}
-            className={`group rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:border-zinc-700 ${
-              !company.isActive ? "opacity-60 grayscale" : ""
-            }`}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                {company.logoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={company.logoUrl}
-                    alt={company.name}
-                    className="h-10 w-10 rounded bg-zinc-800 object-contain p-1"
-                  />
-                ) : (
-                  <div className="flex h-10 w-10 items-center justify-center rounded bg-zinc-800 text-lg font-medium text-zinc-400">
-                    {company.name.charAt(0).toUpperCase()}
+        {filteredAndSortedCompanies.map((company) => {
+          const isSelected = selectedIds.includes(company.id);
+          
+          return (
+            <div
+              key={company.id}
+              onClick={() => handleCardClick(company)}
+              className={`group relative rounded-lg border bg-zinc-900/50 p-4 transition-all ${
+                selectionMode
+                  ? isSelected
+                    ? "border-emerald-500 ring-1 ring-emerald-500/50 bg-emerald-500/5"
+                    : "border-zinc-700 hover:border-emerald-500/50 cursor-pointer"
+                  : "border-zinc-800 hover:border-zinc-700"
+              } ${!company.isActive && !isSelected ? "opacity-60 grayscale" : ""}`}
+            >
+              {isSelected && (
+                <div className="absolute right-2 top-2">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                </div>
+              )}
+
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  {company.logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={company.logoUrl}
+                      alt={company.name}
+                      className="h-10 w-10 rounded bg-zinc-800 object-contain p-1"
+                    />
+                  ) : (
+                    <div className="flex h-10 w-10 items-center justify-center rounded bg-zinc-800 text-lg font-medium text-zinc-400">
+                      {company.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <Link
+                      href={`/jobs?companyIds=${company.id}`}
+                      className="font-medium text-white hover:text-emerald-400 transition-colors"
+                      title={`View jobs at ${company.name}`}
+                      onClick={(e) => selectionMode && e.preventDefault()}
+                    >
+                      {company.name}
+                    </Link>
                   </div>
-                )}
-                <div>
-                  <Link 
-                    href={`/jobs?companyIds=${company.id}`}
-                    className="font-medium text-white hover:text-emerald-400 transition-colors"
-                    title={`View jobs at ${company.name}`}
-                  >
-                    {company.name}
-                  </Link>
+                </div>
+
+              {!selectionMode && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="opacity-0 transition-opacity group-hover:opacity-100"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        refreshMutation.mutate(company.id);
+                      }}
+                      disabled={refreshMutation.isPending}
+                      className="cursor-pointer"
+                    >
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      <span className="truncate">Refresh Jobs</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        matchJobsMutation.mutate(company.id);
+                      }}
+                      disabled={matchJobsMutation.isPending}
+                      className="text-purple-400 focus:text-purple-400 cursor-pointer"
+                    >
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      <span className="truncate">Refresh Matching</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteJobsCompanyId(company.id);
+                      }}
+                      className="text-orange-400 focus:text-orange-400 cursor-pointer"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      <span className="truncate">Delete All Jobs</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingCompany(company);
+                      }}
+                      className="cursor-pointer"
+                    >
+                      <Pencil className="mr-2 h-4 w-4" />
+                      <span className="truncate">Edit</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteMutation.mutate(company.id);
+                      }}
+                      className="text-red-400 focus:text-red-400 cursor-pointer"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      <span className="truncate">Delete</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap gap-2">
+                  {company.platform && (
+                    <Badge
+                      variant="outline"
+                      className={PLATFORM_COLORS[company.platform] || PLATFORM_COLORS.custom}
+                    >
+                      {company.platform}
+                    </Badge>
+                  )}
+                </div>
+
+                <a
+                  href={company.careersUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  {truncateUrl(company.careersUrl)}
+                </a>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between border-t border-zinc-800 pt-3 text-xs text-zinc-500">
+                <div className="flex items-center gap-2">
+                  <ToggleSwitch
+                    checked={company.isActive}
+                    onChange={(isActive) =>
+                      toggleActiveMutation.mutate({ id: company.id, isActive })
+                    }
+                    disabled={toggleActiveMutation.isPending}
+                  />
+                  <span className={company.isActive ? "text-emerald-400" : "text-zinc-500"}>
+                    {company.isActive ? "Active" : "Paused"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span>
+                    {company.lastScrapedAt
+                      ? `Scraped ${getRelativeTime(company.lastScrapedAt)}`
+                      : "Never scraped"}
+                  </span>
                 </div>
               </div>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="opacity-0 transition-opacity group-hover:opacity-100"
-                  >
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuItem
-                    onClick={() => refreshMutation.mutate(company.id)}
-                    disabled={refreshMutation.isPending}
-                    className="cursor-pointer"
-                  >
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    <span className="truncate">Refresh Jobs</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => matchJobsMutation.mutate(company.id)}
-                    disabled={matchJobsMutation.isPending}
-                    className="text-purple-400 focus:text-purple-400 cursor-pointer"
-                  >
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    <span className="truncate">Refresh Matching</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => setDeleteJobsCompanyId(company.id)}
-                    className="text-orange-400 focus:text-orange-400 cursor-pointer"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    <span className="truncate">Delete All Jobs</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => setEditingCompany(company)}
-                    className="cursor-pointer"
-                  >
-                    <Pencil className="mr-2 h-4 w-4" />
-                    <span className="truncate">Edit</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => deleteMutation.mutate(company.id)}
-                    className="text-red-400 focus:text-red-400 cursor-pointer"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    <span className="truncate">Delete</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
             </div>
-
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap gap-2">
-                {company.platform && (
-                  <Badge
-                    variant="outline"
-                    className={PLATFORM_COLORS[company.platform] || PLATFORM_COLORS.custom}
-                  >
-                    {company.platform}
-                  </Badge>
-                )}
-              </div>
-
-              <a
-                href={company.careersUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 hover:underline"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <ExternalLink className="h-3 w-3" />
-                {truncateUrl(company.careersUrl)}
-              </a>
-            </div>
-
-            <div className="mt-4 flex items-center justify-between border-t border-zinc-800 pt-3 text-xs text-zinc-500">
-              <div className="flex items-center gap-2">
-                <ToggleSwitch
-                  checked={company.isActive}
-                  onChange={(isActive) =>
-                    toggleActiveMutation.mutate({ id: company.id, isActive })
-                  }
-                  disabled={toggleActiveMutation.isPending}
-                />
-                <span className={company.isActive ? "text-emerald-400" : "text-zinc-500"}>
-                  {company.isActive ? "Active" : "Paused"}
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span>
-                  {company.lastScrapedAt
-                    ? `Scraped ${getRelativeTime(company.lastScrapedAt)}`
-                    : "Never scraped"}
-                </span>
-              </div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Delete Jobs Confirmation Dialog */}
       <AlertDialog open={deleteJobsCompanyId !== null} onOpenChange={(open) => !open && setDeleteJobsCompanyId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

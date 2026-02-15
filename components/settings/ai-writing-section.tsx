@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -93,14 +93,6 @@ export function AIWritingSection({
   const defaultModel = getDefaultModelForProvider(providerType || "anthropic");
   const currentModel = aiWritingSettings.aiWritingModel || defaultModel;
   const supportsReasoning = models.find(m => m.modelId === currentModel)?.supportsReasoning ?? false;
-
-  useEffect(() => {
-    if (!aiWritingSettings.aiWritingModel && defaultModel) {
-      onAIWritingSettingsChange({ aiWritingModel: defaultModel });
-    }
-    // Only run when provider changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [providerType]);
 
   const toggleFocus = (value: string) => {
     const current = aiWritingSettings.coverLetterFocus || [];

@@ -54,6 +54,11 @@ export const PROVIDER_METADATA: Record<AIProvider, ProviderMetadata> = {
     displayName: "Modal",
     requiresApiKey: true,
   },
+  groq: {
+    id: "groq",
+    displayName: "Groq",
+    requiresApiKey: true,
+  },
 };
 
 export function getProviderMetadata(provider: AIProvider): ProviderMetadata {

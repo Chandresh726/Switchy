@@ -10,7 +10,8 @@ export type AIProvider =
   | "gemini_cli_oauth"
   | "openrouter"
   | "cerebras"
-  | "modal";
+  | "modal"
+  | "groq";
 
 /**
  * Reasoning effort levels for models that support it
@@ -120,4 +121,5 @@ export interface AIClientSettings {
   cerebrasApiKey?: string;
   openaiApiKey?: string;
   modalApiKey?: string;
+  groqApiKey?: string;
 }

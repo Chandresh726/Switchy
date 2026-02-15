@@ -298,6 +298,12 @@ export async function POST(request: Request) {
           );
         }
         updates.push({ key, value: String(value) });
+      } else if (
+        key === "matcher_provider_id" ||
+        key === "resume_parser_provider_id" ||
+        key === "ai_writing_provider_id"
+      ) {
+        updates.push({ key, value: String(value || "") });
       }
     }
 

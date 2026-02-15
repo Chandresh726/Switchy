@@ -184,6 +184,44 @@ export const PROVIDER_MODELS: Record<AIProvider, ModelDefinition[]> = {
       supportsReasoning: true,
     },
   ],
+  groq: [
+    {
+      modelId: "llama-3.1-8b-instant",
+      label: "Llama 3.1 8B Instant",
+      description: "Fast and cost-effective model",
+      supportsReasoning: false,
+    },
+    {
+      modelId: "llama-3.3-70b-versatile",
+      label: "Llama 3.3 70B Versatile",
+      description: "Recommended balanced model",
+      supportsReasoning: true,
+    },
+    {
+      modelId: "openai/gpt-oss-120b",
+      label: "GPT-OSS 120B",
+      description: "Large reasoning model",
+      supportsReasoning: true,
+    },
+    {
+      modelId: "openai/gpt-oss-20b",
+      label: "GPT-OSS 20B",
+      description: "Fast open-weight model",
+      supportsReasoning: true,
+    },
+    {
+      modelId: "qwen/qwen3-32b",
+      label: "Qwen3 32B",
+      description: "Preview reasoning model",
+      supportsReasoning: true,
+    },
+    {
+      modelId: "moonshotai/kimi-k2-instruct-0905",
+      label: "Kimi K2",
+      description: "Preview model",
+      supportsReasoning: false,
+    },
+  ],
 };
 
 export function getModelsForProvider(provider: AIProvider): ModelDefinition[] {

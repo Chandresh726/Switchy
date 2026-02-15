@@ -57,28 +57,6 @@ function formatDate(date: Date | null | undefined): string {
 }
 
 /**
- * Detect placeholders in text that should not be present
- * Returns array of found placeholders or empty array if none found
- */
-function detectPlaceholders(text: string): string[] {
-  const placeholderPatterns = [
-    /\[.*?\]/g,  // [Your Name], [Hiring Manager], etc.
-    /\{.*?\}/g,  // {Your Name}, {Date}, etc.
-    /<.*?>/g,    // <Your Name>, <Date>, etc.
-    /\(.*?\)/g,  // (Your Name), (Date) - sometimes used for placeholders
-  ];
-  
-  const found: string[] = [];
-  for (const pattern of placeholderPatterns) {
-    const matches = text.match(pattern);
-    if (matches) {
-      found.push(...matches);
-    }
-  }
-  return [...new Set(found)]; // Remove duplicates
-}
-
-/**
  * Build conversation context for follow-up requests
  * Shows the AI what was previously generated and what the user requested
  */
@@ -280,39 +258,14 @@ export async function POST(request: NextRequest) {
       userPrompt = promptText;
     }
 
-    // Generate with retry logic for placeholder detection
-    let text: string;
-    const MAX_RETRIES = 2;
-    let retryCount = 0;
-    
-    while (true) {
-      const result = await generateText({
-        model,
-        system: systemPrompt,
-        prompt: userPrompt,
-        ...providerOptions,
-      });
-      
-      text = result.text;
-      
-      // Check for placeholders
-      const placeholders = detectPlaceholders(text);
-      if (placeholders.length === 0) {
-        break; // No placeholders found, we're good
-      }
-      
-      if (retryCount >= MAX_RETRIES) {
-        console.warn(`[Generate AI Content] Placeholders found after ${MAX_RETRIES} retries:`, placeholders);
-        // Continue with the text but log the warning
-        break;
-      }
-      
-      console.log(`[Generate AI Content] Retry ${retryCount + 1}: Placeholders detected:`, placeholders);
-      retryCount++;
-      
-      // Add stronger instruction to avoid placeholders
-      userPrompt += `\n\nIMPORTANT: Your previous response contained placeholders: ${placeholders.join(", ")}. Please rewrite WITHOUT using any bracketed placeholders like [Name], [Date], etc. Use actual values or omit them entirely.`;
-    }
+    const result = await generateText({
+      model,
+      system: systemPrompt,
+      prompt: userPrompt,
+      ...providerOptions,
+    });
+
+    const text = result.text;
 
     const existingResults = await db.select()
       .from(aiGeneratedContent)
