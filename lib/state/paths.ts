@@ -6,9 +6,18 @@ import fs from "fs";
  * Centralized state paths for Switchy application.
  * All application state is stored in ~/.switchy to ensure persistence
  * across git operations and project directory changes.
+ * 
+ * Environment-specific structure:
+ * - Development: ~/.switchy/dev/ (switchy.db, uploads/, etc.)
+ * - Production: ~/.switchy/ (switchy.db, uploads/, etc.)
  */
 
-const STATE_DIR = path.join(os.homedir(), ".switchy");
+const isDev = process.env.NODE_ENV === "development";
+
+const BASE_DIR = path.join(os.homedir(), ".switchy");
+const ENV_DIR = isDev ? path.join(BASE_DIR, "dev") : BASE_DIR;
+
+const STATE_DIR = ENV_DIR;
 const UPLOADS_DIR = path.join(STATE_DIR, "uploads");
 const DB_PATH = path.join(STATE_DIR, "switchy.db");
 
@@ -24,6 +33,14 @@ export function getStateDir(): string {
  */
 export function getDbPath(): string {
   return DB_PATH;
+}
+
+/**
+ * Get the database path for display (with ~ instead of home directory)
+ */
+export function getDbPathDisplay(): string {
+  const home = os.homedir();
+  return DB_PATH.replace(home, "~");
 }
 
 /**
@@ -43,7 +60,7 @@ export function getUploadFilePath(relativePath: string): string {
 
 /**
  * Ensure the state directory structure exists
- * Creates ~/.switchy and ~/.switchy/uploads if missing
+ * Creates ~/.switchy/dev (or ~/.switchy) and ~/.switchy/dev/uploads if missing
  */
 export function ensureStateDir(): void {
   if (!fs.existsSync(STATE_DIR)) {
@@ -64,4 +81,11 @@ export function getUploadTypeDir(type: string): string {
     fs.mkdirSync(typeDir, { recursive: true });
   }
   return typeDir;
+}
+
+/**
+ * Check if running in development mode
+ */
+export function isDevelopment(): boolean {
+  return isDev;
 }

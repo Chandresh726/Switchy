@@ -76,20 +76,6 @@ export const PROVIDER_MODELS: Record<AIProvider, ModelDefinition[]> = {
       supportsReasoning: true,
     },
   ],
-  google: [
-    {
-      modelId: "gemini-3-pro-preview",
-      label: "Gemini 3 Pro",
-      description: "Most capable model (Preview)",
-      supportsReasoning: true,
-    },
-    {
-      modelId: "gemini-3-flash-preview",
-      label: "Gemini 3 Flash",
-      description: "Fastest model (Preview)",
-      supportsReasoning: true,
-    },
-  ],
   openrouter: [
     {
       modelId: "openai/gpt-oss-120b:free",

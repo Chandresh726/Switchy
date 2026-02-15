@@ -159,7 +159,7 @@ export function AIProvidersManager({
     setIsFetchingApiKey(true);
 
     try {
-      const res = await fetch(`/api/providers/${provider.id}`);
+      const res = await fetch(`/api/providers/${provider.id}/api-key`);
       if (res.ok) {
         const data = await res.json();
         setEditApiKey(data.apiKey || "");

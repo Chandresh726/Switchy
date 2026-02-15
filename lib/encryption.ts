@@ -6,7 +6,18 @@ const SALT_LENGTH = 32;
 const IV_LENGTH = 16;
 
 function getKey(salt: Buffer): Buffer {
-  const secret = process.env.ENCRYPTION_SECRET || "switchy-local-secret";
+  const secret = process.env.ENCRYPTION_SECRET;
+
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("ENCRYPTION_SECRET environment variable is required in production");
+    }
+    console.warn(
+      "ENCRYPTION_SECRET not set, using insecure local fallback. This is not recommended for production use."
+    );
+    return scryptSync("switchy-local-secret", salt, KEY_LENGTH);
+  }
+
   return scryptSync(secret, salt, KEY_LENGTH);
 }
 

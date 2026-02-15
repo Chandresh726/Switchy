@@ -7,6 +7,19 @@ import util from "util";
 
 const execAsync = util.promisify(exec);
 
+async function isGeminiInstalled(): Promise<boolean> {
+  try {
+    if (process.platform === "win32") {
+      await execAsync("where gemini");
+    } else {
+      await execAsync("command -v gemini");
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function GET() {
   try {
     const status = {
@@ -15,13 +28,11 @@ export async function GET() {
       message: "",
     };
 
-    try {
-      await execAsync("command -v gemini");
-      status.installed = true;
-    } catch {
+    if (!(await isGeminiInstalled())) {
       status.message = "Gemini CLI not found in PATH. Please install it first.";
       return NextResponse.json(status);
     }
+    status.installed = true;
 
     try {
       const credsPath = path.join(os.homedir(), ".gemini", "oauth_creds.json");

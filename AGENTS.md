@@ -20,9 +20,6 @@ pnpm lint             # Run ESLint (no separate typecheck command - TypeScript i
 pnpm db:generate      # Generate migrations from schema changes
 pnpm db:migrate       # Apply migrations to local SQLite DB
 pnpm db:studio        # Open Drizzle Studio to inspect data
-
-# Testing
-# No tests currently configured. If adding tests, check package.json first.
 ```
 
 ## Agent Execution Rules
@@ -31,6 +28,7 @@ pnpm db:studio        # Open Drizzle Studio to inspect data
 - For verification, use `pnpm lint` and `pnpm build` only
 - Do not start any long-running processes or servers
 - **NEVER commit or push changes** - unless explicitly instructed by the user
+- **NEVER write raw SQL or manually create migration files** - all database changes must use the Drizzle commands below
 
 ## Package Manager
 
@@ -123,7 +121,14 @@ export async function GET(request: NextRequest) {
 
 ### Database (Drizzle ORM)
 
+**IMPORTANT: Never write raw SQL or manually create migration files. Always use the commands below.**
+
 - Schema defined in `lib/db/schema.ts`
+- When making schema changes:
+  1. Modify the schema in `lib/db/schema.ts`
+  2. Run `pnpm db:generate` to create the migration
+  3. Run `pnpm db:migrate` to apply the migration to your local database
+
 - Use `$inferSelect` for select types, `$inferInsert` for insert types
 
 ```typescript

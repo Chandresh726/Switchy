@@ -10,7 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Database, Server } from "lucide-react";
 
-export function SystemInfo() {
+interface SystemInfoProps {
+  version: string;
+  dbPath: string;
+}
+
+export function SystemInfo({ version, dbPath }: SystemInfoProps) {
   return (
     <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
       <CardHeader className="pb-3">
@@ -23,8 +28,7 @@ export function SystemInfo() {
         <div className="space-y-1.5">
           <Label className="text-xs text-zinc-500">Version</Label>
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="font-mono text-zinc-400 border-zinc-800">v0.1.0</Badge>
-            <span className="text-xs text-zinc-600">Beta</span>
+            <Badge variant="outline" className="font-mono text-zinc-400 border-zinc-800">v{version}</Badge>
           </div>
         </div>
 
@@ -32,7 +36,7 @@ export function SystemInfo() {
           <Label className="text-xs text-zinc-500">Database</Label>
           <div className="flex items-center gap-2 rounded-md bg-zinc-950/50 border border-zinc-800 px-3 py-2">
             <Database className="h-3.5 w-3.5 text-zinc-500" />
-            <code className="text-xs text-zinc-400">~/.switchy/switchy.db</code>
+            <code className="text-xs text-zinc-400">{dbPath}</code>
           </div>
         </div>
 

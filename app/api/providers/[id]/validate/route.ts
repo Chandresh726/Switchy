@@ -26,10 +26,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const p = provider[0];
 
-    if (!p.apiKey) {
-      return NextResponse.json({ valid: false, error: "No API key configured" }, { status: 400 });
-    }
-
     const providerType = p.provider as AIProvider;
     const providerInstance = providerRegistry.get(providerType);
 
@@ -37,7 +33,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ valid: false, error: "Provider not registered" }, { status: 400 });
     }
 
-    const decryptedKey = decryptApiKey(p.apiKey);
+    if (providerInstance.requiresApiKey && !p.apiKey) {
+      return NextResponse.json({ valid: false, error: "No API key configured" }, { status: 400 });
+    }
+
+    const decryptedKey = p.apiKey ? decryptApiKey(p.apiKey) : undefined;
     const models = getModelsForProvider(providerType);
 
     if (models.length === 0) {

@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getProviderMetadata } from "@/lib/ai/providers/metadata";
 import { getDefaultModelForProvider, getModelsForProvider } from "@/lib/ai/providers/models";
 import type { AIProvider } from "@/lib/ai/providers/types";
+import { APP_VERSION, DB_PATH } from "@/lib/constants";
 
 type ReasoningEffort = "low" | "medium" | "high";
 
@@ -954,7 +955,7 @@ function SettingsContent() {
             onResumeParserReasoningEffortChange={setResumeParserReasoningEffort}
           />
 
-          <SystemInfo />
+          <SystemInfo version={APP_VERSION} dbPath={DB_PATH} />
         </div>
       </div>
     </div>

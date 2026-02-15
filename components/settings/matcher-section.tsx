@@ -161,7 +161,7 @@ export function MatcherSection({
                     </SelectTrigger>
                     <SelectContent>
                       {models.length === 0 ? (
-                        <SelectItem value="none" disabled>Select a provider first</SelectItem>
+                        <SelectItem value="none" disabled>No models available for selected provider</SelectItem>
                       ) : (
                         models.map((model) => (
                           <SelectItem key={model.modelId} value={model.modelId}>
@@ -206,7 +206,7 @@ export function MatcherSection({
                       Auto-match after scrape
                     </Label>
                     <p className="text-xs text-zinc-500 mt-1">
-                      Automatically trigger the matching process immediately after discovering new jobs.
+                      Automatically match new jobs after each scrape.
                     </p>
                   </div>
                 </div>

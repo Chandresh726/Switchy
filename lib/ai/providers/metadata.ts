@@ -39,11 +39,6 @@ export const PROVIDER_METADATA: Record<AIProvider, ProviderMetadata> = {
     displayName: "Gemini (CLI)",
     requiresApiKey: false,
   },
-  google: {
-    id: "google",
-    displayName: "Google",
-    requiresApiKey: true,
-  },
   openrouter: {
     id: "openrouter",
     displayName: "OpenRouter",

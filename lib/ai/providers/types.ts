@@ -10,7 +10,6 @@ export type AIProvider =
   | "gemini_cli_oauth"
   | "openrouter"
   | "cerebras"
-  | "google"
   | "modal";
 
 /**
@@ -89,6 +88,7 @@ export type AIErrorType =
   | "invalid_model"
   | "reasoning_not_supported"
   | "generation_failed"
+  | "decryption_failed"
   | "timeout"
   | "rate_limit"
   | "network"
