@@ -19,6 +19,7 @@ import {
 import Link from "next/link";
 import { MatchBadge } from "@/components/jobs/match-badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface ScrapeSession {
   id: string;
@@ -181,7 +182,7 @@ function JobRow({ job, type = "default" }: { job: Job; type?: "default" | "appli
 }
 
 export default function DashboardPage() {
-  const { data: profile } = useQuery<Profile>({
+  const { data: profile, isLoading: isProfileLoading } = useQuery<Profile>({
     queryKey: ["profile"],
     queryFn: async () => {
       const res = await fetch("/api/profile");
@@ -190,7 +191,7 @@ export default function DashboardPage() {
     },
   });
 
-  const { data: stats } = useQuery<Stats>({
+  const { data: stats, isLoading: isStatsLoading } = useQuery<Stats>({
     queryKey: ["stats"],
     queryFn: async () => {
       const res = await fetch("/api/stats");
@@ -198,6 +199,8 @@ export default function DashboardPage() {
       return res.json();
     },
   });
+
+  const isInitialLoading = isProfileLoading || isStatsLoading;
 
   // Top 5 high-match jobs (75%+)
   const { data: highMatchData } = useQuery({
@@ -251,39 +254,82 @@ export default function DashboardPage() {
 
       {/* Stats Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          title="New Jobs"
-          value={stats?.newJobs ?? 0}
-          icon={Briefcase}
-          color="text-blue-500"
-          subtitle="this week"
-        />
-        <StatCard
-          title="High Match"
-          value={stats?.highMatchJobs ?? 0}
-          icon={Star}
-          color="text-amber-500"
-          subtitle="75%+ score"
-        />
-        <StatCard
-          title="Applied"
-          value={stats?.appliedJobs ?? 0}
-          icon={Send}
-          color="text-emerald-500"
-        />
-        <StatCard
-          title="Companies"
-          value={stats?.totalCompanies ?? 0}
-          icon={Building2}
-          color="text-purple-500"
-        />
+        {isInitialLoading ? (
+          <>
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-8 w-12" />
+                </div>
+                <Skeleton className="h-12 w-12 rounded-lg" />
+              </div>
+            </div>
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-8 w-12" />
+                </div>
+                <Skeleton className="h-12 w-12 rounded-lg" />
+              </div>
+            </div>
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-8 w-12" />
+                </div>
+                <Skeleton className="h-12 w-12 rounded-lg" />
+              </div>
+            </div>
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-8 w-12" />
+                </div>
+                <Skeleton className="h-12 w-12 rounded-lg" />
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <StatCard
+              title="New Jobs"
+              value={stats?.newJobs ?? 0}
+              icon={Briefcase}
+              color="text-blue-500"
+              subtitle="this week"
+            />
+            <StatCard
+              title="High Match"
+              value={stats?.highMatchJobs ?? 0}
+              icon={Star}
+              color="text-amber-500"
+              subtitle="75%+ score"
+            />
+            <StatCard
+              title="Applied"
+              value={stats?.appliedJobs ?? 0}
+              icon={Send}
+              color="text-emerald-500"
+            />
+            <StatCard
+              title="Companies"
+              value={stats?.totalCompanies ?? 0}
+              icon={Building2}
+              color="text-purple-500"
+            />
+          </>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Main Content Column (2/3 width) */}
         <div className="lg:col-span-2 space-y-6">
           {/* Getting Started (Conditional) */}
-          {(!profile?.name || (stats?.totalCompanies ?? 0) === 0) && (
+          {!isInitialLoading && (!profile?.name || (stats?.totalCompanies ?? 0) === 0) && (
             <div className="rounded-xl border border-zinc-800 bg-gradient-to-br from-zinc-900 to-zinc-950 p-6 mb-6">
               <div className="flex items-start justify-between">
                 <div>

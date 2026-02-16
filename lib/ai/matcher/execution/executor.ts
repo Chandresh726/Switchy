@@ -21,7 +21,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
   }
 
   const aiModel = await getAIClientV2({ modelId: config.model, reasoningEffort: config.reasoningEffort as "low" | "medium" | "high" | undefined, providerId: config.providerId });
-  const providerOptions = await getAIGenerationOptions(config.model, config.reasoningEffort);
+  const providerOptions = await getAIGenerationOptions(config.model, config.reasoningEffort, config.providerId);
 
   const circuitBreaker = createCircuitBreaker({
     failureThreshold: config.circuitBreakerThreshold,

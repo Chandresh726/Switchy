@@ -138,14 +138,13 @@ function AIHistoryCard({ content, onDelete, isDeleting, onClick }: AIHistoryCard
           </div>
 
           {/* Delete Button */}
-          <div className="shrink-0">
+          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-sm"
                   className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={handleDelete}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>

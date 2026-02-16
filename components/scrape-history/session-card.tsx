@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +15,6 @@ import {
   Play,
   Plus,
 } from "lucide-react";
-import Link from "next/link";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -109,6 +109,7 @@ function formatDate(date: Date | null): string {
 export function SessionCard({ session }: SessionCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const queryClient = useQueryClient();
+  const router = useRouter();
   const statusConfig = STATUS_CONFIG[session.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.in_progress;
   const StatusIcon = statusConfig.icon;
 
@@ -116,9 +117,7 @@ export function SessionCard({ session }: SessionCardProps) {
     ? Math.round(((session.companiesCompleted || 0) / session.companiesTotal) * 100)
     : 0;
 
-  const handleDelete = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleDelete = async () => {
     setIsDeleting(true);
     try {
       const res = await fetch(`/api/scrape-history?sessionId=${session.id}`, {
@@ -137,9 +136,25 @@ export function SessionCard({ session }: SessionCardProps) {
     }
   };
 
+  const handleCardClick = () => {
+    router.push(`/history/scrape/${session.id}`);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleCardClick();
+    }
+  };
+
   return (
-    <Link href={`/history/scrape/${session.id}`}>
-      <div className="group rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 mb-3 transition-all hover:border-zinc-700 cursor-pointer">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={handleCardClick}
+      onKeyDown={handleKeyDown}
+      className="group rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 mb-3 transition-all hover:border-zinc-700 cursor-pointer"
+    >
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -157,41 +172,38 @@ export function SessionCard({ session }: SessionCardProps) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-sm"
                   className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
+                  onClick={(e) => e.stopPropagation()}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete Session?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will permanently delete this scrape session and its logs.
-                  This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleDelete}
-                  className="bg-red-500 hover:bg-red-600 text-white"
-                  disabled={isDeleting}
-                >
-                  {isDeleting ? "Deleting..." : "Delete"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete Session?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete this scrape session and its logs.
+                    This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDelete}
+                    className="bg-red-500 hover:bg-red-600 text-white"
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? "Deleting..." : "Delete"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
         </div>
       </div>
 
@@ -244,6 +256,5 @@ export function SessionCard({ session }: SessionCardProps) {
         </div>
       </div>
     </div>
-    </Link>
   );
 }

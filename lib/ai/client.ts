@@ -117,16 +117,26 @@ export async function getAIClientV2(
 
 export async function getAIGenerationOptions(
   modelId: string,
-  reasoningEffort?: string
+  reasoningEffort?: string,
+  providerId?: string
 ): Promise<Record<string, unknown> | undefined> {
-  const defaultProvider = await getDefaultProvider();
-  if (!defaultProvider) {
-    return undefined;
-  }
+  let providerType: AIProvider;
   
-  const providerType = defaultProvider.provider as AIProvider;
-  const provider = providerRegistry.get(providerType);
+  if (providerId) {
+    const dbProvider = await getProviderById(providerId);
+    if (!dbProvider) {
+      return undefined;
+    }
+    providerType = dbProvider.provider as AIProvider;
+  } else {
+    const defaultProvider = await getDefaultProvider();
+    if (!defaultProvider) {
+      return undefined;
+    }
+    providerType = defaultProvider.provider as AIProvider;
+  }
 
+  const provider = providerRegistry.get(providerType);
   if (!provider) {
     return undefined;
   }

@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
     const aiWritingProviderId = settingsMap.get("ai_writing_provider_id") || undefined;
 
     const model = await getAIClientV2({ modelId: aiWritingModel, reasoningEffort: aiWritingReasoningEffort as "low" | "medium" | "high" | undefined, providerId: aiWritingProviderId });
-    const providerOptions = await getAIGenerationOptions(aiWritingModel, aiWritingReasoningEffort);
+    const providerOptions = await getAIGenerationOptions(aiWritingModel, aiWritingReasoningEffort, aiWritingProviderId);
 
     let systemPrompt: string;
     let userPrompt: string;

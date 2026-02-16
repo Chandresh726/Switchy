@@ -82,7 +82,7 @@ export async function parseResume(resumeText: string): Promise<ResumeData> {
   const providerId = providerIdSetting?.value || undefined;
 
   const model = await getAIClientV2({ modelId, reasoningEffort: reasoningEffort as "low" | "medium" | "high" | undefined, providerId });
-  const providerOptions = await getAIGenerationOptions(modelId, reasoningEffort);
+  const providerOptions = await getAIGenerationOptions(modelId, reasoningEffort, providerId);
 
   const prompt = `Parse the following resume and extract structured information:
 
