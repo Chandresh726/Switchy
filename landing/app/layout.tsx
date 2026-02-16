@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, DM_Sans } from "next/font/google";
 import Script from "next/script";
+import { Analytics } from "@vercel/analytics/next";
 
 import { SITE_CONFIG } from "@/lib/constants";
 import "./globals.css";
@@ -114,6 +115,7 @@ export default function RootLayout({
       </head>
       <body className="antialiased bg-[var(--bg-primary)] text-[var(--text-primary)]">
         {children}
+        <Analytics />
       </body>
     </html>
   );
