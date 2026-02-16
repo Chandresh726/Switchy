@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --font-body: "DM Sans", system-ui, sans-serif;
+  
+  --color-black: #000000;
+  --color-black-2: #0a0a0a;
+  --color-black-3: #141414;
+  --color-white: #ffffff;
+  --color-green: #10b981;
+  --color-green-light: #34d399;
+  --color-green-dark: #059669;
+}
+
+@layer base {
+  html { scroll-behavior: smooth; }
+  
+  html.dark {
+    --bg-primary: #000000;
+    --bg-secondary: #0a0a0a;
+    --bg-tertiary: #141414;
+    --text-primary: #ffffff;
+    --text-secondary: #a1a1aa;
+    --border-color: #ffffff;
+    --grid-color: rgba(255,255,255,0.1);
+  }
+  
+  html:not(.dark) {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f4f4f5;
+    --bg-tertiary: #e4e4e7;
+    --text-primary: #000000;
+    --text-secondary: #52525b;
+    --border-color: #000000;
+    --grid-color: rgba(0,0,0,0.03);
+  }
+  
+  body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+  }
+  
+  ::selection { background-color: rgba(16, 185, 129, 0.3); }
+}
+
+@layer components {
+  .gradient-text {
+    background: linear-gradient(135deg, var(--color-green) 0%, var(--color-green-light) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  .geo-card {
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-color);
+    box-shadow: 8px 8px 0 var(--border-color);
+    transition: all 0.2s ease;
+  }
+  
+  .geo-card:hover {
+    transform: translate(-4px, -4px);
+    box-shadow: 12px 12px 0 var(--border-color);
+  }
+  
+  .geo-card-solid {
+    background: var(--color-green);
+    border: 2px solid var(--border-color);
+    box-shadow: 8px 8px 0 var(--color-green-light);
+    transition: all 0.2s ease;
+  }
+  
+  .geo-card-solid:hover {
+    transform: translate(-4px, -4px);
+    box-shadow: 12px 12px 0 var(--color-green-light);
+  }
+  
+  .grid-bg {
+    background-image: 
+      linear-gradient(var(--grid-color) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+    background-size: 50px 50px;
+    background-attachment: fixed;
+  }
+  
+  .marquee {
+    animation: marquee 20s linear infinite;
+  }
+  
+  .marquee-reverse {
+    animation: marquee-reverse 20s linear infinite;
+  }
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes marquee-reverse {
+  0% { transform: translateX(-50%); }
+  100% { transform: translateX(0); }
+}
