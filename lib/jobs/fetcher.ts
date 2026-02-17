@@ -1,148 +1,18 @@
+import { eq } from "drizzle-orm";
+
 import { db } from "@/lib/db";
 import { companies, jobs, scrapingLogs, scrapeSessions, settings } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
 import { scraperRegistry } from "@/lib/scrapers/registry";
-import { batchDeduplicateJobs } from "./deduplicator";
 import { matchWithTracking, getMatcherConfig } from "@/lib/ai/matcher";
 import type { TriggerSource } from "@/lib/ai/matcher/types";
 
-// Country/location mappings for filtering
-const COUNTRY_MAPPINGS: Record<string, string[]> = {
-  india: [
-    "india",
-    "ind",
-    "bangalore",
-    "bengaluru",
-    "mumbai",
-    "delhi",
-    "hyderabad",
-    "chennai",
-    "pune",
-    "kolkata",
-    "gurugram",
-    "gurgaon",
-    "noida",
-    "ahmedabad",
-    "jaipur",
-    "kochi",
-    "thiruvananthapuram",
-  ],
-  "united states": [
-    "usa",
-    "us",
-    "u.s.",
-    "united states",
-    "america",
-    "new york",
-    "san francisco",
-    "seattle",
-    "los angeles",
-    "chicago",
-    "austin",
-    "boston",
-    "denver",
-  ],
-  "united kingdom": [
-    "uk",
-    "u.k.",
-    "britain",
-    "england",
-    "united kingdom",
-    "london",
-    "manchester",
-    "edinburgh",
-    "birmingham",
-  ],
-  germany: ["germany", "deutschland", "berlin", "munich", "frankfurt", "hamburg"],
-  canada: ["canada", "toronto", "vancouver", "montreal", "ottawa", "calgary"],
-};
-
-/**
- * Check if a job location matches the preferred country.
- * Returns true if:
- * - Location is purely "Remote" (no country specified)
- * - Location contains the preferred country or its variations/cities
- */
-function matchesPreferredCountry(
-  location: string | undefined,
-  preferredCountry: string
-): boolean {
-  if (!location) return false;
-
-  const locationLower = location.toLowerCase().trim();
-  const countryLower = preferredCountry.toLowerCase().trim();
-
-  // Pure remote jobs (no country) are always included
-  if (
-    locationLower === "remote" ||
-    locationLower === "remote position" ||
-    locationLower === "worldwide" ||
-    locationLower === "anywhere"
-  ) {
-    return true;
-  }
-
-  // Get variations for the country (or use the country name itself)
-  const variations = COUNTRY_MAPPINGS[countryLower] || [countryLower];
-
-  // Check if location contains any of the country variations
-  return variations.some((variant) => {
-    // Match as whole word to avoid false positives (e.g., "IN" matching "engineering")
-    const regex = new RegExp(`\\b${variant}\\b`, "i");
-    return regex.test(locationLower);
-  });
-}
-
-/**
- * Check if a job location matches the preferred city.
- * Returns true if:
- * - No preferred city is specified
- * - Location contains the preferred city name (case-insensitive)
- */
-function matchesPreferredCity(
-  location: string | undefined,
-  preferredCity: string
-): boolean {
-  if (!preferredCity) return true; // No city filter = allow all
-  if (!location) return false;
-
-  const locationLower = location.toLowerCase().trim();
-  const cityLower = preferredCity.toLowerCase().trim();
-
-  // Check if location contains the city name
-  return locationLower.includes(cityLower);
-}
-
-/** Parse scraper_filter_title_keywords setting into normalized string[] */
-function parseTitleKeywordsFilter(value: string | null | undefined): string[] {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((v): v is string => typeof v === "string")
-      .map((v) => String(v).trim().toLowerCase())
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Check if a job title matches any of the user-defined keywords.
- * Returns true if:
- * - No keywords are specified (empty array = no filter)
- * - OR job title contains any of the keywords (case-insensitive substring match)
- * Example: "Engineer" matches "Software Engineer", "Engineering Manager", "DevOps Engineer"
- */
-function matchesTitleKeywords(
-  job: { title?: string },
-  keywords: string[]
-): boolean {
-  if (keywords.length === 0) return true;
-  const title = (job.title ?? "").toLowerCase();
-  return keywords.some((keyword) => title.includes(keyword));
-}
+import { batchDeduplicateJobs } from "./deduplicator";
+import {
+  matchesPreferredCountry,
+  matchesPreferredCity,
+  parseTitleKeywordsFilter,
+  matchesTitleKeywords,
+} from "./filter-utils";
 
 export interface FetchResult {
   companyId: number;
@@ -210,11 +80,43 @@ export async function fetchJobsForCompany(
   }
 
   try {
-    // Scrape jobs from the company's careers page
+    // Get existing jobs BEFORE scraping for early deduplication
+    const existingJobs = await db
+      .select({
+        id: jobs.id,
+        externalId: jobs.externalId,
+        title: jobs.title,
+        url: jobs.url,
+      })
+      .from(jobs)
+      .where(eq(jobs.companyId, companyId));
+
+    const existingExternalIds = new Set<string>(
+      existingJobs.map(j => j.externalId).filter((id): id is string => Boolean(id))
+    );
+
+    // Load filter settings
+    const filterCountrySetting = await db.select().from(settings).where(eq(settings.key, "scraper_filter_country"));
+    const filterCitySetting = await db.select().from(settings).where(eq(settings.key, "scraper_filter_city"));
+    const filterTitleKeywordsSetting = await db.select().from(settings).where(eq(settings.key, "scraper_filter_title_keywords"));
+    const filterCountry = filterCountrySetting[0]?.value || "";
+    const filterCity = filterCitySetting[0]?.value || "";
+    const filterTitleKeywords = parseTitleKeywordsFilter(filterTitleKeywordsSetting[0]?.value ?? null);
+
+    const scraperOptions = {
+      boardToken: company.boardToken || undefined,
+      filters: {
+        country: filterCountry || undefined,
+        city: filterCity || undefined,
+        titleKeywords: filterTitleKeywords.length > 0 ? filterTitleKeywords : undefined,
+      },
+      existingExternalIds,
+    };
+
     const scraperResult = await scraperRegistry.scrape(
       company.careersUrl,
       company.platform || undefined,
-      { boardToken: company.boardToken || undefined }
+      scraperOptions
     );
 
     if (!scraperResult.success) {
@@ -260,18 +162,7 @@ export async function fetchJobsForCompany(
       };
     }
 
-    // Get existing jobs for deduplication
-    const existingJobs = await db
-      .select({
-        id: jobs.id,
-        externalId: jobs.externalId,
-        title: jobs.title,
-        url: jobs.url,
-      })
-      .from(jobs)
-      .where(eq(jobs.companyId, companyId));
-
-    // Deduplicate jobs
+    // Deduplicate jobs (safety net - scraper may have already done early deduplication)
     const { newJobs, duplicates } = batchDeduplicateJobs(
       scraperResult.jobs.map((j) => ({
         externalId: j.externalId,
@@ -286,17 +177,8 @@ export async function fetchJobsForCompany(
       newJobs.some((nj) => nj.externalId === j.externalId)
     );
 
-    // Filter by preferred country and city if set in settings
-    const filterCountrySetting = await db.select().from(settings).where(eq(settings.key, "scraper_filter_country"));
-    const filterCitySetting = await db.select().from(settings).where(eq(settings.key, "scraper_filter_city"));
-    const filterTitleKeywordsSetting = await db.select().from(settings).where(eq(settings.key, "scraper_filter_title_keywords"));
-    const filterCountry = filterCountrySetting[0]?.value || "";
-    const filterCity = filterCitySetting[0]?.value || "";
-    const filterTitleKeywords = parseTitleKeywordsFilter(filterTitleKeywordsSetting[0]?.value ?? null);
+    // Post-scrape filtering (safety net for scrapers that don't support early filtering)
     let jobsFilteredOut = 0;
-    let countryFilteredOut = 0;
-    let cityFilteredOut = 0;
-    let titleKeywordsFilteredOut = 0;
 
     if (filterCountry || filterCity) {
       const originalCount = newJobsToInsert.length;
@@ -304,37 +186,27 @@ export async function fetchJobsForCompany(
       newJobsToInsert = newJobsToInsert.filter((job) => {
         const matchesCountry = !filterCountry || matchesPreferredCountry(job.location, filterCountry);
         const matchesCity = matchesPreferredCity(job.location, filterCity);
-
-        if (!matchesCountry) countryFilteredOut++;
-        if (matchesCountry && !matchesCity) cityFilteredOut++;
-
         return matchesCountry && matchesCity;
       });
 
-      jobsFilteredOut = newJobsToInsert.length < originalCount ? originalCount - newJobsToInsert.length : 0;
-
-      if (jobsFilteredOut > 0) {
+      const filteredHere = originalCount - newJobsToInsert.length;
+      jobsFilteredOut += filteredHere;
+      
+      if (filteredHere > 0) {
         const filterReasons = [];
         if (filterCountry) filterReasons.push(`country: ${filterCountry}`);
         if (filterCity) filterReasons.push(`city: ${filterCity}`);
-        console.log(
-          `[Filter] Filtered out ${jobsFilteredOut}/${originalCount} jobs not matching preferred ${filterReasons.join(", ")} (country: ${countryFilteredOut}, city: ${cityFilteredOut})`
-        );
+        console.log(`[Filter] Post-scrape: ${filteredHere} jobs filtered (${filterReasons.join(", ")})`);
       }
     }
 
     if (filterTitleKeywords.length > 0) {
       const originalCount = newJobsToInsert.length;
-      newJobsToInsert = newJobsToInsert.filter((job) => {
-        const keep = matchesTitleKeywords(job, filterTitleKeywords);
-        if (!keep) titleKeywordsFilteredOut++;
-        return keep;
-      });
-      jobsFilteredOut += originalCount - newJobsToInsert.length;
-      if (titleKeywordsFilteredOut > 0) {
-        console.log(
-          `[Filter] Title keywords filter: kept ${newJobsToInsert.length}/${originalCount} jobs (filtered out ${titleKeywordsFilteredOut} not matching keywords: ${filterTitleKeywords.join(", ")})`
-        );
+      newJobsToInsert = newJobsToInsert.filter((job) => matchesTitleKeywords(job.title, filterTitleKeywords));
+      const filteredHere = originalCount - newJobsToInsert.length;
+      jobsFilteredOut += filteredHere;
+      if (filteredHere > 0) {
+        console.log(`[Filter] Post-scrape title filter: ${filteredHere} jobs filtered`);
       }
     }
 

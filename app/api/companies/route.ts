@@ -16,6 +16,9 @@ function detectPlatform(url: string): string | null {
   if (urlLower.includes("ashbyhq.com") || urlLower.includes("jobs.ashbyhq.com")) {
     return "ashby";
   }
+  if (urlLower.includes("myworkdayjobs.com") || /\.wd\d*\.myworkdayjobs\.com/.test(urlLower)) {
+    return "workday";
+  }
   return "custom";
 }
 
