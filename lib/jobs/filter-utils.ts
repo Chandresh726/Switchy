@@ -49,15 +49,19 @@ export const COUNTRY_MAPPINGS: Record<string, string[]> = {
   canada: ["canada", "toronto", "vancouver", "montreal", "ottawa", "calgary"],
 };
 
-export interface JobFilterOptions {
+export type JobFilterOptions = {
   country?: string;
   city?: string;
   titleKeywords?: string[];
-}
+};
 
 export interface FilterableJob {
   title?: string;
   location?: string;
+}
+
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export function matchesPreferredCountry(
@@ -81,7 +85,7 @@ export function matchesPreferredCountry(
   const variations = COUNTRY_MAPPINGS[countryLower] || [countryLower];
 
   return variations.some((variant) => {
-    const regex = new RegExp(`\\b${variant}\\b`, "i");
+    const regex = new RegExp(`\\b${escapeRegExp(variant)}\\b`, "i");
     return regex.test(locationLower);
   });
 }

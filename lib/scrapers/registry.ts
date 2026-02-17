@@ -45,11 +45,11 @@ class ScraperRegistry {
     // Otherwise, auto-detect based on URL
     const scraper = this.getScraperForUrl(url);
     if (!scraper) {
+      const supportedPlatforms = this.getSupportedPlatforms().join(", ");
       return {
         success: false,
         jobs: [],
-        error:
-          "No scraper found for this URL. Supported platforms: Greenhouse, Lever, Ashby, Workday",
+        error: `No scraper found for this URL. Supported platforms: ${supportedPlatforms}`,
       };
     }
 

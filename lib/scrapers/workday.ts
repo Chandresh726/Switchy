@@ -1,9 +1,13 @@
-import { chromium, Browser, BrowserContext } from "playwright";
-import { AbstractScraper, ScraperResult, ScrapeOptions, ScrapedJob } from "./base-scraper";
+import { chromium } from "playwright";
+import type { Browser, BrowserContext } from "playwright";
+
 import { processDescription, containsHtml } from "@/lib/jobs/description-processor";
 import { applyFilters, type JobFilterOptions } from "@/lib/jobs/filter-utils";
 
-interface WorkdayJobListItem {
+import { AbstractScraper } from "./base-scraper";
+import type { ScraperResult, ScrapeOptions, ScrapedJob } from "./base-scraper";
+
+type WorkdayJobListItem = {
   title: string;
   externalPath: string;
   locationsText: string;
@@ -12,12 +16,12 @@ interface WorkdayJobListItem {
   bulletFields: string[];
 }
 
-interface WorkdayJobListResponse {
+type WorkdayJobListResponse = {
   total: number;
   jobPostings: WorkdayJobListItem[];
-}
+};
 
-interface WorkdayJobDetailResponse {
+type WorkdayJobDetailResponse = {
   jobPostingInfo: {
     id: string;
     title: string;
@@ -32,21 +36,21 @@ interface WorkdayJobDetailResponse {
     externalUrl: string;
     country?: { descriptor: string };
   };
-}
+};
 
-interface WorkdaySession {
+type WorkdaySession = {
   cookies: string;
   csrfToken: string;
   baseUrl: string;
   tenant: string;
   board: string;
-}
+};
 
-interface ParsedWorkdayUrl {
+type ParsedWorkdayUrl = {
   baseUrl: string;
   tenant: string;
   board: string;
-}
+};
 
 const PARALLEL_LIST_FETCHES = 2;
 const DETAIL_BATCH_SIZE = 5;
@@ -216,7 +220,15 @@ export class WorkdayScraper extends AbstractScraper {
 
       if (!response.ok) return null;
       return response.json();
-    } catch {
+    } catch (err) {
+      console.error("Failed to fetch job list page", {
+        tenant: session.tenant,
+        board: session.board,
+        offset,
+        limit,
+        url,
+        error: err,
+      });
       return null;
     }
   }
@@ -313,7 +325,14 @@ export class WorkdayScraper extends AbstractScraper {
 
       if (!response.ok) return null;
       return response.json();
-    } catch {
+    } catch (err) {
+      console.error("Failed to fetch job detail", {
+        baseUrl: session.baseUrl,
+        tenant: session.tenant,
+        board: session.board,
+        jobPostingId,
+        error: err,
+      });
       return null;
     }
   }
@@ -328,7 +347,24 @@ export class WorkdayScraper extends AbstractScraper {
 
   private parsePostedDate(postedOn: string): Date | undefined {
     if (!postedOn) return undefined;
-    const match = postedOn.match(/(\d+)/);
+
+    // Try parsing as absolute date first (ISO format, etc.)
+    const absoluteDate = new Date(postedOn);
+    if (!isNaN(absoluteDate.getTime())) {
+      return absoluteDate;
+    }
+
+    // Strip "posted" or "posted on" prefix
+    const cleaned = postedOn.replace(/^posted\s+(?:on\s+)?/i, "");
+
+    // Try parsing cleaned string as absolute date
+    const cleanedDate = new Date(cleaned);
+    if (!isNaN(cleanedDate.getTime())) {
+      return cleanedDate;
+    }
+
+    // Fall back to relative days parsing
+    const match = cleaned.match(/(\d+)/);
     if (!match) return undefined;
     const days = parseInt(match[1], 10);
     const date = new Date();
@@ -349,7 +385,11 @@ export class WorkdayScraper extends AbstractScraper {
       };
     }
 
-    return { description, descriptionFormat: "plain" };
+    const result = processDescription(description, "plain");
+    return {
+      description: result.text ?? undefined,
+      descriptionFormat: result.format,
+    };
   }
 
   private async processJobBatch(
@@ -479,7 +519,7 @@ export class WorkdayScraper extends AbstractScraper {
       return {
         success: false,
         jobs: [],
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: "An internal error occurred while scraping jobs",
       };
     }
   }

@@ -15,6 +15,7 @@ A local-first job scraping, matching, and tracking tool. Switchy discovers roles
 - **pnpm**: package manager
 - **Native build tools**: for `better-sqlite3` (Python, C++ compiler)
 - **AI API key** (optional): Anthropic, Google Gemini, or other supported providers
+- **Playwright browsers** (optional): Required only for Workday scraper - run `pnpm exec playwright install`
 
 ## Local Setup
 

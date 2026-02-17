@@ -1,10 +1,12 @@
+import { eq } from "drizzle-orm";
+
 import { db } from "@/lib/db";
 import { companies, jobs, scrapingLogs, scrapeSessions, settings } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
 import { scraperRegistry } from "@/lib/scrapers/registry";
-import { batchDeduplicateJobs } from "./deduplicator";
 import { matchWithTracking, getMatcherConfig } from "@/lib/ai/matcher";
 import type { TriggerSource } from "@/lib/ai/matcher/types";
+
+import { batchDeduplicateJobs } from "./deduplicator";
 import {
   matchesPreferredCountry,
   matchesPreferredCity,
