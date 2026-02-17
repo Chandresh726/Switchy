@@ -29,6 +29,7 @@ const PLATFORMS = [
   { value: "greenhouse", label: "Greenhouse" },
   { value: "lever", label: "Lever" },
   { value: "ashby", label: "Ashby" },
+  { value: "workday", label: "Workday" },
   { value: "custom", label: "Custom" },
 ];
 
@@ -56,6 +57,8 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
       setDetectedPlatform("Lever");
     } else if (urlLower.includes("ashbyhq.com") || urlLower.includes("jobs.ashbyhq.com")) {
       setDetectedPlatform("Ashby");
+    } else if (urlLower.includes("myworkdayjobs.com") || /\.wd\d*\.myworkdayjobs\.com/.test(urlLower)) {
+      setDetectedPlatform("Workday");
     } else if (url.length > 10) {
       setDetectedPlatform("Custom");
     } else {
@@ -168,7 +171,7 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
             )}
           </div>
           <p className="text-xs text-zinc-500">
-            We support Greenhouse, Lever, Ashby, and custom career pages
+            We support Greenhouse, Lever, Ashby, Workday, and custom career pages
           </p>
         </div>
       </div>
@@ -203,10 +206,10 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
             />
             <div>
               <Label htmlFor="manualPlatform" className="text-amber-400 cursor-pointer">
-                This company uses a known ATS (Greenhouse/Lever/Ashby)
+                This company uses a known ATS (Greenhouse/Lever/Ashby/Workday)
               </Label>
               <p className="text-xs text-zinc-400 mt-0.5">
-                Enable this if the company has a custom career page but uses Greenhouse or Lever or Ashby for applications
+                Enable this if the company has a custom career page but uses a supported ATS for applications
               </p>
             </div>
           </div>
@@ -245,6 +248,7 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
                 <p className="text-xs text-zinc-500">
                   For Greenhouse/Lever, this is the company slug in the apply URL (e.g. boards.greenhouse.io/<strong>acme</strong>/jobs/123).
                   For Ashby, use the jobs page name from jobs.ashbyhq.com/<strong>Ashby</strong>.
+                  Workday URLs are parsed automatically.
                 </p>
               </div>
             </div>

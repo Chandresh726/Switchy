@@ -19,7 +19,13 @@ export interface ScraperResult {
 }
 
 export interface ScrapeOptions {
-  boardToken?: string; // Manual board token for platforms like Greenhouse
+  boardToken?: string;
+  filters?: {
+    country?: string;
+    city?: string;
+    titleKeywords?: string[];
+  };
+  existingExternalIds?: Set<string>;
 }
 
 export interface BaseScraper {

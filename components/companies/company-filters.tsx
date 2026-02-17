@@ -65,6 +65,7 @@ const PLATFORM_OPTIONS = [
   { value: "greenhouse", label: "Greenhouse" },
   { value: "lever", label: "Lever" },
   { value: "ashby", label: "Ashby" },
+  { value: "workday", label: "Workday" },
   { value: "custom", label: "Custom" },
 ];
 

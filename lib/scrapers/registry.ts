@@ -2,6 +2,7 @@ import { BaseScraper, ScraperResult, ScrapeOptions } from "./base-scraper";
 import { GreenhouseScraper } from "./greenhouse";
 import { LeverScraper } from "./lever";
 import { AshbyScraper } from "./ashby";
+import { WorkdayScraper } from "./workday";
 
 class ScraperRegistry {
   private scrapers: BaseScraper[] = [];
@@ -11,6 +12,7 @@ class ScraperRegistry {
     this.register(new GreenhouseScraper());
     this.register(new LeverScraper());
     this.register(new AshbyScraper());
+    this.register(new WorkdayScraper());
   }
 
   register(scraper: BaseScraper): void {
@@ -47,7 +49,7 @@ class ScraperRegistry {
         success: false,
         jobs: [],
         error:
-          "No scraper found for this URL. Supported platforms: Greenhouse, Lever, Ashby",
+          "No scraper found for this URL. Supported platforms: Greenhouse, Lever, Ashby, Workday",
       };
     }
 
