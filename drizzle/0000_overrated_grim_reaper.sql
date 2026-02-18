@@ -40,11 +40,11 @@ CREATE TABLE `companies` (
 	`board_token` text,
 	`is_active` integer DEFAULT true NOT NULL,
 	`last_scraped_at` integer,
-	`scrape_frequency` integer DEFAULT 6,
 	`created_at` integer,
 	`updated_at` integer
 );
 --> statement-breakpoint
+CREATE INDEX `companies_careers_url_idx` ON `companies` (`careers_url`);--> statement-breakpoint
 CREATE TABLE `education` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`profile_id` integer,
@@ -69,15 +69,6 @@ CREATE TABLE `experience` (
 	`description` text,
 	`highlights` text,
 	FOREIGN KEY (`profile_id`) REFERENCES `profile`(`id`) ON UPDATE no action ON DELETE cascade
-);
---> statement-breakpoint
-CREATE TABLE `job_requirements` (
-	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-	`job_id` integer NOT NULL,
-	`requirement` text NOT NULL,
-	`type` text,
-	`category` text,
-	FOREIGN KEY (`job_id`) REFERENCES `jobs`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
 CREATE TABLE `jobs` (
@@ -108,6 +99,9 @@ CREATE TABLE `jobs` (
 	FOREIGN KEY (`company_id`) REFERENCES `companies`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE INDEX `jobs_company_id_idx` ON `jobs` (`company_id`);--> statement-breakpoint
+CREATE INDEX `jobs_status_idx` ON `jobs` (`status`);--> statement-breakpoint
+CREATE INDEX `jobs_match_score_idx` ON `jobs` (`match_score`);--> statement-breakpoint
 CREATE TABLE `match_logs` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`session_id` text,
@@ -124,6 +118,7 @@ CREATE TABLE `match_logs` (
 	FOREIGN KEY (`job_id`) REFERENCES `jobs`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE INDEX `match_logs_session_id_idx` ON `match_logs` (`session_id`);--> statement-breakpoint
 CREATE TABLE `match_sessions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`trigger_source` text NOT NULL,
@@ -137,18 +132,6 @@ CREATE TABLE `match_sessions` (
 	`started_at` integer,
 	`completed_at` integer,
 	FOREIGN KEY (`company_id`) REFERENCES `companies`(`id`) ON UPDATE no action ON DELETE set null
-);
---> statement-breakpoint
-CREATE TABLE `matcher_errors` (
-	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-	`job_id` integer NOT NULL,
-	`scraping_log_id` integer,
-	`attempt_number` integer NOT NULL,
-	`error_type` text NOT NULL,
-	`error_message` text NOT NULL,
-	`occurred_at` integer,
-	FOREIGN KEY (`job_id`) REFERENCES `jobs`(`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`scraping_log_id`) REFERENCES `scraping_logs`(`id`) ON UPDATE no action ON DELETE set null
 );
 --> statement-breakpoint
 CREATE TABLE `profile` (
@@ -217,6 +200,8 @@ CREATE TABLE `scraping_logs` (
 	FOREIGN KEY (`session_id`) REFERENCES `scrape_sessions`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE INDEX `scraping_logs_session_id_idx` ON `scraping_logs` (`session_id`);--> statement-breakpoint
+CREATE INDEX `scraping_logs_company_id_idx` ON `scraping_logs` (`company_id`);--> statement-breakpoint
 CREATE TABLE `settings` (
 	`key` text PRIMARY KEY NOT NULL,
 	`value` text,

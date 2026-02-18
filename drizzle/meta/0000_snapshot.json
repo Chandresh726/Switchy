@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "6a782834-919b-4da6-bc93-26f52f3bac78",
+  "id": "2bbfae19-cb5c-4f12-83e3-7b821b2caba3",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "aiGeneratedContent": {
@@ -286,14 +286,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "scrape_frequency": {
-          "name": "scrape_frequency",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false,
-          "default": 6
-        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -309,7 +301,15 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "companies_careers_url_idx": {
+          "name": "companies_careers_url_idx",
+          "columns": [
+            "careers_url"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -477,65 +477,6 @@
           "tableTo": "profile",
           "columnsFrom": [
             "profile_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "job_requirements": {
-      "name": "job_requirements",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "job_id": {
-          "name": "job_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "requirement": {
-          "name": "requirement",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "type": {
-          "name": "type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "category": {
-          "name": "category",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "job_requirements_job_id_jobs_id_fk": {
-          "name": "job_requirements_job_id_jobs_id_fk",
-          "tableFrom": "job_requirements",
-          "tableTo": "jobs",
-          "columnsFrom": [
-            "job_id"
           ],
           "columnsTo": [
             "id"
@@ -722,7 +663,29 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "jobs_company_id_idx": {
+          "name": "jobs_company_id_idx",
+          "columns": [
+            "company_id"
+          ],
+          "isUnique": false
+        },
+        "jobs_status_idx": {
+          "name": "jobs_status_idx",
+          "columns": [
+            "status"
+          ],
+          "isUnique": false
+        },
+        "jobs_match_score_idx": {
+          "name": "jobs_match_score_idx",
+          "columns": [
+            "match_score"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "jobs_company_id_companies_id_fk": {
           "name": "jobs_company_id_companies_id_fk",
@@ -824,7 +787,15 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "match_logs_session_id_idx": {
+          "name": "match_logs_session_id_idx",
+          "columns": [
+            "session_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "match_logs_session_id_match_sessions_id_fk": {
           "name": "match_logs_session_id_match_sessions_id_fk",
@@ -952,92 +923,6 @@
           "tableTo": "companies",
           "columnsFrom": [
             "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "matcher_errors": {
-      "name": "matcher_errors",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "job_id": {
-          "name": "job_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "scraping_log_id": {
-          "name": "scraping_log_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "attempt_number": {
-          "name": "attempt_number",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "error_type": {
-          "name": "error_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "error_message": {
-          "name": "error_message",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "occurred_at": {
-          "name": "occurred_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "matcher_errors_job_id_jobs_id_fk": {
-          "name": "matcher_errors_job_id_jobs_id_fk",
-          "tableFrom": "matcher_errors",
-          "tableTo": "jobs",
-          "columnsFrom": [
-            "job_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "matcher_errors_scraping_log_id_scraping_logs_id_fk": {
-          "name": "matcher_errors_scraping_log_id_scraping_logs_id_fk",
-          "tableFrom": "matcher_errors",
-          "tableTo": "scraping_logs",
-          "columnsFrom": [
-            "scraping_log_id"
           ],
           "columnsTo": [
             "id"
@@ -1467,7 +1352,22 @@
           "default": 0
         }
       },
-      "indexes": {},
+      "indexes": {
+        "scraping_logs_session_id_idx": {
+          "name": "scraping_logs_session_id_idx",
+          "columns": [
+            "session_id"
+          ],
+          "isUnique": false
+        },
+        "scraping_logs_company_id_idx": {
+          "name": "scraping_logs_company_id_idx",
+          "columns": [
+            "company_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "scraping_logs_company_id_companies_id_fk": {
           "name": "scraping_logs_company_id_companies_id_fk",
