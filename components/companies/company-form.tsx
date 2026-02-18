@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState, useEffect } from "react";
 import { Loader2, Plus, X, Save } from "lucide-react";
+import { PLATFORM_OPTIONS } from "@/lib/constants";
 
 interface Company {
   id: number;
@@ -26,11 +27,7 @@ interface CompanyFormProps {
 
 const PLATFORMS = [
   { value: "", label: "Auto-detect" },
-  { value: "greenhouse", label: "Greenhouse" },
-  { value: "lever", label: "Lever" },
-  { value: "ashby", label: "Ashby" },
-  { value: "workday", label: "Workday" },
-  { value: "custom", label: "Custom" },
+  ...PLATFORM_OPTIONS,
 ];
 
 export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) {
@@ -59,6 +56,8 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
       setDetectedPlatform("Ashby");
     } else if (urlLower.includes("myworkdayjobs.com") || /\.wd\d*\.myworkdayjobs\.com/.test(urlLower)) {
       setDetectedPlatform("Workday");
+    } else if (urlLower.includes("eightfold.ai")) {
+      setDetectedPlatform("Eightfold");
     } else if (url.length > 10) {
       setDetectedPlatform("Custom");
     } else {
@@ -171,7 +170,7 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
             )}
           </div>
           <p className="text-xs text-zinc-500">
-            We support Greenhouse, Lever, Ashby, Workday, and custom career pages
+            We support Greenhouse, Lever, Ashby, Workday, Eightfold, and custom career pages
           </p>
         </div>
       </div>
@@ -206,7 +205,7 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
             />
             <div>
               <Label htmlFor="manualPlatform" className="text-amber-400 cursor-pointer">
-                This company uses a known ATS (Greenhouse/Lever/Ashby/Workday)
+                This company uses a known ATS (Greenhouse/Lever/Ashby/Workday/Eightfold)
               </Label>
               <p className="text-xs text-zinc-400 mt-0.5">
                 Enable this if the company has a custom career page but uses a supported ATS for applications
@@ -215,42 +214,56 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
           </div>
 
           {manualPlatformOverride && (
-            <div className="grid gap-4 sm:grid-cols-2 pt-2">
-              <div className="space-y-2">
-                <Label htmlFor="platform">Platform</Label>
-                <select
-                  id="platform"
-                  value={formData.platform}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, platform: e.target.value }))}
-                  className="h-8 w-full rounded border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100"
-                >
-                  {PLATFORMS.map((platform) => (
-                    <option key={platform.value} value={platform.value}>
-                      {platform.label}
-                    </option>
-                  ))}
-                </select>
+            <div className="space-y-4 pt-2">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="platform">Platform</Label>
+                  <select
+                    id="platform"
+                    value={formData.platform}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, platform: e.target.value }))}
+                    className="h-8 w-full rounded border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100"
+                  >
+                    {PLATFORMS.map((platform) => (
+                      <option key={platform.value} value={platform.value}>
+                        {platform.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {(formData.platform === "greenhouse" || formData.platform === "lever" || formData.platform === "ashby") && (
+                  <div className="space-y-2">
+                    <Label htmlFor="boardToken">
+                      Board Token *
+                    </Label>
+                    <Input
+                      id="boardToken"
+                      value={formData.boardToken}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, boardToken: e.target.value }))}
+                      placeholder="e.g., acme"
+                      required
+                      autoComplete="off"
+                      data-form-type="other"
+                    />
+                  </div>
+                )}
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="boardToken">
-                  Board Token {(formData.platform === "greenhouse" || formData.platform === "lever" || formData.platform === "ashby") && "*"}
-                </Label>
-                <Input
-                  id="boardToken"
-                  value={formData.boardToken}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, boardToken: e.target.value }))}
-                  placeholder="e.g., acme"
-                  required={formData.platform === "greenhouse" || formData.platform === "lever" || formData.platform === "ashby"}
-                  autoComplete="off"
-                  data-form-type="other"
-                />
+              {(formData.platform === "greenhouse" || formData.platform === "lever" || formData.platform === "ashby") && (
                 <p className="text-xs text-zinc-500">
                   For Greenhouse/Lever, this is the company slug in the apply URL (e.g. boards.greenhouse.io/<strong>acme</strong>/jobs/123).
-                  For Ashby, use the jobs page name from jobs.ashbyhq.com/<strong>Ashby</strong>.
-                  Workday URLs are parsed automatically.
+                  For Ashby, use the jobs page name from jobs.ashbyhq.com/<strong>OrgName</strong>.
                 </p>
-              </div>
+              )}
+
+              {(formData.platform === "eightfold" || formData.platform === "workday") && (
+                <p className="text-xs text-emerald-400">
+                  {formData.platform === "eightfold" 
+                    ? "Domain will be auto-detected when scraping. No manual configuration needed."
+                    : "Board and tenant will be auto-detected from the URL. No manual configuration needed."}
+                </p>
+              )}
             </div>
           )}
         </div>

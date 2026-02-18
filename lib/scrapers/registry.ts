@@ -3,6 +3,7 @@ import { GreenhouseScraper } from "./greenhouse";
 import { LeverScraper } from "./lever";
 import { AshbyScraper } from "./ashby";
 import { WorkdayScraper } from "./workday";
+import { EightfoldScraper } from "./eightfold";
 
 class ScraperRegistry {
   private scrapers: BaseScraper[] = [];
@@ -12,6 +13,7 @@ class ScraperRegistry {
     this.register(new GreenhouseScraper());
     this.register(new LeverScraper());
     this.register(new AshbyScraper());
+    this.register(new EightfoldScraper());
     this.register(new WorkdayScraper());
   }
 

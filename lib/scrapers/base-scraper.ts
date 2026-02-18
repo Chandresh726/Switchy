@@ -16,6 +16,7 @@ export interface ScraperResult {
   success: boolean;
   jobs: ScrapedJob[];
   error?: string;
+  detectedBoardToken?: string;
 }
 
 export interface ScrapeOptions {

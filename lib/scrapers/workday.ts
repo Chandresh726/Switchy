@@ -435,14 +435,26 @@ export class WorkdayScraper extends AbstractScraper {
 
   async scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult> {
     try {
-      const parsedUrl = this.parseUrl(url);
+      let parsedUrl = this.parseUrl(url);
+      let detectedBoardToken: string | undefined;
       
-      if (!parsedUrl) {
+      if (options?.boardToken && options.boardToken.includes("/")) {
+        const [tenant, board] = options.boardToken.split("/");
+        const urlObj = new URL(url);
+        parsedUrl = {
+          baseUrl: `${urlObj.protocol}//${urlObj.hostname}`,
+          tenant,
+          board,
+        };
+        console.log(`[Workday] Using boardToken from options: tenant=${tenant}, board=${board}`);
+      } else if (!parsedUrl) {
         return {
           success: false,
           jobs: [],
           error: "Could not parse Workday URL. Expected format: https://company.wd5.myworkdayjobs.com/board",
         };
+      } else {
+        detectedBoardToken = `${parsedUrl.tenant}/${parsedUrl.board}`;
       }
 
       const session = await this.bootstrapSession(parsedUrl);
@@ -465,6 +477,7 @@ export class WorkdayScraper extends AbstractScraper {
         return {
           success: true,
           jobs: [],
+          detectedBoardToken,
         };
       }
 
@@ -488,6 +501,7 @@ export class WorkdayScraper extends AbstractScraper {
         return {
           success: true,
           jobs: [],
+          detectedBoardToken,
         };
       }
 
@@ -513,6 +527,7 @@ export class WorkdayScraper extends AbstractScraper {
       return {
         success: true,
         jobs: scrapedJobs,
+        detectedBoardToken,
       };
     } catch (error) {
       console.error("[Workday Scraper] Error:", error);

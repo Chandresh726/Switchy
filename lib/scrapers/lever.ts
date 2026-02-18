@@ -46,6 +46,7 @@ export class LeverScraper extends AbstractScraper {
     try {
       // Use manual board token if provided, otherwise extract from URL
       const companySlug = options?.boardToken || this.extractCompanySlug(url);
+      const detectedBoardToken = !options?.boardToken && companySlug ? companySlug : undefined;
 
       if (!companySlug) {
         return {
@@ -74,7 +75,7 @@ export class LeverScraper extends AbstractScraper {
       }
 
       const data: LeverJob[] = await response.json();
-      return this.parseJobs(data, companySlug);
+      return this.parseJobs(data, companySlug, detectedBoardToken);
     } catch (error) {
       return {
         success: false,
@@ -84,7 +85,7 @@ export class LeverScraper extends AbstractScraper {
     }
   }
 
-  private parseJobs(data: LeverJob[], companySlug: string): ScraperResult {
+  private parseJobs(data: LeverJob[], companySlug: string, detectedBoardToken?: string): ScraperResult {
     const jobs = data.map((job) => {
       const { location, locationType } = this.normalizeLocation(
         job.categories?.location
@@ -107,6 +108,7 @@ export class LeverScraper extends AbstractScraper {
     return {
       success: true,
       jobs,
+      detectedBoardToken,
     };
   }
 }

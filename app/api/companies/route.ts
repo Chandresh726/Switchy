@@ -19,6 +19,9 @@ function detectPlatform(url: string): string | null {
   if (urlLower.includes("myworkdayjobs.com") || /\.wd\d*\.myworkdayjobs\.com/.test(urlLower)) {
     return "workday";
   }
+  if (urlLower.includes("eightfold.ai")) {
+    return "eightfold";
+  }
   return "custom";
 }
 
@@ -62,10 +65,12 @@ export async function POST(request: NextRequest) {
       const platform = manualPlatform || detectPlatform(careersUrl);
       const detectedFromUrl = detectPlatform(careersUrl);
 
-      // Validate boardToken is provided when manually selecting greenhouse/lever with custom URL
+      // Validate boardToken is provided when manually selecting greenhouse/lever/ashby with custom URL
+      // Eightfold and Workday can auto-detect, so boardToken is optional for them
+      const requiresBoardToken = ["greenhouse", "lever", "ashby"].includes(manualPlatform || "");
       if (
         manualPlatform &&
-        manualPlatform !== "custom" &&
+        requiresBoardToken &&
         detectedFromUrl !== manualPlatform &&
         !boardToken
       ) {
@@ -155,10 +160,12 @@ export async function PUT(request: NextRequest) {
       const detectedFromUrl = detectPlatform(item.careersUrl);
       const platform = manualPlatform || detectedFromUrl;
 
-      // Validate boardToken is provided when manually selecting greenhouse/lever with custom URL
+      // Validate boardToken is provided when manually selecting greenhouse/lever/ashby with custom URL
+      // Eightfold and Workday can auto-detect, so boardToken is optional for them
+      const requiresBoardToken = ["greenhouse", "lever", "ashby"].includes(manualPlatform || "");
       if (
         manualPlatform &&
-        manualPlatform !== "custom" &&
+        requiresBoardToken &&
         detectedFromUrl !== manualPlatform &&
         !item.boardToken
       ) {

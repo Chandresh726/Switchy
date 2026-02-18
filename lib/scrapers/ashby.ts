@@ -52,6 +52,7 @@ export class AshbyScraper extends AbstractScraper {
   async scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult> {
     try {
       const boardName = options?.boardToken || this.extractBoardName(url);
+      const detectedBoardToken = !options?.boardToken && boardName ? boardName : undefined;
 
       if (!boardName) {
         return {
@@ -82,7 +83,7 @@ export class AshbyScraper extends AbstractScraper {
       }
 
       const data = (await response.json()) as AshbyResponse;
-      return this.parseJobs(data, boardName);
+      return this.parseJobs(data, boardName, detectedBoardToken);
     } catch (error) {
       return {
         success: false,
@@ -92,7 +93,7 @@ export class AshbyScraper extends AbstractScraper {
     }
   }
 
-  private parseJobs(data: AshbyResponse, boardName: string): ScraperResult {
+  private parseJobs(data: AshbyResponse, boardName: string, detectedBoardToken?: string): ScraperResult {
     const jobs = data.jobs.map((job, index) => {
       // Prefer primary location string, fall back to first secondary location
       const primaryLocation =
@@ -151,6 +152,7 @@ export class AshbyScraper extends AbstractScraper {
     return {
       success: true,
       jobs,
+      detectedBoardToken,
     };
   }
 }

@@ -235,10 +235,20 @@ export async function fetchJobsForCompany(
       insertedJobIds = insertedJobs.map(j => j.id);
     }
 
-    // Update company's last scraped timestamp
+    // Update company's last scraped timestamp and save detected boardToken if present
+    const companyUpdateData: Record<string, unknown> = { 
+      lastScrapedAt: new Date(), 
+      updatedAt: new Date() 
+    };
+    
+    if (scraperResult.detectedBoardToken && !company.boardToken) {
+      companyUpdateData.boardToken = scraperResult.detectedBoardToken;
+      console.log(`[Fetcher] Saving detected boardToken for company ${company.name}: ${scraperResult.detectedBoardToken}`);
+    }
+    
     await db
       .update(companies)
-      .set({ lastScrapedAt: new Date(), updatedAt: new Date() })
+      .set(companyUpdateData)
       .where(eq(companies.id, companyId));
 
     // Log the scrape result

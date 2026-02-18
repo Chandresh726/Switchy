@@ -54,6 +54,7 @@ export class GreenhouseScraper extends AbstractScraper {
     try {
       // Use manual board token if provided, otherwise extract from URL
       const boardToken = options?.boardToken || this.extractBoardToken(url);
+      const detectedBoardToken = !options?.boardToken && boardToken ? boardToken : undefined;
 
       if (!boardToken) {
         return {
@@ -92,11 +93,11 @@ export class GreenhouseScraper extends AbstractScraper {
         }
 
         const data: GreenhouseResponse = await altResponse.json();
-        return this.parseJobs(data, boardToken);
+        return this.parseJobs(data, boardToken, detectedBoardToken);
       }
 
       const data: GreenhouseResponse = await response.json();
-      return this.parseJobs(data, boardToken);
+      return this.parseJobs(data, boardToken, detectedBoardToken);
     } catch (error) {
       return {
         success: false,
@@ -106,7 +107,7 @@ export class GreenhouseScraper extends AbstractScraper {
     }
   }
 
-  private parseJobs(data: GreenhouseResponse, boardToken: string): ScraperResult {
+  private parseJobs(data: GreenhouseResponse, boardToken: string, detectedBoardToken?: string): ScraperResult {
     const jobs = data.jobs.map((job) => {
       // Extract location from metadata - look for location-specific keys only
       const locationMetadata = job.metadata?.find((m: { name: string; value: string | string[] }) => {
@@ -165,6 +166,7 @@ export class GreenhouseScraper extends AbstractScraper {
     return {
       success: true,
       jobs,
+      detectedBoardToken,
     };
   }
 }

@@ -1,10 +1,11 @@
 import { db } from "@/lib/db";
-import { companies, jobs, scrapingLogs, scrapeSessions } from "@/lib/db/schema";
+import { companies, jobs, scrapingLogs, scrapeSessions, settings } from "@/lib/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { scraperRegistry } from "@/lib/scrapers/registry";
 import { batchDeduplicateJobs } from "@/lib/jobs/deduplicator";
 import { getMatcherConfig, matchWithTracking } from "@/lib/ai/matcher";
+import { applyFilters, parseTitleKeywordsFilter } from "@/lib/jobs/filter-utils";
 
 export async function POST(request: NextRequest) {
   try {
@@ -35,18 +36,50 @@ export async function POST(request: NextRequest) {
       totalJobsFiltered: 0,
     });
 
+    // Load filter settings once for all companies
+    const settingsKeys = ["scraper_filter_country", "scraper_filter_city", "scraper_filter_title_keywords"];
+    const settingsData = await db.select().from(settings).where(inArray(settings.key, settingsKeys));
+    const settingsMap = new Map(settingsData.map((s) => [s.key, s.value]));
+    const filterCountry = settingsMap.get("scraper_filter_country") || "";
+    const filterCity = settingsMap.get("scraper_filter_city") || "";
+    const filterTitleKeywords = parseTitleKeywordsFilter(settingsMap.get("scraper_filter_title_keywords") ?? null);
+
     let totalJobsFound = 0;
     let totalJobsAdded = 0;
+    let totalJobsFiltered = 0;
     let completed = 0;
 
     for (const company of companiesList) {
       try {
         const startTime = Date.now();
 
+        // Get existing jobs for early deduplication
+        const existingJobs = await db
+          .select({
+            id: jobs.id,
+            externalId: jobs.externalId,
+            title: jobs.title,
+            url: jobs.url,
+          })
+          .from(jobs)
+          .where(eq(jobs.companyId, company.id));
+
+        const existingExternalIds = new Set<string>(
+          existingJobs.map(j => j.externalId).filter((id): id is string => Boolean(id))
+        );
+
         const scraperResult = await scraperRegistry.scrape(
           company.careersUrl,
           company.platform || undefined,
-          { boardToken: company.boardToken || undefined }
+          {
+            boardToken: company.boardToken || undefined,
+            filters: {
+              country: filterCountry || undefined,
+              city: filterCity || undefined,
+              titleKeywords: filterTitleKeywords.length > 0 ? filterTitleKeywords : undefined,
+            },
+            existingExternalIds,
+          }
         );
 
         if (!scraperResult.success) {
@@ -68,16 +101,6 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        const existingJobs = await db
-          .select({
-            id: jobs.id,
-            externalId: jobs.externalId,
-            title: jobs.title,
-            url: jobs.url,
-          })
-          .from(jobs)
-          .where(eq(jobs.companyId, company.id));
-
         const { newJobs } = batchDeduplicateJobs(
           scraperResult.jobs.map((j) => ({
             externalId: j.externalId,
@@ -87,9 +110,17 @@ export async function POST(request: NextRequest) {
           existingJobs
         );
 
-        const newJobsToInsert = scraperResult.jobs.filter((j) =>
+        let newJobsToInsert = scraperResult.jobs.filter((j) =>
           newJobs.some((nj) => nj.externalId === j.externalId)
         );
+
+        const { filtered, filteredOut } = applyFilters(newJobsToInsert, {
+          country: filterCountry || undefined,
+          city: filterCity || undefined,
+          titleKeywords: filterTitleKeywords.length > 0 ? filterTitleKeywords : undefined,
+        });
+        newJobsToInsert = filtered;
+        const jobsFilteredOut = filteredOut;
 
         let jobsAdded = 0;
         let insertedJobIds: number[] = [];
@@ -115,9 +146,22 @@ export async function POST(request: NextRequest) {
           insertedJobIds = insertedJobs.map((j) => j.id);
         }
 
+        // Save detected boardToken if present
+        const companyUpdateData: {
+          lastScrapedAt: Date;
+          updatedAt: Date;
+          boardToken?: string;
+        } = {
+          lastScrapedAt: new Date(),
+          updatedAt: new Date(),
+        };
+        if (scraperResult.detectedBoardToken && !company.boardToken) {
+          companyUpdateData.boardToken = scraperResult.detectedBoardToken;
+        }
+
         await db
           .update(companies)
-          .set({ lastScrapedAt: new Date(), updatedAt: new Date() })
+          .set(companyUpdateData)
           .where(eq(companies.id, company.id));
 
         await db.insert(scrapingLogs).values({
@@ -129,13 +173,14 @@ export async function POST(request: NextRequest) {
           jobsFound: scraperResult.jobs.length,
           jobsAdded,
           jobsUpdated: 0,
-          jobsFiltered: 0,
+          jobsFiltered: jobsFilteredOut,
           duration: Date.now() - startTime,
           completedAt: new Date(),
         });
 
         totalJobsFound += scraperResult.jobs.length;
         totalJobsAdded += jobsAdded;
+        totalJobsFiltered += jobsFilteredOut;
         completed++;
 
         await db
@@ -144,6 +189,7 @@ export async function POST(request: NextRequest) {
             companiesCompleted: completed,
             totalJobsFound,
             totalJobsAdded,
+            totalJobsFiltered,
           })
           .where(eq(scrapeSessions.id, sessionId));
 
