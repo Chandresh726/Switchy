@@ -98,8 +98,15 @@ function calculateNextRun(cronExpr: string): Date | null {
 export async function getSchedulerStatus(): Promise<SchedulerStatus> {
   const lastRun = await getLastRunFromDB();
   const persistedCron = await getCronFromDB();
-  const nextRun = schedulerTask ? calculateNextRun(currentCronExpression) : null;
   const isEnabled = await getSchedulerEnabled();
+  if (isEnabled && !schedulerTask) {
+    try {
+      await startScheduler();
+    } catch (error) {
+      console.error("[Scheduler] Failed lazy-start while getting status:", error);
+    }
+  }
+  const nextRun = schedulerTask ? calculateNextRun(currentCronExpression) : null;
 
   return {
     isActive: schedulerTask !== null,
