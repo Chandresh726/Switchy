@@ -1,18 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useState } from "react";
+import { Check, Eye, EyeOff, Key, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,21 +14,50 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Plus, Key, Loader2, Trash2, Check, X, Pencil, Eye, EyeOff, Terminal } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { getAllProviderMetadata, type ProviderMetadata } from "@/lib/ai/providers/metadata";
 import type { ProviderWithDetails } from "@/lib/types";
-
-interface GeminiStatus {
-  installed: boolean;
-  authenticated: boolean;
-  message: string;
-}
 
 interface AIProvidersManagerProps {
   providers: ProviderWithDetails[];
   onAddProvider: (provider: string, apiKey?: string) => Promise<void>;
   onDeleteProvider: (id: string) => Promise<void>;
   onUpdateProviderApiKey: (id: string, apiKey?: string) => Promise<void>;
+}
+
+interface ProviderApiKeyHelpProps {
+  metadata?: ProviderMetadata;
+}
+
+function ProviderApiKeyHelp({ metadata }: ProviderApiKeyHelpProps) {
+  if (!metadata || !metadata.requiresApiKey || !metadata.apiKeyUrl) {
+    return null;
+  }
+
+  return (
+    <p className="text-xs text-zinc-500">
+      <a
+        href={metadata.apiKeyUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-400 hover:underline"
+      >
+        Get API Key here
+      </a>
+      {metadata.freeTierNote ? ` - ${metadata.freeTierNote}` : ""}
+    </p>
+  );
 }
 
 export function AIProvidersManager({
@@ -60,47 +79,16 @@ export function AIProvidersManager({
   const [showEditApiKey, setShowEditApiKey] = useState(false);
   const [isFetchingApiKey, setIsFetchingApiKey] = useState(false);
 
-  const [geminiStatus, setGeminiStatus] = useState<GeminiStatus | null>(null);
-  const [isCheckingGemini, setIsCheckingGemini] = useState(false);
-
   const providerMetadata = getAllProviderMetadata();
+  const selectedProviderMetadata = providerMetadata.find((p) => p.id === selectedProviderType);
 
   const availableProviders = providerMetadata.filter(
-    (p) => !providers.some((provider) => provider.provider === p.id)
+    (metadata) => !providers.some((provider) => provider.provider === metadata.id)
   );
 
   const getProviderMeta = (providerType: string): ProviderMetadata | undefined => {
-    return providerMetadata.find((p) => p.id === providerType);
+    return providerMetadata.find((metadata) => metadata.id === providerType);
   };
-
-  const checkGeminiStatus = async () => {
-    setIsCheckingGemini(true);
-    try {
-      const res = await fetch("/api/providers/gemini-cli-status");
-      if (res.ok) {
-        const data = await res.json();
-        setGeminiStatus(data);
-      }
-    } catch (err) {
-      console.error("Failed to check Gemini status:", err);
-    } finally {
-      setIsCheckingGemini(false);
-    }
-  };
-
-  const hasGeminiCLI = providers.some(p => p.provider === "gemini_cli_oauth");
-
-  useEffect(() => {
-    if (hasGeminiCLI) {
-      checkGeminiStatus();
-    }
-  }, [hasGeminiCLI]);
-
-  useEffect(() => {
-    if (selectedProviderType === "gemini_cli_oauth") {
-      checkGeminiStatus();
-    }
-  }, [selectedProviderType]);
 
   const handleAddProvider = async () => {
     if (!selectedProviderType) {
@@ -108,8 +96,7 @@ export function AIProvidersManager({
       return;
     }
 
-    const meta = getProviderMeta(selectedProviderType);
-    if (meta?.requiresApiKey && !apiKey) {
+    if (selectedProviderMetadata?.requiresApiKey && !apiKey) {
       setError("API key is required for this provider");
       return;
     }
@@ -122,6 +109,7 @@ export function AIProvidersManager({
       setIsAddingProvider(false);
       setSelectedProviderType("");
       setApiKey("");
+      setShowApiKey(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add provider");
     } finally {
@@ -133,6 +121,7 @@ export function AIProvidersManager({
     setIsAddingProvider(false);
     setSelectedProviderType("");
     setApiKey("");
+    setShowApiKey(false);
     setError(null);
   };
 
@@ -204,9 +193,9 @@ export function AIProvidersManager({
         ) : (
           <>
             {providers.map((provider) => {
-              const meta = getProviderMeta(provider.provider);
+              const metadata = getProviderMeta(provider.provider);
               const isEditing = editingProviderId === provider.id;
-              const isGeminiCLI = provider.provider === "gemini_cli_oauth";
+              const requiresApiKey = metadata?.requiresApiKey ?? true;
 
               return (
                 <div
@@ -216,41 +205,10 @@ export function AIProvidersManager({
                   {isEditing ? (
                     <div className="p-4 space-y-4">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">{meta?.displayName || provider.provider}</span>
+                        <span className="font-medium">{metadata?.displayName || provider.provider}</span>
                       </div>
 
-                      {isGeminiCLI ? (
-                        <div className="space-y-3">
-                          <div className="flex items-center gap-2 text-sm">
-                            {isCheckingGemini ? (
-                              <>
-                                <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
-                                <span className="text-zinc-400">Checking Gemini CLI status...</span>
-                              </>
-                            ) : geminiStatus ? (
-                              <>
-                                {geminiStatus.authenticated ? (
-                                  <Check className="h-4 w-4 text-green-400" />
-                                ) : (
-                                  <X className="h-4 w-4 text-amber-400" />
-                                )}
-                                <span className={geminiStatus.authenticated ? "text-green-400" : "text-amber-400"}>
-                                  {geminiStatus.message}
-                                </span>
-                              </>
-                            ) : null}
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={checkGeminiStatus}
-                            className="w-full"
-                          >
-                            <Terminal className="mr-2 h-4 w-4" />
-                            Check Status
-                          </Button>
-                        </div>
-                      ) : (
+                      {requiresApiKey ? (
                         <div className="space-y-2">
                           <Label>API Key</Label>
                           <div className="relative">
@@ -272,6 +230,8 @@ export function AIProvidersManager({
                             </button>
                           </div>
                         </div>
+                      ) : (
+                        <p className="text-sm text-zinc-500">This provider does not require an API key.</p>
                       )}
 
                       <div className="flex gap-2">
@@ -297,19 +257,16 @@ export function AIProvidersManager({
                       <div className="flex items-center gap-4">
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <span className="font-medium">{meta?.displayName || provider.provider}</span>
+                            <span className="font-medium">{metadata?.displayName || provider.provider}</span>
                           </div>
-                          <p className="text-sm text-zinc-500">{meta?.requiresApiKey ? "API Key" : "OAuth"}</p>
+                          <p className="text-sm text-zinc-500">
+                            {requiresApiKey ? "API Key" : "No API key required"}
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        {isGeminiCLI ? (
-                          isCheckingGemini ? (
-                            <Badge variant="outline" className="text-xs text-zinc-400">
-                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                              Checking...
-                            </Badge>
-                          ) : geminiStatus?.authenticated ? (
+                        {requiresApiKey ? (
+                          provider.hasApiKey ? (
                             <Badge variant="outline" className="text-xs text-green-400">
                               <Check className="mr-1 h-3 w-3" />
                               Connected
@@ -317,18 +274,13 @@ export function AIProvidersManager({
                           ) : (
                             <Badge variant="outline" className="text-xs text-amber-400">
                               <X className="mr-1 h-3 w-3" />
-                              Not Connected
+                              No API Key
                             </Badge>
                           )
-                        ) : provider.hasApiKey ? (
+                        ) : (
                           <Badge variant="outline" className="text-xs text-green-400">
                             <Check className="mr-1 h-3 w-3" />
                             Connected
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-xs text-amber-400">
-                            <X className="mr-1 h-3 w-3" />
-                            No API Key
                           </Badge>
                         )}
                         <Button
@@ -349,7 +301,7 @@ export function AIProvidersManager({
                             <AlertDialogHeader>
                               <AlertDialogTitle>Delete Provider?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Are you sure you want to delete &quot;{meta?.displayName}&quot;? This action cannot be undone.
+                                Are you sure you want to delete &quot;{metadata?.displayName}&quot;? This action cannot be undone.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -384,9 +336,9 @@ export function AIProvidersManager({
                           All providers added
                         </SelectItem>
                       ) : (
-                        availableProviders.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.displayName}
+                        availableProviders.map((provider) => (
+                          <SelectItem key={provider.id} value={provider.id}>
+                            {provider.displayName}
                           </SelectItem>
                         ))
                       )}
@@ -394,40 +346,7 @@ export function AIProvidersManager({
                   </Select>
                 </div>
 
-                {selectedProviderType && selectedProviderType === "gemini_cli_oauth" && (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      {isCheckingGemini ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
-                          <span className="text-zinc-400">Checking Gemini CLI status...</span>
-                        </>
-                      ) : geminiStatus ? (
-                        <>
-                          {geminiStatus.authenticated ? (
-                            <Check className="h-4 w-4 text-green-400" />
-                          ) : (
-                            <X className="h-4 w-4 text-amber-400" />
-                          )}
-                          <span className={geminiStatus.authenticated ? "text-green-400" : "text-amber-400"}>
-                            {geminiStatus.message}
-                          </span>
-                        </>
-                      ) : null}
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={checkGeminiStatus}
-                      className="w-full"
-                    >
-                      <Terminal className="mr-2 h-4 w-4" />
-                      Check Gemini CLI Status
-                    </Button>
-                  </div>
-                )}
-
-                {selectedProviderType && getProviderMeta(selectedProviderType)?.requiresApiKey && (
+                {selectedProviderMetadata?.requiresApiKey ? (
                   <div className="space-y-2">
                     <Label>API Key</Label>
                     <div className="relative">
@@ -447,11 +366,11 @@ export function AIProvidersManager({
                         {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </div>
-                    <p className="text-xs text-zinc-500">
-                      Your API key is stored locally and encrypted.
-                    </p>
+                    <ProviderApiKeyHelp metadata={selectedProviderMetadata} />
                   </div>
-                )}
+                ) : selectedProviderType ? (
+                  <p className="text-sm text-zinc-500">This provider does not require an API key.</p>
+                ) : null}
 
                 {error && (
                   <div className="rounded-lg bg-red-500/10 p-3 text-sm text-red-400">

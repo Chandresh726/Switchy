@@ -62,20 +62,6 @@ export const PROVIDER_MODELS: Record<AIProvider, ModelDefinition[]> = {
       supportsReasoning: true,
     },
   ],
-  gemini_cli_oauth: [
-    {
-      modelId: "gemini-3-pro-preview",
-      label: "Gemini 3 Pro",
-      description: "Most capable model (Preview)",
-      supportsReasoning: true,
-    },
-    {
-      modelId: "gemini-3-flash-preview",
-      label: "Gemini 3 Flash",
-      description: "Fastest model (Preview)",
-      supportsReasoning: true,
-    },
-  ],
   openrouter: [
     {
       modelId: "openai/gpt-oss-120b:free",
@@ -220,6 +206,26 @@ export const PROVIDER_MODELS: Record<AIProvider, ModelDefinition[]> = {
       label: "Kimi K2",
       description: "Preview model",
       supportsReasoning: false,
+    },
+  ],
+  nvidia: [
+    {
+      modelId: "zai-org/GLM-5",
+      label: "GLM-5",
+      description: "Z.ai GLM-5 via NVIDIA NIM",
+      supportsReasoning: true,
+    },
+    {
+      modelId: "moonshotai/kimi-k2.5",
+      label: "Kimi K2.5",
+      description: "Moonshot AI Kimi K2.5 via NVIDIA NIM",
+      supportsReasoning: true,
+    },
+    {
+      modelId: "qwen/qwen3.5-397b-a17b",
+      label: "Qwen 3.5 397B A17B",
+      description: "Qwen 3.5 flagship model via NVIDIA NIM",
+      supportsReasoning: true,
     },
   ],
 };

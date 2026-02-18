@@ -22,15 +22,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const p = provider[0];
-    
-    const isGeminiCLI = p.provider === "gemini_cli_oauth";
-    
-    let status = "unknown";
-    if (isGeminiCLI) {
-      status = "not_checked";
-    } else {
-      status = p.apiKey ? "connected" : "missing_api_key";
-    }
+    const status = p.apiKey ? "connected" : "missing_api_key";
 
     return NextResponse.json({
       id: p.id,

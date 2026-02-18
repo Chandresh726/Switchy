@@ -19,12 +19,12 @@ It helps you discover jobs from multiple ATS platforms, match them against your 
 
 - Anthropic
 - OpenAI
-- Gemini (API key)
-- Gemini (CLI OAuth)
+- Google Gemini
 - OpenRouter
 - Cerebras
 - Modal
 - Groq
+- NVIDIA (NIM)
 
 ## Prerequisites
 

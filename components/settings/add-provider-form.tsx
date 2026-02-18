@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronUp, Key, Loader2, Plus } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -11,8 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Card, CardContent } from "@/components/ui/card";
-import { Plus, Key, Loader2, ChevronUp } from "lucide-react";
 import { getAllProviderMetadata } from "@/lib/ai/providers/metadata";
 
 interface AddProviderFormProps {
@@ -111,15 +112,25 @@ export function AddProviderForm({ onAddProvider }: AddProviderFormProps) {
                       className="w-full pl-9 bg-zinc-950/50 border-zinc-800"
                     />
                   </div>
-                  <p className="text-xs text-zinc-500">
-                    Your API key is stored locally and encrypted.
-                  </p>
+                  {selectedMetadata.apiKeyUrl && (
+                    <p className="text-xs text-zinc-500">
+                      <a
+                        href={selectedMetadata.apiKeyUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:underline"
+                      >
+                        Get API Key here
+                      </a>
+                      {selectedMetadata.freeTierNote ? ` - ${selectedMetadata.freeTierNote}` : ""}
+                    </p>
+                  )}
                 </div>
               )}
 
               {!selectedMetadata?.requiresApiKey && selectedProvider && (
                 <div className="rounded-lg bg-blue-500/10 p-4 text-sm text-blue-400">
-                  This provider uses OAuth authentication. No API key required.
+                  This provider does not require an API key.
                 </div>
               )}
 

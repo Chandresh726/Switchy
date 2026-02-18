@@ -7,11 +7,11 @@ export type AIProvider =
   | "anthropic"
   | "openai"
   | "gemini_api_key"
-  | "gemini_cli_oauth"
   | "openrouter"
   | "cerebras"
   | "modal"
-  | "groq";
+  | "groq"
+  | "nvidia";
 
 /**
  * Reasoning effort levels for models that support it
@@ -98,11 +98,11 @@ export type { AIErrorType } from "../shared/errors";
 export interface AIClientSettings {
   aiProvider: AIProvider;
   anthropicApiKey?: string;
-  googleAuthMode?: "oauth" | "api_key";
   googleApiKey?: string;
   openrouterApiKey?: string;
   cerebrasApiKey?: string;
   openaiApiKey?: string;
   modalApiKey?: string;
   groqApiKey?: string;
+  nvidiaApiKey?: string;
 }

@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo, useEffect, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
@@ -45,7 +45,6 @@ interface MatcherSettings {
   scraper_filter_title_keywords?: string;
   ai_provider?: string;
   anthropic_api_key?: string;
-  google_auth_mode?: string;
   google_api_key?: string;
   openrouter_api_key?: string;
   cerebras_api_key?: string;
@@ -207,7 +206,6 @@ function SettingsPageSkeleton() {
 
 function SettingsContent() {
   const queryClient = useQueryClient();
-  const searchParams = useSearchParams();
   const router = useRouter();
 
   const [matcherLocalEdits, setMatcherLocalEdits] = useState<MatcherLocalEdits>({});
@@ -217,28 +215,6 @@ function SettingsContent() {
   const [matcherSettingsSaved, setMatcherSettingsSaved] = useState(false);
   const [scraperSettingsSaved, setScraperSettingsSaved] = useState(false);
   const [aiWritingSettingsSaved, setAIWritingSettingsSaved] = useState(false);
-
-  // Handle OAuth callbacks
-  useEffect(() => {
-    const error = searchParams.get("error");
-    const success = searchParams.get("success");
-
-    if (error) {
-      toast.error("Authentication Error", {
-        description: error.replace(/_/g, " "),
-      });
-      // Clean up URL
-      router.replace("/settings");
-    }
-
-    if (success === "google_connected") {
-      toast.success("Google Account Connected", {
-        description: "You can now use Gemini models via OAuth.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
-      router.replace("/settings");
-    }
-  }, [searchParams, router, queryClient]);
 
   const { data: settings, isLoading: isSettingsLoading } = useQuery<MatcherSettings>({
     queryKey: ["settings"],
