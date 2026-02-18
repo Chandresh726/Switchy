@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MatchBadge } from "./match-badge";
@@ -14,6 +14,7 @@ import {
   Sparkles,
   CheckCircle,
   Star,
+  DollarSign,
 } from "lucide-react";
 
 interface Job {
@@ -25,6 +26,7 @@ interface Job {
   department: string | null;
   salary: string | null;
   employmentType: string | null;
+  seniorityLevel: string | null;
   status: string;
   matchScore: number | null;
   postedDate: string | null;
@@ -56,9 +58,18 @@ const LOCATION_TYPE_ICONS: Record<string, string> = {
   onsite: "On-site",
 };
 
+const SENIORITY_LABELS: Record<string, string> = {
+  entry: "Entry",
+  mid: "Mid",
+  senior: "Senior",
+  lead: "Lead",
+  manager: "Manager",
+  director: "Director",
+  executive: "Executive",
+};
+
 export function JobCard({ job }: JobCardProps) {
   const queryClient = useQueryClient();
-  const router = useRouter();
 
   const updateStatusMutation = useMutation({
     mutationFn: async (newStatus: string) => {
@@ -91,14 +102,6 @@ export function JobCard({ job }: JobCardProps) {
     },
   });
 
-  const handleClick = () => {
-    // Mark as viewed if new
-    if (job.status === "new") {
-      updateStatusMutation.mutate("viewed");
-    }
-    router.push(`/jobs/${job.id}`);
-  };
-
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return null;
     const date = new Date(dateStr);
@@ -106,9 +109,9 @@ export function JobCard({ job }: JobCardProps) {
   };
 
   return (
-    <div
-      className="group cursor-pointer rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:border-zinc-700"
-      onClick={handleClick}
+    <Link
+      href={`/jobs/${job.id}`}
+      className="group block rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:border-zinc-700"
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
@@ -151,6 +154,17 @@ export function JobCard({ job }: JobCardProps) {
 
       {/* Meta */}
       <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+        {job.salary && (
+          <span className="flex items-center gap-1 text-emerald-400">
+            <DollarSign className="h-3.5 w-3.5" />
+            {job.salary}
+          </span>
+        )}
+        {job.seniorityLevel && (
+          <Badge variant="outline" className="border-zinc-700 text-zinc-400">
+            {SENIORITY_LABELS[job.seniorityLevel] || job.seniorityLevel}
+          </Badge>
+        )}
         {job.location && (
           <span className="flex items-center gap-1">
             <MapPin className="h-3.5 w-3.5" />
@@ -179,7 +193,7 @@ export function JobCard({ job }: JobCardProps) {
       {/* Actions */}
       <div className="mt-4 flex items-center justify-between border-t border-zinc-800 pt-3">
         {/* Left side - Save and Mark Applied buttons */}
-        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2" onClick={(e) => e.preventDefault()}>
           {/* Save/Unsave Button */}
           {job.status === "interested" ? (
             <Button
@@ -239,7 +253,7 @@ export function JobCard({ job }: JobCardProps) {
         </div>
 
         {/* Right side - Apply button */}
-        <div onClick={(e) => e.stopPropagation()}>
+        <div onClick={(e) => e.preventDefault()}>
           <ApplyButton
             url={job.url}
             size="xs"
@@ -251,6 +265,6 @@ export function JobCard({ job }: JobCardProps) {
           />
         </div>
       </div>
-    </div>
+    </Link>
   );
 }

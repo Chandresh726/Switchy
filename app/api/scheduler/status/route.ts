@@ -15,6 +15,7 @@ export async function GET() {
     return NextResponse.json({
       isActive: status.isActive,
       isRunning: status.isRunning,
+      isEnabled: status.isEnabled,
       lastRun: status.lastRun?.toISOString() || null,
       nextRun: status.nextRun?.toISOString() || null,
       cronExpression: status.cronExpression,

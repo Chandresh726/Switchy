@@ -80,34 +80,17 @@ export interface ProviderRegistry {
   getAll(): AIProviderInterface[];
 }
 
-/**
- * Error types specific to AI operations
- */
-export type AIErrorType =
-  | "provider_not_found"
-  | "missing_api_key"
-  | "invalid_model"
-  | "reasoning_not_supported"
-  | "generation_failed"
-  | "decryption_failed"
-  | "timeout"
-  | "rate_limit"
-  | "network"
-  | "unknown";
+export {
+  AIError,
+  AIProviderError,
+  AITimeoutError,
+  AIRateLimitError,
+  AIValidationError,
+  AINetworkError,
+  AICircuitBreakerError,
+} from "../shared/errors";
 
-/**
- * Custom error class for AI-related errors
- */
-export class AIError extends Error {
-  constructor(
-    public readonly type: AIErrorType,
-    message: string,
-    public readonly cause?: Error
-  ) {
-    super(message);
-    this.name = "AIError";
-  }
-}
+export type { AIErrorType } from "../shared/errors";
 
 /**
  * Settings required for AI client initialization

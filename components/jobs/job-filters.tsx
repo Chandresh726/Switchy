@@ -1,7 +1,7 @@
 "use client";
 
 import { Input } from "@/components/ui/input";
-import { Search, X, ArrowUpDown, MapPin, Building2 } from "lucide-react";
+import { Search, X, ArrowUpDown, MapPin, Building2, Loader2, Briefcase } from "lucide-react";
 import { useMemo, useState, useRef, useEffect } from "react";
 
 interface JobFilters {
@@ -10,6 +10,7 @@ interface JobFilters {
   companyIds: string[];
   locationType: string[];
   employmentType: string[];
+  seniorityLevel: string[];
   minScore: string;
   department: string;
   locationSearch: string;
@@ -23,6 +24,8 @@ interface JobFiltersProps {
   companies: { id: number; name: string }[];
   departments?: string[];
   hideStatusFilter?: boolean;
+  totalCount?: number;
+  isFetching?: boolean;
 }
 
 const LOCATION_TYPE_OPTIONS = [
@@ -36,6 +39,16 @@ const EMPLOYMENT_TYPE_OPTIONS = [
   { value: "part-time", label: "Part-time" },
   { value: "contract", label: "Contract" },
   { value: "internship", label: "Internship" },
+];
+
+const SENIORITY_LEVEL_OPTIONS = [
+  { value: "entry", label: "Entry" },
+  { value: "mid", label: "Mid" },
+  { value: "senior", label: "Senior" },
+  { value: "lead", label: "Lead" },
+  { value: "manager", label: "Manager" },
+  { value: "director", label: "Director" },
+  { value: "executive", label: "Executive" },
 ];
 
 const SCORE_OPTIONS = [
@@ -210,10 +223,111 @@ function CompanyMultiSelect({
   );
 }
 
+function OptionMultiSelect({
+  options,
+  selectedValues,
+  onChange,
+  label,
+  icon: Icon,
+}: {
+  options: { value: string; label: string }[];
+  selectedValues: string[];
+  onChange: (values: string[]) => void;
+  label: string;
+  icon?: React.ComponentType<{ className?: string }>;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const toggleOption = (value: string) => {
+    if (selectedValues.includes(value)) {
+      onChange(selectedValues.filter((v) => v !== value));
+    } else {
+      onChange([...selectedValues, value]);
+    }
+  };
+
+  const selectedCount = selectedValues.length;
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+          selectedCount > 0
+            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+            : "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 hover:text-zinc-200"
+        }`}
+      >
+        {Icon && <Icon className="h-3 w-3" />}
+        {selectedCount > 0 ? `${selectedCount} ${label}` : label}
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-44 rounded-lg border border-zinc-700 bg-zinc-900 shadow-lg">
+          <div className="max-h-48 overflow-auto px-1 py-2">
+            {options.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => toggleOption(opt.value)}
+                className={`flex w-full items-center gap-2 rounded px-3 py-1.5 text-left text-xs transition-colors ${
+                  selectedValues.includes(opt.value)
+                    ? "bg-emerald-500/20 text-emerald-400"
+                    : "text-zinc-300 hover:bg-zinc-800"
+                }`}
+              >
+                <div
+                  className={`h-3 w-3 rounded border ${
+                    selectedValues.includes(opt.value)
+                      ? "border-emerald-500 bg-emerald-500"
+                      : "border-zinc-600"
+                  }`}
+                >
+                  {selectedValues.includes(opt.value) && (
+                    <svg className="h-3 w-3 text-white" viewBox="0 0 12 12">
+                      <path
+                        fill="currentColor"
+                        d="M10.28 2.28a.75.75 0 0 1 0 1.06l-5.5 5.5a.75.75 0 0 1-1.06 0l-2.5-2.5a.75.75 0 1 1 1.06-1.06L4.25 7.19l4.97-4.97a.75.75 0 0 1 1.06 0z"
+                      />
+                    </svg>
+                  )}
+                </div>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {selectedCount > 0 && (
+            <div className="border-t border-zinc-700 p-2">
+              <button
+                onClick={() => onChange([])}
+                className="w-full text-xs text-zinc-400 hover:text-zinc-200"
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function JobFilters({
   filters,
   onFiltersChange,
   companies,
+  totalCount,
+  isFetching,
 }: JobFiltersProps) {
   // Ensure companyIds is always an array
   const companyIds = useMemo(() => filters.companyIds || [], [filters.companyIds]);
@@ -261,6 +375,19 @@ export function JobFilters({
       });
     });
 
+    filters.seniorityLevel.forEach((sl) => {
+      const label = SENIORITY_LEVEL_OPTIONS.find((o) => o.value === sl)?.label || sl;
+      chips.push({
+        key: `seniorityLevel-${sl}`,
+        label,
+        onRemove: () =>
+          onFiltersChange({
+            ...filters,
+            seniorityLevel: filters.seniorityLevel.filter((t) => t !== sl),
+          }),
+      });
+    });
+
     if (filters.minScore) {
       chips.push({
         key: "minScore",
@@ -297,6 +424,7 @@ export function JobFilters({
       companyIds: [],
       locationType: [],
       employmentType: [],
+      seniorityLevel: [],
       minScore: "",
       department: "",
       locationSearch: "",
@@ -311,14 +439,6 @@ export function JobFilters({
       ? current.filter((v) => v !== value)
       : [...current, value];
     onFiltersChange({ ...filters, locationType: updated });
-  };
-
-  const toggleEmploymentType = (value: string) => {
-    const current = filters.employmentType;
-    const updated = current.includes(value)
-      ? current.filter((v) => v !== value)
-      : [...current, value];
-    onFiltersChange({ ...filters, employmentType: updated });
   };
 
   return (
@@ -351,6 +471,17 @@ export function JobFilters({
 
       {/* Filter Pills Row */}
       <div className="flex flex-wrap items-center gap-2">
+        {/* Job Count */}
+        <div className="flex items-center gap-2 pr-2">
+          <span className="text-sm text-zinc-400">
+            {totalCount ?? 0} {(totalCount ?? 0) === 1 ? "job" : "jobs"}
+          </span>
+          {isFetching && <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />}
+        </div>
+
+        {/* Divider */}
+        <div className="h-5 w-px bg-zinc-700" />
+
         {/* Company Multi-Select */}
         <CompanyMultiSelect
           companies={companies}
@@ -375,16 +506,25 @@ export function JobFilters({
         {/* Divider */}
         <div className="h-5 w-px bg-zinc-700" />
 
-        {/* Employment Type Pills */}
-        {EMPLOYMENT_TYPE_OPTIONS.map((opt) => (
-          <TogglePill
-            key={opt.value}
-            selected={filters.employmentType.includes(opt.value)}
-            onClick={() => toggleEmploymentType(opt.value)}
-          >
-            {opt.label}
-          </TogglePill>
-        ))}
+        {/* Employment Type Multi-Select */}
+        <OptionMultiSelect
+          options={EMPLOYMENT_TYPE_OPTIONS}
+          selectedValues={filters.employmentType}
+          onChange={(values) => onFiltersChange({ ...filters, employmentType: values })}
+          label="Job Type"
+          icon={Briefcase}
+        />
+
+        {/* Divider */}
+        <div className="h-5 w-px bg-zinc-700" />
+
+        {/* Seniority Level Multi-Select */}
+        <OptionMultiSelect
+          options={SENIORITY_LEVEL_OPTIONS}
+          selectedValues={filters.seniorityLevel}
+          onChange={(values) => onFiltersChange({ ...filters, seniorityLevel: values })}
+          label="Seniority"
+        />
 
         {/* Divider */}
         <div className="h-5 w-px bg-zinc-700" />

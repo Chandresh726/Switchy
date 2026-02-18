@@ -3,12 +3,12 @@
 import { Suspense, useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { CompanyForm } from "@/components/companies/company-form";
-import { CompanyList } from "@/components/companies/company-list";
+import { CompanyList, type Company } from "@/components/companies/company-list";
 import { JsonEditor } from "@/components/companies/json-editor";
 import { CompanyFilters, type CompanyFilters as CompanyFiltersType } from "@/components/companies/company-filters";
 import { List, FileJson, Download, Upload, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
 
 function parseFiltersFromParams(searchParams: URLSearchParams): CompanyFiltersType {
@@ -79,6 +79,79 @@ function CompaniesPageContent() {
     );
   }, []);
 
+  const [allActiveFilteredIds, setAllActiveFilteredIds] = useState<number[]>([]);
+
+  const selectAllFiltered = useCallback(() => {
+    setSelectedIds(allActiveFilteredIds);
+    if (!selectionMode) {
+      setSelectionMode(true);
+    }
+  }, [allActiveFilteredIds, selectionMode]);
+
+  const { data: companies = [], isLoading: isCompaniesLoading } = useQuery<Company[]>({
+    queryKey: ["companies"],
+    queryFn: async () => {
+      const res = await fetch("/api/companies");
+      if (!res.ok) throw new Error("Failed to fetch companies");
+      return res.json();
+    },
+  });
+
+  const filteredAndSortedCompanies = useMemo(() => {
+    let result = [...companies];
+
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      result = result.filter((c) =>
+        c.name.toLowerCase().includes(searchLower)
+      );
+    }
+
+    if (filters.platforms.length > 0) {
+      result = result.filter((c) =>
+        c.platform && filters.platforms.includes(c.platform)
+      );
+    }
+
+    if (filters.status.length > 0) {
+      const wantActive = filters.status.includes("active");
+      const wantPaused = filters.status.includes("paused");
+      result = result.filter((c) => {
+        if (c.isActive && wantActive) return true;
+        if (!c.isActive && wantPaused) return true;
+        return false;
+      });
+    }
+
+    result.sort((a, b) => {
+      let comparison = 0;
+      switch (filters.sortBy) {
+        case "name":
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case "lastScrapedAt":
+          const aScraped = a.lastScrapedAt ? new Date(a.lastScrapedAt).getTime() : 0;
+          const bScraped = b.lastScrapedAt ? new Date(b.lastScrapedAt).getTime() : 0;
+          comparison = bScraped - aScraped;
+          break;
+        case "createdAt":
+        default:
+          comparison = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          break;
+      }
+      return filters.sortOrder === "asc" ? comparison : -comparison;
+    });
+
+    return result;
+  }, [companies, filters]);
+
+  useEffect(() => {
+    const activeFilteredIds = filteredAndSortedCompanies
+      .filter((c) => c.isActive)
+      .map((c) => c.id);
+    setAllActiveFilteredIds(activeFilteredIds);
+  }, [filteredAndSortedCompanies]);
+
   const importMutation = useMutation({
     mutationFn: async (companies: unknown[]) => {
       const res = await fetch("/api/companies", {
@@ -100,7 +173,7 @@ function CompaniesPageContent() {
 
   const bulkRefreshMutation = useMutation({
     mutationFn: async (companyIds: number[]) => {
-      const res = await fetch("/api/companies/bulk/refresh-jobs", {
+      const res = await fetch("/api/companies/refresh-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ companyIds }),
@@ -120,7 +193,7 @@ function CompaniesPageContent() {
 
   const bulkMatchMutation = useMutation({
     mutationFn: async (companyIds: number[]) => {
-      const res = await fetch("/api/companies/bulk/match", {
+      const res = await fetch("/api/companies/match", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ companyIds }),
@@ -316,6 +389,7 @@ function CompaniesPageContent() {
           selectedIds={selectedIds}
           onToggleSelectionMode={toggleSelectionMode}
           onClearSelection={clearSelection}
+          onSelectAll={selectAllFiltered}
           onBulkRefreshJobs={() => bulkRefreshMutation.mutate(selectedIds)}
           onBulkRefreshMatches={() => bulkMatchMutation.mutate(selectedIds)}
           onBulkDeleteJobs={() => bulkDeleteJobsMutation.mutate(selectedIds)}
@@ -346,10 +420,15 @@ function CompaniesPageContent() {
 
       {view === "list" ? (
         <CompanyList
-          filters={filters}
+          companies={filteredAndSortedCompanies}
+          isLoading={isCompaniesLoading}
           selectionMode={selectionMode}
           selectedIds={selectedIds}
           onToggleSelection={toggleSelection}
+          onRefreshJobs={(companyId) => bulkRefreshMutation.mutate([companyId])}
+          onRefreshMatches={(companyId) => bulkMatchMutation.mutate([companyId])}
+          isRefreshing={bulkRefreshMutation.isPending}
+          isMatching={bulkMatchMutation.isPending}
         />
       ) : (
         <div className="flex h-[calc(100vh-9rem)] flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">

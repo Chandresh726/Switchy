@@ -3,7 +3,7 @@ import cron from "node-cron";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { restartScheduler } from "@/lib/jobs/scheduler";
+import { restartScheduler, stopScheduler, clearSchedulerEnabledCache } from "@/lib/jobs/scheduler";
 
 const DEFAULT_SETTINGS: Record<string, string> = {
   matcher_model: "gemini-3-flash-preview",
@@ -23,6 +23,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   matcher_circuit_breaker_threshold: "10",
   matcher_circuit_breaker_reset_timeout: "60000",
   matcher_auto_match_after_scrape: "true",
+  scheduler_enabled: "true",
   scheduler_cron: "0 */6 * * *",
   scraper_filter_country: "India",
   scraper_filter_city: "",
@@ -75,6 +76,8 @@ export async function POST(request: Request) {
 
     // Track if cron was updated to restart scheduler
     let cronUpdated = false;
+    let enabledChanged = false;
+    let newEnabledValue: boolean | null = null;
     const updates: { key: string; value: string }[] = [];
 
     for (const [key, value] of Object.entries(body)) {
@@ -109,6 +112,11 @@ export async function POST(request: Request) {
         }
         updates.push({ key, value: cronExpr });
         cronUpdated = true;
+      } else if (key === "scheduler_enabled") {
+        const boolValue = value === true || value === "true";
+        updates.push({ key, value: boolValue ? "true" : "false" });
+        enabledChanged = true;
+        newEnabledValue = boolValue;
       } else if (key === "matcher_model" || key === "resume_parser_model") {
         if (typeof value !== "string" || value.trim().length === 0) {
           return NextResponse.json(
@@ -328,6 +336,26 @@ export async function POST(request: Request) {
         console.log("[Settings API] Scheduler restarted due to cron change");
       } catch (error) {
         console.error("[Settings API] Failed to restart scheduler:", error);
+      }
+    }
+
+    // Handle scheduler enabled/disabled change
+    if (enabledChanged) {
+      clearSchedulerEnabledCache();
+      if (newEnabledValue === true) {
+        try {
+          await restartScheduler();
+          console.log("[Settings API] Scheduler started due to enabled change");
+        } catch (error) {
+          console.error("[Settings API] Failed to start scheduler:", error);
+        }
+      } else {
+        try {
+          stopScheduler();
+          console.log("[Settings API] Scheduler stopped due to enabled change");
+        } catch (error) {
+          console.error("[Settings API] Failed to stop scheduler:", error);
+        }
       }
     }
 

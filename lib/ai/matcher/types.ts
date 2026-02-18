@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AIErrorType } from "../shared/errors";
 
 export const MatchResultSchema = z.object({
   score: z.number().min(0).max(100),
@@ -25,15 +26,7 @@ export const BulkMatchResultSchema = z.object({
   results: z.array(BulkMatchItemSchema),
 });
 
-export type ErrorType =
-  | "network"
-  | "validation"
-  | "rate_limit"
-  | "json_parse"
-  | "no_object"
-  | "timeout"
-  | "circuit_breaker"
-  | "unknown";
+export type ErrorType = AIErrorType;
 
 export type TriggerSource = "manual" | "scheduler" | "company_refresh";
 

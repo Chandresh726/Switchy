@@ -46,6 +46,8 @@ export function SystemInfo({ version, dbPath }: SystemInfoProps) {
             <Badge variant="secondary" className="bg-zinc-800 text-zinc-400 hover:bg-zinc-700">Greenhouse</Badge>
             <Badge variant="secondary" className="bg-zinc-800 text-zinc-400 hover:bg-zinc-700">Lever</Badge>
             <Badge variant="secondary" className="bg-zinc-800 text-zinc-400 hover:bg-zinc-700">Ashby</Badge>
+            <Badge variant="secondary" className="bg-zinc-800 text-zinc-400 hover:bg-zinc-700">Eightfold</Badge>
+            <Badge variant="secondary" className="bg-zinc-800 text-zinc-400 hover:bg-zinc-700">Workday</Badge>
           </div>
         </div>
       </CardContent>

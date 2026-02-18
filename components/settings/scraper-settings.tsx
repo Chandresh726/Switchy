@@ -5,6 +5,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -12,8 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Timer, Save, Loader2, X, RefreshCw } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Timer, Save, Loader2, X } from "lucide-react";
 import { ScrapeCountdown } from "./scrape-countdown";
 
 const CRON_PRESETS = [
@@ -26,6 +26,8 @@ const CRON_PRESETS = [
 ] as const;
 
 interface ScraperSettingsProps {
+  schedulerEnabled: boolean;
+  onSchedulerEnabledChange: (value: boolean) => void;
   schedulerCron: string;
   onSchedulerCronChange: (value: string) => void;
   filterCountry: string;
@@ -38,11 +40,11 @@ interface ScraperSettingsProps {
   isSaving: boolean;
   hasUnsavedChanges: boolean;
   settingsSaved: boolean;
-  onRefresh: () => void;
-  isRefreshing: boolean;
 }
 
 export function ScraperSettings({
+  schedulerEnabled,
+  onSchedulerEnabledChange,
   schedulerCron,
   onSchedulerCronChange,
   filterCountry,
@@ -55,8 +57,6 @@ export function ScraperSettings({
   isSaving,
   hasUnsavedChanges,
   settingsSaved,
-  onRefresh,
-  isRefreshing,
 }: ScraperSettingsProps) {
   const [keywordInput, setKeywordInput] = useState("");
 
@@ -92,24 +92,26 @@ export function ScraperSettings({
             <Timer className="h-5 w-5 text-emerald-500" />
             <CardTitle>Scraper Settings</CardTitle>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="border-zinc-700 hover:bg-zinc-800 hover:text-white"
-            onClick={onRefresh}
-            disabled={isRefreshing}
-          >
-            <RefreshCw className={cn("mr-2 h-4 w-4", isRefreshing && "animate-spin")} />
-            {isRefreshing ? "Refreshing..." : "Refresh Jobs"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-zinc-400">Auto-Scrape</span>
+            <Switch
+              checked={schedulerEnabled}
+              onCheckedChange={onSchedulerEnabledChange}
+              aria-label="Enable auto-scrape"
+            />
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="space-y-3">
-          <Label>Schedule</Label>
-          <div className="flex items-center gap-4 flex-wrap">
-            <Select value={selectedPreset} onValueChange={handlePresetChange}>
-              <SelectTrigger className="bg-zinc-950/50 border-zinc-800 w-[180px]">
+          <Label>Scheduler Frequency</Label>
+          <div className="flex items-center gap-3">
+            <Select
+              value={selectedPreset}
+              onValueChange={handlePresetChange}
+              disabled={!schedulerEnabled}
+            >
+              <SelectTrigger className={`bg-zinc-950/50 border-zinc-800 flex-1 ${!schedulerEnabled ? "opacity-50 cursor-not-allowed" : ""}`}>
                 <SelectValue placeholder="Select schedule" />
               </SelectTrigger>
               <SelectContent>
@@ -120,7 +122,7 @@ export function ScraperSettings({
                 ))}
               </SelectContent>
             </Select>
-            {showCustom && (
+            {showCustom && schedulerEnabled && (
               <Input
                 value={schedulerCron}
                 onChange={(e) => onSchedulerCronChange(e.target.value)}
@@ -128,7 +130,9 @@ export function ScraperSettings({
                 className="bg-zinc-950/50 border-zinc-800 w-[160px]"
               />
             )}
-            <ScrapeCountdown className="ml-auto" />
+            {schedulerEnabled && (
+              <ScrapeCountdown />
+            )}
           </div>
         </div>
 

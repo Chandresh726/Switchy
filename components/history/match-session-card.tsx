@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -106,7 +106,6 @@ function formatDate(date: Date | null): string {
 export function MatchSessionCard({ session }: MatchSessionCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const queryClient = useQueryClient();
-  const router = useRouter();
 
   const statusConfig = STATUS_CONFIG[session.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.in_progress;
   const StatusIcon = statusConfig.icon;
@@ -138,24 +137,10 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
     }
   };
 
-  const handleCardClick = () => {
-    router.push(`/history/match/${session.id}`);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      handleCardClick();
-    }
-  };
-
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={handleCardClick}
-      onKeyDown={handleKeyDown}
-      className="group rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:border-zinc-700 cursor-pointer"
+    <Link
+      href={`/history/match/${session.id}`}
+      className="group block rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:border-zinc-700"
     >
         {/* Main Card Content */}
         <div>
@@ -195,14 +180,14 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
               </div>
             </div>
 
-            <div className="flex items-center gap-2" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+            <div className="flex items-center gap-2" onClick={(e) => e.preventDefault()}>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => e.preventDefault()}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -283,6 +268,6 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
           </div>
         </div>
       </div>
-    </div>
+    </Link>
   );
 }

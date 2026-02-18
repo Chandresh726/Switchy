@@ -48,11 +48,11 @@ function getApiKeyFromDb(provider: typeof aiProviders.$inferSelect): string | un
       `Failed to decrypt API key for provider "${provider.provider}" (id: ${provider.id}):`,
       error
     );
-    throw new AIError(
-      "decryption_failed",
-      `Failed to decrypt API key for provider "${provider.provider}": ${error instanceof Error ? error.message : "Unknown error"}`,
-      error instanceof Error ? error : undefined
-    );
+    throw new AIError({
+      type: "decryption_failed",
+      message: `Failed to decrypt API key for provider "${provider.provider}": ${error instanceof Error ? error.message : "Unknown error"}`,
+      cause: error instanceof Error ? error : undefined,
+    });
   }
 }
 
@@ -71,20 +71,20 @@ export async function getAIClientV2(
   if (options.providerId) {
     const dbProvider = await getProviderById(options.providerId);
     if (!dbProvider) {
-      throw new AIError("provider_not_found", `Provider "${options.providerId}" not found`);
+      throw new AIError({ type: "provider_not_found", message: `Provider "${options.providerId}" not found` });
     }
     if (!providerRegistry.has(dbProvider.provider as AIProvider)) {
-      throw new AIError("provider_not_found", `Provider "${dbProvider.provider}" is not registered`);
+      throw new AIError({ type: "provider_not_found", message: `Provider "${dbProvider.provider}" is not registered` });
     }
     providerType = dbProvider.provider as AIProvider;
     apiKey = getApiKeyFromDb(dbProvider);
   } else {
     const defaultProvider = await getDefaultProvider();
     if (!defaultProvider) {
-      throw new AIError("provider_not_found", "No default provider configured");
+      throw new AIError({ type: "provider_not_found", message: "No default provider configured" });
     }
     if (!providerRegistry.has(defaultProvider.provider as AIProvider)) {
-      throw new AIError("provider_not_found", `Provider "${defaultProvider.provider}" is not registered`);
+      throw new AIError({ type: "provider_not_found", message: `Provider "${defaultProvider.provider}" is not registered` });
     }
     providerType = defaultProvider.provider as AIProvider;
     apiKey = getApiKeyFromDb(defaultProvider);
@@ -93,11 +93,11 @@ export async function getAIClientV2(
   const provider = providerRegistry.get(providerType);
 
   if (!provider) {
-    throw new AIError("provider_not_found", `Provider "${providerType}" is not registered`);
+    throw new AIError({ type: "provider_not_found", message: `Provider "${providerType}" is not registered` });
   }
 
   if (!apiKey && provider.requiresApiKey) {
-    throw new AIError("missing_api_key", `API key is required for provider "${providerType}"`);
+    throw new AIError({ type: "missing_api_key", message: `API key is required for provider "${providerType}"` });
   }
 
   const modelConfig: ModelConfig = {

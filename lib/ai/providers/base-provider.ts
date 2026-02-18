@@ -29,10 +29,10 @@ export abstract class BaseProvider implements AIProviderInterface {
    */
   protected validateConfig(config: ProviderConfig): void {
     if (this.requiresApiKey && !config.apiKey) {
-      throw new AIError(
-        "missing_api_key",
-        `${this.name} API Key is required but not provided`
-      );
+      throw new AIError({
+        type: "missing_api_key",
+        message: `${this.name} API Key is required but not provided`,
+      });
     }
   }
 

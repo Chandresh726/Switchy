@@ -15,6 +15,7 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { PLATFORM_OPTIONS } from "@/lib/constants";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,6 +49,7 @@ interface CompanyFiltersProps {
   selectedIds: number[];
   onToggleSelectionMode: () => void;
   onClearSelection: () => void;
+  onSelectAll: () => void;
   onBulkRefreshJobs: () => void;
   onBulkRefreshMatches: () => void;
   onBulkDeleteJobs: () => void;
@@ -60,14 +62,6 @@ interface CompanyFiltersProps {
   isDeletingCompanies: boolean;
   isTogglingActive: boolean;
 }
-
-const PLATFORM_OPTIONS = [
-  { value: "greenhouse", label: "Greenhouse" },
-  { value: "lever", label: "Lever" },
-  { value: "ashby", label: "Ashby" },
-  { value: "workday", label: "Workday" },
-  { value: "custom", label: "Custom" },
-];
 
 const STATUS_OPTIONS = [
   { value: "active", label: "Active" },
@@ -131,6 +125,7 @@ export function CompanyFilters({
   selectedIds,
   onToggleSelectionMode,
   onClearSelection,
+  onSelectAll,
   onBulkRefreshJobs,
   onBulkRefreshMatches,
   onBulkDeleteJobs,
@@ -339,15 +334,25 @@ export function CompanyFilters({
         )}
 
         {selectionMode ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onToggleSelectionMode}
-            className="h-7 text-xs"
-          >
-            <CheckCircle2 className="mr-1.5 h-3 w-3" />
-            Done
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onSelectAll}
+              className="h-7 text-xs"
+            >
+              Select All
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onToggleSelectionMode}
+              className="h-7 text-xs"
+            >
+              <CheckCircle2 className="mr-1.5 h-3 w-3" />
+              Done
+            </Button>
+          </>
         ) : (
           <Button
             variant="outline"

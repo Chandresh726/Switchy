@@ -16,6 +16,7 @@ interface Filters {
   companyIds: string[];
   locationType: string[];
   employmentType: string[];
+  seniorityLevel: string[];
   minScore: string;
   department: string;
   locationSearch: string;
@@ -29,6 +30,7 @@ const defaultFilters: Filters = {
   companyIds: [],
   locationType: [],
   employmentType: [],
+  seniorityLevel: [],
   minScore: "",
   department: "",
   locationSearch: "",
@@ -59,6 +61,7 @@ function parseFiltersFromSearchParams(searchParams: URLSearchParams): Filters {
   const companyIds = searchParams.get("companyIds");
   const locationType = searchParams.get("locationType");
   const employmentType = searchParams.get("employmentType");
+  const seniorityLevel = searchParams.get("seniorityLevel");
   const minScore = searchParams.get("minScore");
   const department = searchParams.get("department");
   const locationSearch = searchParams.get("locationSearch");
@@ -75,6 +78,7 @@ function parseFiltersFromSearchParams(searchParams: URLSearchParams): Filters {
   }
   if (locationType) filters.locationType = locationType.split(",").filter(Boolean);
   if (employmentType) filters.employmentType = employmentType.split(",").filter(Boolean);
+  if (seniorityLevel) filters.seniorityLevel = seniorityLevel.split(",").filter(Boolean);
   if (minScore) filters.minScore = minScore;
   if (department) filters.department = department;
   if (locationSearch) filters.locationSearch = locationSearch;
@@ -99,6 +103,7 @@ function buildQueryString(filters: Filters, tab: TabType): string {
   if (filters.companyIds.length > 0) params.set("companyIds", filters.companyIds.join(","));
   if (filters.locationType.length > 0) params.set("locationType", filters.locationType.join(","));
   if (filters.employmentType.length > 0) params.set("employmentType", filters.employmentType.join(","));
+  if (filters.seniorityLevel.length > 0) params.set("seniorityLevel", filters.seniorityLevel.join(","));
   if (filters.minScore) params.set("minScore", filters.minScore);
   if (filters.department) params.set("department", filters.department);
   if (filters.locationSearch) params.set("locationSearch", filters.locationSearch);
@@ -118,6 +123,7 @@ interface Job {
   department: string | null;
   salary: string | null;
   employmentType: string | null;
+  seniorityLevel: string | null;
   status: string;
   matchScore: number | null;
   postedDate: string | null;
@@ -281,6 +287,9 @@ export function JobList() {
     if (filters.employmentType.length > 0) {
       params.set("employmentType", filters.employmentType.join(","));
     }
+    if (filters.seniorityLevel.length > 0) {
+      params.set("seniorityLevel", filters.seniorityLevel.join(","));
+    }
     if (filters.minScore) params.set("minScore", filters.minScore);
     if (debouncedDepartment) params.set("department", debouncedDepartment);
     if (debouncedLocationSearch) params.set("locationSearch", debouncedLocationSearch);
@@ -298,6 +307,7 @@ export function JobList() {
     filters.companyIds,
     filters.locationType,
     filters.employmentType,
+    filters.seniorityLevel,
     filters.minScore,
     debouncedDepartment,
     debouncedLocationSearch,
@@ -428,20 +438,14 @@ export function JobList() {
         </button>
       </div>
 
-      {/* Header with count */}
-      <div className="flex items-center gap-2 pb-4">
-        <span className="text-sm text-zinc-400">
-          {totalCount} {totalCount === 1 ? "job" : "jobs"}
-        </span>
-        {isFetching && <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />}
-      </div>
-
       {/* Filters - hide status filter when on Applied/Saved tab */}
       <JobFilters
         filters={filters}
         onFiltersChange={handleFiltersChange}
         companies={companies}
         hideStatusFilter={activeTab !== "all"}
+        totalCount={totalCount}
+        isFetching={isFetching}
       />
 
       {/* Job List and Pagination - scrollable together */}

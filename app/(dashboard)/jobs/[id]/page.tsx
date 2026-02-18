@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ interface Job {
   department: string | null;
   salary: string | null;
   employmentType: string | null;
+  seniorityLevel: string | null;
   status: string;
   matchScore: number | null;
   matchReasons: string[];
@@ -110,6 +112,13 @@ export default function JobDetailPage() {
     },
   });
 
+  useEffect(() => {
+    if (job && job.status === "new") {
+      updateStatusMutation.mutate("viewed");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.id, job?.status]);
+
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return null;
     const date = new Date(dateStr);
@@ -175,6 +184,16 @@ export default function JobDetailPage() {
 
             {/* Meta */}
             <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-zinc-400">
+              {job.salary && (
+                <span className="flex items-center gap-1 text-emerald-400">
+                  {job.salary}
+                </span>
+              )}
+              {job.seniorityLevel && (
+                <Badge variant="outline" className="border-zinc-700">
+                  {job.seniorityLevel.charAt(0).toUpperCase() + job.seniorityLevel.slice(1)}
+                </Badge>
+              )}
               {job.location && (
                 <span className="flex items-center gap-1">
                   <MapPin className="h-4 w-4" />
@@ -202,11 +221,6 @@ export default function JobDetailPage() {
                   <Calendar className="h-4 w-4" />
                   Posted {formatDate(job.postedDate)}
                 </span>
-              )}
-              {job.salary && (
-                <Badge variant="outline" className="border-emerald-500/30 text-emerald-400">
-                  {job.salary}
-                </Badge>
               )}
             </div>
           </div>
