@@ -249,6 +249,18 @@ function SettingsContent() {
     },
   });
 
+  const getApiErrorMessage = async (res: Response, fallback: string): Promise<string> => {
+    try {
+      const data = await res.json() as { error?: string };
+      if (typeof data.error === "string" && data.error.trim().length > 0) {
+        return data.error;
+      }
+    } catch {
+      // Ignore parse errors and fall back to default message
+    }
+    return fallback;
+  };
+
   interface Provider {
     id: string;
     provider: string;
@@ -558,25 +570,42 @@ function SettingsContent() {
     onError: () => toast.error("Failed to save resume parser settings"),
   });
 
-  const schedulerEnabledMutation = useMutation({
+  const schedulerEnabledMutation = useMutation<MatcherSettings, Error, boolean, { previousEnabled: boolean }>({
     mutationFn: async (enabled: boolean) => {
       const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scheduler_enabled: enabled }),
       });
-      if (!res.ok) throw new Error("Failed to save scheduler enabled setting");
+      if (!res.ok) {
+        throw new Error(await getApiErrorMessage(res, "Failed to save scheduler enabled setting"));
+      }
       return res.json();
     },
-    onSuccess: () => {
+    onMutate: (enabled: boolean) => {
+      const previousEnabled = schedulerEnabled;
+      setScraperLocalEdits((prev) => ({ ...prev, schedulerEnabled: enabled }));
+      return { previousEnabled };
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["settings"], data);
+      setScraperLocalEdits((prev) => ({ ...prev, schedulerEnabled: undefined }));
+    },
+    onError: (error, _enabled, context) => {
+      setScraperLocalEdits((prev) => ({
+        ...prev,
+        schedulerEnabled: context?.previousEnabled,
+      }));
+      toast.error(error.message || "Failed to update auto-scrape setting");
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
       queryClient.invalidateQueries({ queryKey: ["scheduler-status"] });
     },
-    onError: () => toast.error("Failed to update auto-scrape setting"),
   });
 
   const handleSchedulerEnabledChange = (enabled: boolean) => {
-    setScraperLocalEdits((prev) => ({ ...prev, schedulerEnabled: enabled }));
+    if (schedulerEnabledMutation.isPending) return;
     schedulerEnabledMutation.mutate(enabled);
   };
 
@@ -649,7 +678,7 @@ function SettingsContent() {
     onError: () => toast.error("Failed to save matcher settings"),
   });
 
-  const scraperSettingsMutation = useMutation({
+  const scraperSettingsMutation = useMutation<unknown, Error>({
     mutationFn: async () => {
       const res = await fetch("/api/settings", {
         method: "POST",
@@ -661,7 +690,9 @@ function SettingsContent() {
           scraper_filter_title_keywords: JSON.stringify(filterTitleKeywords),
         }),
       });
-      if (!res.ok) throw new Error("Failed to save scraper settings");
+      if (!res.ok) {
+        throw new Error(await getApiErrorMessage(res, "Failed to save scraper settings"));
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -677,7 +708,7 @@ function SettingsContent() {
       setScraperSettingsSaved(true);
       setTimeout(() => setScraperSettingsSaved(false), 3000);
     },
-    onError: () => toast.error("Failed to save scraper settings"),
+    onError: (error) => toast.error(error.message || "Failed to save scraper settings"),
   });
 
   const aiWritingMutation = useMutation({

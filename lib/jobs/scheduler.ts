@@ -7,6 +7,7 @@ import { getScrapingModule } from "@/lib/scraper";
 
 const DEFAULT_CRON = "0 */6 * * *";
 const SCHEDULER_ENABLED_KEY = "scheduler_enabled";
+const LOCK_REFRESH_INTERVAL_MS = 60 * 1000;
 
 let schedulerTask: ScheduledTask | null = null;
 let isRunning = false;
@@ -96,6 +97,7 @@ function calculateNextRun(cronExpr: string): Date | null {
 
 export async function getSchedulerStatus(): Promise<SchedulerStatus> {
   const lastRun = await getLastRunFromDB();
+  const persistedCron = await getCronFromDB();
   const nextRun = schedulerTask ? calculateNextRun(currentCronExpression) : null;
   const isEnabled = await getSchedulerEnabled();
 
@@ -105,7 +107,7 @@ export async function getSchedulerStatus(): Promise<SchedulerStatus> {
     isEnabled,
     lastRun,
     nextRun,
-    cronExpression: currentCronExpression,
+    cronExpression: persistedCron,
   };
 }
 
@@ -172,27 +174,65 @@ export async function runScheduledRefresh(): Promise<void> {
   }
 
   const { orchestrator, repository } = getScrapingModule();
+  const ownerId = `scheduler-${process.pid}-${crypto.randomUUID()}`;
+  const lockToken = await repository.acquireSchedulerLock(ownerId);
 
-  if (!(await repository.acquireSchedulerLock())) {
+  if (!lockToken) {
     console.log("[Scheduler] Another instance is running, skipping");
     return;
   }
 
   isRunning = true;
+  let activeLockToken: string | null = lockToken;
+  let lockLost = false;
+  let refreshInFlight = false;
+  const refreshTimer = setInterval(async () => {
+    if (!activeLockToken || lockLost || refreshInFlight) {
+      return;
+    }
+
+    refreshInFlight = true;
+    try {
+      const refreshedToken = await repository.refreshSchedulerLock(activeLockToken);
+      if (!refreshedToken) {
+        lockLost = true;
+        activeLockToken = null;
+        console.error("[Scheduler] Lost scheduler lock while running; run will end without releasing lock token");
+      }
+    } catch (error) {
+      lockLost = true;
+      activeLockToken = null;
+      console.error("[Scheduler] Failed to refresh scheduler lock:", error);
+    } finally {
+      refreshInFlight = false;
+    }
+  }, LOCK_REFRESH_INTERVAL_MS);
+  if (typeof refreshTimer === "object" && "unref" in refreshTimer) {
+    refreshTimer.unref();
+  }
+
   const startTime = new Date();
   console.log("[Scheduler] Starting scheduled refresh");
 
   try {
     const result = await orchestrator.scrapeAllCompanies("scheduler");
 
-    await saveLastRun(startTime);
+    if (!lockLost) {
+      await saveLastRun(startTime);
+    } else {
+      console.error("[Scheduler] Skipping lastRun update because lock ownership was lost");
+    }
+
     console.log(
       `[Scheduler] Completed: ${result.summary.successfulCompanies}/${result.summary.totalCompanies} companies, ${result.summary.totalJobsAdded} jobs added`
     );
   } catch (error) {
     console.error("[Scheduler] Error during refresh:", error);
   } finally {
+    clearInterval(refreshTimer);
     isRunning = false;
-    await repository.releaseSchedulerLock();
+    if (activeLockToken) {
+      await repository.releaseSchedulerLock(activeLockToken);
+    }
   }
 }

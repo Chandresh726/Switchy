@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { companies, jobs, settings, scrapeSessions, scrapingLogs } from "@/lib/db/schema";
 import type { NewJob } from "@/lib/db/schema";
@@ -14,6 +14,33 @@ import type {
 
 const SCHEDULER_LOCK_KEY = "scheduler.lock";
 const SCHEDULER_LOCK_TIMEOUT_MS = 5 * 60 * 1000;
+
+interface SchedulerLockPayload {
+  ownerId: string;
+  token: string;
+  expiresAt: number;
+}
+
+function parseSchedulerLock(value: string | null): SchedulerLockPayload | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as SchedulerLockPayload;
+    if (
+      typeof parsed.ownerId !== "string" ||
+      typeof parsed.token !== "string" ||
+      typeof parsed.expiresAt !== "number"
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function createSchedulerLockValue(payload: SchedulerLockPayload): string {
+  return JSON.stringify(payload);
+}
 
 export class DrizzleScraperRepository implements IScraperRepository {
   async getCompany(id: number) {
@@ -136,31 +163,81 @@ export class DrizzleScraperRepository implements IScraperRepository {
       .where(eq(scrapingLogs.id, id));
   }
 
-  async acquireSchedulerLock(): Promise<boolean> {
-    const existingLock = await this.getSetting(SCHEDULER_LOCK_KEY);
-    
-    if (existingLock) {
-      const lockTime = parseInt(existingLock, 10);
-      if (Date.now() - lockTime < SCHEDULER_LOCK_TIMEOUT_MS) {
-        return false;
-      }
+  async acquireSchedulerLock(ownerId: string): Promise<string | null> {
+    const now = Date.now();
+    const currentRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
+    const currentLock = parseSchedulerLock(currentRaw);
+    const hasUnexpiredLock = currentLock && currentLock.expiresAt > now;
+
+    if (hasUnexpiredLock) {
+      return null;
     }
-    
+
+    const token = crypto.randomUUID();
+    const nextLock: SchedulerLockPayload = {
+      ownerId,
+      token,
+      expiresAt: now + SCHEDULER_LOCK_TIMEOUT_MS,
+    };
+    const nextRaw = createSchedulerLockValue(nextLock);
+
+    if (!currentRaw) {
+      await db
+        .insert(settings)
+        .values({
+          key: SCHEDULER_LOCK_KEY,
+          value: nextRaw,
+          updatedAt: new Date(),
+        })
+        .onConflictDoNothing();
+
+      const persistedRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
+      return persistedRaw === nextRaw ? token : null;
+    }
+
     await db
-      .insert(settings)
-      .values({ key: SCHEDULER_LOCK_KEY, value: Date.now().toString() })
-      .onConflictDoUpdate({
-        target: settings.key,
-        set: { value: Date.now().toString() },
-      });
-    
-    return true;
+      .update(settings)
+      .set({ value: nextRaw, updatedAt: new Date() })
+      .where(and(eq(settings.key, SCHEDULER_LOCK_KEY), eq(settings.value, currentRaw)));
+
+    const persistedRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
+    return persistedRaw === nextRaw ? token : null;
   }
 
-  async releaseSchedulerLock(): Promise<void> {
+  async refreshSchedulerLock(lockToken: string): Promise<string | null> {
+    const currentRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
+    const currentLock = parseSchedulerLock(currentRaw);
+
+    if (!currentRaw || !currentLock || currentLock.token !== lockToken) {
+      return null;
+    }
+
+    const nextLock: SchedulerLockPayload = {
+      ...currentLock,
+      expiresAt: Date.now() + SCHEDULER_LOCK_TIMEOUT_MS,
+    };
+    const nextRaw = createSchedulerLockValue(nextLock);
+
+    await db
+      .update(settings)
+      .set({ value: nextRaw, updatedAt: new Date() })
+      .where(and(eq(settings.key, SCHEDULER_LOCK_KEY), eq(settings.value, currentRaw)));
+
+    const persistedRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
+    return persistedRaw === nextRaw ? lockToken : null;
+  }
+
+  async releaseSchedulerLock(lockToken: string): Promise<void> {
+    const currentRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
+    const currentLock = parseSchedulerLock(currentRaw);
+
+    if (!currentRaw || !currentLock || currentLock.token !== lockToken) {
+      return;
+    }
+
     await db
       .delete(settings)
-      .where(eq(settings.key, SCHEDULER_LOCK_KEY));
+      .where(and(eq(settings.key, SCHEDULER_LOCK_KEY), eq(settings.value, currentRaw)));
   }
 }
 

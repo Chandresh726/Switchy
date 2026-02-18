@@ -1,15 +1,8 @@
 import { NextResponse } from "next/server";
-import { getSchedulerStatus, startScheduler } from "@/lib/jobs/scheduler";
-
-let hasStarted = false;
+import { getSchedulerStatus } from "@/lib/jobs/scheduler";
 
 export async function GET() {
   try {
-    if (!hasStarted) {
-      await startScheduler();
-      hasStarted = true;
-    }
-
     const status = await getSchedulerStatus();
 
     return NextResponse.json({

@@ -70,6 +70,7 @@ export interface IScraperRepository {
   createScrapingLog(log: ScrapingLogCreate): Promise<number>;
   updateScrapingLog(id: number, updates: ScrapingLogUpdate): Promise<void>;
   
-  acquireSchedulerLock(): Promise<boolean>;
-  releaseSchedulerLock(): Promise<void>;
+  acquireSchedulerLock(ownerId: string): Promise<string | null>;
+  refreshSchedulerLock(lockToken: string): Promise<string | null>;
+  releaseSchedulerLock(lockToken: string): Promise<void>;
 }

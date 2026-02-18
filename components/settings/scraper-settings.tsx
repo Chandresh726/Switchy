@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -59,18 +59,24 @@ export function ScraperSettings({
   settingsSaved,
 }: ScraperSettingsProps) {
   const [keywordInput, setKeywordInput] = useState("");
+  const [isCustomSelected, setIsCustomSelected] = useState<boolean>(() =>
+    !CRON_PRESETS.some((p) => p.value === schedulerCron)
+  );
 
   const isPreset = useMemo(
     () => CRON_PRESETS.some((p) => p.value === schedulerCron),
     [schedulerCron]
   );
-  const selectedPreset = isPreset ? schedulerCron : "__custom__";
-  const showCustom = !isPreset && schedulerCron !== "";
+
+  const selectedPreset =
+    isCustomSelected ? "__custom__" : (isPreset ? schedulerCron : "__custom__");
+  const showCustom = isCustomSelected || !isPreset;
 
   const handlePresetChange = (value: string) => {
     if (value === "__custom__") {
-      // Keep custom visible, but don't change schedulerCron yet
+      setIsCustomSelected(true);
     } else {
+      setIsCustomSelected(false);
       onSchedulerCronChange(value);
     }
   };
@@ -109,9 +115,8 @@ export function ScraperSettings({
             <Select
               value={selectedPreset}
               onValueChange={handlePresetChange}
-              disabled={!schedulerEnabled}
             >
-              <SelectTrigger className={`bg-zinc-950/50 border-zinc-800 flex-1 ${!schedulerEnabled ? "opacity-50 cursor-not-allowed" : ""}`}>
+              <SelectTrigger className="bg-zinc-950/50 border-zinc-800 flex-1">
                 <SelectValue placeholder="Select schedule" />
               </SelectTrigger>
               <SelectContent>
@@ -122,7 +127,7 @@ export function ScraperSettings({
                 ))}
               </SelectContent>
             </Select>
-            {showCustom && schedulerEnabled && (
+            {showCustom && (
               <Input
                 value={schedulerCron}
                 onChange={(e) => onSchedulerCronChange(e.target.value)}

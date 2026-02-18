@@ -3,7 +3,7 @@ import cron from "node-cron";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { restartScheduler, stopScheduler, clearSchedulerEnabledCache } from "@/lib/jobs/scheduler";
+import { restartScheduler, stopScheduler, clearSchedulerEnabledCache, getSchedulerEnabled } from "@/lib/jobs/scheduler";
 
 const DEFAULT_SETTINGS: Record<string, string> = {
   matcher_model: "gemini-3-flash-preview",
@@ -329,32 +329,46 @@ export async function POST(request: Request) {
       }
     }
 
-    // Restart scheduler if cron was updated
-    if (cronUpdated) {
-      try {
-        await restartScheduler();
-        console.log("[Settings API] Scheduler restarted due to cron change");
-      } catch (error) {
-        console.error("[Settings API] Failed to restart scheduler:", error);
-      }
-    }
+    let shouldRestartScheduler = false;
+    let shouldStopScheduler = false;
 
-    // Handle scheduler enabled/disabled change
     if (enabledChanged) {
       clearSchedulerEnabledCache();
       if (newEnabledValue === true) {
-        try {
-          await restartScheduler();
-          console.log("[Settings API] Scheduler started due to enabled change");
-        } catch (error) {
-          console.error("[Settings API] Failed to start scheduler:", error);
-        }
+        shouldRestartScheduler = true;
       } else {
-        try {
-          stopScheduler();
-          console.log("[Settings API] Scheduler stopped due to enabled change");
-        } catch (error) {
-          console.error("[Settings API] Failed to stop scheduler:", error);
+        shouldStopScheduler = true;
+      }
+    } else if (cronUpdated) {
+      clearSchedulerEnabledCache();
+      const schedulerEnabled = await getSchedulerEnabled();
+      if (schedulerEnabled) {
+        shouldRestartScheduler = true;
+      }
+    }
+
+    if (shouldStopScheduler) {
+      try {
+        stopScheduler();
+        console.log("[Settings API] Scheduler stopped due to enabled change");
+      } catch (error) {
+        console.error("[Settings API] Failed to stop scheduler:", error);
+      }
+    }
+
+    if (shouldRestartScheduler) {
+      try {
+        await restartScheduler();
+        if (enabledChanged) {
+          console.log("[Settings API] Scheduler started due to enabled change");
+        } else if (cronUpdated) {
+          console.log("[Settings API] Scheduler restarted due to cron change");
+        }
+      } catch (error) {
+        if (enabledChanged) {
+          console.error("[Settings API] Failed to start scheduler:", error);
+        } else if (cronUpdated) {
+          console.error("[Settings API] Failed to restart scheduler:", error);
         }
       }
     }
