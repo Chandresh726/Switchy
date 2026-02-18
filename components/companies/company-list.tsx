@@ -1,10 +1,9 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CompanyForm } from "./company-form";
-import type { CompanyFilters } from "./company-filters";
 import {
   Building2,
   ExternalLink,
@@ -33,10 +32,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import Link from "next/link";
 
-interface Company {
+export interface Company {
   id: number;
   name: string;
   careersUrl: string;
@@ -49,10 +48,15 @@ interface Company {
 }
 
 interface CompanyListProps {
-  filters: CompanyFilters;
+  companies: Company[];
+  isLoading: boolean;
   selectionMode: boolean;
   selectedIds: number[];
   onToggleSelection: (id: number) => void;
+  onRefreshJobs: (companyId: number) => void;
+  onRefreshMatches: (companyId: number) => void;
+  isRefreshing: boolean;
+  isMatching: boolean;
 }
 
 const PLATFORM_COLORS: Record<string, string> = {
@@ -123,23 +127,19 @@ function ToggleSwitch({
 }
 
 export function CompanyList({
-  filters,
+  companies,
+  isLoading,
   selectionMode,
   selectedIds,
   onToggleSelection,
+  onRefreshJobs,
+  onRefreshMatches,
+  isRefreshing,
+  isMatching,
 }: CompanyListProps) {
   const queryClient = useQueryClient();
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [deleteJobsCompanyId, setDeleteJobsCompanyId] = useState<number | null>(null);
-
-  const { data: companies = [], isLoading } = useQuery<Company[]>({
-    queryKey: ["companies"],
-    queryFn: async () => {
-      const res = await fetch("/api/companies");
-      if (!res.ok) throw new Error("Failed to fetch companies");
-      return res.json();
-    },
-  });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -151,20 +151,6 @@ export function CompanyList({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
-    },
-  });
-
-  const refreshMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`/api/jobs/refresh?companyId=${id}`, {
-        method: "POST",
-      });
-      if (!res.ok) throw new Error("Failed to refresh jobs");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
   });
 
@@ -196,67 +182,6 @@ export function CompanyList({
     },
   });
 
-  const matchJobsMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`/api/companies/${id}/match`, { method: "POST" });
-      if (!res.ok) throw new Error("Failed to match jobs");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["match-history"] });
-    },
-  });
-
-  const filteredAndSortedCompanies = useMemo(() => {
-    let result = [...companies];
-
-    if (filters.search) {
-      const searchLower = filters.search.toLowerCase();
-      result = result.filter((c) =>
-        c.name.toLowerCase().includes(searchLower)
-      );
-    }
-
-    if (filters.platforms.length > 0) {
-      result = result.filter((c) =>
-        c.platform && filters.platforms.includes(c.platform)
-      );
-    }
-
-    if (filters.status.length > 0) {
-      const wantActive = filters.status.includes("active");
-      const wantPaused = filters.status.includes("paused");
-      result = result.filter((c) => {
-        if (c.isActive && wantActive) return true;
-        if (!c.isActive && wantPaused) return true;
-        return false;
-      });
-    }
-
-    result.sort((a, b) => {
-      let comparison = 0;
-      switch (filters.sortBy) {
-        case "name":
-          comparison = a.name.localeCompare(b.name);
-          break;
-        case "lastScrapedAt":
-          const aScraped = a.lastScrapedAt ? new Date(a.lastScrapedAt).getTime() : 0;
-          const bScraped = b.lastScrapedAt ? new Date(b.lastScrapedAt).getTime() : 0;
-          comparison = bScraped - aScraped;
-          break;
-        case "createdAt":
-        default:
-          comparison = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-          break;
-      }
-      return filters.sortOrder === "asc" ? comparison : -comparison;
-    });
-
-    return result;
-  }, [companies, filters]);
-
   const handleCardClick = (company: Company) => {
     if (selectionMode) {
       onToggleSelection(company.id);
@@ -283,18 +208,6 @@ export function CompanyList({
     );
   }
 
-  if (filteredAndSortedCompanies.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-700 py-12">
-        <Building2 className="h-12 w-12 text-zinc-600" />
-        <h3 className="mt-4 text-lg font-medium text-white">No matching companies</h3>
-        <p className="mt-1 text-sm text-zinc-400">
-          Try adjusting your filters
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
       {editingCompany && (
@@ -308,7 +221,7 @@ export function CompanyList({
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {filteredAndSortedCompanies.map((company) => {
+        {companies.map((company) => {
           const isSelected = selectedIds.includes(company.id);
           
           return (
@@ -371,9 +284,9 @@ export function CompanyList({
                     <DropdownMenuItem
                       onClick={(e) => {
                         e.stopPropagation();
-                        refreshMutation.mutate(company.id);
+                        onRefreshJobs(company.id);
                       }}
-                      disabled={refreshMutation.isPending}
+                      disabled={isRefreshing}
                       className="cursor-pointer"
                     >
                       <RefreshCw className="mr-2 h-4 w-4" />
@@ -382,9 +295,9 @@ export function CompanyList({
                     <DropdownMenuItem
                       onClick={(e) => {
                         e.stopPropagation();
-                        matchJobsMutation.mutate(company.id);
+                        onRefreshMatches(company.id);
                       }}
-                      disabled={matchJobsMutation.isPending}
+                      disabled={isMatching}
                       className="text-purple-400 focus:text-purple-400 cursor-pointer"
                     >
                       <Sparkles className="mr-2 h-4 w-4" />

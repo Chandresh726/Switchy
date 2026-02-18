@@ -1,41 +1,41 @@
 import { db } from "@/lib/db";
 import { jobs, companies, scrapeSessions } from "@/lib/db/schema";
-import { count, gte, eq, desc, isNotNull } from "drizzle-orm";
+import { count, sql, desc } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export async function GET() {
   try {
-    const [
-      totalJobsResult,
-      totalCompaniesResult,
-      highMatchResult,
-      appliedResult,
-      newJobsResult,
-      viewedJobsResult,
-      savedJobsResult,
-      jobsWithScoreResult,
-      lastSession,
-    ] = await Promise.all([
-      db.select({ count: count() }).from(jobs),
-      db.select({ count: count() }).from(companies),
-      db.select({ count: count() }).from(jobs).where(gte(jobs.matchScore, 75)),
-      db.select({ count: count() }).from(jobs).where(eq(jobs.status, "applied")),
-      db.select({ count: count() }).from(jobs).where(eq(jobs.status, "new")),
-      db.select({ count: count() }).from(jobs).where(eq(jobs.status, "viewed")),
-      db.select({ count: count() }).from(jobs).where(eq(jobs.status, "interested")),
-      db.select({ count: count() }).from(jobs).where(isNotNull(jobs.matchScore)),
-      db.select().from(scrapeSessions).orderBy(desc(scrapeSessions.startedAt)).limit(1),
-    ]);
+    const [jobStats] = await db
+      .select({
+        totalJobs: count(),
+        highMatchJobs: sql<number>`SUM(CASE WHEN ${jobs.matchScore} >= 75 THEN 1 ELSE 0 END)`,
+        appliedJobs: sql<number>`SUM(CASE WHEN ${jobs.status} = 'applied' THEN 1 ELSE 0 END)`,
+        newJobs: sql<number>`SUM(CASE WHEN ${jobs.status} = 'new' THEN 1 ELSE 0 END)`,
+        viewedJobs: sql<number>`SUM(CASE WHEN ${jobs.status} = 'viewed' THEN 1 ELSE 0 END)`,
+        savedJobs: sql<number>`SUM(CASE WHEN ${jobs.status} = 'interested' THEN 1 ELSE 0 END)`,
+        jobsWithScore: sql<number>`SUM(CASE WHEN ${jobs.matchScore} IS NOT NULL THEN 1 ELSE 0 END)`,
+      })
+      .from(jobs);
+
+    const [companyStats] = await db
+      .select({ totalCompanies: count() })
+      .from(companies);
+
+    const lastSession = await db
+      .select()
+      .from(scrapeSessions)
+      .orderBy(desc(scrapeSessions.startedAt))
+      .limit(1);
 
     return NextResponse.json({
-      totalJobs: totalJobsResult[0].count,
-      totalCompanies: totalCompaniesResult[0].count,
-      highMatchJobs: highMatchResult[0].count,
-      appliedJobs: appliedResult[0].count,
-      newJobs: newJobsResult[0].count,
-      viewedJobs: viewedJobsResult[0].count,
-      savedJobs: savedJobsResult[0].count,
-      jobsWithScore: jobsWithScoreResult[0].count,
+      totalJobs: jobStats.totalJobs,
+      totalCompanies: companyStats.totalCompanies,
+      highMatchJobs: jobStats.highMatchJobs,
+      appliedJobs: jobStats.appliedJobs,
+      newJobs: jobStats.newJobs,
+      viewedJobs: jobStats.viewedJobs,
+      savedJobs: jobStats.savedJobs,
+      jobsWithScore: jobStats.jobsWithScore,
       lastScan: lastSession[0] || null,
     });
   } catch (error) {

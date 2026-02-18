@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 interface SchedulerStatus {
   isActive: boolean;
   isRunning: boolean;
+  isEnabled: boolean;
   lastRun: string | null;
   nextRun: string | null;
   cronExpression: string;
@@ -74,6 +75,10 @@ export function ScrapeCountdown({ className }: ScrapeCountdownProps) {
         <span>Loading...</span>
       </div>
     );
+  }
+
+  if (!status?.isEnabled) {
+    return null;
   }
 
   if (!status?.isActive) {

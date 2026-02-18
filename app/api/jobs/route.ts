@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get("search");
     const department = searchParams.get("department");
     const employmentType = searchParams.get("employmentType");
+    const seniorityLevel = searchParams.get("seniorityLevel");
     const locationSearch = searchParams.get("locationSearch");
     const sortBy = searchParams.get("sortBy") || "matchScore";
     const sortOrder = searchParams.get("sortOrder") || "desc";
@@ -93,6 +94,17 @@ export async function GET(request: NextRequest) {
       } else if (employmentTypes.length > 1) {
         conditions.push(
           or(...employmentTypes.map((et) => eq(jobs.employmentType, et)))
+        );
+      }
+    }
+
+    if (seniorityLevel) {
+      const seniorityLevels = seniorityLevel.split(",").filter(Boolean);
+      if (seniorityLevels.length === 1) {
+        conditions.push(eq(jobs.seniorityLevel, seniorityLevels[0]));
+      } else if (seniorityLevels.length > 1) {
+        conditions.push(
+          or(...seniorityLevels.map((sl) => eq(jobs.seniorityLevel, sl)))
         );
       }
     }

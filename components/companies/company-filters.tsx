@@ -49,6 +49,7 @@ interface CompanyFiltersProps {
   selectedIds: number[];
   onToggleSelectionMode: () => void;
   onClearSelection: () => void;
+  onSelectAll: () => void;
   onBulkRefreshJobs: () => void;
   onBulkRefreshMatches: () => void;
   onBulkDeleteJobs: () => void;
@@ -124,6 +125,7 @@ export function CompanyFilters({
   selectedIds,
   onToggleSelectionMode,
   onClearSelection,
+  onSelectAll,
   onBulkRefreshJobs,
   onBulkRefreshMatches,
   onBulkDeleteJobs,
@@ -332,15 +334,25 @@ export function CompanyFilters({
         )}
 
         {selectionMode ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onToggleSelectionMode}
-            className="h-7 text-xs"
-          >
-            <CheckCircle2 className="mr-1.5 h-3 w-3" />
-            Done
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onSelectAll}
+              className="h-7 text-xs"
+            >
+              Select All
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onToggleSelectionMode}
+              className="h-7 text-xs"
+            >
+              <CheckCircle2 className="mr-1.5 h-3 w-3" />
+              Done
+            </Button>
+          </>
         ) : (
           <Button
             variant="outline"

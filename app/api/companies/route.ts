@@ -115,7 +115,6 @@ export async function POST(request: NextRequest) {
             logoUrl,
             platform,
             boardToken: boardToken || null,
-            scrapeFrequency: 6,
             isActive: true,
           })
           .returning();
@@ -200,7 +199,6 @@ export async function PUT(request: NextRequest) {
           logoUrl: item.logoUrl,
           platform,
           boardToken: item.boardToken || null,
-          scrapeFrequency: 6,
           isActive: true,
         });
       }

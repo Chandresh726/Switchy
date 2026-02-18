@@ -38,6 +38,7 @@ interface MatcherSettings {
   matcher_timeout_ms: string;
   matcher_circuit_breaker_threshold: string;
   matcher_auto_match_after_scrape: string;
+  scheduler_enabled: string;
   scheduler_cron: string;
   scraper_filter_country?: string;
   scraper_filter_city?: string;
@@ -82,6 +83,7 @@ interface ResumeParserLocalEdits {
 }
 
 interface ScraperLocalEdits {
+  schedulerEnabled?: boolean;
   schedulerCron?: string;
   filterCountry?: string;
   filterCity?: string;
@@ -385,6 +387,9 @@ function SettingsContent() {
       autoMatchAfterScrape:
         matcherLocalEdits.autoMatchAfterScrape ??
         (settings?.matcher_auto_match_after_scrape !== "false"),
+      schedulerEnabled:
+        scraperLocalEdits.schedulerEnabled ??
+        (settings?.scheduler_enabled !== "false"),
       schedulerCron:
         scraperLocalEdits.schedulerCron ??
         (settings?.scheduler_cron || "0 */6 * * *"),
@@ -428,7 +433,7 @@ function SettingsContent() {
 
   const {
     matcherModel, matcherProviderId, resumeParserModel, resumeParserProviderId, matcherReasoningEffort, resumeParserReasoningEffort, bulkEnabled, serializeOperations, batchSize, maxRetries, concurrencyLimit, timeoutMs,
-    circuitBreakerThreshold, autoMatchAfterScrape, schedulerCron, filterCountry, filterCity, filterTitleKeywords,
+    circuitBreakerThreshold, autoMatchAfterScrape, schedulerEnabled, schedulerCron, filterCountry, filterCity, filterTitleKeywords,
     aiWritingModel, aiWritingProviderId, aiWritingReasoningEffort, referralTone, referralLength,
     coverLetterTone, coverLetterLength, coverLetterFocus
   } = derivedValues;
@@ -492,17 +497,6 @@ function SettingsContent() {
     setAIWritingLocalEdits((prev) => ({ ...prev, ...updates }));
   };
 
-  const refreshMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/jobs/refresh", { method: "POST" });
-      if (!res.ok) throw new Error("Failed to refresh");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries();
-    },
-  });
-
   const clearJobsMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/jobs", { method: "DELETE" });
@@ -563,6 +557,28 @@ function SettingsContent() {
     },
     onError: () => toast.error("Failed to save resume parser settings"),
   });
+
+  const schedulerEnabledMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduler_enabled: enabled }),
+      });
+      if (!res.ok) throw new Error("Failed to save scheduler enabled setting");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["settings"] });
+      queryClient.invalidateQueries({ queryKey: ["scheduler-status"] });
+    },
+    onError: () => toast.error("Failed to update auto-scrape setting"),
+  });
+
+  const handleSchedulerEnabledChange = (enabled: boolean) => {
+    setScraperLocalEdits((prev) => ({ ...prev, schedulerEnabled: enabled }));
+    schedulerEnabledMutation.mutate(enabled);
+  };
 
   // Auto-save effect for Resume Parser with debounce
   useEffect(() => {
@@ -650,6 +666,7 @@ function SettingsContent() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
+      queryClient.invalidateQueries({ queryKey: ["scheduler-status"] });
       setScraperLocalEdits((prev) => ({
         ...prev,
         schedulerCron: undefined,
@@ -912,6 +929,8 @@ function SettingsContent() {
         {/* Right Column: Info */}
         <div className="space-y-6">
           <ScraperSettings
+            schedulerEnabled={schedulerEnabled}
+            onSchedulerEnabledChange={handleSchedulerEnabledChange}
             schedulerCron={schedulerCron}
             onSchedulerCronChange={setSchedulerCron}
             filterCountry={filterCountry}
@@ -924,16 +943,6 @@ function SettingsContent() {
             isSaving={scraperSettingsMutation.isPending}
             hasUnsavedChanges={scraperHasUnsavedChanges}
             settingsSaved={scraperSettingsSaved}
-            onRefresh={() => {
-              toast.success("Refresh triggered", {
-                action: {
-                  label: "Details",
-                  onClick: () => router.push("/history/scrape")
-                }
-              });
-              refreshMutation.mutate();
-            }}
-            isRefreshing={refreshMutation.isPending}
           />
 
           <ResumeParserSection

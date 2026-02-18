@@ -3,7 +3,7 @@ export {
   CircuitState,
   createCircuitBreaker,
   type CircuitBreakerOptions,
-} from "./circuit-breaker";
+} from "../../shared/circuit-breaker";
 
 export { retryWithBackoff, withTimeout, type RetryOptions } from "./retry";
 

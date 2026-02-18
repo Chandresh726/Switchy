@@ -3,17 +3,20 @@ import { CronExpressionParser } from "cron-parser";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { fetchJobsForAllCompanies } from "./fetcher";
+import { getScrapingModule } from "@/lib/scraper";
 
 const DEFAULT_CRON = "0 */6 * * *";
+const SCHEDULER_ENABLED_KEY = "scheduler_enabled";
 
 let schedulerTask: ScheduledTask | null = null;
 let isRunning = false;
 let currentCronExpression = DEFAULT_CRON;
+let cachedEnabled: boolean | null = null;
 
 export interface SchedulerStatus {
   isActive: boolean;
   isRunning: boolean;
+  isEnabled: boolean;
   lastRun: Date | null;
   nextRun: Date | null;
   cronExpression: string;
@@ -56,6 +59,32 @@ async function getLastRunFromDB(): Promise<Date | null> {
   return null;
 }
 
+export async function getSchedulerEnabled(): Promise<boolean> {
+  if (cachedEnabled !== null) {
+    return cachedEnabled;
+  }
+
+  try {
+    const result = await db
+      .select()
+      .from(settings)
+      .where(eq(settings.key, SCHEDULER_ENABLED_KEY))
+      .limit(1);
+
+    if (result.length > 0 && result[0].value) {
+      cachedEnabled = result[0].value === "true";
+      return cachedEnabled;
+    }
+  } catch (error) {
+    console.error("[Scheduler] Error fetching enabled from DB:", error);
+  }
+  return true;
+}
+
+export function clearSchedulerEnabledCache(): void {
+  cachedEnabled = null;
+}
+
 function calculateNextRun(cronExpr: string): Date | null {
   try {
     const interval = CronExpressionParser.parse(cronExpr);
@@ -68,10 +97,12 @@ function calculateNextRun(cronExpr: string): Date | null {
 export async function getSchedulerStatus(): Promise<SchedulerStatus> {
   const lastRun = await getLastRunFromDB();
   const nextRun = schedulerTask ? calculateNextRun(currentCronExpression) : null;
+  const isEnabled = await getSchedulerEnabled();
 
   return {
     isActive: schedulerTask !== null,
     isRunning,
+    isEnabled,
     lastRun,
     nextRun,
     cronExpression: currentCronExpression,
@@ -79,6 +110,12 @@ export async function getSchedulerStatus(): Promise<SchedulerStatus> {
 }
 
 export async function startScheduler(): Promise<void> {
+  const isEnabled = await getSchedulerEnabled();
+  if (!isEnabled) {
+    console.log("[Scheduler] Not enabled, skipping start");
+    return;
+  }
+
   if (schedulerTask) {
     console.log("[Scheduler] Already running");
     return;
@@ -128,59 +165,15 @@ async function saveLastRun(time: Date): Promise<void> {
   }
 }
 
-const LOCK_TIMEOUT_MS = 5 * 60 * 1000;
-
-async function acquireLock(): Promise<boolean> {
-  try {
-    const now = Date.now();
-    const [existing] = await db
-      .select()
-      .from(settings)
-      .where(eq(settings.key, "scheduler.lock"))
-      .limit(1);
-
-    if (existing && existing.value) {
-      const lockTime = new Date(existing.value).getTime();
-      if (now - lockTime < LOCK_TIMEOUT_MS) {
-        return false;
-      }
-    }
-
-    await db
-      .insert(settings)
-      .values({
-        key: "scheduler.lock",
-        value: new Date().toISOString(),
-      })
-      .onConflictDoUpdate({
-        target: settings.key,
-        set: { value: new Date().toISOString() },
-      });
-
-    return true;
-  } catch (error) {
-    console.error("[Scheduler] Error acquiring lock:", error);
-    return false;
-  }
-}
-
-async function releaseLock(): Promise<void> {
-  try {
-    await db
-      .delete(settings)
-      .where(eq(settings.key, "scheduler.lock"));
-  } catch (error) {
-    console.error("[Scheduler] Error releasing lock:", error);
-  }
-}
-
 export async function runScheduledRefresh(): Promise<void> {
   if (isRunning) {
     console.log("[Scheduler] Already running (in-memory), skipping");
     return;
   }
 
-  if (!(await acquireLock())) {
+  const { orchestrator, repository } = getScrapingModule();
+
+  if (!(await repository.acquireSchedulerLock())) {
     console.log("[Scheduler] Another instance is running, skipping");
     return;
   }
@@ -190,7 +183,7 @@ export async function runScheduledRefresh(): Promise<void> {
   console.log("[Scheduler] Starting scheduled refresh");
 
   try {
-    const result = await fetchJobsForAllCompanies("scheduler");
+    const result = await orchestrator.scrapeAllCompanies("scheduler");
 
     await saveLastRun(startTime);
     console.log(
@@ -200,6 +193,6 @@ export async function runScheduledRefresh(): Promise<void> {
     console.error("[Scheduler] Error during refresh:", error);
   } finally {
     isRunning = false;
-    await releaseLock();
+    await repository.releaseSchedulerLock();
   }
 }
