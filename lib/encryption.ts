@@ -1,24 +1,66 @@
+import fs from "fs";
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "crypto";
+
+import { ensureStateDir, getEncryptionSecretPath } from "@/lib/state/paths";
 
 const ALGORITHM = "aes-256-gcm";
 const KEY_LENGTH = 32;
 const SALT_LENGTH = 32;
 const IV_LENGTH = 16;
+let cachedSecret: string | null = null;
 
-function getKey(salt: Buffer): Buffer {
-  const secret = process.env.ENCRYPTION_SECRET;
-
-  if (!secret) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("ENCRYPTION_SECRET environment variable is required in production");
-    }
-    console.warn(
-      "ENCRYPTION_SECRET not set, using insecure local fallback. This is not recommended for production use."
-    );
-    return scryptSync("switchy-local-secret", salt, KEY_LENGTH);
+function readSecretFromFile(filePath: string): string | null {
+  if (!fs.existsSync(filePath)) {
+    return null;
   }
 
+  const secret = fs.readFileSync(filePath, "utf8").trim();
+  return secret.length > 0 ? secret : null;
+}
+
+function getOrCreateLocalSecret(): string {
+  if (cachedSecret) {
+    return cachedSecret;
+  }
+
+  ensureStateDir();
+  const secretPath = getEncryptionSecretPath();
+  const existingSecret = readSecretFromFile(secretPath);
+
+  if (existingSecret) {
+    cachedSecret = existingSecret;
+    return existingSecret;
+  }
+
+  const generatedSecret = randomBytes(KEY_LENGTH).toString("base64");
+
+  try {
+    fs.writeFileSync(secretPath, generatedSecret, {
+      encoding: "utf8",
+      mode: 0o600,
+      flag: "wx",
+    });
+    cachedSecret = generatedSecret;
+    return generatedSecret;
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === "EEXIST") {
+      const concurrentSecret = readSecretFromFile(secretPath);
+      if (concurrentSecret) {
+        cachedSecret = concurrentSecret;
+        return concurrentSecret;
+      }
+    }
+    throw error;
+  }
+}
+
+function deriveKey(secret: string, salt: Buffer): Buffer {
   return scryptSync(secret, salt, KEY_LENGTH);
+}
+
+function getKey(salt: Buffer): Buffer {
+  return deriveKey(getOrCreateLocalSecret(), salt);
 }
 
 export function encryptApiKey(apiKey: string): string {
@@ -59,8 +101,8 @@ export function decryptApiKey(encryptedData: string): string {
     const key = getKey(salt);
     const decipher = createDecipheriv(ALGORITHM, key, iv);
     decipher.setAuthTag(tag);
-
-    return decipher.update(encrypted) + decipher.final("utf8");
+    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+    return decrypted.toString("utf8");
   } catch (error) {
     if (error instanceof DecryptionError) {
       throw error;

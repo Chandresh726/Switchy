@@ -20,6 +20,7 @@ const ENV_DIR = isDev ? path.join(BASE_DIR, "dev") : BASE_DIR;
 const STATE_DIR = ENV_DIR;
 const UPLOADS_DIR = path.join(STATE_DIR, "uploads");
 const DB_PATH = path.join(STATE_DIR, "switchy.db");
+const ENCRYPTION_SECRET_PATH = path.join(STATE_DIR, "encryption.secret");
 
 /**
  * Get the base state directory (~/.switchy)
@@ -48,6 +49,13 @@ export function getDbPathDisplay(): string {
  */
 export function getUploadsDir(): string {
   return UPLOADS_DIR;
+}
+
+/**
+ * Get the encryption secret file path
+ */
+export function getEncryptionSecretPath(): string {
+  return ENCRYPTION_SECRET_PATH;
 }
 
 /**

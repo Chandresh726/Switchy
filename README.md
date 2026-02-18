@@ -23,14 +23,16 @@ A local-first job scraping, matching, and tracking tool. Switchy discovers roles
 # 1. Install dependencies
 pnpm install
 
-# 2. Set up the database
-pnpm db:migrate
-
-# 3. Start the dev server
+# 2. Start the dev server
 pnpm dev
 ```
 
 Open `http://localhost:3000` and configure your AI provider in Settings.
+
+Switchy now auto-runs database migrations before `pnpm dev` and `pnpm start`, and auto-manages an encryption secret in `~/.switchy/` on first run. No `.env` setup is required for local use.
+
+- `pnpm dev` uses development state: `~/.switchy/dev/`
+- `pnpm start` uses production state: `~/.switchy/`
 
 ### Production Build
 

@@ -3,9 +3,11 @@
   "version": "0.5.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "predev": "NODE_ENV=development pnpm db:migrate",
+    "dev": "NODE_ENV=development next dev",
+    "prestart": "NODE_ENV=production pnpm db:migrate",
     "build": "next build",
-    "start": "next start",
+    "start": "NODE_ENV=production next start",
     "lint": "eslint",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config=drizzle.config.ts",
