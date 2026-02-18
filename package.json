@@ -3,6 +3,7 @@
   "version": "0.5.0",
   "private": true,
   "scripts": {
+    "postinstall": "playwright install chromium",
     "predev": "NODE_ENV=development pnpm db:migrate",
     "dev": "NODE_ENV=development next dev",
     "prestart": "NODE_ENV=production pnpm db:migrate",

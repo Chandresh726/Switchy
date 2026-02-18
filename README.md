@@ -1,69 +1,78 @@
 # Switchy
 
-A local-first job scraping, matching, and tracking tool. Switchy discovers roles from job platforms, matches them to your resume using AI, and helps you track applications—all running locally on your machine.
+Switchy is a local-first job scraping, matching, and tracking app built with Next.js, TypeScript, Drizzle ORM (SQLite), and Shadcn UI.
 
-## What it does
+It helps you discover jobs from multiple ATS platforms, match them against your profile/resume with AI, generate outreach content, and track everything locally.
 
-- **Scrape jobs** from platforms like Greenhouse, Lever, and Ashby
-- **Parse resumes** and match them to jobs using AI
-- **Track applications** with a local SQLite database
-- **Tune matching** via a settings UI—batch size, concurrency, timeouts, AI models
+## Current Capabilities
+
+- Scrape jobs from `Greenhouse`, `Lever`, `Ashby`, `Eightfold`, and `Workday`
+- Track companies (single and bulk operations), with support for custom career pages + manual ATS override
+- Manage a job pipeline with filters, search, sorting, saved/applied tabs, and match score views
+- Upload and parse resumes, then manage profile, skills, experience, and education data
+- Configure AI-based matching (provider/model, reasoning effort, bulk mode, retry/concurrency/timeout tuning)
+- Generate AI referral messages and cover letters per job, with editable AI history
+- Run scheduled scraping (cron-based) and review scrape/match/AI histories
+- Keep data local in `~/.switchy` (database, uploads, encryption secret)
+
+## Supported AI Providers
+
+- Anthropic
+- OpenAI
+- Gemini (API key)
+- Gemini (CLI OAuth)
+- OpenRouter
+- Cerebras
+- Modal
+- Groq
 
 ## Prerequisites
 
-- **Node.js**: v20+
-- **pnpm**: package manager
-- **Native build tools**: for `better-sqlite3` (Python, C++ compiler)
-- **AI API key** (optional): Anthropic, Google Gemini, or other supported providers
-- **Playwright browsers** (optional): Required only for Workday scraper - run `pnpm exec playwright install`
+- Node.js `v20+`
+- `pnpm`
+- Native build tools for `better-sqlite3` (Python + C/C++ toolchain)
+- Internet access on first install (Playwright Chromium is auto-installed)
+- AI provider credentials (optional, only required for AI-powered features)
 
 ## Local Setup
 
 ```bash
-# 1. Install dependencies
 pnpm install
-
-# 2. Start the dev server
 pnpm dev
 ```
 
-Open `http://localhost:3000` and configure your AI provider in Settings.
+Open [http://localhost:3000](http://localhost:3000).
 
-Switchy now auto-runs database migrations before `pnpm dev` and `pnpm start`, and auto-manages an encryption secret in `~/.switchy/` on first run. No `.env` setup is required for local use.
-
-- `pnpm dev` uses development state: `~/.switchy/dev/`
-- `pnpm start` uses production state: `~/.switchy/`
-
-### Production Build
+## Production
 
 ```bash
-# Build for production
 pnpm build
-
-# Start production server
 pnpm start
 ```
 
-### Database Commands
+Database migrations run automatically before `pnpm dev` and `pnpm start`.
+
+## Data Storage
+
+- Development state: `~/.switchy/dev/`
+  - DB: `~/.switchy/dev/switchy.db`
+  - Uploads: `~/.switchy/dev/uploads/`
+  - Encryption secret: `~/.switchy/dev/encryption.secret`
+- Production state: `~/.switchy/`
+  - DB: `~/.switchy/switchy.db`
+  - Uploads: `~/.switchy/uploads/`
+  - Encryption secret: `~/.switchy/encryption.secret`
+
+No `.env` setup is required for standard local usage.
+
+## Useful Commands
 
 | Command | Description |
 |---------|-------------|
-| `pnpm db:generate` | Generate migrations from schema |
-| `pnpm db:migrate` | Apply migrations to local DB |
-| `pnpm db:studio` | Open Drizzle Studio to inspect data |
-
-## Supported AI Providers
-
-| Provider | Authentication |
-|----------|----------------|
-| **Anthropic (Claude)** | API key |
-| **Google (Gemini)** | API key or Gemini CLI OAuth |
-| **OpenAI** | API key |
-| **Cerebras** | API key |
-| **OpenRouter** | API key |
-
-Configure providers in the Settings page. API keys are stored locally in SQLite and never committed to git.
-
----
-
-**Note**: Data is stored in `~/.switchy/` (SQLite DB, uploads, and local settings). All personal data stays local and outside the project directory.
+| `pnpm dev` | Start local app (development mode) |
+| `pnpm build` | Build for production |
+| `pnpm start` | Start production server |
+| `pnpm lint` | Run ESLint |
+| `pnpm db:generate` | Generate Drizzle migrations from schema changes |
+| `pnpm db:migrate` | Apply Drizzle migrations |
+| `pnpm db:studio` | Open Drizzle Studio |
