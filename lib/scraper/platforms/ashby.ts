@@ -167,10 +167,14 @@ export class AshbyScraper extends AbstractApiScraper<AshbyConfig> {
       };
     });
 
+    const openExternalIds = jobs.map((job) => job.externalId);
+
     return {
       success: true,
       jobs,
       detectedBoardToken,
+      openExternalIds,
+      openExternalIdsComplete: true,
     };
   }
 }

@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { jobs, companies } from "@/lib/db/schema";
-import { eq, desc, and, gte, lte, like, or, sql, asc, count } from "drizzle-orm";
+import { eq, desc, and, gte, lte, like, or, sql, asc, count, notInArray } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
     const companyId = searchParams.get("companyId");
     const companyIds = searchParams.get("companyIds");
     const status = searchParams.get("status");
+    const excludeStatus = searchParams.get("excludeStatus");
     const minScore = searchParams.get("minScore");
     const maxScore = searchParams.get("maxScore");
     const locationType = searchParams.get("locationType");
@@ -51,6 +52,11 @@ export async function GET(request: NextRequest) {
 
     if (status) {
       conditions.push(eq(jobs.status, status));
+    } else if (excludeStatus) {
+      const excludedStatuses = excludeStatus.split(",").filter(Boolean);
+      if (excludedStatuses.length > 0) {
+        conditions.push(notInArray(jobs.status, excludedStatuses));
+      }
     }
 
     if (minScore) {
@@ -215,6 +221,14 @@ export async function PATCH(request: NextRequest) {
     if (status) updateData.status = status;
     if (viewedAt) updateData.viewedAt = new Date(viewedAt);
     if (appliedAt) updateData.appliedAt = new Date(appliedAt);
+
+    if (status === "archived") {
+      updateData.archivedAt = new Date();
+      updateData.archiveSource = "manual";
+    } else if (status) {
+      updateData.archivedAt = null;
+      updateData.archiveSource = null;
+    }
 
     // Auto-set viewedAt when status changes to viewed
     if (status === "viewed" && !viewedAt) {

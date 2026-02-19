@@ -46,6 +46,11 @@ type WorkdayJobListResponse = {
   jobPostings: WorkdayJobListItem[];
 };
 
+type WorkdayListFetchResult = {
+  jobs: WorkdayJobListItem[];
+  isComplete: boolean;
+};
+
 type WorkdayJobDetailResponse = {
   jobPostingInfo: {
     id: string;
@@ -156,13 +161,33 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       const filters: JobFilters | undefined = options?.filters;
       const existingExternalIds = options?.existingExternalIds;
 
-      const allJobListItems = await this.fetchAllJobListItems(workdaySession);
+      const listResult = await this.fetchAllJobListItems(workdaySession);
+      if (!listResult) {
+        return {
+          success: true,
+          jobs: [],
+          detectedBoardToken,
+          openExternalIds: [],
+          openExternalIdsComplete: false,
+        };
+      }
+
+      const allJobListItems = listResult.jobs;
+      const openExternalIds = allJobListItems
+        .map((job) => {
+          const jobPostingId = this.getJobPostingId(job);
+          if (!jobPostingId) return null;
+          return this.generateExternalId(this.platform, workdaySession.board, jobPostingId);
+        })
+        .filter((externalId): externalId is string => Boolean(externalId));
 
       if (allJobListItems.length === 0) {
         return {
           success: true,
           jobs: [],
           detectedBoardToken,
+          openExternalIds,
+          openExternalIdsComplete: listResult.isComplete,
         };
       }
 
@@ -194,6 +219,8 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           jobs: [],
           detectedBoardToken,
           earlyFiltered: earlyFilterStats,
+          openExternalIds,
+          openExternalIdsComplete: listResult.isComplete,
         };
       }
 
@@ -201,7 +228,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
 
       if (existingExternalIds && existingExternalIds.size > 0) {
         jobsToFetch = jobsToProcess.filter((job) => {
-          const jobPostingId = job.externalPath?.split("/").pop() || job.bulletFields?.[1];
+          const jobPostingId = this.getJobPostingId(job);
           if (!jobPostingId) return false;
           const externalId = this.generateExternalId(this.platform, workdaySession.board, jobPostingId);
           return !existingExternalIds.has(externalId);
@@ -214,6 +241,8 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           jobs: [],
           detectedBoardToken,
           earlyFiltered: earlyFilterStats,
+          openExternalIds,
+          openExternalIdsComplete: listResult.isComplete,
         };
       }
 
@@ -234,6 +263,8 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         jobs: scrapedJobs,
         detectedBoardToken,
         earlyFiltered: earlyFilterStats,
+        openExternalIds,
+        openExternalIdsComplete: listResult.isComplete,
       };
     } catch (error) {
       return {
@@ -314,15 +345,16 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
 
   private async fetchAllJobListItems(
     session: WorkdaySession
-  ): Promise<WorkdayJobListItem[]> {
+  ): Promise<WorkdayListFetchResult | null> {
     const firstBatch = await this.fetchJobListPage(session, 0, this.config.listPageSize);
 
-    if (!firstBatch || !firstBatch.jobPostings) {
-      return [];
+    if (!firstBatch || !Array.isArray(firstBatch.jobPostings)) {
+      return null;
     }
 
     const total = firstBatch.total || 0;
     const allJobs = [...firstBatch.jobPostings];
+    let failedPages = 0;
 
     if (total > this.config.listPageSize) {
       const totalPages = Math.ceil(total / this.config.listPageSize);
@@ -346,7 +378,9 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         );
 
         for (const result of results) {
-          if (result?.jobPostings?.length) {
+          if (!result || !Array.isArray(result.jobPostings)) {
+            failedPages++;
+          } else {
             allJobs.push(...result.jobPostings);
           }
         }
@@ -357,7 +391,10 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       }
     }
 
-    return allJobs;
+    return {
+      jobs: allJobs,
+      isComplete: failedPages === 0 && allJobs.length >= total,
+    };
   }
 
   private async fetchJobDetail(
@@ -386,7 +423,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
   ): Promise<ScrapedJob[]> {
     const detailPromises = jobs.map(async (job) => {
       try {
-        const jobPostingId = job.externalPath?.split("/").pop() || job.bulletFields?.[1];
+        const jobPostingId = this.getJobPostingId(job);
 
         if (!jobPostingId) return null;
 
@@ -420,6 +457,11 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
 
     const results = await Promise.all(detailPromises);
     return results.filter((j): j is ScrapedJob => j !== null);
+  }
+
+  private getJobPostingId(job: WorkdayJobListItem): string | null {
+    const jobPostingId = job.externalPath?.split("/").pop() || job.bulletFields?.[1];
+    return jobPostingId || null;
   }
 
   private processJobDescription(description: string): { description: string | undefined; descriptionFormat: "markdown" | "plain" } {

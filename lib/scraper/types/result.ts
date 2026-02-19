@@ -50,6 +50,8 @@ export interface ScraperResult<T extends ScrapedJob = ScrapedJob> {
   metadata?: ScraperMetadata;
   detectedBoardToken?: string;
   earlyFiltered?: EarlyFilterStats;
+  openExternalIds?: string[];
+  openExternalIdsComplete?: boolean;
 }
 
 export interface FetchResult {

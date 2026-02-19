@@ -123,10 +123,14 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
       };
     });
 
+    const openExternalIds = jobs.map((job) => job.externalId);
+
     return {
       success: true,
       jobs,
       detectedBoardToken,
+      openExternalIds,
+      openExternalIdsComplete: true,
     };
   }
 }

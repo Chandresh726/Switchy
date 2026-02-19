@@ -19,6 +19,8 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
   defaultFilters: {},
 };
 
+const ARCHIVABLE_JOB_STATUSES = ["new", "viewed", "interested", "rejected"];
+
 export interface IScrapeOrchestrator {
   scrapeAllCompanies(trigger: TriggerSource): Promise<BatchFetchResult>;
   scrapeCompany(companyId: number, options?: ScrapeCompanyOptions): Promise<FetchResult>;
@@ -225,6 +227,26 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
         });
       } else {
         logger.fetched(scraperResult.jobs.length);
+      }
+
+      const openExternalIds = Array.from(
+        new Set(
+          (scraperResult.openExternalIds ?? scraperResult.jobs.map((job) => job.externalId)).filter(
+            (externalId): externalId is string => Boolean(externalId)
+          )
+        )
+      );
+
+      if (openExternalIds.length > 0) {
+        await this.repository.reopenScraperArchivedJobs(companyId, openExternalIds);
+      }
+
+      if (scraperResult.openExternalIdsComplete !== false) {
+        await this.repository.archiveMissingJobs(
+          companyId,
+          openExternalIds,
+          ARCHIVABLE_JOB_STATUSES
+        );
       }
 
       const { newJobs, duplicates } = this.deduplicationService.batchDeduplicate(

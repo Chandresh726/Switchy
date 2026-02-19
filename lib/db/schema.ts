@@ -107,6 +107,8 @@ export const jobs = sqliteTable("jobs", {
   postedDate: integer("posted_date", { mode: "timestamp" }),
   discoveredAt: integer("discovered_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  archivedAt: integer("archived_at", { mode: "timestamp" }),
+  archiveSource: text("archive_source"), // "manual" | "scraper"
   viewedAt: integer("viewed_at", { mode: "timestamp" }),
   appliedAt: integer("applied_at", { mode: "timestamp" }),
 }, (table) => ({

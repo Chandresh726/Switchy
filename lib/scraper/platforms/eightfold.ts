@@ -70,6 +70,11 @@ interface EightfoldPositionDetails {
   };
 }
 
+interface EightfoldListFetchResult {
+  positions: EightfoldPosition[];
+  isComplete: boolean;
+}
+
 export type EightfoldConfig = BrowserScraperConfig & {
   pageSize: number;
   parallelListFetches: number;
@@ -169,13 +174,29 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       const existingExternalIds = options?.existingExternalIds;
       const boardToken = domain.replace(/\.com$/i, "");
 
-      const allPositions = await this.fetchAllPositions(baseUrl, domain);
+      const listResult = await this.fetchAllPositions(baseUrl, domain);
+      if (!listResult) {
+        return {
+          success: true,
+          jobs: [],
+          detectedBoardToken: detectedBoardToken || (options?.boardToken ? undefined : domain),
+          openExternalIds: [],
+          openExternalIdsComplete: false,
+        };
+      }
+
+      const allPositions = listResult.positions;
+      const openExternalIds = allPositions.map((position) =>
+        this.generateExternalId(this.platform, boardToken, position.id)
+      );
 
       if (allPositions.length === 0) {
         return {
           success: true,
           jobs: [],
           detectedBoardToken: detectedBoardToken || (options?.boardToken ? undefined : domain),
+          openExternalIds,
+          openExternalIdsComplete: listResult.isComplete,
         };
       }
 
@@ -209,6 +230,8 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
           jobs: [],
           detectedBoardToken: detectedBoardToken || (options?.boardToken ? undefined : domain),
           earlyFiltered: earlyFilterStats,
+          openExternalIds,
+          openExternalIdsComplete: listResult.isComplete,
         };
       }
 
@@ -227,6 +250,8 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
           jobs: [],
           detectedBoardToken: detectedBoardToken || (options?.boardToken ? undefined : domain),
           earlyFiltered: earlyFilterStats,
+          openExternalIds,
+          openExternalIdsComplete: listResult.isComplete,
         };
       }
 
@@ -253,6 +278,8 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         jobs: scrapedJobs,
         detectedBoardToken: detectedBoardToken || (options?.boardToken ? undefined : domain),
         earlyFiltered: earlyFilterStats,
+        openExternalIds,
+        openExternalIdsComplete: listResult.isComplete,
       };
     } catch (error) {
       return {
@@ -367,15 +394,16 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
   private async fetchAllPositions(
     baseUrl: string,
     domain: string
-  ): Promise<EightfoldPosition[]> {
+  ): Promise<EightfoldListFetchResult | null> {
     const firstBatch = await this.fetchJobList(baseUrl, domain, 0);
 
     if (!firstBatch || firstBatch.status !== 200 || !firstBatch.data) {
-      return [];
+      return null;
     }
 
     const total = firstBatch.data.count || 0;
     const allPositions = [...firstBatch.data.positions];
+    let failedPages = 0;
 
     if (total > this.config.pageSize) {
       const totalPages = Math.ceil(total / this.config.pageSize);
@@ -398,7 +426,9 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         );
 
         for (const result of results) {
-          if (result?.data?.positions?.length) {
+          if (!result || !result.data || !Array.isArray(result.data.positions)) {
+            failedPages++;
+          } else {
             allPositions.push(...result.data.positions);
           }
         }
@@ -409,7 +439,10 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       }
     }
 
-    return allPositions;
+    return {
+      positions: allPositions,
+      isComplete: failedPages === 0 && allPositions.length >= total,
+    };
   }
 
   private async fetchPositionDetails(

@@ -59,6 +59,12 @@ export interface IScraperRepository {
   getActiveCompanies(): Promise<Company[]>;
   getExistingJobs(companyId: number): Promise<ExistingJob[]>;
   getSetting(key: string): Promise<string | null>;
+  reopenScraperArchivedJobs(companyId: number, openExternalIds: string[]): Promise<number>;
+  archiveMissingJobs(
+    companyId: number,
+    openExternalIds: string[],
+    statusesToArchive: string[]
+  ): Promise<number>;
   
   insertJobs(jobs: Omit<NewJob, "discoveredAt" | "updatedAt">[]): Promise<number[]>;
   updateCompany(id: number, updates: CompanyUpdate): Promise<void>;

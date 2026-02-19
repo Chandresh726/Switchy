@@ -174,10 +174,14 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
       };
     });
 
+    const openExternalIds = jobs.map((job) => job.externalId);
+
     return {
       success: true,
       jobs,
       detectedBoardToken,
+      openExternalIds,
+      openExternalIdsComplete: true,
     };
   }
 }

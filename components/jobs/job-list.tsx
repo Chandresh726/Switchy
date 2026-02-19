@@ -90,7 +90,7 @@ function parseFiltersFromSearchParams(searchParams: URLSearchParams): Filters {
 
 function parseTabFromSearchParams(searchParams: URLSearchParams): TabType {
   const tab = searchParams.get("tab");
-  return tab === "saved" || tab === "applied" ? tab : "all";
+  return tab === "saved" || tab === "applied" || tab === "archived" ? tab : "all";
 }
 
 function buildQueryString(filters: Filters, tab: TabType): string {
@@ -141,7 +141,7 @@ interface Company {
   name: string;
 }
 
-type TabType = "all" | "saved" | "applied";
+type TabType = "all" | "saved" | "applied" | "archived";
 
 export function JobList() {
   const searchParams = useSearchParams();
@@ -271,6 +271,7 @@ export function JobList() {
   const effectiveStatus =
     activeTab === "applied" ? "applied" :
     activeTab === "saved" ? "interested" :
+    activeTab === "archived" ? "archived" :
     filters.status;
 
   // Build query params
@@ -278,6 +279,9 @@ export function JobList() {
     const params = new URLSearchParams();
     if (debouncedSearch) params.set("search", debouncedSearch);
     if (effectiveStatus) params.set("status", effectiveStatus);
+    if (!effectiveStatus && activeTab === "all") {
+      params.set("excludeStatus", "archived");
+    }
     if (filters.companyIds && filters.companyIds.length > 0) {
       params.set("companyIds", filters.companyIds.join(","));
     }
@@ -304,6 +308,7 @@ export function JobList() {
   }, [
     debouncedSearch,
     effectiveStatus,
+    activeTab,
     filters.companyIds,
     filters.locationType,
     filters.employmentType,
@@ -351,10 +356,21 @@ export function JobList() {
     },
   });
 
+  // Fetch archived count for tab badge
+  const { data: archivedData } = useQuery<{ totalCount: number }>({
+    queryKey: ["jobs", "archived-count"],
+    queryFn: async () => {
+      const res = await fetch("/api/jobs?status=archived&limit=1");
+      if (!res.ok) throw new Error("Failed to fetch archived count");
+      return res.json();
+    },
+  });
+
   const jobs: Job[] = data?.jobs || [];
   const totalCount = data?.totalCount || 0;
   const appliedCount = appliedData?.totalCount || 0;
   const savedCount = savedData?.totalCount || 0;
+  const archivedCount = archivedData?.totalCount || 0;
   const totalPages = Math.ceil(totalCount / pageSize);
 
   const startIndex = (currentPage - 1) * pageSize;
@@ -436,6 +452,21 @@ export function JobList() {
             </span>
           )}
         </button>
+        <button
+          onClick={() => handleTabChange("archived")}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === "archived"
+              ? "border-b-2 border-emerald-500 text-white"
+              : "text-zinc-400 hover:text-zinc-200"
+          }`}
+        >
+          Archived
+          {archivedCount > 0 && (
+            <span className="rounded-full bg-zinc-500/20 px-2 py-0.5 text-xs text-zinc-400">
+              {archivedCount}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Filters - hide status filter when on Applied/Saved tab */}
@@ -460,6 +491,8 @@ export function JobList() {
             <h3 className="mt-4 text-lg font-medium text-white">
               {activeTab === "applied"
                 ? "No applied jobs yet"
+                : activeTab === "archived"
+                ? "No archived jobs"
                 : activeTab === "saved"
                 ? "No saved jobs yet"
                 : "No jobs found"}
@@ -467,6 +500,8 @@ export function JobList() {
             <p className="mt-1 text-sm text-zinc-400">
               {activeTab === "applied"
                 ? "Jobs you apply to will appear here"
+                : activeTab === "archived"
+                ? "Closed jobs archived by scraper or manually archived jobs will appear here"
                 : activeTab === "saved"
                 ? "Click Save on a job to add it here"
                 : filters.search || filters.status || filters.companyIds.length > 0 || filters.locationType.length > 0

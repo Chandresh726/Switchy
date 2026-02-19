@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { companies, jobs, settings, scrapeSessions, scrapingLogs } from "@/lib/db/schema";
 import type { NewJob } from "@/lib/db/schema";
@@ -76,6 +76,61 @@ export class DrizzleScraperRepository implements IScraperRepository {
       .from(settings)
       .where(eq(settings.key, key));
     return setting?.value ?? null;
+  }
+
+  async reopenScraperArchivedJobs(companyId: number, openExternalIds: string[]): Promise<number> {
+    if (openExternalIds.length === 0) return 0;
+
+    const reopened = await db
+      .update(jobs)
+      .set({
+        status: "new",
+        archivedAt: null,
+        archiveSource: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(jobs.companyId, companyId),
+          eq(jobs.status, "archived"),
+          eq(jobs.archiveSource, "scraper"),
+          inArray(jobs.externalId, openExternalIds)
+        )
+      )
+      .returning({ id: jobs.id });
+
+    return reopened.length;
+  }
+
+  async archiveMissingJobs(
+    companyId: number,
+    openExternalIds: string[],
+    statusesToArchive: string[]
+  ): Promise<number> {
+    if (statusesToArchive.length === 0) return 0;
+
+    const baseConditions = [
+      eq(jobs.companyId, companyId),
+      isNotNull(jobs.externalId),
+      inArray(jobs.status, statusesToArchive),
+    ] as const;
+
+    const whereClause = openExternalIds.length > 0
+      ? and(...baseConditions, notInArray(jobs.externalId, openExternalIds))
+      : and(...baseConditions);
+
+    const archived = await db
+      .update(jobs)
+      .set({
+        status: "archived",
+        archivedAt: new Date(),
+        archiveSource: "scraper",
+        updatedAt: new Date(),
+      })
+      .where(whereClause)
+      .returning({ id: jobs.id });
+
+    return archived.length;
   }
 
   async insertJobs(jobsToInsert: Omit<NewJob, "discoveredAt" | "updatedAt">[]): Promise<number[]> {
