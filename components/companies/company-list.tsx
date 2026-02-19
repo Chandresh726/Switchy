@@ -32,7 +32,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 export interface Company {
@@ -140,6 +140,41 @@ export function CompanyList({
   const queryClient = useQueryClient();
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [deleteJobsCompanyId, setDeleteJobsCompanyId] = useState<number | null>(null);
+  const editFormRef = useRef<HTMLDivElement | null>(null);
+  const suppressCloseAutoFocusRef = useRef(false);
+
+  const scrollToEditForm = () => {
+    const editForm = editFormRef.current;
+    if (!editForm) return;
+
+    const mainContent = document.getElementById("main-content");
+    if (mainContent) {
+      const mainRect = mainContent.getBoundingClientRect();
+      const formRect = editForm.getBoundingClientRect();
+      const targetTop = formRect.top - mainRect.top + mainContent.scrollTop - 12;
+
+      mainContent.scrollTo({
+        top: Math.max(targetTop, 0),
+        behavior: "smooth",
+      });
+      return;
+    }
+
+    editForm.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  };
+
+  useEffect(() => {
+    if (!editingCompany) return;
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        scrollToEditForm();
+      });
+    });
+  }, [editingCompany]);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -211,7 +246,7 @@ export function CompanyList({
   return (
     <div className="space-y-4">
       {editingCompany && (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+        <div ref={editFormRef} className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
           <CompanyForm
             company={editingCompany}
             onSuccess={() => setEditingCompany(null)}
@@ -280,7 +315,16 @@ export function CompanyList({
                       <MoreVertical className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuContent
+                    align="end"
+                    className="w-56"
+                    onCloseAutoFocus={(event) => {
+                      if (suppressCloseAutoFocusRef.current) {
+                        event.preventDefault();
+                        suppressCloseAutoFocusRef.current = false;
+                      }
+                    }}
+                  >
                     <DropdownMenuItem
                       onClick={(e) => {
                         e.stopPropagation();
@@ -317,6 +361,7 @@ export function CompanyList({
                     <DropdownMenuItem
                       onClick={(e) => {
                         e.stopPropagation();
+                        suppressCloseAutoFocusRef.current = true;
                         setEditingCompany(company);
                       }}
                       className="cursor-pointer"
