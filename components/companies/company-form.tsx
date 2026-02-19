@@ -58,6 +58,8 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
       setDetectedPlatform("Workday");
     } else if (urlLower.includes("eightfold.ai")) {
       setDetectedPlatform("Eightfold");
+    } else if (urlLower.includes("uber.com/careers") || urlLower.includes("jobs.uber.com") || (urlLower.includes("uber.com") && urlLower.includes("career"))) {
+      setDetectedPlatform("Uber");
     } else if (url.length > 10) {
       setDetectedPlatform("Custom");
     } else {

@@ -1,4 +1,4 @@
-export type Platform = "greenhouse" | "lever" | "ashby" | "eightfold" | "workday";
+export type Platform = "greenhouse" | "lever" | "ashby" | "eightfold" | "workday" | "uber";
 
 export type TriggerSource = "manual" | "scheduler" | "company_refresh";
 
@@ -26,6 +26,7 @@ export const PLATFORMS: readonly Platform[] = [
   "ashby",
   "eightfold",
   "workday",
+  "uber",
 ] as const;
 
 export const TRIGGER_SOURCES: readonly TriggerSource[] = [

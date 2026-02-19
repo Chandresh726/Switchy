@@ -22,6 +22,9 @@ function detectPlatform(url: string): string | null {
   if (urlLower.includes("eightfold.ai")) {
     return "eightfold";
   }
+  if (urlLower.includes("uber.com/careers") || urlLower.includes("jobs.uber.com") || (urlLower.includes("uber.com") && urlLower.includes("career"))) {
+    return "uber";
+  }
   return "custom";
 }
 

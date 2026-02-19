@@ -9,5 +9,6 @@ export const PLATFORM_OPTIONS = [
   { value: "ashby", label: "Ashby" },
   { value: "eightfold", label: "Eightfold" },
   { value: "workday", label: "Workday" },
+  { value: "uber", label: "Uber" },
   { value: "custom", label: "Custom" },
 ] as const;
