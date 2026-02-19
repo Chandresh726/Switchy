@@ -28,7 +28,7 @@ export const BulkMatchResultSchema = z.object({
 
 export type ErrorType = AIErrorType;
 
-export type TriggerSource = "manual" | "scheduler" | "company_refresh";
+export type TriggerSource = "manual" | "auto_match" | "company_refresh" | "match_unmatched";
 
 export type MatchPhase = "queued" | "matching" | "completed";
 

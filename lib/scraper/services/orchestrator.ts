@@ -403,7 +403,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
         const matcherStartTime = Date.now();
 
         const result = await matchWithTracking(jobIds, {
-          triggerSource: "scheduler",
+          triggerSource: "auto_match",
           companyId,
           onProgress: (progress) => {
             void this.repository

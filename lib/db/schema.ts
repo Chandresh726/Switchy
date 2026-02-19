@@ -120,7 +120,7 @@ export const jobs = sqliteTable("jobs", {
 // Scrape Sessions - Track batch scrape operations
 export const scrapeSessions = sqliteTable("scrape_sessions", {
   id: text("id").primaryKey(), // UUID
-  triggerSource: text("trigger_source").notNull(), // "manual" | "scheduler" | "company_refresh"
+  triggerSource: text("trigger_source").notNull(), // "manual" | "auto_match" | "company_refresh" | "match_unmatched"
   status: text("status").notNull().default("in_progress"), // "in_progress" | "completed" | "failed"
   companiesTotal: integer("companies_total").default(0),
   companiesCompleted: integer("companies_completed").default(0),
@@ -136,7 +136,7 @@ export const scrapingLogs = sqliteTable("scraping_logs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   companyId: integer("company_id").references(() => companies.id, { onDelete: "cascade" }),
   sessionId: text("session_id").references(() => scrapeSessions.id, { onDelete: "cascade" }),
-  triggerSource: text("trigger_source"), // "manual" | "scheduler" | "company_refresh"
+  triggerSource: text("trigger_source"), // "manual" | "auto_match" | "company_refresh" | "match_unmatched"
   status: text("status").notNull(), // "success", "error", "partial"
   jobsFound: integer("jobs_found").default(0),
   jobsAdded: integer("jobs_added").default(0),
@@ -179,7 +179,7 @@ export const aiProviders = sqliteTable("aiProviders", {
 // Match Sessions - Track batch match operations
 export const matchSessions = sqliteTable("match_sessions", {
   id: text("id").primaryKey(), // UUID
-  triggerSource: text("trigger_source").notNull(), // "manual" | "scheduler" | "company_refresh"
+  triggerSource: text("trigger_source").notNull(), // "manual" | "auto_match" | "company_refresh" | "match_unmatched"
   companyId: integer("company_id").references(() => companies.id, { onDelete: "set null" }), // nullable, for company-specific matches
   status: text("status").notNull().default("in_progress"), // "in_progress" | "completed" | "failed"
   jobsTotal: integer("jobs_total").default(0),

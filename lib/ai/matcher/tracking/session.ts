@@ -80,6 +80,7 @@ export async function createMatchSession(
     jobsSucceeded: 0,
     jobsFailed: 0,
     errorCount: 0,
+    startedAt: null,
   });
 
   return sessionId;
@@ -93,6 +94,7 @@ export async function updateMatchSession(
     jobsSucceeded?: number;
     jobsFailed?: number;
     errorCount?: number;
+    startedAt?: Date;
   }
 ): Promise<void> {
   await db

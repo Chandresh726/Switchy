@@ -48,10 +48,10 @@ export async function POST() {
       });
     }
 
-    const sessionId = await createMatchSession(unmatchedJobIds, "manual");
+    const sessionId = await createMatchSession(unmatchedJobIds, "match_unmatched");
 
     matchWithTracking(unmatchedJobIds, {
-      triggerSource: "manual",
+      triggerSource: "match_unmatched",
       sessionId,
     }).catch((err) => {
       console.error("[Match Unmatched] Background matching failed:", err);

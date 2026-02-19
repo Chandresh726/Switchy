@@ -2,7 +2,7 @@ import type { MatchResult, MatchResultMap, MatchSessionResult, MatchProgressCall
 import { getMatcherConfig } from "./config";
 import { withQueue, getQueueStatus } from "./queue";
 import { executeMatch } from "./execution";
-import { createMatchSession, finalizeMatchSession, getUnmatchedJobIds, createProgressTracker } from "./tracking";
+import { createMatchSession, finalizeMatchSession, getUnmatchedJobIds, createProgressTracker, updateMatchSession } from "./tracking";
 import type { StrategyProgressCallback } from "./strategies";
 
 export interface MatchEngine {
@@ -84,6 +84,7 @@ export async function createMatchEngine(): Promise<MatchEngine> {
         const results = await withQueue(
           config,
           async () => {
+            await updateMatchSession(sessionId, { startedAt: new Date() });
             progressTracker.setPhase("matching");
 
             return executeMatch({
