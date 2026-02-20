@@ -876,9 +876,7 @@ function SettingsContent() {
           referral_length: updates.referralLength,
           cover_letter_tone: updates.coverLetterTone,
           cover_letter_length: updates.coverLetterLength,
-          cover_letter_focus: updates.coverLetterFocus
-            ? JSON.stringify(updates.coverLetterFocus)
-            : undefined,
+          cover_letter_focus: updates.coverLetterFocus,
           ai_writing_model: updates.aiWritingModel,
           ai_writing_provider_id: updates.aiWritingProviderId,
           ai_writing_reasoning_effort: updates.aiWritingReasoningEffort,

@@ -55,6 +55,7 @@ export const AISettingsUpdateSchema = z.object({
   cover_letter_focus: z.union([
     z.enum(["skills", "experience", "cultural_fit", "all"]),
     z.array(z.enum(["skills", "experience", "cultural_fit"])),
+    z.string().trim().min(1),
   ]).optional(),
 });
 

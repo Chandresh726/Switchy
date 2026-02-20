@@ -35,7 +35,7 @@ function formatTimeRemaining(ms: number): string {
 }
 
 export function ScrapeCountdown({ className }: ScrapeCountdownProps) {
-  const { data: status, isLoading, refetch } = useQuery<SchedulerStatus>({
+  const { data: status, isLoading, isError, refetch } = useQuery<SchedulerStatus>({
     queryKey: ["scheduler-status"],
     queryFn: async () => {
       const res = await fetch("/api/scheduler/status");
@@ -77,11 +77,25 @@ export function ScrapeCountdown({ className }: ScrapeCountdownProps) {
     );
   }
 
-  if (!status?.isEnabled) {
-    return null;
+  if (isError || !status) {
+    return (
+      <div className={cn("flex items-center gap-2 text-sm text-yellow-500", className)}>
+        <AlertCircle className="h-4 w-4" />
+        <span>Scheduler status unavailable</span>
+      </div>
+    );
   }
 
-  if (!status?.isActive) {
+  if (!status.isEnabled) {
+    return (
+      <div className={cn("flex items-center gap-2 text-sm text-zinc-500", className)}>
+        <Clock className="h-4 w-4" />
+        <span>Auto-scrape off</span>
+      </div>
+    );
+  }
+
+  if (!status.isActive) {
     return (
       <div className={cn("flex items-center gap-2 text-sm text-yellow-500", className)}>
         <AlertCircle className="h-4 w-4" />

@@ -12,7 +12,6 @@ const LOCK_REFRESH_INTERVAL_MS = 60 * 1000;
 let schedulerTask: ScheduledTask | null = null;
 let isRunning = false;
 let currentCronExpression = DEFAULT_CRON;
-let cachedEnabled: boolean | null = null;
 
 export interface SchedulerStatus {
   isActive: boolean;
@@ -61,10 +60,6 @@ async function getLastRunFromDB(): Promise<Date | null> {
 }
 
 export async function getSchedulerEnabled(): Promise<boolean> {
-  if (cachedEnabled !== null) {
-    return cachedEnabled;
-  }
-
   try {
     const result = await db
       .select()
@@ -73,8 +68,7 @@ export async function getSchedulerEnabled(): Promise<boolean> {
       .limit(1);
 
     if (result.length > 0 && result[0].value) {
-      cachedEnabled = result[0].value === "true";
-      return cachedEnabled;
+      return result[0].value === "true";
     }
   } catch (error) {
     console.error("[Scheduler] Error fetching enabled from DB:", error);
@@ -83,7 +77,7 @@ export async function getSchedulerEnabled(): Promise<boolean> {
 }
 
 export function clearSchedulerEnabledCache(): void {
-  cachedEnabled = null;
+  // No-op: keep function for compatibility with existing callers.
 }
 
 function calculateNextRun(cronExpr: string): Date | null {
@@ -99,6 +93,9 @@ export async function getSchedulerStatus(): Promise<SchedulerStatus> {
   const lastRun = await getLastRunFromDB();
   const persistedCron = await getCronFromDB();
   const isEnabled = await getSchedulerEnabled();
+  if (!isEnabled && schedulerTask) {
+    stopScheduler();
+  }
   if (isEnabled && !schedulerTask) {
     try {
       await startScheduler();
@@ -106,10 +103,10 @@ export async function getSchedulerStatus(): Promise<SchedulerStatus> {
       console.error("[Scheduler] Failed lazy-start while getting status:", error);
     }
   }
-  const nextRun = schedulerTask ? calculateNextRun(currentCronExpression) : null;
+  const nextRun = isEnabled ? calculateNextRun(persistedCron) : null;
 
   return {
-    isActive: schedulerTask !== null,
+    isActive: isEnabled && schedulerTask !== null,
     isRunning,
     isEnabled,
     lastRun,

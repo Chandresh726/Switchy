@@ -69,6 +69,31 @@ describe("settings route", () => {
     expect(mocks.parseSettingsUpdateBody).not.toHaveBeenCalled();
   });
 
+  it("accepts cover_letter_focus as JSON string for backward compatibility", async () => {
+    mocks.parseSettingsUpdateBody.mockReturnValue({
+      updates: [{ key: "cover_letter_focus", value: "[\"skills\",\"experience\"]" }],
+      cronUpdated: false,
+      enabledChanged: false,
+      newEnabledValue: null,
+    });
+
+    const request = new Request("http://localhost/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cover_letter_focus: "[\"skills\",\"experience\"]",
+      }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(200);
+    expect(mocks.parseSettingsUpdateBody).toHaveBeenCalledTimes(1);
+    expect(mocks.upsertSettings).toHaveBeenCalledWith([
+      { key: "cover_letter_focus", value: "[\"skills\",\"experience\"]" },
+    ]);
+  });
+
   it("stops scheduler when scheduler_enabled changes to false", async () => {
     mocks.parseSettingsUpdateBody.mockReturnValue({
       updates: [{ key: "scheduler_enabled", value: "false" }],
