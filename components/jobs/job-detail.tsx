@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -113,18 +114,25 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
         <div className="sticky top-0 z-10 border-b border-border bg-background p-6">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-start gap-4">
-              {job.company.logoUrl ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={job.company.logoUrl}
-                  alt={job.company.name}
-                  className="h-12 w-12 rounded bg-muted object-contain p-1"
-                />
-              ) : (
-                <div className="flex h-12 w-12 items-center justify-center rounded bg-muted text-xl font-medium text-muted-foreground">
-                  {job.company.name.charAt(0).toUpperCase()}
-                </div>
-              )}
+              <Link
+                href={`/jobs?companyIds=${job.company.id}`}
+                className="transition-opacity hover:opacity-85"
+                title={`View all jobs at ${job.company.name}`}
+                aria-label={`View all jobs at ${job.company.name}`}
+              >
+                {job.company.logoUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={job.company.logoUrl}
+                    alt={job.company.name}
+                    className="h-12 w-12 rounded bg-muted object-contain p-1"
+                  />
+                ) : (
+                  <div className="flex h-12 w-12 items-center justify-center rounded bg-muted text-xl font-medium text-muted-foreground">
+                    {job.company.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </Link>
 
               <div>
                 <h2 className="text-xl font-semibold text-foreground">{job.title}</h2>

@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MatchBadge } from "@/components/jobs/match-badge";
@@ -163,18 +164,25 @@ export default function JobDetailPage() {
       {/* Header */}
       <div className="mb-6 border-b border-border pb-6">
         <div className="flex items-start gap-4">
-          {job.company.logoUrl ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src={job.company.logoUrl}
-              alt={job.company.name}
-              className="h-16 w-16 rounded-lg bg-muted object-contain p-2"
-            />
-          ) : (
-            <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-muted text-2xl font-medium text-muted-foreground">
-              {job.company.name.charAt(0).toUpperCase()}
-            </div>
-          )}
+          <Link
+            href={`/jobs?companyIds=${job.company.id}`}
+            className="transition-opacity hover:opacity-85"
+            title={`View all jobs at ${job.company.name}`}
+            aria-label={`View all jobs at ${job.company.name}`}
+          >
+            {job.company.logoUrl ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={job.company.logoUrl}
+                alt={job.company.name}
+                className="h-16 w-16 rounded-lg bg-muted object-contain p-2"
+              />
+            ) : (
+              <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-muted text-2xl font-medium text-muted-foreground">
+                {job.company.name.charAt(0).toUpperCase()}
+              </div>
+            )}
+          </Link>
 
           <div className="flex-1">
             <h1 className="text-2xl font-semibold text-foreground">{job.title}</h1>
