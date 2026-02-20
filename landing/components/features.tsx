@@ -7,7 +7,7 @@ import { fadeInUp, getSlideDelay } from "@/lib/animations";
 
 export function Features() {
   return (
-    <section id="features" className="px-6 py-32 grid-bg relative">
+    <section id="features" className="px-6 py-32 relative">
       <div className="max-w-7xl mx-auto">
         <motion.div
           variants={fadeInUp}

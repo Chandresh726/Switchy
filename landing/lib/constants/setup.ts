@@ -15,12 +15,6 @@ export const SETUP_STEPS: SetupStep[] = [
   },
   {
     step: "3",
-    title: "Set Up Environment",
-    description: "Copy the example environment file and add your API keys.",
-    code: "cp .env.example .env",
-  },
-  {
-    step: "4",
     title: "Build & Start",
     description: "Build the app and start the production server.",
     code: "pnpm build && pnpm start",

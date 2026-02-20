@@ -7,4 +7,5 @@ export const PROVIDERS: ProviderItem[] = [
   { name: "Cerebras", logo: "/brands/cerebras.png" },
   { name: "OpenRouter", logo: "/brands/openrouter.png" },
   { name: "Groq", logo: "/brands/groq.png" },
+  { name: "NVIDIA (NIM)", logo: "/brands/nvidia.png" },
 ];

@@ -29,6 +29,11 @@ export interface ProviderItem {
   logo: string;
 }
 
+export interface PlatformItem {
+  name: string;
+  logo: string;
+}
+
 export interface ScreenshotImage {
   src: string;
   url: string;
