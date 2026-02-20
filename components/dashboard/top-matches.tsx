@@ -39,7 +39,7 @@ export function TopMatches() {
         {[1, 2, 3].map((i) => (
           <div
             key={i}
-            className="h-20 animate-pulse rounded-lg border border-zinc-800 bg-zinc-900/50"
+            className="h-20 animate-pulse rounded-lg border border-border bg-card/70"
           />
         ))}
       </div>
@@ -48,8 +48,8 @@ export function TopMatches() {
 
   if (jobs.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-zinc-700 p-8 text-center">
-        <p className="text-sm text-zinc-400">
+      <div className="rounded-lg border border-dashed border-border p-8 text-center">
+        <p className="text-sm text-muted-foreground">
           No new jobs with match scores yet. Add companies and refresh to see your top matches.
         </p>
       </div>
@@ -62,19 +62,19 @@ export function TopMatches() {
         <Link
           key={job.id}
           href={`/jobs/${job.id}`}
-          className="group block rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700 hover:bg-zinc-900"
+          className="group block rounded-lg border border-border bg-card/70 p-4 transition-colors hover:border-border hover:bg-card"
         >
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <h3 className="truncate font-medium text-white group-hover:text-emerald-400">
+                <h3 className="truncate font-medium text-foreground group-hover:text-emerald-400">
                   {job.title}
                 </h3>
                 {job.matchScore !== null && (
                   <MatchBadge score={job.matchScore} size="sm" />
                 )}
               </div>
-              <div className="mt-1 flex items-center gap-3 text-sm text-zinc-400">
+              <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <Building2 className="h-3.5 w-3.5" />
                   {job.company.name}
@@ -91,7 +91,7 @@ export function TopMatches() {
                 </span>
               </div>
             </div>
-            <ExternalLink className="h-4 w-4 flex-shrink-0 text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100" />
+            <ExternalLink className="h-4 w-4 flex-shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
           </div>
         </Link>
       ))}
@@ -99,7 +99,7 @@ export function TopMatches() {
       {jobs.length === 5 && (
         <Link
           href="/jobs?status=new&sortBy=matchScore"
-          className="block text-center text-sm text-zinc-400 hover:text-zinc-300"
+          className="block text-center text-sm text-muted-foreground hover:text-foreground/80"
         >
           View all jobs
         </Link>

@@ -322,14 +322,14 @@ function CompaniesPageContent() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Companies</h1>
-          <p className="mt-1 text-zinc-400">
+          <h1 className="text-2xl font-semibold text-foreground">Companies</h1>
+          <p className="mt-1 text-muted-foreground">
             Track companies and their job openings
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center rounded-md border border-zinc-800 bg-zinc-900 p-1">
+          <div className="flex items-center rounded-md border border-border bg-card p-1">
             <Button
               variant={view === "list" ? "secondary" : "ghost"}
               size="sm"
@@ -350,7 +350,7 @@ function CompaniesPageContent() {
             </Button>
           </div>
 
-          <div className="h-6 w-px bg-zinc-800 mx-2 hidden sm:block" />
+          <div className="h-6 w-px bg-muted mx-2 hidden sm:block" />
 
           <input
             type="file"
@@ -410,7 +410,7 @@ function CompaniesPageContent() {
       )}
 
       {view === "list" && isAdding && (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+        <div className="rounded-xl border border-border bg-card/70 p-6">
           <CompanyForm
             onSuccess={() => setIsAdding(false)}
             onCancel={() => setIsAdding(false)}
@@ -431,7 +431,7 @@ function CompaniesPageContent() {
           isMatching={bulkMatchMutation.isPending}
         />
       ) : (
-        <div className="flex h-[calc(100vh-9rem)] flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">
+        <div className="flex h-[calc(100vh-9rem)] flex-col overflow-hidden rounded-xl border border-border bg-background">
           <JsonEditor onSuccess={() => {}} />
         </div>
       )}
@@ -443,7 +443,7 @@ export default function CompaniesPage() {
   return (
     <Suspense fallback={
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     }>
       <CompaniesPageContent />

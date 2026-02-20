@@ -102,8 +102,8 @@ function AIHistoryCard({ content, onDelete, isDeleting, onClick }: AIHistoryCard
       }}
       className={cn(
         "group flex flex-col gap-3 p-4 rounded-lg border transition-all duration-200 cursor-pointer",
-        "bg-zinc-900/50 hover:bg-zinc-900",
-        "border-zinc-800 hover:border-zinc-700",
+        "bg-card/70 hover:bg-card",
+        "border-border hover:border-border",
         typeConfig.hoverBorderColor
       )}
     >
@@ -116,10 +116,10 @@ function AIHistoryCard({ content, onDelete, isDeleting, onClick }: AIHistoryCard
             <img
               src={content.companyLogoUrl}
               alt={content.companyName || "Company"}
-              className="h-10 w-10 rounded-lg bg-zinc-800 object-contain p-1.5"
+              className="h-10 w-10 rounded-lg bg-muted object-contain p-1.5"
             />
           ) : (
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-800 text-sm font-medium text-zinc-400">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-sm font-medium text-muted-foreground">
               {(content.companyName || "?").charAt(0).toUpperCase()}
             </div>
           )}
@@ -128,10 +128,10 @@ function AIHistoryCard({ content, onDelete, isDeleting, onClick }: AIHistoryCard
         {/* Header */}
         <div className="flex-1 flex items-start justify-between gap-3 min-w-0">
           <div className="min-w-0">
-            <h4 className="font-medium text-white truncate">
+            <h4 className="font-medium text-foreground truncate">
               {content.jobTitle || "Untitled Job"}
             </h4>
-            <div className="flex items-center gap-2 mt-0.5 text-sm text-zinc-400">
+            <div className="flex items-center gap-2 mt-0.5 text-sm text-muted-foreground">
               <Building2 className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">{content.companyName || "Unknown Company"}</span>
             </div>
@@ -144,7 +144,7 @@ function AIHistoryCard({ content, onDelete, isDeleting, onClick }: AIHistoryCard
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -160,7 +160,7 @@ function AIHistoryCard({ content, onDelete, isDeleting, onClick }: AIHistoryCard
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction
                     onClick={handleDelete}
-                    className="bg-red-500 hover:bg-red-600 text-white"
+                    className="bg-red-500 hover:bg-red-600 text-foreground"
                     disabled={isDeleting}
                   >
                     {isDeleting ? "Deleting..." : "Delete"}
@@ -173,10 +173,10 @@ function AIHistoryCard({ content, onDelete, isDeleting, onClick }: AIHistoryCard
       </div>
 
       {/* Preview & Metadata */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-zinc-500">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
         {/* Variants Indicator */}
         {content.history.length > 1 && (
-          <span className="flex items-center gap-1 text-zinc-400">
+          <span className="flex items-center gap-1 text-muted-foreground">
             <Layers className="h-3 w-3" />
             {content.history.length} variants
           </span>
@@ -201,7 +201,7 @@ function AIHistoryCard({ content, onDelete, isDeleting, onClick }: AIHistoryCard
             {typeConfig.label}
           </Badge>
           <span className="flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5 text-zinc-400" />
+            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
             {formatDate(content.updatedAt)}
           </span>
         </div>
@@ -347,15 +347,15 @@ export default function AIHistoryPage() {
   if (contents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 px-4">
-        <div className="w-16 h-16 rounded-2xl bg-zinc-900 flex items-center justify-center mb-4">
-          <Wand2 className="h-8 w-8 text-zinc-600" />
+        <div className="w-16 h-16 rounded-2xl bg-card flex items-center justify-center mb-4">
+          <Wand2 className="h-8 w-8 text-muted-foreground" />
         </div>
-        <h3 className="text-lg font-medium text-white mb-1">No AI-generated content yet</h3>
-        <p className="text-sm text-zinc-400 text-center max-w-md mb-6">
+        <h3 className="text-lg font-medium text-foreground mb-1">No AI-generated content yet</h3>
+        <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
           Generate referral messages and cover letters from job pages to see them here
         </p>
         <Link href="/jobs">
-          <Button variant="outline" className="border-zinc-700 hover:bg-zinc-800">
+          <Button variant="outline" className="border-border hover:bg-muted">
             <ExternalLink className="h-4 w-4 mr-2" />
             Browse Jobs
           </Button>
@@ -369,7 +369,7 @@ export default function AIHistoryPage() {
       <div className="space-y-8">
         {Object.entries(groupedContents).map(([date, items]) => (
           <div key={date}>
-            <h3 className="text-xs font-medium uppercase tracking-wider text-zinc-500 mb-3 sticky top-0 bg-zinc-950 py-2 z-10">
+            <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3 sticky top-0 bg-background py-2 z-10">
               {date}
             </h3>
             <div className="space-y-3">

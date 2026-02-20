@@ -76,8 +76,8 @@ export default function ProfilePage() {
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-semibold text-white">Profile</h1>
-        <p className="mt-1 text-zinc-400">
+        <h1 className="text-2xl font-semibold text-foreground">Profile</h1>
+        <p className="mt-1 text-muted-foreground">
           Manage your professional profile for AI-powered job matching
         </p>
       </div>
@@ -92,8 +92,8 @@ export default function ProfilePage() {
 
       {/* Parsed Resume Summary */}
       {parsedResumeData && (
-        <div className="rounded-xl border border-emerald-800/50 bg-emerald-900/20 p-4">
-          <div className="flex items-center gap-2 text-sm text-emerald-400">
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
+          <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300">
             <span>
               Resume parsed! Found {parsedResumeData.skills.length} skills,{" "}
               {parsedResumeData.experience.length} work experiences, and{" "}

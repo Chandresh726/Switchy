@@ -78,18 +78,18 @@ function SettingsPageSkeleton() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+          <div className="rounded-xl border border-border bg-card/70 p-6">
             <div className="flex items-center gap-2 mb-4">
               <Skeleton className="h-5 w-5 rounded" />
               <Skeleton className="h-5 w-28" />
             </div>
             <Skeleton className="h-4 w-64 mb-4" />
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-zinc-500" />
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           </div>
 
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+          <div className="rounded-xl border border-border bg-card/70 p-6">
             <div className="flex items-center gap-2 mb-4">
               <Skeleton className="h-5 w-5 rounded" />
               <Skeleton className="h-5 w-36" />
@@ -104,7 +104,7 @@ function SettingsPageSkeleton() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+          <div className="rounded-xl border border-border bg-card/70 p-6">
             <div className="flex items-center gap-2 mb-4">
               <Skeleton className="h-5 w-5 rounded" />
               <Skeleton className="h-5 w-24" />
@@ -119,7 +119,7 @@ function SettingsPageSkeleton() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+          <div className="rounded-xl border border-border bg-card/70 p-6">
             <div className="flex items-center gap-2 mb-4">
               <Skeleton className="h-5 w-5 rounded" />
               <Skeleton className="h-5 w-28" />
@@ -133,7 +133,7 @@ function SettingsPageSkeleton() {
         </div>
 
         <div className="space-y-6">
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+          <div className="rounded-xl border border-border bg-card/70 p-6">
             <div className="flex items-center gap-2 mb-4">
               <Skeleton className="h-5 w-5 rounded" />
               <Skeleton className="h-5 w-28" />
@@ -144,7 +144,7 @@ function SettingsPageSkeleton() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+          <div className="rounded-xl border border-border bg-card/70 p-6">
             <div className="flex items-center gap-2 mb-4">
               <Skeleton className="h-5 w-5 rounded" />
               <Skeleton className="h-5 w-28" />
@@ -155,7 +155,7 @@ function SettingsPageSkeleton() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+          <div className="rounded-xl border border-border bg-card/70 p-6">
             <div className="flex items-center gap-2 mb-4">
               <Skeleton className="h-5 w-5 rounded" />
               <Skeleton className="h-5 w-20" />
@@ -975,8 +975,8 @@ function SettingsContent() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-semibold text-white">Settings</h1>
-        <p className="mt-1 text-zinc-400">Configure your Switchy preferences and manage data</p>
+        <h1 className="text-2xl font-semibold text-foreground">Settings</h1>
+        <p className="mt-1 text-muted-foreground">Configure your Switchy preferences and manage data</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">

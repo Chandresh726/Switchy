@@ -138,8 +138,8 @@ export function ResumeUpload({ onParsed, disabled }: ResumeUploadProps) {
         onDragLeave={handleDragLeave}
         className={`
           relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors
-          ${isDragging ? "border-emerald-500 bg-emerald-500/10" : "border-zinc-700 bg-zinc-900/50"}
-          ${isUploading ? "pointer-events-none opacity-50" : "cursor-pointer hover:border-zinc-600"}
+          ${isDragging ? "border-emerald-500 bg-emerald-500/10" : "border-border bg-card"}
+          ${isUploading ? "pointer-events-none opacity-50" : "cursor-pointer hover:border-border"}
           ${disabled ? "pointer-events-none opacity-50" : ""}
         `}
       >
@@ -154,16 +154,16 @@ export function ResumeUpload({ onParsed, disabled }: ResumeUploadProps) {
         {isUploading ? (
           <>
             <Loader2 className="h-10 w-10 animate-spin text-emerald-500" />
-            <p className="mt-3 text-sm text-zinc-400">Parsing resume...</p>
-            <p className="mt-1 text-xs text-zinc-500">{fileName}</p>
+            <p className="mt-3 text-sm text-muted-foreground">Parsing resume...</p>
+            <p className="mt-1 text-xs text-muted-foreground">{fileName}</p>
           </>
         ) : success ? (
           <>
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20">
               <Check className="h-6 w-6 text-emerald-500" />
             </div>
-            <p className="mt-3 text-sm text-emerald-400">Resume parsed successfully!</p>
-            <p className="mt-1 text-xs text-zinc-500">{fileName}</p>
+            <p className="mt-3 text-sm text-emerald-600 dark:text-emerald-400">Resume parsed successfully!</p>
+            <p className="mt-1 text-xs text-muted-foreground">{fileName}</p>
             <Button variant="ghost" size="sm" onClick={reset} className="mt-2">
               Upload different file
             </Button>
@@ -173,23 +173,23 @@ export function ResumeUpload({ onParsed, disabled }: ResumeUploadProps) {
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/20">
               <AlertCircle className="h-6 w-6 text-red-500" />
             </div>
-            <p className="mt-3 text-sm text-red-400">{error}</p>
+            <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>
             <Button variant="ghost" size="sm" onClick={reset} className="mt-2">
               Try again
             </Button>
           </>
         ) : (
           <>
-            <Upload className="h-10 w-10 text-zinc-500" />
-            <p className="mt-3 text-sm text-zinc-300">
+            <Upload className="h-10 w-10 text-muted-foreground" />
+            <p className="mt-3 text-sm text-foreground/80">
               Drop your resume here or click to browse
             </p>
-            <p className="mt-1 text-xs text-zinc-500">Supports PDF, DOCX, and TXT files</p>
+            <p className="mt-1 text-xs text-muted-foreground">Supports PDF, DOCX, and TXT files</p>
           </>
         )}
       </div>
 
-      <p className="text-center text-xs text-zinc-500">
+      <p className="text-center text-xs text-muted-foreground">
         Your resume will be parsed by AI to auto-fill your profile. You can edit all fields before saving.
       </p>
 
@@ -200,7 +200,7 @@ export function ResumeUpload({ onParsed, disabled }: ResumeUploadProps) {
           onCheckedChange={setAutofill}
           disabled={isUploading || disabled}
         />
-        <Label htmlFor="autofill-mode" className="text-sm font-medium text-zinc-300">
+        <Label htmlFor="autofill-mode" className="text-sm font-medium text-foreground/80">
           Autofill profile with parsed data
         </Label>
       </div>

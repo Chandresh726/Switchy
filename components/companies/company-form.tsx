@@ -117,7 +117,7 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
   return (
     <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium text-white">
+        <h3 className="text-lg font-medium text-foreground">
           {isEditing ? "Edit Company" : "Add Company"}
         </h3>
         {onCancel && (
@@ -160,7 +160,7 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
               </span>
             )}
           </div>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-muted-foreground">
             We support Greenhouse, Lever, Ashby, Workday, Eightfold, and custom career pages
           </p>
         </div>
@@ -192,13 +192,13 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
                   setFormData((prev) => ({ ...prev, platform: "", boardToken: "" }));
                 }
               }}
-              className="mt-1 h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-emerald-500 focus:ring-emerald-500"
+              className="mt-1 h-4 w-4 rounded border-border bg-card text-emerald-500 focus:ring-emerald-500"
             />
             <div>
               <Label htmlFor="manualPlatform" className="text-amber-400 cursor-pointer">
                 This company uses a known ATS (Greenhouse/Lever/Ashby/Workday/Eightfold)
               </Label>
-              <p className="text-xs text-zinc-400 mt-0.5">
+              <p className="text-xs text-muted-foreground mt-0.5">
                 Enable this if the company has a custom career page but uses a supported ATS for applications
               </p>
             </div>
@@ -213,7 +213,7 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
                     id="platform"
                     value={formData.platform}
                     onChange={(e) => setFormData((prev) => ({ ...prev, platform: e.target.value }))}
-                    className="h-8 w-full rounded border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100"
+                    className="h-8 w-full rounded border border-border bg-card px-2 text-xs text-foreground"
                   >
                     {PLATFORMS.map((platform) => (
                       <option key={platform.value} value={platform.value}>
@@ -242,7 +242,7 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
               </div>
 
               {(formData.platform === "greenhouse" || formData.platform === "lever" || formData.platform === "ashby") && (
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-muted-foreground">
                   For Greenhouse/Lever, this is the company slug in the apply URL (e.g. boards.greenhouse.io/<strong>acme</strong>/jobs/123).
                   For Ashby, use the jobs page name from jobs.ashbyhq.com/<strong>OrgName</strong>.
                 </p>

@@ -48,7 +48,7 @@ function ProviderApiKeyHelp({ metadata }: ProviderApiKeyHelpProps) {
   }
 
   return (
-    <p className="text-xs text-zinc-500">
+    <p className="text-xs text-muted-foreground">
       <a
         href={metadata.apiKeyUrl}
         target="_blank"
@@ -180,7 +180,7 @@ export function AIProvidersManager({
   };
 
   return (
-    <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
+    <Card className="border-border bg-card/70 rounded-xl">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -196,7 +196,7 @@ export function AIProvidersManager({
       </CardHeader>
       <CardContent className="space-y-4">
         {providers.length === 0 && !isAddingProvider ? (
-          <div className="text-center py-8 text-zinc-500">
+          <div className="text-center py-8 text-muted-foreground">
             <p className="mb-4">No AI providers configured yet.</p>
             <Button onClick={() => setIsAddingProvider(true)}>
               <Plus className="mr-2 h-4 w-4" />
@@ -215,7 +215,7 @@ export function AIProvidersManager({
               return (
                 <div
                   key={provider.id}
-                  className="rounded-lg border border-zinc-800 bg-zinc-950/30"
+                  className="rounded-lg border border-border bg-background/30"
                 >
                   {isEditing ? (
                     <div className="p-4 space-y-4">
@@ -227,26 +227,26 @@ export function AIProvidersManager({
                         <div className="space-y-2">
                           <Label>API Key</Label>
                           <div className="relative">
-                            <Key className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+                            <Key className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                             <Input
                               type={showEditApiKey ? "text" : "password"}
                               placeholder={isFetchingApiKey ? "Loading..." : (provider.hasApiKey ? "••••••••••••" : "Enter API key")}
                               value={editApiKey}
                               onChange={(e) => setEditApiKey(e.target.value)}
                               disabled={isFetchingApiKey}
-                              className="w-full pl-9 pr-10 bg-zinc-950/50 border-zinc-800"
+                              className="w-full pl-9 pr-10 bg-background/60 border-border"
                             />
                             <button
                               type="button"
                               onClick={() => setShowEditApiKey(!showEditApiKey)}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                             >
                               {showEditApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                             </button>
                           </div>
                         </div>
                       ) : (
-                        <p className="text-sm text-zinc-500">This provider does not require an API key.</p>
+                        <p className="text-sm text-muted-foreground">This provider does not require an API key.</p>
                       )}
 
                       <div className="flex gap-2">
@@ -274,7 +274,7 @@ export function AIProvidersManager({
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{metadata?.displayName || provider.provider}</span>
                           </div>
-                          <p className="text-sm text-zinc-500">
+                          <p className="text-sm text-muted-foreground">
                             {requiresApiKey ? "API Key" : "No API key required"}
                           </p>
                         </div>
@@ -305,7 +305,7 @@ export function AIProvidersManager({
                           title="Refresh models"
                           disabled={isRefreshingModels || !canRefreshModels}
                         >
-                          <RefreshCw className={`h-4 w-4 text-zinc-500 hover:text-white ${isRefreshingModels ? "animate-spin" : ""}`} />
+                          <RefreshCw className={`h-4 w-4 text-muted-foreground hover:text-foreground ${isRefreshingModels ? "animate-spin" : ""}`} />
                         </Button>
                         <Button
                           variant="ghost"
@@ -313,12 +313,12 @@ export function AIProvidersManager({
                           onClick={() => startEditing(provider)}
                           title="Edit"
                         >
-                          <Pencil className="h-4 w-4 text-zinc-500 hover:text-white" />
+                          <Pencil className="h-4 w-4 text-muted-foreground hover:text-foreground" />
                         </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button variant="ghost" size="icon" title="Delete">
-                              <Trash2 className="h-4 w-4 text-zinc-500 hover:text-red-400" />
+                              <Trash2 className="h-4 w-4 text-muted-foreground hover:text-red-400" />
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
@@ -347,11 +347,11 @@ export function AIProvidersManager({
             })}
 
             {isAddingProvider ? (
-              <div className="p-4 rounded-lg border border-zinc-700 bg-zinc-900/50 space-y-4">
+              <div className="p-4 rounded-lg border border-border bg-card/70 space-y-4">
                 <div className="space-y-2">
                   <Label>Provider</Label>
                   <Select value={selectedProviderType} onValueChange={setSelectedProviderType}>
-                    <SelectTrigger className="w-full bg-zinc-950/50 border-zinc-800">
+                    <SelectTrigger className="w-full bg-background/60 border-border">
                       <SelectValue placeholder="Select a provider" />
                     </SelectTrigger>
                     <SelectContent>
@@ -374,18 +374,18 @@ export function AIProvidersManager({
                   <div className="space-y-2">
                     <Label>API Key</Label>
                     <div className="relative">
-                      <Key className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+                      <Key className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         type={showApiKey ? "text" : "password"}
                         placeholder="Enter API key"
                         value={apiKey}
                         onChange={(e) => setApiKey(e.target.value)}
-                        className="w-full pl-9 pr-10 bg-zinc-950/50 border-zinc-800"
+                        className="w-full pl-9 pr-10 bg-background/60 border-border"
                       />
                       <button
                         type="button"
                         onClick={() => setShowApiKey(!showApiKey)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                       >
                         {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
@@ -393,7 +393,7 @@ export function AIProvidersManager({
                     <ProviderApiKeyHelp metadata={selectedProviderMetadata} />
                   </div>
                 ) : selectedProviderType ? (
-                  <p className="text-sm text-zinc-500">This provider does not require an API key.</p>
+                  <p className="text-sm text-muted-foreground">This provider does not require an API key.</p>
                 ) : null}
 
                 {error && (

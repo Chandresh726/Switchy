@@ -168,14 +168,14 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
 
   if (!profileId) {
     return (
-      <Card className="border-zinc-800 bg-zinc-900/50">
+      <Card className="border-border bg-card">
         <CardContent className="p-6">
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-muted-foreground">
             Save your profile first to add skills.
           </p>
           {pendingSkills.length > 0 && (
             <div className="mt-4">
-              <p className="text-sm text-amber-400">
+              <p className="text-sm text-amber-700 dark:text-amber-400">
                 {pendingSkills.length} skills from resume will be added after you save your profile.
               </p>
             </div>
@@ -187,10 +187,10 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
 
   if (isLoading) {
     return (
-      <Card className="border-zinc-800 bg-zinc-900/50">
+      <Card className="border-border bg-card">
         <CardContent className="p-6">
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         </CardContent>
       </Card>
@@ -198,23 +198,23 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
   }
 
   return (
-    <Card className="border-zinc-800 bg-zinc-900/50">
+    <Card className="border-border bg-card">
       <CardHeader>
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-500/10">
             <Zap className="h-5 w-5 text-violet-500" />
           </div>
-          <CardTitle className="text-lg font-medium text-white">Skills</CardTitle>
+          <CardTitle className="text-lg font-medium text-foreground">Skills</CardTitle>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Pending skills from resume */}
         {pendingSkills.length > 0 && (
-          <div className="rounded-lg border border-emerald-800/50 bg-emerald-900/20 p-4">
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-emerald-400" />
-                <span className="text-sm font-medium text-emerald-400">
+                <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
                   {pendingSkills.length} skills from resume
                 </span>
               </div>
@@ -224,12 +224,12 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
                 <Badge
                   key={idx}
                   variant="outline"
-                  className="border-emerald-700 bg-emerald-900/30 text-emerald-300"
+                  className="border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
                 >
                   {skill.name}
                   <button
                     onClick={() => removePendingSkill(idx)}
-                    className="ml-1 rounded p-0.5 hover:bg-emerald-800"
+                    className="ml-1 rounded p-0.5 hover:bg-emerald-500/20"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -250,7 +250,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
           <select
             value={newSkill.category}
             onChange={(e) => setNewSkill((prev) => ({ ...prev, category: e.target.value }))}
-            className="h-8 rounded border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100"
+            className="h-8 rounded border border-border bg-card px-2 text-xs text-foreground"
           >
             {SKILL_CATEGORIES.map((cat) => (
               <option key={cat} value={cat}>
@@ -263,7 +263,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
             onChange={(e) =>
               setNewSkill((prev) => ({ ...prev, proficiency: parseInt(e.target.value) }))
             }
-            className="h-8 rounded border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100"
+            className="h-8 rounded border border-border bg-card px-2 text-xs text-foreground"
           >
             {PROFICIENCY_LEVELS.map((level) => (
               <option key={level.value} value={level.value}>
@@ -283,14 +283,14 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
 
         {/* Skills list by category */}
         {Object.entries(skillsByCategory).length === 0 ? (
-          <div className="rounded-lg border border-dashed border-zinc-700 p-6 text-center">
-            <p className="text-sm text-zinc-400">No skills added yet. Add your first skill above.</p>
+          <div className="rounded-lg border border-dashed border-border p-6 text-center">
+            <p className="text-sm text-muted-foreground">No skills added yet. Add your first skill above.</p>
           </div>
         ) : (
           <div className="space-y-4">
             {Object.entries(skillsByCategory).map(([category, categorySkills]) => (
               <div key={category}>
-                <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500">
+                <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   {category}
                 </h4>
                 <div className="flex flex-wrap gap-2">
@@ -301,13 +301,13 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
                       className="group flex items-center gap-1 pl-2 pr-1"
                     >
                       {skill.name}
-                      <span className="text-zinc-500">
+                      <span className="text-muted-foreground">
                         ({PROFICIENCY_LEVELS.find((l) => l.value === skill.proficiency)?.label})
                       </span>
                       <button
                         type="button"
                         onClick={() => deleteMutation.mutate(skill.id)}
-                        className="ml-1 rounded p-0.5 opacity-0 transition-opacity hover:bg-zinc-700 group-hover:opacity-100"
+                        className="ml-1 rounded p-0.5 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -321,21 +321,21 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
       </CardContent>
 
       {pendingSkills.length > 0 && (
-        <CardFooter className="flex items-center justify-between border-t border-zinc-800 bg-zinc-900/50 px-6 py-4">
-          <p className="text-xs text-zinc-500">
+        <CardFooter className="flex items-center justify-between border-t border-border bg-card px-6 py-4">
+          <p className="text-xs text-muted-foreground">
             {settingsSaved ? (
-              <span className="flex items-center text-emerald-400 gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400" />
                 Changes saved successfully
               </span>
             ) : (
-              <span className="text-yellow-400">{pendingSkills.length} pending skills to save</span>
+              <span className="text-yellow-700 dark:text-yellow-400">{pendingSkills.length} pending skills to save</span>
             )}
           </p>
           <Button
             onClick={handleSavePending}
             disabled={isBulkAdding || pendingSkills.length === 0}
-            className="bg-violet-600 hover:bg-violet-500 text-white min-w-[120px]"
+            className="bg-violet-600 hover:bg-violet-500 text-foreground min-w-[120px]"
           >
             {isBulkAdding ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

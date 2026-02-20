@@ -139,7 +139,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -147,7 +147,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
   if (error || !data) {
     return (
       <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-center">
-        <p className="text-sm text-red-400">Failed to load session details</p>
+        <p className="text-sm text-red-600 dark:text-red-400">Failed to load session details</p>
         <Link href="/history">
           <Button variant="ghost" className="mt-2">
             <ArrowLeft className="mr-2 h-4 w-4" />
@@ -174,7 +174,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
       {/* Header Navigation */}
       <div className="flex items-center justify-between">
         <Link href="/history/scrape">
-          <Button variant="ghost" className="text-zinc-400 hover:text-white -ml-2 pl-2">
+          <Button variant="ghost" className="text-muted-foreground hover:text-foreground -ml-2 pl-2">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to History
           </Button>
@@ -206,22 +206,22 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
       </div>
 
       {/* Session Overview Card */}
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-6">
+      <div className="rounded-lg border border-border bg-card p-6">
         <div className="flex items-start justify-between gap-4 mb-6">
           <div className="flex items-center gap-4">
             <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${sessionStatusConfig.color.replace("text-", "bg-").replace("400", "500/10")}`}>
               <SessionStatusIcon className={`h-6 w-6 ${sessionStatusConfig.color}`} />
             </div>
             <div>
-              <h1 className="text-xl font-semibold text-white">
+              <h1 className="text-xl font-semibold text-foreground">
                 Scrape Session
               </h1>
-              <div className="flex items-center gap-3 mt-1.5 text-sm text-zinc-400">
+              <div className="flex items-center gap-3 mt-1.5 text-sm text-muted-foreground">
                 <span className="flex items-center gap-1.5">
                   <Clock className="h-3.5 w-3.5" />
                   {formatDateTime(session.startedAt)}
                 </span>
-                <span className="text-zinc-700">&bull;</span>
+                <span className="text-muted-foreground">&bull;</span>
                 <span>{TRIGGER_LABELS[session.triggerSource] || session.triggerSource}</span>
               </div>
             </div>
@@ -237,11 +237,11 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
         {/* Progress Bar */}
         {session.status === "in_progress" && (
           <div className="mb-6">
-            <div className="flex items-center justify-between text-xs text-zinc-400 mb-1.5">
+            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
               <span>Processing Companies...</span>
               <span>{progress}%</span>
             </div>
-            <div className="h-2 w-full rounded-full bg-zinc-800 overflow-hidden">
+            <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
               <div
                 className="h-full bg-blue-500 transition-all duration-300"
                 style={{ width: `${progress}%` }}
@@ -252,47 +252,47 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
 
         {/* Summary Stats Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-4">
-            <div className="flex items-center gap-2 mb-2 text-zinc-400">
+          <div className="rounded-lg border border-border bg-background/60 p-4">
+            <div className="flex items-center gap-2 mb-2 text-muted-foreground">
               <Building2 className="h-4 w-4" />
               <span className="text-xs font-medium uppercase tracking-wider">Companies</span>
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-semibold text-white">
+              <span className="text-2xl font-semibold text-foreground">
                 {session.companiesCompleted || 0}
               </span>
-              <span className="text-sm text-zinc-500">
+              <span className="text-sm text-muted-foreground">
                 / {session.companiesTotal || 0}
               </span>
             </div>
           </div>
 
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-4">
-            <div className="flex items-center gap-2 mb-2 text-zinc-400">
+          <div className="rounded-lg border border-border bg-background/60 p-4">
+            <div className="flex items-center gap-2 mb-2 text-muted-foreground">
               <Briefcase className="h-4 w-4" />
               <span className="text-xs font-medium uppercase tracking-wider">Jobs Found</span>
             </div>
-            <span className="text-2xl font-semibold text-white">
+            <span className="text-2xl font-semibold text-foreground">
               {session.totalJobsFound || 0}
             </span>
           </div>
 
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-4">
-            <div className="flex items-center gap-2 mb-2 text-emerald-400">
+          <div className="rounded-lg border border-border bg-background/60 p-4">
+            <div className="mb-2 flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
               <Sparkles className="h-4 w-4" />
               <span className="text-xs font-medium uppercase tracking-wider">New Jobs</span>
             </div>
-            <span className="text-2xl font-semibold text-emerald-400">
+            <span className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400">
               +{session.totalJobsAdded || 0}
             </span>
           </div>
 
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-4">
-            <div className="flex items-center gap-2 mb-2 text-zinc-400">
+          <div className="rounded-lg border border-border bg-background/60 p-4">
+            <div className="flex items-center gap-2 mb-2 text-muted-foreground">
               <Filter className="h-4 w-4" />
               <span className="text-xs font-medium uppercase tracking-wider">Filtered</span>
             </div>
-            <span className="text-2xl font-semibold text-zinc-400">
+            <span className="text-2xl font-semibold text-muted-foreground">
               {session.totalJobsFiltered || 0}
             </span>
           </div>
@@ -301,7 +301,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
 
       {/* Company Logs List */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-400 mb-4 px-1">Company Logs</h3>
+        <h3 className="text-sm font-medium text-muted-foreground mb-4 px-1">Company Logs</h3>
         <div className="space-y-3">
           {logs.map((log) => {
             const logStatusConfig = getLogStatusConfig(log.status);
@@ -313,7 +313,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
             return (
               <div
                 key={log.id}
-                className="group rounded-lg border border-zinc-800 bg-zinc-900/30 p-4 transition-all hover:border-zinc-700 hover:bg-zinc-900/50"
+                className="group rounded-lg border border-border bg-card p-4 transition-all hover:border-border hover:bg-muted/30"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-4">
@@ -323,10 +323,10 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
                         <img
                           src={log.companyLogoUrl}
                           alt={log.companyName || "Company"}
-                          className="h-10 w-10 rounded-lg bg-zinc-800 object-contain p-1.5"
+                          className="h-10 w-10 rounded-lg bg-muted object-contain p-1.5"
                         />
                       ) : (
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-800 text-sm font-medium text-zinc-400">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-sm font-medium text-muted-foreground">
                           {(log.companyName || "?").charAt(0).toUpperCase()}
                         </div>
                       )}
@@ -334,24 +334,24 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
 
                     <div>
                       <div className="flex items-center gap-2">
-                        <h4 className="font-medium text-white">{log.companyName || "Unknown"}</h4>
+                        <h4 className="font-medium text-foreground">{log.companyName || "Unknown"}</h4>
                         {log.platform && (
-                          <Badge variant="outline" className="border-zinc-800 bg-zinc-900 text-zinc-500 text-[10px] h-5 px-1.5">
+                          <Badge variant="outline" className="border-border bg-card text-muted-foreground text-[10px] h-5 px-1.5">
                             {log.platform}
                           </Badge>
                         )}
                       </div>
 
                       <div className="flex items-center gap-4 mt-2 text-sm">
-                        <div className="flex items-center gap-1.5 text-zinc-400">
+                        <div className="flex items-center gap-1.5 text-muted-foreground">
                           <Briefcase className="h-3.5 w-3.5" />
                           <span>{log.jobsFound || 0}</span>
                         </div>
-                        <div className="flex items-center gap-1.5 text-emerald-400">
+                        <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
                           <Sparkles className="h-3.5 w-3.5" />
                           <span>{log.jobsAdded || 0}</span>
                         </div>
-                        <div className="flex items-center gap-1.5 text-zinc-500">
+                        <div className="flex items-center gap-1.5 text-muted-foreground">
                           <Filter className="h-3.5 w-3.5" />
                           <span>{log.jobsFiltered || 0}</span>
                         </div>
@@ -364,7 +364,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
                       <LogStatusIcon className="h-3.5 w-3.5" />
                       <span className="capitalize">{log.status}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Clock className="h-3.5 w-3.5" />
                       {formatDurationMs(log.duration)}
                     </div>
@@ -375,18 +375,18 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
                 {log.errorMessage && (
                   <div className="mt-4 rounded-md border border-red-500/10 bg-red-500/5 p-3">
                     <div className="flex gap-2">
-                      <AlertCircle className="h-4 w-4 text-red-400 shrink-0" />
-                      <p className="text-xs text-red-300 font-mono break-all">{log.errorMessage}</p>
+                      <AlertCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
+                      <p className="text-xs font-mono break-all text-red-700/90 dark:text-red-300">{log.errorMessage}</p>
                     </div>
                   </div>
                 )}
 
                 {/* Matcher Status */}
                 {matcherConfig && log.matcherJobsTotal && log.matcherJobsTotal > 0 && (
-                  <div className="mt-4 flex items-center justify-between rounded-md border border-zinc-800 bg-zinc-950/30 p-3 text-xs">
+                  <div className="mt-4 flex items-center justify-between rounded-md border border-border bg-background/30 p-3 text-xs">
                     <div className="flex items-center gap-2">
                       <Sparkles className="h-3.5 w-3.5 text-purple-400" />
-                      <span className="text-zinc-400">Matcher:</span>
+                      <span className="text-muted-foreground">Matcher:</span>
                       <span className={`font-medium ${matcherConfig.color}`}>
                         {matcherConfig.label}
                       </span>
@@ -394,14 +394,14 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
                         <Loader2 className="h-3 w-3 animate-spin text-blue-400" />
                       )}
                     </div>
-                    <div className="flex items-center gap-3 text-zinc-500">
+                    <div className="flex items-center gap-3 text-muted-foreground">
                       <span>
-                        <span className="text-zinc-300">{log.matcherJobsCompleted || 0}</span>
-                        <span className="text-zinc-600 mx-0.5">/</span>
+                        <span className="text-foreground/80">{log.matcherJobsCompleted || 0}</span>
+                        <span className="text-muted-foreground mx-0.5">/</span>
                         {log.matcherJobsTotal}
                       </span>
                       {log.matcherErrorCount && log.matcherErrorCount > 0 && (
-                        <span className="text-red-400 flex items-center gap-1">
+                        <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
                           <AlertCircle className="h-3 w-3" />
                           {log.matcherErrorCount}
                         </span>

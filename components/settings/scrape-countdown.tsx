@@ -70,7 +70,7 @@ export function ScrapeCountdown({ className }: ScrapeCountdownProps) {
 
   if (isLoading) {
     return (
-      <div className={cn("flex items-center gap-2 text-sm text-zinc-500", className)}>
+      <div className={cn("flex items-center gap-2 text-sm text-muted-foreground", className)}>
         <Clock className="h-4 w-4" />
         <span>Loading...</span>
       </div>
@@ -88,7 +88,7 @@ export function ScrapeCountdown({ className }: ScrapeCountdownProps) {
 
   if (!status.isEnabled) {
     return (
-      <div className={cn("flex items-center gap-2 text-sm text-zinc-500", className)}>
+      <div className={cn("flex items-center gap-2 text-sm text-muted-foreground", className)}>
         <Clock className="h-4 w-4" />
         <span>Auto-scrape off</span>
       </div>
@@ -115,7 +115,7 @@ export function ScrapeCountdown({ className }: ScrapeCountdownProps) {
 
   if (remainingMs !== null && remainingMs > 0) {
     return (
-      <div className={cn("flex items-center gap-2 text-sm text-zinc-400", className)}>
+      <div className={cn("flex items-center gap-2 text-sm text-muted-foreground", className)}>
         <Clock className="h-4 w-4" />
         <span className="tabular-nums">Next: {formatTimeRemaining(remainingMs)}</span>
       </div>
@@ -123,7 +123,7 @@ export function ScrapeCountdown({ className }: ScrapeCountdownProps) {
   }
 
   return (
-    <div className={cn("flex items-center gap-2 text-sm text-zinc-500", className)}>
+    <div className={cn("flex items-center gap-2 text-sm text-muted-foreground", className)}>
       <Clock className="h-4 w-4" />
       <span>Calculating...</span>
     </div>

@@ -57,7 +57,7 @@ export function AddProviderForm({ onAddProvider }: AddProviderFormProps) {
   };
 
   return (
-    <Card className="border-zinc-800 bg-zinc-900/50">
+    <Card className="border-border bg-card/70">
       <CardContent className="pt-6">
         {!isExpanded ? (
           <Button
@@ -85,7 +85,7 @@ export function AddProviderForm({ onAddProvider }: AddProviderFormProps) {
               <div className="space-y-2">
                 <Label htmlFor="provider">Provider</Label>
                 <Select value={selectedProvider} onValueChange={setSelectedProvider}>
-                  <SelectTrigger id="provider" className="w-full bg-zinc-950/50 border-zinc-800">
+                  <SelectTrigger id="provider" className="w-full bg-background/60 border-border">
                     <SelectValue placeholder="Select a provider" />
                   </SelectTrigger>
                   <SelectContent>
@@ -102,18 +102,18 @@ export function AddProviderForm({ onAddProvider }: AddProviderFormProps) {
                 <div className="space-y-2">
                   <Label htmlFor="apiKey">API Key</Label>
                   <div className="relative">
-                    <Key className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+                    <Key className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       id="apiKey"
                       type="password"
                       placeholder="Enter API key"
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
-                      className="w-full pl-9 bg-zinc-950/50 border-zinc-800"
+                      className="w-full pl-9 bg-background/60 border-border"
                     />
                   </div>
                   {selectedMetadata.apiKeyUrl && (
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-muted-foreground">
                       <a
                         href={selectedMetadata.apiKeyUrl}
                         target="_blank"

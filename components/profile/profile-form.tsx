@@ -146,10 +146,10 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
 
   if (isLoading) {
     return (
-      <Card className="border-zinc-800 bg-zinc-900/50">
+      <Card className="border-border bg-card">
         <CardContent className="p-6">
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         </CardContent>
       </Card>
@@ -157,13 +157,13 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
   }
 
   return (
-    <Card className="border-zinc-800 bg-zinc-900/50">
+    <Card className="border-border bg-card">
       <CardHeader>
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
             <User className="h-5 w-5 text-blue-500" />
           </div>
-          <CardTitle className="text-lg font-medium text-white">Basic Information</CardTitle>
+          <CardTitle className="text-lg font-medium text-foreground">Basic Information</CardTitle>
         </div>
       </CardHeader>
       <form onSubmit={handleSubmit}>
@@ -264,15 +264,15 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
           </div>
         </CardContent>
 
-        <CardFooter className="flex items-center justify-between border-t border-zinc-800 bg-zinc-900/50 px-6 py-4">
-          <p className="text-xs text-zinc-500">
+        <CardFooter className="flex items-center justify-between border-t border-border bg-card px-6 py-4">
+          <p className="text-xs text-muted-foreground">
             {settingsSaved ? (
-              <span className="flex items-center text-emerald-400 gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                 Changes saved successfully
               </span>
             ) : hasUnsavedChanges ? (
-              <span className="text-yellow-400">Unsaved changes</span>
+              <span className="text-amber-700 dark:text-amber-400">Unsaved changes</span>
             ) : (
               "Up to date"
             )}
@@ -280,7 +280,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
           <Button
             type="submit"
             disabled={mutation.isPending || !hasUnsavedChanges}
-            className="bg-blue-600 hover:bg-blue-500 text-white min-w-[120px]"
+            className="bg-blue-600 hover:bg-blue-500 text-foreground min-w-[120px]"
           >
             {mutation.isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

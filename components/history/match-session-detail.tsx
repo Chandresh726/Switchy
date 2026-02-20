@@ -132,7 +132,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -140,7 +140,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
   if (error || !data) {
     return (
       <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-center">
-        <p className="text-sm text-red-400">Failed to load session details</p>
+        <p className="text-sm text-red-600 dark:text-red-400">Failed to load session details</p>
         <Link href="/history/match">
           <Button variant="ghost" className="mt-2">
             <ArrowLeft className="mr-2 h-4 w-4" />
@@ -170,7 +170,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
       {/* Header Navigation */}
       <div className="flex items-center justify-between">
         <Link href="/history/match">
-          <Button variant="ghost" className="text-zinc-400 hover:text-white -ml-2 pl-2">
+          <Button variant="ghost" className="text-muted-foreground hover:text-foreground -ml-2 pl-2">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Match History
           </Button>
@@ -202,7 +202,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
       </div>
 
       {/* Session Overview Card */}
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-6">
+      <div className="rounded-lg border border-border bg-card p-6">
         <div className="flex items-start justify-between gap-4 mb-6">
           <div className="flex items-center gap-4">
             <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${statusConfig.bgColor}`}>
@@ -213,23 +213,23 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
               )}
             </div>
             <div>
-              <h1 className="text-xl font-semibold text-white">
+              <h1 className="text-xl font-semibold text-foreground">
                 Match Session
               </h1>
-              <div className="flex items-center gap-3 mt-1.5 text-sm text-zinc-400">
+              <div className="flex items-center gap-3 mt-1.5 text-sm text-muted-foreground">
                 <span className="flex items-center gap-1.5">
                   <Clock className="h-3.5 w-3.5" />
                   {formatDateTime(session.startedAt)}
                 </span>
-                <span className="text-zinc-700">&bull;</span>
+                <span className="text-muted-foreground">&bull;</span>
                 <span className="flex items-center gap-1.5">
                   <Play className="h-3.5 w-3.5" />
                   {TRIGGER_LABELS[session.triggerSource] || session.triggerSource}
                 </span>
                 {session.companyName && (
                   <>
-                    <span className="text-zinc-700">&bull;</span>
-                    <span className="flex items-center gap-1.5 text-purple-400">
+                    <span className="text-muted-foreground">&bull;</span>
+                    <span className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400">
                       <Building2 className="h-3.5 w-3.5" />
                       {session.companyName}
                     </span>
@@ -249,11 +249,11 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
         {/* Progress Bar */}
         {session.status === "in_progress" && (
           <div className="mb-6">
-            <div className="flex items-center justify-between text-xs text-zinc-400 mb-1.5">
+            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
               <span>Matching Jobs...</span>
               <span>{progress}%</span>
             </div>
-            <div className="h-2 w-full rounded-full bg-zinc-800 overflow-hidden">
+            <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
               <div
                 className="h-full bg-blue-500 transition-all duration-300"
                 style={{ width: `${progress}%` }}
@@ -264,53 +264,61 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
 
         {/* Summary Stats Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-4">
-            <div className="flex items-center gap-2 mb-2 text-zinc-400">
+          <div className="rounded-lg border border-border bg-background/60 p-4">
+            <div className="flex items-center gap-2 mb-2 text-muted-foreground">
               <Target className="h-4 w-4" />
               <span className="text-xs font-medium uppercase tracking-wider">Total Jobs</span>
             </div>
-            <span className="text-2xl font-semibold text-white">
+            <span className="text-2xl font-semibold text-foreground">
               {session.jobsTotal || 0}
             </span>
           </div>
 
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-4">
-            <div className="flex items-center gap-2 mb-2 text-emerald-400">
+          <div className="rounded-lg border border-border bg-background/60 p-4">
+            <div className="mb-2 flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
               <CheckCircle className="h-4 w-4" />
               <span className="text-xs font-medium uppercase tracking-wider">Succeeded</span>
             </div>
-            <span className="text-2xl font-semibold text-emerald-400">
+            <span className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400">
               {session.jobsSucceeded || 0}
             </span>
           </div>
 
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-4">
-            <div className="flex items-center gap-2 mb-2 text-red-400">
+          <div className="rounded-lg border border-border bg-background/60 p-4">
+            <div className="mb-2 flex items-center gap-2 text-red-600 dark:text-red-400">
               <XCircle className="h-4 w-4" />
               <span className="text-xs font-medium uppercase tracking-wider">Failed</span>
             </div>
-            <span className="text-2xl font-semibold text-red-400">
+            <span className="text-2xl font-semibold text-red-600 dark:text-red-400">
               {session.jobsFailed || 0}
             </span>
           </div>
 
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-4">
-            <div className="flex items-center gap-2 mb-2 text-purple-400">
+          <div className="rounded-lg border border-border bg-background/60 p-4">
+            <div className="mb-2 flex items-center gap-2 text-purple-600 dark:text-purple-400">
               <Sparkles className="h-4 w-4" />
               <span className="text-xs font-medium uppercase tracking-wider">Success Rate</span>
             </div>
-            <span className={`text-2xl font-semibold ${successRate >= 75 ? "text-emerald-400" : successRate >= 50 ? "text-yellow-400" : "text-red-400"}`}>
+            <span
+              className={`text-2xl font-semibold ${
+                successRate >= 75
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : successRate >= 50
+                    ? "text-yellow-600 dark:text-yellow-400"
+                    : "text-red-600 dark:text-red-400"
+              }`}
+            >
               {successRate}%
             </span>
           </div>
         </div>
 
         {/* Duration */}
-        <div className="mt-4 pt-4 border-t border-zinc-800">
-          <div className="flex items-center gap-2 text-sm text-zinc-400">
+        <div className="mt-4 pt-4 border-t border-border">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Clock className="h-4 w-4" />
             <span>Duration:</span>
-            <span className="text-white font-medium">
+            <span className="text-foreground font-medium">
               {formatDurationFromDates(session.startedAt, session.completedAt)}
             </span>
           </div>
@@ -319,12 +327,12 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
 
       {/* Job Logs List */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-400 mb-4 px-1">Job Match Logs</h3>
+        <h3 className="text-sm font-medium text-muted-foreground mb-4 px-1">Job Match Logs</h3>
         
         {/* Failed Jobs Section */}
         {failedLogs.length > 0 && (
           <div className="mb-6">
-            <h4 className="text-xs font-medium uppercase tracking-wider text-red-400 mb-3 flex items-center gap-2">
+            <h4 className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-red-600 dark:text-red-400">
               <AlertCircle className="h-3.5 w-3.5" />
               Failed Jobs ({failedLogs.length})
             </h4>
@@ -339,17 +347,17 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
                     className="block rounded-lg border border-red-500/20 bg-red-500/5 p-4 transition-all hover:bg-red-500/10 hover:border-red-500/30"
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-white">
+                      <span className="font-medium text-foreground">
                         {jobDisplay}
                       </span>
-                      <Badge variant="outline" className="border-red-500/30 text-red-400 text-[10px] h-5 px-1.5">
+                      <Badge variant="outline" className="h-5 border-red-500/30 px-1.5 text-[10px] text-red-600 dark:text-red-400">
                         {log.errorType || "error"}
                       </Badge>
                     </div>
                     {log.errorMessage && (
-                      <p className="text-red-300/80 mb-2 font-mono text-[10px] break-all">{log.errorMessage}</p>
+                      <p className="mb-2 break-all font-mono text-[10px] text-red-700/90 dark:text-red-300">{log.errorMessage}</p>
                     )}
-                    <div className="flex gap-4 text-zinc-500 text-xs">
+                    <div className="flex gap-4 text-muted-foreground text-xs">
                       <span>Attempts: {log.attemptCount}</span>
                       <span>Duration: {formatDurationMs(log.duration)}</span>
                       {log.modelUsed && <span>Model: {log.modelUsed}</span>}
@@ -362,17 +370,17 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
                     aria-disabled="true"
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-white">
+                      <span className="font-medium text-foreground">
                         {jobDisplay}
                       </span>
-                      <Badge variant="outline" className="border-red-500/30 text-red-400 text-[10px] h-5 px-1.5">
+                      <Badge variant="outline" className="h-5 border-red-500/30 px-1.5 text-[10px] text-red-600 dark:text-red-400">
                         {log.errorType || "error"}
                       </Badge>
                     </div>
                     {log.errorMessage && (
-                      <p className="text-red-300/80 mb-2 font-mono text-[10px] break-all">{log.errorMessage}</p>
+                      <p className="mb-2 break-all font-mono text-[10px] text-red-700/90 dark:text-red-300">{log.errorMessage}</p>
                     )}
-                    <div className="flex gap-4 text-zinc-500 text-xs">
+                    <div className="flex gap-4 text-muted-foreground text-xs">
                       <span>Attempts: {log.attemptCount}</span>
                       <span>Duration: {formatDurationMs(log.duration)}</span>
                       {log.modelUsed && <span>Model: {log.modelUsed}</span>}
@@ -387,7 +395,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
         {/* Successful Jobs Section */}
         {successLogs.length > 0 && (
           <div>
-            <h4 className="text-xs font-medium uppercase tracking-wider text-emerald-400 mb-3 flex items-center gap-2">
+            <h4 className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
               <CheckCircle className="h-3.5 w-3.5" />
               Successful Jobs ({successLogs.length})
             </h4>
@@ -402,24 +410,24 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
                     className="block rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-4 transition-all hover:bg-emerald-500/10 hover:border-emerald-500/20"
                   >
                     <div className="flex items-start justify-between mb-2">
-                      <span className="text-zinc-200 font-medium truncate block" title={log.jobTitle || ""}>
+                      <span className="text-foreground font-medium truncate block" title={log.jobTitle || ""}>
                         {jobDisplay}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <Sparkles className="h-3.5 w-3.5 text-emerald-500" />
-                        <span className="text-emerald-400 font-mono text-lg">
+                        <span className="font-mono text-lg text-emerald-600 dark:text-emerald-400">
                           {log.score?.toFixed(0)}
                         </span>
-                        <span className="text-zinc-500 text-xs">match score</span>
+                        <span className="text-muted-foreground text-xs">match score</span>
                       </div>
-                      <span className="text-zinc-600 text-xs">
+                      <span className="text-muted-foreground text-xs">
                         {formatDurationMs(log.duration)}
                       </span>
                     </div>
                     {log.modelUsed && (
-                      <div className="mt-2 text-xs text-zinc-500">
+                      <div className="mt-2 text-xs text-muted-foreground">
                         Model: {log.modelUsed}
                       </div>
                     )}
@@ -431,24 +439,24 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
                     aria-disabled="true"
                   >
                     <div className="flex items-start justify-between mb-2">
-                      <span className="text-zinc-200 font-medium truncate block" title={log.jobTitle || ""}>
+                      <span className="text-foreground font-medium truncate block" title={log.jobTitle || ""}>
                         {jobDisplay}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <Sparkles className="h-3.5 w-3.5 text-emerald-500" />
-                        <span className="text-emerald-400 font-mono text-lg">
+                        <span className="font-mono text-lg text-emerald-600 dark:text-emerald-400">
                           {log.score?.toFixed(0)}
                         </span>
-                        <span className="text-zinc-500 text-xs">match score</span>
+                        <span className="text-muted-foreground text-xs">match score</span>
                       </div>
-                      <span className="text-zinc-600 text-xs">
+                      <span className="text-muted-foreground text-xs">
                         {formatDurationMs(log.duration)}
                       </span>
                     </div>
                     {log.modelUsed && (
-                      <div className="mt-2 text-xs text-zinc-500">
+                      <div className="mt-2 text-xs text-muted-foreground">
                         Model: {log.modelUsed}
                       </div>
                     )}
@@ -460,7 +468,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
         )}
 
         {logs.length === 0 && (
-          <p className="text-sm text-zinc-500 text-center py-8">
+          <p className="text-sm text-muted-foreground text-center py-8">
             No job logs available for this session
           </p>
         )}

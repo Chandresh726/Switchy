@@ -72,10 +72,10 @@ function ExperienceForm({
   return (
     <form
       onSubmit={onSubmit}
-      className="space-y-4 rounded-lg border border-zinc-700 bg-zinc-900 p-4"
+      className="space-y-4 rounded-lg border border-border bg-card p-4"
     >
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium text-white">
+        <h4 className="text-sm font-medium text-foreground">
           {isEdit ? "Edit Experience" : "Add Experience"}
         </h4>
         <Button
@@ -345,14 +345,14 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
 
   if (!profileId) {
     return (
-      <Card className="border-zinc-800 bg-zinc-900/50">
+      <Card className="border-border bg-card">
         <CardContent className="p-6">
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-muted-foreground">
             Save your profile first to add work experience.
           </p>
           {pendingExperiences.length > 0 && (
             <div className="mt-4">
-              <p className="text-sm text-amber-400">
+              <p className="text-sm text-amber-700 dark:text-amber-400">
                 {pendingExperiences.length} work experiences from resume will be added after you save your profile.
               </p>
             </div>
@@ -364,10 +364,10 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
 
   if (isLoading) {
     return (
-      <Card className="border-zinc-800 bg-zinc-900/50">
+      <Card className="border-border bg-card">
         <CardContent className="p-6">
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         </CardContent>
       </Card>
@@ -375,23 +375,23 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
   }
 
   return (
-    <Card className="border-zinc-800 bg-zinc-900/50">
+    <Card className="border-border bg-card">
       <CardHeader>
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10">
             <Briefcase className="h-5 w-5 text-amber-500" />
           </div>
-          <CardTitle className="text-lg font-medium text-white">Work Experience</CardTitle>
+          <CardTitle className="text-lg font-medium text-foreground">Work Experience</CardTitle>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Pending experiences from resume */}
         {pendingExperiences.length > 0 && (
-          <div className="rounded-lg border border-emerald-800/50 bg-emerald-900/20 p-4">
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-emerald-400" />
-                <span className="text-sm font-medium text-emerald-400">
+                <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
                   {pendingExperiences.length} work experiences from resume
                 </span>
               </div>
@@ -400,18 +400,18 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
               {pendingExperiences.map((exp, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center justify-between rounded border border-emerald-700/50 bg-emerald-900/30 p-2"
+                  className="flex items-center justify-between rounded border border-emerald-500/30 bg-emerald-500/15 p-2"
                 >
                   <div className="text-sm">
-                    <span className="font-medium text-emerald-300">{exp.title}</span>
-                    <span className="text-emerald-400"> at {exp.company}</span>
-                    <span className="text-emerald-500 ml-2 text-xs">
+                    <span className="font-medium text-emerald-700 dark:text-emerald-300">{exp.title}</span>
+                    <span className="text-emerald-600 dark:text-emerald-400"> at {exp.company}</span>
+                    <span className="ml-2 text-xs text-emerald-600/80 dark:text-emerald-400/90">
                       {exp.startDate} - {exp.endDate || "Present"}
                     </span>
                   </div>
                   <button
                     onClick={() => removePendingExperience(idx)}
-                    className="rounded p-1 text-emerald-400 hover:bg-emerald-800 hover:text-emerald-300"
+                    className="rounded p-1 text-emerald-600 hover:bg-emerald-500/20 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -437,14 +437,14 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
         {experiences.map((exp) => (
           <div
             key={exp.id}
-            className={`group rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 ${
+            className={`group rounded-lg border border-border bg-card p-4 ${
               editingId === exp.id ? "opacity-50" : ""
             }`}
           >
             <div className="flex items-start justify-between">
               <div className="space-y-1">
-                <h4 className="font-medium text-white">{exp.title}</h4>
-                <div className="flex items-center gap-4 text-sm text-zinc-400">
+                <h4 className="font-medium text-foreground">{exp.title}</h4>
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Building2 className="h-3.5 w-3.5" />
                     {exp.company}
@@ -461,7 +461,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
                   </span>
                 </div>
                 {exp.description && (
-                  <p className="mt-2 text-sm text-zinc-300 whitespace-pre-wrap">{exp.description}</p>
+                  <p className="mt-2 text-sm text-foreground/80 whitespace-pre-wrap">{exp.description}</p>
                 )}
               </div>
               <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
@@ -471,14 +471,14 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
                   onClick={() => startEditing(exp)}
                   disabled={editingId === exp.id}
                 >
-                  <Pencil className="h-4 w-4 text-zinc-400 hover:text-zinc-200" />
+                  <Pencil className="h-4 w-4 text-muted-foreground hover:text-foreground" />
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => deleteMutation.mutate(exp.id)}
                 >
-                  <Trash2 className="h-4 w-4 text-zinc-400 hover:text-red-400" />
+                  <Trash2 className="h-4 w-4 text-muted-foreground hover:text-red-400" />
                 </Button>
               </div>
             </div>
@@ -507,21 +507,21 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
       </CardContent>
 
       {pendingExperiences.length > 0 && (
-        <CardFooter className="flex items-center justify-between border-t border-zinc-800 bg-zinc-900/50 px-6 py-4">
-          <p className="text-xs text-zinc-500">
+        <CardFooter className="flex items-center justify-between border-t border-border bg-card px-6 py-4">
+          <p className="text-xs text-muted-foreground">
             {settingsSaved ? (
-              <span className="flex items-center text-emerald-400 gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400" />
                 Changes saved successfully
               </span>
             ) : (
-              <span className="text-yellow-400">{pendingExperiences.length} pending experiences to save</span>
+              <span className="text-yellow-700 dark:text-yellow-400">{pendingExperiences.length} pending experiences to save</span>
             )}
           </p>
           <Button
             onClick={handleSavePending}
             disabled={isBulkAdding || pendingExperiences.length === 0}
-            className="bg-amber-600 hover:bg-amber-500 text-white min-w-[120px]"
+            className="bg-amber-600 hover:bg-amber-500 text-foreground min-w-[120px]"
           >
             {isBulkAdding ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

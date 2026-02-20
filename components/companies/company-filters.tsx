@@ -110,7 +110,7 @@ function TogglePill({
       className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
         selected
           ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-          : "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 hover:text-zinc-200"
+          : "bg-muted text-muted-foreground border border-border hover:bg-muted hover:text-foreground"
       }`}
     >
       {children}
@@ -205,7 +205,7 @@ export function CompanyFilters({
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search companies..."
             value={filters.search}
@@ -232,7 +232,7 @@ export function CompanyFilters({
           </TogglePill>
         ))}
 
-        <div className="h-5 w-px bg-zinc-700" />
+        <div className="h-5 w-px bg-muted" />
 
         {STATUS_OPTIONS.map((opt) => (
           <TogglePill
@@ -244,7 +244,7 @@ export function CompanyFilters({
           </TogglePill>
         ))}
 
-        <div className="h-5 w-px bg-zinc-700" />
+        <div className="h-5 w-px bg-muted" />
 
         <select
           value={filters.sortBy}
@@ -254,7 +254,7 @@ export function CompanyFilters({
               sortBy: e.target.value as CompanyFilters["sortBy"],
             })
           }
-          className="h-7 rounded-full border border-zinc-700 bg-zinc-800 px-3 text-xs text-zinc-300"
+          className="h-7 rounded-full border border-border bg-muted px-3 text-xs text-foreground/80"
         >
           {SORT_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -269,7 +269,7 @@ export function CompanyFilters({
               sortOrder: filters.sortOrder === "desc" ? "asc" : "desc",
             })
           }
-          className="rounded-full p-1 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
+          className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           title={filters.sortOrder === "desc" ? "Descending" : "Ascending"}
         >
           {filters.sortOrder === "desc" ? "↓" : "↑"}
@@ -379,14 +379,14 @@ export function CompanyFilters({
               ))}
               <button
                 onClick={clearAllFilters}
-                className="text-xs text-zinc-500 hover:text-zinc-300"
+                className="text-xs text-muted-foreground hover:text-foreground/80"
               >
                 Clear all
               </button>
             </>
           )}
           {selectionMode && hasSelection && (
-            <span className="text-xs text-zinc-400">
+            <span className="text-xs text-muted-foreground">
               {hasActiveFilters && "• "}
               {selectedIds.length} selected
               <button

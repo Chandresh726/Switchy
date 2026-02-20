@@ -100,8 +100,8 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
       {!isDetailPage && (
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-white">History</h1>
-            <p className="mt-1 text-zinc-400">
+            <h1 className="text-2xl font-semibold text-foreground">History</h1>
+            <p className="mt-1 text-muted-foreground">
               View scraping and matching operation history
             </p>
           </div>
@@ -128,7 +128,7 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
                   onClick={handleClearHistory}
-                  className="bg-red-500 hover:bg-red-600 text-white"
+                  className="bg-red-500 hover:bg-red-600 text-foreground"
                   disabled={isDeleting}
                 >
                   {isDeleting ? "Clearing..." : "Yes, clear all"}
@@ -141,13 +141,13 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
 
       {/* Tabs - Hide on detail pages */}
       {!isDetailPage && (
-        <div className="mb-6 flex items-center gap-1 border-b border-zinc-800">
+        <div className="mb-6 flex items-center gap-1 border-b border-border">
           <Link
             href="/history/scrape"
             className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
               isScrapeTab
-                ? "text-white border-emerald-500"
-                : "text-zinc-400 border-transparent hover:text-zinc-200"
+                ? "text-foreground border-emerald-500"
+                : "text-muted-foreground border-transparent hover:text-foreground"
             }`}
           >
             <History className="h-4 w-4" />
@@ -157,8 +157,8 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
             href="/history/match"
             className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
               isMatchTab
-                ? "text-white border-purple-500"
-                : "text-zinc-400 border-transparent hover:text-zinc-200"
+                ? "text-foreground border-purple-500"
+                : "text-muted-foreground border-transparent hover:text-foreground"
             }`}
           >
             <Sparkles className="h-4 w-4" />
@@ -168,8 +168,8 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
             href="/history/ai"
             className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
               isAITab
-                ? "text-white border-blue-500"
-                : "text-zinc-400 border-transparent hover:text-zinc-200"
+                ? "text-foreground border-blue-500"
+                : "text-muted-foreground border-transparent hover:text-foreground"
             }`}
           >
             <Wand2 className="h-4 w-4" />

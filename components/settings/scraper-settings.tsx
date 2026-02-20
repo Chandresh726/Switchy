@@ -91,7 +91,7 @@ export function ScraperSettings({
   };
 
   return (
-    <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
+    <Card className="border-border bg-card/70 rounded-xl">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -99,7 +99,7 @@ export function ScraperSettings({
             <CardTitle>Scraper Settings</CardTitle>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-zinc-400">Auto-Scrape</span>
+            <span className="text-sm text-muted-foreground">Auto-Scrape</span>
             <Switch
               checked={schedulerEnabled}
               onCheckedChange={onSchedulerEnabledChange}
@@ -116,7 +116,7 @@ export function ScraperSettings({
               value={selectedPreset}
               onValueChange={handlePresetChange}
             >
-              <SelectTrigger className="bg-zinc-950/50 border-zinc-800 flex-1">
+              <SelectTrigger className="bg-background/60 border-border flex-1">
                 <SelectValue placeholder="Select schedule" />
               </SelectTrigger>
               <SelectContent>
@@ -132,7 +132,7 @@ export function ScraperSettings({
                 value={schedulerCron}
                 onChange={(e) => onSchedulerCronChange(e.target.value)}
                 placeholder="0 */6 * * *"
-                className="bg-zinc-950/50 border-zinc-800 w-[160px]"
+                className="bg-background/60 border-border w-[160px]"
               />
             )}
             {schedulerEnabled && (
@@ -141,38 +141,38 @@ export function ScraperSettings({
           </div>
         </div>
 
-        <div className="space-y-4 pt-4 border-t border-zinc-800">
+        <div className="space-y-4 pt-4 border-t border-border">
           <Label>Location Filter</Label>
-          <p className="text-xs text-zinc-500 -mt-2">Only matching jobs are added. Remote jobs always included.</p>
+          <p className="text-xs text-muted-foreground -mt-2">Only matching jobs are added. Remote jobs always included.</p>
           
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="filter-country" className="text-sm text-zinc-400">Country</Label>
+              <Label htmlFor="filter-country" className="text-sm text-muted-foreground">Country</Label>
               <Input
                 id="filter-country"
                 value={filterCountry}
                 onChange={(e) => onFilterCountryChange(e.target.value)}
                 placeholder="India"
-                className="bg-zinc-950/50 border-zinc-800"
+                className="bg-background/60 border-border"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="filter-city" className="text-sm text-zinc-400">City</Label>
+              <Label htmlFor="filter-city" className="text-sm text-muted-foreground">City</Label>
               <Input
                 id="filter-city"
                 value={filterCity}
                 onChange={(e) => onFilterCityChange(e.target.value)}
                 placeholder="e.g., Bangalore"
-                className="bg-zinc-950/50 border-zinc-800"
+                className="bg-background/60 border-border"
               />
             </div>
           </div>
         </div>
 
-        <div className="space-y-4 pt-4 border-t border-zinc-800">
+        <div className="space-y-4 pt-4 border-t border-border">
           <Label htmlFor="filter-title-keywords">Job Title Keywords</Label>
-          <p className="text-xs text-zinc-500 -mt-2">
+          <p className="text-xs text-muted-foreground -mt-2">
             Add keywords to filter jobs by title (e.g., Engineer).
           </p>
           <Input
@@ -186,7 +186,7 @@ export function ScraperSettings({
               }
             }}
             placeholder="Type a keyword and press Enter"
-            className="bg-zinc-950/50 border-zinc-800"
+            className="bg-background/60 border-border"
           />
           {filterTitleKeywords.length > 0 && (
             <div className="flex flex-wrap gap-2">
@@ -210,8 +210,8 @@ export function ScraperSettings({
           )}
         </div>
       </CardContent>
-      <CardFooter className="flex items-center justify-between border-t border-zinc-800 bg-zinc-900/50 px-6 py-4 rounded-b-xl">
-        <p className="text-xs text-zinc-500">
+      <CardFooter className="flex items-center justify-between border-t border-border bg-card/70 px-6 py-4 rounded-b-xl">
+        <p className="text-xs text-muted-foreground">
           {settingsSaved ? (
             <span className="flex items-center text-emerald-400 gap-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
@@ -226,7 +226,7 @@ export function ScraperSettings({
         <Button
           onClick={onSave}
           disabled={isSaving || !hasUnsavedChanges}
-          className="bg-emerald-600 hover:bg-emerald-500 text-white min-w-[100px]"
+          className="bg-emerald-600 hover:bg-emerald-500 text-foreground min-w-[100px]"
         >
           {isSaving ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />

@@ -48,11 +48,11 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
+  --background: oklch(0.975 0.005 264.5);
   --foreground: oklch(0.13 0.028 261.692);
-  --card: oklch(1 0 0);
+  --card: oklch(0.995 0.002 286.3);
   --card-foreground: oklch(0.13 0.028 261.692);
-  --popover: oklch(1 0 0);
+  --popover: oklch(0.995 0.002 286.3);
   --popover-foreground: oklch(0.13 0.028 261.692);
   --primary: oklch(0.488 0.243 264.376);
   --primary-foreground: oklch(0.97 0.014 254.604);
@@ -63,8 +63,8 @@
   --accent: oklch(0.488 0.243 264.376);
   --accent-foreground: oklch(0.97 0.014 254.604);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.928 0.006 264.531);
-  --input: oklch(0.928 0.006 264.531);
+  --border: oklch(0.9 0.007 264.6);
+  --input: oklch(0.9 0.007 264.6);
   --ring: oklch(0.707 0.022 261.325);
   --chart-1: oklch(0.809 0.105 251.813);
   --chart-2: oklch(0.623 0.214 259.815);
@@ -72,7 +72,7 @@
   --chart-4: oklch(0.488 0.243 264.376);
   --chart-5: oklch(0.424 0.199 265.638);
   --radius: 0;
-  --sidebar: oklch(0.985 0.002 247.839);
+  --sidebar: oklch(0.965 0.004 248.5);
   --sidebar-foreground: oklch(0.13 0.028 261.692);
   --sidebar-primary: oklch(0.546 0.245 262.881);
   --sidebar-primary-foreground: oklch(0.97 0.014 254.604);
@@ -83,37 +83,37 @@
 }
 
 .dark {
-  --background: oklch(0.13 0.028 261.692);
-  --foreground: oklch(0.985 0.002 247.839);
-  --card: oklch(0.21 0.034 264.665);
-  --card-foreground: oklch(0.985 0.002 247.839);
-  --popover: oklch(0.21 0.034 264.665);
-  --popover-foreground: oklch(0.985 0.002 247.839);
+  --background: oklch(0.145 0.006 285);
+  --foreground: oklch(0.968 0.002 286);
+  --card: oklch(0.19 0.006 285);
+  --card-foreground: oklch(0.968 0.002 286);
+  --popover: oklch(0.19 0.006 285);
+  --popover-foreground: oklch(0.968 0.002 286);
   --primary: oklch(0.42 0.18 266);
   --primary-foreground: oklch(0.97 0.014 254.604);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.278 0.033 256.848);
-  --muted-foreground: oklch(0.707 0.022 261.325);
+  --secondary: oklch(0.24 0.006 285);
+  --secondary-foreground: oklch(0.968 0.002 286);
+  --muted: oklch(0.24 0.005 285);
+  --muted-foreground: oklch(0.72 0.012 286);
   --accent: oklch(0.42 0.18 266);
   --accent-foreground: oklch(0.97 0.014 254.604);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
+  --border: oklch(0.34 0.004 285 / 45%);
+  --input: oklch(0.39 0.004 285 / 55%);
+  --ring: oklch(0.58 0.012 286);
   --chart-1: oklch(0.809 0.105 251.813);
   --chart-2: oklch(0.623 0.214 259.815);
   --chart-3: oklch(0.546 0.245 262.881);
   --chart-4: oklch(0.488 0.243 264.376);
   --chart-5: oklch(0.424 0.199 265.638);
-  --sidebar: oklch(0.21 0.034 264.665);
-  --sidebar-foreground: oklch(0.985 0.002 247.839);
+  --sidebar: oklch(0.18 0.006 285);
+  --sidebar-foreground: oklch(0.968 0.002 286);
   --sidebar-primary: oklch(0.623 0.214 259.815);
   --sidebar-primary-foreground: oklch(0.97 0.014 254.604);
   --sidebar-accent: oklch(0.42 0.18 266);
   --sidebar-accent-foreground: oklch(0.97 0.014 254.604);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.551 0.027 264.364);
+  --sidebar-border: oklch(0.34 0.004 285 / 45%);
+  --sidebar-ring: oklch(0.58 0.012 286);
 }
 
 @layer base {
@@ -122,5 +122,55 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  .json-editor textarea,
+  .json-editor pre {
+    color: oklch(0.24 0.02 265);
+  }
+
+  .json-editor .token.property {
+    color: oklch(0.52 0.19 265);
+  }
+
+  .json-editor .token.string {
+    color: oklch(0.54 0.18 155);
+  }
+
+  .json-editor .token.number,
+  .json-editor .token.boolean,
+  .json-editor .token.null {
+    color: oklch(0.65 0.2 45);
+  }
+
+  .json-editor .token.punctuation,
+  .json-editor .token.operator {
+    color: oklch(0.5 0.02 265);
+  }
+
+  .dark .json-editor textarea,
+  .dark .json-editor pre {
+    color: oklch(0.94 0.01 255);
+  }
+
+  .dark .json-editor .token.property {
+    color: oklch(0.76 0.14 260);
+  }
+
+  .dark .json-editor .token.string {
+    color: oklch(0.82 0.15 155);
+  }
+
+  .dark .json-editor .token.number,
+  .dark .json-editor .token.boolean,
+  .dark .json-editor .token.null {
+    color: oklch(0.84 0.13 80);
+  }
+
+  .dark .json-editor .token.punctuation,
+  .dark .json-editor .token.operator {
+    color: oklch(0.73 0.02 265);
   }
 }

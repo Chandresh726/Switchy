@@ -45,11 +45,11 @@ interface JobCardProps {
 
 const STATUS_COLORS: Record<string, string> = {
   new: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  viewed: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
+  viewed: "bg-muted text-muted-foreground border-border",
   interested: "bg-purple-500/10 text-purple-400 border-purple-500/20",
   applied: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
   rejected: "bg-red-500/10 text-red-400 border-red-500/20",
-  archived: "bg-zinc-500/10 text-zinc-500 border-zinc-500/20",
+  archived: "bg-muted text-muted-foreground border-border",
 };
 
 const LOCATION_TYPE_ICONS: Record<string, string> = {
@@ -111,7 +111,7 @@ export function JobCard({ job }: JobCardProps) {
   return (
     <Link
       href={`/jobs/${job.id}`}
-      className="group block rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:border-zinc-700"
+      className="group block rounded-lg border border-border bg-card/70 p-4 transition-all hover:border-border"
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
@@ -122,17 +122,17 @@ export function JobCard({ job }: JobCardProps) {
             <img
               src={job.company.logoUrl}
               alt={job.company.name}
-              className="h-10 w-10 rounded bg-zinc-800 object-contain p-1"
+              className="h-10 w-10 rounded bg-muted object-contain p-1"
             />
           ) : (
-            <div className="flex h-10 w-10 items-center justify-center rounded bg-zinc-800 text-lg font-medium text-zinc-400">
+            <div className="flex h-10 w-10 items-center justify-center rounded bg-muted text-lg font-medium text-muted-foreground">
               {job.company.name.charAt(0).toUpperCase()}
             </div>
           )}
 
           <div className="min-w-0 flex-1">
-            <h3 className="font-medium text-white truncate">{job.title}</h3>
-            <p className="flex items-center gap-1 text-sm text-zinc-400">
+            <h3 className="font-medium text-foreground truncate">{job.title}</h3>
+            <p className="flex items-center gap-1 text-sm text-muted-foreground">
               <Building2 className="h-3.5 w-3.5 shrink-0" />
               {job.company.name}
             </p>
@@ -153,7 +153,7 @@ export function JobCard({ job }: JobCardProps) {
       </div>
 
       {/* Meta */}
-      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         {job.salary && (
           <span className="flex items-center gap-1 text-emerald-400">
             <DollarSign className="h-3.5 w-3.5" />
@@ -161,7 +161,7 @@ export function JobCard({ job }: JobCardProps) {
           </span>
         )}
         {job.seniorityLevel && (
-          <Badge variant="outline" className="border-zinc-700 text-zinc-400">
+          <Badge variant="outline" className="border-border text-muted-foreground">
             {SENIORITY_LABELS[job.seniorityLevel] || job.seniorityLevel}
           </Badge>
         )}
@@ -172,7 +172,7 @@ export function JobCard({ job }: JobCardProps) {
           </span>
         )}
         {job.locationType && (
-          <Badge variant="outline" className="border-zinc-700 text-zinc-400">
+          <Badge variant="outline" className="border-border text-muted-foreground">
             {LOCATION_TYPE_ICONS[job.locationType] || job.locationType}
           </Badge>
         )}
@@ -191,7 +191,7 @@ export function JobCard({ job }: JobCardProps) {
       </div>
 
       {/* Actions */}
-      <div className="mt-4 flex items-center justify-between border-t border-zinc-800 pt-3">
+      <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
         {/* Left side - Save and Mark Applied buttons */}
         <div className="flex items-center gap-2" onClick={(e) => e.preventDefault()}>
           {/* Save/Unsave Button */}

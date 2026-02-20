@@ -103,7 +103,7 @@ function TogglePill({
       className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
         selected
           ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-          : "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 hover:text-zinc-200"
+          : "bg-muted text-muted-foreground border border-border hover:bg-muted hover:text-foreground"
       }`}
     >
       {children}
@@ -155,7 +155,7 @@ function CompanyMultiSelect({
         className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
           selectedCount > 0
             ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-            : "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 hover:text-zinc-200"
+            : "bg-muted text-muted-foreground border border-border hover:bg-muted hover:text-foreground"
         }`}
       >
         <Building2 className="h-3 w-3" />
@@ -163,7 +163,7 @@ function CompanyMultiSelect({
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-lg border border-zinc-700 bg-zinc-900 shadow-lg">
+        <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-lg border border-border bg-card shadow-lg">
           <div className="p-2">
             <Input
               placeholder="Search companies..."
@@ -174,7 +174,7 @@ function CompanyMultiSelect({
           </div>
           <div className="max-h-48 overflow-auto px-1 pb-2">
             {filteredCompanies.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-zinc-500">No companies found</div>
+              <div className="px-3 py-2 text-xs text-muted-foreground">No companies found</div>
             ) : (
               filteredCompanies.map((company) => (
                 <button
@@ -183,18 +183,18 @@ function CompanyMultiSelect({
                   className={`flex w-full items-center gap-2 rounded px-3 py-1.5 text-left text-xs transition-colors ${
                     selectedIds.includes(company.id.toString())
                       ? "bg-emerald-500/20 text-emerald-400"
-                      : "text-zinc-300 hover:bg-zinc-800"
+                      : "text-foreground/80 hover:bg-muted"
                   }`}
                 >
                   <div
                     className={`h-3 w-3 rounded border ${
                       selectedIds.includes(company.id.toString())
                         ? "border-emerald-500 bg-emerald-500"
-                        : "border-zinc-600"
+                        : "border-border"
                     }`}
                   >
                     {selectedIds.includes(company.id.toString()) && (
-                      <svg className="h-3 w-3 text-white" viewBox="0 0 12 12">
+                      <svg className="h-3 w-3 text-foreground" viewBox="0 0 12 12">
                         <path
                           fill="currentColor"
                           d="M10.28 2.28a.75.75 0 0 1 0 1.06l-5.5 5.5a.75.75 0 0 1-1.06 0l-2.5-2.5a.75.75 0 1 1 1.06-1.06L4.25 7.19l4.97-4.97a.75.75 0 0 1 1.06 0z"
@@ -208,10 +208,10 @@ function CompanyMultiSelect({
             )}
           </div>
           {selectedCount > 0 && (
-            <div className="border-t border-zinc-700 p-2">
+            <div className="border-t border-border p-2">
               <button
                 onClick={() => onChange([])}
-                className="w-full text-xs text-zinc-400 hover:text-zinc-200"
+                className="w-full text-xs text-muted-foreground hover:text-foreground"
               >
                 Clear selection
               </button>
@@ -266,7 +266,7 @@ function OptionMultiSelect({
         className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
           selectedCount > 0
             ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-            : "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 hover:text-zinc-200"
+            : "bg-muted text-muted-foreground border border-border hover:bg-muted hover:text-foreground"
         }`}
       >
         {Icon && <Icon className="h-3 w-3" />}
@@ -274,7 +274,7 @@ function OptionMultiSelect({
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-44 rounded-lg border border-zinc-700 bg-zinc-900 shadow-lg">
+        <div className="absolute left-0 top-full z-50 mt-1 w-44 rounded-lg border border-border bg-card shadow-lg">
           <div className="max-h-48 overflow-auto px-1 py-2">
             {options.map((opt) => (
               <button
@@ -283,18 +283,18 @@ function OptionMultiSelect({
                 className={`flex w-full items-center gap-2 rounded px-3 py-1.5 text-left text-xs transition-colors ${
                   selectedValues.includes(opt.value)
                     ? "bg-emerald-500/20 text-emerald-400"
-                    : "text-zinc-300 hover:bg-zinc-800"
+                    : "text-foreground/80 hover:bg-muted"
                 }`}
               >
                 <div
                   className={`h-3 w-3 rounded border ${
                     selectedValues.includes(opt.value)
                       ? "border-emerald-500 bg-emerald-500"
-                      : "border-zinc-600"
+                      : "border-border"
                   }`}
                 >
                   {selectedValues.includes(opt.value) && (
-                    <svg className="h-3 w-3 text-white" viewBox="0 0 12 12">
+                    <svg className="h-3 w-3 text-foreground" viewBox="0 0 12 12">
                       <path
                         fill="currentColor"
                         d="M10.28 2.28a.75.75 0 0 1 0 1.06l-5.5 5.5a.75.75 0 0 1-1.06 0l-2.5-2.5a.75.75 0 1 1 1.06-1.06L4.25 7.19l4.97-4.97a.75.75 0 0 1 1.06 0z"
@@ -307,10 +307,10 @@ function OptionMultiSelect({
             ))}
           </div>
           {selectedCount > 0 && (
-            <div className="border-t border-zinc-700 p-2">
+            <div className="border-t border-border p-2">
               <button
                 onClick={() => onChange([])}
-                className="w-full text-xs text-zinc-400 hover:text-zinc-200"
+                className="w-full text-xs text-muted-foreground hover:text-foreground"
               >
                 Clear selection
               </button>
@@ -446,7 +446,7 @@ export function JobFilters({
       {/* Search Row */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search job titles, descriptions..."
             value={filters.search}
@@ -457,7 +457,7 @@ export function JobFilters({
           />
         </div>
         <div className="relative">
-          <MapPin className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+          <MapPin className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Location..."
             value={filters.locationSearch}
@@ -473,14 +473,14 @@ export function JobFilters({
       <div className="flex flex-wrap items-center gap-2">
         {/* Job Count */}
         <div className="flex items-center gap-2 pr-2">
-          <span className="text-sm text-zinc-400">
+          <span className="text-sm text-muted-foreground">
             {totalCount ?? 0} {(totalCount ?? 0) === 1 ? "job" : "jobs"}
           </span>
-          {isFetching && <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />}
+          {isFetching && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
         </div>
 
         {/* Divider */}
-        <div className="h-5 w-px bg-zinc-700" />
+        <div className="h-5 w-px bg-muted" />
 
         {/* Company Multi-Select */}
         <CompanyMultiSelect
@@ -490,7 +490,7 @@ export function JobFilters({
         />
 
         {/* Divider */}
-        <div className="h-5 w-px bg-zinc-700" />
+        <div className="h-5 w-px bg-muted" />
 
         {/* Location Type Pills */}
         {LOCATION_TYPE_OPTIONS.map((opt) => (
@@ -504,7 +504,7 @@ export function JobFilters({
         ))}
 
         {/* Divider */}
-        <div className="h-5 w-px bg-zinc-700" />
+        <div className="h-5 w-px bg-muted" />
 
         {/* Employment Type Multi-Select */}
         <OptionMultiSelect
@@ -516,7 +516,7 @@ export function JobFilters({
         />
 
         {/* Divider */}
-        <div className="h-5 w-px bg-zinc-700" />
+        <div className="h-5 w-px bg-muted" />
 
         {/* Seniority Level Multi-Select */}
         <OptionMultiSelect
@@ -527,7 +527,7 @@ export function JobFilters({
         />
 
         {/* Divider */}
-        <div className="h-5 w-px bg-zinc-700" />
+        <div className="h-5 w-px bg-muted" />
 
         {/* Score Filter */}
         <select
@@ -535,7 +535,7 @@ export function JobFilters({
           onChange={(e) =>
             onFiltersChange({ ...filters, minScore: e.target.value })
           }
-          className="h-7 rounded-full border border-zinc-700 bg-zinc-800 px-3 text-xs text-zinc-300"
+          className="h-7 rounded-full border border-border bg-muted px-3 text-xs text-foreground/80"
         >
           {SCORE_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -549,13 +549,13 @@ export function JobFilters({
 
         {/* Sort */}
         <div className="flex items-center gap-1">
-          <ArrowUpDown className="h-3.5 w-3.5 text-zinc-500" />
+          <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
           <select
             value={filters.sortBy}
             onChange={(e) =>
               onFiltersChange({ ...filters, sortBy: e.target.value })
             }
-            className="h-7 rounded-full border border-zinc-700 bg-zinc-800 px-3 text-xs text-zinc-300"
+            className="h-7 rounded-full border border-border bg-muted px-3 text-xs text-foreground/80"
           >
             {SORT_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -570,7 +570,7 @@ export function JobFilters({
                 sortOrder: filters.sortOrder === "desc" ? "asc" : "desc",
               })
             }
-            className="rounded-full p-1 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
+            className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             title={filters.sortOrder === "desc" ? "Descending" : "Ascending"}
           >
             {filters.sortOrder === "desc" ? "↓" : "↑"}
@@ -590,7 +590,7 @@ export function JobFilters({
           ))}
           <button
             onClick={clearAllFilters}
-            className="text-xs text-zinc-500 hover:text-zinc-300"
+            className="text-xs text-muted-foreground hover:text-foreground/80"
           >
             Clear all
           </button>

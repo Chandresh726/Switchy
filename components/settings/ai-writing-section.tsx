@@ -106,7 +106,7 @@ export function AIWritingSection({
   };
 
   return (
-    <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
+    <Card className="border-border bg-card/70 rounded-xl">
       <CardHeader>
         <div className="flex items-center gap-2">
           <Wand2 className="h-5 w-5 text-purple-500" />
@@ -123,7 +123,7 @@ export function AIWritingSection({
               <Label>AI Provider & Model</Label>
               <div className="flex gap-2">
                 <Select value={aiWritingProviderId} onValueChange={onAIWritingProviderIdChange}>
-                  <SelectTrigger className="w-[180px] bg-zinc-950/50 border-zinc-800">
+                  <SelectTrigger className="w-[180px] bg-background/60 border-border">
                     <SelectValue placeholder="Select provider" />
                   </SelectTrigger>
                   <SelectContent>
@@ -139,7 +139,7 @@ export function AIWritingSection({
                   onValueChange={(value) => onAIWritingSettingsChange({ aiWritingModel: value })}
                   disabled={modelsLoading || models.length === 0}
                 >
-                  <SelectTrigger className="flex-1 bg-zinc-950/50 border-zinc-800">
+                  <SelectTrigger className="flex-1 bg-background/60 border-border">
                     <SelectValue placeholder="Select model" />
                   </SelectTrigger>
                   <SelectContent>
@@ -154,8 +154,8 @@ export function AIWritingSection({
                         <SelectItem key={model.modelId} value={model.modelId}>
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{model.label}</span>
-                            <span className="text-zinc-600 text-xs">•</span>
-                            <span className="text-xs text-zinc-400">{model.description}</span>
+                            <span className="text-muted-foreground text-xs">•</span>
+                            <span className="text-xs text-muted-foreground">{model.description}</span>
                           </div>
                         </SelectItem>
                       ))
@@ -167,7 +167,7 @@ export function AIWritingSection({
                     value={aiWritingSettings.aiWritingReasoningEffort || "medium"} 
                     onValueChange={(value) => onAIWritingSettingsChange({ aiWritingReasoningEffort: value as ReasoningEffort })}
                   >
-                    <SelectTrigger className="w-32 bg-zinc-950/50 border-zinc-800">
+                    <SelectTrigger className="w-32 bg-background/60 border-border">
                       <SelectValue placeholder="Effort" />
                     </SelectTrigger>
                     <SelectContent>
@@ -194,23 +194,23 @@ export function AIWritingSection({
               )}
             </div>
 
-            <Separator className="bg-zinc-800" />
+            <Separator className="bg-muted" />
 
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <FileText className="h-4 w-4 text-emerald-400" />
-            <h3 className="text-sm font-medium text-white">Cover Letter</h3>
+            <h3 className="text-sm font-medium text-foreground">Cover Letter</h3>
           </div>
           
           <div className="grid gap-4">
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-2">
-                <Label className="text-zinc-400">Tone</Label>
+                <Label className="text-muted-foreground">Tone</Label>
                 <Select
                   value={aiWritingSettings.coverLetterTone}
                   onValueChange={(value) => onAIWritingSettingsChange({ coverLetterTone: value })}
                 >
-                  <SelectTrigger className="w-full bg-zinc-950/50 border-zinc-800">
+                  <SelectTrigger className="w-full bg-background/60 border-border">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -224,12 +224,12 @@ export function AIWritingSection({
               </div>
               
               <div className="space-y-2">
-                <Label className="text-zinc-400">Length</Label>
+                <Label className="text-muted-foreground">Length</Label>
                 <Select
                   value={aiWritingSettings.coverLetterLength}
                   onValueChange={(value) => onAIWritingSettingsChange({ coverLetterLength: value })}
                 >
-                  <SelectTrigger className="w-full bg-zinc-950/50 border-zinc-800">
+                  <SelectTrigger className="w-full bg-background/60 border-border">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -243,7 +243,7 @@ export function AIWritingSection({
               </div>
 
               <div className="space-y-2">
-                <Label className="text-zinc-400">Focus</Label>
+                <Label className="text-muted-foreground">Focus</Label>
                 <div className="flex flex-wrap gap-2">
                   {COVER_LETTER_FOCUS_OPTIONS.map((option) => (
                     <button
@@ -254,7 +254,7 @@ export function AIWritingSection({
                         "inline-flex items-center rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
                         isFocusSelected(option.value)
                           ? "bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30"
-                          : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300"
+                          : "bg-muted text-muted-foreground hover:bg-muted hover:text-foreground/80"
                       )}
                     >
                       {option.label}
@@ -266,24 +266,24 @@ export function AIWritingSection({
           </div>
         </div>
 
-        <Separator className="bg-zinc-800" />
+        <Separator className="bg-muted" />
 
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <MessageCircle className="h-4 w-4 text-purple-400" />
-            <h3 className="text-sm font-medium text-white">Referral Message</h3>
+            <h3 className="text-sm font-medium text-foreground">Referral Message</h3>
           </div>
           
           <div className="grid gap-4">
             <div className="flex gap-4 items-end">
               <div className="flex gap-3 flex-1">
                 <div className="space-y-2 flex-1">
-                  <Label className="text-zinc-400">Tone</Label>
+                  <Label className="text-muted-foreground">Tone</Label>
                   <Select
                     value={aiWritingSettings.referralTone}
                     onValueChange={(value) => onAIWritingSettingsChange({ referralTone: value })}
                   >
-                    <SelectTrigger className="w-full bg-zinc-950/50 border-zinc-800">
+                    <SelectTrigger className="w-full bg-background/60 border-border">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -297,12 +297,12 @@ export function AIWritingSection({
                 </div>
                 
                 <div className="space-y-2 flex-1">
-                  <Label className="text-zinc-400">Length</Label>
+                  <Label className="text-muted-foreground">Length</Label>
                   <Select
                     value={aiWritingSettings.referralLength}
                     onValueChange={(value) => onAIWritingSettingsChange({ referralLength: value })}
                   >
-                    <SelectTrigger className="w-full bg-zinc-950/50 border-zinc-800">
+                    <SelectTrigger className="w-full bg-background/60 border-border">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -320,15 +320,15 @@ export function AIWritingSection({
           </div>
           </>
         ) : (
-          <div className="flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed border-zinc-800 bg-zinc-950/20">
-            <Wand2 className="h-10 w-10 text-zinc-600 mb-3" />
-            <p className="text-zinc-400 text-sm font-medium">No AI Provider configured</p>
-            <p className="text-zinc-500 text-xs mt-1">Add an AI Provider above to use AI Writing</p>
+          <div className="flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed border-border bg-background/20">
+            <Wand2 className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-muted-foreground text-sm font-medium">No AI Provider configured</p>
+            <p className="text-muted-foreground text-xs mt-1">Add an AI Provider above to use AI Writing</p>
           </div>
         )}
       </CardContent>
-      <CardFooter className="flex items-center justify-between border-t border-zinc-800 bg-zinc-900/50 px-6 py-4 rounded-b-xl">
-        <p className="text-xs text-zinc-500">
+      <CardFooter className="flex items-center justify-between border-t border-border bg-card/70 px-6 py-4 rounded-b-xl">
+        <p className="text-xs text-muted-foreground">
           {!hasProviders ? (
             "Add a provider to configure AI writing"
           ) : settingsSaved ? (
@@ -345,7 +345,7 @@ export function AIWritingSection({
         <Button
           onClick={onSave}
           disabled={isSaving || !hasUnsavedChanges || !hasProviders || !aiWritingSettings.aiWritingModel}
-          className="bg-emerald-600 hover:bg-emerald-500 text-white min-w-[120px]"
+          className="bg-emerald-600 hover:bg-emerald-500 text-foreground min-w-[120px]"
         >
           {isSaving ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />

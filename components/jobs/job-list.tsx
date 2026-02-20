@@ -411,13 +411,13 @@ export function JobList() {
   return (
     <div className="flex flex-col">
       {/* Tabs */}
-      <div className="mb-4 flex items-center gap-1 border-b border-zinc-800">
+      <div className="mb-4 flex items-center gap-1 border-b border-border">
         <button
           onClick={() => handleTabChange("all")}
           className={`px-4 py-2 text-sm font-medium transition-colors ${
             activeTab === "all"
-              ? "border-b-2 border-emerald-500 text-white"
-              : "text-zinc-400 hover:text-zinc-200"
+              ? "border-b-2 border-emerald-500 text-foreground"
+              : "text-muted-foreground hover:text-foreground"
           }`}
         >
           All Jobs
@@ -426,8 +426,8 @@ export function JobList() {
           onClick={() => handleTabChange("saved")}
           className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
             activeTab === "saved"
-              ? "border-b-2 border-emerald-500 text-white"
-              : "text-zinc-400 hover:text-zinc-200"
+              ? "border-b-2 border-emerald-500 text-foreground"
+              : "text-muted-foreground hover:text-foreground"
           }`}
         >
           Saved
@@ -441,8 +441,8 @@ export function JobList() {
           onClick={() => handleTabChange("applied")}
           className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
             activeTab === "applied"
-              ? "border-b-2 border-emerald-500 text-white"
-              : "text-zinc-400 hover:text-zinc-200"
+              ? "border-b-2 border-emerald-500 text-foreground"
+              : "text-muted-foreground hover:text-foreground"
           }`}
         >
           Applied
@@ -456,13 +456,13 @@ export function JobList() {
           onClick={() => handleTabChange("archived")}
           className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
             activeTab === "archived"
-              ? "border-b-2 border-emerald-500 text-white"
-              : "text-zinc-400 hover:text-zinc-200"
+              ? "border-b-2 border-emerald-500 text-foreground"
+              : "text-muted-foreground hover:text-foreground"
           }`}
         >
           Archived
           {archivedCount > 0 && (
-            <span className="rounded-full bg-zinc-500/20 px-2 py-0.5 text-xs text-zinc-400">
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
               {archivedCount}
             </span>
           )}
@@ -483,12 +483,12 @@ export function JobList() {
       <div className="mt-4 space-y-3">
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
         ) : jobs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-700 py-12">
-            <Briefcase className="h-12 w-12 text-zinc-600" />
-            <h3 className="mt-4 text-lg font-medium text-white">
+          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12">
+            <Briefcase className="h-12 w-12 text-muted-foreground" />
+            <h3 className="mt-4 text-lg font-medium text-foreground">
               {activeTab === "applied"
                 ? "No applied jobs yet"
                 : activeTab === "archived"
@@ -497,7 +497,7 @@ export function JobList() {
                 ? "No saved jobs yet"
                 : "No jobs found"}
             </h3>
-            <p className="mt-1 text-sm text-zinc-400">
+            <p className="mt-1 text-sm text-muted-foreground">
               {activeTab === "applied"
                 ? "Jobs you apply to will appear here"
                 : activeTab === "archived"
@@ -520,14 +520,14 @@ export function JobList() {
 
             {/* Pagination - inside scrollable area */}
             {totalCount > 0 && (
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-4 border-t border-zinc-800 pt-3">
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-3">
                 {/* Items per page */}
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-zinc-400">Show:</span>
+                  <span className="text-sm text-muted-foreground">Show:</span>
                   <select
                     value={pageSize}
                     onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
-                    className="h-8 rounded border border-zinc-700 bg-zinc-900 px-2 text-sm text-zinc-100"
+                    className="h-8 rounded border border-border bg-card px-2 text-sm text-foreground"
                   >
                     <option value={10}>10</option>
                     <option value={25}>25</option>
@@ -536,7 +536,7 @@ export function JobList() {
                 </div>
 
                 {/* Page info */}
-                <span className="text-sm text-zinc-400">
+                <span className="text-sm text-muted-foreground">
                   {startIndex + 1}-{endIndex} of {totalCount}
                 </span>
 
@@ -553,7 +553,7 @@ export function JobList() {
 
                   {getPageNumbers().map((page, idx) =>
                     page === "ellipsis" ? (
-                      <span key={`ellipsis-${idx}`} className="px-2 text-zinc-500">
+                      <span key={`ellipsis-${idx}`} className="px-2 text-muted-foreground">
                         ...
                       </span>
                     ) : (

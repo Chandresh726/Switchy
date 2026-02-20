@@ -27,7 +27,7 @@ export function QuickActions({
   unmatchedCount,
 }: QuickActionsProps) {
   return (
-    <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
+    <Card className="border-border bg-card/70 rounded-xl">
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2">
           <Activity className="h-4 w-4 text-blue-500" />
@@ -38,7 +38,7 @@ export function QuickActions({
         <div className="space-y-2">
           <Button
             variant="outline"
-            className="w-full justify-start border-zinc-800 hover:bg-zinc-800/50 hover:text-white"
+            className="w-full justify-start border-border hover:bg-muted/70 hover:text-foreground"
             onClick={onRefresh}
             disabled={isRefreshing}
           >
@@ -51,7 +51,7 @@ export function QuickActions({
           <Button
             variant="outline"
             className={cn(
-              "w-full justify-start border-zinc-800 hover:bg-zinc-800/50 hover:text-white",
+              "w-full justify-start border-border hover:bg-muted/70 hover:text-foreground",
               unmatchedCount > 0 && "border-purple-500/30 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10"
             )}
             onClick={onMatchUnmatched}

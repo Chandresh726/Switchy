@@ -65,7 +65,7 @@ const PLATFORM_COLORS: Record<string, string> = {
   ashby: "bg-purple-500/10 text-purple-400 border-purple-500/20",
   eightfold: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
   workday: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  custom: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
+  custom: "bg-muted text-muted-foreground border-border",
 };
 
 function truncateUrl(url: string, maxLength: number = 30): string {
@@ -113,8 +113,8 @@ function ToggleSwitch({
         e.stopPropagation();
         onChange(!checked);
       }}
-      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900 disabled:cursor-not-allowed disabled:opacity-50 ${
-        checked ? "bg-emerald-500" : "bg-zinc-700"
+      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 ${
+        checked ? "bg-emerald-500" : "bg-muted"
       }`}
     >
       <span
@@ -226,17 +226,17 @@ export function CompanyList({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   if (companies.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-700 py-12">
-        <Building2 className="h-12 w-12 text-zinc-600" />
-        <h3 className="mt-4 text-lg font-medium text-white">No companies yet</h3>
-        <p className="mt-1 text-sm text-zinc-400">
+      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12">
+        <Building2 className="h-12 w-12 text-muted-foreground" />
+        <h3 className="mt-4 text-lg font-medium text-foreground">No companies yet</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
           Add companies to start tracking job openings
         </p>
       </div>
@@ -246,7 +246,7 @@ export function CompanyList({
   return (
     <div className="space-y-4">
       {editingCompany && (
-        <div ref={editFormRef} className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+        <div ref={editFormRef} className="rounded-xl border border-border bg-card/70 p-6">
           <CompanyForm
             company={editingCompany}
             onSuccess={() => setEditingCompany(null)}
@@ -263,12 +263,12 @@ export function CompanyList({
             <div
               key={company.id}
               onClick={() => handleCardClick(company)}
-              className={`group relative rounded-lg border bg-zinc-900/50 p-4 transition-all ${
+              className={`group relative rounded-lg border bg-card/70 p-4 transition-all ${
                 selectionMode
                   ? isSelected
                     ? "border-emerald-500 ring-1 ring-emerald-500/50 bg-emerald-500/5"
-                    : "border-zinc-700 hover:border-emerald-500/50 cursor-pointer"
-                  : "border-zinc-800 hover:border-zinc-700"
+                    : "border-border hover:border-emerald-500/50 cursor-pointer"
+                  : "border-border hover:border-border"
               } ${!company.isActive && !isSelected ? "opacity-60 grayscale" : ""}`}
             >
               {isSelected && (
@@ -284,17 +284,17 @@ export function CompanyList({
                     <img
                       src={company.logoUrl}
                       alt={company.name}
-                      className="h-10 w-10 rounded bg-zinc-800 object-contain p-1"
+                      className="h-10 w-10 rounded bg-muted object-contain p-1"
                     />
                   ) : (
-                    <div className="flex h-10 w-10 items-center justify-center rounded bg-zinc-800 text-lg font-medium text-zinc-400">
+                    <div className="flex h-10 w-10 items-center justify-center rounded bg-muted text-lg font-medium text-muted-foreground">
                       {company.name.charAt(0).toUpperCase()}
                     </div>
                   )}
                   <div>
                     <Link
                       href={`/jobs?companyIds=${company.id}`}
-                      className="font-medium text-white hover:text-emerald-400 transition-colors"
+                      className="font-medium text-foreground hover:text-emerald-400 transition-colors"
                       title={`View jobs at ${company.name}`}
                       onClick={(e) => selectionMode && e.preventDefault()}
                     >
@@ -408,7 +408,7 @@ export function CompanyList({
                 </a>
               </div>
 
-              <div className="mt-4 flex items-center justify-between border-t border-zinc-800 pt-3 text-xs text-zinc-500">
+              <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <ToggleSwitch
                     checked={company.isActive}
@@ -417,7 +417,7 @@ export function CompanyList({
                     }
                     disabled={toggleActiveMutation.isPending}
                   />
-                  <span className={company.isActive ? "text-emerald-400" : "text-zinc-500"}>
+                  <span className={company.isActive ? "text-emerald-400" : "text-muted-foreground"}>
                     {company.isActive ? "Active" : "Paused"}
                   </span>
                 </div>

@@ -1,7 +1,9 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+
 import { cn } from "@/lib/utils";
 import {
   Briefcase,
@@ -12,6 +14,18 @@ import {
   History,
 } from "lucide-react";
 
+const ThemeToggle = dynamic(
+  () => import("@/components/dashboard/theme-toggle").then((mod) => mod.ThemeToggle),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground">
+        Theme
+      </div>
+    ),
+  }
+);
+
 const mainNavigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Jobs", href: "/jobs", icon: Briefcase },
@@ -19,10 +33,8 @@ const mainNavigation = [
   { name: "Profile", href: "/profile", icon: User },
 ];
 
-const bottomNavigation = [
-  { name: "History", href: "/history", icon: History },
-  { name: "Settings", href: "/settings", icon: Settings },
-];
+const historyNavigation = { name: "History", href: "/history", icon: History };
+const settingsNavigation = { name: "Settings", href: "/settings", icon: Settings };
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -40,7 +52,7 @@ export function Sidebar() {
           "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
           isActive
             ? "bg-emerald-500/10 text-emerald-500"
-            : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground"
         )}
       >
         <item.icon className="h-5 w-5" />
@@ -50,10 +62,10 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="flex h-full w-64 flex-col border-r border-zinc-800 bg-zinc-950">
+    <aside className="flex h-full w-64 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
       {/* Logo */}
-      <div className="flex h-16 items-center border-b border-zinc-800 px-6">
-        <span className="text-xl font-semibold text-white">Switchy</span>
+      <div className="flex h-16 items-center border-b border-sidebar-border px-6">
+        <span className="text-xl font-semibold text-foreground">Switchy</span>
       </div>
 
       {/* Main Navigation */}
@@ -62,8 +74,10 @@ export function Sidebar() {
       </nav>
 
       {/* Bottom Navigation */}
-      <div className="border-t border-zinc-800 px-3 py-4 space-y-1">
-        {bottomNavigation.map(renderNavItem)}
+      <div className="space-y-1 border-t border-sidebar-border px-3 py-4">
+        {renderNavItem(historyNavigation)}
+        <ThemeToggle />
+        {renderNavItem(settingsNavigation)}
       </div>
     </aside>
   );

@@ -6,7 +6,7 @@ export function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivEl
   return (
     <div
       className={cn(
-        "animate-pulse rounded bg-zinc-800",
+        "animate-pulse rounded bg-muted",
         className
       )}
       {...props}
@@ -16,7 +16,7 @@ export function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivEl
 
 export function JobCardSkeleton() {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+    <div className="rounded-lg border border-border bg-card/70 p-4">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
           <Skeleton className="h-10 w-10 rounded" />
@@ -31,7 +31,7 @@ export function JobCardSkeleton() {
         <Skeleton className="h-4 w-24" />
         <Skeleton className="h-4 w-20" />
       </div>
-      <div className="mt-4 flex items-center justify-between border-t border-zinc-800 pt-3">
+      <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
         <Skeleton className="h-6 w-28" />
         <Skeleton className="h-6 w-16" />
       </div>
@@ -41,7 +41,7 @@ export function JobCardSkeleton() {
 
 export function CompanyCardSkeleton() {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+    <div className="rounded-lg border border-border bg-card/70 p-4">
       <div className="flex items-start gap-3">
         <Skeleton className="h-10 w-10 rounded" />
         <div className="space-y-2">
@@ -53,7 +53,7 @@ export function CompanyCardSkeleton() {
         <Skeleton className="h-5 w-20" />
         <Skeleton className="h-5 w-16" />
       </div>
-      <div className="mt-4 border-t border-zinc-800 pt-3">
+      <div className="mt-4 border-t border-border pt-3">
         <Skeleton className="h-3 w-40" />
       </div>
     </div>
@@ -81,7 +81,7 @@ export function ProfileFormSkeleton() {
 
 export function StatCardSkeleton() {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+    <div className="rounded-xl border border-border bg-card/70 p-6">
       <div className="flex items-center gap-4">
         <Skeleton className="h-12 w-12 rounded-lg" />
         <div className="space-y-2">

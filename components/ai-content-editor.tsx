@@ -210,7 +210,7 @@ export function AIContentEditor({
       <div
         ref={drawerRef}
         className={cn(
-          "absolute left-0 right-0 bg-zinc-950 border-t border-zinc-800 shadow-2xl pointer-events-auto z-10 transition-transform duration-300 ease-out flex flex-col",
+          "absolute left-0 right-0 bg-background border-t border-border shadow-2xl pointer-events-auto z-10 transition-transform duration-300 ease-out flex flex-col",
           isVisible ? "translate-y-0" : "translate-y-full"
         )}
         style={{
@@ -220,21 +220,21 @@ export function AIContentEditor({
         }}
       >
         {/* Section 1: Header */}
-        <div className="border-b border-zinc-800 p-6">
+        <div className="border-b border-border p-6">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
-              <h2 className="flex items-center gap-2 text-lg font-semibold text-white">
+              <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
                 <TypeIcon className={cn("h-5 w-5", typeConfig.color)} />
                 {title}
               </h2>
-              <p className="mt-2 text-sm text-zinc-400">{description}</p>
+              <p className="mt-2 text-sm text-muted-foreground">{description}</p>
             </div>
 
             <Button
               variant="ghost"
               size="icon"
               onClick={handleClose}
-              className="h-7 w-7 rounded-none text-zinc-400 hover:text-white"
+              className="h-7 w-7 rounded-none text-muted-foreground hover:text-foreground"
             >
               <X className="h-4 w-4" />
             </Button>
@@ -243,7 +243,7 @@ export function AIContentEditor({
 
         {/* Section 2: Variant selector + User prompt */}
         {content && content.history.length > 1 && (
-          <div className="px-6 py-4 border-b border-zinc-800">
+          <div className="px-6 py-4 border-b border-border">
             <div className="flex items-center gap-4 flex-wrap">
               {/* Variant Navigation */}
               <div className="flex items-center gap-2">
@@ -251,18 +251,18 @@ export function AIContentEditor({
                   variant="outline"
                   size="icon"
                   onClick={() => navigateVariant("prev")}
-                  className="h-7 w-7 rounded-none border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800"
+                  className="h-7 w-7 rounded-none border-border text-muted-foreground hover:text-foreground hover:bg-muted"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span className="text-xs text-zinc-500 min-w-[100px] text-center font-medium">
+                <span className="text-xs text-muted-foreground min-w-[100px] text-center font-medium">
                   Variant {currentVariantIndex + 1} of {content.history.length}
                 </span>
                 <Button
                   variant="outline"
                   size="icon"
                   onClick={() => navigateVariant("next")}
-                  className="h-7 w-7 rounded-none border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800"
+                  className="h-7 w-7 rounded-none border-border text-muted-foreground hover:text-foreground hover:bg-muted"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
@@ -271,13 +271,13 @@ export function AIContentEditor({
               {/* User Prompt */}
               {currentVariant?.userPrompt && (
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs px-2.5 py-1.5 border border-zinc-800 bg-zinc-950/30 inline-flex items-center rounded-none">
+                  <div className="text-xs px-2.5 py-1.5 border border-border bg-background/30 inline-flex items-center rounded-none">
                     {currentVariant.userPrompt === "Manual edit" ? (
-                      <span className="text-zinc-400">Manual edit</span>
+                      <span className="text-muted-foreground">Manual edit</span>
                     ) : (
                       <>
-                        <span className="text-zinc-500 mr-2">Request:</span>
-                        <span className="text-zinc-300 truncate">{currentVariant.userPrompt}</span>
+                        <span className="text-muted-foreground mr-2">Request:</span>
+                        <span className="text-foreground/80 truncate">{currentVariant.userPrompt}</span>
                       </>
                     )}
                   </div>
@@ -292,19 +292,19 @@ export function AIContentEditor({
           {isLoading ? (
             <div className="flex items-center justify-center h-[200px]">
               <Loader2 className={cn("h-6 w-6 animate-spin", typeConfig.color)} />
-              <span className="ml-2 text-sm text-zinc-400">Generating content...</span>
+              <span className="ml-2 text-sm text-muted-foreground">Generating content...</span>
             </div>
           ) : (
             <div className="relative">
               {/* Content Container */}
-              <div className="relative border border-zinc-800 bg-zinc-950/30">
+              <div className="relative border border-border bg-background/30">
                 {/* Copy button - fixed top right */}
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={handleCopy}
                   disabled={isLoading}
-                  className="absolute top-2 right-2 h-7 w-7 rounded-none text-zinc-400 hover:text-white z-20"
+                  className="absolute top-2 right-2 h-7 w-7 rounded-none text-muted-foreground hover:text-foreground z-20"
                 >
                   {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 </Button>
@@ -316,7 +316,7 @@ export function AIContentEditor({
                       variant="outline"
                       size="sm"
                       onClick={handleCancelChanges}
-                      className="h-7 rounded-none border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800"
+                      className="h-7 rounded-none border-border text-muted-foreground hover:text-foreground hover:bg-muted"
                     >
                       Cancel
                     </Button>
@@ -353,7 +353,7 @@ export function AIContentEditor({
         </div>
 
         {/* Section 4: Input + Send */}
-        <div className="px-6 py-4 border-t border-zinc-800">
+        <div className="px-6 py-4 border-t border-border">
           <div className="flex gap-3">
             <Textarea
               ref={textareaRef}
@@ -361,7 +361,7 @@ export function AIContentEditor({
               onChange={(e) => setModificationPrompt(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Ask for changes (e.g., 'Make it shorter', 'Use more formal tone')..."
-              className="min-h-[60px] bg-transparent border-zinc-800 rounded-none resize-none text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="min-h-[60px] bg-transparent border-border rounded-none resize-none text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
               disabled={isSending || isSaving}
             />
             <Button
@@ -376,7 +376,7 @@ export function AIContentEditor({
               )}
             </Button>
           </div>
-          <p className="mt-2 text-[10px] text-zinc-500">
+          <p className="mt-2 text-[10px] text-muted-foreground">
             Press Enter to send, Shift+Enter for new line
           </p>
         </div>

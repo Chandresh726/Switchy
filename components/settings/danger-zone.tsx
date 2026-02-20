@@ -48,8 +48,8 @@ export function DangerZone({ onClearAIContent, onClearMatchData, onClearJobs }: 
               <FileX className="h-4 w-4 text-red-400" />
             </div>
             <div className="space-y-1">
-              <h4 className="text-sm font-medium text-zinc-200">Delete AI Generated Content</h4>
-              <p className="text-xs text-zinc-500 max-w-md">
+              <h4 className="text-sm font-medium text-foreground">Delete AI Generated Content</h4>
+              <p className="text-xs text-muted-foreground max-w-md">
                 Permanently removes all AI-generated cover letters and referral messages. Job listings and match data are preserved.
               </p>
             </div>
@@ -71,12 +71,12 @@ export function DangerZone({ onClearAIContent, onClearMatchData, onClearJobs }: 
                 <AlertDialogDescription className="space-y-2" asChild>
                   <div>
                     <p>This action will permanently delete:</p>
-                    <ul className="list-disc list-inside text-zinc-400 ml-2">
+                    <ul className="list-disc list-inside text-muted-foreground ml-2">
                       <li>All generated cover letters</li>
                       <li>All generated referral messages</li>
                       <li>Generation history and variants</li>
                     </ul>
-                    <p className="mt-2 font-medium text-zinc-300">
+                    <p className="mt-2 font-medium text-foreground/80">
                       Your job listings, match scores, and company data will NOT be deleted.
                     </p>
                   </div>
@@ -85,7 +85,7 @@ export function DangerZone({ onClearAIContent, onClearMatchData, onClearJobs }: 
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  className="bg-red-600 hover:bg-red-700 text-white"
+                  className="bg-red-600 hover:bg-red-700 text-foreground"
                   onClick={onClearAIContent}
                 >
                   Yes, Delete Content
@@ -104,8 +104,8 @@ export function DangerZone({ onClearAIContent, onClearMatchData, onClearJobs }: 
               <Sparkles className="h-4 w-4 text-red-400" />
             </div>
             <div className="space-y-1">
-              <h4 className="text-sm font-medium text-zinc-200">Delete Match History</h4>
-              <p className="text-xs text-zinc-500 max-w-md">
+              <h4 className="text-sm font-medium text-foreground">Delete Match History</h4>
+              <p className="text-xs text-muted-foreground max-w-md">
                 Permanently removes all match scores and AI reasoning. Job listings are preserved.
               </p>
             </div>
@@ -127,12 +127,12 @@ export function DangerZone({ onClearAIContent, onClearMatchData, onClearJobs }: 
                 <AlertDialogDescription className="space-y-2" asChild>
                   <div>
                     <p>This action will permanently delete:</p>
-                    <ul className="list-disc list-inside text-zinc-400 ml-2">
+                    <ul className="list-disc list-inside text-muted-foreground ml-2">
                       <li>All AI match scores and confidence levels</li>
                       <li>Generated match reasoning and analysis</li>
                       <li>Historical records of match runs</li>
                     </ul>
-                    <p className="mt-2 font-medium text-zinc-300">
+                    <p className="mt-2 font-medium text-foreground/80">
                       Your scraped job listings and company data will NOT be deleted.
                     </p>
                   </div>
@@ -141,7 +141,7 @@ export function DangerZone({ onClearAIContent, onClearMatchData, onClearJobs }: 
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  className="bg-red-600 hover:bg-red-700 text-white"
+                  className="bg-red-600 hover:bg-red-700 text-foreground"
                   onClick={onClearMatchData}
                 >
                   Yes, Delete History
@@ -160,8 +160,8 @@ export function DangerZone({ onClearAIContent, onClearMatchData, onClearJobs }: 
               <Trash2 className="h-4 w-4 text-red-400" />
             </div>
             <div className="space-y-1">
-              <h4 className="text-sm font-medium text-zinc-200">Delete All Jobs</h4>
-              <p className="text-xs text-zinc-500 max-w-md">
+              <h4 className="text-sm font-medium text-foreground">Delete All Jobs</h4>
+              <p className="text-xs text-muted-foreground max-w-md">
                 Permanently removes all scraped jobs and their associated data. Companies remain tracked.
               </p>
             </div>
@@ -183,12 +183,12 @@ export function DangerZone({ onClearAIContent, onClearMatchData, onClearJobs }: 
                 <AlertDialogDescription className="space-y-2" asChild>
                   <div>
                     <p>This action will permanently delete:</p>
-                    <ul className="list-disc list-inside text-zinc-400 ml-2">
+                    <ul className="list-disc list-inside text-muted-foreground ml-2">
                       <li>All scraped job postings</li>
                       <li>Match scores and AI reasoning for jobs</li>
                       <li>AI-generated cover letters and referrals</li>
                     </ul>
-                    <p className="mt-2 font-medium text-zinc-300">
+                    <p className="mt-2 font-medium text-foreground/80">
                       Your tracked companies will NOT be deleted.
                     </p>
                   </div>
@@ -197,7 +197,7 @@ export function DangerZone({ onClearAIContent, onClearMatchData, onClearJobs }: 
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  className="bg-red-600 hover:bg-red-700 text-white"
+                  className="bg-red-600 hover:bg-red-700 text-foreground"
                   onClick={onClearJobs}
                 >
                   Yes, Delete All

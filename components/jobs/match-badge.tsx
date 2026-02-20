@@ -13,7 +13,7 @@ export function MatchBadge({ score, size = "md", showLabel = false }: MatchBadge
     return (
       <span
         className={cn(
-          "inline-flex items-center justify-center rounded border border-zinc-700 bg-zinc-800 text-zinc-500",
+          "inline-flex items-center justify-center rounded border border-border bg-muted text-muted-foreground",
           size === "sm" && "h-5 px-1.5 text-[10px]",
           size === "md" && "h-6 px-2 text-xs",
           size === "lg" && "h-8 px-3 text-sm"

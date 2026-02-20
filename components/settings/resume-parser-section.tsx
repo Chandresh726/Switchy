@@ -52,7 +52,7 @@ export function ResumeParserSection({
   const supportsReasoning = models.find((model) => model.modelId === resumeParserModel)?.supportsReasoning ?? false;
 
   return (
-    <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
+    <Card className="border-border bg-card/70 rounded-xl">
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2">
           <Terminal className="h-4 w-4 text-purple-500" />
@@ -68,7 +68,7 @@ export function ResumeParserSection({
             <div className="space-y-2">
               <Label>AI Provider</Label>
               <Select value={resumeParserProviderId} onValueChange={onResumeParserProviderIdChange}>
-                <SelectTrigger className="w-full bg-zinc-950/50 border-zinc-800">
+                <SelectTrigger className="w-full bg-background/60 border-border">
                   <SelectValue placeholder="Select provider" />
                 </SelectTrigger>
                 <SelectContent>
@@ -88,7 +88,7 @@ export function ResumeParserSection({
                   onValueChange={onResumeParserModelChange}
                   disabled={modelsLoading || models.length === 0}
                 >
-                  <SelectTrigger className="flex-1 bg-zinc-950/50 border-zinc-800">
+                  <SelectTrigger className="flex-1 bg-background/60 border-border">
                     <SelectValue placeholder="Select model" />
                   </SelectTrigger>
                   <SelectContent>
@@ -109,7 +109,7 @@ export function ResumeParserSection({
                 </Select>
                 {supportsReasoning && (
                   <Select value={resumeParserReasoningEffort} onValueChange={onResumeParserReasoningEffortChange}>
-                    <SelectTrigger className="w-32 bg-zinc-950/50 border-zinc-800">
+                    <SelectTrigger className="w-32 bg-background/60 border-border">
                       <SelectValue placeholder="Effort" />
                     </SelectTrigger>
                     <SelectContent>
@@ -137,10 +137,10 @@ export function ResumeParserSection({
             </div>
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed border-zinc-800 bg-zinc-950/20">
-            <Terminal className="h-10 w-10 text-zinc-600 mb-3" />
-            <p className="text-zinc-400 text-sm font-medium">No AI Provider configured</p>
-            <p className="text-zinc-500 text-xs mt-1">Add an AI Provider above to use the Resume Parser</p>
+          <div className="flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed border-border bg-background/20">
+            <Terminal className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-muted-foreground text-sm font-medium">No AI Provider configured</p>
+            <p className="text-muted-foreground text-xs mt-1">Add an AI Provider above to use the Resume Parser</p>
           </div>
         )}
       </CardContent>

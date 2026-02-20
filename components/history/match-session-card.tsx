@@ -157,7 +157,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
   return (
     <Link
       href={`/history/match/${session.id}`}
-      className="group block rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:border-zinc-700"
+      className="group block rounded-lg border border-border bg-card p-4 transition-all hover:border-border"
     >
         {/* Main Card Content */}
         <div>
@@ -173,12 +173,12 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="font-medium text-white">
-                    {formatDate(session.startedAt)} <span className="text-zinc-500">at</span> {formatTime(session.startedAt)}
+                  <h3 className="font-medium text-foreground">
+                    {formatDate(session.startedAt)} <span className="text-muted-foreground">at</span> {formatTime(session.startedAt)}
                   </h3>
                 </div>
 
-                <div className="flex items-center gap-2 text-sm text-zinc-400 mt-0.5">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground mt-0.5">
                   <span className="flex items-center gap-1">
                     <Play className="h-3 w-3" />
                     {TRIGGER_LABELS[session.triggerSource] || session.triggerSource}
@@ -186,8 +186,8 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
 
                   {session.companyName && (
                     <>
-                      <span className="text-zinc-700">•</span>
-                      <span className="flex items-center gap-1 text-purple-400">
+                      <span className="text-muted-foreground">•</span>
+                      <span className="flex items-center gap-1 text-purple-600 dark:text-purple-400">
                         <Building2 className="h-3 w-3" />
                         {session.companyName}
                       </span>
@@ -220,7 +220,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -237,7 +237,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction
                     onClick={handleDelete}
-                    className="bg-red-500 hover:bg-red-600 text-white"
+                    className="bg-red-500 hover:bg-red-600 text-foreground"
                     disabled={isDeleting}
                   >
                     {isDeleting ? "Deleting..." : "Delete"}
@@ -251,11 +251,11 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
         {/* Progress Bar */}
         {session.status === "in_progress" && (
           <div className="mt-4">
-            <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
               <span>Matching Jobs...</span>
               <span>{progress}%</span>
             </div>
-            <div className="h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
               <div
                 className="h-full bg-blue-500 transition-all duration-300"
                 style={{ width: `${progress}%` }}
@@ -265,24 +265,32 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
         )}
 
         {/* Meta Stats */}
-        <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-zinc-500">
+        <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
-            <Target className="h-3.5 w-3.5 text-zinc-400" />
-            <span className="text-zinc-300 font-medium">{session.jobsTotal || 0}</span> Total
+            <Target className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-foreground/80 font-medium">{session.jobsTotal || 0}</span> Total
           </span>
           <span className="flex items-center gap-1.5">
-            <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
-            <span className="text-emerald-400 font-medium">{session.jobsSucceeded || 0}</span> Succeeded
+            <CheckCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span className="font-medium text-emerald-600 dark:text-emerald-400">{session.jobsSucceeded || 0}</span> Succeeded
           </span>
           {session.jobsFailed ? (
             <span className="flex items-center gap-1.5">
-              <XCircle className="h-3.5 w-3.5 text-red-400" />
-              <span className="text-red-400 font-medium">{session.jobsFailed}</span> Failed
+              <XCircle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
+              <span className="font-medium text-red-600 dark:text-red-400">{session.jobsFailed}</span> Failed
             </span>
           ) : null}
           <span className="flex items-center gap-1.5">
             <Sparkles className="h-3.5 w-3.5 text-yellow-500" />
-            <span className={`font-medium ${successRate >= 75 ? "text-emerald-400" : successRate >= 50 ? "text-yellow-500" : "text-red-400"}`}>
+            <span
+              className={`font-medium ${
+                successRate >= 75
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : successRate >= 50
+                    ? "text-yellow-600 dark:text-yellow-400"
+                    : "text-red-600 dark:text-red-400"
+              }`}
+            >
               {successRate}%
             </span> Match Rate
           </span>
@@ -295,7 +303,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
               {statusConfig.label}
             </Badge>
             <span className="flex items-center gap-1.5">
-              <Clock className="h-3.5 w-3.5 text-zinc-400" />
+              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
               {formatDurationFromDates(session.startedAt, session.completedAt)}
             </span>
           </div>

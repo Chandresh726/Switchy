@@ -8,7 +8,6 @@ import { toast } from "sonner";
 import Editor from "react-simple-code-editor";
 import { highlight, languages } from "prismjs";
 import "prismjs/components/prism-json";
-import "prismjs/themes/prism-tomorrow.css";
 
 interface Company {
   name: string;
@@ -105,15 +104,15 @@ export function JsonEditor({ onSuccess }: { onSuccess: () => void }) {
   if (isLoadingCompanies) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-900/50 px-4 py-2">
-        <p className="text-sm text-zinc-400">
+      <div className="flex items-center justify-between border-b border-border bg-card/70 px-4 py-2">
+        <p className="text-sm text-muted-foreground">
           Edit your companies list as JSON.
         </p>
         <Button
@@ -132,7 +131,7 @@ export function JsonEditor({ onSuccess }: { onSuccess: () => void }) {
       </div>
 
       {error && (
-        <div className="border-b border-zinc-800 bg-red-500/10 p-4">
+        <div className="border-b border-border bg-red-500/10 p-4">
           <div className="flex items-center gap-2 text-red-400">
             <AlertCircle className="h-4 w-4" />
             <span className="text-sm font-medium">Error: {error}</span>
@@ -140,7 +139,7 @@ export function JsonEditor({ onSuccess }: { onSuccess: () => void }) {
         </div>
       )}
 
-      <div className="flex-1 overflow-auto bg-zinc-950 font-mono text-sm">
+      <div className="json-editor flex-1 overflow-auto bg-background font-mono text-sm">
         <Editor
           value={jsonValue}
           onValueChange={setJsonValue}

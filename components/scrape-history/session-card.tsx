@@ -148,7 +148,7 @@ export function SessionCard({ session }: SessionCardProps) {
   return (
     <Link
       href={`/history/scrape/${session.id}`}
-      className="group block rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 mb-3 transition-all hover:border-zinc-700"
+      className="group block rounded-lg border border-border bg-card p-4 mb-3 transition-all hover:border-border"
     >
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
@@ -157,10 +157,10 @@ export function SessionCard({ session }: SessionCardProps) {
               <StatusIcon className={`h-5 w-5 ${statusConfig.color}`} />
             </div>
             <div>
-              <h3 className="font-medium text-white">
-                {formatDate(session.startedAt)} <span className="text-zinc-500">at</span> {formatTime(session.startedAt)}
+              <h3 className="font-medium text-foreground">
+                {formatDate(session.startedAt)} <span className="text-muted-foreground">at</span> {formatTime(session.startedAt)}
               </h3>
-              <p className="flex items-center gap-1 text-sm text-zinc-400">
+              <p className="flex items-center gap-1 text-sm text-muted-foreground">
                 <Play className="h-3 w-3" />
                 {TRIGGER_LABELS[session.triggerSource] || session.triggerSource}
               </p>
@@ -190,7 +190,7 @@ export function SessionCard({ session }: SessionCardProps) {
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -207,7 +207,7 @@ export function SessionCard({ session }: SessionCardProps) {
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction
                     onClick={handleDelete}
-                    className="bg-red-500 hover:bg-red-600 text-white"
+                    className="bg-red-500 hover:bg-red-600 text-foreground"
                     disabled={isDeleting}
                   >
                     {isDeleting ? "Deleting..." : "Delete"}
@@ -221,11 +221,11 @@ export function SessionCard({ session }: SessionCardProps) {
       {/* Progress Bar */}
       {session.status === "in_progress" && (
         <div className="mt-4">
-          <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+          <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
             <span>Processing Companies...</span>
             <span>{progress}%</span>
           </div>
-          <div className="h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
             <div
               className="h-full bg-blue-500 transition-all duration-300"
               style={{ width: `${progress}%` }}
@@ -235,22 +235,22 @@ export function SessionCard({ session }: SessionCardProps) {
       )}
 
       {/* Meta Stats */}
-      <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-zinc-500">
+      <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
-          <Building2 className="h-3.5 w-3.5 text-zinc-400" />
-          <span className="text-zinc-300 font-medium">{session.companiesCompleted || 0}/{session.companiesTotal || 0}</span> Companies
+          <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-foreground/80 font-medium">{session.companiesCompleted || 0}/{session.companiesTotal || 0}</span> Companies
         </span>
         <span className="flex items-center gap-1.5">
-          <Briefcase className="h-3.5 w-3.5 text-zinc-400" />
-          <span className="text-zinc-300 font-medium">{session.totalJobsFound || 0}</span> Found
+          <Briefcase className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-foreground/80 font-medium">{session.totalJobsFound || 0}</span> Found
         </span>
         <span className="flex items-center gap-1.5">
-          <Plus className="h-3.5 w-3.5 text-emerald-400" />
-          <span className="text-emerald-400 font-medium">{session.totalJobsAdded || 0}</span> New
+          <Plus className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+          <span className="font-medium text-emerald-600 dark:text-emerald-400">{session.totalJobsAdded || 0}</span> New
         </span>
         <span className="flex items-center gap-1.5">
-          <Filter className="h-3.5 w-3.5 text-zinc-400" />
-          <span className="text-zinc-300 font-medium">{session.totalJobsFiltered || 0}</span> Filtered
+          <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-foreground/80 font-medium">{session.totalJobsFiltered || 0}</span> Filtered
         </span>
 
         <div className="ml-auto flex items-center gap-3">
@@ -261,7 +261,7 @@ export function SessionCard({ session }: SessionCardProps) {
             {statusConfig.label}
           </Badge>
           <span className="flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5 text-zinc-400" />
+            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
             {formatDurationFromDates(session.startedAt, session.completedAt)}
           </span>
         </div>

@@ -54,11 +54,11 @@ interface JobDetailProps {
 
 const STATUS_OPTIONS = [
   { value: "new", label: "New", color: "text-blue-400" },
-  { value: "viewed", label: "Viewed", color: "text-zinc-400" },
+  { value: "viewed", label: "Viewed", color: "text-muted-foreground" },
   { value: "interested", label: "Interested", color: "text-purple-400" },
   { value: "applied", label: "Applied", color: "text-emerald-400" },
   { value: "rejected", label: "Rejected", color: "text-red-400" },
-  { value: "archived", label: "Archived", color: "text-zinc-500" },
+  { value: "archived", label: "Archived", color: "text-muted-foreground" },
 ];
 
 export function JobDetail({ job, onClose }: JobDetailProps) {
@@ -107,9 +107,9 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="relative max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950">
+      <div className="relative max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-lg border border-border bg-background">
         {/* Header */}
-        <div className="sticky top-0 z-10 border-b border-zinc-800 bg-zinc-950 p-6">
+        <div className="sticky top-0 z-10 border-b border-border bg-background p-6">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-start gap-4">
               {job.company.logoUrl ? (
@@ -117,17 +117,17 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
                 <img
                   src={job.company.logoUrl}
                   alt={job.company.name}
-                  className="h-12 w-12 rounded bg-zinc-800 object-contain p-1"
+                  className="h-12 w-12 rounded bg-muted object-contain p-1"
                 />
               ) : (
-                <div className="flex h-12 w-12 items-center justify-center rounded bg-zinc-800 text-xl font-medium text-zinc-400">
+                <div className="flex h-12 w-12 items-center justify-center rounded bg-muted text-xl font-medium text-muted-foreground">
                   {job.company.name.charAt(0).toUpperCase()}
                 </div>
               )}
 
               <div>
-                <h2 className="text-xl font-semibold text-white">{job.title}</h2>
-                <p className="flex items-center gap-1 text-sm text-zinc-400">
+                <h2 className="text-xl font-semibold text-foreground">{job.title}</h2>
+                <p className="flex items-center gap-1 text-sm text-muted-foreground">
                   <Building2 className="h-4 w-4" />
                   {job.company.name}
                 </p>
@@ -140,7 +140,7 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
           </div>
 
           {/* Meta */}
-          <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-zinc-400">
+          <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
             {job.location && (
               <span className="flex items-center gap-1">
                 <MapPin className="h-4 w-4" />
@@ -148,7 +148,7 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
               </span>
             )}
             {job.locationType && (
-              <Badge variant="outline" className="border-zinc-700">
+              <Badge variant="outline" className="border-border">
                 {job.locationType}
               </Badge>
             )}
@@ -175,11 +175,11 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
         {/* Content */}
         <div className="max-h-[60vh] overflow-auto p-6">
           {/* Match Score Section */}
-          <div className="mb-6 rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+          <div className="mb-6 rounded-lg border border-border bg-card/70 p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <MatchBadge score={job.matchScore} size="lg" showLabel />
-                <span className="text-sm text-zinc-400">Match Score</span>
+                <span className="text-sm text-muted-foreground">Match Score</span>
               </div>
 
               {job.matchScore === null ? (
@@ -204,11 +204,11 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
                 {/* Match Reasons */}
                 {job.matchReasons.length > 0 && (
                   <div>
-                    <h4 className="mb-2 text-sm font-medium text-white">Why this score?</h4>
-                    <ul className="space-y-1 text-sm text-zinc-400">
+                    <h4 className="mb-2 text-sm font-medium text-foreground">Why this score?</h4>
+                    <ul className="space-y-1 text-sm text-muted-foreground">
                       {job.matchReasons.map((reason, i) => (
                         <li key={i} className="flex items-start gap-2">
-                          <span className="text-zinc-500">•</span>
+                          <span className="text-muted-foreground">•</span>
                           {reason}
                         </li>
                       ))}
@@ -265,10 +265,10 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
                       <Lightbulb className="h-4 w-4" />
                       Recommendations
                     </h4>
-                    <ul className="space-y-1 text-sm text-zinc-400">
+                    <ul className="space-y-1 text-sm text-muted-foreground">
                       {job.recommendations.map((rec, i) => (
                         <li key={i} className="flex items-start gap-2">
-                          <span className="text-zinc-500">•</span>
+                          <span className="text-muted-foreground">•</span>
                           {rec}
                         </li>
                       ))}
@@ -282,18 +282,18 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
           {/* Description */}
           {job.description && (
             <div>
-              <h3 className="mb-3 text-lg font-medium text-white">Description</h3>
+              <h3 className="mb-3 text-lg font-medium text-foreground">Description</h3>
               {job.descriptionFormat === "html" ? (
                 <div
-                  className="text-sm text-zinc-300 prose prose-invert prose-sm max-w-none"
+                  className="text-sm text-foreground/80 prose prose-invert prose-sm max-w-none"
                   dangerouslySetInnerHTML={{ __html: sanitizeHtmlContent(job.description) }}
                 />
               ) : job.descriptionFormat === "plain" ? (
-                <p className="text-sm text-zinc-300 whitespace-pre-wrap">{job.description}</p>
+                <p className="text-sm text-foreground/80 whitespace-pre-wrap">{job.description}</p>
               ) : (
                 <MarkdownRenderer
                   content={job.description}
-                  className="text-sm text-zinc-300"
+                  className="text-sm text-foreground/80"
                 />
               )}
             </div>
@@ -301,15 +301,15 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 border-t border-zinc-800 bg-zinc-950 p-4">
+        <div className="sticky bottom-0 border-t border-border bg-background p-4">
           <div className="flex items-center justify-between">
             {/* Status Selector */}
             <div className="flex items-center gap-2">
-              <span className="text-sm text-zinc-500">Status:</span>
+              <span className="text-sm text-muted-foreground">Status:</span>
               <select
                 value={job.status}
                 onChange={(e) => updateStatusMutation.mutate(e.target.value)}
-                className="h-8 rounded-none border border-zinc-700 bg-zinc-900 px-2 text-sm text-zinc-100"
+                className="h-8 rounded-none border border-border bg-card px-2 text-sm text-foreground"
               >
                 {STATUS_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>

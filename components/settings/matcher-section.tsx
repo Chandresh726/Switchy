@@ -94,7 +94,7 @@ export function MatcherSection({
   const supportsReasoning = models.find((model) => model.modelId === matcherModel)?.supportsReasoning ?? false;
 
   return (
-    <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
+    <Card className="border-border bg-card/70 rounded-xl">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="space-y-1">
@@ -110,7 +110,7 @@ export function MatcherSection({
             variant="outline"
             size="sm"
             className={cn(
-              "border-zinc-700 hover:bg-zinc-800 hover:text-white",
+              "border-border hover:bg-muted hover:text-foreground",
               unmatchedCount > 0 && !hasProviders && "border-purple-500/30 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10"
             )}
             onClick={onMatchUnmatched}
@@ -146,7 +146,7 @@ export function MatcherSection({
                 <Label>AI Provider & Model</Label>
                 <div className="flex gap-2">
                   <Select value={matcherProviderId} onValueChange={onMatcherProviderIdChange}>
-                    <SelectTrigger className="w-[180px] bg-zinc-950/50 border-zinc-800">
+                    <SelectTrigger className="w-[180px] bg-background/60 border-border">
                       <SelectValue placeholder="Select provider" />
                     </SelectTrigger>
                     <SelectContent>
@@ -162,7 +162,7 @@ export function MatcherSection({
                     onValueChange={onMatcherModelChange}
                     disabled={modelsLoading || models.length === 0}
                   >
-                    <SelectTrigger className="flex-1 bg-zinc-950/50 border-zinc-800">
+                    <SelectTrigger className="flex-1 bg-background/60 border-border">
                       <SelectValue placeholder="Select model" />
                     </SelectTrigger>
                     <SelectContent>
@@ -177,8 +177,8 @@ export function MatcherSection({
                           <SelectItem key={model.modelId} value={model.modelId}>
                             <div className="flex items-center gap-2">
                               <span className="font-medium">{model.label}</span>
-                              <span className="text-zinc-600 text-xs">•</span>
-                              <span className="text-xs text-zinc-400">{model.description}</span>
+                              <span className="text-muted-foreground text-xs">•</span>
+                              <span className="text-xs text-muted-foreground">{model.description}</span>
                             </div>
                           </SelectItem>
                         ))
@@ -187,7 +187,7 @@ export function MatcherSection({
                   </Select>
                   {supportsReasoning && (
                     <Select value={matcherReasoningEffort} onValueChange={onMatcherReasoningEffortChange}>
-                      <SelectTrigger className="w-32 bg-zinc-950/50 border-zinc-800">
+                      <SelectTrigger className="w-32 bg-background/60 border-border">
                         <SelectValue placeholder="Effort" />
                       </SelectTrigger>
                       <SelectContent>
@@ -215,37 +215,37 @@ export function MatcherSection({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-950/30 p-4">
+                <div className="flex items-start gap-3 rounded-lg border border-border bg-background/30 p-4">
                   <input
                     type="checkbox"
                     id="auto-match"
                     checked={autoMatchAfterScrape}
                     onChange={(e) => onAutoMatchAfterScrapeChange(e.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-zinc-700 bg-zinc-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-zinc-900"
+                    className="mt-1 h-4 w-4 rounded border-border bg-muted text-emerald-500 focus:ring-emerald-500 focus:ring-offset-background"
                   />
                   <div>
                     <Label htmlFor="auto-match" className="cursor-pointer font-medium">
                       Auto-match after scrape
                     </Label>
-                    <p className="text-xs text-zinc-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Automatically match new jobs after each scrape.
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-950/30 p-4">
+                <div className="flex items-start gap-3 rounded-lg border border-border bg-background/30 p-4">
                   <input
                     type="checkbox"
                     id="serialize-operations"
                     checked={serializeOperations}
                     onChange={(e) => onSerializeOperationsChange(e.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-zinc-700 bg-zinc-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-zinc-900"
+                    className="mt-1 h-4 w-4 rounded border-border bg-muted text-emerald-500 focus:ring-emerald-500 focus:ring-offset-background"
                   />
                   <div>
                     <Label htmlFor="serialize-operations" className="cursor-pointer font-medium">
                       Serialize Operations
                     </Label>
-                    <p className="text-xs text-zinc-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Process jobs one at a time instead of in parallel.
                     </p>
                   </div>
@@ -253,14 +253,14 @@ export function MatcherSection({
               </div>
             </div>
 
-            <Separator className="bg-zinc-800" />
+            <Separator className="bg-muted" />
 
             {/* Performance Settings */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="space-y-1">
                   <Label className="text-base">Performance & Limits</Label>
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-xs text-muted-foreground">
                     Fine-tune API usage and concurrency
                   </p>
                 </div>
@@ -268,7 +268,7 @@ export function MatcherSection({
                   variant="ghost"
                   size="sm"
                   onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="h-8 text-xs text-zinc-400 hover:text-white"
+                  className="h-8 text-xs text-muted-foreground hover:text-foreground"
                 >
                   <Settings2 className="mr-2 h-3.5 w-3.5" />
                   {showAdvanced ? "Simple View" : "Advanced View"}
@@ -276,7 +276,7 @@ export function MatcherSection({
               </div>
 
               <div className="grid gap-6">
-                <div className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-950/30 p-4">
+                <div className="flex items-start gap-3 rounded-lg border border-border bg-background/30 p-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-3">
                       <input
@@ -284,18 +284,18 @@ export function MatcherSection({
                         id="bulk-enabled"
                         checked={bulkEnabled}
                         onChange={(e) => onBulkEnabledChange(e.target.checked)}
-                        className="mt-1 h-4 w-4 rounded border-zinc-700 bg-zinc-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-zinc-900"
+                        className="mt-1 h-4 w-4 rounded border-border bg-muted text-emerald-500 focus:ring-emerald-500 focus:ring-offset-background"
                       />
                       <Label htmlFor="bulk-enabled" className="cursor-pointer font-medium">
                         Bulk Matching
                       </Label>
                     </div>
-                    <p className="text-xs text-zinc-500 mt-1 ml-7">
+                    <p className="text-xs text-muted-foreground mt-1 ml-7">
                       Process multiple jobs in a single API call to save time and reduce requests.
                     </p>
                   </div>
                   <div className={cn("flex items-center gap-2", !bulkEnabled && "opacity-50 grayscale")}>
-                    <Label htmlFor="batch-size" className="text-xs text-zinc-400 whitespace-nowrap">Batch Size</Label>
+                    <Label htmlFor="batch-size" className="text-xs text-muted-foreground whitespace-nowrap">Batch Size</Label>
                     <Input
                       id="batch-size"
                       type="number"
@@ -303,7 +303,7 @@ export function MatcherSection({
                       max={10}
                       value={batchSize}
                       onChange={(e) => onBatchSizeChange(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
-                      className="w-20 bg-zinc-950/50 border-zinc-800"
+                      className="w-20 bg-background/60 border-border"
                       disabled={!bulkEnabled}
                     />
                   </div>
@@ -312,7 +312,7 @@ export function MatcherSection({
                 {showAdvanced && (
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="max-retries" className="text-xs text-zinc-400">Max Retries</Label>
+                      <Label htmlFor="max-retries" className="text-xs text-muted-foreground">Max Retries</Label>
                       <Input
                         id="max-retries"
                         type="number"
@@ -320,11 +320,11 @@ export function MatcherSection({
                         max={5}
                         value={maxRetries}
                         onChange={(e) => onMaxRetriesChange(Math.min(5, Math.max(1, parseInt(e.target.value) || 1)))}
-                        className="bg-zinc-950/50 border-zinc-800"
+                        className="bg-background/60 border-border"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="timeout" className="text-xs text-zinc-400">Timeout (sec)</Label>
+                      <Label htmlFor="timeout" className="text-xs text-muted-foreground">Timeout (sec)</Label>
                       <Input
                         id="timeout"
                         type="number"
@@ -332,11 +332,11 @@ export function MatcherSection({
                         max={120}
                         value={Math.round(timeoutMs / 1000)}
                         onChange={(e) => onTimeoutMsChange(Math.min(120000, Math.max(5000, (parseInt(e.target.value) || 5) * 1000)))}
-                        className="bg-zinc-950/50 border-zinc-800"
+                        className="bg-background/60 border-border"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="concurrency" className="text-xs text-zinc-400">Concurrency</Label>
+                      <Label htmlFor="concurrency" className="text-xs text-muted-foreground">Concurrency</Label>
                       <Input
                         id="concurrency"
                         type="number"
@@ -344,11 +344,11 @@ export function MatcherSection({
                         max={10}
                         value={concurrencyLimit}
                         onChange={(e) => onConcurrencyLimitChange(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
-                        className="bg-zinc-950/50 border-zinc-800"
+                        className="bg-background/60 border-border"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="circuit-breaker" className="text-xs text-zinc-400">Circuit Breaker</Label>
+                      <Label htmlFor="circuit-breaker" className="text-xs text-muted-foreground">Circuit Breaker</Label>
                       <Input
                         id="circuit-breaker"
                         type="number"
@@ -356,7 +356,7 @@ export function MatcherSection({
                         max={50}
                         value={circuitBreakerThreshold}
                         onChange={(e) => onCircuitBreakerThresholdChange(Math.min(50, Math.max(3, parseInt(e.target.value) || 10)))}
-                        className="bg-zinc-950/50 border-zinc-800"
+                        className="bg-background/60 border-border"
                       />
                     </div>
                   </div>
@@ -365,15 +365,15 @@ export function MatcherSection({
             </div>
           </>
         ) : (
-          <div className="flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed border-zinc-800 bg-zinc-950/20">
-            <Cpu className="h-10 w-10 text-zinc-600 mb-3" />
-            <p className="text-zinc-400 text-sm font-medium">No AI Provider configured</p>
-            <p className="text-zinc-500 text-xs mt-1">Add an AI Provider above to use the matching engine</p>
+          <div className="flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed border-border bg-background/20">
+            <Cpu className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-muted-foreground text-sm font-medium">No AI Provider configured</p>
+            <p className="text-muted-foreground text-xs mt-1">Add an AI Provider above to use the matching engine</p>
           </div>
         )}
       </CardContent>
-      <CardFooter className="flex items-center justify-between border-t border-zinc-800 bg-zinc-900/50 px-6 py-4 rounded-b-xl">
-        <p className="text-xs text-zinc-500">
+      <CardFooter className="flex items-center justify-between border-t border-border bg-card/70 px-6 py-4 rounded-b-xl">
+        <p className="text-xs text-muted-foreground">
           {!hasProviders ? (
             "Add a provider to configure matching"
           ) : settingsSaved ? (
@@ -390,7 +390,7 @@ export function MatcherSection({
         <Button
           onClick={onSave}
           disabled={isSaving || !hasUnsavedChanges || !hasProviders || !matcherModel}
-          className="bg-emerald-600 hover:bg-emerald-500 text-white min-w-[120px]"
+          className="bg-emerald-600 hover:bg-emerald-500 text-foreground min-w-[120px]"
         >
           {isSaving ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
