@@ -70,6 +70,7 @@ const SENIORITY_LABELS: Record<string, string> = {
 
 export function JobCard({ job }: JobCardProps) {
   const queryClient = useQueryClient();
+  const isReadOnlyPostingAction = job.status === "applied" || job.status === "archived";
 
   const updateStatusMutation = useMutation({
     mutationFn: async (newStatus: string) => {
@@ -257,11 +258,17 @@ export function JobCard({ job }: JobCardProps) {
           <ApplyButton
             url={job.url}
             size="xs"
-            onApply={() => {
-              if (job.status !== "applied") {
-                updateStatusMutation.mutate("applied");
-              }
-            }}
+            label={isReadOnlyPostingAction ? "Check Posting" : "Apply"}
+            confirmOnOpen={!isReadOnlyPostingAction}
+            onApply={
+              isReadOnlyPostingAction
+                ? undefined
+                : () => {
+                    if (job.status !== "applied") {
+                      updateStatusMutation.mutate("applied");
+                    }
+                  }
+            }
           />
         </div>
       </div>

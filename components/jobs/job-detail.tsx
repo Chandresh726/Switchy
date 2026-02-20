@@ -63,6 +63,7 @@ const STATUS_OPTIONS = [
 
 export function JobDetail({ job, onClose }: JobDetailProps) {
   const queryClient = useQueryClient();
+  const isReadOnlyPostingAction = job.status === "applied" || job.status === "archived";
 
   const updateStatusMutation = useMutation({
     mutationFn: async (newStatus: string) => {
@@ -322,11 +323,17 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
             <div className="flex items-center gap-2">
               <ApplyButton
                 url={job.url}
-                onApply={() => {
-                  if (job.status !== "applied") {
-                    updateStatusMutation.mutate("applied");
-                  }
-                }}
+                label={isReadOnlyPostingAction ? "Check Posting" : "Apply"}
+                confirmOnOpen={!isReadOnlyPostingAction}
+                onApply={
+                  isReadOnlyPostingAction
+                    ? undefined
+                    : () => {
+                        if (job.status !== "applied") {
+                          updateStatusMutation.mutate("applied");
+                        }
+                      }
+                }
               />
             </div>
           </div>

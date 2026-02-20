@@ -78,6 +78,7 @@ export default function JobDetailPage() {
   });
 
   const job = jobData?.jobs?.[0];
+  const isReadOnlyPostingAction = job?.status === "applied" || job?.status === "archived";
 
   const updateStatusMutation = useMutation({
     mutationFn: async (newStatus: string) => {
@@ -317,11 +318,17 @@ export default function JobDetailPage() {
 
           <ApplyButton
             url={job.url}
-            onApply={() => {
-              if (job.status !== "applied") {
-                updateStatusMutation.mutate("applied");
-              }
-            }}
+            label={isReadOnlyPostingAction ? "Check Posting" : "Apply"}
+            confirmOnOpen={!isReadOnlyPostingAction}
+            onApply={
+              isReadOnlyPostingAction
+                ? undefined
+                : () => {
+                    if (job.status !== "applied") {
+                      updateStatusMutation.mutate("applied");
+                    }
+                  }
+            }
           />
         </div>
       </div>
