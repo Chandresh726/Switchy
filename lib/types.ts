@@ -1,4 +1,5 @@
 import type { AIProvider } from "@/lib/ai/providers/types";
+import type { ProviderModelDefinition, ProviderModelsResponse } from "@/lib/ai/providers/model-catalog";
 
 export interface Provider {
   id: string;
@@ -14,4 +15,4 @@ export interface ProviderWithDetails {
   updatedAt: Date;
 }
 
-export { AIProvider };
+export type { AIProvider, ProviderModelDefinition as ProviderModelOption, ProviderModelsResponse };

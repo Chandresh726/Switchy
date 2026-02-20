@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import { asc, eq } from "drizzle-orm";
+
+import { clearProviderModelsCache } from "@/lib/ai/providers/model-catalog";
 import { db } from "@/lib/db";
 import { aiProviders } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
 import { encryptApiKey } from "@/lib/encryption";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
     const provider = await db
@@ -66,6 +68,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       })
       .where(eq(aiProviders.id, id));
 
+    clearProviderModelsCache(id);
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Failed to update provider:", error);
@@ -73,7 +77,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
     
@@ -87,7 +91,36 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Provider not found" }, { status: 404 });
     }
 
+    const deletedProvider = existing[0];
+
     await db.delete(aiProviders).where(eq(aiProviders.id, id));
+    clearProviderModelsCache(id);
+
+    if (deletedProvider.isDefault) {
+      const remainingProviders = await db
+        .select()
+        .from(aiProviders)
+        .where(eq(aiProviders.isActive, true))
+        .orderBy(asc(aiProviders.createdAt));
+
+      if (remainingProviders.length > 0) {
+        await db
+          .update(aiProviders)
+          .set({
+            isDefault: false,
+            updatedAt: new Date(),
+          })
+          .where(eq(aiProviders.isActive, true));
+
+        await db
+          .update(aiProviders)
+          .set({
+            isDefault: true,
+            updatedAt: new Date(),
+          })
+          .where(eq(aiProviders.id, remainingProviders[0].id));
+      }
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

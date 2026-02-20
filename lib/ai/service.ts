@@ -1,6 +1,7 @@
 import { generateText, Output, type LanguageModel } from "ai";
 import { z } from "zod";
 import { getAIClientV2, getAIGenerationOptions, getDefaultProvider, getProviderById } from "./client";
+import { resolveProviderModelSelection } from "./providers/model-catalog";
 import { AIError } from "./shared/errors";
 import type { ReasoningEffort } from "./providers/types";
 import { db } from "@/lib/db";
@@ -47,12 +48,18 @@ export class AIService {
     let reasoningEffort = this.config.reasoningEffort;
     let providerId = this.config.providerId;
 
-    if (!modelId || !providerId) {
-      const featureSettings = await this.getFeatureSettings();
-      modelId = modelId ?? featureSettings.modelId;
-      reasoningEffort = reasoningEffort ?? featureSettings.reasoningEffort;
-      providerId = providerId ?? featureSettings.providerId;
-    }
+    const featureSettings = await this.getFeatureSettings();
+    modelId = modelId ?? featureSettings.modelId;
+    reasoningEffort = reasoningEffort ?? featureSettings.reasoningEffort;
+    providerId = providerId ?? featureSettings.providerId;
+
+    const resolvedSelection = await resolveProviderModelSelection({
+      providerId,
+      modelId,
+    });
+
+    modelId = resolvedSelection.modelId;
+    providerId = resolvedSelection.providerId;
 
     this.model = await getAIClientV2({
       modelId,
@@ -64,7 +71,7 @@ export class AIService {
   }
 
   private async getFeatureSettings(): Promise<{
-    modelId: string;
+    modelId?: string;
     reasoningEffort: ReasoningEffort;
     providerId?: string;
   }> {
@@ -97,23 +104,10 @@ export class AIService {
     const settingsMap = new Map(settingsResults.map((s) => [s.key, s.value]));
 
     return {
-      modelId: settingsMap.get(keys.model) ?? this.getDefaultModelForFeature(),
+      modelId: settingsMap.get(keys.model) ?? undefined,
       reasoningEffort: (settingsMap.get(keys.reasoning) as ReasoningEffort) ?? "medium",
       providerId: settingsMap.get(keys.provider) ?? undefined,
     };
-  }
-
-  private getDefaultModelForFeature(): string {
-    switch (this.config.feature) {
-      case "matcher":
-        return "gemini-3-flash-preview";
-      case "writing":
-        return "gemini-3-flash-preview";
-      case "resume_parser":
-        return "gemini-3-flash-preview";
-      default:
-        return "gemini-3-flash-preview";
-    }
   }
 
   getClient(): LanguageModel {

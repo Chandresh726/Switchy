@@ -6,10 +6,10 @@ import { eq } from "drizzle-orm";
 import { restartScheduler, stopScheduler, clearSchedulerEnabledCache, getSchedulerEnabled } from "@/lib/jobs/scheduler";
 
 const DEFAULT_SETTINGS: Record<string, string> = {
-  matcher_model: "gemini-3-flash-preview",
+  matcher_model: "",
   matcher_provider_id: "",
   matcher_reasoning_effort: "medium",
-  resume_parser_model: "gemini-3-flash-preview",
+  resume_parser_model: "",
   resume_parser_provider_id: "",
   resume_parser_reasoning_effort: "medium",
   matcher_bulk_enabled: "true",
@@ -33,7 +33,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   cover_letter_tone: "professional",
   cover_letter_length: "medium",
   cover_letter_focus: '["skills","experience","cultural_fit"]',
-  ai_writing_model: "gemini-3-flash-preview",
+  ai_writing_model: "",
   ai_writing_provider_id: "",
   ai_writing_reasoning_effort: "medium",
 };

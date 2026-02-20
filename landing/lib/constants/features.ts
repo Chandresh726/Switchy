@@ -27,7 +27,7 @@ export const FEATURES: FeatureItem[] = [
     icon: Zap,
     title: "Multi-Provider AI",
     description:
-      "Support for Anthropic, OpenAI, Gemini, Cerebras, Groq, OpenRouter, Modal, and NVIDIA NIM.",
+      "Support for Anthropic, OpenAI, Gemini, Cerebras, Groq, OpenRouter, and NVIDIA NIM.",
     color: "green-light",
   },
   {

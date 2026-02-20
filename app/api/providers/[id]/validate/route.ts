@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { aiProviders } from "@/lib/db/schema";
 import { decryptApiKey } from "@/lib/encryption";
-import { providerRegistry, getModelsForProvider } from "@/lib/ai/providers";
+import { providerRegistry } from "@/lib/ai/providers";
+import { AIError } from "@/lib/ai/shared/errors";
+import { getProviderModels } from "@/lib/ai/providers/model-catalog";
 import type { AIProvider } from "@/lib/ai/providers/types";
 import { eq } from "drizzle-orm";
 
@@ -10,7 +12,7 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export async function POST(_request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
 
@@ -38,7 +40,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const decryptedKey = p.apiKey ? decryptApiKey(p.apiKey) : undefined;
-    const models = getModelsForProvider(providerType);
+    const modelsResponse = await getProviderModels(id);
+    const models = modelsResponse.models;
 
     if (models.length === 0) {
       return NextResponse.json({ valid: false, error: "No models available" }, { status: 400 });
@@ -69,6 +72,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
   } catch (error) {
+    if (error instanceof AIError) {
+      const status = error.type === "provider_not_found" ? 404 : 400;
+      return NextResponse.json({ valid: false, error: error.message }, { status });
+    }
     console.error("Failed to validate provider:", error);
     return NextResponse.json({ error: "Failed to validate provider" }, { status: 500 });
   }

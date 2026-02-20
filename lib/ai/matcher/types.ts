@@ -50,7 +50,7 @@ export interface MatcherConfig {
 }
 
 export const DEFAULT_MATCHER_CONFIG: MatcherConfig = {
-  model: "gemini-3-flash-preview",
+  model: "",
   reasoningEffort: "medium",
   bulkEnabled: true,
   batchSize: 2,
@@ -66,17 +66,7 @@ export const DEFAULT_MATCHER_CONFIG: MatcherConfig = {
   autoMatchAfterScrape: true,
 };
 
-export const PROVIDER_DEFAULTS: Record<string, Partial<MatcherConfig>> = {
-  modal: {
-    concurrencyLimit: 1,
-    serializeOperations: true,
-    interRequestDelayMs: 1000,
-    timeoutMs: 90000,
-    backoffBaseDelay: 3000,
-    backoffMaxDelay: 60000,
-    circuitBreakerThreshold: 5,
-  },
-};
+export const PROVIDER_DEFAULTS: Record<string, Partial<MatcherConfig>> = {};
 
 export interface MatchJob {
   id: number;

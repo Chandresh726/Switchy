@@ -168,7 +168,7 @@ export const settings = sqliteTable("settings", {
 // AI Providers - User-configured AI provider instances
 export const aiProviders = sqliteTable("aiProviders", {
   id: text("id").primaryKey(), // UUID
-  provider: text("provider").notNull(), // "anthropic", "openai", "gemini_api_key", "openrouter", "cerebras", "modal", "groq", "nvidia"
+  provider: text("provider").notNull(), // "anthropic", "openai", "gemini_api_key", "openrouter", "cerebras", "groq", "nvidia"
   apiKey: text("api_key"), // Encrypted API key
   isActive: integer("is_active", { mode: "boolean" }).default(true),
   isDefault: integer("is_default", { mode: "boolean" }).default(false),

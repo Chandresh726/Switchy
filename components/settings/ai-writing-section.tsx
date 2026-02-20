@@ -1,17 +1,15 @@
 "use client";
 
-import { useMemo } from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { FileText, MessageCircle, Wand2, Save, Loader2 } from "lucide-react";
+import { AlertTriangle, FileText, Loader2, MessageCircle, Save, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getDefaultModelForProvider, getModelsForProvider } from "@/lib/ai/providers/models";
 import { REASONING_EFFORT_OPTIONS } from "@/lib/ai/providers/metadata";
-import type { ReasoningEffort, AIProvider } from "@/lib/ai/providers/types";
-import type { Provider } from "@/lib/types";
+import type { ReasoningEffort } from "@/lib/ai/providers/types";
+import type { Provider, ProviderModelOption } from "@/lib/types";
 
 export interface AIWritingSettings {
   referralTone: string;
@@ -27,6 +25,10 @@ export interface AIWritingSettings {
 interface AIWritingSectionProps {
   availableProviders: Provider[];
   hasProviders: boolean;
+  models: ProviderModelOption[];
+  modelsLoading: boolean;
+  modelsError?: string;
+  modelsStale: boolean;
   aiWritingProviderId: string;
   onAIWritingProviderIdChange: (value: string) => void;
   aiWritingSettings: AIWritingSettings;
@@ -74,6 +76,10 @@ const DEFAULT_FOCUS = ["skills", "experience", "cultural_fit"];
 export function AIWritingSection({
   availableProviders,
   hasProviders,
+  models,
+  modelsLoading,
+  modelsError,
+  modelsStale,
   aiWritingProviderId,
   onAIWritingProviderIdChange,
   aiWritingSettings,
@@ -83,15 +89,7 @@ export function AIWritingSection({
   hasUnsavedChanges,
   settingsSaved,
 }: AIWritingSectionProps) {
-  const currentProvider = availableProviders.find(p => p.id === aiWritingProviderId);
-  const providerType = currentProvider?.provider as AIProvider | undefined;
-  const models = useMemo(() => {
-    if (!providerType) return [];
-    return getModelsForProvider(providerType);
-  }, [providerType]);
-
-  const defaultModel = getDefaultModelForProvider(providerType || "anthropic");
-  const currentModel = aiWritingSettings.aiWritingModel || defaultModel;
+  const currentModel = aiWritingSettings.aiWritingModel;
   const supportsReasoning = models.find(m => m.modelId === currentModel)?.supportsReasoning ?? false;
 
   const toggleFocus = (value: string) => {
@@ -139,12 +137,17 @@ export function AIWritingSection({
                 <Select 
                   value={currentModel} 
                   onValueChange={(value) => onAIWritingSettingsChange({ aiWritingModel: value })}
+                  disabled={modelsLoading || models.length === 0}
                 >
                   <SelectTrigger className="flex-1 bg-zinc-950/50 border-zinc-800">
                     <SelectValue placeholder="Select model" />
                   </SelectTrigger>
                   <SelectContent>
-                    {models.length === 0 ? (
+                    {modelsLoading ? (
+                      <SelectItem value="loading" disabled>Loading models...</SelectItem>
+                    ) : modelsError && models.length === 0 ? (
+                      <SelectItem value="error" disabled>Failed to load models</SelectItem>
+                    ) : models.length === 0 ? (
                       <SelectItem value="none" disabled>Select a provider first</SelectItem>
                     ) : (
                       models.map((model) => (
@@ -177,6 +180,18 @@ export function AIWritingSection({
                   </Select>
                 )}
               </div>
+              {modelsError && (
+                <p className="text-xs text-amber-400 flex items-center gap-2">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  {modelsError}
+                </p>
+              )}
+              {modelsStale && !modelsError && (
+                <p className="text-xs text-amber-400 flex items-center gap-2">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Showing cached model list (latest refresh failed)
+                </p>
+              )}
             </div>
 
             <Separator className="bg-zinc-800" />
@@ -329,7 +344,7 @@ export function AIWritingSection({
         </p>
         <Button
           onClick={onSave}
-          disabled={isSaving || !hasUnsavedChanges || !hasProviders}
+          disabled={isSaving || !hasUnsavedChanges || !hasProviders || !aiWritingSettings.aiWritingModel}
           className="bg-emerald-600 hover:bg-emerald-500 text-white min-w-[120px]"
         >
           {isSaving ? (

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { generateText } from "ai";
 import { eq, desc, asc, and, sql } from "drizzle-orm";
 import { getAIClientV2, getAIGenerationOptions } from "@/lib/ai/client";
+import { resolveProviderModelSelection } from "@/lib/ai/providers/model-catalog";
 import { db } from "@/lib/db";
 import { settings, aiGeneratedContent, aiGenerationHistory } from "@/lib/db/schema";
 import { fetchCandidateProfile, fetchJobWithCompany } from "@/lib/ai/writing/utils";
@@ -180,9 +181,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Profile not found. Please set up your profile first." }, { status: 400 });
     }
 
-    const aiWritingModel = settingsMap.get("ai_writing_model") || "gemini-3-flash-preview";
+    const resolvedSelection = await resolveProviderModelSelection({
+      providerId: settingsMap.get("ai_writing_provider_id") || undefined,
+      modelId: settingsMap.get("ai_writing_model") || undefined,
+    });
+
+    const aiWritingModel = resolvedSelection.modelId;
     const aiWritingReasoningEffort = settingsMap.get("ai_writing_reasoning_effort") || "medium";
-    const aiWritingProviderId = settingsMap.get("ai_writing_provider_id") || undefined;
+    const aiWritingProviderId = resolvedSelection.providerId;
 
     const model = await getAIClientV2({ modelId: aiWritingModel, reasoningEffort: aiWritingReasoningEffort as "low" | "medium" | "high" | undefined, providerId: aiWritingProviderId });
     const providerOptions = await getAIGenerationOptions(aiWritingModel, aiWritingReasoningEffort, aiWritingProviderId);

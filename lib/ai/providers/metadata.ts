@@ -56,13 +56,6 @@ export const PROVIDER_METADATA: Record<AIProvider, ProviderMetadata> = {
     apiKeyUrl: "https://cloud.cerebras.ai/platform/api-keys",
     freeTierNote: "Provides free models with rate limits depending on account tier.",
   },
-  modal: {
-    id: "modal",
-    displayName: "Modal",
-    requiresApiKey: true,
-    apiKeyUrl: "https://modal.com/settings?tab=tokens",
-    freeTierNote: "You may be charged based on your usage and selected model pricing.",
-  },
   groq: {
     id: "groq",
     displayName: "Groq",

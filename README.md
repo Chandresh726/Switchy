@@ -22,7 +22,6 @@ It helps you discover jobs from multiple ATS platforms, match them against your 
 - Google Gemini
 - OpenRouter
 - Cerebras
-- Modal
 - Groq
 - NVIDIA (NIM)
 

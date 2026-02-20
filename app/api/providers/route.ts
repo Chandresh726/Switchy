@@ -1,10 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
+import { eq } from "drizzle-orm";
+
+import { getProviderModels } from "@/lib/ai/providers/model-catalog";
 import { db } from "@/lib/db";
-import { aiProviders } from "@/lib/db/schema";
+import { aiProviders, settings } from "@/lib/db/schema";
 import { encryptApiKey } from "@/lib/encryption";
 import { getProviderMetadata } from "@/lib/ai/providers/metadata";
-import { eq } from "drizzle-orm";
-import { randomUUID } from "crypto";
+
+async function upsertSetting(key: string, value: string): Promise<void> {
+  const existing = await db.select().from(settings).where(eq(settings.key, key)).limit(1);
+
+  if (existing.length > 0) {
+    await db
+      .update(settings)
+      .set({ value, updatedAt: new Date() })
+      .where(eq(settings.key, key));
+  } else {
+    await db.insert(settings).values({ key, value, updatedAt: new Date() });
+  }
+}
 
 export async function GET() {
   try {
@@ -46,11 +61,7 @@ export async function POST(request: NextRequest) {
       encryptedApiKey = encryptApiKey(apiKey);
     }
 
-    const existingProviders = await db
-      .select()
-      .from(aiProviders)
-      .where(eq(aiProviders.provider, providerType));
-
+    const existingProviders = await db.select().from(aiProviders);
     const isFirstProvider = existingProviders.length === 0;
 
     const newProvider = await db
@@ -64,6 +75,37 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
+    let autoConfiguredDefaults = false;
+    let autoConfiguredModelId: string | undefined;
+    let autoConfiguredWarning: string | undefined;
+
+    if (isFirstProvider) {
+      try {
+        const providerModels = await getProviderModels(newProvider[0].id, { forceRefresh: true });
+        const firstModelId = providerModels.models[0]?.modelId;
+
+        if (!firstModelId) {
+          autoConfiguredWarning = "Provider added, but no text/chat model was available for auto-configuration.";
+        } else {
+          await Promise.all([
+            upsertSetting("matcher_provider_id", newProvider[0].id),
+            upsertSetting("resume_parser_provider_id", newProvider[0].id),
+            upsertSetting("ai_writing_provider_id", newProvider[0].id),
+            upsertSetting("matcher_model", firstModelId),
+            upsertSetting("resume_parser_model", firstModelId),
+            upsertSetting("ai_writing_model", firstModelId),
+          ]);
+
+          autoConfiguredDefaults = true;
+          autoConfiguredModelId = firstModelId;
+        }
+      } catch (error) {
+        autoConfiguredWarning = error instanceof Error
+          ? `Provider added, but defaults could not be auto-configured: ${error.message}`
+          : "Provider added, but defaults could not be auto-configured.";
+      }
+    }
+
     return NextResponse.json({
       id: newProvider[0].id,
       provider: newProvider[0].provider,
@@ -72,6 +114,9 @@ export async function POST(request: NextRequest) {
       hasApiKey: !!encryptedApiKey,
       createdAt: newProvider[0].createdAt,
       updatedAt: newProvider[0].updatedAt,
+      autoConfiguredDefaults,
+      autoConfiguredModelId,
+      autoConfiguredWarning,
     });
   } catch (error) {
     console.error("Failed to create provider:", error);

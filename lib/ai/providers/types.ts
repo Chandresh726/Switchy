@@ -9,7 +9,6 @@ export type AIProvider =
   | "gemini_api_key"
   | "openrouter"
   | "cerebras"
-  | "modal"
   | "groq"
   | "nvidia";
 
@@ -102,7 +101,6 @@ export interface AIClientSettings {
   openrouterApiKey?: string;
   cerebrasApiKey?: string;
   openaiApiKey?: string;
-  modalApiKey?: string;
   groqApiKey?: string;
   nvidiaApiKey?: string;
 }

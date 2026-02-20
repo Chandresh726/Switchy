@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Eye, EyeOff, Key, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, Eye, EyeOff, Key, Loader2, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 
 import {
   AlertDialog,
@@ -34,6 +34,7 @@ interface AIProvidersManagerProps {
   onAddProvider: (provider: string, apiKey?: string) => Promise<void>;
   onDeleteProvider: (id: string) => Promise<void>;
   onUpdateProviderApiKey: (id: string, apiKey?: string) => Promise<void>;
+  onRefreshProviderModels: (id: string) => Promise<void>;
 }
 
 interface ProviderApiKeyHelpProps {
@@ -65,6 +66,7 @@ export function AIProvidersManager({
   onAddProvider,
   onDeleteProvider,
   onUpdateProviderApiKey,
+  onRefreshProviderModels,
 }: AIProvidersManagerProps) {
   const [isAddingProvider, setIsAddingProvider] = useState(false);
   const [selectedProviderType, setSelectedProviderType] = useState<string>("");
@@ -78,6 +80,7 @@ export function AIProvidersManager({
   const [isEditLoading, setIsEditLoading] = useState(false);
   const [showEditApiKey, setShowEditApiKey] = useState(false);
   const [isFetchingApiKey, setIsFetchingApiKey] = useState(false);
+  const [refreshingProviderIds, setRefreshingProviderIds] = useState<Record<string, boolean>>({});
 
   const providerMetadata = getAllProviderMetadata();
   const selectedProviderMetadata = providerMetadata.find((p) => p.id === selectedProviderType);
@@ -166,6 +169,15 @@ export function AIProvidersManager({
     setShowEditApiKey(false);
   };
 
+  const handleRefreshProviderModels = async (providerId: string) => {
+    setRefreshingProviderIds((prev) => ({ ...prev, [providerId]: true }));
+    try {
+      await onRefreshProviderModels(providerId);
+    } finally {
+      setRefreshingProviderIds((prev) => ({ ...prev, [providerId]: false }));
+    }
+  };
+
   return (
     <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
       <CardHeader>
@@ -196,6 +208,8 @@ export function AIProvidersManager({
               const metadata = getProviderMeta(provider.provider);
               const isEditing = editingProviderId === provider.id;
               const requiresApiKey = metadata?.requiresApiKey ?? true;
+              const isRefreshingModels = !!refreshingProviderIds[provider.id];
+              const canRefreshModels = !requiresApiKey || provider.hasApiKey;
 
               return (
                 <div
@@ -283,6 +297,15 @@ export function AIProvidersManager({
                             Connected
                           </Badge>
                         )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleRefreshProviderModels(provider.id)}
+                          title="Refresh models"
+                          disabled={isRefreshingModels || !canRefreshModels}
+                        >
+                          <RefreshCw className={`h-4 w-4 text-zinc-500 hover:text-white ${isRefreshingModels ? "animate-spin" : ""}`} />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"

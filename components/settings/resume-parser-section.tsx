@@ -15,16 +15,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Terminal } from "lucide-react";
-import { getModelsForProvider, modelSupportsReasoning } from "@/lib/ai/providers/models";
+import { AlertTriangle, Terminal } from "lucide-react";
 import { REASONING_EFFORT_OPTIONS } from "@/lib/ai/providers/metadata";
-import type { ReasoningEffort, AIProvider } from "@/lib/ai/providers/types";
-import type { Provider } from "@/lib/types";
-import { useMemo } from "react";
+import type { ReasoningEffort } from "@/lib/ai/providers/types";
+import type { Provider, ProviderModelOption } from "@/lib/types";
 
 interface ResumeParserSectionProps {
   availableProviders: Provider[];
   hasProviders: boolean;
+  models: ProviderModelOption[];
+  modelsLoading: boolean;
+  modelsError?: string;
+  modelsStale: boolean;
   resumeParserProviderId: string;
   onResumeParserProviderIdChange: (value: string) => void;
   resumeParserModel: string;
@@ -36,6 +38,10 @@ interface ResumeParserSectionProps {
 export function ResumeParserSection({
   availableProviders,
   hasProviders,
+  models,
+  modelsLoading,
+  modelsError,
+  modelsStale,
   resumeParserProviderId,
   onResumeParserProviderIdChange,
   resumeParserModel,
@@ -43,14 +49,7 @@ export function ResumeParserSection({
   resumeParserReasoningEffort,
   onResumeParserReasoningEffortChange,
 }: ResumeParserSectionProps) {
-  const currentProvider = availableProviders.find(p => p.id === resumeParserProviderId);
-  const providerType = currentProvider?.provider as AIProvider | undefined;
-  const models = useMemo(() => {
-    if (!providerType) return [];
-    return getModelsForProvider(providerType);
-  }, [providerType]);
-
-  const supportsReasoning = providerType ? modelSupportsReasoning(providerType, resumeParserModel) : false;
+  const supportsReasoning = models.find((model) => model.modelId === resumeParserModel)?.supportsReasoning ?? false;
 
   return (
     <Card className="border-zinc-800 bg-zinc-900/50 rounded-xl">
@@ -84,12 +83,20 @@ export function ResumeParserSection({
             <div className="space-y-2">
               <Label>Model</Label>
               <div className="flex gap-2">
-                <Select value={resumeParserModel} onValueChange={onResumeParserModelChange}>
+                <Select
+                  value={resumeParserModel}
+                  onValueChange={onResumeParserModelChange}
+                  disabled={modelsLoading || models.length === 0}
+                >
                   <SelectTrigger className="flex-1 bg-zinc-950/50 border-zinc-800">
                     <SelectValue placeholder="Select model" />
                   </SelectTrigger>
                   <SelectContent>
-                    {models.length === 0 ? (
+                    {modelsLoading ? (
+                      <SelectItem value="loading" disabled>Loading models...</SelectItem>
+                    ) : modelsError && models.length === 0 ? (
+                      <SelectItem value="error" disabled>Failed to load models</SelectItem>
+                    ) : models.length === 0 ? (
                       <SelectItem value="none" disabled>Select a provider first</SelectItem>
                     ) : (
                       models.map((model) => (
@@ -115,6 +122,18 @@ export function ResumeParserSection({
                   </Select>
                 )}
               </div>
+              {modelsError && (
+                <p className="text-xs text-amber-400 flex items-center gap-2">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  {modelsError}
+                </p>
+              )}
+              {modelsStale && !modelsError && (
+                <p className="text-xs text-amber-400 flex items-center gap-2">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Showing cached model list (latest refresh failed)
+                </p>
+              )}
             </div>
           </div>
         ) : (

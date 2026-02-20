@@ -1,6 +1,7 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { getAIClientV2, getAIGenerationOptions } from "./client";
+import { resolveProviderModelSelection } from "./providers/model-catalog";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -77,9 +78,14 @@ export async function parseResume(resumeText: string): Promise<ResumeData> {
       where: eq(settings.key, "resume_parser_provider_id"),
     }),
   ]);
-  const modelId = modelSetting?.value || "gemini-3-flash-preview";
+  const resolvedSelection = await resolveProviderModelSelection({
+    providerId: providerIdSetting?.value || undefined,
+    modelId: modelSetting?.value || undefined,
+  });
+
+  const modelId = resolvedSelection.modelId;
   const reasoningEffort = reasoningEffortSetting?.value || "medium";
-  const providerId = providerIdSetting?.value || undefined;
+  const providerId = resolvedSelection.providerId;
 
   const model = await getAIClientV2({ modelId, reasoningEffort: reasoningEffort as "low" | "medium" | "high" | undefined, providerId });
   const providerOptions = await getAIGenerationOptions(modelId, reasoningEffort, providerId);

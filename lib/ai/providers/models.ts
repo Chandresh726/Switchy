@@ -162,14 +162,6 @@ export const PROVIDER_MODELS: Record<AIProvider, ModelDefinition[]> = {
       supportsReasoning: false,
     },
   ],
-  modal: [
-    {
-      modelId: "zai-org/GLM-5-FP8",
-      label: "GLM-5 FP8",
-      description: "Frontier open model via Modal",
-      supportsReasoning: true,
-    },
-  ],
   groq: [
     {
       modelId: "llama-3.1-8b-instant",

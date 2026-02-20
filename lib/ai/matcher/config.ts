@@ -3,6 +3,7 @@ import { inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { getProviderById } from "@/lib/ai/client";
+import { resolveProviderModelSelection } from "@/lib/ai/providers/model-catalog";
 import {
   type MatcherConfig,
   DEFAULT_MATCHER_CONFIG,
@@ -46,21 +47,36 @@ export const getMatcherConfig = cache(async (): Promise<MatcherConfig & { provid
 
   const settingsMap = new Map(dbSettings.map((s) => [s.key, s.value]));
 
-  const storedProviderId = settingsMap.get("matcher_provider_id");
-  let currentProvider = "anthropic";
-  
-  if (storedProviderId) {
-    const provider = await getProviderById(storedProviderId);
-    if (provider) {
-      currentProvider = provider.provider;
+  const storedProviderId = settingsMap.get("matcher_provider_id") || undefined;
+  const storedModelId = settingsMap.get("matcher_model") || undefined;
+
+  let resolvedProviderId = storedProviderId;
+  let resolvedModelId = storedModelId ?? DEFAULT_MATCHER_CONFIG.model;
+  let currentProvider = "";
+
+  try {
+    const resolvedSelection = await resolveProviderModelSelection({
+      providerId: storedProviderId,
+      modelId: storedModelId,
+    });
+
+    resolvedProviderId = resolvedSelection.providerId;
+    resolvedModelId = resolvedSelection.modelId;
+    currentProvider = resolvedSelection.provider;
+  } catch {
+    if (storedProviderId) {
+      const provider = await getProviderById(storedProviderId);
+      if (provider) {
+        currentProvider = provider.provider;
+      }
     }
   }
   
   const providerDefaults = PROVIDER_DEFAULTS[currentProvider] || {};
 
   return {
-    providerId: storedProviderId || undefined,
-    model: settingsMap.get("matcher_model") || DEFAULT_MATCHER_CONFIG.model,
+    providerId: resolvedProviderId,
+    model: resolvedModelId,
     reasoningEffort:
       settingsMap.get("matcher_reasoning_effort") ||
       DEFAULT_MATCHER_CONFIG.reasoningEffort,
