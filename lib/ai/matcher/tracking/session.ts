@@ -1,4 +1,4 @@
-import { eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { jobs, profile, skills, experience, education, matchSessions, matchLogs } from "@/lib/db/schema";
@@ -80,7 +80,7 @@ export async function createMatchSession(
     jobsSucceeded: 0,
     jobsFailed: 0,
     errorCount: 0,
-    startedAt: null,
+    startedAt: new Date(),
   });
 
   return sessionId;
@@ -104,6 +104,29 @@ export async function updateMatchSession(
       ...(updates.status === "completed" ? { completedAt: new Date() } : {}),
     })
     .where(eq(matchSessions.id, sessionId));
+}
+
+export async function updateMatchSessionIfActive(
+  sessionId: string,
+  updates: {
+    status?: "in_progress" | "completed" | "failed";
+    jobsCompleted?: number;
+    jobsSucceeded?: number;
+    jobsFailed?: number;
+    errorCount?: number;
+    startedAt?: Date;
+  }
+): Promise<boolean> {
+  const updated = await db
+    .update(matchSessions)
+    .set({
+      ...updates,
+      ...(updates.status === "completed" ? { completedAt: new Date() } : {}),
+    })
+    .where(and(eq(matchSessions.id, sessionId), eq(matchSessions.status, "in_progress")))
+    .returning({ id: matchSessions.id });
+
+  return updated.length > 0;
 }
 
 export async function logMatchSuccess(

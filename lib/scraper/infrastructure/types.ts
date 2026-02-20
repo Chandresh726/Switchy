@@ -70,6 +70,8 @@ export interface IScraperRepository {
   updateCompany(id: number, updates: CompanyUpdate): Promise<void>;
   
   createSession(session: ScrapeSessionCreate): Promise<void>;
+  isSessionInProgress(id: string): Promise<boolean>;
+  stopSession(id: string): Promise<boolean>;
   updateSessionProgress(id: string, progress: SessionProgressUpdate): Promise<void>;
   completeSession(id: string, hasFailures: boolean): Promise<void>;
   

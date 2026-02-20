@@ -2,7 +2,7 @@ import { z } from "zod";
 import { BULK_MATCH_SYSTEM_PROMPT, buildBulkMatchPrompt } from "../prompts";
 import { generateStructured } from "../generation";
 import { retryWithBackoff, withTimeout, isServerError, isRateLimitError, categorizeError } from "../resilience";
-import type { StrategyResultMap, BulkMatchResult, MatchJob } from "../types";
+import type { StrategyResultItem, StrategyResultMap, BulkMatchResult, MatchJob } from "../types";
 import { BulkMatchResultSchema } from "../types";
 import { chunkArray } from "../utils";
 import type { BulkStrategy } from "./types";
@@ -41,7 +41,7 @@ function validateBatchResponse(batchResults: BulkMatchResult[], batchJobs: Match
 }
 
 export const bulkStrategy: BulkStrategy = async (ctx) => {
-  const { config, model, providerOptions, circuitBreaker, candidateProfile, jobs, onProgress } = ctx;
+  const { config, model, providerOptions, circuitBreaker, candidateProfile, jobs, onProgress, onResult, shouldStop } = ctx;
 
   const results: StrategyResultMap = new Map();
   
@@ -54,11 +54,28 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
   let succeeded = 0;
   let failed = 0;
 
+  const reportResult = async (jobId: number, item: StrategyResultItem) => {
+    if (!onResult) return;
+
+    try {
+      await onResult(jobId, item);
+    } catch (error) {
+      console.error(`[BulkStrategy] Failed to report result for job ${jobId}:`, error);
+    }
+  };
+
   for (const batch of batches) {
+    if (shouldStop && await shouldStop()) {
+      console.log("[BulkStrategy] Stop requested, ending remaining batches");
+      break;
+    }
+
     if (!circuitBreaker.canExecute()) {
       console.log(`[BulkStrategy] Circuit breaker open, marking ${batch.length} jobs as failed`);
       for (const job of batch) {
-        results.set(job.id, { error: new Error("Circuit breaker open - too many failures"), duration: 0 });
+        const item = { error: new Error("Circuit breaker open - too many failures"), duration: 0 };
+        results.set(job.id, item);
+        await reportResult(job.id, item);
         failed++;
       }
       completed += batch.length;
@@ -82,7 +99,7 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
       const successfulJobIds = new Set<number>();
       for (const result of batchResults) {
         const jobDuration = Math.round(batchDuration / batch.length);
-        results.set(result.jobId, {
+        const item = {
           result: {
             score: result.score,
             reasons: result.reasons,
@@ -91,7 +108,9 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
             recommendations: result.recommendations,
           },
           duration: jobDuration,
-        });
+        };
+        results.set(result.jobId, item);
+        await reportResult(result.jobId, item);
         successfulJobIds.add(result.jobId);
         succeeded++;
         completed++;
@@ -101,10 +120,12 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
 
       for (const job of batch) {
         if (!successfulJobIds.has(job.id)) {
-          results.set(job.id, {
+          const item = {
             error: new Error("AI did not return match result for this job"),
             duration: 0,
-          });
+          };
+          results.set(job.id, item);
+          await reportResult(job.id, item);
           failed++;
           completed++;
           onProgress?.(completed, jobs.length, succeeded, failed);
@@ -120,7 +141,9 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
       console.error(`[BulkStrategy] Batch failed: ${errorObj.message} (type: ${errorType})`);
 
       for (const job of batch) {
-        results.set(job.id, { error: errorObj, duration: 0 });
+        const item = { error: errorObj, duration: 0 };
+        results.set(job.id, item);
+        await reportResult(job.id, item);
         failed++;
         completed++;
         onProgress?.(completed, jobs.length, succeeded, failed);

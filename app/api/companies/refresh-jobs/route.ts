@@ -41,6 +41,11 @@ export async function POST(request: NextRequest) {
     let completed = 0;
 
     for (const company of selectedCompanies) {
+      const isSessionActive = await repository.isSessionInProgress(sessionId);
+      if (!isSessionActive) {
+        break;
+      }
+
       const result = await orchestrator.scrapeCompany(company.id, {
         sessionId,
         triggerSource: "manual",
@@ -59,7 +64,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    await repository.completeSession(sessionId, false);
+    const shouldCompleteSession = await repository.isSessionInProgress(sessionId);
+    if (shouldCompleteSession) {
+      await repository.completeSession(sessionId, false);
+    }
 
     return NextResponse.json({
       success: true,

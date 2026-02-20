@@ -14,6 +14,7 @@ import {
   Building2,
   Trash2,
   Play,
+  Square,
   Target,
 } from "lucide-react";
 import {
@@ -29,6 +30,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
+import {
+  formatDurationFromDates,
+  formatTime,
+  formatDate,
+} from "@/lib/utils/format";
+import { getSessionStatusConfig } from "@/lib/utils/status-config";
 
 interface MatchSession {
   id: string;
@@ -50,64 +57,12 @@ interface MatchSessionCardProps {
   session: MatchSession;
 }
 
-const STATUS_CONFIG = {
-  completed: {
-    icon: CheckCircle,
-    label: "Completed",
-    color: "text-emerald-400",
-    bgColor: "bg-emerald-500/10",
-    borderColor: "border-emerald-500/20",
-  },
-  failed: {
-    icon: XCircle,
-    label: "Failed",
-    color: "text-red-400",
-    bgColor: "bg-red-500/10",
-    borderColor: "border-red-500/20",
-  },
-  in_progress: {
-    icon: Clock,
-    label: "In Progress",
-    color: "text-blue-400",
-    bgColor: "bg-blue-500/10",
-    borderColor: "border-blue-500/20",
-  },
-};
-
-function formatDuration(startedAt: Date | null, completedAt: Date | null): string {
-  if (!startedAt) return "-";
-  const end = completedAt ? new Date(completedAt) : new Date();
-  const start = new Date(startedAt);
-  const diffMs = end.getTime() - start.getTime();
-
-  if (diffMs < 1000) return `${diffMs}ms`;
-  if (diffMs < 60000) return `${(diffMs / 1000).toFixed(1)}s`;
-  return `${Math.floor(diffMs / 60000)}m ${Math.floor((diffMs % 60000) / 1000)}s`;
-}
-
-function formatTime(date: Date | null): string {
-  if (!date) return "-";
-  return new Date(date).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-}
-
-function formatDate(date: Date | null): string {
-  if (!date) return "-";
-  return new Date(date).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 export function MatchSessionCard({ session }: MatchSessionCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const queryClient = useQueryClient();
 
-  const statusConfig = STATUS_CONFIG[session.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.in_progress;
+  const statusConfig = getSessionStatusConfig(session.status);
   const StatusIcon = statusConfig.icon;
 
   const progress = session.jobsTotal
@@ -134,6 +89,63 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
       toast.error("Failed to delete match session");
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const markSessionStoppedInCache = () => {
+    const now = new Date();
+
+    queryClient.setQueryData([
+      "match-history",
+    ], (old: { sessions?: MatchSession[] } | undefined) => {
+      if (!old?.sessions) return old;
+      return {
+        ...old,
+        sessions: old.sessions.map((item) =>
+          item.id === session.id
+            ? { ...item, status: "failed", completedAt: now }
+            : item
+        ),
+      };
+    });
+
+    queryClient.setQueryData([
+      "match-history",
+      session.id,
+    ], (old: { session?: MatchSession } | undefined) => {
+      if (!old?.session) return old;
+      return {
+        ...old,
+        session: {
+          ...old.session,
+          status: "failed",
+          completedAt: now,
+        },
+      };
+    });
+  };
+
+  const handleStop = async () => {
+    setIsStopping(true);
+    markSessionStoppedInCache();
+
+    try {
+      const res = await fetch(`/api/match-history?sessionId=${encodeURIComponent(session.id)}`, {
+        method: "PATCH",
+      });
+
+      if (!res.ok) throw new Error("Failed to stop session");
+
+      toast.success("Stopping match session");
+      queryClient.invalidateQueries({ queryKey: ["match-history"] });
+      queryClient.invalidateQueries({ queryKey: ["match-history", session.id] });
+    } catch (error) {
+      console.error("Failed to stop session:", error);
+      toast.error("Failed to stop match session");
+      queryClient.invalidateQueries({ queryKey: ["match-history"] });
+      queryClient.invalidateQueries({ queryKey: ["match-history", session.id] });
+    } finally {
+      setIsStopping(false);
     }
   };
 
@@ -186,6 +198,23 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
             </div>
 
             <div className="flex items-center gap-2" onClick={handleDeleteAreaClick}>
+              {session.status === "in_progress" && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="h-8 w-8 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={handleStop}
+                  disabled={isStopping}
+                  title="Stop Session"
+                >
+                  {isStopping ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Square className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              )}
+
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
@@ -267,7 +296,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
             </Badge>
             <span className="flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5 text-zinc-400" />
-              {formatDuration(session.startedAt, session.completedAt)}
+              {formatDurationFromDates(session.startedAt, session.completedAt)}
             </span>
           </div>
         </div>

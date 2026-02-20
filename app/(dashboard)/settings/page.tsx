@@ -764,7 +764,9 @@ function SettingsContent() {
     queryKey: ["match-progress", matchSessionId],
     queryFn: async () => {
       if (!matchSessionId) return null;
-      const res = await fetch(`/api/jobs/match-unmatched?sessionId=${matchSessionId}`);
+      const res = await fetch(`/api/jobs/match-unmatched?sessionId=${matchSessionId}`, {
+        cache: "no-store",
+      });
       if (!res.ok) return null;
       return res.json();
     },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,10 +15,14 @@ import {
   Loader2,
   Play,
   Target,
+  Square,
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
+import { toast } from "sonner";
+import { formatDurationMs, formatDurationFromDates, formatDateTime } from "@/lib/utils/format";
+import { getSessionStatusConfig } from "@/lib/utils/status-config";
 
 interface MatchSession {
   id: string;
@@ -56,70 +60,21 @@ interface SessionDetailResponse {
   logs: MatchLog[];
 }
 
-const STATUS_CONFIG = {
-  completed: {
-    icon: CheckCircle,
-    label: "Completed",
-    color: "text-emerald-400",
-    bgColor: "bg-emerald-500/10",
-  },
-  failed: {
-    icon: XCircle,
-    label: "Failed",
-    color: "text-red-400",
-    bgColor: "bg-red-500/10",
-  },
-  in_progress: {
-    icon: Clock,
-    label: "In Progress",
-    color: "text-blue-400",
-    bgColor: "bg-blue-500/10",
-  },
-};
-
-function formatDuration(startedAt: Date | null, completedAt: Date | null): string {
-  if (!startedAt) return "-";
-  const end = completedAt ? new Date(completedAt) : new Date();
-  const start = new Date(startedAt);
-  const diffMs = end.getTime() - start.getTime();
-
-  if (diffMs < 1000) return `${diffMs}ms`;
-  if (diffMs < 60000) return `${(diffMs / 1000).toFixed(1)}s`;
-  return `${Math.floor(diffMs / 60000)}m ${Math.floor((diffMs % 60000) / 1000)}s`;
-}
-
-function formatDurationMs(ms: number | null): string {
-  if (ms == null) return "-";
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
-}
-
-function formatDateTime(date: Date | null): string {
-  if (!date) return "-";
-  return new Date(date).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-}
-
 interface MatchSessionDetailProps {
   sessionId: string;
 }
 
 export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery<SessionDetailResponse>({
     queryKey: ["match-history", sessionId],
     queryFn: async () => {
-      const res = await fetch(`/api/match-history?sessionId=${encodeURIComponent(sessionId)}`);
+      const res = await fetch(`/api/match-history?sessionId=${encodeURIComponent(sessionId)}`, {
+        cache: "no-store",
+      });
       if (!res.ok) throw new Error("Failed to fetch session details");
       const json = await res.json();
-      // Normalize date fields from ISO strings to Date objects
       return {
         session: {
           ...json.session,
@@ -134,7 +89,27 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
     },
     refetchInterval: (query) => {
       const session = query.state.data?.session;
-      return session?.status === "in_progress" ? 2000 : false;
+      if (!session) return 1000;
+      return session.status === "in_progress" ? 1000 : false;
+    },
+    refetchIntervalInBackground: true,
+  });
+
+  const stopMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/match-history?sessionId=${encodeURIComponent(sessionId)}`, {
+        method: "PATCH",
+      });
+      if (!res.ok) throw new Error("Failed to stop session");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success("Stopping match session");
+      queryClient.invalidateQueries({ queryKey: ["match-history"] });
+      queryClient.invalidateQueries({ queryKey: ["match-history", sessionId] });
+    },
+    onError: () => {
+      toast.error("Failed to stop match session");
     },
   });
 
@@ -177,11 +152,14 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
   }
 
   const { session, logs } = data;
-  const statusConfig = STATUS_CONFIG[session.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.in_progress;
+  const statusConfig = getSessionStatusConfig(session.status);
   const StatusIcon = statusConfig.icon;
 
   const successRate = session.jobsTotal
     ? Math.round(((session.jobsSucceeded || 0) / session.jobsTotal) * 100)
+    : 0;
+  const progress = session.jobsTotal
+    ? Math.round(((session.jobsCompleted || 0) / session.jobsTotal) * 100)
     : 0;
 
   const failedLogs = logs.filter((l) => l.status === "failed");
@@ -197,16 +175,30 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
             Back to Match History
           </Button>
         </Link>
-        <Button
-          variant="outline"
-          size="sm"
-          className="border-red-500/20 text-red-400 hover:bg-red-500/10 hover:text-red-300"
-          onClick={() => deleteMutation.mutate()}
-          disabled={deleteMutation.isPending}
-        >
-          <Trash2 className="mr-2 h-4 w-4" />
-          {deleteMutation.isPending ? "Deleting..." : "Delete Session"}
-        </Button>
+        <div className="flex items-center gap-2">
+          {session.status === "in_progress" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-amber-500/20 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
+              onClick={() => stopMutation.mutate()}
+              disabled={stopMutation.isPending}
+            >
+              <Square className="mr-2 h-4 w-4" />
+              {stopMutation.isPending ? "Stopping..." : "Stop Session"}
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-500/20 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+            onClick={() => deleteMutation.mutate()}
+            disabled={deleteMutation.isPending}
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            {deleteMutation.isPending ? "Deleting..." : "Delete Session"}
+          </Button>
+        </div>
       </div>
 
       {/* Session Overview Card */}
@@ -253,6 +245,22 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
             {statusConfig.label}
           </Badge>
         </div>
+
+        {/* Progress Bar */}
+        {session.status === "in_progress" && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between text-xs text-zinc-400 mb-1.5">
+              <span>Matching Jobs...</span>
+              <span>{progress}%</span>
+            </div>
+            <div className="h-2 w-full rounded-full bg-zinc-800 overflow-hidden">
+              <div
+                className="h-full bg-blue-500 transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Summary Stats Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -303,7 +311,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
             <Clock className="h-4 w-4" />
             <span>Duration:</span>
             <span className="text-white font-medium">
-              {formatDuration(session.startedAt, session.completedAt)}
+              {formatDurationFromDates(session.startedAt, session.completedAt)}
             </span>
           </div>
         </div>

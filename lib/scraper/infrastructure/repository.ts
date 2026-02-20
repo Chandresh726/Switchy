@@ -164,6 +164,28 @@ export class DrizzleScraperRepository implements IScraperRepository {
     });
   }
 
+  async isSessionInProgress(id: string): Promise<boolean> {
+    const [session] = await db
+      .select({ status: scrapeSessions.status })
+      .from(scrapeSessions)
+      .where(eq(scrapeSessions.id, id));
+
+    return session?.status === "in_progress";
+  }
+
+  async stopSession(id: string): Promise<boolean> {
+    const updated = await db
+      .update(scrapeSessions)
+      .set({
+        status: "failed",
+        completedAt: new Date(),
+      })
+      .where(and(eq(scrapeSessions.id, id), eq(scrapeSessions.status, "in_progress")))
+      .returning({ id: scrapeSessions.id });
+
+    return updated.length > 0;
+  }
+
   async updateSessionProgress(id: string, progress: SessionProgressUpdate): Promise<void> {
     await db
       .update(scrapeSessions)
@@ -173,7 +195,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
         totalJobsAdded: progress.totalJobsAdded,
         totalJobsFiltered: progress.totalJobsFiltered,
       })
-      .where(eq(scrapeSessions.id, id));
+      .where(and(eq(scrapeSessions.id, id), eq(scrapeSessions.status, "in_progress")));
   }
 
   async completeSession(id: string, hasFailures: boolean): Promise<void> {
@@ -183,7 +205,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
         status: hasFailures ? "failed" : "completed",
         completedAt: new Date(),
       })
-      .where(eq(scrapeSessions.id, id));
+      .where(and(eq(scrapeSessions.id, id), eq(scrapeSessions.status, "in_progress")));
   }
 
   async createScrapingLog(log: ScrapingLogCreate): Promise<number> {

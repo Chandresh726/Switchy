@@ -5,6 +5,7 @@ export {
   getUnmatchedJobIds,
   createMatchSession,
   updateMatchSession,
+  updateMatchSessionIfActive,
   logMatchSuccess,
   logMatchFailure,
   finalizeMatchSession,

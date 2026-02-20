@@ -1,5 +1,12 @@
 import type { LanguageModel } from "ai";
-import type { MatcherConfig, MatchResult, MatchJob, CandidateProfile, StrategyResultMap } from "../types";
+import type {
+  MatcherConfig,
+  MatchResult,
+  MatchJob,
+  CandidateProfile,
+  StrategyResultItem,
+  StrategyResultMap,
+} from "../types";
 import type { CircuitBreaker } from "../resilience";
 
 export interface StrategyContext {
@@ -21,14 +28,25 @@ export type StrategyProgressCallback = (
   failed: number
 ) => void;
 
+export type StrategyResultCallback = (
+  jobId: number,
+  item: StrategyResultItem
+) => Promise<void> | void;
+
+export type ShouldStopCallback = () => Promise<boolean>;
+
 export interface BulkStrategyContext extends StrategyContext {
   jobs: MatchJob[];
   onProgress?: StrategyProgressCallback;
+  onResult?: StrategyResultCallback;
+  shouldStop?: ShouldStopCallback;
 }
 
 export interface ParallelStrategyContext extends StrategyContext {
   jobs: MatchJob[];
   onProgress?: StrategyProgressCallback;
+  onResult?: StrategyResultCallback;
+  shouldStop?: ShouldStopCallback;
 }
 
 export type SingleStrategy = (ctx: SingleStrategyContext) => Promise<MatchResult>;

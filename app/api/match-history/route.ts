@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { matchSessions, matchLogs, jobs, companies } from "@/lib/db/schema";
-import { eq, desc, count } from "drizzle-orm";
+import { and, eq, desc, count } from "drizzle-orm";
+import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
 /**
  * GET /api/match-history
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest) {
       if (!session) {
         return NextResponse.json(
           { error: "Session not found" },
-          { status: 404 }
+          { status: 404, headers: NO_STORE_HEADERS }
         );
       }
 
@@ -73,7 +74,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         session,
         logs,
-      });
+      }, { headers: NO_STORE_HEADERS });
     }
 
     // Return paginated list of sessions with stats
@@ -161,12 +162,12 @@ export async function GET(request: NextRequest) {
         avgDuration,
         totalJobsMatched,
       },
-    });
+    }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     console.error("[Match History API] GET error:", error);
     return NextResponse.json(
       { error: "Failed to fetch match history" },
-      { status: 500 }
+      { status: 500, headers: NO_STORE_HEADERS }
     );
   }
 }
@@ -177,19 +178,67 @@ export async function DELETE(request: NextRequest) {
     const sessionId = searchParams.get("sessionId");
 
     if (sessionId) {
-      // Delete specific session
       await db.delete(matchSessions).where(eq(matchSessions.id, sessionId));
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true }, { headers: NO_STORE_HEADERS });
     } else {
-      // Delete all sessions
       await db.delete(matchSessions);
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true }, { headers: NO_STORE_HEADERS });
     }
   } catch (error) {
     console.error("Failed to delete match history:", error);
     return NextResponse.json(
       { error: "Failed to delete match history" },
-      { status: 500 }
+      { status: 500, headers: NO_STORE_HEADERS }
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const sessionId = searchParams.get("sessionId");
+
+    if (!sessionId) {
+      return NextResponse.json(
+        { error: "sessionId is required" },
+        { status: 400, headers: NO_STORE_HEADERS }
+      );
+    }
+
+    const updated = await db
+      .update(matchSessions)
+      .set({
+        status: "failed",
+        completedAt: new Date(),
+      })
+      .where(and(eq(matchSessions.id, sessionId), eq(matchSessions.status, "in_progress")))
+      .returning({ id: matchSessions.id });
+
+    if (updated.length > 0) {
+      return NextResponse.json({ success: true, stopped: true }, { headers: NO_STORE_HEADERS });
+    }
+
+    const [session] = await db
+      .select({ id: matchSessions.id, status: matchSessions.status })
+      .from(matchSessions)
+      .where(eq(matchSessions.id, sessionId));
+
+    if (!session) {
+      return NextResponse.json(
+        { error: "Session not found" },
+        { status: 404, headers: NO_STORE_HEADERS }
+      );
+    }
+
+    return NextResponse.json(
+      { success: true, stopped: false, status: session.status },
+      { headers: NO_STORE_HEADERS }
+    );
+  } catch (error) {
+    console.error("Failed to stop match session:", error);
+    return NextResponse.json(
+      { error: "Failed to stop match session" },
+      { status: 500, headers: NO_STORE_HEADERS }
     );
   }
 }

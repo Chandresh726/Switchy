@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,9 +16,13 @@ import {
   AlertCircle,
   Loader2,
   Trash2,
+  Square,
 } from "lucide-react";
 import Link from "next/link";
 import { TRIGGER_LABELS } from "./constants";
+import { toast } from "sonner";
+import { formatDurationMs, formatDateTime } from "@/lib/utils/format";
+import { getLogStatusConfig, MATCHER_STATUS_CONFIG } from "@/lib/utils/status-config";
 
 interface SessionLog {
   id: number;
@@ -60,46 +64,20 @@ interface SessionDetailResponse {
   logs: SessionLog[];
 }
 
-const STATUS_CONFIG = {
-  success: {
+const SESSION_DETAIL_STATUS_CONFIG = {
+  completed: {
     icon: CheckCircle,
     color: "text-emerald-400",
   },
-  error: {
+  failed: {
     icon: XCircle,
     color: "text-red-400",
   },
-  partial: {
+  in_progress: {
     icon: AlertCircle,
     color: "text-yellow-400",
   },
 };
-
-const MATCHER_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  pending: { label: "Pending", color: "text-zinc-400" },
-  in_progress: { label: "In Progress", color: "text-blue-400" },
-  completed: { label: "Completed", color: "text-emerald-400" },
-  failed: { label: "Failed", color: "text-red-400" },
-};
-
-function formatDuration(ms: number | null): string {
-  if (!ms) return "-";
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
-}
-
-function formatDateTime(date: Date | null): string {
-  if (!date) return "-";
-  return new Date(date).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-}
 
 interface SessionDetailProps {
   sessionId: string;
@@ -107,17 +85,40 @@ interface SessionDetailProps {
 
 export function SessionDetail({ sessionId }: SessionDetailProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery<SessionDetailResponse>({
     queryKey: ["scrape-history", sessionId],
     queryFn: async () => {
-      const res = await fetch(`/api/scrape-history?sessionId=${sessionId}`);
+      const res = await fetch(`/api/scrape-history?sessionId=${sessionId}`, {
+        cache: "no-store",
+      });
       if (!res.ok) throw new Error("Failed to fetch session details");
       return res.json();
     },
     refetchInterval: (query) => {
-      // Refresh every 2 seconds if session is in progress
       const session = query.state.data?.session;
-      return session?.status === "in_progress" ? 2000 : false;
+      if (!session) return 1000;
+      return session.status === "in_progress" ? 1000 : false;
+    },
+    refetchIntervalInBackground: true,
+  });
+
+  const stopMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/scrape-history?sessionId=${encodeURIComponent(sessionId)}`, {
+        method: "PATCH",
+      });
+
+      if (!res.ok) throw new Error("Failed to stop session");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success("Stopping scrape session");
+      queryClient.invalidateQueries({ queryKey: ["scrape-history"] });
+      queryClient.invalidateQueries({ queryKey: ["scrape-history", sessionId] });
+    },
+    onError: () => {
+      toast.error("Failed to stop scrape session");
     },
   });
 
@@ -159,11 +160,14 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
 
   const { session, logs } = data;
   const sessionStatusConfig = session.status === "completed"
-    ? STATUS_CONFIG.success
+    ? SESSION_DETAIL_STATUS_CONFIG.completed
     : session.status === "failed"
-    ? STATUS_CONFIG.error
-    : STATUS_CONFIG.partial;
+    ? SESSION_DETAIL_STATUS_CONFIG.failed
+    : SESSION_DETAIL_STATUS_CONFIG.in_progress;
   const SessionStatusIcon = sessionStatusConfig.icon;
+  const progress = session.companiesTotal
+    ? Math.round(((session.companiesCompleted || 0) / session.companiesTotal) * 100)
+    : 0;
 
   return (
     <div className="space-y-6">
@@ -175,16 +179,30 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
             Back to History
           </Button>
         </Link>
-        <Button
-          variant="outline"
-          size="sm"
-          className="border-red-500/20 text-red-400 hover:bg-red-500/10 hover:text-red-300"
-          onClick={() => deleteMutation.mutate()}
-          disabled={deleteMutation.isPending}
-        >
-          <Trash2 className="mr-2 h-4 w-4" />
-          {deleteMutation.isPending ? "Deleting..." : "Delete Session"}
-        </Button>
+        <div className="flex items-center gap-2">
+          {session.status === "in_progress" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-amber-500/20 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
+              onClick={() => stopMutation.mutate()}
+              disabled={stopMutation.isPending}
+            >
+              <Square className="mr-2 h-4 w-4" />
+              {stopMutation.isPending ? "Stopping..." : "Stop Session"}
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-500/20 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+            onClick={() => deleteMutation.mutate()}
+            disabled={deleteMutation.isPending}
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            {deleteMutation.isPending ? "Deleting..." : "Delete Session"}
+          </Button>
+        </div>
       </div>
 
       {/* Session Overview Card */}
@@ -215,6 +233,22 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
             {session.status}
           </Badge>
         </div>
+
+        {/* Progress Bar */}
+        {session.status === "in_progress" && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between text-xs text-zinc-400 mb-1.5">
+              <span>Processing Companies...</span>
+              <span>{progress}%</span>
+            </div>
+            <div className="h-2 w-full rounded-full bg-zinc-800 overflow-hidden">
+              <div
+                className="h-full bg-blue-500 transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Summary Stats Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -270,7 +304,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
         <h3 className="text-sm font-medium text-zinc-400 mb-4 px-1">Company Logs</h3>
         <div className="space-y-3">
           {logs.map((log) => {
-            const logStatusConfig = STATUS_CONFIG[log.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.partial;
+            const logStatusConfig = getLogStatusConfig(log.status);
             const LogStatusIcon = logStatusConfig.icon;
             const matcherConfig = log.matcherStatus
               ? MATCHER_STATUS_CONFIG[log.matcherStatus] || MATCHER_STATUS_CONFIG.pending
@@ -332,7 +366,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-zinc-500">
                       <Clock className="h-3.5 w-3.5" />
-                      {formatDuration(log.duration)}
+                      {formatDurationMs(log.duration)}
                     </div>
                   </div>
                 </div>

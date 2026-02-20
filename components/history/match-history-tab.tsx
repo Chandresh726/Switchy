@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { MatchSessionCard } from "./match-session-card";
 import { Loader2, Sparkles } from "lucide-react";
+import { formatDurationMs, groupSessionsByDate } from "@/lib/utils/format";
 
 interface MatchSession {
   id: string;
@@ -35,60 +36,20 @@ interface MatchHistoryResponse {
   };
 }
 
-function formatDurationMs(ms: number): string {
-  if (!ms || ms <= 0) return "-";
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
-}
-
-function groupSessionsByDate(sessions: MatchSession[]): Map<string, MatchSession[]> {
-  const groups = new Map<string, MatchSession[]>();
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-
-  for (const session of sessions) {
-    if (!session.startedAt) continue;
-
-    const sessionDate = new Date(session.startedAt);
-    let label: string;
-
-    if (sessionDate.toDateString() === today.toDateString()) {
-      label = "Today";
-    } else if (sessionDate.toDateString() === yesterday.toDateString()) {
-      label = "Yesterday";
-    } else {
-      label = sessionDate.toLocaleDateString("en-US", {
-        weekday: "long",
-        month: "short",
-        day: "numeric",
-      });
-    }
-
-    if (!groups.has(label)) {
-      groups.set(label, []);
-    }
-    groups.get(label)!.push(session);
-  }
-
-  return groups;
-}
-
 export function MatchHistoryTab() {
   const { data, isLoading, error } = useQuery<MatchHistoryResponse>({
     queryKey: ["match-history"],
     queryFn: async () => {
-      const res = await fetch("/api/match-history");
+      const res = await fetch("/api/match-history", { cache: "no-store" });
       if (!res.ok) throw new Error("Failed to fetch match history");
       return res.json();
     },
     refetchInterval: (query) => {
-      // Refresh every 2 seconds if any session is in progress
       const sessions = query.state.data?.sessions || [];
       const hasInProgress = sessions.some((s) => s.status === "in_progress");
-      return hasInProgress ? 2000 : false;
+      return hasInProgress ? 1000 : 5000;
     },
+    refetchIntervalInBackground: true,
   });
 
   if (isLoading) {

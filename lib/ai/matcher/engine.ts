@@ -2,7 +2,14 @@ import type { MatchResult, MatchResultMap, MatchSessionResult, MatchProgressCall
 import { getMatcherConfig } from "./config";
 import { withQueue, getQueueStatus } from "./queue";
 import { executeMatch } from "./execution";
-import { createMatchSession, finalizeMatchSession, getUnmatchedJobIds, createProgressTracker, updateMatchSession } from "./tracking";
+import {
+  createMatchSession,
+  finalizeMatchSession,
+  getUnmatchedJobIds,
+  createProgressTracker,
+  getMatchSessionStatus,
+  updateMatchSessionIfActive,
+} from "./tracking";
 import type { StrategyProgressCallback } from "./strategies";
 
 export interface MatchEngine {
@@ -75,6 +82,23 @@ export async function createMatchEngine(): Promise<MatchEngine> {
         ? providedSessionId
         : await createMatchSession(jobIds, triggerSource, companyId);
       const progressTracker = createProgressTracker(jobIds.length, onProgress);
+      let progressWriteChain: Promise<void> = Promise.resolve();
+
+      const persistProgress = (completed: number, succeeded: number, failed: number) => {
+        progressWriteChain = progressWriteChain
+          .then(async () => {
+            await updateMatchSessionIfActive(sessionId, {
+              status: "in_progress",
+              jobsCompleted: completed,
+              jobsSucceeded: succeeded,
+              jobsFailed: failed,
+              errorCount: failed,
+            });
+          })
+          .catch((error) => {
+            console.error(`[MatchEngine] Failed to persist session progress for ${sessionId}:`, error);
+          });
+      };
 
       console.log(
         `[MatchEngine] Starting session ${sessionId} for ${jobIds.length} jobs (bulkEnabled=${config.bulkEnabled}, serializeOperations=${config.serializeOperations})`
@@ -84,15 +108,32 @@ export async function createMatchEngine(): Promise<MatchEngine> {
         const results = await withQueue(
           config,
           async () => {
-            await updateMatchSession(sessionId, { startedAt: new Date() });
+            const started = await updateMatchSessionIfActive(sessionId, {
+              startedAt: new Date(),
+              status: "in_progress",
+              jobsCompleted: 0,
+              jobsSucceeded: 0,
+              jobsFailed: 0,
+              errorCount: 0,
+            });
+
+            if (!started) {
+              return new Map();
+            }
+
             progressTracker.setPhase("matching");
 
             return executeMatch({
               config,
               jobIds,
               sessionId,
+              shouldStop: async () => {
+                const currentSession = await getMatchSessionStatus(sessionId);
+                return !currentSession || currentSession.status !== "in_progress";
+              },
               onProgress: (completed, total, succeeded, failed) => {
                 progressTracker.setStats({ completed, succeeded, failed });
+                persistProgress(completed, succeeded, failed);
               },
             });
           },
@@ -106,6 +147,17 @@ export async function createMatchEngine(): Promise<MatchEngine> {
         const failed = jobIds.length - succeeded;
 
         progressTracker.complete();
+        await progressWriteChain;
+
+        const currentSession = await getMatchSessionStatus(sessionId);
+        if (currentSession && currentSession.status !== "in_progress") {
+          return {
+            sessionId,
+            total: currentSession.jobsTotal ?? jobIds.length,
+            succeeded: currentSession.jobsSucceeded ?? 0,
+            failed: currentSession.jobsFailed ?? 0,
+          };
+        }
 
         console.log(
           `[MatchEngine] Session ${sessionId} completed: ${succeeded} succeeded, ${failed} failed`

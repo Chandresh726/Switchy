@@ -1,7 +1,9 @@
 import { db } from "@/lib/db";
 import { scrapeSessions, scrapingLogs, companies } from "@/lib/db/schema";
+import { getScrapingModule } from "@/lib/scraper";
 import { desc, eq, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
+import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,7 +20,7 @@ export async function GET(request: NextRequest) {
         .where(eq(scrapeSessions.id, sessionId));
 
       if (!session) {
-        return NextResponse.json({ error: "Session not found" }, { status: 404 });
+        return NextResponse.json({ error: "Session not found" }, { status: 404, headers: NO_STORE_HEADERS });
       }
 
       // Get all logs for this session with company info
@@ -49,7 +51,7 @@ export async function GET(request: NextRequest) {
         .where(eq(scrapingLogs.sessionId, sessionId))
         .orderBy(scrapingLogs.startedAt);
 
-      return NextResponse.json({ session, logs });
+      return NextResponse.json({ session, logs }, { headers: NO_STORE_HEADERS });
     }
 
     // Get all sessions with summary stats
@@ -87,12 +89,12 @@ export async function GET(request: NextRequest) {
         successRate: stats?.successRate || 0,
         avgDuration: stats?.avgDuration || 0,
       },
-    });
+    }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     console.error("Failed to fetch scrape history:", error);
     return NextResponse.json(
       { error: "Failed to fetch scrape history" },
-      { status: 500 }
+      { status: 500, headers: NO_STORE_HEADERS }
     );
   }
 }
@@ -103,19 +105,61 @@ export async function DELETE(request: NextRequest) {
     const sessionId = searchParams.get("sessionId");
 
     if (sessionId) {
-      // Delete specific session
       await db.delete(scrapeSessions).where(eq(scrapeSessions.id, sessionId));
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true }, { headers: NO_STORE_HEADERS });
     } else {
-      // Delete all sessions
       await db.delete(scrapeSessions);
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true }, { headers: NO_STORE_HEADERS });
     }
   } catch (error) {
     console.error("Failed to delete scrape history:", error);
     return NextResponse.json(
       { error: "Failed to delete scrape history" },
-      { status: 500 }
+      { status: 500, headers: NO_STORE_HEADERS }
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const sessionId = searchParams.get("sessionId");
+
+    if (!sessionId) {
+      return NextResponse.json(
+        { error: "sessionId is required" },
+        { status: 400, headers: NO_STORE_HEADERS }
+      );
+    }
+
+    const { repository } = getScrapingModule();
+    const stopped = await repository.stopSession(sessionId);
+
+    if (stopped) {
+      return NextResponse.json({ success: true, stopped: true }, { headers: NO_STORE_HEADERS });
+    }
+
+    const [session] = await db
+      .select({ id: scrapeSessions.id, status: scrapeSessions.status })
+      .from(scrapeSessions)
+      .where(eq(scrapeSessions.id, sessionId));
+
+    if (!session) {
+      return NextResponse.json(
+        { error: "Session not found" },
+        { status: 404, headers: NO_STORE_HEADERS }
+      );
+    }
+
+    return NextResponse.json(
+      { success: true, stopped: false, status: session.status },
+      { headers: NO_STORE_HEADERS }
+    );
+  } catch (error) {
+    console.error("Failed to stop scrape session:", error);
+    return NextResponse.json(
+      { error: "Failed to stop scrape session" },
+      { status: 500, headers: NO_STORE_HEADERS }
     );
   }
 }

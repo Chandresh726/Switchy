@@ -1,10 +1,10 @@
 import PQueue from "p-queue";
 import { singleStrategy } from "./single";
-import type { StrategyResultMap } from "../types";
+import type { StrategyResultItem, StrategyResultMap } from "../types";
 import type { ParallelStrategy } from "./types";
 
 export const parallelStrategy: ParallelStrategy = async (ctx) => {
-  const { config, jobs, onProgress } = ctx;
+  const { config, jobs, onProgress, onResult, shouldStop } = ctx;
 
   const results: StrategyResultMap = new Map();
   
@@ -22,19 +22,37 @@ export const parallelStrategy: ParallelStrategy = async (ctx) => {
   let succeeded = 0;
   let failed = 0;
 
+  const reportResult = async (jobId: number, item: StrategyResultItem) => {
+    if (!onResult) return;
+
+    try {
+      await onResult(jobId, item);
+    } catch (error) {
+      console.error(`[ParallelStrategy] Failed to report result for job ${jobId}:`, error);
+    }
+  };
+
   const jobPromises = jobs.map((job) =>
     queue.add(async () => {
+      if (shouldStop && await shouldStop()) {
+        return;
+      }
+
       const startTime = Date.now();
       try {
         const result = await singleStrategy({
           ...ctx,
           job,
         });
-        results.set(job.id, { result, duration: Date.now() - startTime });
+        const item = { result, duration: Date.now() - startTime };
+        results.set(job.id, item);
+        await reportResult(job.id, item);
         succeeded++;
       } catch (error) {
         const errorObj = error instanceof Error ? error : new Error(String(error));
-        results.set(job.id, { error: errorObj, duration: Date.now() - startTime });
+        const item = { error: errorObj, duration: Date.now() - startTime };
+        results.set(job.id, item);
+        await reportResult(job.id, item);
         failed++;
         console.error(`[ParallelStrategy] Job ${job.id} failed:`, errorObj.message);
       }
