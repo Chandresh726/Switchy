@@ -1,9 +1,8 @@
 "use client";
 
+import Link from "next/link";
+import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { CompanyForm } from "./company-form";
 import {
   Building2,
   ExternalLink,
@@ -15,13 +14,7 @@ import {
   Sparkles,
   CheckCircle2,
 } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,8 +25,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export interface Company {
   id: number;
@@ -53,6 +53,7 @@ interface CompanyListProps {
   selectionMode: boolean;
   selectedIds: number[];
   onToggleSelection: (id: number) => void;
+  onEditCompany: (company: Company) => void;
   onRefreshJobs: (companyId: number) => void;
   onRefreshMatches: (companyId: number) => void;
   isRefreshing: boolean;
@@ -132,49 +133,15 @@ export function CompanyList({
   selectionMode,
   selectedIds,
   onToggleSelection,
+  onEditCompany,
   onRefreshJobs,
   onRefreshMatches,
   isRefreshing,
   isMatching,
 }: CompanyListProps) {
   const queryClient = useQueryClient();
-  const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [deleteJobsCompanyId, setDeleteJobsCompanyId] = useState<number | null>(null);
-  const editFormRef = useRef<HTMLDivElement | null>(null);
   const suppressCloseAutoFocusRef = useRef(false);
-
-  const scrollToEditForm = () => {
-    const editForm = editFormRef.current;
-    if (!editForm) return;
-
-    const mainContent = document.getElementById("main-content");
-    if (mainContent) {
-      const mainRect = mainContent.getBoundingClientRect();
-      const formRect = editForm.getBoundingClientRect();
-      const targetTop = formRect.top - mainRect.top + mainContent.scrollTop - 12;
-
-      mainContent.scrollTo({
-        top: Math.max(targetTop, 0),
-        behavior: "smooth",
-      });
-      return;
-    }
-
-    editForm.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-  };
-
-  useEffect(() => {
-    if (!editingCompany) return;
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        scrollToEditForm();
-      });
-    });
-  }, [editingCompany]);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -245,16 +212,6 @@ export function CompanyList({
 
   return (
     <div className="space-y-4">
-      {editingCompany && (
-        <div ref={editFormRef} className="rounded-xl border border-border bg-card/70 p-6">
-          <CompanyForm
-            company={editingCompany}
-            onSuccess={() => setEditingCompany(null)}
-            onCancel={() => setEditingCompany(null)}
-          />
-        </div>
-      )}
-
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {companies.map((company) => {
           const isSelected = selectedIds.includes(company.id);
@@ -362,7 +319,7 @@ export function CompanyList({
                       onClick={(e) => {
                         e.stopPropagation();
                         suppressCloseAutoFocusRef.current = true;
-                        setEditingCompany(company);
+                        onEditCompany(company);
                       }}
                       className="cursor-pointer"
                     >

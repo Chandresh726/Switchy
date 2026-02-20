@@ -1,15 +1,17 @@
 "use client";
 
 import { Suspense, useState, useRef, useCallback, useMemo, useEffect } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { List, FileJson, Download, Upload, Loader2, X } from "lucide-react";
+import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
+import { CompanyFilters, type CompanyFilters as CompanyFiltersType } from "@/components/companies/company-filters";
 import { CompanyForm } from "@/components/companies/company-form";
+import { CompanyQuickAdd } from "@/components/companies/company-quick-add";
 import { CompanyList, type Company } from "@/components/companies/company-list";
 import { JsonEditor } from "@/components/companies/json-editor";
-import { CompanyFilters, type CompanyFilters as CompanyFiltersType } from "@/components/companies/company-filters";
-import { List, FileJson, Download, Upload, Loader2 } from "lucide-react";
-import { toast } from "sonner";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams, usePathname, useRouter } from "next/navigation";
 
 function parseFiltersFromParams(searchParams: URLSearchParams): CompanyFiltersType {
   return {
@@ -39,6 +41,8 @@ function CompaniesPageContent() {
   const filters = useMemo(() => parseFiltersFromParams(searchParams), [searchParams]);
   const [view, setView] = useState<"list" | "json">("list");
   const [isAdding, setIsAdding] = useState(false);
+  const [addPanelTab, setAddPanelTab] = useState<"quick" | "manual">("quick");
+  const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -71,6 +75,46 @@ function CompaniesPageContent() {
 
   const clearSelection = useCallback(() => {
     setSelectedIds([]);
+  }, []);
+
+  const scrollToPageTop = useCallback(() => {
+    const scrollToTop = (behavior: ScrollBehavior) => {
+      const mainContent = document.getElementById("main-content");
+      if (mainContent) {
+        mainContent.scrollTo({ top: 0, behavior });
+        return;
+      }
+
+      window.scrollTo({ top: 0, behavior });
+    };
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        scrollToTop("smooth");
+      });
+    });
+
+    window.setTimeout(() => {
+      scrollToTop("auto");
+    }, 320);
+  }, []);
+
+  const openAddCompanyPanel = useCallback(() => {
+    setEditingCompany(null);
+    setAddPanelTab("quick");
+    setIsAdding(true);
+  }, []);
+
+  const openEditCompanyPanel = useCallback((company: Company) => {
+    setEditingCompany(company);
+    setAddPanelTab("manual");
+    setIsAdding(true);
+    scrollToPageTop();
+  }, [scrollToPageTop]);
+
+  const closeAddPanel = useCallback(() => {
+    setIsAdding(false);
+    setEditingCompany(null);
   }, []);
 
   const toggleSelection = useCallback((id: number) => {
@@ -400,7 +444,7 @@ function CompaniesPageContent() {
               isActive: true,
             });
           }}
-          onAddCompany={() => setIsAdding(true)}
+          onAddCompany={openAddCompanyPanel}
           isRefreshing={bulkRefreshMutation.isPending}
           isMatching={bulkMatchMutation.isPending}
           isDeletingJobs={bulkDeleteJobsMutation.isPending}
@@ -410,11 +454,52 @@ function CompaniesPageContent() {
       )}
 
       {view === "list" && isAdding && (
-        <div className="rounded-xl border border-border bg-card/70 p-6">
-          <CompanyForm
-            onSuccess={() => setIsAdding(false)}
-            onCancel={() => setIsAdding(false)}
-          />
+        <div className="rounded-xl border border-border bg-card/70 p-4 sm:p-6">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center rounded-md border border-border bg-card p-1">
+              <Button
+                type="button"
+                size="sm"
+                variant={addPanelTab === "quick" ? "secondary" : "ghost"}
+                className="h-7 px-3"
+                onClick={() => {
+                  setEditingCompany(null);
+                  setAddPanelTab("quick");
+                }}
+              >
+                Quick Add
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={addPanelTab === "manual" ? "secondary" : "ghost"}
+                className="h-7 px-3"
+                onClick={() => setAddPanelTab("manual")}
+              >
+                Manual
+              </Button>
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="self-end sm:self-auto"
+              onClick={closeAddPanel}
+            >
+              <X className="mr-1.5 h-4 w-4" />
+              Close
+            </Button>
+          </div>
+
+          {addPanelTab === "quick" ? (
+            <CompanyQuickAdd existingCompanies={companies} />
+          ) : (
+            <CompanyForm
+              company={editingCompany ?? undefined}
+              onSuccess={closeAddPanel}
+            />
+          )}
         </div>
       )}
 
@@ -425,6 +510,7 @@ function CompaniesPageContent() {
           selectionMode={selectionMode}
           selectedIds={selectedIds}
           onToggleSelection={toggleSelection}
+          onEditCompany={openEditCompanyPanel}
           onRefreshJobs={(companyId) => bulkRefreshMutation.mutate([companyId])}
           onRefreshMatches={(companyId) => bulkMatchMutation.mutate([companyId])}
           isRefreshing={bulkRefreshMutation.isPending}

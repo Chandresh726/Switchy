@@ -1,0 +1,362 @@
+[
+  {
+    "name": "Skildai",
+    "careersUrl": "https://job-boards.greenhouse.io/skildai-careers",
+    "logoUrl": "https://images.prismic.io/sacra/aI0AvqTt2nPbZrw6_logo_www.skild.ai_1754071230540.jpeg?auto=format,compress",
+    "platform": "greenhouse",
+    "boardToken": "skildai-careers",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:37:56.000Z"
+  },
+  {
+    "name": "PayPal",
+    "careersUrl": "https://paypal.eightfold.ai/careers?domain=paypal.com&Codes=W-LINKEDIN&query=Software+Engineer&start=0&location=India&sort_by=timestamp&filter_include_remote=1",
+    "logoUrl": "https://upload.wikimedia.org/wikipedia/commons/a/a4/Paypal_2014_logo.png",
+    "platform": "eightfold",
+    "boardToken": "paypal.com",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:37:55.000Z"
+  },
+  {
+    "name": "Crowdstrike",
+    "careersUrl": "https://crowdstrike.wd5.myworkdayjobs.com/en-US/crowdstrikecareers/jobs?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e&Job_Family=1408861ee6e201641be2c2f6b000c00b",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRFfPTU9TziQKdJuPaqf0zD02KY-xgjIAW5hA&s",
+    "platform": "workday",
+    "boardToken": "crowdstrike/crowdstrikecareers",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:37:35.000Z"
+  },
+  {
+    "name": "F5 Networks",
+    "careersUrl": "https://ffive.wd5.myworkdayjobs.com/f5jobs?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e&CF_-_Job_Posting_Category_Extended=ebc0867ff0da10015d4881e40be60000",
+    "logoUrl": "https://companieslogo.com/img/orig/FFIV-bb8852d2.png?t=1740290345",
+    "platform": "workday",
+    "boardToken": "ffive/f5jobs",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:36:54.000Z"
+  },
+  {
+    "name": "LSEG",
+    "careersUrl": "https://lseg.wd3.myworkdayjobs.com/en-US/Careers?CF_Lookup_Business_Unit_Level_02__Job_Posting_Anchor__Extended=9c1f71183c10016d116d72382401ff75&locationCountry=c4f78be1a8f14da0ab49ce1162348a5e",
+    "logoUrl": "https://www.wayup.com/cdn/company_logo/YJUqkOfQco_20231002.png",
+    "platform": "workday",
+    "boardToken": "lseg/Careers",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:36:31.000Z"
+  },
+  {
+    "name": "Morgan Stanley",
+    "careersUrl": "https://morganstanley.eightfold.ai/careers?source=mscom&start=0&pid=549795976654&sort_by=timestamp",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT5uDFLt7hnIDntDdN7_I62afU4lHkyP7Jn2g&s",
+    "platform": "eightfold",
+    "boardToken": "morganstanley.com",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:35:15.000Z"
+  },
+  {
+    "name": "Microsoft",
+    "careersUrl": "https://apply.careers.microsoft.com/careers?query=Software+Engineer&start=0&location=India&pid=1970393556631475&sort_by=relevance&filter_include_remote=1",
+    "logoUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Microsoft_logo.svg/3840px-Microsoft_logo.svg.png",
+    "platform": "eightfold",
+    "boardToken": "microsoft.com",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:34:32.000Z"
+  },
+  {
+    "name": "Uber",
+    "careersUrl": "https://www.uber.com/in/en/careers/list/",
+    "logoUrl": "https://cdn.mos.cms.futurecdn.net/tQxVwcJSowYD7xwWDYidd9.jpg",
+    "platform": "uber",
+    "boardToken": "",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:56.000Z"
+  },
+  {
+    "name": "UI Path",
+    "careersUrl": "https://jobs.ashbyhq.com/uipath",
+    "logoUrl": "https://images.ctfassets.net/s8trkbswp726/vCaWDCeQVjwusIsBrjdfl/8df599caf4a0e738637260362e67f276/uipath.png?w=400&h=400&fm=webp",
+    "platform": "ashby",
+    "boardToken": "uipath",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:00.000Z"
+  },
+  {
+    "name": "Giga AI",
+    "careersUrl": "https://jobs.ashbyhq.com/gigaml",
+    "logoUrl": "https://cdn.prod.website-files.com/63c578f55c1979a2be474264/6942b36eecd1598eb47c14a0_YqUHSYuYdXWsXH64s8BMsGLUIqoBJO4eVXEUYuNDJvQ.jpeg",
+    "platform": "ashby",
+    "boardToken": "gigaml",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:02.000Z"
+  },
+  {
+    "name": "Mercor",
+    "careersUrl": "https://jobs.ashbyhq.com/mercor?locationId=e317cb07-b1e8-45f0-ae5d-ad570d05e5e7",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTUVA2ls8yGQ52_BMWxQFWMA0saokKDONn1DQ&s",
+    "platform": "ashby",
+    "boardToken": "mercor",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:02.000Z"
+  },
+  {
+    "name": "CodeRabbit",
+    "careersUrl": "https://jobs.ashbyhq.com/coderabbit?locationId=31c07ec1-3664-4ac0-9758-7369564b8c0b",
+    "logoUrl": "https://docs.coderabbit.ai/favicon-light.svg",
+    "platform": "ashby",
+    "boardToken": "coderabbit",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:04.000Z"
+  },
+  {
+    "name": "ElevenLabs",
+    "careersUrl": "https://jobs.ashbyhq.com/elevenlabs",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTlEdq5hAReQrzhWqhVzUwgHwwEVjl1EDOfTg&s",
+    "platform": "ashby",
+    "boardToken": "elevenlabs",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:05.000Z"
+  },
+  {
+    "name": "Supabase",
+    "careersUrl": "https://jobs.ashbyhq.com/supabase",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTypnQ74htzg5cGsW4RCPQkPCzDT-eaoKr2sg&s",
+    "platform": "ashby",
+    "boardToken": "supabase",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:05.000Z"
+  },
+  {
+    "name": "OpenAI",
+    "careersUrl": "https://jobs.ashbyhq.com/openai",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRQVRSNCZKUcvSYkmDLtSNNaRwRDh8rz5HxHA&s",
+    "platform": "ashby",
+    "boardToken": "openai",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:06.000Z"
+  },
+  {
+    "name": "Notion",
+    "careersUrl": "https://jobs.ashbyhq.com/notion",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSZ_A-v_GtM9QoY9_H96U7s7wucV0EFII-TvQ&s",
+    "platform": "ashby",
+    "boardToken": "notion",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:07.000Z"
+  },
+  {
+    "name": "Zapier",
+    "careersUrl": "https://jobs.ashbyhq.com/zapier",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSrVwOzVey6XcMevohRDman3xgDFw91v8qZfw&s",
+    "platform": "ashby",
+    "boardToken": "zapier",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:07.000Z"
+  },
+  {
+    "name": "GitLab",
+    "careersUrl": "https://job-boards.greenhouse.io/gitlab",
+    "logoUrl": "https://cdn.worldvectorlogo.com/logos/gitlab-3.svg",
+    "platform": "greenhouse",
+    "boardToken": "gitlab",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:09.000Z"
+  },
+  {
+    "name": "Databricks",
+    "careersUrl": "https://www.databricks.com/company/careers/open-positions",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQmRXW3Ffv_NM1BG3nN5r_Oqz1bT9-dnFUr-A&s",
+    "platform": "greenhouse",
+    "boardToken": "databricks",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:11.000Z"
+  },
+  {
+    "name": "Anthropic",
+    "careersUrl": "https://job-boards.greenhouse.io/anthropic",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTU1PdBd0XMyzREeMuVP18JIDkhBXJKY4ufTQ&s",
+    "platform": "greenhouse",
+    "boardToken": "anthropic",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:14.000Z"
+  },
+  {
+    "name": "Zeta",
+    "careersUrl": "https://jobs.lever.co/zeta",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQIJ4OK-nbZxOpJq9LeyD3Yrsnc9wMqwv6h8g&s",
+    "platform": "lever",
+    "boardToken": "zeta",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:20.000Z"
+  },
+  {
+    "name": "PhonePe",
+    "careersUrl": "https://job-boards.greenhouse.io/phonepe",
+    "logoUrl": "https://uxwing.com/wp-content/themes/uxwing/download/brands-and-social-media/phonepe-icon.png",
+    "platform": "greenhouse",
+    "boardToken": "phonepe",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:22.000Z"
+  },
+  {
+    "name": "Observe.ai",
+    "careersUrl": "https://www.observe.ai/careers#open",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTP2ti_SpfxxHTxauzdf53wm7z_zVsmYoiAsA&s",
+    "platform": "greenhouse",
+    "boardToken": "observeai",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:22.000Z"
+  },
+  {
+    "name": "DoorDash",
+    "careersUrl": "https://job-boards.greenhouse.io/doordashindia",
+    "logoUrl": "https://www.shutterstock.com/image-vector/kerala-india-09082023-doordash-food-600nw-2344891519.jpg",
+    "platform": "greenhouse",
+    "boardToken": "doordashindia",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:23.000Z"
+  },
+  {
+    "name": "New relic",
+    "careersUrl": "https://job-boards.greenhouse.io/newrelic?offices%5B%5D=4014341008",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQkEHuf5an28obz7vNFXxZCkHgjh_Sq6CKF5Q&s",
+    "platform": "greenhouse",
+    "boardToken": "newrelic",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:24.000Z"
+  },
+  {
+    "name": "Airbnb",
+    "careersUrl": "https://careers.airbnb.com/positions/?_departments=engineering&_where_you_work=india",
+    "logoUrl": "https://www.wvnstv.com/wp-content/uploads/sites/76/2018/01/airbnb_1516750226295_32508217_ver1.0.png",
+    "platform": "greenhouse",
+    "boardToken": "airbnb",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:27.000Z"
+  },
+  {
+    "name": "Headout",
+    "careersUrl": "https://www.headout.com/careers/#open-roles",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTYwgH5YP6oWkwJiQjX-rseLHeMeAs5EaXU2w&s",
+    "platform": "greenhouse",
+    "boardToken": "headoutcareers",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:28.000Z"
+  },
+  {
+    "name": "Motive",
+    "careersUrl": "https://job-boards.greenhouse.io/gomotive",
+    "logoUrl": "https://images.crunchbase.com/image/upload/c_pad,h_256,w_256,f_auto,q_auto:eco,dpr_1/65a7dcb0ee7848159169f94ec436d447?ik-sanitizeSvg=true",
+    "platform": "greenhouse",
+    "boardToken": "gomotive",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:29.000Z"
+  },
+  {
+    "name": "Cloudflare",
+    "careersUrl": "https://www.cloudflare.com/careers/jobs/?location=Bengaluru%2C+India",
+    "logoUrl": "https://cdn.iconscout.com/icon/free/png-256/free-cloudflare-logo-icon-svg-download-png-2285038.png",
+    "platform": "greenhouse",
+    "boardToken": "cloudflare",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:33.000Z"
+  },
+  {
+    "name": "Coinbase",
+    "careersUrl": "https://www.coinbase.com/en-in/careers/positions?location=remote+india",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSCqAcp2nKqa7kAITMdhwg1hyl7S288Z2y-CA&s",
+    "platform": "greenhouse",
+    "boardToken": "coinbase",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:34.000Z"
+  },
+  {
+    "name": "Digital Ocean",
+    "careersUrl": "https://www.digitalocean.com/careers?location=Hyderabad",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQjlteYC8JzOXhlKW6bLCwKrpTKJV8u6-GAFg&s",
+    "platform": "greenhouse",
+    "boardToken": "digitalocean98",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:35.000Z"
+  },
+  {
+    "name": "Harness",
+    "careersUrl": "https://www.harness.io/company/jobs/apply?gh_jid=4964657007&gh_jid=4964657007",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRU74nNYxOQS3gri6MkcXUHN4E_o_uy9Zao-g&s",
+    "platform": "greenhouse",
+    "boardToken": "harnessinc",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:36.000Z"
+  },
+  {
+    "name": "Stripe",
+    "careersUrl": "https://stripe.com/jobs/search?remote_locations=Asia+Pacific--India+Remote&office_locations=Asia+Pacific--Bengaluru",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTIfQ0Zah6zuQLAQWojHL0QM7InosE_X4RUdA&s",
+    "platform": "greenhouse",
+    "boardToken": "stripe",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:39.000Z"
+  },
+  {
+    "name": "Apollo.io",
+    "careersUrl": "https://job-boards.greenhouse.io/apolloio",
+    "logoUrl": "https://media.glassdoor.com/sqll/1468521/apollo-io-squareLogo-1740860866018.png",
+    "platform": "greenhouse",
+    "boardToken": "apolloio",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:39.000Z"
+  },
+  {
+    "name": "Earnin",
+    "careersUrl": "https://job-boards.greenhouse.io/earnin",
+    "logoUrl": "https://media.licdn.com/dms/image/v2/C560BAQHQD88jYf-vPg/company-logo_200_200/company-logo_200_200/0/1674591755695/earnin_logo?e=2147483647&v=beta&t=9ClTx_-w_vQULfQmeaRdBXx2X8XabfZJKH_AKYnCmTs",
+    "platform": "greenhouse",
+    "boardToken": "earnin",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:40.000Z"
+  },
+  {
+    "name": "Oportun",
+    "careersUrl": "https://job-boards.greenhouse.io/oportun",
+    "logoUrl": "https://media.licdn.com/dms/image/v2/C560BAQE89RuN5LTUCQ/company-logo_200_200/company-logo_200_200/0/1678224977686/oportun_logo?e=2147483647&v=beta&t=sRCEIUR-Rp9HnXW7YG7aptDAKfVmuGRvuR0fKjNnM3s",
+    "platform": "greenhouse",
+    "boardToken": "oportun",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:41.000Z"
+  },
+  {
+    "name": "OpenTable",
+    "careersUrl": "https://job-boards.greenhouse.io/opentable",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQS-CwsG6Z_oOOgUYyhpd2zR4A5mVVZxNqqJQ&s",
+    "platform": "greenhouse",
+    "boardToken": "opentable",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:42.000Z"
+  },
+  {
+    "name": "Postman",
+    "careersUrl": "https://job-boards.greenhouse.io/postman",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT-TB9d5YXwtKhv4NWbpeTBVveYvcxu9gMJng&s",
+    "platform": "greenhouse",
+    "boardToken": "postman",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:43.000Z"
+  },
+  {
+    "name": "Glean",
+    "careersUrl": "https://job-boards.greenhouse.io/gleanwork",
+    "logoUrl": "https://play-lh.googleusercontent.com/1oYrER4_ZFCJgtrq6OOEFqvPTGMSBsXSpVQE8hSajuQRxENQRMWqgvH3b76258CR2A",
+    "platform": "greenhouse",
+    "boardToken": "gleanwork",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:44.000Z"
+  },
+  {
+    "name": "Twilio",
+    "careersUrl": "https://job-boards.greenhouse.io/twilio",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTt6gRFwBKgW_SwaVmI136gCRNfR0Z3hJWHkQ&s",
+    "platform": "greenhouse",
+    "boardToken": "twilio",
+    "isActive": true,
+    "lastScrapedAt": "2026-02-20T06:30:45.000Z"
+  }
+]

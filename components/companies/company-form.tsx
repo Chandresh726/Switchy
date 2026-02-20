@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, Save, X } from "lucide-react";
+import { Loader2, Plus, Save } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -25,12 +25,10 @@ interface Company {
 interface CompanyFormProps {
   company?: Company;
   onSuccess?: () => void;
-  onCancel?: () => void;
 }
 
 const PLATFORMS = [
-  { value: "", label: "Auto-detect" },
-  ...PLATFORM_OPTIONS,
+  ...PLATFORM_OPTIONS.filter((platform) => platform.value !== "uber"),
 ];
 
 async function getApiErrorMessage(response: Response, fallbackMessage: string): Promise<string> {
@@ -54,7 +52,7 @@ function getErrorMessage(error: unknown, fallbackMessage: string): string {
   return fallbackMessage;
 }
 
-export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) {
+export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
   const queryClient = useQueryClient();
   const isEditing = !!company;
   const [formData, setFormData] = useState({
@@ -147,18 +145,17 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
     mutation.mutate(formData);
   };
 
+  const title = isEditing ? "Edit Company" : "Add Company";
+  const submitLabel = isEditing ? "Save" : "Add Company";
+  const selectedManualPlatform = formData.platform || "custom";
+  const requiresBoardToken =
+    selectedManualPlatform === "greenhouse" ||
+    selectedManualPlatform === "lever" ||
+    selectedManualPlatform === "ashby";
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium text-foreground">
-          {isEditing ? "Edit Company" : "Add Company"}
-        </h3>
-        {onCancel && (
-          <Button type="button" variant="ghost" size="icon-sm" onClick={onCancel}>
-            <X className="h-4 w-4" />
-          </Button>
-        )}
-      </div>
+      <h3 className="text-lg font-medium text-foreground">{title}</h3>
 
       {/* Required Fields Only */}
       <div className="grid gap-4 sm:grid-cols-2">
@@ -186,120 +183,116 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
               placeholder="https://jobs.lever.co/acme"
               autoComplete="off"
               data-form-type="other"
+              className={detectedPlatform && !manualPlatformOverride ? "pr-32" : ""}
             />
             {detectedPlatform && !manualPlatformOverride && (
-              <span className="absolute right-2 top-1/2 -translate-y-1/2 rounded bg-emerald-500/20 px-2 py-0.5 text-xs text-emerald-400">
+              <span className="absolute right-2 top-1/2 max-w-[8rem] -translate-y-1/2 truncate rounded bg-emerald-500/20 px-2 py-0.5 text-xs text-emerald-400">
                 {detectedPlatform}
               </span>
             )}
           </div>
-          <p className="text-xs text-muted-foreground">
-            We support Greenhouse, Lever, Ashby, Workday, Eightfold, and custom career pages
-          </p>
         </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="logoUrl">Logo URL (Optional)</Label>
-        <Input
-          id="logoUrl"
-          value={formData.logoUrl}
-          onChange={(e) => setFormData((prev) => ({ ...prev, logoUrl: e.target.value }))}
-          placeholder="https://..."
-          autoComplete="off"
-          data-form-type="other"
-        />
       </div>
 
       {/* Platform Override Section */}
       {detectedPlatform === "Custom" && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 space-y-3">
-          <div className="flex items-start gap-2">
-            <input
-              type="checkbox"
-              id="manualPlatform"
-              checked={manualPlatformOverride}
-              onChange={(e) => {
-                setManualPlatformOverride(e.target.checked);
-                if (!e.target.checked) {
-                  setFormData((prev) => ({ ...prev, platform: "", boardToken: "" }));
-                }
-              }}
-              className="mt-1 h-4 w-4 rounded border-border bg-card text-emerald-500 focus:ring-emerald-500"
-            />
-            <div>
-              <Label htmlFor="manualPlatform" className="text-amber-400 cursor-pointer">
-                This company uses a known ATS (Greenhouse/Lever/Ashby/Workday/Eightfold)
-              </Label>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Enable this if the company has a custom career page but uses a supported ATS for applications
-              </p>
-            </div>
-          </div>
-
-          {manualPlatformOverride && (
-            <div className="space-y-4 pt-2">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="platform">Platform</Label>
-                  <select
-                    id="platform"
-                    value={formData.platform}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, platform: e.target.value }))}
-                    className="h-8 w-full rounded border border-border bg-card px-2 text-xs text-foreground"
-                  >
-                    {PLATFORMS.map((platform) => (
-                      <option key={platform.value} value={platform.value}>
-                        {platform.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {(formData.platform === "greenhouse" || formData.platform === "lever" || formData.platform === "ashby") && (
-                  <div className="space-y-2">
-                    <Label htmlFor="boardToken">
-                      Board Token *
-                    </Label>
-                    <Input
-                      id="boardToken"
-                      value={formData.boardToken}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, boardToken: e.target.value }))}
-                      placeholder="e.g., acme"
-                      required
-                      autoComplete="off"
-                      data-form-type="other"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {(formData.platform === "greenhouse" || formData.platform === "lever" || formData.platform === "ashby") && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="manualPlatform"
+                checked={manualPlatformOverride}
+                onChange={(e) => {
+                  setManualPlatformOverride(e.target.checked);
+                  if (e.target.checked) {
+                    setFormData((prev) => ({
+                      ...prev,
+                      platform: prev.platform || "custom",
+                    }));
+                  } else {
+                    setFormData((prev) => ({ ...prev, platform: "", boardToken: "" }));
+                  }
+                }}
+                className="h-4 w-4 rounded border-border bg-card text-emerald-500 focus:ring-emerald-500"
+              />
+              <div className="space-y-0.5">
+                <Label htmlFor="manualPlatform" className="cursor-pointer text-amber-400">
+                  This company uses a known ATS
+                </Label>
                 <p className="text-xs text-muted-foreground">
-                  For Greenhouse/Lever, this is the company slug in the apply URL (e.g. boards.greenhouse.io/<strong>acme</strong>/jobs/123).
-                  For Ashby, use the jobs page name from jobs.ashbyhq.com/<strong>OrgName</strong>.
+                  Enable if a careers page routes to Greenhouse, Lever, Ashby, Workday, or Eightfold.
                 </p>
-              )}
-
-              {(formData.platform === "eightfold" || formData.platform === "workday") && (
-                <p className="text-xs text-emerald-400">
-                  {formData.platform === "eightfold" 
-                    ? "Domain will be auto-detected when scraping. No manual configuration needed."
-                    : "Board and tenant will be auto-detected from the URL. No manual configuration needed."}
-                </p>
-              )}
+              </div>
             </div>
-          )}
+
+            {manualPlatformOverride && requiresBoardToken ? (
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  id="platform"
+                  value={selectedManualPlatform}
+                  onChange={(e) =>
+                    setFormData((prev) => ({ ...prev, platform: e.target.value }))
+                  }
+                  className="h-9 w-full rounded border border-border bg-card px-2 text-xs text-foreground"
+                >
+                  {PLATFORMS.map((platform) => (
+                    <option key={platform.value} value={platform.value}>
+                      {platform.label}
+                    </option>
+                  ))}
+                </select>
+                <Input
+                  id="boardToken"
+                  value={formData.boardToken}
+                  onChange={(e) =>
+                    setFormData((prev) => ({ ...prev, boardToken: e.target.value }))
+                  }
+                  placeholder="Board token"
+                  required
+                  autoComplete="off"
+                  data-form-type="other"
+                  className="h-9"
+                />
+              </div>
+            ) : (
+              <select
+                id="platform"
+                value={selectedManualPlatform}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, platform: e.target.value }))
+                }
+                disabled={!manualPlatformOverride}
+                className="h-9 w-full rounded border border-border bg-card px-2 text-xs text-foreground disabled:opacity-60"
+              >
+                {PLATFORMS.map((platform) => (
+                  <option key={platform.value} value={platform.value}>
+                    {platform.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
       )}
 
-      <div className="flex justify-end gap-2">
-        {onCancel && (
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-        )}
-        <Button type="submit" disabled={mutation.isPending}>
+      <div className="flex items-end gap-3">
+        <div className="flex-1 space-y-2">
+          <Label htmlFor="logoUrl">Logo URL (Optional)</Label>
+          <Input
+            id="logoUrl"
+            value={formData.logoUrl}
+            onChange={(e) => setFormData((prev) => ({ ...prev, logoUrl: e.target.value }))}
+            placeholder="https://..."
+            autoComplete="off"
+            data-form-type="other"
+          />
+        </div>
+        <Button
+          type="submit"
+          disabled={mutation.isPending}
+          className={`shrink-0 ${isEditing ? "bg-emerald-600 hover:bg-emerald-500 text-foreground min-w-[100px]" : ""}`}
+        >
           {mutation.isPending ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : isEditing ? (
@@ -307,7 +300,7 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
           ) : (
             <Plus className="h-4 w-4" />
           )}
-          {isEditing ? "Save Changes" : "Add Company"}
+          {mutation.isPending ? "Saving..." : submitLabel}
         </Button>
       </div>
     </form>
