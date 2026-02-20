@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { AlertTriangle, FileText, Loader2, MessageCircle, Save, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { REASONING_EFFORT_OPTIONS } from "@/lib/ai/providers/metadata";
-import type { ReasoningEffort } from "@/lib/ai/providers/types";
+import type { ReasoningEffort } from "@/lib/settings/types";
 import type { Provider, ProviderModelOption } from "@/lib/types";
 
 export interface AIWritingSettings {

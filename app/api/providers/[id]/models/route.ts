@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { AIError } from "@/lib/ai/shared/errors";
 import { getProviderModels } from "@/lib/ai/providers/model-catalog";
+import { handleAIAPIError } from "@/lib/api/ai-error-handler";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -32,8 +33,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (error instanceof AIError) {
       return NextResponse.json({ error: error.message, type: error.type }, { status: getStatusCode(error) });
     }
-
-    console.error("Failed to fetch provider models:", error);
-    return NextResponse.json({ error: "Failed to fetch provider models" }, { status: 500 });
+    return handleAIAPIError(error, "Failed to fetch provider models", "provider_models_fetch_failed");
   }
 }

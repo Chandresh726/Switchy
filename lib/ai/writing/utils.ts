@@ -1,6 +1,8 @@
 import { eq } from "drizzle-orm";
+
+import { fetchCandidateProfileSnapshot } from "@/lib/ai/profile/profile-snapshot";
 import { db } from "@/lib/db";
-import { profile, skills, experience, education, jobs, companies } from "@/lib/db/schema";
+import { jobs, companies } from "@/lib/db/schema";
 
 export interface CandidateProfileData {
   name: string;
@@ -11,31 +13,23 @@ export interface CandidateProfileData {
 }
 
 export async function fetchCandidateProfile(): Promise<CandidateProfileData | null> {
-  const profiles = await db.select().from(profile).limit(1);
-  if (profiles.length === 0) return null;
-
-  const userProfile = profiles[0];
-
-  const [userSkills, userExperience, userEducation] = await Promise.all([
-    db.select().from(skills).where(eq(skills.profileId, userProfile.id)),
-    db.select().from(experience).where(eq(experience.profileId, userProfile.id)),
-    db.select().from(education).where(eq(education.profileId, userProfile.id)),
-  ]);
+  const snapshot = await fetchCandidateProfileSnapshot();
+  if (!snapshot) return null;
 
   return {
-    name: userProfile.name || "",
-    summary: userProfile.summary,
-    skills: userSkills.map((s) => ({
+    name: snapshot.profile.name || "",
+    summary: snapshot.profile.summary,
+    skills: snapshot.skills.map((s) => ({
       name: s.name,
       proficiency: s.proficiency,
       category: s.category,
     })),
-    experience: userExperience.map((e) => ({
+    experience: snapshot.experience.map((e) => ({
       title: e.title,
       company: e.company,
       description: e.description,
     })),
-    education: userEducation.map((e) => ({
+    education: snapshot.education.map((e) => ({
       degree: e.degree,
       institution: e.institution,
       field: e.field,

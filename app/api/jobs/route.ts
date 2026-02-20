@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { jobs, companies } from "@/lib/db/schema";
 import { eq, desc, and, gte, lte, like, or, sql, asc, count, notInArray } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
+import { safeJsonStringArray } from "@/lib/utils/safe-json";
 
 export async function GET(request: NextRequest) {
   try {
@@ -187,10 +188,10 @@ export async function GET(request: NextRequest) {
     const transformedJobs = jobsData.map(({ job, company }) => ({
       ...job,
       company,
-      matchReasons: job.matchReasons ? JSON.parse(job.matchReasons) : [],
-      matchedSkills: job.matchedSkills ? JSON.parse(job.matchedSkills) : [],
-      missingSkills: job.missingSkills ? JSON.parse(job.missingSkills) : [],
-      recommendations: job.recommendations ? JSON.parse(job.recommendations) : [],
+      matchReasons: safeJsonStringArray(job.matchReasons),
+      matchedSkills: safeJsonStringArray(job.matchedSkills),
+      missingSkills: safeJsonStringArray(job.missingSkills),
+      recommendations: safeJsonStringArray(job.recommendations),
     }));
 
     return NextResponse.json({

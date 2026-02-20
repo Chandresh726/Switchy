@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { AlertTriangle, Cpu, Loader2, Save, Settings2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { REASONING_EFFORT_OPTIONS } from "@/lib/ai/providers/metadata";
-import type { ReasoningEffort } from "@/lib/ai/providers/types";
+import type { ReasoningEffort } from "@/lib/settings/types";
 import type { Provider, ProviderModelOption } from "@/lib/types";
 
 interface MatcherSectionProps {

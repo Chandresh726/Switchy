@@ -27,10 +27,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getAllProviderMetadata, type ProviderMetadata } from "@/lib/ai/providers/metadata";
-import type { ProviderWithDetails } from "@/lib/types";
+import { apiGet } from "@/lib/api/client";
+import type { ProviderSettingsListItem } from "@/lib/settings/types";
 
 interface AIProvidersManagerProps {
-  providers: ProviderWithDetails[];
+  providers: ProviderSettingsListItem[];
   onAddProvider: (provider: string, apiKey?: string) => Promise<void>;
   onDeleteProvider: (id: string) => Promise<void>;
   onUpdateProviderApiKey: (id: string, apiKey?: string) => Promise<void>;
@@ -128,7 +129,7 @@ export function AIProvidersManager({
     setError(null);
   };
 
-  const handleEditProvider = async (provider: ProviderWithDetails) => {
+  const handleEditProvider = async (provider: ProviderSettingsListItem) => {
     setIsEditLoading(true);
 
     try {
@@ -144,18 +145,18 @@ export function AIProvidersManager({
     }
   };
 
-  const startEditing = async (provider: ProviderWithDetails) => {
+  const startEditing = async (provider: ProviderSettingsListItem) => {
     setEditingProviderId(provider.id);
     setEditApiKey("");
     setShowEditApiKey(false);
     setIsFetchingApiKey(true);
 
     try {
-      const res = await fetch(`/api/providers/${provider.id}/api-key`);
-      if (res.ok) {
-        const data = await res.json();
-        setEditApiKey(data.apiKey || "");
-      }
+      const data = await apiGet<{ apiKey?: string | null }>(
+        `/api/providers/${provider.id}/api-key`,
+        "Failed to fetch API key"
+      );
+      setEditApiKey(data.apiKey || "");
     } catch (err) {
       console.error("Failed to fetch API key:", err);
     } finally {

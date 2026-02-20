@@ -6,6 +6,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
+import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api/client";
 import { MatcherSection } from "@/components/settings/matcher-section";
 import { ScraperSettings } from "@/components/settings/scraper-settings";
 import { DangerZone } from "@/components/settings/danger-zone";
@@ -17,57 +18,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getProviderMetadata } from "@/lib/ai/providers/metadata";
 import type { AIProvider } from "@/lib/ai/providers/types";
 import { APP_VERSION, DB_PATH } from "@/lib/constants";
-import type { ProviderModelOption, ProviderModelsResponse } from "@/lib/types";
-
-type ReasoningEffort = "low" | "medium" | "high";
+import type { ProviderModelsResponse } from "@/lib/types";
+import type {
+  ProviderModelsState,
+  ProviderSettingsListItem,
+  ReasoningEffort,
+  SettingsRecord,
+} from "@/lib/settings/types";
 
 const getDefaultReasoningEffort = (): ReasoningEffort => "medium";
 const PROVIDER_MODELS_STALE_TIME_MS = 15 * 60 * 1000;
-
-interface ProviderModelsState {
-  models: ProviderModelOption[];
-  loading: boolean;
-  isRefreshing: boolean;
-  isStale: boolean;
-  error?: string;
-}
-
-interface MatcherSettings {
-  matcher_model: string;
-  matcher_provider_id: string;
-  resume_parser_model: string;
-  resume_parser_provider_id: string;
-  matcher_reasoning_effort: string;
-  resume_parser_reasoning_effort: string;
-  matcher_bulk_enabled: string;
-  matcher_serialize_operations: string;
-  matcher_batch_size: string;
-  matcher_max_retries: string;
-  matcher_concurrency_limit: string;
-  matcher_timeout_ms: string;
-  matcher_circuit_breaker_threshold: string;
-  matcher_auto_match_after_scrape: string;
-  scheduler_enabled: string;
-  scheduler_cron: string;
-  scraper_filter_country?: string;
-  scraper_filter_city?: string;
-  scraper_filter_title_keywords?: string;
-  ai_provider?: string;
-  anthropic_api_key?: string;
-  google_api_key?: string;
-  openrouter_api_key?: string;
-  cerebras_api_key?: string;
-  openai_api_key?: string;
-  // AI Writing
-  referral_tone?: string;
-  referral_length?: string;
-  cover_letter_tone?: string;
-  cover_letter_length?: string;
-  cover_letter_focus?: string;
-  ai_writing_model?: string;
-  ai_writing_provider_id?: string;
-  ai_writing_reasoning_effort?: string;
-}
 
 interface MatcherLocalEdits {
   matcherModel?: string;
@@ -225,55 +185,25 @@ function SettingsContent() {
   const [aiWritingSettingsSaved, setAIWritingSettingsSaved] = useState(false);
   const lastModelReconciliationRef = useRef<string | null>(null);
 
-  const { data: settings, isLoading: isSettingsLoading } = useQuery<MatcherSettings>({
+  const { data: settings, isLoading: isSettingsLoading } = useQuery<SettingsRecord>({
     queryKey: ["settings"],
-    queryFn: async () => {
-      const res = await fetch("/api/settings");
-      if (!res.ok) throw new Error("Failed to fetch settings");
-      return res.json();
-    },
+    queryFn: () => apiGet<SettingsRecord>("/api/settings", "Failed to fetch settings"),
   });
-
-  const getApiErrorMessage = async (res: Response, fallback: string): Promise<string> => {
-    try {
-      const data = await res.json() as { error?: string };
-      if (typeof data.error === "string" && data.error.trim().length > 0) {
-        return data.error;
-      }
-    } catch {
-      // Ignore parse errors and fall back to default message
-    }
-    return fallback;
-  };
 
   const fetchProviderModels = async (
     providerId: string,
     forceRefresh = false
   ): Promise<ProviderModelsResponse> => {
     const refreshQuery = forceRefresh ? "?refresh=1" : "";
-    const res = await fetch(`/api/providers/${providerId}/models${refreshQuery}`);
-    if (!res.ok) {
-      throw new Error(await getApiErrorMessage(res, "Failed to fetch provider models"));
-    }
-    return res.json();
+    return apiGet<ProviderModelsResponse>(
+      `/api/providers/${providerId}/models${refreshQuery}`,
+      "Failed to fetch provider models"
+    );
   };
 
-  interface Provider {
-    id: string;
-    provider: string;
-    isActive: boolean;
-    hasApiKey: boolean;
-    createdAt: Date;
-    updatedAt: Date;
-  }
-
-  const { data: providers = [], isLoading: isProvidersLoading } = useQuery<Provider[]>({
+  const { data: providers = [], isLoading: isProvidersLoading } = useQuery<ProviderSettingsListItem[]>({
     queryKey: ["providers"],
-    queryFn: async () => {
-      const res = await fetch("/api/providers");
-      if (!res.ok) throw new Error("Failed to fetch providers");
-      return res.json();
-    },
+    queryFn: () => apiGet<ProviderSettingsListItem[]>("/api/providers", "Failed to fetch providers"),
   });
 
   const providerModelsQueries = useQueries({
@@ -321,17 +251,11 @@ function SettingsContent() {
 
   const addProviderMutation = useMutation({
     mutationFn: async ({ provider, apiKey }: { provider: string; apiKey?: string }) => {
-      const res = await fetch("/api/providers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, apiKey }),
-      });
-      if (!res.ok) throw new Error("Failed to add provider");
-      return res.json() as Promise<{
+      return apiPost<{
         autoConfiguredDefaults?: boolean;
         autoConfiguredModelId?: string;
         autoConfiguredWarning?: string;
-      }>;
+      }>("/api/providers", { provider, apiKey }, "Failed to add provider");
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["providers"] });
@@ -354,11 +278,7 @@ function SettingsContent() {
   });
 
   const deleteProviderMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete provider");
-      return res.json();
-    },
+    mutationFn: (id: string) => apiDelete<{ success: boolean }>(`/api/providers/${id}`, "Failed to delete provider"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["providers"] });
       queryClient.invalidateQueries({ queryKey: ["provider-models"] });
@@ -369,15 +289,12 @@ function SettingsContent() {
   });
 
   const updateProviderApiKeyMutation = useMutation({
-    mutationFn: async ({ id, apiKey }: { id: string; apiKey?: string }) => {
-      const res = await fetch(`/api/providers/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey }),
-      });
-      if (!res.ok) throw new Error("Failed to update provider API key");
-      return res.json();
-    },
+    mutationFn: ({ id, apiKey }: { id: string; apiKey?: string }) =>
+      apiPatch<{ success: boolean }>(
+        `/api/providers/${id}`,
+        { apiKey },
+        "Failed to update provider API key"
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["providers"] });
       queryClient.invalidateQueries({ queryKey: ["provider-models"] });
@@ -549,19 +466,12 @@ function SettingsContent() {
   const aiWritingModelsState = getProviderModelsState(aiWritingProviderId);
 
   const reconcileModelsMutation = useMutation({
-    mutationFn: async ({ updates }: { updates: Record<string, string>; features: string[] }) => {
-      const res = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
-      });
-
-      if (!res.ok) {
-        throw new Error(await getApiErrorMessage(res, "Failed to reconcile invalid model settings"));
-      }
-
-      return res.json();
-    },
+    mutationFn: ({ updates }: { updates: Record<string, string>; features: string[] }) =>
+      apiPost<Record<string, string>>(
+        "/api/settings",
+        updates,
+        "Failed to reconcile invalid model settings"
+      ),
     onSuccess: (_data, variables) => {
       const updatedFeatures = Array.from(new Set(variables.features));
       if (updatedFeatures.length > 0) {
@@ -763,11 +673,7 @@ function SettingsContent() {
   };
 
   const clearJobsMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/jobs", { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to clear jobs");
-      return res.json();
-    },
+    mutationFn: () => apiDelete<{ success: boolean }>("/api/jobs", "Failed to clear jobs"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["companies"] });
@@ -776,11 +682,8 @@ function SettingsContent() {
   });
 
   const clearMatchDataMutation = useMutation<{ jobsCleared: number }>({
-    mutationFn: async () => {
-      const res = await fetch("/api/jobs/match-data", { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to clear match data");
-      return res.json();
-    },
+    mutationFn: () =>
+      apiDelete<{ jobsCleared: number }>("/api/jobs/match-data", "Failed to clear match data"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["match-history"] });
@@ -794,11 +697,13 @@ function SettingsContent() {
     historyDeleted: number;
     message: string;
   }>({
-    mutationFn: async () => {
-      const res = await fetch("/api/ai/content", { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to clear AI content");
-      return res.json();
-    },
+    mutationFn: () =>
+      apiDelete<{
+        success: boolean;
+        contentDeleted: number;
+        historyDeleted: number;
+        message: string;
+      }>("/api/ai/content", "Failed to clear AI content"),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["ai-content"] });
       toast.success(data.message || "AI generated content deleted successfully");
@@ -807,15 +712,12 @@ function SettingsContent() {
   });
 
   const resumeParserMutation = useMutation({
-    mutationFn: async (updates: { resume_parser_model?: string; resume_parser_provider_id?: string; resume_parser_reasoning_effort?: ReasoningEffort }) => {
-      const res = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
-      });
-      if (!res.ok) throw new Error("Failed to save resume parser settings");
-      return res.json();
-    },
+    mutationFn: (updates: { resume_parser_model?: string; resume_parser_provider_id?: string; resume_parser_reasoning_effort?: ReasoningEffort }) =>
+      apiPost<Record<string, string>>(
+        "/api/settings",
+        updates,
+        "Failed to save resume parser settings"
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
       setResumeParserLocalEdits({});
@@ -823,18 +725,13 @@ function SettingsContent() {
     onError: () => toast.error("Failed to save resume parser settings"),
   });
 
-  const schedulerEnabledMutation = useMutation<MatcherSettings, Error, boolean, { previousEnabled: boolean }>({
-    mutationFn: async (enabled: boolean) => {
-      const res = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scheduler_enabled: enabled }),
-      });
-      if (!res.ok) {
-        throw new Error(await getApiErrorMessage(res, "Failed to save scheduler enabled setting"));
-      }
-      return res.json();
-    },
+  const schedulerEnabledMutation = useMutation<SettingsRecord, Error, boolean, { previousEnabled: boolean }>({
+    mutationFn: (enabled: boolean) =>
+      apiPost<SettingsRecord>(
+        "/api/settings",
+        { scheduler_enabled: enabled },
+        "Failed to save scheduler enabled setting"
+      ),
     onMutate: (enabled: boolean) => {
       const previousEnabled = schedulerEnabled;
       setScraperLocalEdits((prev) => ({ ...prev, schedulerEnabled: enabled }));
@@ -902,11 +799,10 @@ function SettingsContent() {
   ]);
 
   const matcherSettingsMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+    mutationFn: () =>
+      apiPost<Record<string, string>>(
+        "/api/settings",
+        {
           matcher_model: matcherModel,
           matcher_provider_id: matcherProviderId,
           matcher_reasoning_effort: matcherReasoningEffort,
@@ -918,11 +814,9 @@ function SettingsContent() {
           matcher_timeout_ms: timeoutMs,
           matcher_circuit_breaker_threshold: circuitBreakerThreshold,
           matcher_auto_match_after_scrape: autoMatchAfterScrape,
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to save matcher settings");
-      return res.json();
-    },
+        },
+        "Failed to save matcher settings"
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
       setMatcherLocalEdits((prev) => ({
@@ -946,22 +840,17 @@ function SettingsContent() {
   });
 
   const scraperSettingsMutation = useMutation<unknown, Error>({
-    mutationFn: async () => {
-      const res = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+    mutationFn: () =>
+      apiPost<Record<string, string>>(
+        "/api/settings",
+        {
           scheduler_cron: schedulerCron,
           scraper_filter_country: filterCountry,
           scraper_filter_city: filterCity,
           scraper_filter_title_keywords: JSON.stringify(filterTitleKeywords),
-        }),
-      });
-      if (!res.ok) {
-        throw new Error(await getApiErrorMessage(res, "Failed to save scraper settings"));
-      }
-      return res.json();
-    },
+        },
+        "Failed to save scraper settings"
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
       queryClient.invalidateQueries({ queryKey: ["scheduler-status"] });
@@ -979,24 +868,23 @@ function SettingsContent() {
   });
 
   const aiWritingMutation = useMutation({
-    mutationFn: async (updates: Partial<AIWritingSettings>) => {
-      const res = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+    mutationFn: (updates: Partial<AIWritingSettings>) =>
+      apiPost<Record<string, string>>(
+        "/api/settings",
+        {
           referral_tone: updates.referralTone,
           referral_length: updates.referralLength,
           cover_letter_tone: updates.coverLetterTone,
           cover_letter_length: updates.coverLetterLength,
-          cover_letter_focus: updates.coverLetterFocus ? JSON.stringify(updates.coverLetterFocus) : undefined,
+          cover_letter_focus: updates.coverLetterFocus
+            ? JSON.stringify(updates.coverLetterFocus)
+            : undefined,
           ai_writing_model: updates.aiWritingModel,
           ai_writing_provider_id: updates.aiWritingProviderId,
           ai_writing_reasoning_effort: updates.aiWritingReasoningEffort,
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to save AI writing settings");
-      return res.json();
-    },
+        },
+        "Failed to save AI writing settings"
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
       setAIWritingLocalEdits({});
@@ -1022,19 +910,20 @@ function SettingsContent() {
   // Query for unmatched jobs count
   const { data: unmatchedData } = useQuery<{ count: number }>({
     queryKey: ["unmatched-jobs-count"],
-    queryFn: async () => {
-      const res = await fetch("/api/jobs/match-unmatched");
-      if (!res.ok) throw new Error("Failed to fetch unmatched count");
-      return res.json();
-    },
+    queryFn: () =>
+      apiGet<{ count: number }>(
+        "/api/jobs/match-unmatched",
+        "Failed to fetch unmatched count"
+      ),
   });
 
   const matchUnmatchedMutation = useMutation<{ total: number; matched: number; failed: number; sessionId: string }>({
-    mutationFn: async () => {
-      const res = await fetch("/api/jobs/match-unmatched", { method: "POST" });
-      if (!res.ok) throw new Error("Failed to match jobs");
-      return res.json();
-    },
+    mutationFn: () =>
+      apiPost<{ total: number; matched: number; failed: number; sessionId: string }>(
+        "/api/jobs/match-unmatched",
+        {},
+        "Failed to match jobs"
+      ),
     onSuccess: (data) => {
       if (data.sessionId) {
         setMatchSessionId(data.sessionId);
@@ -1097,11 +986,7 @@ function SettingsContent() {
         <div className="space-y-6 lg:col-span-2">
 
           <AIProvidersManager
-            providers={providers.map((p) => ({
-              ...p,
-              createdAt: new Date(p.createdAt),
-              updatedAt: new Date(p.updatedAt),
-            }))}
+            providers={providers}
             onAddProvider={async (provider, apiKey) => {
               await addProviderMutation.mutateAsync({ provider, apiKey });
             }}

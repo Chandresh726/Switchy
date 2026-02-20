@@ -1,332 +1,79 @@
 import { NextResponse } from "next/server";
-import cron from "node-cron";
-import { db } from "@/lib/db";
-import { settings } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import { restartScheduler, stopScheduler, clearSchedulerEnabledCache, getSchedulerEnabled } from "@/lib/jobs/scheduler";
 
-const DEFAULT_SETTINGS: Record<string, string> = {
-  matcher_model: "",
-  matcher_provider_id: "",
-  matcher_reasoning_effort: "medium",
-  resume_parser_model: "",
-  resume_parser_provider_id: "",
-  resume_parser_reasoning_effort: "medium",
-  matcher_bulk_enabled: "true",
-  matcher_batch_size: "2",
-  matcher_max_retries: "3",
-  matcher_concurrency_limit: "3",
-  matcher_serialize_operations: "false",
-  matcher_timeout_ms: "30000",
-  matcher_backoff_base_delay: "2000",
-  matcher_backoff_max_delay: "32000",
-  matcher_circuit_breaker_threshold: "10",
-  matcher_circuit_breaker_reset_timeout: "60000",
-  matcher_auto_match_after_scrape: "true",
-  scheduler_enabled: "true",
-  scheduler_cron: "0 */6 * * *",
-  scraper_filter_country: "India",
-  scraper_filter_city: "",
-  scraper_filter_title_keywords: "[]",
-  referral_tone: "professional",
-  referral_length: "medium",
-  cover_letter_tone: "professional",
-  cover_letter_length: "medium",
-  cover_letter_focus: '["skills","experience","cultural_fit"]',
-  ai_writing_model: "",
-  ai_writing_provider_id: "",
-  ai_writing_reasoning_effort: "medium",
-};
+import { AISettingsUpdateSchema } from "@/lib/ai/contracts";
+import { handleAIAPIError } from "@/lib/api/ai-error-handler";
+import {
+  clearSchedulerEnabledCache,
+  getSchedulerEnabled,
+  restartScheduler,
+  stopScheduler,
+} from "@/lib/jobs/scheduler";
+import {
+  DEFAULT_SETTINGS,
+  getSettingsWithDefaults,
+  parseSettingsUpdateBody,
+  upsertSettings,
+  type SettingKey,
+} from "@/lib/settings/settings-service";
 
-// GET - fetch all settings
+const AI_SETTING_KEYS: ReadonlySet<SettingKey> = new Set([
+  "matcher_model",
+  "matcher_provider_id",
+  "matcher_reasoning_effort",
+  "resume_parser_model",
+  "resume_parser_provider_id",
+  "resume_parser_reasoning_effort",
+  "ai_writing_model",
+  "ai_writing_provider_id",
+  "ai_writing_reasoning_effort",
+  "referral_tone",
+  "referral_length",
+  "cover_letter_tone",
+  "cover_letter_length",
+  "cover_letter_focus",
+]);
+
+function pickAISettings(body: Record<string, unknown>): Record<string, unknown> {
+  const aiOnly: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(body)) {
+    if (AI_SETTING_KEYS.has(key as SettingKey)) {
+      aiOnly[key] = value;
+    }
+  }
+
+  return aiOnly;
+}
+
 export async function GET() {
   try {
-    const allSettings = await db.select().from(settings);
-
-    // Build response with defaults for missing keys
-    const result: Record<string, string> = { ...DEFAULT_SETTINGS };
-    for (const setting of allSettings) {
-      if (setting.value !== null) {
-        result[setting.key] = setting.value;
-      }
-    }
-
-    return NextResponse.json(result);
+    const allSettings = await getSettingsWithDefaults();
+    return NextResponse.json(allSettings);
   } catch (error) {
-    console.error("[Settings API] GET error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch settings" },
-      { status: 500 }
-    );
+    return handleAIAPIError(error, "Failed to fetch settings", "settings_fetch_failed");
   }
 }
 
-// POST - update settings
 export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    // Validate that body is an object
     if (typeof body !== "object" || body === null) {
       return NextResponse.json(
-        { error: "Request body must be an object" },
+        { error: "Request body must be an object", code: "invalid_request" },
         { status: 400 }
       );
     }
 
-    // Track if cron was updated to restart scheduler
-    let cronUpdated = false;
-    let enabledChanged = false;
-    let newEnabledValue: boolean | null = null;
-    const updates: { key: string; value: string }[] = [];
-
-    for (const [key, value] of Object.entries(body)) {
-      // Only allow known settings keys
-      if (!(key in DEFAULT_SETTINGS)) {
-        continue;
-      }
-
-      // Validate values based on key
-      if (key === "matcher_batch_size") {
-        const num = parseInt(String(value), 10);
-        if (isNaN(num) || num < 1 || num > 10) {
-          return NextResponse.json(
-            { error: "matcher_batch_size must be a number between 1 and 10" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(num) });
-      } else if (key === "matcher_auto_match_after_scrape") {
-        updates.push({ key, value: value === true || value === "true" ? "true" : "false" });
-      } else if (key === "matcher_bulk_enabled") {
-        updates.push({ key, value: value === true || value === "true" ? "true" : "false" });
-      } else if (key === "matcher_serialize_operations") {
-        updates.push({ key, value: value === true || value === "true" ? "true" : "false" });
-      } else if (key === "scheduler_cron") {
-        const cronExpr = String(value).trim();
-        if (!cron.validate(cronExpr)) {
-          return NextResponse.json(
-            { error: "Invalid cron expression" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: cronExpr });
-        cronUpdated = true;
-      } else if (key === "scheduler_enabled") {
-        const boolValue = value === true || value === "true";
-        updates.push({ key, value: boolValue ? "true" : "false" });
-        enabledChanged = true;
-        newEnabledValue = boolValue;
-      } else if (key === "matcher_model" || key === "resume_parser_model") {
-        if (typeof value !== "string" || value.trim().length === 0) {
-          return NextResponse.json(
-            { error: `${key} must be a non-empty string` },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(value).trim() });
-      } else if (key === "matcher_reasoning_effort" || key === "resume_parser_reasoning_effort") {
-        if (!["low", "medium", "high"].includes(String(value))) {
-          return NextResponse.json(
-            { error: `${key} must be one of: low, medium, high` },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(value) });
-      } else if (key === "matcher_max_retries") {
-        const num = parseInt(String(value), 10);
-        if (isNaN(num) || num < 1 || num > 10) {
-          return NextResponse.json(
-            { error: "matcher_max_retries must be a number between 1 and 10" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(num) });
-      } else if (key === "matcher_concurrency_limit") {
-        const num = parseInt(String(value), 10);
-        if (isNaN(num) || num < 1 || num > 10) {
-          return NextResponse.json(
-            { error: "matcher_concurrency_limit must be a number between 1 and 10" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(num) });
-      } else if (key === "matcher_timeout_ms") {
-        const num = parseInt(String(value), 10);
-        if (isNaN(num) || num < 5000 || num > 120000) {
-          return NextResponse.json(
-            { error: "matcher_timeout_ms must be a number between 5000 and 120000" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(num) });
-      } else if (key === "matcher_backoff_base_delay") {
-        const num = parseInt(String(value), 10);
-        if (isNaN(num) || num < 500 || num > 10000) {
-          return NextResponse.json(
-            { error: "matcher_backoff_base_delay must be a number between 500 and 10000" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(num) });
-      } else if (key === "matcher_backoff_max_delay") {
-        const num = parseInt(String(value), 10);
-        if (isNaN(num) || num < 5000 || num > 120000) {
-          return NextResponse.json(
-            { error: "matcher_backoff_max_delay must be a number between 5000 and 120000" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(num) });
-      } else if (key === "matcher_circuit_breaker_threshold") {
-        const num = parseInt(String(value), 10);
-        if (isNaN(num) || num < 3 || num > 50) {
-          return NextResponse.json(
-            { error: "matcher_circuit_breaker_threshold must be a number between 3 and 50" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(num) });
-      } else if (key === "matcher_circuit_breaker_reset_timeout") {
-        const num = parseInt(String(value), 10);
-        if (isNaN(num) || num < 10000 || num > 300000) {
-          return NextResponse.json(
-            { error: "matcher_circuit_breaker_reset_timeout must be a number between 10000 and 300000" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(num) });
-      } else if (key === "scraper_filter_country" || key === "scraper_filter_city") {
-        // Allow any string value for location filters
-        updates.push({ key, value: String(value || "") });
-      } else if (key === "scraper_filter_title_keywords") {
-        // Store as JSON array string; accept array or string
-        let normalized: string;
-        if (Array.isArray(value)) {
-          const arr = value.filter((v) => typeof v === "string").map((v) => String(v).trim()).filter(Boolean);
-          normalized = JSON.stringify(arr);
-        } else if (typeof value === "string") {
-          try {
-            const parsed = JSON.parse(value);
-            if (!Array.isArray(parsed)) throw new Error("Not an array");
-            const arr = parsed.filter((v) => typeof v === "string").map((v) => String(v).trim()).filter(Boolean);
-            normalized = JSON.stringify(arr);
-          } catch {
-            return NextResponse.json(
-              { error: "scraper_filter_title_keywords must be a JSON array of strings" },
-              { status: 400 }
-            );
-          }
-        } else {
-          return NextResponse.json(
-            { error: "scraper_filter_title_keywords must be an array or JSON array string" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: normalized });
-      } else if (key === "referral_tone") {
-        if (!["professional", "casual", "friendly", "flexible"].includes(String(value))) {
-          return NextResponse.json(
-            { error: "referral_tone must be one of: professional, casual, friendly, flexible" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(value) });
-      } else if (key === "referral_length") {
-        if (!["short", "medium", "long"].includes(String(value))) {
-          return NextResponse.json(
-            { error: "referral_length must be one of: short, medium, long" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(value) });
-      } else if (key === "cover_letter_tone") {
-        if (!["professional", "formal", "casual", "flexible"].includes(String(value))) {
-          return NextResponse.json(
-            { error: "cover_letter_tone must be one of: professional, formal, casual, flexible" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(value) });
-      } else if (key === "cover_letter_length") {
-        if (!["short", "medium", "long"].includes(String(value))) {
-          return NextResponse.json(
-            { error: "cover_letter_length must be one of: short, medium, long" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(value) });
-      } else if (key === "cover_letter_focus") {
-        // Accept either a JSON array string or a single string
-        let normalized: string;
-        if (typeof value === "string") {
-          try {
-            const parsed = JSON.parse(value);
-            if (Array.isArray(parsed)) {
-              const arr = parsed.filter((v) => typeof v === "string" && ["skills", "experience", "cultural_fit"].includes(v));
-              normalized = JSON.stringify(arr);
-            } else if (["skills", "experience", "cultural_fit", "all"].includes(parsed)) {
-              normalized = parsed;
-            } else {
-              return NextResponse.json(
-                { error: "cover_letter_focus must be an array or one of: skills, experience, cultural_fit, all" },
-                { status: 400 }
-              );
-            }
-          } catch {
-            if (["skills", "experience", "cultural_fit", "all"].includes(value)) {
-              normalized = value;
-            } else {
-              return NextResponse.json(
-                { error: "cover_letter_focus must be one of: skills, experience, cultural_fit, all" },
-                { status: 400 }
-              );
-            }
-          }
-        } else {
-          return NextResponse.json(
-            { error: "cover_letter_focus must be a string or JSON array string" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: normalized });
-      } else if (key === "ai_writing_model") {
-        if (typeof value !== "string" || value.trim().length === 0) {
-          return NextResponse.json(
-            { error: "ai_writing_model must be a non-empty string" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(value).trim() });
-      } else if (key === "ai_writing_reasoning_effort") {
-        if (!["low", "medium", "high"].includes(String(value))) {
-          return NextResponse.json(
-            { error: "ai_writing_reasoning_effort must be one of: low, medium, high" },
-            { status: 400 }
-          );
-        }
-        updates.push({ key, value: String(value) });
-      } else if (
-        key === "matcher_provider_id" ||
-        key === "resume_parser_provider_id" ||
-        key === "ai_writing_provider_id"
-      ) {
-        updates.push({ key, value: String(value || "") });
-      }
+    const aiOnlyPayload = pickAISettings(body as Record<string, unknown>);
+    if (Object.keys(aiOnlyPayload).length > 0) {
+      AISettingsUpdateSchema.parse(aiOnlyPayload);
     }
 
-    // Upsert each setting
-    for (const { key, value } of updates) {
-      const existing = await db.select().from(settings).where(eq(settings.key, key));
+    const { updates, cronUpdated, enabledChanged, newEnabledValue } = parseSettingsUpdateBody(body);
 
-      if (existing.length > 0) {
-        await db
-          .update(settings)
-          .set({ value, updatedAt: new Date() })
-          .where(eq(settings.key, key));
-      } else {
-        await db.insert(settings).values({ key, value, updatedAt: new Date() });
-      }
+    if (updates.length > 0) {
+      await upsertSettings(updates);
     }
 
     let shouldRestartScheduler = false;
@@ -373,21 +120,11 @@ export async function POST(request: Request) {
       }
     }
 
-    // Return updated settings
-    const allSettings = await db.select().from(settings);
-    const result: Record<string, string> = { ...DEFAULT_SETTINGS };
-    for (const setting of allSettings) {
-      if (setting.value !== null) {
-        result[setting.key] = setting.value;
-      }
-    }
-
-    return NextResponse.json(result);
+    const allSettings = await getSettingsWithDefaults();
+    return NextResponse.json(allSettings);
   } catch (error) {
-    console.error("[Settings API] POST error:", error);
-    return NextResponse.json(
-      { error: "Failed to update settings" },
-      { status: 500 }
-    );
+    return handleAIAPIError(error, "Failed to update settings", "settings_update_failed");
   }
 }
+
+export { DEFAULT_SETTINGS };

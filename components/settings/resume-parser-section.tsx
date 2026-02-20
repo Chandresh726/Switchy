@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/select";
 import { AlertTriangle, Terminal } from "lucide-react";
 import { REASONING_EFFORT_OPTIONS } from "@/lib/ai/providers/metadata";
-import type { ReasoningEffort } from "@/lib/ai/providers/types";
+import type { ReasoningEffort } from "@/lib/settings/types";
 import type { Provider, ProviderModelOption } from "@/lib/types";
 
 interface ResumeParserSectionProps {

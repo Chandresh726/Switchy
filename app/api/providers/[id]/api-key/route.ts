@@ -1,65 +1,80 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
-import { z } from "zod";
 
-import { db } from "@/lib/db";
-import { aiProviders } from "@/lib/db/schema";
-import { decryptApiKey } from "@/lib/encryption";
+import { ProviderRouteParamsSchema } from "@/lib/ai/contracts";
+import {
+  decryptProviderApiKey,
+  requireProviderById,
+} from "@/lib/ai/providers/provider-service";
+import { APIValidationError, handleAIAPIError } from "@/lib/api/ai-error-handler";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-const RouteParamsSchema = z.object({
-  id: z.string().min(1),
-});
+const STRICT_NO_STORE_HEADERS = {
+  "Cache-Control": "private, no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+  Pragma: "no-cache",
+  Expires: "0",
+} as const;
 
-const NO_STORE_HEADERS = {
-  "Cache-Control": "no-store",
-};
+function resolveCallerOrigin(request: NextRequest): string | null {
+  const origin = request.headers.get("origin");
+  if (origin) {
+    return origin;
+  }
 
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+  const referer = request.headers.get("referer");
+  if (!referer) {
+    return null;
+  }
+
   try {
-    const parsedParams = RouteParamsSchema.safeParse(await params);
-    if (!parsedParams.success) {
-      return NextResponse.json({ error: "Provider not found" }, { status: 404, headers: NO_STORE_HEADERS });
-    }
-    const { id } = parsedParams.data;
+    return new URL(referer).origin;
+  } catch {
+    return null;
+  }
+}
 
-    const provider = await db
-      .select()
-      .from(aiProviders)
-      .where(eq(aiProviders.id, id))
-      .limit(1);
+function assertSameOrigin(request: NextRequest): void {
+  const callerOrigin = resolveCallerOrigin(request);
+  const appOrigin = request.nextUrl.origin;
 
-    if (provider.length === 0) {
-      return NextResponse.json({ error: "Provider not found" }, { status: 404, headers: NO_STORE_HEADERS });
-    }
+  if (!callerOrigin || callerOrigin !== appOrigin) {
+    throw new APIValidationError(
+      "Cross-origin requests are not allowed",
+      "cross_origin_forbidden",
+      403
+    );
+  }
+}
 
-    const p = provider[0];
-    
-    let apiKey: string | null = null;
-    if (p.apiKey) {
-      try {
-        apiKey = decryptApiKey(p.apiKey);
-      } catch {
-        console.error(`Failed to decrypt API key for provider "${p.id}"`);
-        apiKey = null;
-      }
-    }
+export async function GET(request: NextRequest, { params }: RouteParams) {
+  try {
+    assertSameOrigin(request);
 
-    return NextResponse.json({
-      id: p.id,
-      provider: p.provider,
-      isActive: p.isActive,
-      isDefault: p.isDefault,
-      hasApiKey: !!p.apiKey,
-      apiKey,
-      createdAt: p.createdAt,
-      updatedAt: p.updatedAt,
-    }, { headers: NO_STORE_HEADERS });
+    const parsedParams = ProviderRouteParamsSchema.parse(await params);
+    const provider = await requireProviderById(parsedParams.id);
+    const apiKey = decryptProviderApiKey(provider) ?? null;
+
+    return NextResponse.json(
+      {
+        id: provider.id,
+        provider: provider.provider,
+        isActive: provider.isActive,
+        isDefault: provider.isDefault,
+        hasApiKey: !!provider.apiKey,
+        apiKey,
+        createdAt: provider.createdAt,
+        updatedAt: provider.updatedAt,
+      },
+      { headers: STRICT_NO_STORE_HEADERS }
+    );
   } catch (error) {
-    console.error("Failed to fetch provider:", error);
-    return NextResponse.json({ error: "Failed to fetch provider" }, { status: 500, headers: NO_STORE_HEADERS });
+    return handleAIAPIError(
+      error,
+      "Failed to fetch provider",
+      "provider_api_key_fetch_failed",
+      STRICT_NO_STORE_HEADERS
+    );
   }
 }

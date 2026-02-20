@@ -1,5 +1,13 @@
 import { NextResponse } from "next/server";
-import { getUnmatchedJobIds, createMatchSession, matchWithTracking, getMatchSessionStatus } from "@/lib/ai/matcher";
+
+import { MatchUnmatchedQuerySchema } from "@/lib/ai/contracts";
+import {
+  createMatchSession,
+  getMatchSessionStatus,
+  getUnmatchedJobIds,
+  matchWithTracking,
+} from "@/lib/ai/matcher";
+import { handleAIAPIError } from "@/lib/api/ai-error-handler";
 
 const NO_STORE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -8,32 +16,42 @@ const NO_STORE_HEADERS = {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const sessionId = searchParams.get("sessionId");
+    const query = MatchUnmatchedQuerySchema.parse({
+      sessionId: searchParams.get("sessionId") ?? undefined,
+    });
 
-    if (sessionId) {
-      const session = await getMatchSessionStatus(sessionId);
+    if (query.sessionId) {
+      const session = await getMatchSessionStatus(query.sessionId);
       if (!session) {
-        return NextResponse.json({ error: "Session not found" }, { status: 404, headers: NO_STORE_HEADERS });
+        return NextResponse.json(
+          { error: "Session not found", code: "session_not_found" },
+          { status: 404, headers: NO_STORE_HEADERS }
+        );
       }
-      return NextResponse.json({
-        sessionId: session.id,
-        status: session.status,
-        total: session.jobsTotal,
-        completed: session.jobsCompleted,
-        succeeded: session.jobsSucceeded,
-        failed: session.jobsFailed,
-        startedAt: session.startedAt,
-        completedAt: session.completedAt,
-      }, { headers: NO_STORE_HEADERS });
+
+      return NextResponse.json(
+        {
+          sessionId: session.id,
+          status: session.status,
+          total: session.jobsTotal,
+          completed: session.jobsCompleted,
+          succeeded: session.jobsSucceeded,
+          failed: session.jobsFailed,
+          startedAt: session.startedAt,
+          completedAt: session.completedAt,
+        },
+        { headers: NO_STORE_HEADERS }
+      );
     }
 
     const unmatchedJobIds = await getUnmatchedJobIds();
     return NextResponse.json({ count: unmatchedJobIds.length }, { headers: NO_STORE_HEADERS });
   } catch (error) {
-    console.error("[Match Unmatched API] GET error:", error);
-    return NextResponse.json(
-      { error: "Failed to get unmatched job count" },
-      { status: 500, headers: NO_STORE_HEADERS }
+    return handleAIAPIError(
+      error,
+      "Failed to get unmatched job count",
+      "match_unmatched_get_failed",
+      NO_STORE_HEADERS
     );
   }
 }
@@ -57,8 +75,8 @@ export async function POST() {
     matchWithTracking(unmatchedJobIds, {
       triggerSource: "match_unmatched",
       sessionId,
-    }).catch((err) => {
-      console.error("[Match Unmatched] Background matching failed:", err);
+    }).catch((error) => {
+      console.error("[Match Unmatched] Background matching failed:", error);
     });
 
     return NextResponse.json({
@@ -69,10 +87,6 @@ export async function POST() {
       failed: 0,
     });
   } catch (error) {
-    console.error("[Match Unmatched API] POST error:", error);
-    return NextResponse.json(
-      { error: "Failed to start matching" },
-      { status: 500 }
-    );
+    return handleAIAPIError(error, "Failed to start matching", "match_unmatched_post_failed");
   }
 }

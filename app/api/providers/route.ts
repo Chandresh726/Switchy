@@ -1,110 +1,73 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "crypto";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { getProviderModels } from "@/lib/ai/providers/model-catalog";
 import { getProviderMetadata } from "@/lib/ai/providers/metadata";
+import {
+  createProvider,
+  listProviders,
+  toProviderPublic,
+} from "@/lib/ai/providers/provider-service";
 import { isAIProvider } from "@/lib/ai/providers/types";
-import { db } from "@/lib/db";
-import { aiProviders, settings } from "@/lib/db/schema";
-import { encryptApiKey } from "@/lib/encryption";
+import { APIValidationError, handleAIAPIError } from "@/lib/api/ai-error-handler";
+import { upsertSettings } from "@/lib/settings/settings-service";
 
 const CreateProviderBodySchema = z.object({
   provider: z.string().min(1),
   apiKey: z.string().optional(),
 });
 
-async function upsertSetting(key: string, value: string): Promise<void> {
-  const existing = await db.select().from(settings).where(eq(settings.key, key)).limit(1);
-
-  if (existing.length > 0) {
-    await db
-      .update(settings)
-      .set({ value, updatedAt: new Date() })
-      .where(eq(settings.key, key));
-  } else {
-    await db.insert(settings).values({ key, value, updatedAt: new Date() });
-  }
-}
-
 export async function GET() {
   try {
-    const providers = await db.select().from(aiProviders).orderBy(aiProviders.createdAt);
-    
-    const providersWithoutKeys = providers.map((p) => ({
-      id: p.id,
-      provider: p.provider,
-      isActive: p.isActive,
-      isDefault: p.isDefault,
-      createdAt: p.createdAt,
-      updatedAt: p.updatedAt,
-      hasApiKey: !!p.apiKey,
-    }));
-
-    return NextResponse.json(providersWithoutKeys);
+    const providers = await listProviders();
+    return NextResponse.json(providers.map(toProviderPublic));
   } catch (error) {
-    console.error("Failed to fetch providers:", error);
-    return NextResponse.json({ error: "Failed to fetch providers" }, { status: 500 });
+    return handleAIAPIError(error, "Failed to fetch providers", "providers_fetch_failed");
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const parsedBody = CreateProviderBodySchema.safeParse(body);
+    const parsedBody = CreateProviderBodySchema.parse(body);
 
-    if (!parsedBody.success) {
-      return NextResponse.json({ error: "Provider type is required" }, { status: 400 });
-    }
-
-    const { provider: providerType, apiKey } = parsedBody.data;
+    const { provider: providerType, apiKey } = parsedBody;
 
     if (!isAIProvider(providerType)) {
-      return NextResponse.json({ error: "Invalid provider type" }, { status: 400 });
+      throw new APIValidationError("Invalid provider type", "invalid_provider");
     }
 
     const metadata = getProviderMetadata(providerType);
-
-    let encryptedApiKey: string | undefined;
     const normalizedApiKey = apiKey?.trim();
-    if (normalizedApiKey && metadata.requiresApiKey) {
-      encryptedApiKey = encryptApiKey(normalizedApiKey);
+
+    if (metadata.requiresApiKey && !normalizedApiKey) {
+      throw new APIValidationError("API key is required for this provider", "missing_api_key");
     }
 
-    const existingProviders = await db.select().from(aiProviders);
-    const isFirstProvider = existingProviders.length === 0;
-
-    const newProvider = await db
-      .insert(aiProviders)
-      .values({
-        id: randomUUID(),
-        provider: providerType,
-        apiKey: encryptedApiKey,
-        isActive: true,
-        isDefault: isFirstProvider,
-      })
-      .returning();
+    const created = await createProvider({
+      provider: providerType,
+      apiKey: normalizedApiKey,
+    });
 
     let autoConfiguredDefaults = false;
     let autoConfiguredModelId: string | undefined;
     let autoConfiguredWarning: string | undefined;
 
-    if (isFirstProvider) {
+    if (created.isDefault) {
       try {
-        const providerModels = await getProviderModels(newProvider[0].id, { forceRefresh: true });
+        const providerModels = await getProviderModels(created.id, { forceRefresh: true });
         const firstModelId = providerModels.models[0]?.modelId;
 
         if (!firstModelId) {
           autoConfiguredWarning = "Provider added, but no text/chat model was available for auto-configuration.";
         } else {
-          await Promise.all([
-            upsertSetting("matcher_provider_id", newProvider[0].id),
-            upsertSetting("resume_parser_provider_id", newProvider[0].id),
-            upsertSetting("ai_writing_provider_id", newProvider[0].id),
-            upsertSetting("matcher_model", firstModelId),
-            upsertSetting("resume_parser_model", firstModelId),
-            upsertSetting("ai_writing_model", firstModelId),
+          await upsertSettings([
+            { key: "matcher_provider_id", value: created.id },
+            { key: "resume_parser_provider_id", value: created.id },
+            { key: "ai_writing_provider_id", value: created.id },
+            { key: "matcher_model", value: firstModelId },
+            { key: "resume_parser_model", value: firstModelId },
+            { key: "ai_writing_model", value: firstModelId },
           ]);
 
           autoConfiguredDefaults = true;
@@ -118,19 +81,12 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      id: newProvider[0].id,
-      provider: newProvider[0].provider,
-      isActive: newProvider[0].isActive,
-      isDefault: newProvider[0].isDefault,
-      hasApiKey: !!encryptedApiKey,
-      createdAt: newProvider[0].createdAt,
-      updatedAt: newProvider[0].updatedAt,
+      ...toProviderPublic(created),
       autoConfiguredDefaults,
       autoConfiguredModelId,
       autoConfiguredWarning,
     });
   } catch (error) {
-    console.error("Failed to create provider:", error);
-    return NextResponse.json({ error: "Failed to create provider" }, { status: 500 });
+    return handleAIAPIError(error, "Failed to create provider", "provider_create_failed");
   }
 }

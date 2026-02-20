@@ -1,48 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
-import { matchSingle, matchBulk } from "@/lib/ai/matcher";
+
+import { MatchRouteBodySchema } from "@/lib/ai/contracts";
+import { matchBulk, matchSingle } from "@/lib/ai/matcher";
+import { handleAIAPIError } from "@/lib/api/ai-error-handler";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { jobId, jobIds } = body;
+    const body = MatchRouteBodySchema.parse(await request.json());
 
-    if (jobId) {
-      const result = await matchSingle(jobId);
+    if ("jobId" in body) {
+      const result = await matchSingle(body.jobId);
       return NextResponse.json(result);
     }
 
-    if (jobIds && Array.isArray(jobIds)) {
-      const results = await matchBulk(jobIds);
+    const results = await matchBulk(body.jobIds);
+    const response: Record<string, unknown> = {};
 
-      const response: Record<string, unknown> = {};
-      for (const [id, result] of results) {
-        if (result instanceof Error) {
-          response[id] = { error: result.message };
-        } else {
-          response[id] = result;
-        }
+    for (const [id, result] of results) {
+      if (result instanceof Error) {
+        response[id] = { error: result.message };
+      } else {
+        response[id] = result;
       }
-
-      return NextResponse.json({
-        results: response,
-        summary: {
-          total: jobIds.length,
-          successful: Array.from(results.values()).filter(
-            (r) => !(r instanceof Error)
-          ).length,
-        },
-      });
     }
 
-    return NextResponse.json(
-      { error: "jobId or jobIds is required" },
-      { status: 400 }
-    );
+    return NextResponse.json({
+      results: response,
+      summary: {
+        total: body.jobIds.length,
+        successful: Array.from(results.values()).filter((item) => !(item instanceof Error)).length,
+      },
+    });
   } catch (error) {
-    console.error("Failed to calculate match:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to calculate match" },
-      { status: 500 }
-    );
+    return handleAIAPIError(error, "Failed to calculate match", "match_failed");
   }
 }
