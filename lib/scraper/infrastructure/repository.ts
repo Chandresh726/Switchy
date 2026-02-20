@@ -179,6 +179,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
       totalJobsFound: 0,
       totalJobsAdded: 0,
       totalJobsFiltered: 0,
+      totalJobsArchived: 0,
     });
   }
 
@@ -212,6 +213,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
         totalJobsFound: progress.totalJobsFound,
         totalJobsAdded: progress.totalJobsAdded,
         totalJobsFiltered: progress.totalJobsFiltered,
+        totalJobsArchived: progress.totalJobsArchived,
       })
       .where(and(eq(scrapeSessions.id, id), eq(scrapeSessions.status, "in_progress")));
   }
@@ -239,6 +241,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
         jobsAdded: log.jobsAdded,
         jobsUpdated: log.jobsUpdated,
         jobsFiltered: log.jobsFiltered,
+        jobsArchived: log.jobsArchived,
         errorMessage: log.errorMessage,
         duration: log.duration,
         completedAt: log.completedAt,

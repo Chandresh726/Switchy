@@ -129,6 +129,7 @@ export const scrapeSessions = sqliteTable("scrape_sessions", {
   totalJobsFound: integer("total_jobs_found").default(0),
   totalJobsAdded: integer("total_jobs_added").default(0),
   totalJobsFiltered: integer("total_jobs_filtered").default(0),
+  totalJobsArchived: integer("total_jobs_archived").default(0),
   startedAt: integer("started_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   completedAt: integer("completed_at", { mode: "timestamp" }),
 });
@@ -144,6 +145,7 @@ export const scrapingLogs = sqliteTable("scraping_logs", {
   jobsAdded: integer("jobs_added").default(0),
   jobsUpdated: integer("jobs_updated").default(0),
   jobsFiltered: integer("jobs_filtered").default(0), // Jobs filtered by location preference
+  jobsArchived: integer("jobs_archived").default(0),
   platform: text("platform"), // "greenhouse" | "lever" etc.
   errorMessage: text("error_message"),
   duration: integer("duration"), // milliseconds

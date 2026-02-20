@@ -9,6 +9,7 @@ import {
   Building2,
   Briefcase,
   Filter,
+  Archive,
   Trash2,
   Play,
   Plus,
@@ -45,6 +46,7 @@ interface ScrapeSession {
   totalJobsFound: number | null;
   totalJobsAdded: number | null;
   totalJobsFiltered: number | null;
+  totalJobsArchived: number | null;
   startedAt: Date | null;
   completedAt: Date | null;
 }
@@ -251,6 +253,10 @@ export function SessionCard({ session }: SessionCardProps) {
         <span className="flex items-center gap-1.5">
           <Filter className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-foreground/80 font-medium">{session.totalJobsFiltered || 0}</span> Filtered
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Archive className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-foreground/80 font-medium">{session.totalJobsArchived || 0}</span> Archived
         </span>
 
         <div className="ml-auto flex items-center gap-3">

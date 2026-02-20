@@ -9,7 +9,6 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  Sparkles,
   Loader2,
   Building2,
   Trash2,
@@ -67,10 +66,6 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
 
   const progress = session.jobsTotal
     ? Math.round(((session.jobsCompleted || 0) / session.jobsTotal) * 100)
-    : 0;
-
-  const successRate = session.jobsTotal
-    ? Math.round(((session.jobsSucceeded || 0) / session.jobsTotal) * 100)
     : 0;
   const isActiveSession = session.status === "in_progress" || session.status === "queued";
 
@@ -273,28 +268,14 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
           </span>
           <span className="flex items-center gap-1.5">
             <CheckCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span className="font-medium text-emerald-600 dark:text-emerald-400">{session.jobsSucceeded || 0}</span> Succeeded
+            <span className="font-medium text-emerald-600 dark:text-emerald-400">{session.jobsSucceeded || 0}</span> Success
           </span>
-          {session.jobsFailed ? (
+          {(session.jobsFailed || 0) > 0 && (
             <span className="flex items-center gap-1.5">
               <XCircle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
-              <span className="font-medium text-red-600 dark:text-red-400">{session.jobsFailed}</span> Failed
+              <span className="font-medium text-red-600 dark:text-red-400">{session.jobsFailed || 0}</span> Failed
             </span>
-          ) : null}
-          <span className="flex items-center gap-1.5">
-            <Sparkles className="h-3.5 w-3.5 text-yellow-500" />
-            <span
-              className={`font-medium ${
-                successRate >= 75
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : successRate >= 50
-                    ? "text-yellow-600 dark:text-yellow-400"
-                    : "text-red-600 dark:text-red-400"
-              }`}
-            >
-              {successRate}%
-            </span> Match Rate
-          </span>
+          )}
 
           <div className="ml-auto flex items-center gap-3">
             <Badge

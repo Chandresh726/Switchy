@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
           jobsAdded: scrapingLogs.jobsAdded,
           jobsUpdated: scrapingLogs.jobsUpdated,
           jobsFiltered: scrapingLogs.jobsFiltered,
+          jobsArchived: scrapingLogs.jobsArchived,
           errorMessage: scrapingLogs.errorMessage,
           duration: scrapingLogs.duration,
           startedAt: scrapingLogs.startedAt,

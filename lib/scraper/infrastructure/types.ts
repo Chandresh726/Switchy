@@ -19,6 +19,7 @@ export interface SessionProgressUpdate {
   totalJobsFound: number;
   totalJobsAdded: number;
   totalJobsFiltered: number;
+  totalJobsArchived: number;
 }
 
 export interface ScrapeSessionCreate {
@@ -38,6 +39,7 @@ export interface ScrapingLogCreate {
   jobsAdded: number;
   jobsUpdated: number;
   jobsFiltered: number;
+  jobsArchived: number;
   errorMessage?: string;
   duration: number;
   completedAt: Date;

@@ -14,6 +14,7 @@ interface ScrapeSession {
   totalJobsFound: number | null;
   totalJobsAdded: number | null;
   totalJobsFiltered: number | null;
+  totalJobsArchived: number | null;
   startedAt: Date | null;
   completedAt: Date | null;
 }

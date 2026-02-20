@@ -8,7 +8,6 @@ import {
   TrendingUp,
   Clock,
   RefreshCw,
-  CheckCircle2,
   AlertCircle,
   Eye,
   Zap,
@@ -20,6 +19,7 @@ import Link from "next/link";
 import { MatchBadge } from "@/components/jobs/match-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getSessionStatusConfig } from "@/lib/utils/status-config";
 
 interface ScrapeSession {
   id: string;
@@ -237,6 +237,9 @@ export default function DashboardPage() {
   const recentJobs: Job[] = recentJobsData?.jobs || [];
   const appliedJobs: Job[] = appliedJobsData?.jobs || [];
   const lastScan = stats?.lastScan;
+  const lastScanStatusConfig = lastScan
+    ? getSessionStatusConfig(lastScan.status)
+    : null;
 
   return (
     <div className="space-y-8">
@@ -453,7 +456,7 @@ export default function DashboardPage() {
                   <RefreshCw className="h-4 w-4 text-muted-foreground" />
                   Latest Scan
                 </h2>
-                <Link href={`/history/${lastScan.id}`}>
+                <Link href={`/history/scrape/${lastScan.id}`}>
                   <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground h-8">
                     View Details <ArrowRight className="ml-1 h-3.5 w-3.5" />
                   </Button>
@@ -462,21 +465,25 @@ export default function DashboardPage() {
 
               <div className="flex items-center justify-between bg-background/60 rounded-lg border border-border p-4">
                 <div className="flex items-center gap-4">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${
-                    lastScan.status === "completed" ? "bg-emerald-500/10" : lastScan.status === "failed" ? "bg-red-500/10" : "bg-blue-500/10"
-                  }`}>
-                    {lastScan.status === "completed" ? (
-                      <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                    ) : lastScan.status === "failed" ? (
-                      <AlertCircle className="h-5 w-5 text-red-500" />
-                    ) : (
+                  <div
+                    className={`flex h-10 w-10 items-center justify-center rounded-lg ${
+                      lastScanStatusConfig?.bgColor ?? "bg-muted"
+                    }`}
+                  >
+                    {lastScan.status === "in_progress" ? (
                       <RefreshCw className="h-5 w-5 animate-spin text-blue-500" />
+                    ) : lastScanStatusConfig ? (
+                      <lastScanStatusConfig.icon className={`h-5 w-5 ${lastScanStatusConfig.color}`} />
+                    ) : (
+                      <AlertCircle className="h-5 w-5 text-red-500" />
                     )}
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-foreground">
-                        {lastScan.status === "completed" ? "Completed" : lastScan.status === "in_progress" ? "Scanning..." : "Failed"}
+                        {lastScan.status === "in_progress"
+                          ? "Scanning..."
+                          : (lastScanStatusConfig?.label ?? "Failed")}
                       </span>
                       <span className="text-xs text-muted-foreground">&bull;</span>
                       <span className="text-xs text-muted-foreground">{formatRelativeTime(new Date(lastScan.startedAt))}</span>

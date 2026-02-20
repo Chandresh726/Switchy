@@ -22,6 +22,13 @@
       "when": 1771576208944,
       "tag": "0002_narrow_mandrill",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1771587935652,
+      "tag": "0003_hot_masque",
+      "breakpoints": true
     }
   ]
 }

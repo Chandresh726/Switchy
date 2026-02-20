@@ -10,6 +10,7 @@ import {
   Building2,
   Briefcase,
   Filter,
+  Archive,
   Sparkles,
   Plus,
   AlertCircle,
@@ -38,6 +39,7 @@ interface SessionLog {
   jobsAdded: number | null;
   jobsUpdated: number | null;
   jobsFiltered: number | null;
+  jobsArchived: number | null;
   errorMessage: string | null;
   duration: number | null;
   startedAt: Date | null;
@@ -58,6 +60,7 @@ interface ScrapeSession {
   totalJobsFound: number | null;
   totalJobsAdded: number | null;
   totalJobsFiltered: number | null;
+  totalJobsArchived: number | null;
   startedAt: Date | null;
   completedAt: Date | null;
 }
@@ -235,7 +238,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
         )}
 
         {/* Summary Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <div className="rounded-lg border border-border bg-background/60 p-4">
             <div className="flex items-center gap-2 mb-2 text-muted-foreground">
               <Building2 className="h-4 w-4" />
@@ -278,6 +281,16 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
             </div>
             <span className="text-2xl font-semibold text-muted-foreground">
               {session.totalJobsFiltered || 0}
+            </span>
+          </div>
+
+          <div className="rounded-lg border border-border bg-background/60 p-4">
+            <div className="flex items-center gap-2 mb-2 text-muted-foreground">
+              <Archive className="h-4 w-4" />
+              <span className="text-xs font-medium uppercase tracking-wider">Archived</span>
+            </div>
+            <span className="text-2xl font-semibold text-muted-foreground">
+              {session.totalJobsArchived || 0}
             </span>
           </div>
         </div>
@@ -338,6 +351,10 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
                         <div className="flex items-center gap-1.5 text-muted-foreground">
                           <Filter className="h-3.5 w-3.5" />
                           <span>{log.jobsFiltered || 0}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                          <Archive className="h-3.5 w-3.5" />
+                          <span>{log.jobsArchived || 0}</span>
                         </div>
                       </div>
                     </div>

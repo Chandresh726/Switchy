@@ -154,10 +154,6 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
   const { session, logs } = data;
   const statusConfig = getSessionStatusConfig(session.status);
   const StatusIcon = statusConfig.icon;
-
-  const successRate = session.jobsTotal
-    ? Math.round(((session.jobsSucceeded || 0) / session.jobsTotal) * 100)
-    : 0;
   const progress = session.jobsTotal
     ? Math.round(((session.jobsCompleted || 0) / session.jobsTotal) * 100)
     : 0;
@@ -296,36 +292,15 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
           </div>
 
           <div className="rounded-lg border border-border bg-background/60 p-4">
-            <div className="mb-2 flex items-center gap-2 text-purple-600 dark:text-purple-400">
-              <Sparkles className="h-4 w-4" />
-              <span className="text-xs font-medium uppercase tracking-wider">Success Rate</span>
+            <div className="mb-2 flex items-center gap-2 text-muted-foreground">
+              <Clock className="h-4 w-4" />
+              <span className="text-xs font-medium uppercase tracking-wider">Total Duration</span>
             </div>
-            <span
-              className={`text-2xl font-semibold ${
-                successRate >= 75
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : successRate >= 50
-                    ? "text-yellow-600 dark:text-yellow-400"
-                    : "text-red-600 dark:text-red-400"
-              }`}
-            >
-              {successRate}%
+            <span className="text-2xl font-semibold text-foreground">
+              {formatDurationFromDates(session.startedAt, session.completedAt)}
             </span>
           </div>
         </div>
-
-        {/* Duration */}
-        {session.status !== "queued" && (
-          <div className="mt-4 pt-4 border-t border-border">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Clock className="h-4 w-4" />
-              <span>Duration:</span>
-              <span className="text-foreground font-medium">
-                {formatDurationFromDates(session.startedAt, session.completedAt)}
-              </span>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Job Logs List */}

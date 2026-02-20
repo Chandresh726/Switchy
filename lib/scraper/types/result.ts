@@ -66,6 +66,7 @@ export interface FetchResult {
   jobsAdded: number;
   jobsUpdated: number;
   jobsFiltered: number;
+  jobsArchived: number;
   platform: Platform | null;
   error?: string;
   duration: number;
@@ -82,6 +83,7 @@ export interface BatchFetchResult {
     totalJobsFound: number;
     totalJobsAdded: number;
     totalJobsFiltered: number;
+    totalJobsArchived: number;
     totalDuration: number;
   };
 }
@@ -91,6 +93,7 @@ export interface SessionProgress {
   totalJobsFound: number;
   totalJobsAdded: number;
   totalJobsFiltered: number;
+  totalJobsArchived: number;
 }
 
 export interface DeduplicationResult {

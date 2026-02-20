@@ -49,6 +49,7 @@ interface ScrapeExecutionResult {
   jobsAdded: number;
   jobsUpdated: number;
   jobsFiltered: number;
+  jobsArchived: number;
   logId?: number;
   error?: string;
 }
@@ -58,6 +59,7 @@ interface ScrapeBatchProgress {
   totalJobsFound: number;
   totalJobsAdded: number;
   totalJobsFiltered: number;
+  totalJobsArchived: number;
 }
 
 export class ScrapeOrchestrator implements IScrapeOrchestrator {
@@ -125,6 +127,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
           totalJobsFound: result.jobsFound,
           totalJobsAdded: result.jobsAdded,
           totalJobsFiltered: result.jobsFiltered,
+          totalJobsArchived: result.jobsArchived,
         });
         await this.repository.completeSession(
           sessionId,
@@ -203,6 +206,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
         totalJobsFound: progress.totalJobsFound,
         totalJobsAdded: progress.totalJobsAdded,
         totalJobsFiltered: progress.totalJobsFiltered,
+        totalJobsArchived: progress.totalJobsArchived,
         totalDuration: Date.now() - sessionStartTime,
       },
     };
@@ -214,6 +218,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       totalJobsFound: results.reduce((sum, result) => sum + result.jobsFound, 0),
       totalJobsAdded: results.reduce((sum, result) => sum + result.jobsAdded, 0),
       totalJobsFiltered: results.reduce((sum, result) => sum + result.jobsFiltered, 0),
+      totalJobsArchived: results.reduce((sum, result) => sum + result.jobsArchived, 0),
     };
   }
 
@@ -303,6 +308,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
         jobsAdded: 0,
         jobsUpdated: 0,
         jobsFiltered: 0,
+        jobsArchived: 0,
         errorMessage,
         duration: Date.now() - startTime,
         completedAt: new Date(),
@@ -317,6 +323,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
         jobsAdded: 0,
         jobsUpdated: 0,
         jobsFiltered: 0,
+        jobsArchived: 0,
         error: errorMessage,
         duration: Date.now() - startTime,
       });
@@ -383,6 +390,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
         jobsAdded: 0,
         jobsUpdated: 0,
         jobsFiltered: 0,
+        jobsArchived: 0,
         errorMessage,
         duration: Date.now() - startTime,
         completedAt: new Date(),
@@ -394,6 +402,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
         jobsAdded: 0,
         jobsUpdated: 0,
         jobsFiltered: 0,
+        jobsArchived: 0,
         error: errorMessage,
       };
     }
@@ -423,7 +432,11 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       )
     );
 
-    await this.syncArchivedJobs(companyId, openExternalIds, scraperResult.openExternalIdsComplete);
+    const jobsArchived = await this.syncArchivedJobs(
+      companyId,
+      openExternalIds,
+      scraperResult.openExternalIdsComplete
+    );
 
     const dedupeResult = this.deduplicationService.batchDeduplicate(scraperResult.jobs, existingJobs);
     const filterResult = this.filterService.applyFilters(dedupeResult.newJobs, filters);
@@ -469,6 +482,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       jobsAdded,
       jobsUpdated: dedupeResult.duplicates.length,
       jobsFiltered,
+      jobsArchived,
       duration: Date.now() - startTime,
       completedAt: new Date(),
       matcherStatus: shouldMatch ? "pending" : null,
@@ -486,6 +500,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       jobsAdded,
       jobsUpdated: dedupeResult.duplicates.length,
       jobsFiltered,
+      jobsArchived,
       logId,
     };
   }
@@ -494,18 +509,22 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     companyId: number,
     openExternalIds: string[],
     openExternalIdsComplete?: boolean
-  ): Promise<void> {
+  ): Promise<number> {
+    let archivedCount = 0;
+
     if (openExternalIds.length > 0) {
       await this.repository.reopenScraperArchivedJobs(companyId, openExternalIds);
     }
 
     if (openExternalIdsComplete !== false) {
-      await this.repository.archiveMissingJobs(
+      archivedCount = await this.repository.archiveMissingJobs(
         companyId,
         openExternalIds,
         ARCHIVABLE_JOB_STATUSES
       );
     }
+
+    return archivedCount;
   }
 
   private async insertFilteredJobs(companyId: number, jobs: ScrapedJob[]): Promise<number[]> {
@@ -558,6 +577,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     jobsAdded: number;
     jobsUpdated: number;
     jobsFiltered: number;
+    jobsArchived: number;
     duration: number;
     error?: string;
     logId?: number;
@@ -571,6 +591,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       jobsAdded: params.jobsAdded,
       jobsUpdated: params.jobsUpdated,
       jobsFiltered: params.jobsFiltered,
+      jobsArchived: params.jobsArchived,
       platform: params.platform,
       error: params.error,
       duration: params.duration,
@@ -657,6 +678,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       jobsAdded: 0,
       jobsUpdated: 0,
       jobsFiltered: 0,
+      jobsArchived: 0,
       error,
       duration: 0,
     });
@@ -698,6 +720,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       jobsAdded: 0,
       jobsUpdated: 0,
       jobsFiltered: 0,
+      jobsArchived: 0,
       duration: 0,
     });
   }

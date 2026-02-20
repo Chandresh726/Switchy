@@ -100,7 +100,6 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
 
       const successfulJobIds = new Set<number>();
       for (const result of batchResults) {
-        const jobDuration = Math.round(batchDuration / batch.length);
         const item = {
           result: {
             score: result.score,
@@ -109,7 +108,7 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
             missingSkills: result.missingSkills,
             recommendations: result.recommendations,
           },
-          duration: jobDuration,
+          duration: batchDuration,
           attemptCount: batchAttemptCount,
         };
         results.set(result.jobId, item);
@@ -125,7 +124,7 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
         if (!successfulJobIds.has(job.id)) {
           const item = {
             error: new Error("AI did not return match result for this job"),
-            duration: 0,
+            duration: batchDuration,
             attemptCount: batchAttemptCount,
           };
           results.set(job.id, item);
@@ -140,13 +139,14 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
       console.log(`[BulkStrategy] Batch completed: ${batchResults.length}/${batch.length} jobs`);
     } catch (error) {
       const errorObj = error instanceof Error ? error : new Error(String(error));
+      const batchDuration = Date.now() - batchStartTime;
       circuitBreaker.recordFailure(errorObj);
       const errorType = categorizeError(errorObj);
       const attemptCount = (errorObj as Error & { attemptCount?: number }).attemptCount ?? 1;
       console.error(`[BulkStrategy] Batch failed: ${errorObj.message} (type: ${errorType})`);
 
       for (const job of batch) {
-        const item = { error: errorObj, duration: 0, attemptCount };
+        const item = { error: errorObj, duration: batchDuration, attemptCount };
         results.set(job.id, item);
         await reportResult(job.id, item);
         failed++;
