@@ -206,7 +206,7 @@ export default function DashboardPage() {
   const { data: highMatchData } = useQuery({
     queryKey: ["jobs", "high-match"],
     queryFn: async () => {
-      const res = await fetch("/api/jobs?minScore=75&sortBy=matchScore&sortOrder=desc&limit=5");
+      const res = await fetch("/api/jobs?minScore=75&excludeStatus=applied,archived&sortBy=matchScore&sortOrder=desc&limit=5");
       if (!res.ok) throw new Error("Failed to fetch jobs");
       return res.json();
     },
@@ -216,7 +216,7 @@ export default function DashboardPage() {
   const { data: recentJobsData } = useQuery({
     queryKey: ["jobs", "recent"],
     queryFn: async () => {
-      const res = await fetch("/api/jobs?status=new&sortBy=discoveredAt&sortOrder=desc&limit=5");
+      const res = await fetch("/api/jobs?excludeStatus=applied,archived&sortBy=discoveredAt&sortOrder=desc&limit=5");
       if (!res.ok) throw new Error("Failed to fetch jobs");
       return res.json();
     },
