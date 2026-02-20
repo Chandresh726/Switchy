@@ -2,10 +2,10 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { generateText } from "ai";
 import { eq, desc, asc, and, sql } from "drizzle-orm";
-import { getAIClientV2, getAIGenerationOptions } from "@/lib/ai/client";
-import { resolveProviderModelSelection } from "@/lib/ai/providers/model-catalog";
+
 import { db } from "@/lib/db";
 import { settings, aiGeneratedContent, aiGenerationHistory } from "@/lib/db/schema";
+import { resolveAIContextForFeature } from "@/lib/ai/runtime-context";
 import { fetchCandidateProfile, fetchJobWithCompany } from "@/lib/ai/writing/utils";
 import { COVER_LETTER_SYSTEM_PROMPT, buildCoverLetterPromptFromProfileData, type CoverLetterSettings } from "@/lib/ai/prompts/cover-letter";
 import { REFERRAL_SYSTEM_PROMPT, buildReferralPromptFromProfileData, type ReferralSettings } from "@/lib/ai/prompts/referral";
@@ -181,17 +181,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Profile not found. Please set up your profile first." }, { status: 400 });
     }
 
-    const resolvedSelection = await resolveProviderModelSelection({
+    const aiContext = await resolveAIContextForFeature("writing", {
       providerId: settingsMap.get("ai_writing_provider_id") || undefined,
       modelId: settingsMap.get("ai_writing_model") || undefined,
+      reasoningEffort: settingsMap.get("ai_writing_reasoning_effort") || undefined,
     });
-
-    const aiWritingModel = resolvedSelection.modelId;
-    const aiWritingReasoningEffort = settingsMap.get("ai_writing_reasoning_effort") || "medium";
-    const aiWritingProviderId = resolvedSelection.providerId;
-
-    const model = await getAIClientV2({ modelId: aiWritingModel, reasoningEffort: aiWritingReasoningEffort as "low" | "medium" | "high" | undefined, providerId: aiWritingProviderId });
-    const providerOptions = await getAIGenerationOptions(aiWritingModel, aiWritingReasoningEffort, aiWritingProviderId);
 
     let systemPrompt: string;
     let userPrompt: string;
@@ -265,10 +259,10 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await generateText({
-      model,
+      model: aiContext.model,
       system: systemPrompt,
       prompt: userPrompt,
-      ...providerOptions,
+      ...aiContext.providerOptions,
     });
 
     const text = result.text;

@@ -8,7 +8,7 @@ import { decryptApiKey } from "@/lib/encryption";
 import { AIError } from "@/lib/ai/shared/errors";
 
 import { providerRegistry } from "./index";
-import type { AIProvider } from "./types";
+import { isAIProvider, type AIProvider } from "./types";
 
 const MODEL_CACHE_TTL_MS = 15 * 60 * 1000;
 
@@ -210,6 +210,13 @@ async function getProviderRecord(providerId: string): Promise<ProviderRecord> {
     });
   }
 
+  if (!isAIProvider(provider.provider)) {
+    throw new AIError({
+      type: "provider_not_found",
+      message: `Provider "${provider.provider}" is not supported`,
+    });
+  }
+
   let decryptedApiKey: string | undefined;
   if (provider.apiKey) {
     try {
@@ -225,7 +232,7 @@ async function getProviderRecord(providerId: string): Promise<ProviderRecord> {
 
   return {
     id: provider.id,
-    provider: provider.provider as AIProvider,
+    provider: provider.provider,
     apiKey: decryptedApiKey,
     updatedAt: provider.updatedAt,
   };
@@ -245,6 +252,13 @@ async function getFallbackProviderRecord(): Promise<ProviderRecord | null> {
   const defaultProvider = providers.find((provider) => provider.isDefault);
   const candidate = defaultProvider ?? providers[0];
 
+  if (!isAIProvider(candidate.provider)) {
+    throw new AIError({
+      type: "provider_not_found",
+      message: `Provider "${candidate.provider}" is not supported`,
+    });
+  }
+
   let decryptedApiKey: string | undefined;
   if (candidate.apiKey) {
     try {
@@ -260,7 +274,7 @@ async function getFallbackProviderRecord(): Promise<ProviderRecord | null> {
 
   return {
     id: candidate.id,
-    provider: candidate.provider as AIProvider,
+    provider: candidate.provider,
     apiKey: decryptedApiKey,
     updatedAt: candidate.updatedAt,
   };

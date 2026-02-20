@@ -3,14 +3,21 @@ import type { LanguageModel } from "ai";
 /**
  * Supported AI providers
  */
-export type AIProvider =
-  | "anthropic"
-  | "openai"
-  | "gemini_api_key"
-  | "openrouter"
-  | "cerebras"
-  | "groq"
-  | "nvidia";
+export const AI_PROVIDER_IDS = [
+  "anthropic",
+  "openai",
+  "gemini_api_key",
+  "openrouter",
+  "cerebras",
+  "groq",
+  "nvidia",
+] as const;
+
+export type AIProvider = (typeof AI_PROVIDER_IDS)[number];
+
+export function isAIProvider(value: string): value is AIProvider {
+  return (AI_PROVIDER_IDS as readonly string[]).includes(value);
+}
 
 /**
  * Reasoning effort levels for models that support it

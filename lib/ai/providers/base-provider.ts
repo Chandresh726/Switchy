@@ -5,6 +5,7 @@ import {
   type CreateModelOptions,
   type ProviderConfig,
   type ModelConfig,
+  type ReasoningEffort,
   AIError,
 } from "./types";
 
@@ -36,20 +37,26 @@ export abstract class BaseProvider implements AIProviderInterface {
     }
   }
 
-  /**
-   * Get reasoning effort options for model creation
-   * Override in subclasses to provide provider-specific reasoning options
-   */
-  protected getReasoningOptions(
-    _modelId: string,
-    reasoningEffort?: string
+  protected buildProviderReasoningOptions(
+    providerKey: string,
+    config: ModelConfig,
+    transform?: (reasoningEffort: ReasoningEffort, config: ModelConfig) => unknown
   ): Record<string, unknown> | undefined {
-    // Base implementation returns the reasoning effort as a generic option
-    // Subclasses should override this to provide provider-specific options
-    if (reasoningEffort) {
-      return { reasoningEffort };
+    if (!config.reasoningEffort || !this.supportsReasoningEffort(config.modelId)) {
+      return undefined;
     }
-    return undefined;
+
+    const reasoningEffort = transform
+      ? transform(config.reasoningEffort, config)
+      : config.reasoningEffort;
+
+    return {
+      providerOptions: {
+        [providerKey]: {
+          reasoningEffort,
+        },
+      },
+    };
   }
 
   /**
@@ -80,19 +87,6 @@ export abstract class BaseProvider implements AIProviderInterface {
    */
   createModel(options: CreateModelOptions): LanguageModel {
     this.validateConfig(options.providerConfig);
-
-    const reasoningOptions = this.getReasoningOptions(
-      options.config.modelId,
-      options.config.reasoningEffort
-    );
-
-    // Merge reasoning options into extra options if they exist
-    if (reasoningOptions) {
-      options.providerConfig.extraOptions = {
-        ...options.providerConfig.extraOptions,
-        ...reasoningOptions,
-      };
-    }
 
     return this.createLanguageModel(options.config, options.providerConfig);
   }

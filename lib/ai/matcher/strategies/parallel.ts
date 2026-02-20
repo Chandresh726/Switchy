@@ -40,17 +40,21 @@ export const parallelStrategy: ParallelStrategy = async (ctx) => {
 
       const startTime = Date.now();
       try {
-        const result = await singleStrategy({
+        const { result, attemptCount } = await singleStrategy({
           ...ctx,
           job,
         });
-        const item = { result, duration: Date.now() - startTime };
+        const item = { result, duration: Date.now() - startTime, attemptCount };
         results.set(job.id, item);
         await reportResult(job.id, item);
         succeeded++;
       } catch (error) {
         const errorObj = error instanceof Error ? error : new Error(String(error));
-        const item = { error: errorObj, duration: Date.now() - startTime };
+        const item = {
+          error: errorObj,
+          duration: Date.now() - startTime,
+          attemptCount: (errorObj as Error & { attemptCount?: number }).attemptCount,
+        };
         results.set(job.id, item);
         await reportResult(job.id, item);
         failed++;

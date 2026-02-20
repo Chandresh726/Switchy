@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { asc, eq } from "drizzle-orm";
+import { z } from "zod";
 
 import { clearProviderModelsCache } from "@/lib/ai/providers/model-catalog";
 import { db } from "@/lib/db";
@@ -10,9 +11,22 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
+const RouteParamsSchema = z.object({
+  id: z.string().min(1),
+});
+
+const PatchProviderBodySchema = z.object({
+  apiKey: z.string().nullable().optional(),
+});
+
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
-    const { id } = await params;
+    const parsedParams = RouteParamsSchema.safeParse(await params);
+    if (!parsedParams.success) {
+      return NextResponse.json({ error: "Provider not found" }, { status: 404 });
+    }
+    const { id } = parsedParams.data;
+
     const provider = await db
       .select()
       .from(aiProviders)
@@ -44,9 +58,17 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
-    const { id } = await params;
-    const body = await request.json();
-    const { apiKey } = body;
+    const parsedParams = RouteParamsSchema.safeParse(await params);
+    if (!parsedParams.success) {
+      return NextResponse.json({ error: "Provider not found" }, { status: 404 });
+    }
+    const { id } = parsedParams.data;
+
+    const parsedBody = PatchProviderBodySchema.safeParse(await request.json());
+    if (!parsedBody.success) {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+    const { apiKey } = parsedBody.data;
 
     const existing = await db
       .select()
@@ -58,7 +80,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Provider not found" }, { status: 404 });
     }
 
-    const encryptedApiKey = apiKey ? encryptApiKey(apiKey) : null;
+    const normalizedApiKey = apiKey?.trim();
+    const encryptedApiKey = normalizedApiKey ? encryptApiKey(normalizedApiKey) : null;
 
     await db
       .update(aiProviders)
@@ -79,7 +102,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
-    const { id } = await params;
+    const parsedParams = RouteParamsSchema.safeParse(await params);
+    if (!parsedParams.success) {
+      return NextResponse.json({ error: "Provider not found" }, { status: 404 });
+    }
+    const { id } = parsedParams.data;
     
     const existing = await db
       .select()

@@ -58,7 +58,6 @@ interface MatcherSettings {
   openrouter_api_key?: string;
   cerebras_api_key?: string;
   openai_api_key?: string;
-  modal_api_key?: string;
   // AI Writing
   referral_tone?: string;
   referral_length?: string;

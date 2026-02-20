@@ -27,17 +27,7 @@ export class CerebrasProvider extends BaseProvider {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _providerConfig: ProviderConfig
   ): Record<string, unknown> | undefined {
-    if (!config.reasoningEffort || !this.supportsReasoningEffort(config.modelId)) {
-      return undefined;
-    }
-
-    return {
-      providerOptions: {
-        cerebras: {
-          reasoningEffort: config.reasoningEffort,
-        },
-      },
-    };
+    return this.buildProviderReasoningOptions("cerebras", config);
   }
 
   protected createLanguageModel(

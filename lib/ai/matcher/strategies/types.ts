@@ -21,6 +21,11 @@ export interface SingleStrategyContext extends StrategyContext {
   job: MatchJob;
 }
 
+export interface SingleStrategyResult {
+  result: MatchResult;
+  attemptCount: number;
+}
+
 export type StrategyProgressCallback = (
   completed: number,
   total: number,
@@ -49,7 +54,7 @@ export interface ParallelStrategyContext extends StrategyContext {
   shouldStop?: ShouldStopCallback;
 }
 
-export type SingleStrategy = (ctx: SingleStrategyContext) => Promise<MatchResult>;
+export type SingleStrategy = (ctx: SingleStrategyContext) => Promise<SingleStrategyResult>;
 export type BulkStrategy = (ctx: BulkStrategyContext) => Promise<StrategyResultMap>;
 export type ParallelStrategy = (ctx: ParallelStrategyContext) => Promise<StrategyResultMap>;
 

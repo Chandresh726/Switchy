@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 
 import { getProviderModels } from "@/lib/ai/providers/model-catalog";
+import { getProviderMetadata } from "@/lib/ai/providers/metadata";
+import { isAIProvider } from "@/lib/ai/providers/types";
 import { db } from "@/lib/db";
 import { aiProviders, settings } from "@/lib/db/schema";
 import { encryptApiKey } from "@/lib/encryption";
-import { getProviderMetadata } from "@/lib/ai/providers/metadata";
+
+const CreateProviderBodySchema = z.object({
+  provider: z.string().min(1),
+  apiKey: z.string().optional(),
+});
 
 async function upsertSetting(key: string, value: string): Promise<void> {
   const existing = await db.select().from(settings).where(eq(settings.key, key)).limit(1);
@@ -45,20 +52,24 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { provider: providerType, apiKey } = body;
+    const parsedBody = CreateProviderBodySchema.safeParse(body);
 
-    if (!providerType) {
+    if (!parsedBody.success) {
       return NextResponse.json({ error: "Provider type is required" }, { status: 400 });
     }
 
-    const metadata = getProviderMetadata(providerType);
-    if (!metadata) {
+    const { provider: providerType, apiKey } = parsedBody.data;
+
+    if (!isAIProvider(providerType)) {
       return NextResponse.json({ error: "Invalid provider type" }, { status: 400 });
     }
 
+    const metadata = getProviderMetadata(providerType);
+
     let encryptedApiKey: string | undefined;
-    if (apiKey && metadata.requiresApiKey) {
-      encryptedApiKey = encryptApiKey(apiKey);
+    const normalizedApiKey = apiKey?.trim();
+    if (normalizedApiKey && metadata.requiresApiKey) {
+      encryptedApiKey = encryptApiKey(normalizedApiKey);
     }
 
     const existingProviders = await db.select().from(aiProviders);

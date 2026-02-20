@@ -1,10 +1,7 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import { getAIClientV2, getAIGenerationOptions } from "./client";
-import { resolveProviderModelSelection } from "./providers/model-catalog";
-import { db } from "@/lib/db";
-import { settings } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+
+import { resolveAIContextForFeature } from "./runtime-context";
 
 const ResumeDataSchema = z.object({
   name: z.string(),
@@ -67,28 +64,7 @@ Guidelines:
 - Be thorough but don't hallucinate information not in the resume`;
 
 export async function parseResume(resumeText: string): Promise<ResumeData> {
-  const [modelSetting, reasoningEffortSetting, providerIdSetting] = await Promise.all([
-    db.query.settings.findFirst({
-      where: eq(settings.key, "resume_parser_model"),
-    }),
-    db.query.settings.findFirst({
-      where: eq(settings.key, "resume_parser_reasoning_effort"),
-    }),
-    db.query.settings.findFirst({
-      where: eq(settings.key, "resume_parser_provider_id"),
-    }),
-  ]);
-  const resolvedSelection = await resolveProviderModelSelection({
-    providerId: providerIdSetting?.value || undefined,
-    modelId: modelSetting?.value || undefined,
-  });
-
-  const modelId = resolvedSelection.modelId;
-  const reasoningEffort = reasoningEffortSetting?.value || "medium";
-  const providerId = resolvedSelection.providerId;
-
-  const model = await getAIClientV2({ modelId, reasoningEffort: reasoningEffort as "low" | "medium" | "high" | undefined, providerId });
-  const providerOptions = await getAIGenerationOptions(modelId, reasoningEffort, providerId);
+  const aiContext = await resolveAIContextForFeature("resume_parser");
 
   const prompt = `Parse the following resume and extract structured information:
 
@@ -99,11 +75,11 @@ ${resumeText}
 Extract all relevant information including contact details, skills, work experience, and education.`;
 
   const result = await generateText({
-    model,
+    model: aiContext.model,
     output: Output.object({ schema: ResumeDataSchema }),
     system: RESUME_PARSING_SYSTEM_PROMPT,
     prompt,
-    ...providerOptions,
+    ...aiContext.providerOptions,
   });
 
   if (result.output === undefined || result.output === null) {

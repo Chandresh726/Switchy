@@ -32,25 +32,13 @@ export class GroqProvider extends BaseProvider {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _providerConfig: ProviderConfig
   ): Record<string, unknown> | undefined {
-    if (!config.reasoningEffort || !this.supportsReasoningEffort(config.modelId)) {
-      return undefined;
-    }
+    return this.buildProviderReasoningOptions("groq", config, (reasoningEffort, modelConfig) => {
+      if (modelConfig.modelId.includes("qwen3-32b")) {
+        return reasoningEffort === "low" ? "none" : "default";
+      }
 
-    let reasoningEffort: "low" | "medium" | "high" | "default" | "none" | undefined;
-
-    if (config.modelId.includes("qwen3-32b")) {
-      reasoningEffort = config.reasoningEffort === "low" ? "none" : "default";
-    } else {
-      reasoningEffort = config.reasoningEffort;
-    }
-
-    return {
-      providerOptions: {
-        groq: {
-          reasoningEffort,
-        },
-      },
-    };
+      return reasoningEffort;
+    });
   }
 
   protected createLanguageModel(

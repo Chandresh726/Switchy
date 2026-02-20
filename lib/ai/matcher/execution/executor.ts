@@ -1,4 +1,4 @@
-import { getAIClientV2, getAIGenerationOptions } from "@/lib/ai/client";
+import { resolveAIContextFromExplicitConfig } from "@/lib/ai/runtime-context";
 import { createCircuitBreaker } from "../resilience";
 import type {
   MatcherConfig,
@@ -10,7 +10,14 @@ import type {
 } from "../types";
 import { singleStrategy, bulkStrategy, parallelStrategy, selectStrategy, type StrategyProgressCallback } from "../strategies";
 import { fetchJobsData, updateJobWithMatchResult, logMatchSuccess, logMatchFailure } from "../tracking";
-import { extractRequirements, htmlToText } from "../utils";
+import {
+  applyExperienceScoreGuardrails,
+  calculateTotalExperienceYears,
+  deriveCandidateExperienceYears,
+  estimateRequiredExperienceYears,
+  extractRequirements,
+  htmlToText,
+} from "../utils";
 import { categorizeError } from "../resilience";
 
 export interface ExecuteMatchOptions {
@@ -28,8 +35,12 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
     return new Map();
   }
 
-  const aiModel = await getAIClientV2({ modelId: config.model, reasoningEffort: config.reasoningEffort as "low" | "medium" | "high" | undefined, providerId: config.providerId });
-  const providerOptions = await getAIGenerationOptions(config.model, config.reasoningEffort, config.providerId);
+  const aiContext = await resolveAIContextFromExplicitConfig({
+    providerId: config.providerId,
+    modelId: config.model,
+    reasoningEffort: config.reasoningEffort,
+  });
+  const modelUsed = aiContext.modelId;
 
   const circuitBreaker = createCircuitBreaker({
     failureThreshold: config.circuitBreakerThreshold,
@@ -50,15 +61,18 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
 
   const candidateProfile: CandidateProfile = {
     summary: profileData.profile.summary || undefined,
-    skills: profileData.skills.map((s: { name: string; proficiency: number; category: string | null }) => ({
+    skills: profileData.skills.map((s: { name: string; proficiency: number; category: string | null; yearsOfExperience: number | null }) => ({
       name: s.name,
       proficiency: s.proficiency,
       category: s.category || undefined,
+      yearsOfExperience: s.yearsOfExperience ?? undefined,
     })),
-    experience: profileData.experience.map((e: { title: string; company: string; description: string | null }) => ({
+    experience: profileData.experience.map((e: { title: string; company: string; description: string | null; startDate: string; endDate: string | null }) => ({
       title: e.title,
       company: e.company,
       description: e.description || undefined,
+      startDate: e.startDate,
+      endDate: e.endDate || undefined,
     })),
     education: profileData.education.map((e: { institution: string; degree: string; field: string | null }) => ({
       institution: e.institution,
@@ -66,6 +80,10 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
       field: e.field || undefined,
     })),
   };
+  candidateProfile.totalExperienceYears = deriveCandidateExperienceYears(
+    calculateTotalExperienceYears(candidateProfile.experience),
+    candidateProfile.skills.map((skill) => skill.yearsOfExperience)
+  ) ?? undefined;
 
   const matchJobs: MatchJob[] = jobIds
     .map((jobId) => {
@@ -96,7 +114,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
         },
       ])
     );
-    const results = await persistResults(missingResults, sessionId, config.model, new Set<number>());
+    const results = await persistResults(missingResults, sessionId, modelUsed, new Set<number>());
     return results;
   }
 
@@ -108,8 +126,8 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
 
   const strategyContext = {
     config,
-    model: aiModel,
-    providerOptions,
+    model: aiContext.model,
+    providerOptions: aiContext.providerOptions,
     circuitBreaker,
     candidateProfile,
   };
@@ -120,7 +138,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
     if (persistedJobIds.has(jobId)) return;
 
     try {
-      await persistJobResult(jobId, item, sessionId, config.model);
+      await persistJobResult(jobId, item, sessionId, modelUsed);
       persistedJobIds.add(jobId);
     } catch (error) {
       console.error(`[ExecuteMatch] Failed to persist realtime result for job ${jobId}:`, error);
@@ -135,17 +153,21 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
     } else {
     const startTime = Date.now();
     try {
-      const result = await singleStrategy({
+      const { result, attemptCount } = await singleStrategy({
         ...strategyContext,
         job: matchJobs[0],
       });
-      const item = { result, duration: Date.now() - startTime };
+      const item = { result, duration: Date.now() - startTime, attemptCount };
       strategyResults = new Map([[matchJobs[0].id, item]]);
       await persistRealtimeResult(matchJobs[0].id, item);
       onProgress?.(1, 1, 1, 0);
     } catch (error) {
       const errorObj = error instanceof Error ? error : new Error(String(error));
-      const item = { error: errorObj, duration: Date.now() - startTime };
+      const item = {
+        error: errorObj,
+        duration: Date.now() - startTime,
+        attemptCount: (errorObj as Error & { attemptCount?: number }).attemptCount,
+      };
       strategyResults = new Map([[matchJobs[0].id, item]]);
       await persistRealtimeResult(matchJobs[0].id, item);
       onProgress?.(1, 1, 0, 1);
@@ -176,7 +198,9 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
     });
   }
 
-  const results = await persistResults(strategyResults, sessionId, config.model, persistedJobIds);
+  applyExperienceGuardrails(strategyResults, matchJobs, candidateProfile.totalExperienceYears ?? null);
+
+  const results = await persistResults(strategyResults, sessionId, modelUsed, persistedJobIds);
 
   return results;
 }
@@ -184,6 +208,43 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
 async function fetchProfileDataForMatch() {
   const { fetchProfileData } = await import("../tracking");
   return fetchProfileData();
+}
+
+function applyExperienceGuardrails(
+  strategyResults: StrategyResultMap,
+  matchJobs: MatchJob[],
+  candidateYears: number | null
+): void {
+  if (candidateYears === null) return;
+
+  const jobsById = new Map<number, MatchJob>(matchJobs.map((job) => [job.id, job]));
+
+  for (const [jobId, item] of strategyResults.entries()) {
+    if (!item.result) continue;
+
+    const job = jobsById.get(jobId);
+    if (!job) continue;
+
+    const requiredYears = estimateRequiredExperienceYears(job.description, job.requirements);
+    const adjusted = applyExperienceScoreGuardrails(item.result.score, requiredYears, candidateYears);
+
+    if (adjusted.adjustedScore >= item.result.score) {
+      continue;
+    }
+
+    const reasons = adjusted.reason
+      ? [adjusted.reason, ...item.result.reasons]
+      : item.result.reasons;
+
+    strategyResults.set(jobId, {
+      ...item,
+      result: {
+        ...item.result,
+        score: adjusted.adjustedScore,
+        reasons,
+      },
+    });
+  }
 }
 
 async function persistResults(
@@ -226,7 +287,7 @@ async function persistJobResult(
         item.duration,
         categorizeError(item.error),
         item.error.message,
-        1,
+        item.attemptCount ?? 1,
         modelUsed
       );
     }
@@ -244,7 +305,7 @@ async function persistJobResult(
       sessionId,
       jobId,
       item.result.score,
-      1,
+      item.attemptCount ?? 1,
       item.duration,
       modelUsed
     );

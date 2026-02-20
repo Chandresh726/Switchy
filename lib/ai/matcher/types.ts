@@ -78,8 +78,15 @@ export interface MatchJob {
 export interface CandidateProfile {
   name?: string;
   summary?: string;
-  skills: Array<{ name: string; proficiency: number; category?: string }>;
-  experience: Array<{ title: string; company: string; description?: string }>;
+  totalExperienceYears?: number;
+  skills: Array<{ name: string; proficiency: number; category?: string; yearsOfExperience?: number }>;
+  experience: Array<{
+    title: string;
+    company: string;
+    description?: string;
+    startDate?: string;
+    endDate?: string;
+  }>;
   education: Array<{ degree: string; institution: string; field?: string }>;
 }
 
@@ -114,6 +121,7 @@ export interface StrategyResultItem {
   result?: MatchResult;
   error?: Error;
   duration: number;
+  attemptCount?: number;
 }
 
 export type StrategyResultMap = Map<number, StrategyResultItem>;
@@ -122,8 +130,19 @@ export type MatchStrategy = "single" | "bulk" | "parallel";
 
 export interface ProfileData {
   profile: { id: number; summary: string | null };
-  skills: Array<{ name: string; proficiency: number; category: string | null }>;
-  experience: Array<{ title: string; company: string; description: string | null }>;
+  skills: Array<{
+    name: string;
+    proficiency: number;
+    category: string | null;
+    yearsOfExperience: number | null;
+  }>;
+  experience: Array<{
+    title: string;
+    company: string;
+    description: string | null;
+    startDate: string;
+    endDate: string | null;
+  }>;
   education: Array<{ institution: string; degree: string; field: string | null }>;
 }
 

@@ -5,16 +5,18 @@ export interface RetryOptions {
   baseDelay: number;
   maxDelay: number;
   onRetry?: (attempt: number, delay: number, error: Error) => number | void;
+  onAttempt?: (attempt: number) => void;
 }
 
 export async function retryWithBackoff<T>(
   fn: () => Promise<T>,
   options: RetryOptions
 ): Promise<T> {
-  const { maxRetries, baseDelay, maxDelay, onRetry } = options;
+  const { maxRetries, baseDelay, maxDelay, onRetry, onAttempt } = options;
   let lastError: Error = new Error("Unknown error");
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    onAttempt?.(attempt);
     try {
       return await fn();
     } catch (error) {

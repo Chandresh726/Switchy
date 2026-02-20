@@ -48,13 +48,16 @@ export function buildBulkMatchPrompt(
 **Summary:**
 ${candidateProfile.summary || "No summary provided"}
 
+**Estimated Total Professional Experience:**
+${typeof candidateProfile.totalExperienceYears === "number" ? `${candidateProfile.totalExperienceYears.toFixed(1)} years` : "Not available"}
+
 **Skills:**
 ${
   candidateProfile.skills.length > 0
     ? candidateProfile.skills
         .map(
           (s) =>
-            `- ${s.name} (${["Beginner", "Elementary", "Intermediate", "Advanced", "Expert"][s.proficiency - 1]}${s.category ? `, ${s.category}` : ""})`
+            `- ${s.name} (${["Beginner", "Elementary", "Intermediate", "Advanced", "Expert"][s.proficiency - 1]}${s.category ? `, ${s.category}` : ""}${typeof s.yearsOfExperience === "number" ? `, ${s.yearsOfExperience.toFixed(1)} years` : ""})`
         )
         .join("\n")
     : "No skills listed"
@@ -64,7 +67,12 @@ ${
 ${
   candidateProfile.experience.length > 0
     ? candidateProfile.experience
-        .map((e) => `- ${e.title} at ${e.company}${e.description ? `: ${e.description}` : ""}`)
+        .map((e) => {
+          const dateRange = e.startDate
+            ? ` (${e.startDate} - ${e.endDate || "Present"})`
+            : "";
+          return `- ${e.title} at ${e.company}${dateRange}${e.description ? `: ${e.description}` : ""}`;
+        })
         .join("\n")
     : "No experience listed"
 }

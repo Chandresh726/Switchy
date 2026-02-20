@@ -8,6 +8,7 @@ import { chunkArray } from "../utils";
 import type { BulkStrategy } from "./types";
 
 type BulkMatchResponse = z.infer<typeof BulkMatchResultSchema>;
+type BulkProcessResult = { data: BulkMatchResponse; attemptCount: number };
 
 function validateBatchResponse(batchResults: BulkMatchResult[], batchJobs: MatchJob[]): BulkMatchResult[] {
   const batchJobIds = new Set(batchJobs.map((j) => j.id));
@@ -85,13 +86,14 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
 
     const batchStartTime = Date.now();
     try {
-      const rawBatchResults = (await processBatch(batch, {
+      const batchResult = await processBatch(batch, {
         config,
         model,
         providerOptions,
-        circuitBreaker,
         candidateProfile,
-      })).results;
+      });
+      const rawBatchResults = batchResult.data.results;
+      const batchAttemptCount = batchResult.attemptCount;
 
       const batchResults = validateBatchResponse(rawBatchResults, batch);
       const batchDuration = Date.now() - batchStartTime;
@@ -108,6 +110,7 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
             recommendations: result.recommendations,
           },
           duration: jobDuration,
+          attemptCount: batchAttemptCount,
         };
         results.set(result.jobId, item);
         await reportResult(result.jobId, item);
@@ -123,6 +126,7 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
           const item = {
             error: new Error("AI did not return match result for this job"),
             duration: 0,
+            attemptCount: batchAttemptCount,
           };
           results.set(job.id, item);
           await reportResult(job.id, item);
@@ -138,10 +142,11 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
       const errorObj = error instanceof Error ? error : new Error(String(error));
       circuitBreaker.recordFailure(errorObj);
       const errorType = categorizeError(errorObj);
+      const attemptCount = (errorObj as Error & { attemptCount?: number }).attemptCount ?? 1;
       console.error(`[BulkStrategy] Batch failed: ${errorObj.message} (type: ${errorType})`);
 
       for (const job of batch) {
-        const item = { error: errorObj, duration: 0 };
+        const item = { error: errorObj, duration: 0, attemptCount };
         results.set(job.id, item);
         await reportResult(job.id, item);
         failed++;
@@ -162,48 +167,60 @@ interface ProcessBatchContext {
   config: Parameters<BulkStrategy>[0]["config"];
   model: Parameters<BulkStrategy>[0]["model"];
   providerOptions: Parameters<BulkStrategy>[0]["providerOptions"];
-  circuitBreaker: Parameters<BulkStrategy>[0]["circuitBreaker"];
   candidateProfile: Parameters<BulkStrategy>[0]["candidateProfile"];
 }
 
 async function processBatch(
   batch: Parameters<BulkStrategy>[0]["jobs"],
   ctx: ProcessBatchContext
-): Promise<BulkMatchResponse> {
+): Promise<BulkProcessResult> {
   const { config, model, providerOptions, candidateProfile } = ctx;
+  let attemptCount = 0;
 
   const prompt = buildBulkMatchPrompt(batch, candidateProfile);
 
-  const result = await retryWithBackoff(
-    async () => {
-      return withTimeout(
-        (async () => {
-          const generated = await generateStructured({
-            model,
-            schema: BulkMatchResultSchema,
-            system: BULK_MATCH_SYSTEM_PROMPT,
-            prompt,
-            providerOptions,
-          });
-          return generated.data;
-        })(),
-        config.timeoutMs * 2,
-        `Match batch of ${batch.length} jobs`
-      );
-    },
-    {
-      maxRetries: config.maxRetries,
-      baseDelay: config.backoffBaseDelay,
-      maxDelay: config.backoffMaxDelay,
-      onRetry: (attempt, delay, error) => {
-        if (error && (isServerError(error) || isRateLimitError(error))) {
-          console.log(`[BulkStrategy] Batch retry ${attempt}: Server/rate limit error, returning 3x computed delay`);
-          return Math.min(delay * 3, config.backoffMaxDelay);
-        }
-        console.log(`[BulkStrategy] Batch retry ${attempt} scheduled after ${Math.round(delay)}ms`);
+  try {
+    const result = await retryWithBackoff(
+      async () => {
+        return withTimeout(
+          (async () => {
+            const generated = await generateStructured({
+              model,
+              schema: BulkMatchResultSchema,
+              system: BULK_MATCH_SYSTEM_PROMPT,
+              prompt,
+              providerOptions,
+            });
+            return generated.data;
+          })(),
+          config.timeoutMs * 2,
+          `Match batch of ${batch.length} jobs`
+        );
       },
-    }
-  );
+      {
+        maxRetries: config.maxRetries,
+        baseDelay: config.backoffBaseDelay,
+        maxDelay: config.backoffMaxDelay,
+        onAttempt: (attempt) => {
+          attemptCount = attempt;
+        },
+        onRetry: (attempt, delay, error) => {
+          if (error && (isServerError(error) || isRateLimitError(error))) {
+            console.log(`[BulkStrategy] Batch retry ${attempt}: Server/rate limit error, returning 3x computed delay`);
+            return Math.min(delay * 3, config.backoffMaxDelay);
+          }
+          console.log(`[BulkStrategy] Batch retry ${attempt} scheduled after ${Math.round(delay)}ms`);
+        },
+      }
+    );
 
-  return result;
+    return {
+      data: result,
+      attemptCount: Math.max(attemptCount, 1),
+    };
+  } catch (error) {
+    const errorObj = error instanceof Error ? error : new Error(String(error));
+    (errorObj as Error & { attemptCount?: number }).attemptCount = Math.max(attemptCount, 1);
+    throw errorObj;
+  }
 }

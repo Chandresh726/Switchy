@@ -1,4 +1,3 @@
-import { cache } from "react";
 import { inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
@@ -39,7 +38,7 @@ function parseNumber(value: string | null | undefined, defaultValue: number): nu
   return isNaN(parsed) ? defaultValue : parsed;
 }
 
-export const getMatcherConfig = cache(async (): Promise<MatcherConfig & { providerId?: string }> => {
+export async function getMatcherConfig(): Promise<MatcherConfig & { providerId?: string }> {
   const dbSettings = await db
     .select()
     .from(settings)
@@ -129,7 +128,7 @@ export const getMatcherConfig = cache(async (): Promise<MatcherConfig & { provid
       providerDefaults.autoMatchAfterScrape ?? DEFAULT_MATCHER_CONFIG.autoMatchAfterScrape
     ),
   };
-});
+}
 
 export function getDefaultConfig(): MatcherConfig {
   return { ...DEFAULT_MATCHER_CONFIG };
