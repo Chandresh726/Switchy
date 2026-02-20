@@ -4,26 +4,26 @@ export const FAQS: FAQItem[] = [
   {
     question: "Is Switchy free to use?",
     answer:
-      "Yes, Switchy is completely free and open source. You only pay for the AI API keys you choose to use (like OpenAI or Anthropic).",
+      "Yes. Switchy is open source and free to run locally. If you use AI features, you only pay your selected provider for API usage.",
   },
   {
     question: "Where is my data stored?",
     answer:
-      "All your data is stored locally on your machine in a SQLite database. Nothing is sent to the cloud unless you explicitly configure it.",
+      "Your data stays on your machine using local storage (SQLite and local files). No cloud account is required.",
   },
   {
     question: "Which job boards does Switchy support?",
     answer:
-      "Switchy currently supports Greenhouse, Lever, and Ashby job boards. We're working on adding more platforms in future updates.",
+      "Switchy supports Greenhouse, Lever, Ashby, Workday, and Eightfold job platforms.",
   },
   {
     question: "Do I need an AI API key?",
     answer:
-      "Yes, you'll need an API key from one of the supported providers (OpenAI, Anthropic, Google Gemini, etc.) to use AI features like matching and content generation.",
+      "Only for AI features. Scraping and tracking work locally, and AI capabilities (like matching, cover letters, and referral messages) use your own provider API key.",
   },
   {
     question: "How do I get started?",
     answer:
-      "Simply clone the repository, install dependencies with pnpm, configure your .env file with API keys, and run pnpm build && pnpm start. The Setup section above has detailed instructions.",
+      "Follow the setup steps above: clone the repo, run pnpm install, then run pnpm build && pnpm start. Add an AI provider key when you want to enable AI features.",
   },
 ];
