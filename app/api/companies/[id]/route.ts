@@ -10,10 +10,20 @@ const ParamsSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
 
+const PLATFORM_VALUES = [
+  "greenhouse",
+  "lever",
+  "ashby",
+  "workday",
+  "eightfold",
+  "uber",
+  "custom",
+] as const;
+
 const PlatformOverrideSchema = z
-  .enum(["greenhouse", "lever", "ashby", "workday", "eightfold", "uber", "custom"])
-  .nullable()
-  .optional();
+  .union([z.enum(PLATFORM_VALUES), z.literal(""), z.null()])
+  .optional()
+  .transform((value) => (value === "" ? null : value));
 
 const PutBodySchema = z.object({
   name: z.string().trim().min(1),

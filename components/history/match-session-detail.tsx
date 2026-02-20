@@ -90,7 +90,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
     refetchInterval: (query) => {
       const session = query.state.data?.session;
       if (!session) return 1000;
-      return session.status === "in_progress" ? 1000 : false;
+      return session.status === "in_progress" || session.status === "queued" ? 1000 : false;
     },
     refetchIntervalInBackground: true,
   });
@@ -161,6 +161,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
   const progress = session.jobsTotal
     ? Math.round(((session.jobsCompleted || 0) / session.jobsTotal) * 100)
     : 0;
+  const isActiveSession = session.status === "in_progress" || session.status === "queued";
 
   const failedLogs = logs.filter((l) => l.status === "failed");
   const successLogs = logs.filter((l) => l.status === "success");
@@ -176,7 +177,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
           </Button>
         </Link>
         <div className="flex items-center gap-2">
-          {session.status === "in_progress" && (
+          {isActiveSession && (
             <Button
               variant="outline"
               size="sm"
@@ -314,15 +315,17 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
         </div>
 
         {/* Duration */}
-        <div className="mt-4 pt-4 border-t border-border">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Clock className="h-4 w-4" />
-            <span>Duration:</span>
-            <span className="text-foreground font-medium">
-              {formatDurationFromDates(session.startedAt, session.completedAt)}
-            </span>
+        {session.status !== "queued" && (
+          <div className="mt-4 pt-4 border-t border-border">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Clock className="h-4 w-4" />
+              <span>Duration:</span>
+              <span className="text-foreground font-medium">
+                {formatDurationFromDates(session.startedAt, session.completedAt)}
+              </span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Job Logs List */}

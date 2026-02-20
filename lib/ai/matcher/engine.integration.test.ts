@@ -76,6 +76,15 @@ describe("match engine integration", () => {
       setQueuePosition: vi.fn(),
       complete: vi.fn(),
     });
+
+    mocks.updateMatchSessionIfActive.mockResolvedValue(true);
+    mocks.executeMatch.mockResolvedValue(new Map());
+    mocks.finalizeMatchSession.mockResolvedValue({
+      sessionId: "session-1",
+      total: 2,
+      succeeded: 0,
+      failed: 2,
+    });
   });
 
   it("respects stopped session state and does not overwrite final totals", async () => {
@@ -106,5 +115,142 @@ describe("match engine integration", () => {
 
     expect(mocks.executeMatch).not.toHaveBeenCalled();
     expect(mocks.finalizeMatchSession).not.toHaveBeenCalled();
+  });
+
+  it("persists queued state before transitioning to in_progress", async () => {
+    mocks.getMatcherConfig.mockResolvedValue({
+      model: "gpt-4.1-mini",
+      reasoningEffort: "medium",
+      bulkEnabled: true,
+      batchSize: 2,
+      maxRetries: 3,
+      concurrencyLimit: 3,
+      serializeOperations: true,
+      interRequestDelayMs: 500,
+      timeoutMs: 30000,
+      backoffBaseDelay: 2000,
+      backoffMaxDelay: 32000,
+      circuitBreakerThreshold: 10,
+      circuitBreakerResetTimeout: 60000,
+      autoMatchAfterScrape: true,
+    });
+
+    mocks.executeMatch.mockResolvedValue(
+      new Map([
+        [
+          11,
+          {
+            score: 85,
+            reasons: [],
+            matchedSkills: [],
+            missingSkills: [],
+            recommendations: [],
+          },
+        ],
+      ])
+    );
+    mocks.getMatchSessionStatus.mockResolvedValue({
+      id: "session-1",
+      status: "in_progress",
+      jobsTotal: 1,
+      jobsCompleted: 1,
+      jobsSucceeded: 1,
+      jobsFailed: 0,
+      startedAt: new Date("2026-02-20T00:00:00.000Z"),
+      completedAt: null,
+    });
+    mocks.finalizeMatchSession.mockResolvedValue({
+      sessionId: "session-1",
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+    });
+
+    const engine = await createMatchEngine();
+    const result = await engine.matchWithTracking([11], {
+      sessionId: "session-1",
+      triggerSource: "manual",
+    });
+
+    expect(result).toEqual({
+      sessionId: "session-1",
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+    });
+    expect(mocks.updateMatchSessionIfActive).toHaveBeenCalledWith(
+      "session-1",
+      expect.objectContaining({ status: "queued" })
+    );
+    expect(mocks.updateMatchSessionIfActive).toHaveBeenCalledWith(
+      "session-1",
+      expect.objectContaining({ status: "in_progress" })
+    );
+  });
+
+  it("treats queued sessions as active for shouldStop and finalization checks", async () => {
+    mocks.getMatcherConfig.mockResolvedValue({
+      model: "gpt-4.1-mini",
+      reasoningEffort: "medium",
+      bulkEnabled: true,
+      batchSize: 2,
+      maxRetries: 3,
+      concurrencyLimit: 3,
+      serializeOperations: true,
+      interRequestDelayMs: 500,
+      timeoutMs: 30000,
+      backoffBaseDelay: 2000,
+      backoffMaxDelay: 32000,
+      circuitBreakerThreshold: 10,
+      circuitBreakerResetTimeout: 60000,
+      autoMatchAfterScrape: true,
+    });
+
+    mocks.executeMatch.mockImplementation(async ({ shouldStop }) => {
+      const stopped = await shouldStop?.();
+      expect(stopped).toBe(false);
+      return new Map([
+        [
+          11,
+          {
+            score: 90,
+            reasons: [],
+            matchedSkills: [],
+            missingSkills: [],
+            recommendations: [],
+          },
+        ],
+      ]);
+    });
+    mocks.getMatchSessionStatus.mockResolvedValue({
+      id: "session-1",
+      status: "queued",
+      jobsTotal: 1,
+      jobsCompleted: 0,
+      jobsSucceeded: 0,
+      jobsFailed: 0,
+      startedAt: new Date("2026-02-20T00:00:00.000Z"),
+      completedAt: null,
+    });
+    mocks.finalizeMatchSession.mockResolvedValue({
+      sessionId: "session-1",
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+    });
+
+    const engine = await createMatchEngine();
+    const result = await engine.matchWithTracking([11], {
+      sessionId: "session-1",
+      triggerSource: "manual",
+    });
+
+    expect(result).toEqual({
+      sessionId: "session-1",
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+    });
+    expect(mocks.finalizeMatchSession).toHaveBeenCalledWith("session-1", 1, 0, 1);
   });
 });

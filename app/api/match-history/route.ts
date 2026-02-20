@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { matchSessions, matchLogs, jobs, companies } from "@/lib/db/schema";
-import { and, eq, desc, count } from "drizzle-orm";
+import { and, eq, desc, count, inArray } from "drizzle-orm";
 import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
 /**
@@ -211,7 +211,12 @@ export async function PATCH(request: NextRequest) {
         status: "failed",
         completedAt: new Date(),
       })
-      .where(and(eq(matchSessions.id, sessionId), eq(matchSessions.status, "in_progress")))
+      .where(
+        and(
+          eq(matchSessions.id, sessionId),
+          inArray(matchSessions.status, ["in_progress", "queued"])
+        )
+      )
       .returning({ id: matchSessions.id });
 
     if (updated.length > 0) {

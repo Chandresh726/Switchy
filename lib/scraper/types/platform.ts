@@ -14,7 +14,7 @@ export type SeniorityLevel = "entry" | "mid" | "senior" | "lead" | "manager";
 
 export type ScrapeLogStatus = "success" | "error" | "partial";
 
-export type SessionStatus = "in_progress" | "completed" | "failed";
+export type SessionStatus = "in_progress" | "completed" | "partial" | "failed";
 
 export type MatcherStatus = "pending" | "in_progress" | "completed" | "failed";
 

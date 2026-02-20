@@ -72,6 +72,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
   const successRate = session.jobsTotal
     ? Math.round(((session.jobsSucceeded || 0) / session.jobsTotal) * 100)
     : 0;
+  const isActiveSession = session.status === "in_progress" || session.status === "queued";
 
   const handleDelete = async () => {
     setIsDeleting(true);
@@ -198,7 +199,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
             </div>
 
             <div className="flex items-center gap-2" onClick={handleDeleteAreaClick}>
-              {session.status === "in_progress" && (
+              {isActiveSession && (
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -302,10 +303,12 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
             >
               {statusConfig.label}
             </Badge>
-            <span className="flex items-center gap-1.5">
-              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-              {formatDurationFromDates(session.startedAt, session.completedAt)}
-            </span>
+            {session.status !== "queued" && (
+              <span className="flex items-center gap-1.5">
+                <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                {formatDurationFromDates(session.startedAt, session.completedAt)}
+              </span>
+            )}
           </div>
         </div>
       </div>

@@ -1,16 +1,22 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi, waitFor } from "vitest";
 
+import type { Company } from "@/lib/db/schema";
 import type { ScraperResult } from "@/lib/scraper/types";
 import { TitleBasedDeduplicationService } from "@/lib/scraper/services/deduplication-service";
 import { DefaultFilterService } from "@/lib/scraper/services/filter-service";
 import { ScrapeOrchestrator } from "@/lib/scraper/services/orchestrator";
 
-vi.mock("@/lib/ai/matcher", () => ({
-  getMatcherConfig: vi.fn(async () => ({ autoMatchAfterScrape: false })),
-  matchWithTracking: vi.fn(async () => ({ total: 0, succeeded: 0, failed: 0 })),
+const matcherMocks = vi.hoisted(() => ({
+  getMatcherConfig: vi.fn(),
+  matchWithTracking: vi.fn(),
 }));
 
-const company = {
+vi.mock("@/lib/ai/matcher", () => ({
+  getMatcherConfig: matcherMocks.getMatcherConfig,
+  matchWithTracking: matcherMocks.matchWithTracking,
+}));
+
+const company: Company = {
   id: 1,
   name: "Acme",
   careersUrl: "https://jobs.example.com",
@@ -21,17 +27,34 @@ const company = {
   lastScrapedAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
-} as const;
+};
 
-function createRepositoryMock() {
+const companyTwo = {
+  ...company,
+  id: 2,
+  name: "Globex",
+} as Company;
+
+interface RepositoryMockOptions {
+  activeCompanies?: Company[];
+  insertedJobIds?: number[];
+  matchableJobIds?: number[];
+}
+
+function createRepositoryMock(options: RepositoryMockOptions = {}) {
+  const activeCompanies = options.activeCompanies ?? [company];
+  const insertedJobIds = options.insertedJobIds ?? [101];
+  const matchableJobIds = options.matchableJobIds ?? insertedJobIds;
+
   return {
-    getCompany: vi.fn(async () => company),
-    getActiveCompanies: vi.fn(async () => [company]),
+    getCompany: vi.fn(async (id: number) => activeCompanies.find((item) => item.id === id) ?? null),
+    getActiveCompanies: vi.fn(async () => activeCompanies),
     getExistingJobs: vi.fn(async () => []),
     getSetting: vi.fn(async () => null),
     reopenScraperArchivedJobs: vi.fn(async () => 0),
     archiveMissingJobs: vi.fn(async () => 0),
-    insertJobs: vi.fn(async () => [101]),
+    insertJobs: vi.fn(async () => insertedJobIds),
+    getMatchableJobIds: vi.fn(async () => matchableJobIds),
     updateCompany: vi.fn(async () => undefined),
     createSession: vi.fn(async () => undefined),
     isSessionInProgress: vi.fn(async () => true),
@@ -46,12 +69,20 @@ function createRepositoryMock() {
   };
 }
 
-function createRegistryMock(result: ScraperResult) {
+function createRegistryMock(
+  result:
+    | ScraperResult
+    | ((...args: unknown[]) => Promise<ScraperResult>)
+) {
+  const scrape = typeof result === "function"
+    ? vi.fn(result)
+    : vi.fn(async () => result);
+
   return {
     register: vi.fn(),
     getScraperForUrl: vi.fn(),
     getScraperByPlatform: vi.fn(),
-    scrape: vi.fn(async () => result),
+    scrape,
     getSupportedPlatforms: vi.fn(() => ["greenhouse"]),
   };
 }
@@ -59,6 +90,12 @@ function createRegistryMock(result: ScraperResult) {
 describe("ScrapeOrchestrator", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    matcherMocks.getMatcherConfig.mockResolvedValue({ autoMatchAfterScrape: false });
+    matcherMocks.matchWithTracking.mockResolvedValue({
+      total: 0,
+      succeeded: 0,
+      failed: 0,
+    });
   });
 
   it("maps partial scraper results to failed FetchResult and partial log status", async () => {
@@ -120,6 +157,205 @@ describe("ScrapeOrchestrator", () => {
 
     expect(result.summary.totalCompanies).toBe(1);
     expect(result.summary.failedCompanies).toBe(1);
-    expect(repository.completeSession).toHaveBeenCalledWith(result.sessionId, true);
+    expect(repository.completeSession).toHaveBeenCalledWith(result.sessionId, "partial");
+  });
+
+  it("marks standalone partial sessions as partial", async () => {
+    const repository = createRepositoryMock();
+    const registry = createRegistryMock({
+      success: true,
+      outcome: "partial",
+      jobs: [],
+      openExternalIds: [],
+      openExternalIdsComplete: false,
+    });
+
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    await orchestrator.scrapeCompany(company.id);
+
+    expect(repository.completeSession).toHaveBeenCalledWith(expect.any(String), "partial");
+  });
+
+  it("marks fully successful batch sessions as completed", async () => {
+    const repository = createRepositoryMock();
+    const registry = createRegistryMock({
+      success: true,
+      outcome: "success",
+      jobs: [],
+      openExternalIds: [],
+      openExternalIdsComplete: true,
+    });
+
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    const result = await orchestrator.scrapeCompanies([company.id], "manual");
+
+    expect(repository.completeSession).toHaveBeenCalledWith(result.sessionId, "completed");
+  });
+
+  it("marks fully failed batch sessions as failed", async () => {
+    const repository = createRepositoryMock();
+    const registry = createRegistryMock({
+      success: false,
+      outcome: "error",
+      jobs: [],
+      error: "Network failure",
+    });
+
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    const result = await orchestrator.scrapeCompanies([company.id], "manual");
+
+    expect(repository.completeSession).toHaveBeenCalledWith(result.sessionId, "failed");
+  });
+
+  it("marks mixed success and error batch sessions as partial", async () => {
+    const repository = createRepositoryMock({
+      activeCompanies: [company, companyTwo],
+    });
+    const registry = createRegistryMock(
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          success: true,
+          outcome: "success",
+          jobs: [],
+          openExternalIds: [],
+          openExternalIdsComplete: true,
+        })
+        .mockResolvedValueOnce({
+          success: false,
+          outcome: "error",
+          jobs: [],
+          error: "Network failure",
+        })
+    );
+
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    const result = await orchestrator.scrapeAllCompanies("manual");
+
+    expect(result.summary.failedCompanies).toBe(1);
+    expect(repository.completeSession).toHaveBeenCalledWith(result.sessionId, "partial");
+  });
+
+  it("does not trigger auto-match when inserted jobs have no descriptions", async () => {
+    matcherMocks.getMatcherConfig.mockResolvedValue({ autoMatchAfterScrape: true });
+    const repository = createRepositoryMock({
+      insertedJobIds: [101, 102],
+      matchableJobIds: [],
+    });
+    const registry = createRegistryMock({
+      success: true,
+      outcome: "success",
+      jobs: [
+        {
+          externalId: "greenhouse-acme-1",
+          title: "Software Engineer",
+          url: "https://jobs.example.com/1",
+          description: "",
+        },
+      ],
+      openExternalIds: ["greenhouse-acme-1"],
+      openExternalIdsComplete: true,
+    });
+
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    await orchestrator.scrapeCompany(company.id, {
+      sessionId: "session-1",
+      triggerSource: "manual",
+    });
+
+    expect(repository.createScrapingLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        matcherStatus: null,
+        matcherJobsTotal: null,
+      })
+    );
+    expect(matcherMocks.matchWithTracking).not.toHaveBeenCalled();
+  });
+
+  it("only auto-matches inserted jobs that have descriptions", async () => {
+    matcherMocks.getMatcherConfig.mockResolvedValue({ autoMatchAfterScrape: true });
+    const repository = createRepositoryMock({
+      insertedJobIds: [101, 102, 103],
+      matchableJobIds: [102, 103],
+    });
+    const registry = createRegistryMock({
+      success: true,
+      outcome: "success",
+      jobs: [
+        {
+          externalId: "greenhouse-acme-1",
+          title: "Software Engineer",
+          url: "https://jobs.example.com/1",
+          description: "Role details",
+        },
+      ],
+      openExternalIds: ["greenhouse-acme-1"],
+      openExternalIdsComplete: true,
+    });
+
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    await orchestrator.scrapeCompany(company.id, {
+      sessionId: "session-1",
+      triggerSource: "manual",
+    });
+
+    expect(repository.createScrapingLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        matcherStatus: "pending",
+        matcherJobsTotal: 2,
+      })
+    );
+
+    await waitFor(() => {
+      expect(matcherMocks.matchWithTracking).toHaveBeenCalledWith(
+        [102, 103],
+        expect.objectContaining({
+          triggerSource: "auto_match",
+          companyId: company.id,
+        })
+      );
+    });
   });
 });

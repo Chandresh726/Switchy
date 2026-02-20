@@ -123,7 +123,7 @@ export const jobs = sqliteTable("jobs", {
 export const scrapeSessions = sqliteTable("scrape_sessions", {
   id: text("id").primaryKey(), // UUID
   triggerSource: text("trigger_source").notNull(), // "manual" | "auto_match" | "company_refresh" | "match_unmatched"
-  status: text("status").notNull().default("in_progress"), // "in_progress" | "completed" | "failed"
+  status: text("status").notNull().default("in_progress"), // "in_progress" | "completed" | "partial" | "failed"
   companiesTotal: integer("companies_total").default(0),
   companiesCompleted: integer("companies_completed").default(0),
   totalJobsFound: integer("total_jobs_found").default(0),
@@ -183,7 +183,7 @@ export const matchSessions = sqliteTable("match_sessions", {
   id: text("id").primaryKey(), // UUID
   triggerSource: text("trigger_source").notNull(), // "manual" | "auto_match" | "company_refresh" | "match_unmatched"
   companyId: integer("company_id").references(() => companies.id, { onDelete: "set null" }), // nullable, for company-specific matches
-  status: text("status").notNull().default("in_progress"), // "in_progress" | "completed" | "failed"
+  status: text("status").notNull().default("in_progress"), // "queued" | "in_progress" | "completed" | "failed"
   jobsTotal: integer("jobs_total").default(0),
   jobsCompleted: integer("jobs_completed").default(0),
   jobsSucceeded: integer("jobs_succeeded").default(0),

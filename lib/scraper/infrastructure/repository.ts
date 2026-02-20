@@ -145,6 +145,23 @@ export class DrizzleScraperRepository implements IScraperRepository {
     return inserted.map((j) => j.id);
   }
 
+  async getMatchableJobIds(jobIds: number[]): Promise<number[]> {
+    if (jobIds.length === 0) return [];
+
+    const existingJobs = await db
+      .select({ id: jobs.id, description: jobs.description })
+      .from(jobs)
+      .where(inArray(jobs.id, jobIds));
+
+    const matchableJobIds = new Set(
+      existingJobs
+        .filter((job) => typeof job.description === "string" && job.description.trim().length > 0)
+        .map((job) => job.id)
+    );
+
+    return jobIds.filter((jobId) => matchableJobIds.has(jobId));
+  }
+
   async updateCompany(id: number, updates: CompanyUpdate): Promise<void> {
     await db
       .update(companies)
@@ -199,11 +216,11 @@ export class DrizzleScraperRepository implements IScraperRepository {
       .where(and(eq(scrapeSessions.id, id), eq(scrapeSessions.status, "in_progress")));
   }
 
-  async completeSession(id: string, hasFailures: boolean): Promise<void> {
+  async completeSession(id: string, status: "completed" | "partial" | "failed"): Promise<void> {
     await db
       .update(scrapeSessions)
       .set({
-        status: hasFailures ? "failed" : "completed",
+        status,
         completedAt: new Date(),
       })
       .where(and(eq(scrapeSessions.id, id), eq(scrapeSessions.status, "in_progress")));

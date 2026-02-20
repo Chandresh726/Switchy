@@ -46,8 +46,10 @@ export function MatchHistoryTab() {
     },
     refetchInterval: (query) => {
       const sessions = query.state.data?.sessions || [];
-      const hasInProgress = sessions.some((s) => s.status === "in_progress");
-      return hasInProgress ? 1000 : 5000;
+      const hasActiveSessions = sessions.some(
+        (s) => s.status === "in_progress" || s.status === "queued"
+      );
+      return hasActiveSessions ? 1000 : 5000;
     },
     refetchIntervalInBackground: true,
   });

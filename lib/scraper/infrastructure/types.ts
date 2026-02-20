@@ -1,4 +1,10 @@
-import type { Platform, TriggerSource, ScrapeLogStatus, MatcherStatus } from "@/lib/scraper/types";
+import type {
+  Platform,
+  TriggerSource,
+  ScrapeLogStatus,
+  MatcherStatus,
+  SessionStatus,
+} from "@/lib/scraper/types";
 import type { Company, NewJob } from "@/lib/db/schema";
 
 export interface ExistingJob {
@@ -67,13 +73,17 @@ export interface IScraperRepository {
   ): Promise<number>;
   
   insertJobs(jobs: Omit<NewJob, "discoveredAt" | "updatedAt">[]): Promise<number[]>;
+  getMatchableJobIds(jobIds: number[]): Promise<number[]>;
   updateCompany(id: number, updates: CompanyUpdate): Promise<void>;
   
   createSession(session: ScrapeSessionCreate): Promise<void>;
   isSessionInProgress(id: string): Promise<boolean>;
   stopSession(id: string): Promise<boolean>;
   updateSessionProgress(id: string, progress: SessionProgressUpdate): Promise<void>;
-  completeSession(id: string, hasFailures: boolean): Promise<void>;
+  completeSession(
+    id: string,
+    status: Exclude<SessionStatus, "in_progress">
+  ): Promise<void>;
   
   createScrapingLog(log: ScrapingLogCreate): Promise<number>;
   updateScrapingLog(id: number, updates: ScrapingLogUpdate): Promise<void>;

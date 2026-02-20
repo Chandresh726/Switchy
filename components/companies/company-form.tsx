@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Loader2, Plus, Save, X } from "lucide-react";
+import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Plus, X, Save } from "lucide-react";
 import { PLATFORM_OPTIONS } from "@/lib/constants";
 import { detectPlatformFromUrl, getPlatformLabel } from "@/lib/scraper/platform-detection";
 
@@ -30,6 +32,27 @@ const PLATFORMS = [
   { value: "", label: "Auto-detect" },
   ...PLATFORM_OPTIONS,
 ];
+
+async function getApiErrorMessage(response: Response, fallbackMessage: string): Promise<string> {
+  try {
+    const data = await response.json();
+    if (data && typeof data.error === "string" && data.error.trim().length > 0) {
+      return data.error;
+    }
+  } catch {
+    // Ignore invalid JSON error responses and use fallback message.
+  }
+
+  return fallbackMessage;
+}
+
+function getErrorMessage(error: unknown, fallbackMessage: string): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  return fallbackMessage;
+}
 
 export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) {
   const queryClient = useQueryClient();
@@ -82,12 +105,17 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to create company");
+      if (!res.ok) {
+        throw new Error(await getApiErrorMessage(res, "Failed to create company"));
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
       onSuccess?.();
+    },
+    onError: (error) => {
+      toast.error(getErrorMessage(error, "Failed to create company"));
     },
   });
 
@@ -98,12 +126,17 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to update company");
+      if (!res.ok) {
+        throw new Error(await getApiErrorMessage(res, "Failed to update company"));
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
       onSuccess?.();
+    },
+    onError: (error) => {
+      toast.error(getErrorMessage(error, "Failed to update company"));
     },
   });
 

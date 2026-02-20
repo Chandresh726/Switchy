@@ -36,6 +36,20 @@ export const SESSION_STATUS_CONFIG: Record<string, StatusConfig> = {
     bgColor: "bg-blue-500/10",
     borderColor: "border-blue-500/20",
   },
+  partial: {
+    icon: AlertCircle,
+    label: "Partial",
+    color: "text-yellow-400",
+    bgColor: "bg-yellow-500/10",
+    borderColor: "border-yellow-500/20",
+  },
+  queued: {
+    icon: Clock,
+    label: "In Queue",
+    color: "text-zinc-400",
+    bgColor: "bg-zinc-500/10",
+    borderColor: "border-zinc-500/20",
+  },
 };
 
 export const LOG_STATUS_CONFIG: Record<string, { icon: LucideIcon; color: string }> = {

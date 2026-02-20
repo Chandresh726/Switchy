@@ -79,7 +79,7 @@ export async function createMatchSession(
 export async function updateMatchSession(
   sessionId: string,
   updates: {
-    status?: "in_progress" | "completed" | "failed";
+    status?: "queued" | "in_progress" | "completed" | "failed";
     jobsCompleted?: number;
     jobsSucceeded?: number;
     jobsFailed?: number;
@@ -99,7 +99,7 @@ export async function updateMatchSession(
 export async function updateMatchSessionIfActive(
   sessionId: string,
   updates: {
-    status?: "in_progress" | "completed" | "failed";
+    status?: "queued" | "in_progress" | "completed" | "failed";
     jobsCompleted?: number;
     jobsSucceeded?: number;
     jobsFailed?: number;
@@ -113,7 +113,12 @@ export async function updateMatchSessionIfActive(
       ...updates,
       ...(updates.status === "completed" ? { completedAt: new Date() } : {}),
     })
-    .where(and(eq(matchSessions.id, sessionId), eq(matchSessions.status, "in_progress")))
+    .where(
+      and(
+        eq(matchSessions.id, sessionId),
+        inArray(matchSessions.status, ["in_progress", "queued"])
+      )
+    )
     .returning({ id: matchSessions.id });
 
   return updated.length > 0;

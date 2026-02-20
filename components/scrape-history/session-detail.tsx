@@ -5,14 +5,13 @@ import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  CheckCircle,
-  XCircle,
   Clock,
   ArrowLeft,
   Building2,
   Briefcase,
   Filter,
   Sparkles,
+  Plus,
   AlertCircle,
   Loader2,
   Trash2,
@@ -22,7 +21,11 @@ import Link from "next/link";
 import { TRIGGER_LABELS } from "./constants";
 import { toast } from "sonner";
 import { formatDurationMs, formatDateTime } from "@/lib/utils/format";
-import { getLogStatusConfig, MATCHER_STATUS_CONFIG } from "@/lib/utils/status-config";
+import {
+  getLogStatusConfig,
+  getSessionStatusConfig,
+  MATCHER_STATUS_CONFIG,
+} from "@/lib/utils/status-config";
 
 interface SessionLog {
   id: number;
@@ -63,21 +66,6 @@ interface SessionDetailResponse {
   session: ScrapeSession;
   logs: SessionLog[];
 }
-
-const SESSION_DETAIL_STATUS_CONFIG = {
-  completed: {
-    icon: CheckCircle,
-    color: "text-emerald-400",
-  },
-  failed: {
-    icon: XCircle,
-    color: "text-red-400",
-  },
-  in_progress: {
-    icon: AlertCircle,
-    color: "text-yellow-400",
-  },
-};
 
 interface SessionDetailProps {
   sessionId: string;
@@ -159,11 +147,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
   }
 
   const { session, logs } = data;
-  const sessionStatusConfig = session.status === "completed"
-    ? SESSION_DETAIL_STATUS_CONFIG.completed
-    : session.status === "failed"
-    ? SESSION_DETAIL_STATUS_CONFIG.failed
-    : SESSION_DETAIL_STATUS_CONFIG.in_progress;
+  const sessionStatusConfig = getSessionStatusConfig(session.status);
   const SessionStatusIcon = sessionStatusConfig.icon;
   const progress = session.companiesTotal
     ? Math.round(((session.companiesCompleted || 0) / session.companiesTotal) * 100)
@@ -209,7 +193,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
       <div className="rounded-lg border border-border bg-card p-6">
         <div className="flex items-start justify-between gap-4 mb-6">
           <div className="flex items-center gap-4">
-            <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${sessionStatusConfig.color.replace("text-", "bg-").replace("400", "500/10")}`}>
+            <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${sessionStatusConfig.bgColor}`}>
               <SessionStatusIcon className={`h-6 w-6 ${sessionStatusConfig.color}`} />
             </div>
             <div>
@@ -228,9 +212,9 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
           </div>
           <Badge
             variant="outline"
-            className={`${sessionStatusConfig.color} ${sessionStatusConfig.color.replace("text-", "bg-").replace("400", "500/10")} border-transparent px-3 py-1`}
+            className={`${sessionStatusConfig.color} ${sessionStatusConfig.bgColor} border-transparent px-3 py-1`}
           >
-            {session.status}
+            {sessionStatusConfig.label}
           </Badge>
         </div>
 
@@ -348,7 +332,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
                           <span>{log.jobsFound || 0}</span>
                         </div>
                         <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-                          <Sparkles className="h-3.5 w-3.5" />
+                          <Plus className="h-3.5 w-3.5" />
                           <span>{log.jobsAdded || 0}</span>
                         </div>
                         <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -395,6 +379,12 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
                       )}
                     </div>
                     <div className="flex items-center gap-3 text-muted-foreground">
+                      <Link
+                        href="/history/match"
+                        className="text-blue-400 hover:text-blue-300 transition-colors"
+                      >
+                        View Match History
+                      </Link>
                       <span>
                         <span className="text-foreground/80">{log.matcherJobsCompleted || 0}</span>
                         <span className="text-muted-foreground mx-0.5">/</span>

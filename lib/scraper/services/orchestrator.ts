@@ -126,7 +126,10 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
           totalJobsAdded: result.jobsAdded,
           totalJobsFiltered: result.jobsFiltered,
         });
-        await this.repository.completeSession(sessionId, result.outcome !== "success");
+        await this.repository.completeSession(
+          sessionId,
+          this.resolveSessionStatusFromOutcome(result.outcome)
+        );
       }
     }
 
@@ -176,10 +179,12 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     }
 
     const shouldCompleteSession = await this.repository.isSessionInProgress(sessionId);
-    const hasFailures = results.some((result) => result.outcome !== "success");
 
     if (shouldCompleteSession) {
-      await this.repository.completeSession(sessionId, hasFailures);
+      await this.repository.completeSession(
+        sessionId,
+        this.resolveBatchSessionStatus(results)
+      );
     }
 
     const successfulCompanies = results.filter((result) => result.outcome === "success").length;
@@ -210,6 +215,28 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       totalJobsAdded: results.reduce((sum, result) => sum + result.jobsAdded, 0),
       totalJobsFiltered: results.reduce((sum, result) => sum + result.jobsFiltered, 0),
     };
+  }
+
+  private resolveSessionStatusFromOutcome(
+    outcome: ScrapeOutcome
+  ): "completed" | "partial" | "failed" {
+    if (outcome === "success") return "completed";
+    if (outcome === "error") return "failed";
+    return "partial";
+  }
+
+  private resolveBatchSessionStatus(
+    results: FetchResult[]
+  ): "completed" | "partial" | "failed" {
+    if (results.length === 0 || results.every((result) => result.outcome === "success")) {
+      return "completed";
+    }
+
+    if (results.every((result) => result.outcome === "error")) {
+      return "failed";
+    }
+
+    return "partial";
   }
 
   private async scrapeCompanyInternal(
@@ -417,10 +444,17 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     logger.added(jobsAdded, dedupeResult.duplicates.length);
 
     const matcherConfig = await getMatcherConfig();
-    const shouldMatch =
+    let matchableJobIds: number[] = [];
+
+    if (
       insertedJobIds.length > 0 &&
       this.config.autoMatchAfterScrape &&
-      matcherConfig.autoMatchAfterScrape;
+      matcherConfig.autoMatchAfterScrape
+    ) {
+      matchableJobIds = await this.repository.getMatchableJobIds(insertedJobIds);
+    }
+
+    const shouldMatch = matchableJobIds.length > 0;
 
     const logStatus = outcome === "success" ? "success" : "partial";
     const jobsFiltered = filterResult.filteredOut + (scraperResult.earlyFiltered?.total || 0);
@@ -438,12 +472,12 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       duration: Date.now() - startTime,
       completedAt: new Date(),
       matcherStatus: shouldMatch ? "pending" : null,
-      matcherJobsTotal: shouldMatch ? insertedJobIds.length : null,
+      matcherJobsTotal: shouldMatch ? matchableJobIds.length : null,
       matcherJobsCompleted: 0,
     });
 
     if (shouldMatch) {
-      this.runBackgroundMatching(insertedJobIds, logId, companyId);
+      this.runBackgroundMatching(matchableJobIds, logId, companyId);
     }
 
     return {

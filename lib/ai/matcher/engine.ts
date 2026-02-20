@@ -100,6 +100,18 @@ export async function createMatchEngine(): Promise<MatchEngine> {
           });
       };
 
+      const markSessionQueued = () => {
+        progressWriteChain = progressWriteChain
+          .then(async () => {
+            await updateMatchSessionIfActive(sessionId, {
+              status: "queued",
+            });
+          })
+          .catch((error) => {
+            console.error(`[MatchEngine] Failed to persist queued state for ${sessionId}:`, error);
+          });
+      };
+
       console.log(
         `[MatchEngine] Starting session ${sessionId} for ${jobIds.length} jobs (bulkEnabled=${config.bulkEnabled}, serializeOperations=${config.serializeOperations})`
       );
@@ -108,6 +120,8 @@ export async function createMatchEngine(): Promise<MatchEngine> {
         const results = await withQueue(
           config,
           async () => {
+            await progressWriteChain;
+
             const started = await updateMatchSessionIfActive(sessionId, {
               startedAt: new Date(),
               status: "in_progress",
@@ -129,7 +143,11 @@ export async function createMatchEngine(): Promise<MatchEngine> {
               sessionId,
               shouldStop: async () => {
                 const currentSession = await getMatchSessionStatus(sessionId);
-                return !currentSession || currentSession.status !== "in_progress";
+                return (
+                  !currentSession ||
+                  (currentSession.status !== "in_progress" &&
+                    currentSession.status !== "queued")
+                );
               },
               onProgress: (completed, total, succeeded, failed) => {
                 progressTracker.setStats({ completed, succeeded, failed });
@@ -140,6 +158,7 @@ export async function createMatchEngine(): Promise<MatchEngine> {
           (position) => {
             progressTracker.setQueuePosition(position);
             progressTracker.setPhase("queued");
+            markSessionQueued();
           }
         );
 
@@ -150,7 +169,11 @@ export async function createMatchEngine(): Promise<MatchEngine> {
         await progressWriteChain;
 
         const currentSession = await getMatchSessionStatus(sessionId);
-        if (currentSession && currentSession.status !== "in_progress") {
+        if (
+          currentSession &&
+          currentSession.status !== "in_progress" &&
+          currentSession.status !== "queued"
+        ) {
           return {
             sessionId,
             total: currentSession.jobsTotal ?? jobIds.length,

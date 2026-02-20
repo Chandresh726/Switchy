@@ -6,9 +6,20 @@ import { db } from "@/lib/db";
 import { companies } from "@/lib/db/schema";
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 
+const PLATFORM_VALUES = [
+  "greenhouse",
+  "lever",
+  "ashby",
+  "workday",
+  "eightfold",
+  "uber",
+  "custom",
+] as const;
+
 const PlatformOverrideSchema = z
-  .enum(["greenhouse", "lever", "ashby", "workday", "eightfold", "uber", "custom"])
-  .optional();
+  .union([z.enum(PLATFORM_VALUES), z.literal("")])
+  .optional()
+  .transform((value) => (value === "" ? undefined : value));
 
 const CompanyInputSchema = z.object({
   name: z.string().trim().min(1),
