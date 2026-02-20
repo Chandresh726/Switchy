@@ -9,6 +9,7 @@ export interface HttpRequestOptions extends RequestInit {
   timeout?: number;
   retries?: number;
   baseDelay?: number;
+  maxDelay?: number;
 }
 
 export interface IHttpClient {
@@ -36,10 +37,11 @@ export class FetchHttpClient implements IHttpClient {
       timeout = this.defaultConfig.timeout,
       retries = this.defaultConfig.retries,
       baseDelay = this.defaultConfig.baseDelay,
+      maxDelay = this.defaultConfig.maxDelay,
       ...fetchOptions
     } = options;
 
-    return this.fetchWithRetry(url, fetchOptions, retries, baseDelay, timeout);
+    return this.fetchWithRetry(url, fetchOptions, retries, baseDelay, maxDelay, timeout);
   }
 
   async get<T>(url: string, options: HttpRequestOptions = {}): Promise<T> {
@@ -71,6 +73,7 @@ export class FetchHttpClient implements IHttpClient {
     options: RequestInit,
     retries: number,
     baseDelay: number,
+    maxDelay: number,
     timeout: number
   ): Promise<Response> {
     const controller = new AbortController();
@@ -91,12 +94,26 @@ export class FetchHttpClient implements IHttpClient {
       if (retries <= 0) return response;
 
       await this.delay(baseDelay);
-      return this.fetchWithRetry(url, options, retries - 1, baseDelay * 2, timeout);
+      return this.fetchWithRetry(
+        url,
+        options,
+        retries - 1,
+        Math.min(maxDelay, baseDelay * 2),
+        maxDelay,
+        timeout
+      );
     } catch (error) {
       if (retries <= 0) throw error;
 
       await this.delay(baseDelay);
-      return this.fetchWithRetry(url, options, retries - 1, baseDelay * 2, timeout);
+      return this.fetchWithRetry(
+        url,
+        options,
+        retries - 1,
+        Math.min(maxDelay, baseDelay * 2),
+        maxDelay,
+        timeout
+      );
     } finally {
       clearTimeout(timeoutId);
     }

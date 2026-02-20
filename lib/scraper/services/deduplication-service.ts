@@ -71,12 +71,20 @@ export class TitleBasedDeduplicationService implements IDeduplicationService {
   batchDeduplicate(jobs: ScrapedJob[], existingJobs: ExistingJob[]): BatchDeduplicationResult {
     const newJobs: ScrapedJob[] = [];
     const duplicates: BatchDeduplicationResult["duplicates"] = [];
+    const comparisonJobs: ExistingJob[] = [...existingJobs];
+    let transientId = -1;
 
     for (const job of jobs) {
-      const result = this.deduplicate(job, existingJobs);
+      const result = this.deduplicate(job, comparisonJobs);
 
       if (result.isNew) {
         newJobs.push(job);
+        comparisonJobs.push({
+          id: transientId--,
+          externalId: job.externalId,
+          title: job.title,
+          url: job.url,
+        });
       } else if (result.existingJobId) {
         duplicates.push({
           job,

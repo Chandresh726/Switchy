@@ -48,6 +48,7 @@ export class ScraperRegistry implements IScraperRegistry {
       }
       return {
         success: false,
+        outcome: "error",
         jobs: [],
         error: `No scraper found for platform: ${platform}`,
       };
@@ -58,6 +59,7 @@ export class ScraperRegistry implements IScraperRegistry {
       const supportedPlatforms = this.getSupportedPlatforms().join(", ");
       return {
         success: false,
+        outcome: "error",
         jobs: [],
         error: `No scraper found for this URL. Supported platforms: ${supportedPlatforms}`,
       };

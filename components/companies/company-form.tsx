@@ -1,12 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useState, useEffect } from "react";
 import { Loader2, Plus, X, Save } from "lucide-react";
 import { PLATFORM_OPTIONS } from "@/lib/constants";
+import { detectPlatformFromUrl, getPlatformLabel } from "@/lib/scraper/platform-detection";
 
 interface Company {
   id: number;
@@ -46,25 +47,13 @@ export function CompanyForm({ company, onSuccess, onCancel }: CompanyFormProps) 
   const handleUrlChange = (url: string) => {
     setFormData((prev) => ({ ...prev, careersUrl: url }));
 
-    // Auto-detect platform (basic heuristics)
-    const urlLower = url.toLowerCase();
-    if (urlLower.includes("greenhouse.io") || urlLower.includes("boards.greenhouse")) {
-      setDetectedPlatform("Greenhouse");
-    } else if (urlLower.includes("lever.co") || urlLower.includes("jobs.lever")) {
-      setDetectedPlatform("Lever");
-    } else if (urlLower.includes("ashbyhq.com") || urlLower.includes("jobs.ashbyhq.com")) {
-      setDetectedPlatform("Ashby");
-    } else if (urlLower.includes("myworkdayjobs.com") || /\.wd\d*\.myworkdayjobs\.com/.test(urlLower)) {
-      setDetectedPlatform("Workday");
-    } else if (urlLower.includes("eightfold.ai")) {
-      setDetectedPlatform("Eightfold");
-    } else if (urlLower.includes("uber.com/careers") || urlLower.includes("jobs.uber.com") || (urlLower.includes("uber.com") && urlLower.includes("career"))) {
-      setDetectedPlatform("Uber");
-    } else if (url.length > 10) {
-      setDetectedPlatform("Custom");
-    } else {
+    if (url.trim().length <= 10) {
       setDetectedPlatform(null);
+      return;
     }
+
+    const detected = detectPlatformFromUrl(url);
+    setDetectedPlatform(getPlatformLabel(detected));
   };
 
   // Pre-fill form when editing

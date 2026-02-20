@@ -139,6 +139,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
     const inserted = await db
       .insert(jobs)
       .values(jobsToInsert as NewJob[])
+      .onConflictDoNothing()
       .returning({ id: jobs.id });
     
     return inserted.map((j) => j.id);

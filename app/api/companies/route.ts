@@ -1,31 +1,90 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { desc, eq } from "drizzle-orm";
+
 import { db } from "@/lib/db";
 import { companies } from "@/lib/db/schema";
-import { desc, eq } from "drizzle-orm";
-import { NextRequest, NextResponse } from "next/server";
+import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 
-// Detect platform from URL
-function detectPlatform(url: string): string | null {
-  const urlLower = url.toLowerCase();
+const PlatformOverrideSchema = z
+  .enum(["greenhouse", "lever", "ashby", "workday", "eightfold", "uber", "custom"])
+  .optional();
 
-  if (urlLower.includes("greenhouse.io") || urlLower.includes("boards.greenhouse")) {
-    return "greenhouse";
+const CompanyInputSchema = z.object({
+  name: z.string().trim().min(1),
+  careersUrl: z.string().trim().url(),
+  logoUrl: z.string().trim().url().optional().or(z.literal("")),
+  platform: PlatformOverrideSchema,
+  boardToken: z.string().trim().optional().or(z.literal("")),
+});
+
+type CompanyInput = z.infer<typeof CompanyInputSchema>;
+
+const MANUAL_BOARD_TOKEN_REQUIRED = new Set(["greenhouse", "lever", "ashby"]);
+
+function normalizeOptionalText(value?: string): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function shouldRejectMissingBoardToken(input: CompanyInput, detectedFromUrl: string): boolean {
+  const manualPlatform = input.platform;
+  if (!manualPlatform) return false;
+
+  if (!MANUAL_BOARD_TOKEN_REQUIRED.has(manualPlatform)) {
+    return false;
   }
-  if (urlLower.includes("lever.co") || urlLower.includes("jobs.lever")) {
-    return "lever";
+
+  const boardToken = normalizeOptionalText(input.boardToken);
+  if (detectedFromUrl === manualPlatform) {
+    return false;
   }
-  if (urlLower.includes("ashbyhq.com") || urlLower.includes("jobs.ashbyhq.com")) {
-    return "ashby";
+
+  return !boardToken;
+}
+
+async function upsertCompany(input: CompanyInput) {
+  const manualPlatform = input.platform;
+  const detectedFromUrl = detectPlatformFromUrl(input.careersUrl);
+  const resolvedPlatform = manualPlatform ?? detectedFromUrl;
+  const boardToken = normalizeOptionalText(input.boardToken);
+
+  const [existing] = await db
+    .select()
+    .from(companies)
+    .where(eq(companies.careersUrl, input.careersUrl));
+
+  if (existing) {
+    const [updated] = await db
+      .update(companies)
+      .set({
+        name: input.name,
+        logoUrl: normalizeOptionalText(input.logoUrl),
+        platform: resolvedPlatform,
+        boardToken,
+        isActive: true,
+        updatedAt: new Date(),
+      })
+      .where(eq(companies.id, existing.id))
+      .returning();
+
+    return updated;
   }
-  if (urlLower.includes("myworkdayjobs.com") || /\.wd\d*\.myworkdayjobs\.com/.test(urlLower)) {
-    return "workday";
-  }
-  if (urlLower.includes("eightfold.ai")) {
-    return "eightfold";
-  }
-  if (urlLower.includes("uber.com/careers") || urlLower.includes("jobs.uber.com") || (urlLower.includes("uber.com") && urlLower.includes("career"))) {
-    return "uber";
-  }
-  return "custom";
+
+  const [created] = await db
+    .insert(companies)
+    .values({
+      name: input.name,
+      careersUrl: input.careersUrl,
+      logoUrl: normalizeOptionalText(input.logoUrl),
+      platform: resolvedPlatform,
+      boardToken,
+      isActive: true,
+    })
+    .returning();
+
+  return created;
 }
 
 export async function GET() {
@@ -48,84 +107,54 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const items = Array.isArray(body) ? body : [body];
+    const isBulk = Array.isArray(body);
+    const rawItems = isBulk ? body : [body];
     const results = [];
 
-    for (const item of items) {
-      const { name, careersUrl, logoUrl, platform: manualPlatform, boardToken } = item;
+    for (const rawItem of rawItems) {
+      const parsed = CompanyInputSchema.safeParse(rawItem);
 
-      if (!name || !careersUrl) {
-        if (!Array.isArray(body)) {
-          return NextResponse.json(
-            { error: "name and careersUrl are required" },
-            { status: 400 }
-          );
-        }
-        continue;
-      }
-
-      // Use manual platform if provided, otherwise auto-detect
-      const platform = manualPlatform || detectPlatform(careersUrl);
-      const detectedFromUrl = detectPlatform(careersUrl);
-
-      // Validate boardToken is provided when manually selecting greenhouse/lever/ashby with custom URL
-      // Eightfold and Workday can auto-detect, so boardToken is optional for them
-      const requiresBoardToken = ["greenhouse", "lever", "ashby"].includes(manualPlatform || "");
-      if (
-        manualPlatform &&
-        requiresBoardToken &&
-        detectedFromUrl !== manualPlatform &&
-        !boardToken
-      ) {
-        if (!Array.isArray(body)) {
+      if (!parsed.success) {
+        if (!isBulk) {
           return NextResponse.json(
             {
-              error: `boardToken is required when manually selecting ${manualPlatform} platform with a custom URL`,
+              error: "Invalid request body",
+              details: parsed.error.flatten(),
             },
             { status: 400 }
           );
         }
-        // In bulk mode, maybe we skip or default? Let's skip for now to be safe
         continue;
       }
 
-      // Check for existing company
-      const [existing] = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.careersUrl, careersUrl));
+      const input = parsed.data;
+      const detectedFromUrl = detectPlatformFromUrl(input.careersUrl);
 
-      let result;
-      if (existing) {
-        [result] = await db
-          .update(companies)
-          .set({
-            name,
-            logoUrl,
-            platform,
-            boardToken: boardToken || null,
-            isActive: true,
-            updatedAt: new Date(),
-          })
-          .where(eq(companies.id, existing.id))
-          .returning();
-      } else {
-        [result] = await db
-          .insert(companies)
-          .values({
-            name,
-            careersUrl,
-            logoUrl,
-            platform,
-            boardToken: boardToken || null,
-            isActive: true,
-          })
-          .returning();
+      if (shouldRejectMissingBoardToken(input, detectedFromUrl)) {
+        if (!isBulk) {
+          return NextResponse.json(
+            {
+              error: `boardToken is required when manually selecting ${input.platform} platform with a custom URL`,
+            },
+            { status: 400 }
+          );
+        }
+        continue;
       }
-      results.push(result);
+
+      const result = await upsertCompany(input);
+      if (result) {
+        results.push(result);
+      }
     }
 
-    if (!Array.isArray(body)) {
+    if (!isBulk) {
+      if (results.length === 0) {
+        return NextResponse.json(
+          { error: "name and careersUrl are required" },
+          { status: 400 }
+        );
+      }
       return NextResponse.json(results[0]);
     }
 
@@ -150,64 +179,28 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const incomingUrls = new Set(
-      body.map((c: { careersUrl?: string }) => c.careersUrl).filter(Boolean)
-    );
-
-    // 1. Upsert incoming
+    const validated: CompanyInput[] = [];
     for (const item of body) {
-      if (!item.name || !item.careersUrl) continue;
+      const parsed = CompanyInputSchema.safeParse(item);
+      if (parsed.success) {
+        validated.push(parsed.data);
+      }
+    }
 
-      const manualPlatform = item.platform;
-      const detectedFromUrl = detectPlatform(item.careersUrl);
-      const platform = manualPlatform || detectedFromUrl;
+    const incomingUrls = new Set(validated.map((item) => item.careersUrl));
 
-      // Validate boardToken is provided when manually selecting greenhouse/lever/ashby with custom URL
-      // Eightfold and Workday can auto-detect, so boardToken is optional for them
-      const requiresBoardToken = ["greenhouse", "lever", "ashby"].includes(manualPlatform || "");
-      if (
-        manualPlatform &&
-        requiresBoardToken &&
-        detectedFromUrl !== manualPlatform &&
-        !item.boardToken
-      ) {
-        // Skip items with inconsistent platform override without boardToken
+    for (const item of validated) {
+      const detectedFromUrl = detectPlatformFromUrl(item.careersUrl);
+      if (shouldRejectMissingBoardToken(item, detectedFromUrl)) {
         console.warn(
-          `[Companies Sync] Skipping ${item.name}: boardToken required when manually selecting ${manualPlatform} platform with a custom URL`
+          `[Companies Sync] Skipping ${item.name}: boardToken required when manually selecting ${item.platform} platform with a custom URL`
         );
         continue;
       }
 
-      const [existing] = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.careersUrl, item.careersUrl));
-
-      if (existing) {
-        await db
-          .update(companies)
-          .set({
-            name: item.name,
-            logoUrl: item.logoUrl,
-            platform,
-            boardToken: item.boardToken || null,
-            isActive: true, // Ensure active if present in JSON
-            updatedAt: new Date(),
-          })
-          .where(eq(companies.id, existing.id));
-      } else {
-        await db.insert(companies).values({
-          name: item.name,
-          careersUrl: item.careersUrl,
-          logoUrl: item.logoUrl,
-          platform,
-          boardToken: item.boardToken || null,
-          isActive: true,
-        });
-      }
+      await upsertCompany(item);
     }
 
-    // 2. Deactivate missing
     const allCompanies = await db.select().from(companies);
     for (const company of allCompanies) {
       if (!incomingUrls.has(company.careersUrl) && company.isActive) {

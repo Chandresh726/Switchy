@@ -68,6 +68,7 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
       if (!boardToken) {
         return {
           success: false,
+          outcome: "error",
           jobs: [],
           error: "Could not extract board token from URL. Please provide the board token manually.",
         };
@@ -102,6 +103,7 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
         if (!altResponse.ok) {
           return {
             success: false,
+            outcome: "error",
             jobs: [],
             error: `Failed to fetch jobs: ${response.status}`,
           };
@@ -116,6 +118,7 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
     } catch (error) {
       return {
         success: false,
+        outcome: "error",
         jobs: [],
         error: error instanceof Error ? error.message : "Unknown error",
       };
@@ -178,6 +181,7 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
 
     return {
       success: true,
+      outcome: "success",
       jobs,
       detectedBoardToken,
       openExternalIds,

@@ -10,9 +10,12 @@
     "build": "next build",
     "start": "NODE_ENV=production next start",
     "lint": "eslint",
+    "test": "vitest",
+    "test:run": "vitest run",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config=drizzle.config.ts",
-    "db:studio": "drizzle-kit studio --config=drizzle.config.ts"
+    "db:studio": "drizzle-kit studio --config=drizzle.config.ts",
+    "db:cleanup-job-duplicates": "tsx scripts/cleanup-job-duplicates.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.38",
@@ -78,6 +81,9 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "tsx": "^4.20.6",
+    "typescript": "^5",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^3.2.4"
   }
 }

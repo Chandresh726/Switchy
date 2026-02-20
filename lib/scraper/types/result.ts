@@ -1,6 +1,8 @@
 import type { Platform } from "./platform";
 import type { ScrapedJob } from "./job";
 
+export type ScrapeOutcome = "success" | "partial" | "error";
+
 export type ScraperErrorCode =
   | "invalid_url"
   | "board_not_found"
@@ -45,6 +47,7 @@ export interface EarlyFilterStats {
 
 export interface ScraperResult<T extends ScrapedJob = ScrapedJob> {
   success: boolean;
+  outcome: ScrapeOutcome;
   jobs: T[];
   error?: string;
   metadata?: ScraperMetadata;
@@ -58,6 +61,7 @@ export interface FetchResult {
   companyId: number;
   companyName: string;
   success: boolean;
+  outcome: ScrapeOutcome;
   jobsFound: number;
   jobsAdded: number;
   jobsUpdated: number;

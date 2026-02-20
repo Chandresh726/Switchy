@@ -115,6 +115,8 @@ export const jobs = sqliteTable("jobs", {
   companyIdIdx: index("jobs_company_id_idx").on(table.companyId),
   statusIdx: index("jobs_status_idx").on(table.status),
   matchScoreIdx: index("jobs_match_score_idx").on(table.matchScore),
+  companyExternalIdUnique: unique("jobs_company_external_id_unique").on(table.companyId, table.externalId),
+  companyUrlUnique: unique("jobs_company_url_unique").on(table.companyId, table.url),
 }));
 
 // Scrape Sessions - Track batch scrape operations

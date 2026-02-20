@@ -1,4 +1,4 @@
-import type { TriggerSource } from "@/lib/scraper/types";
+import type { Platform, TriggerSource, ScrapeLogStatus, MatcherStatus } from "@/lib/scraper/types";
 import type { Company, NewJob } from "@/lib/db/schema";
 
 export interface ExistingJob {
@@ -26,8 +26,8 @@ export interface ScrapingLogCreate {
   companyId: number;
   sessionId: string;
   triggerSource?: TriggerSource;
-  platform?: string | null;
-  status: "success" | "error" | "partial";
+  platform?: Platform | null;
+  status: ScrapeLogStatus;
   jobsFound: number;
   jobsAdded: number;
   jobsUpdated: number;
@@ -35,13 +35,13 @@ export interface ScrapingLogCreate {
   errorMessage?: string;
   duration: number;
   completedAt: Date;
-  matcherStatus?: "pending" | null;
+  matcherStatus?: Extract<MatcherStatus, "pending"> | null;
   matcherJobsTotal?: number | null;
   matcherJobsCompleted?: number;
 }
 
 export interface ScrapingLogUpdate {
-  matcherStatus?: "pending" | "in_progress" | "completed" | "failed" | null;
+  matcherStatus?: MatcherStatus | null;
   matcherJobsCompleted?: number;
   matcherJobsTotal?: number | null;
   matcherErrorCount?: number;

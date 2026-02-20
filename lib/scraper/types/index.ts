@@ -38,6 +38,7 @@ export type {
 export { toJobInsert } from "./job";
 
 export type {
+  ScrapeOutcome,
   ScraperErrorCode,
   ScraperError,
   ScraperMetadata,

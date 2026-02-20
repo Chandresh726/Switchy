@@ -1,13 +1,23 @@
-import { isPlatform, type Platform, type TriggerSource, type FetchResult, type BatchFetchResult } from "@/lib/scraper/types";
+import type { Company } from "@/lib/db/schema";
 import type { IScraperRepository } from "@/lib/scraper/infrastructure/types";
+import type { ScrapeOptions } from "@/lib/scraper/core/types";
+import {
+  isPlatform,
+  type Platform,
+  type TriggerSource,
+  type FetchResult,
+  type BatchFetchResult,
+  type ScrapeOutcome,
+  type ScraperResult,
+  type ScrapedJob,
+} from "@/lib/scraper/types";
+import { ScraperLogger } from "@/lib/scraper/utils/logger";
+import { getMatcherConfig, matchWithTracking } from "@/lib/ai/matcher";
+
+import { parseTitleKeywords } from "./filter-service";
 import type { IScraperRegistry } from "./registry";
 import type { IDeduplicationService } from "./deduplication-service";
 import type { IFilterService, JobFilters } from "./filter-service";
-import { parseTitleKeywords } from "./filter-service";
-import type { ScrapeOptions } from "@/lib/scraper/core/types";
-import { ScraperLogger } from "@/lib/scraper/utils/logger";
-
-import { matchWithTracking, getMatcherConfig } from "@/lib/ai/matcher";
 
 export interface OrchestratorConfig {
   autoMatchAfterScrape: boolean;
@@ -23,6 +33,7 @@ const ARCHIVABLE_JOB_STATUSES = ["new", "viewed", "interested", "rejected"];
 
 export interface IScrapeOrchestrator {
   scrapeAllCompanies(trigger: TriggerSource): Promise<BatchFetchResult>;
+  scrapeCompanies(companyIds: number[], trigger: TriggerSource): Promise<BatchFetchResult>;
   scrapeCompany(companyId: number, options?: ScrapeCompanyOptions): Promise<FetchResult>;
 }
 
@@ -30,6 +41,23 @@ export interface ScrapeCompanyOptions {
   sessionId?: string;
   triggerSource?: TriggerSource;
   filters?: JobFilters;
+}
+
+interface ScrapeExecutionResult {
+  outcome: ScrapeOutcome;
+  jobsFound: number;
+  jobsAdded: number;
+  jobsUpdated: number;
+  jobsFiltered: number;
+  logId?: number;
+  error?: string;
+}
+
+interface ScrapeBatchProgress {
+  companiesCompleted: number;
+  totalJobsFound: number;
+  totalJobsAdded: number;
+  totalJobsFiltered: number;
 }
 
 export class ScrapeOrchestrator implements IScrapeOrchestrator {
@@ -42,80 +70,20 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
   ) {}
 
   async scrapeAllCompanies(trigger: TriggerSource): Promise<BatchFetchResult> {
-    const sessionId = crypto.randomUUID();
-    const sessionStartTime = Date.now();
-
     const activeCompanies = await this.repository.getActiveCompanies();
     const scrapeableCompanies = activeCompanies.filter(
       (company) => !this.isCustomPlatform(company.platform)
     );
-    
-    const logger = new ScraperLogger("", "");
-    logger.batchStart(scrapeableCompanies.length);
 
-    await this.repository.createSession({
-      id: sessionId,
-      triggerSource: trigger,
-      status: "in_progress",
-      companiesTotal: scrapeableCompanies.length,
-    });
+    return this.scrapeBatch(scrapeableCompanies, trigger);
+  }
 
-    const results: FetchResult[] = [];
+  async scrapeCompanies(companyIds: number[], trigger: TriggerSource): Promise<BatchFetchResult> {
+    const companyIdsSet = new Set(companyIds);
+    const activeCompanies = await this.repository.getActiveCompanies();
+    const selectedCompanies = activeCompanies.filter((company) => companyIdsSet.has(company.id));
 
-    for (const company of scrapeableCompanies) {
-      const isSessionActive = await this.repository.isSessionInProgress(sessionId);
-      if (!isSessionActive) {
-        console.log(`[ScrapeOrchestrator] Session ${sessionId} stop requested`);
-        break;
-      }
-
-      const result = await this.scrapeCompanyInternal(
-        company.id,
-        company.name,
-        company.careersUrl,
-        this.resolvePlatform(company.platform),
-        company.boardToken,
-        { sessionId, triggerSource: trigger }
-      );
-      results.push(result);
-
-      const totalJobsFound = results.reduce((sum, r) => sum + r.jobsFound, 0);
-      const totalJobsAdded = results.reduce((sum, r) => sum + r.jobsAdded, 0);
-      const totalJobsFiltered = results.reduce((sum, r) => sum + r.jobsFiltered, 0);
-
-      await this.repository.updateSessionProgress(sessionId, {
-        companiesCompleted: results.length,
-        totalJobsFound,
-        totalJobsAdded,
-        totalJobsFiltered,
-      });
-    }
-
-    const totalDuration = Date.now() - sessionStartTime;
-    const successfulCompanies = results.filter((r) => r.success).length;
-    const hasFailures = results.some((r) => !r.success);
-
-    const shouldCompleteSession = await this.repository.isSessionInProgress(sessionId);
-    if (shouldCompleteSession) {
-      await this.repository.completeSession(sessionId, hasFailures);
-    }
-
-    const totalJobsAdded = results.reduce((sum, r) => sum + r.jobsAdded, 0);
-    logger.batchComplete(successfulCompanies, scrapeableCompanies.length, totalJobsAdded);
-
-    return {
-      sessionId,
-      results,
-      summary: {
-        totalCompanies: scrapeableCompanies.length,
-        successfulCompanies,
-        failedCompanies: results.length - successfulCompanies,
-        totalJobsFound: results.reduce((sum, r) => sum + r.jobsFound, 0),
-        totalJobsAdded,
-        totalJobsFiltered: results.reduce((sum, r) => sum + r.jobsFiltered, 0),
-        totalDuration,
-      },
-    };
+    return this.scrapeBatch(selectedCompanies, trigger);
   }
 
   async scrapeCompany(companyId: number, options?: ScrapeCompanyOptions): Promise<FetchResult> {
@@ -128,7 +96,6 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     const sessionId = options?.sessionId ?? crypto.randomUUID();
     const triggerSource = options?.triggerSource ?? "manual";
     const isStandaloneRefresh = !options?.sessionId;
-    const isCustomPlatform = this.isCustomPlatform(company.platform);
 
     if (isStandaloneRefresh) {
       await this.repository.createSession({
@@ -139,51 +106,110 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       });
     }
 
-    if (isCustomPlatform) {
-      const result = this.createSkippedResult(
-        company.id,
-        company.name,
-        "Skipping custom platform company"
-      );
-
-      if (isStandaloneRefresh) {
-        await this.repository.updateSessionProgress(sessionId, {
-          companiesCompleted: 1,
-          totalJobsFound: 0,
-          totalJobsAdded: 0,
-          totalJobsFiltered: 0,
-        });
-        await this.repository.completeSession(sessionId, false);
-      }
-
-      return result;
-    }
-
-    const result = await this.scrapeCompanyInternal(
-      company.id,
-      company.name,
-      company.careersUrl,
-      this.resolvePlatform(company.platform),
-      company.boardToken,
-      { sessionId, triggerSource, filters: options?.filters }
-    );
+    const result = this.isCustomPlatform(company.platform)
+      ? this.createSkippedResult(company.id, company.name, "Skipping custom platform company")
+      : await this.scrapeCompanyInternal(
+          company.id,
+          company.name,
+          company.careersUrl,
+          this.resolvePlatform(company.platform),
+          company.boardToken,
+          { sessionId, triggerSource, filters: options?.filters }
+        );
 
     if (isStandaloneRefresh) {
       const shouldCompleteSession = await this.repository.isSessionInProgress(sessionId);
-      if (!shouldCompleteSession) {
-        return result;
+      if (shouldCompleteSession) {
+        await this.repository.updateSessionProgress(sessionId, {
+          companiesCompleted: 1,
+          totalJobsFound: result.jobsFound,
+          totalJobsAdded: result.jobsAdded,
+          totalJobsFiltered: result.jobsFiltered,
+        });
+        await this.repository.completeSession(sessionId, result.outcome !== "success");
       }
-
-      await this.repository.updateSessionProgress(sessionId, {
-        companiesCompleted: 1,
-        totalJobsFound: result.jobsFound,
-        totalJobsAdded: result.jobsAdded,
-        totalJobsFiltered: result.jobsFiltered,
-      });
-      await this.repository.completeSession(sessionId, !result.success);
     }
 
     return result;
+  }
+
+  private async scrapeBatch(companiesToScrape: Company[], trigger: TriggerSource): Promise<BatchFetchResult> {
+    const sessionId = crypto.randomUUID();
+    const sessionStartTime = Date.now();
+
+    const logger = new ScraperLogger("", "");
+    logger.batchStart(companiesToScrape.length);
+
+    await this.repository.createSession({
+      id: sessionId,
+      triggerSource: trigger,
+      status: "in_progress",
+      companiesTotal: companiesToScrape.length,
+    });
+
+    const results: FetchResult[] = [];
+
+    for (const company of companiesToScrape) {
+      const isSessionActive = await this.repository.isSessionInProgress(sessionId);
+      if (!isSessionActive) {
+        console.log(`[ScrapeOrchestrator] Session ${sessionId} stop requested`);
+        break;
+      }
+
+      const result = this.isCustomPlatform(company.platform)
+        ? this.createSkippedResult(company.id, company.name, "Skipping custom platform company")
+        : await this.scrapeCompanyInternal(
+            company.id,
+            company.name,
+            company.careersUrl,
+            this.resolvePlatform(company.platform),
+            company.boardToken,
+            { sessionId, triggerSource: trigger }
+          );
+
+      results.push(result);
+
+      await this.repository.updateSessionProgress(
+        sessionId,
+        this.calculateBatchProgress(results)
+      );
+    }
+
+    const shouldCompleteSession = await this.repository.isSessionInProgress(sessionId);
+    const hasFailures = results.some((result) => result.outcome !== "success");
+
+    if (shouldCompleteSession) {
+      await this.repository.completeSession(sessionId, hasFailures);
+    }
+
+    const successfulCompanies = results.filter((result) => result.outcome === "success").length;
+    const failedCompanies = results.length - successfulCompanies;
+    const progress = this.calculateBatchProgress(results);
+
+    logger.batchComplete(successfulCompanies, companiesToScrape.length, progress.totalJobsAdded);
+
+    return {
+      sessionId,
+      results,
+      summary: {
+        totalCompanies: companiesToScrape.length,
+        successfulCompanies,
+        failedCompanies,
+        totalJobsFound: progress.totalJobsFound,
+        totalJobsAdded: progress.totalJobsAdded,
+        totalJobsFiltered: progress.totalJobsFiltered,
+        totalDuration: Date.now() - sessionStartTime,
+      },
+    };
+  }
+
+  private calculateBatchProgress(results: FetchResult[]): ScrapeBatchProgress {
+    return {
+      companiesCompleted: results.length,
+      totalJobsFound: results.reduce((sum, result) => sum + result.jobsFound, 0),
+      totalJobsAdded: results.reduce((sum, result) => sum + result.jobsAdded, 0),
+      totalJobsFiltered: results.reduce((sum, result) => sum + result.jobsFiltered, 0),
+    };
   }
 
   private async scrapeCompanyInternal(
@@ -195,24 +221,20 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     options: { sessionId: string; triggerSource: TriggerSource; filters?: JobFilters }
   ): Promise<FetchResult> {
     const startTime = Date.now();
-    const platformLabel = platform || "auto-detect";
-    const logger = new ScraperLogger(companyName, platformLabel);
+    const logger = new ScraperLogger(companyName, platform || "auto-detect");
 
     logger.start();
 
     try {
       const existingJobs = await this.repository.getExistingJobs(companyId);
       const existingExternalIds = new Set<string>(
-        existingJobs.map((j) => j.externalId).filter((id): id is string => Boolean(id))
+        existingJobs
+          .map((job) => job.externalId)
+          .filter((externalId): externalId is string => Boolean(externalId))
       );
 
       const filters = await this.loadFilters(options.filters);
-
-      const scraperOptions: ScrapeOptions = {
-        boardToken: boardToken ?? undefined,
-        filters,
-        existingExternalIds,
-      };
+      const scraperOptions = this.createScraperOptions(boardToken, filters, existingExternalIds);
 
       const scraperResult = await this.registry.scrape(
         careersUrl,
@@ -220,161 +242,26 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
         scraperOptions
       );
 
-      if (!scraperResult.success) {
-        logger.error(scraperResult.error || "Unknown error");
-        
-        await this.repository.createScrapingLog({
-          companyId,
-          sessionId: options.sessionId,
-          triggerSource: options.triggerSource,
-          platform,
-          status: "error",
-          jobsFound: 0,
-          jobsAdded: 0,
-          jobsUpdated: 0,
-          jobsFiltered: 0,
-          errorMessage: scraperResult.error,
-          duration: Date.now() - startTime,
-          completedAt: new Date(),
-        });
-
-        return {
-          companyId,
-          companyName,
-          success: false,
-          jobsFound: 0,
-          jobsAdded: 0,
-          jobsUpdated: 0,
-          jobsFiltered: 0,
-          platform,
-          error: scraperResult.error,
-          duration: Date.now() - startTime,
-        };
-      }
-
-      const hasEarlyFilter = scraperResult.earlyFiltered && scraperResult.earlyFiltered.total > 0;
-      const totalFetched = hasEarlyFilter
-        ? scraperResult.jobs.length + scraperResult.earlyFiltered!.total
-        : scraperResult.jobs.length;
-
-      if (hasEarlyFilter) {
-        logger.fetchedWithEarlyFilter(totalFetched, {
-          country: scraperResult.earlyFiltered!.country,
-          city: scraperResult.earlyFiltered!.city,
-          title: scraperResult.earlyFiltered!.title,
-        });
-      } else {
-        logger.fetched(scraperResult.jobs.length);
-      }
-
-      const openExternalIds = Array.from(
-        new Set(
-          (scraperResult.openExternalIds ?? scraperResult.jobs.map((job) => job.externalId)).filter(
-            (externalId): externalId is string => Boolean(externalId)
-          )
-        )
-      );
-
-      if (openExternalIds.length > 0) {
-        await this.repository.reopenScraperArchivedJobs(companyId, openExternalIds);
-      }
-
-      if (scraperResult.openExternalIdsComplete !== false) {
-        await this.repository.archiveMissingJobs(
-          companyId,
-          openExternalIds,
-          ARCHIVABLE_JOB_STATUSES
-        );
-      }
-
-      const { newJobs, duplicates } = this.deduplicationService.batchDeduplicate(
-        scraperResult.jobs,
-        existingJobs
-      );
-
-      const { filtered, filteredOut, breakdown } = this.filterService.applyFilters(newJobs, filters);
-
-      if (filteredOut > 0 && !hasEarlyFilter) {
-        logger.filtered({
-          country: breakdown.failedCountry > 0 ? breakdown.failedCountry : undefined,
-          city: breakdown.failedCity > 0 ? breakdown.failedCity : undefined,
-          title: breakdown.failedTitle > 0 ? breakdown.failedTitle : undefined,
-        });
-      }
-
-      let jobsAdded = 0;
-      let insertedJobIds: number[] = [];
-
-      if (filtered.length > 0) {
-        insertedJobIds = await this.repository.insertJobs(
-          filtered.map((job) => ({
-            companyId,
-            externalId: job.externalId,
-            title: job.title,
-            url: job.url,
-            location: job.location,
-            locationType: job.locationType,
-            department: job.department,
-            description: job.description,
-            descriptionFormat: job.descriptionFormat ?? "plain",
-            salary: job.salary,
-            employmentType: job.employmentType,
-            postedDate: job.postedDate,
-            status: "new" as const,
-          }))
-        );
-        jobsAdded = insertedJobIds.length;
-      }
-
-      const companyUpdates: { lastScrapedAt: Date; updatedAt: Date; boardToken?: string } = {
-        lastScrapedAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      if (scraperResult.detectedBoardToken && !boardToken) {
-        companyUpdates.boardToken = scraperResult.detectedBoardToken;
-      }
-
-      await this.repository.updateCompany(companyId, companyUpdates);
-
-      logger.added(jobsAdded, duplicates.length);
-
-      const matcherConfig = await getMatcherConfig();
-      const shouldMatch = insertedJobIds.length > 0 && matcherConfig.autoMatchAfterScrape;
-
-      const logId = await this.repository.createScrapingLog({
+      const executionResult = await this.processScraperResult({
+        scraperResult,
         companyId,
+        platform,
+        boardToken,
+        existingJobs,
+        filters,
         sessionId: options.sessionId,
         triggerSource: options.triggerSource,
-        platform,
-        status: "success",
-        jobsFound: scraperResult.jobs.length,
-        jobsAdded,
-        jobsUpdated: duplicates.length,
-        jobsFiltered: filteredOut + (scraperResult.earlyFiltered?.total || 0),
-        duration: Date.now() - startTime,
-        completedAt: new Date(),
-        matcherStatus: shouldMatch ? "pending" : null,
-        matcherJobsTotal: shouldMatch ? insertedJobIds.length : null,
-        matcherJobsCompleted: 0,
+        startTime,
+        logger,
       });
 
-      if (shouldMatch) {
-        this.runBackgroundMatching(insertedJobIds, logId, companyId);
-      }
-
-      return {
+      return this.createFetchResult({
         companyId,
         companyName,
-        success: true,
-        jobsFound: scraperResult.jobs.length,
-        jobsAdded,
-        jobsUpdated: duplicates.length,
-        jobsFiltered: filteredOut + (scraperResult.earlyFiltered?.total || 0),
         platform,
         duration: Date.now() - startTime,
-        logId,
-      };
+        ...executionResult,
+      });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       logger.error(errorMessage);
@@ -394,24 +281,272 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
         completedAt: new Date(),
       });
 
-      return {
+      return this.createFetchResult({
         companyId,
         companyName,
-        success: false,
+        platform,
+        outcome: "error",
         jobsFound: 0,
         jobsAdded: 0,
         jobsUpdated: 0,
         jobsFiltered: 0,
-        platform,
         error: errorMessage,
         duration: Date.now() - startTime,
+      });
+    }
+  }
+
+  private createScraperOptions(
+    boardToken: string | null,
+    filters: JobFilters,
+    existingExternalIds: Set<string>
+  ): ScrapeOptions {
+    return {
+      boardToken: boardToken ?? undefined,
+      filters,
+      existingExternalIds,
+    };
+  }
+
+  private resolveScrapeOutcome(scraperResult: ScraperResult<ScrapedJob>): ScrapeOutcome {
+    if (scraperResult.outcome) {
+      return scraperResult.outcome;
+    }
+    return scraperResult.success ? "success" : "error";
+  }
+
+  private async processScraperResult(params: {
+    scraperResult: ScraperResult<ScrapedJob>;
+    companyId: number;
+    platform: Platform | null;
+    boardToken: string | null;
+    existingJobs: Array<{ id: number; externalId: string | null; title: string; url: string }>;
+    filters: JobFilters;
+    sessionId: string;
+    triggerSource: TriggerSource;
+    startTime: number;
+    logger: ScraperLogger;
+  }): Promise<ScrapeExecutionResult> {
+    const {
+      scraperResult,
+      companyId,
+      platform,
+      boardToken,
+      existingJobs,
+      filters,
+      sessionId,
+      triggerSource,
+      startTime,
+      logger,
+    } = params;
+
+    const outcome = this.resolveScrapeOutcome(scraperResult);
+
+    if (outcome === "error") {
+      const errorMessage = scraperResult.error || "Unknown error";
+      logger.error(errorMessage);
+
+      await this.repository.createScrapingLog({
+        companyId,
+        sessionId,
+        triggerSource,
+        platform,
+        status: "error",
+        jobsFound: 0,
+        jobsAdded: 0,
+        jobsUpdated: 0,
+        jobsFiltered: 0,
+        errorMessage,
+        duration: Date.now() - startTime,
+        completedAt: new Date(),
+      });
+
+      return {
+        outcome,
+        jobsFound: 0,
+        jobsAdded: 0,
+        jobsUpdated: 0,
+        jobsFiltered: 0,
+        error: errorMessage,
       };
     }
+
+    const hasEarlyFilter = Boolean(
+      scraperResult.earlyFiltered && scraperResult.earlyFiltered.total > 0
+    );
+    const totalFetched = hasEarlyFilter
+      ? scraperResult.jobs.length + (scraperResult.earlyFiltered?.total || 0)
+      : scraperResult.jobs.length;
+
+    if (hasEarlyFilter) {
+      logger.fetchedWithEarlyFilter(totalFetched, {
+        country: scraperResult.earlyFiltered?.country,
+        city: scraperResult.earlyFiltered?.city,
+        title: scraperResult.earlyFiltered?.title,
+      });
+    } else {
+      logger.fetched(scraperResult.jobs.length);
+    }
+
+    const openExternalIds = Array.from(
+      new Set(
+        (scraperResult.openExternalIds ?? scraperResult.jobs.map((job) => job.externalId)).filter(
+          (externalId): externalId is string => Boolean(externalId)
+        )
+      )
+    );
+
+    await this.syncArchivedJobs(companyId, openExternalIds, scraperResult.openExternalIdsComplete);
+
+    const dedupeResult = this.deduplicationService.batchDeduplicate(scraperResult.jobs, existingJobs);
+    const filterResult = this.filterService.applyFilters(dedupeResult.newJobs, filters);
+
+    if (filterResult.filteredOut > 0 && !hasEarlyFilter) {
+      logger.filtered({
+        country: filterResult.breakdown.failedCountry > 0 ? filterResult.breakdown.failedCountry : undefined,
+        city: filterResult.breakdown.failedCity > 0 ? filterResult.breakdown.failedCity : undefined,
+        title: filterResult.breakdown.failedTitle > 0 ? filterResult.breakdown.failedTitle : undefined,
+      });
+    }
+
+    const insertedJobIds = await this.insertFilteredJobs(companyId, filterResult.filtered);
+    const jobsAdded = insertedJobIds.length;
+
+    await this.updateCompanyScrapeMetadata(companyId, boardToken, scraperResult.detectedBoardToken);
+
+    logger.added(jobsAdded, dedupeResult.duplicates.length);
+
+    const matcherConfig = await getMatcherConfig();
+    const shouldMatch =
+      insertedJobIds.length > 0 &&
+      this.config.autoMatchAfterScrape &&
+      matcherConfig.autoMatchAfterScrape;
+
+    const logStatus = outcome === "success" ? "success" : "partial";
+    const jobsFiltered = filterResult.filteredOut + (scraperResult.earlyFiltered?.total || 0);
+
+    const logId = await this.repository.createScrapingLog({
+      companyId,
+      sessionId,
+      triggerSource,
+      platform,
+      status: logStatus,
+      jobsFound: scraperResult.jobs.length,
+      jobsAdded,
+      jobsUpdated: dedupeResult.duplicates.length,
+      jobsFiltered,
+      duration: Date.now() - startTime,
+      completedAt: new Date(),
+      matcherStatus: shouldMatch ? "pending" : null,
+      matcherJobsTotal: shouldMatch ? insertedJobIds.length : null,
+      matcherJobsCompleted: 0,
+    });
+
+    if (shouldMatch) {
+      this.runBackgroundMatching(insertedJobIds, logId, companyId);
+    }
+
+    return {
+      outcome,
+      jobsFound: scraperResult.jobs.length,
+      jobsAdded,
+      jobsUpdated: dedupeResult.duplicates.length,
+      jobsFiltered,
+      logId,
+    };
+  }
+
+  private async syncArchivedJobs(
+    companyId: number,
+    openExternalIds: string[],
+    openExternalIdsComplete?: boolean
+  ): Promise<void> {
+    if (openExternalIds.length > 0) {
+      await this.repository.reopenScraperArchivedJobs(companyId, openExternalIds);
+    }
+
+    if (openExternalIdsComplete !== false) {
+      await this.repository.archiveMissingJobs(
+        companyId,
+        openExternalIds,
+        ARCHIVABLE_JOB_STATUSES
+      );
+    }
+  }
+
+  private async insertFilteredJobs(companyId: number, jobs: ScrapedJob[]): Promise<number[]> {
+    if (jobs.length === 0) {
+      return [];
+    }
+
+    return this.repository.insertJobs(
+      jobs.map((job) => ({
+        companyId,
+        externalId: job.externalId,
+        title: job.title,
+        url: job.url,
+        location: job.location,
+        locationType: job.locationType,
+        department: job.department,
+        description: job.description,
+        descriptionFormat: job.descriptionFormat ?? "plain",
+        salary: job.salary,
+        employmentType: job.employmentType,
+        postedDate: job.postedDate,
+        status: "new" as const,
+      }))
+    );
+  }
+
+  private async updateCompanyScrapeMetadata(
+    companyId: number,
+    boardToken: string | null,
+    detectedBoardToken?: string
+  ): Promise<void> {
+    const companyUpdates: { lastScrapedAt: Date; updatedAt: Date; boardToken?: string } = {
+      lastScrapedAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    if (detectedBoardToken && !boardToken) {
+      companyUpdates.boardToken = detectedBoardToken;
+    }
+
+    await this.repository.updateCompany(companyId, companyUpdates);
+  }
+
+  private createFetchResult(params: {
+    companyId: number;
+    companyName: string;
+    platform: Platform | null;
+    outcome: ScrapeOutcome;
+    jobsFound: number;
+    jobsAdded: number;
+    jobsUpdated: number;
+    jobsFiltered: number;
+    duration: number;
+    error?: string;
+    logId?: number;
+  }): FetchResult {
+    return {
+      companyId: params.companyId,
+      companyName: params.companyName,
+      success: params.outcome === "success",
+      outcome: params.outcome,
+      jobsFound: params.jobsFound,
+      jobsAdded: params.jobsAdded,
+      jobsUpdated: params.jobsUpdated,
+      jobsFiltered: params.jobsFiltered,
+      platform: params.platform,
+      error: params.error,
+      duration: params.duration,
+      logId: params.logId,
+    };
   }
 
   private async loadFilters(overrideFilters?: JobFilters): Promise<JobFilters> {
     if (overrideFilters) {
-      return overrideFilters;
+      return { ...this.config.defaultFilters, ...overrideFilters };
     }
 
     const [country, city, titleKeywordsRaw] = await Promise.all([
@@ -423,9 +558,13 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     const titleKeywords = parseTitleKeywords(titleKeywordsRaw);
 
     return {
-      country: country || undefined,
-      city: city || undefined,
-      titleKeywords: titleKeywords.length > 0 ? titleKeywords : undefined,
+      ...this.config.defaultFilters,
+      country: country || this.config.defaultFilters.country,
+      city: city || this.config.defaultFilters.city,
+      titleKeywords:
+        titleKeywords.length > 0
+          ? titleKeywords
+          : this.config.defaultFilters.titleKeywords,
     };
   }
 
@@ -474,19 +613,19 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
   ): FetchResult {
     const logger = new ScraperLogger(companyName, "unknown");
     logger.error(error);
-    
-    return {
+
+    return this.createFetchResult({
       companyId,
       companyName,
-      success: false,
+      platform: null,
+      outcome: "error",
       jobsFound: 0,
       jobsAdded: 0,
       jobsUpdated: 0,
       jobsFiltered: 0,
-      platform: null,
       error,
       duration: 0,
-    };
+    });
   }
 
   private normalizePlatformValue(value: string | null | undefined): string | null {
@@ -503,7 +642,6 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     const normalized = this.normalizePlatformValue(value);
     if (!normalized) return null;
 
-    // "custom" is intentionally excluded from scraping for now.
     if (normalized === "custom") return null;
 
     return isPlatform(normalized) ? normalized : null;
@@ -517,17 +655,17 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     const logger = new ScraperLogger(companyName, "custom");
     logger.error(reason);
 
-    return {
+    return this.createFetchResult({
       companyId,
       companyName,
-      success: true,
+      platform: null,
+      outcome: "success",
       jobsFound: 0,
       jobsAdded: 0,
       jobsUpdated: 0,
       jobsFiltered: 0,
-      platform: null,
       duration: 0,
-    };
+    });
   }
 }
 

@@ -1,81 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getScrapingModule } from "@/lib/scraper";
+import { z } from "zod";
+
 import { handleApiError, ValidationError } from "@/lib/api";
+import { getScrapingModule } from "@/lib/scraper";
+
+const RefreshJobsSchema = z.object({
+  companyIds: z.array(z.coerce.number().int().positive()).min(1),
+});
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { companyIds } = body as { companyIds: number[] };
+    const parsed = RefreshJobsSchema.safeParse(body);
 
-    if (!Array.isArray(companyIds) || companyIds.length === 0) {
-      throw new ValidationError("companyIds must be a non-empty array");
+    if (!parsed.success) {
+      throw new ValidationError("companyIds must be a non-empty array of positive numbers");
     }
 
-    const { orchestrator, repository } = getScrapingModule();
+    const { orchestrator } = getScrapingModule();
 
-    const sessionId = crypto.randomUUID();
-    const companies = await repository.getActiveCompanies();
-    const selectedCompanies = companies.filter((c) => companyIds.includes(c.id));
-
-    if (selectedCompanies.length === 0) {
-      return NextResponse.json({
-        success: true,
-        sessionId: null,
-        totalCompanies: 0,
-        totalJobsFound: 0,
-        totalJobsAdded: 0,
-        message: "No active companies found in selection",
-      });
-    }
-
-    await repository.createSession({
-      id: sessionId,
-      triggerSource: "manual",
-      status: "in_progress",
-      companiesTotal: selectedCompanies.length,
-    });
-
-    let totalJobsFound = 0;
-    let totalJobsAdded = 0;
-    let totalJobsFiltered = 0;
-    let completed = 0;
-
-    for (const company of selectedCompanies) {
-      const isSessionActive = await repository.isSessionInProgress(sessionId);
-      if (!isSessionActive) {
-        break;
-      }
-
-      const result = await orchestrator.scrapeCompany(company.id, {
-        sessionId,
-        triggerSource: "manual",
-      });
-
-      totalJobsFound += result.jobsFound;
-      totalJobsAdded += result.jobsAdded;
-      totalJobsFiltered += result.jobsFiltered;
-      completed++;
-
-      await repository.updateSessionProgress(sessionId, {
-        companiesCompleted: completed,
-        totalJobsFound,
-        totalJobsAdded,
-        totalJobsFiltered,
-      });
-    }
-
-    const shouldCompleteSession = await repository.isSessionInProgress(sessionId);
-    if (shouldCompleteSession) {
-      await repository.completeSession(sessionId, false);
-    }
+    const result = await orchestrator.scrapeCompanies(parsed.data.companyIds, "manual");
 
     return NextResponse.json({
-      success: true,
-      sessionId,
-      totalCompanies: selectedCompanies.length,
-      totalJobsFound,
-      totalJobsAdded,
-      message: `Refreshed jobs for ${selectedCompanies.length} companies. Found ${totalJobsFound} jobs, added ${totalJobsAdded} new.`,
+      success: result.summary.failedCompanies === 0,
+      sessionId: result.sessionId,
+      totalCompanies: result.summary.totalCompanies,
+      totalJobsFound: result.summary.totalJobsFound,
+      totalJobsAdded: result.summary.totalJobsAdded,
+      totalJobsFiltered: result.summary.totalJobsFiltered,
+      failedCompanies: result.summary.failedCompanies,
+      message: `Refreshed jobs for ${result.summary.totalCompanies} companies. Found ${result.summary.totalJobsFound} jobs, added ${result.summary.totalJobsAdded} new.`,
     });
   } catch (error) {
     return handleApiError(error);

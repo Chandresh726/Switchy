@@ -69,6 +69,7 @@ export class AshbyScraper extends AbstractApiScraper<AshbyConfig> {
       if (!boardName) {
         return {
           success: false,
+          outcome: "error",
           jobs: [],
           error:
             "Could not determine Ashby job board name from URL. Please provide the board token (jobs page name) manually.",
@@ -92,6 +93,7 @@ export class AshbyScraper extends AbstractApiScraper<AshbyConfig> {
       if (!response.ok) {
         return {
           success: false,
+          outcome: "error",
           jobs: [],
           error: `Failed to fetch Ashby jobs: ${response.status}`,
         };
@@ -102,6 +104,7 @@ export class AshbyScraper extends AbstractApiScraper<AshbyConfig> {
     } catch (error) {
       return {
         success: false,
+        outcome: "error",
         jobs: [],
         error: error instanceof Error ? error.message : "Unknown error",
       };
@@ -171,6 +174,7 @@ export class AshbyScraper extends AbstractApiScraper<AshbyConfig> {
 
     return {
       success: true,
+      outcome: "success",
       jobs,
       detectedBoardToken,
       openExternalIds,

@@ -1,8 +1,9 @@
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig } from "../core/types";
-import { parseEmploymentType, type JobFilters } from "../types";
+import { parseEmploymentType, type JobFilters, type SeniorityLevel } from "../types";
 import { processDescription } from "@/lib/jobs/description-processor";
+import { applyEarlyFilters, hasEarlyFilters, toEarlyFilterStats } from "@/lib/scraper/services";
 
 interface UberLocation {
   country: string;
@@ -40,6 +41,13 @@ interface UberSearchResponse {
     results: UberJob[];
     total: number;
   };
+}
+
+interface NormalizedUberJob {
+  job: UberJob;
+  title: string;
+  location?: string;
+  locationType?: "remote" | "hybrid" | "onsite";
 }
 
 export type UberConfig = ApiScraperConfig;
@@ -116,6 +124,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
         if (!response.ok) {
           return {
             success: false,
+            outcome: "error",
             jobs: [],
             error: `Failed to fetch jobs: ${response.status}`,
           };
@@ -126,6 +135,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
         if (data.status !== "success" || !data.data) {
           return {
             success: false,
+            outcome: "error",
             jobs: [],
             error: "Invalid response from Uber API",
           };
@@ -146,6 +156,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
     } catch (error) {
       return {
         success: false,
+        outcome: "error",
         jobs: [],
         error: error instanceof Error ? error.message : "Unknown error",
       };
@@ -156,75 +167,29 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
     jobs: UberJob[],
     filters: JobFilters | undefined
   ): ScraperResult {
-    const filteredJobs: ScrapedJob[] = [];
-    let filteredOutCount = 0;
-    let countryFiltered = 0;
-    let cityFiltered = 0;
-    let titleFiltered = 0;
-
-    for (const job of jobs) {
+    const normalizedJobs: NormalizedUberJob[] = jobs.map((job) => {
       const locationStr = this.formatLocation(job.location, job.allLocations);
       const { location, locationType } = this.normalizeLocation(locationStr);
+      return {
+        job,
+        title: job.title,
+        location,
+        locationType,
+      };
+    });
 
-      // Apply filters client-side
-      if (filters) {
-        let passesFilters = true;
+    const shouldFilter = hasEarlyFilters(filters);
+    const filteredResult = shouldFilter
+      ? applyEarlyFilters(normalizedJobs, filters)
+      : {
+          filtered: normalizedJobs,
+          filteredOut: 0,
+          breakdown: { country: 0, city: 0, title: 0 },
+        };
 
-        if (filters.country) {
-          const countryLower = filters.country.toLowerCase();
-          const locationLower = location?.toLowerCase() || "";
-          const countryMappings: Record<string, string[]> = {
-            "united states": ["usa", "us", "united states", "america"],
-            "india": ["india", "ind"],
-            "united kingdom": ["uk", "united kingdom", "britain", "england"],
-            "canada": ["canada", "ca"],
-            "australia": ["australia", "au"],
-            "germany": ["germany", "de"],
-            "france": ["france", "fr"],
-            "netherlands": ["netherlands", "nl"],
-            "singapore": ["singapore", "sg"],
-            "japan": ["japan", "jp"],
-            "brazil": ["brazil", "br"],
-            "mexico": ["mexico", "mx"],
-          };
-
-          const variations = countryMappings[countryLower] || [countryLower];
-          const matchesCountry = variations.some((variant) =>
-            locationLower.includes(variant.toLowerCase())
-          );
-
-          if (!matchesCountry && locationLower !== "remote") {
-            passesFilters = false;
-            countryFiltered++;
-          }
-        }
-
-        if (passesFilters && filters.city) {
-          const cityLower = filters.city.toLowerCase();
-          const locationLower = location?.toLowerCase() || "";
-          if (!locationLower.includes(cityLower)) {
-            passesFilters = false;
-            cityFiltered++;
-          }
-        }
-
-        if (passesFilters && filters.titleKeywords && filters.titleKeywords.length > 0) {
-          const titleLower = job.title.toLowerCase();
-          const matchesKeyword = filters.titleKeywords.some((keyword) =>
-            titleLower.includes(keyword.toLowerCase())
-          );
-          if (!matchesKeyword) {
-            passesFilters = false;
-            titleFiltered++;
-          }
-        }
-
-        if (!passesFilters) {
-          filteredOutCount++;
-          continue;
-        }
-      }
-
+    const filteredJobs: ScrapedJob[] = [];
+    for (const normalizedJob of filteredResult.filtered) {
+      const { job, location, locationType } = normalizedJob;
       const { text: description, format: descriptionFormat } = processDescription(
         job.description || "",
         "plain"
@@ -240,7 +205,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
         description: description || undefined,
         descriptionFormat,
         employmentType: parseEmploymentType(job.timeType),
-        seniorityLevel: this.mapLevel(job.level) as "entry" | "mid" | "senior" | "lead" | "manager" | undefined,
+        seniorityLevel: this.mapLevel(job.level),
         postedDate: new Date(job.creationDate),
       });
     }
@@ -251,18 +216,15 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
 
     const result: ScraperResult = {
       success: true,
+      outcome: "success",
       jobs: filteredJobs,
       openExternalIds: allExternalIds,
       openExternalIdsComplete: true,
     };
 
-    if (filteredOutCount > 0) {
-      result.earlyFiltered = {
-        total: filteredOutCount,
-        country: countryFiltered > 0 ? countryFiltered : undefined,
-        city: cityFiltered > 0 ? cityFiltered : undefined,
-        title: titleFiltered > 0 ? titleFiltered : undefined,
-      };
+    const earlyFiltered = toEarlyFilterStats(filteredResult);
+    if (earlyFiltered) {
+      result.earlyFiltered = earlyFiltered;
     }
 
     return result;
@@ -290,7 +252,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
     return formatSingleLocation(primaryLocation);
   }
 
-  private mapLevel(level: string | null): string | undefined {
+  private mapLevel(level: string | null): SeniorityLevel | undefined {
     if (!level) return undefined;
 
     const levelLower = level.toLowerCase();

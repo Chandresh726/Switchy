@@ -23,6 +23,18 @@ export {
 } from "./filter-service";
 
 export type {
+  FilterableItem,
+  EarlyFilterBreakdown,
+  EarlyFilterResult,
+} from "./early-filter-service";
+
+export {
+  hasEarlyFilters,
+  applyEarlyFilters,
+  toEarlyFilterStats,
+} from "./early-filter-service";
+
+export type {
   IScraperRegistry,
   ScraperRegistryConfig,
 } from "./registry";

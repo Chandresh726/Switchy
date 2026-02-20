@@ -63,6 +63,7 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
       if (!companySlug) {
         return {
           success: false,
+          outcome: "error",
           jobs: [],
           error: "Could not extract company slug from URL. Please provide the board token manually.",
         };
@@ -83,6 +84,7 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
       if (!response.ok) {
         return {
           success: false,
+          outcome: "error",
           jobs: [],
           error: `Failed to fetch jobs: ${response.status}`,
         };
@@ -93,6 +95,7 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
     } catch (error) {
       return {
         success: false,
+        outcome: "error",
         jobs: [],
         error: error instanceof Error ? error.message : "Unknown error",
       };
@@ -127,6 +130,7 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
 
     return {
       success: true,
+      outcome: "success",
       jobs,
       detectedBoardToken,
       openExternalIds,

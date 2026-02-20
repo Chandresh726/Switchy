@@ -15,6 +15,13 @@
       "when": 1771478194324,
       "tag": "0001_superb_slyde",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1771576208944,
+      "tag": "0002_narrow_mandrill",
+      "breakpoints": true
     }
   ]
 }
