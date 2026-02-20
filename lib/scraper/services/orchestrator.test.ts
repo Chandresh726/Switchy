@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi, waitFor } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Company } from "@/lib/db/schema";
+import type { ExistingJob } from "@/lib/scraper/infrastructure/types";
 import type { ScraperResult } from "@/lib/scraper/types";
 import { TitleBasedDeduplicationService } from "@/lib/scraper/services/deduplication-service";
 import { DefaultFilterService } from "@/lib/scraper/services/filter-service";
@@ -35,25 +36,37 @@ const companyTwo = {
   name: "Globex",
 } as Company;
 
+const uberCompany = {
+  ...company,
+  id: 3,
+  name: "Uber",
+  platform: "uber",
+} as Company;
+
 interface RepositoryMockOptions {
   activeCompanies?: Company[];
   insertedJobIds?: number[];
   matchableJobIds?: number[];
+  existingJobs?: ExistingJob[];
+  updatedExistingJobsCount?: number;
 }
 
 function createRepositoryMock(options: RepositoryMockOptions = {}) {
   const activeCompanies = options.activeCompanies ?? [company];
   const insertedJobIds = options.insertedJobIds ?? [101];
   const matchableJobIds = options.matchableJobIds ?? insertedJobIds;
+  const existingJobs = options.existingJobs ?? [];
+  const updatedExistingJobsCount = options.updatedExistingJobsCount ?? 0;
 
   return {
     getCompany: vi.fn(async (id: number) => activeCompanies.find((item) => item.id === id) ?? null),
     getActiveCompanies: vi.fn(async () => activeCompanies),
-    getExistingJobs: vi.fn(async () => []),
+    getExistingJobs: vi.fn(async () => existingJobs),
     getSetting: vi.fn(async () => null),
     reopenScraperArchivedJobs: vi.fn(async () => 0),
     archiveMissingJobs: vi.fn(async () => 0),
     insertJobs: vi.fn(async () => insertedJobIds),
+    updateExistingJobsFromScrape: vi.fn(async () => updatedExistingJobsCount),
     getMatchableJobIds: vi.fn(async () => matchableJobIds),
     updateCompany: vi.fn(async () => undefined),
     createSession: vi.fn(async () => undefined),
@@ -158,6 +171,84 @@ describe("ScrapeOrchestrator", () => {
     expect(result.summary.totalCompanies).toBe(1);
     expect(result.summary.failedCompanies).toBe(1);
     expect(repository.completeSession).toHaveBeenCalledWith(result.sessionId, "partial");
+  });
+
+  it("skips uber archiving when missing open jobs exceed conservative threshold", async () => {
+    const existingJobs: ExistingJob[] = Array.from({ length: 100 }, (_, index) => ({
+      id: index + 1,
+      externalId: `uber-${index + 1}`,
+      title: `Role ${index + 1}`,
+      url: `https://jobs.example.com/${index + 1}`,
+      status: "new",
+      description: "Existing description",
+    }));
+    const openExternalIds = existingJobs.slice(0, 90).map((job) => job.externalId as string);
+    const repository = createRepositoryMock({
+      activeCompanies: [uberCompany],
+      existingJobs,
+      insertedJobIds: [],
+    });
+    const registry = createRegistryMock({
+      success: true,
+      outcome: "success",
+      jobs: [],
+      openExternalIds,
+      openExternalIdsComplete: true,
+    });
+
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    await orchestrator.scrapeCompany(uberCompany.id, {
+      sessionId: "session-uber-guard",
+      triggerSource: "manual",
+    });
+
+    expect(repository.archiveMissingJobs).not.toHaveBeenCalled();
+  });
+
+  it("archives uber jobs when missing open jobs stay below conservative threshold", async () => {
+    const existingJobs: ExistingJob[] = Array.from({ length: 100 }, (_, index) => ({
+      id: index + 1,
+      externalId: `uber-${index + 1}`,
+      title: `Role ${index + 1}`,
+      url: `https://jobs.example.com/${index + 1}`,
+      status: "new",
+      description: "Existing description",
+    }));
+    const openExternalIds = existingJobs.slice(0, 96).map((job) => job.externalId as string);
+    const repository = createRepositoryMock({
+      activeCompanies: [uberCompany],
+      existingJobs,
+      insertedJobIds: [],
+    });
+    const registry = createRegistryMock({
+      success: true,
+      outcome: "success",
+      jobs: [],
+      openExternalIds,
+      openExternalIdsComplete: true,
+    });
+
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    await orchestrator.scrapeCompany(uberCompany.id, {
+      sessionId: "session-uber-archive",
+      triggerSource: "manual",
+    });
+
+    expect(repository.archiveMissingJobs).toHaveBeenCalledTimes(1);
   });
 
   it("marks standalone partial sessions as partial", async () => {
@@ -348,7 +439,7 @@ describe("ScrapeOrchestrator", () => {
       })
     );
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(matcherMocks.matchWithTracking).toHaveBeenCalledWith(
         [102, 103],
         expect.objectContaining({
@@ -357,5 +448,128 @@ describe("ScrapeOrchestrator", () => {
         })
       );
     });
+  });
+
+  it("heals duplicate jobs when existing description is empty", async () => {
+    const existingJobs: ExistingJob[] = [
+      {
+        id: 41,
+        externalId: "greenhouse-acme-1",
+        title: "Software Engineer",
+        url: "https://jobs.example.com/1",
+        status: "new",
+        description: null,
+      },
+    ];
+    const repository = createRepositoryMock({
+      existingJobs,
+      insertedJobIds: [],
+      updatedExistingJobsCount: 1,
+    });
+    const registry = createRegistryMock({
+      success: true,
+      outcome: "success",
+      jobs: [
+        {
+          externalId: "greenhouse-acme-1",
+          title: "Software Engineer",
+          url: "https://jobs.example.com/1",
+          description: "Updated role details",
+          descriptionFormat: "plain",
+        },
+      ],
+      openExternalIds: ["greenhouse-acme-1"],
+      openExternalIdsComplete: true,
+    });
+
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    await orchestrator.scrapeCompany(company.id, {
+      sessionId: "session-heal-duplicate",
+      triggerSource: "manual",
+    });
+
+    expect(registry.scrape).toHaveBeenCalledWith(
+      company.careersUrl,
+      company.platform,
+      expect.objectContaining({
+        existingExternalIds: new Set<string>(),
+      })
+    );
+
+    expect(repository.updateExistingJobsFromScrape).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          existingJobId: 41,
+          job: expect.objectContaining({
+            description: "Updated role details",
+          }),
+        }),
+      ])
+    );
+    expect(repository.createScrapingLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobsUpdated: 1,
+      })
+    );
+  });
+
+  it("does not heal duplicates matched by title similarity only", async () => {
+    const existingJobs: ExistingJob[] = [
+      {
+        id: 52,
+        externalId: "greenhouse-acme-existing",
+        title: "Software Engineer",
+        url: "https://jobs.example.com/existing",
+        status: "new",
+        description: "Existing description",
+      },
+    ];
+    const repository = createRepositoryMock({
+      existingJobs,
+      insertedJobIds: [],
+      updatedExistingJobsCount: 0,
+    });
+    const registry = createRegistryMock({
+      success: true,
+      outcome: "success",
+      jobs: [
+        {
+          externalId: "greenhouse-acme-new",
+          title: "Software Engineer",
+          url: "https://jobs.example.com/new",
+          description: "New role details",
+          descriptionFormat: "plain",
+        },
+      ],
+      openExternalIds: ["greenhouse-acme-new"],
+      openExternalIdsComplete: true,
+    });
+
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    await orchestrator.scrapeCompany(company.id, {
+      sessionId: "session-no-heal-similarity",
+      triggerSource: "manual",
+    });
+
+    expect(repository.updateExistingJobsFromScrape).toHaveBeenCalledWith([]);
+    expect(repository.createScrapingLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobsUpdated: 0,
+      })
+    );
   });
 });

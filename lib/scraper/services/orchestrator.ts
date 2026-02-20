@@ -3,6 +3,8 @@ import type { IScraperRepository } from "@/lib/scraper/infrastructure/types";
 import type { ScrapeOptions } from "@/lib/scraper/core/types";
 import {
   isPlatform,
+  type BatchDeduplicationResult,
+  type DeduplicationMatchReason,
   type Platform,
   type TriggerSource,
   type FetchResult,
@@ -30,6 +32,9 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
 };
 
 const ARCHIVABLE_JOB_STATUSES = ["new", "viewed", "interested", "rejected"];
+const UBER_ARCHIVE_MISSING_ABSOLUTE_THRESHOLD = 5;
+const UBER_ARCHIVE_MISSING_RATIO_THRESHOLD = 0.05;
+const SAFE_HYDRATION_MATCH_REASONS: DeduplicationMatchReason[] = ["externalId", "url"];
 
 export interface IScrapeOrchestrator {
   scrapeAllCompanies(trigger: TriggerSource): Promise<BatchFetchResult>;
@@ -60,6 +65,11 @@ interface ScrapeBatchProgress {
   totalJobsAdded: number;
   totalJobsFiltered: number;
   totalJobsArchived: number;
+}
+
+interface DuplicateHydrationCandidate {
+  existingJobId: number;
+  job: ScrapedJob;
 }
 
 export class ScrapeOrchestrator implements IScrapeOrchestrator {
@@ -261,6 +271,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       const existingJobs = await this.repository.getExistingJobs(companyId);
       const existingExternalIds = new Set<string>(
         existingJobs
+          .filter((job) => this.hasNonEmptyDescription(job.description))
           .map((job) => job.externalId)
           .filter((externalId): externalId is string => Boolean(externalId))
       );
@@ -354,7 +365,14 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     companyId: number;
     platform: Platform | null;
     boardToken: string | null;
-    existingJobs: Array<{ id: number; externalId: string | null; title: string; url: string }>;
+    existingJobs: Array<{
+      id: number;
+      externalId: string | null;
+      title: string;
+      url: string;
+      status: string;
+      description: string | null;
+    }>;
     filters: JobFilters;
     sessionId: string;
     triggerSource: TriggerSource;
@@ -435,11 +453,18 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     const jobsArchived = await this.syncArchivedJobs(
       companyId,
       openExternalIds,
-      scraperResult.openExternalIdsComplete
+      scraperResult.openExternalIdsComplete,
+      platform,
+      existingJobs
     );
 
     const dedupeResult = this.deduplicationService.batchDeduplicate(scraperResult.jobs, existingJobs);
     const filterResult = this.filterService.applyFilters(dedupeResult.newJobs, filters);
+    const duplicateHydrationCandidates = this.getDuplicateHydrationCandidates(
+      dedupeResult.duplicates,
+      existingJobs
+    );
+    const jobsUpdated = await this.repository.updateExistingJobsFromScrape(duplicateHydrationCandidates);
 
     if (filterResult.filteredOut > 0 && !hasEarlyFilter) {
       logger.filtered({
@@ -480,7 +505,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       status: logStatus,
       jobsFound: scraperResult.jobs.length,
       jobsAdded,
-      jobsUpdated: dedupeResult.duplicates.length,
+      jobsUpdated,
       jobsFiltered,
       jobsArchived,
       duration: Date.now() - startTime,
@@ -498,7 +523,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       outcome,
       jobsFound: scraperResult.jobs.length,
       jobsAdded,
-      jobsUpdated: dedupeResult.duplicates.length,
+      jobsUpdated,
       jobsFiltered,
       jobsArchived,
       logId,
@@ -508,7 +533,16 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
   private async syncArchivedJobs(
     companyId: number,
     openExternalIds: string[],
-    openExternalIdsComplete?: boolean
+    openExternalIdsComplete: boolean | undefined,
+    platform: Platform | null,
+    existingJobs: Array<{
+      id: number;
+      externalId: string | null;
+      title: string;
+      url: string;
+      status: string;
+      description: string | null;
+    }>
   ): Promise<number> {
     let archivedCount = 0;
 
@@ -517,6 +551,10 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     }
 
     if (openExternalIdsComplete !== false) {
+      if (platform === "uber" && this.shouldSkipUberArchival(openExternalIds, existingJobs)) {
+        return 0;
+      }
+
       archivedCount = await this.repository.archiveMissingJobs(
         companyId,
         openExternalIds,
@@ -525,6 +563,85 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     }
 
     return archivedCount;
+  }
+
+  private shouldSkipUberArchival(
+    openExternalIds: string[],
+    existingJobs: Array<{
+      id: number;
+      externalId: string | null;
+      title: string;
+      url: string;
+      status: string;
+      description: string | null;
+    }>
+  ): boolean {
+    const openExternalIdSet = new Set(openExternalIds);
+    const archivableJobs = existingJobs.filter(
+      (job) => Boolean(job.externalId) && ARCHIVABLE_JOB_STATUSES.includes(job.status)
+    );
+
+    if (archivableJobs.length === 0) {
+      return false;
+    }
+
+    const missingCount = archivableJobs.reduce((total, job) => {
+      if (!job.externalId) return total;
+      return openExternalIdSet.has(job.externalId) ? total : total + 1;
+    }, 0);
+
+    const threshold = Math.max(
+      UBER_ARCHIVE_MISSING_ABSOLUTE_THRESHOLD,
+      Math.ceil(archivableJobs.length * UBER_ARCHIVE_MISSING_RATIO_THRESHOLD)
+    );
+
+    return missingCount > threshold;
+  }
+
+  private getDuplicateHydrationCandidates(
+    duplicates: BatchDeduplicationResult["duplicates"],
+    existingJobs: Array<{ id: number; description: string | null }>
+  ): DuplicateHydrationCandidate[] {
+    if (duplicates.length === 0) {
+      return [];
+    }
+
+    const existingJobsById = new Map(existingJobs.map((existingJob) => [existingJob.id, existingJob]));
+
+    const candidates: DuplicateHydrationCandidate[] = [];
+
+    for (const duplicate of duplicates) {
+      if (!SAFE_HYDRATION_MATCH_REASONS.includes(duplicate.matchReason)) {
+        continue;
+      }
+
+      const existingJob = existingJobsById.get(duplicate.existingJobId);
+      if (!existingJob) {
+        continue;
+      }
+
+      if (!this.hasNonEmptyDescription(duplicate.job.description)) {
+        continue;
+      }
+
+      const existingDescription = existingJob.description?.trim() ?? "";
+      const scrapedDescription = duplicate.job.description?.trim() ?? "";
+
+      if (existingDescription === scrapedDescription) {
+        continue;
+      }
+
+      candidates.push({
+        existingJobId: duplicate.existingJobId,
+        job: duplicate.job,
+      });
+    }
+
+    return candidates;
+  }
+
+  private hasNonEmptyDescription(description: string | null | undefined): boolean {
+    return typeof description === "string" && description.trim().length > 0;
   }
 
   private async insertFilteredJobs(companyId: number, jobs: ScrapedJob[]): Promise<number[]> {

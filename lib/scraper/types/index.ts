@@ -46,6 +46,7 @@ export type {
   FetchResult,
   BatchFetchResult,
   SessionProgress,
+  DeduplicationMatchReason,
   DeduplicationResult,
   BatchDeduplicationResult,
   EarlyFilterStats,

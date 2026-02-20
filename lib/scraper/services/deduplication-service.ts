@@ -1,6 +1,10 @@
 import stringSimilarity from "string-similarity";
 import type { ExistingJob } from "@/lib/scraper/infrastructure/types";
-import type { ScrapedJob, DeduplicationResult, BatchDeduplicationResult } from "@/lib/scraper/types";
+import type {
+  ScrapedJob,
+  DeduplicationResult,
+  BatchDeduplicationResult,
+} from "@/lib/scraper/types";
 
 export interface IDeduplicationService {
   deduplicate(job: ScrapedJob, existingJobs: ExistingJob[]): DeduplicationResult;
@@ -26,6 +30,7 @@ export class TitleBasedDeduplicationService implements IDeduplicationService {
         isNew: false,
         existingJobId: exactMatch.id,
         similarity: 1,
+        matchReason: "externalId",
       };
     }
 
@@ -36,6 +41,7 @@ export class TitleBasedDeduplicationService implements IDeduplicationService {
         isNew: false,
         existingJobId: urlMatch.id,
         similarity: 1,
+        matchReason: "url",
       };
     }
 
@@ -59,6 +65,7 @@ export class TitleBasedDeduplicationService implements IDeduplicationService {
         isNew: false,
         existingJobId: mostSimilarJob.id,
         similarity: highestSimilarity,
+        matchReason: "titleSimilarity",
       };
     }
 
@@ -84,12 +91,15 @@ export class TitleBasedDeduplicationService implements IDeduplicationService {
           externalId: job.externalId,
           title: job.title,
           url: job.url,
+          status: "new",
+          description: null,
         });
       } else if (result.existingJobId) {
         duplicates.push({
           job,
           existingJobId: result.existingJobId,
           similarity: result.similarity,
+          matchReason: result.matchReason ?? "titleSimilarity",
         });
       }
     }

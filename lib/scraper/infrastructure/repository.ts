@@ -2,6 +2,7 @@ import { and, eq, inArray, isNotNull, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { companies, jobs, settings, scrapeSessions, scrapingLogs } from "@/lib/db/schema";
 import type { NewJob } from "@/lib/db/schema";
+import type { ScrapedJob } from "@/lib/scraper/types";
 import type {
   IScraperRepository,
   ExistingJob,
@@ -65,6 +66,8 @@ export class DrizzleScraperRepository implements IScraperRepository {
         externalId: jobs.externalId,
         title: jobs.title,
         url: jobs.url,
+        status: jobs.status,
+        description: jobs.description,
       })
       .from(jobs)
       .where(eq(jobs.companyId, companyId));
@@ -143,6 +146,38 @@ export class DrizzleScraperRepository implements IScraperRepository {
       .returning({ id: jobs.id });
     
     return inserted.map((j) => j.id);
+  }
+
+  async updateExistingJobsFromScrape(
+    updates: Array<{ existingJobId: number; job: ScrapedJob }>
+  ): Promise<number> {
+    if (updates.length === 0) return 0;
+
+    let updatedCount = 0;
+
+    for (const { existingJobId, job } of updates) {
+      const updated = await db
+        .update(jobs)
+        .set({
+          title: job.title,
+          url: job.url,
+          location: job.location,
+          locationType: job.locationType,
+          department: job.department,
+          description: job.description,
+          descriptionFormat: job.descriptionFormat ?? "plain",
+          salary: job.salary,
+          employmentType: job.employmentType,
+          postedDate: job.postedDate,
+          updatedAt: new Date(),
+        })
+        .where(eq(jobs.id, existingJobId))
+        .returning({ id: jobs.id });
+
+      updatedCount += updated.length;
+    }
+
+    return updatedCount;
   }
 
   async getMatchableJobIds(jobIds: number[]): Promise<number[]> {

@@ -59,6 +59,13 @@ export const DEFAULT_UBER_CONFIG: UberConfig = {
 
 export class UberScraper extends AbstractApiScraper<UberConfig> {
   readonly platform = "uber" as const;
+  private readonly emptySearchParams = {
+    department: [] as string[],
+    lineOfBusinessName: [] as string[],
+    location: [] as string[],
+    programAndPlatform: [] as string[],
+    team: [] as string[],
+  };
 
   constructor(
     httpClient: IHttpClient,
@@ -114,7 +121,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
           body: JSON.stringify({
             page,
             limit,
-            filter: {}, // Fetch all, filter client-side
+            params: this.emptySearchParams,
           }),
           timeout: this.config.timeout,
           retries: this.config.retries,

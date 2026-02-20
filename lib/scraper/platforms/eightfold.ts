@@ -49,6 +49,11 @@ interface EightfoldListFetchResult {
   isComplete: boolean;
 }
 
+interface EightfoldDetailFetchResult {
+  details: EightfoldPositionDetails | null;
+  status: number | null;
+}
+
 export type EightfoldConfig = BrowserScraperConfig & {
   pageSize: number;
   parallelListFetches: number;
@@ -59,9 +64,9 @@ export type EightfoldConfig = BrowserScraperConfig & {
 export const DEFAULT_EIGHTFOLD_CONFIG: EightfoldConfig = {
   ...DEFAULT_BROWSER_CONFIG,
   pageSize: 10,
-  parallelListFetches: 5,
-  detailBatchSize: 10,
-  requestDelayMs: 100,
+  parallelListFetches: 2,
+  detailBatchSize: 4,
+  requestDelayMs: 400,
 };
 
 export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
@@ -110,32 +115,33 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       }
 
       const isDirectEightfold = url.toLowerCase().includes("eightfold.ai");
-      let domain: string | undefined = options?.boardToken;
-      let baseUrl: string = parsedUrl.baseUrl;
+      const session = await this.bootstrapSession(url);
+
+      if (!session) {
+        return {
+          success: false,
+          outcome: "error",
+          jobs: [],
+          error: "Failed to establish Eightfold browser session.",
+        };
+      }
+
+      let domain: string | undefined = options?.boardToken ?? session.domain;
+      const baseUrl: string = session.baseUrl || parsedUrl.baseUrl;
       let detectedBoardToken: string | undefined;
 
+      if (session.domain && !options?.boardToken) {
+        detectedBoardToken = session.domain;
+        console.log(`[Scraper] Unknown - Bootstrapped browser session (domain: ${session.domain})`);
+      }
+
+      if (!domain && isDirectEightfold) {
+        const apiDetectedDomain = await this.detectDomainFromApi(baseUrl, session.cookies);
+        domain = apiDetectedDomain || (parsedUrl.subdomain ? `${parsedUrl.subdomain}.com` : parsedUrl.domain);
+      }
+
       if (!domain) {
-        if (isDirectEightfold) {
-          const apiDetectedDomain = await this.detectDomainFromApi(parsedUrl.baseUrl);
-          domain = apiDetectedDomain || (parsedUrl.subdomain ? `${parsedUrl.subdomain}.com` : parsedUrl.domain);
-        } else {
-          const session = await this.bootstrapSession(url);
-
-          if (!session || !session.domain) {
-            return {
-              success: false,
-              outcome: "error",
-              jobs: [],
-              error: "Failed to detect Eightfold domain. This may not be an Eightfold-powered careers page.",
-            };
-          }
-
-          domain = session.domain;
-          baseUrl = session.baseUrl;
-          detectedBoardToken = domain;
-
-          console.log(`[Scraper] Unknown - Bootstrapped browser session (domain: ${domain})`);
-        }
+        domain = parsedUrl.domain;
       }
 
       if (!domain) {
@@ -151,8 +157,10 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       const existingExternalIds = options?.existingExternalIds;
       const resolvedDomain = domain;
       const boardToken = domain.replace(/\.com$/i, "");
+      let adaptiveDetailBatchSize = this.config.detailBatchSize;
+      let adaptiveDelayMs = this.config.requestDelayMs;
 
-      const listResult = await this.fetchAllPositions(baseUrl, domain);
+      const listResult = await this.fetchAllPositions(baseUrl, domain, session.cookies);
       if (!listResult) {
         return {
           success: false,
@@ -236,23 +244,51 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
 
       const scrapedJobs: ScrapedJob[] = [];
       let detailFailures = 0;
+      let index = 0;
 
-      for (let i = 0; i < positionsToFetch.length; i += this.config.detailBatchSize) {
-        const batch = positionsToFetch.slice(i, i + this.config.detailBatchSize);
+      while (index < positionsToFetch.length) {
+        const batchSize = Math.max(
+          1,
+          Math.min(adaptiveDetailBatchSize, positionsToFetch.length - index)
+        );
+        const batch = positionsToFetch.slice(index, index + batchSize);
 
         const detailPromises = batch.map(async (position) => {
-          const details = await this.fetchPositionDetails(baseUrl, resolvedDomain, position.id);
-          if (!details?.data) {
+          const detailResult = await this.fetchPositionDetails(
+            baseUrl,
+            resolvedDomain,
+            position.id,
+            session.cookies
+          );
+          const isRateLimited = detailResult.status === 403 || detailResult.status === 429;
+          const details = detailResult.details?.data;
+          if (!details) {
             detailFailures++;
           }
-          return this.mapPositionToScrapedJob(baseUrl, boardToken, position, details?.data);
+          return {
+            isRateLimited,
+            hasDetails: Boolean(details),
+            job: this.mapPositionToScrapedJob(baseUrl, boardToken, position, details),
+          };
         });
 
         const results = await Promise.all(detailPromises);
-        scrapedJobs.push(...results);
+        scrapedJobs.push(...results.map((result) => result.job));
+        const rateLimitedResponses = results.filter((result) => result.isRateLimited).length;
+        const batchFailureCount = results.filter((result) => !result.hasDetails).length;
 
-        if (i + this.config.detailBatchSize < positionsToFetch.length) {
-          await this.delay(this.config.requestDelayMs);
+        if (rateLimitedResponses > 0) {
+          adaptiveDetailBatchSize = Math.max(1, adaptiveDetailBatchSize - 1);
+          adaptiveDelayMs = Math.min(5000, adaptiveDelayMs + 400);
+        } else if (batchFailureCount === 0) {
+          adaptiveDetailBatchSize = Math.min(this.config.detailBatchSize, adaptiveDetailBatchSize + 1);
+          adaptiveDelayMs = Math.max(this.config.requestDelayMs, adaptiveDelayMs - 100);
+        }
+
+        index += batch.length;
+
+        if (index < positionsToFetch.length) {
+          await this.delay(adaptiveDelayMs);
         }
       }
 
@@ -308,13 +344,10 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
     }
   }
 
-  private async detectDomainFromApi(baseUrl: string): Promise<string | null> {
+  private async detectDomainFromApi(baseUrl: string, cookies: string): Promise<string | null> {
     try {
       const response = await this.httpClient.fetch(`${baseUrl}/api/pcsx/job_cart`, {
-        headers: {
-          Accept: "application/json",
-          "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-        },
+        headers: this.createRequestHeaders("application/json", cookies),
         timeout: this.config.timeout,
         retries: this.config.retries,
         baseDelay: this.config.baseDelay,
@@ -329,10 +362,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       }
 
       const pageResponse = await this.httpClient.fetch(baseUrl, {
-        headers: {
-          Accept: "text/html",
-          "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-        },
+        headers: this.createRequestHeaders("text/html", cookies),
         timeout: this.config.timeout,
         retries: this.config.retries,
         baseDelay: this.config.baseDelay,
@@ -355,16 +385,14 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
   private async fetchJobList(
     baseUrl: string,
     domain: string,
+    cookies: string,
     start: number = 0
   ): Promise<EightfoldSearchResponse | null> {
     const url = `${baseUrl}/api/pcsx/search?domain=${encodeURIComponent(domain)}&query=&location=&start=${start}&sort_by=timestamp`;
 
     try {
       const response = await this.httpClient.fetch(url, {
-        headers: {
-          Accept: "application/json",
-          "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-        },
+        headers: this.createRequestHeaders("application/json", cookies),
         timeout: this.config.timeout,
         retries: this.config.retries,
         baseDelay: this.config.baseDelay,
@@ -379,9 +407,10 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
 
   private async fetchAllPositions(
     baseUrl: string,
-    domain: string
+    domain: string,
+    cookies: string
   ): Promise<EightfoldListFetchResult | null> {
-    const firstBatch = await this.fetchJobList(baseUrl, domain, 0);
+    const firstBatch = await this.fetchJobList(baseUrl, domain, cookies, 0);
 
     if (!firstBatch || firstBatch.status !== 200 || !firstBatch.data) {
       return null;
@@ -402,7 +431,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       const fetchWithStagger = async (offset: number, index: number): Promise<EightfoldSearchResponse | null> => {
         const staggerDelay = index * 50;
         await this.delay(staggerDelay);
-        return this.fetchJobList(baseUrl, domain, offset);
+        return this.fetchJobList(baseUrl, domain, cookies, offset);
       };
 
       for (let i = 0; i < offsets.length; i += this.config.parallelListFetches) {
@@ -434,26 +463,44 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
   private async fetchPositionDetails(
     baseUrl: string,
     domain: string,
-    positionId: number
-  ): Promise<EightfoldPositionDetails | null> {
+    positionId: number,
+    cookies: string
+  ): Promise<EightfoldDetailFetchResult> {
     const url = `${baseUrl}/api/pcsx/position_details?position_id=${positionId}&domain=${encodeURIComponent(domain)}&hl=en`;
 
     try {
       const response = await this.httpClient.fetch(url, {
-        headers: {
-          Accept: "application/json",
-          "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-        },
+        headers: this.createRequestHeaders("application/json", cookies),
         timeout: this.config.timeout,
         retries: this.config.retries,
         baseDelay: this.config.baseDelay,
       });
 
-      if (!response.ok) return null;
-      return response.json();
+      if (!response.ok) {
+        return { details: null, status: response.status };
+      }
+
+      const details: EightfoldPositionDetails = await response.json();
+      return { details, status: response.status };
     } catch {
-      return null;
+      return { details: null, status: null };
     }
+  }
+
+  private createRequestHeaders(
+    accept: "application/json" | "text/html",
+    cookies: string
+  ): Record<string, string> {
+    const headers: Record<string, string> = {
+      Accept: accept,
+      "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
+    };
+
+    if (cookies.trim().length > 0) {
+      headers.Cookie = cookies;
+    }
+
+    return headers;
   }
 
   private mapPositionToScrapedJob(

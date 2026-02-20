@@ -96,10 +96,13 @@ export interface SessionProgress {
   totalJobsArchived: number;
 }
 
+export type DeduplicationMatchReason = "externalId" | "url" | "titleSimilarity";
+
 export interface DeduplicationResult {
   isNew: boolean;
   existingJobId?: number;
   similarity: number;
+  matchReason?: DeduplicationMatchReason;
 }
 
 export interface BatchDeduplicationResult {
@@ -108,5 +111,6 @@ export interface BatchDeduplicationResult {
     job: ScrapedJob;
     existingJobId: number;
     similarity: number;
+    matchReason: DeduplicationMatchReason;
   }>;
 }

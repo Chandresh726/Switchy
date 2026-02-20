@@ -4,14 +4,34 @@ import type {
   ScrapeLogStatus,
   MatcherStatus,
   SessionStatus,
+  DescriptionFormat,
+  EmploymentType,
+  LocationType,
 } from "@/lib/scraper/types";
 import type { Company, NewJob } from "@/lib/db/schema";
+import type { ScrapedJob } from "@/lib/scraper/types";
 
 export interface ExistingJob {
   id: number;
   externalId: string | null;
   title: string;
   url: string;
+  status: string;
+  description: string | null;
+}
+
+export interface ExistingJobUpdate {
+  existingJobId: number;
+  title: string;
+  url: string;
+  location?: string;
+  locationType?: LocationType;
+  department?: string;
+  description?: string;
+  descriptionFormat: DescriptionFormat;
+  salary?: string;
+  employmentType?: EmploymentType;
+  postedDate?: Date;
 }
 
 export interface SessionProgressUpdate {
@@ -75,6 +95,9 @@ export interface IScraperRepository {
   ): Promise<number>;
   
   insertJobs(jobs: Omit<NewJob, "discoveredAt" | "updatedAt">[]): Promise<number[]>;
+  updateExistingJobsFromScrape(
+    updates: Array<{ existingJobId: number; job: ScrapedJob }>
+  ): Promise<number>;
   getMatchableJobIds(jobIds: number[]): Promise<number[]>;
   updateCompany(id: number, updates: CompanyUpdate): Promise<void>;
   
