@@ -137,9 +137,9 @@ export function ResumeUpload({ onParsed, disabled }: ResumeUploadProps) {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         className={`
-          relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors
+          relative flex items-center gap-3 rounded-lg border-2 border-dashed py-3 px-4 transition-colors
           ${isDragging ? "border-emerald-500 bg-emerald-500/10" : "border-border bg-card"}
-          ${isUploading ? "pointer-events-none opacity-50" : "cursor-pointer hover:border-border"}
+          ${isUploading ? "pointer-events-none opacity-50" : "cursor-pointer hover:border-muted-foreground/40"}
           ${disabled ? "pointer-events-none opacity-50" : ""}
         `}
       >
@@ -153,38 +153,44 @@ export function ResumeUpload({ onParsed, disabled }: ResumeUploadProps) {
 
         {isUploading ? (
           <>
-            <Loader2 className="h-10 w-10 animate-spin text-emerald-500" />
-            <p className="mt-3 text-sm text-muted-foreground">Parsing resume...</p>
-            <p className="mt-1 text-xs text-muted-foreground">{fileName}</p>
+            <Loader2 className="h-5 w-5 shrink-0 animate-spin text-emerald-500" />
+            <div className="min-w-0">
+              <p className="text-sm text-muted-foreground">Parsing resume...</p>
+              <p className="truncate text-xs text-muted-foreground">{fileName}</p>
+            </div>
           </>
         ) : success ? (
           <>
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20">
-              <Check className="h-6 w-6 text-emerald-500" />
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/20">
+              <Check className="h-4 w-4 text-emerald-500" />
             </div>
-            <p className="mt-3 text-sm text-emerald-600 dark:text-emerald-400">Resume parsed successfully!</p>
-            <p className="mt-1 text-xs text-muted-foreground">{fileName}</p>
-            <Button variant="ghost" size="sm" onClick={reset} className="mt-2">
-              Upload different file
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-emerald-600 dark:text-emerald-400">Resume parsed successfully!</p>
+              <p className="truncate text-xs text-muted-foreground">{fileName}</p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); reset(); }} className="relative z-10 shrink-0">
+              Upload different
             </Button>
           </>
         ) : error ? (
           <>
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/20">
-              <AlertCircle className="h-6 w-6 text-red-500" />
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-500/20">
+              <AlertCircle className="h-4 w-4 text-red-500" />
             </div>
-            <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>
-            <Button variant="ghost" size="sm" onClick={reset} className="mt-2">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm text-red-600 dark:text-red-400">{error}</p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); reset(); }} className="relative z-10 shrink-0">
               Try again
             </Button>
           </>
         ) : (
           <>
-            <Upload className="h-10 w-10 text-muted-foreground" />
-            <p className="mt-3 text-sm text-foreground/80">
-              Drop your resume here or click to browse
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">Supports PDF, DOCX, and TXT files</p>
+            <Upload className="h-5 w-5 shrink-0 text-muted-foreground" />
+            <div>
+              <p className="text-sm text-foreground/80">Drop resume here or click to browse</p>
+              <p className="text-xs text-muted-foreground">PDF, DOCX, TXT</p>
+            </div>
           </>
         )}
       </div>

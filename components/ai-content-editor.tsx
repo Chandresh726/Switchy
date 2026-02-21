@@ -24,6 +24,9 @@ interface AIContentEditorProps {
     color: string;
     bgColor: string;
   };
+  primaryActionLabel?: string;
+  onPrimaryAction?: (payload: { contentId: number; variantId?: number }) => void;
+  primaryActionDisabled?: boolean;
 }
 
 export function AIContentEditor({
@@ -36,6 +39,9 @@ export function AIContentEditor({
   title,
   description,
   typeConfig,
+  primaryActionLabel,
+  onPrimaryAction,
+  primaryActionDisabled = false,
 }: AIContentEditorProps) {
   const [currentVariantIndex, setCurrentVariantIndex] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -230,14 +236,30 @@ export function AIContentEditor({
               <p className="mt-2 text-sm text-muted-foreground">{description}</p>
             </div>
 
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleClose}
-              className="h-7 w-7 rounded-none text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            <div className="flex flex-col items-end gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleClose}
+                className="h-7 w-7 rounded-none text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+              {primaryActionLabel && onPrimaryAction && content ? (
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    onPrimaryAction({
+                      contentId: content.id,
+                      variantId: currentVariant?.id,
+                    })
+                  }
+                  disabled={primaryActionDisabled}
+                >
+                  {primaryActionLabel}
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
 

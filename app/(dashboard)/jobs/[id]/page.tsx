@@ -165,10 +165,10 @@ export default function JobDetailPage() {
       <div className="mb-6 border-b border-border pb-6">
         <div className="flex items-start gap-4">
           <Link
-            href={`/jobs?companyIds=${job.company.id}`}
+            href={`/companies/${job.company.id}`}
             className="transition-opacity hover:opacity-85"
-            title={`View all jobs at ${job.company.name}`}
-            aria-label={`View all jobs at ${job.company.name}`}
+            title={`View company details for ${job.company.name}`}
+            aria-label={`View company details for ${job.company.name}`}
           >
             {job.company.logoUrl ? (
               /* eslint-disable-next-line @next/next/no-img-element */

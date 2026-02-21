@@ -2,6 +2,7 @@
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { TogglePill } from "@/components/ui/toggle-pill";
 import {
   Search,
   X,
@@ -82,39 +83,16 @@ function FilterChip({
   onRemove: () => void;
 }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-1 text-xs text-emerald-400">
+    <span className="inline-flex items-center gap-1 bg-emerald-500/20 px-2.5 py-1 text-xs text-emerald-400">
       {label}
       <button
         onClick={onRemove}
-        className="rounded-full p-0.5 hover:bg-emerald-500/30"
+        className="p-0.5 hover:bg-emerald-500/30"
         aria-label={`Remove ${label} filter`}
       >
         <X className="h-3 w-3" />
       </button>
     </span>
-  );
-}
-
-function TogglePill({
-  selected,
-  onClick,
-  children,
-}: {
-  selected: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-        selected
-          ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-          : "bg-muted text-muted-foreground border border-border hover:bg-muted hover:text-foreground"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -254,7 +232,7 @@ export function CompanyFilters({
               sortBy: e.target.value as CompanyFilters["sortBy"],
             })
           }
-          className="h-7 rounded-full border border-border bg-muted px-3 text-xs text-foreground/80"
+          className="h-7 border border-border bg-muted px-3 text-xs text-foreground/80"
         >
           {SORT_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -269,7 +247,7 @@ export function CompanyFilters({
               sortOrder: filters.sortOrder === "desc" ? "asc" : "desc",
             })
           }
-          className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           title={filters.sortOrder === "desc" ? "Descending" : "Ascending"}
         >
           {filters.sortOrder === "desc" ? "↓" : "↑"}

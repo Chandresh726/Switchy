@@ -14,7 +14,7 @@ Guidelines:
 - Always be respectful of the recipient's time
 
 CRITICAL RULES:
-1. NEVER use placeholders like [Your Name], [Connection's Name], or any bracketed text. Always use actual values provided in the context. If a name is not available, use a professional generic salutation.
+1. Do NOT use placeholders like [Your Name], [Connection's Name], or any bracketed text. The ONLY allowed placeholder token is {{connection_first_name}} when requested by context.
 2. RETURN PLAIN TEXT ONLY - NO MARKDOWN FORMATTING. Do NOT use:
    - Bold (**text**) or italics (*text*)
    - Headers (# or ##)
@@ -110,5 +110,6 @@ ${profileInfo.length > 0 ? profileInfo.join("\n") : "No profile information avai
 - **Length:** ${lengthGuidance[settings.length as keyof typeof lengthGuidance] || lengthGuidance.medium}
 
 Please write a referral request message that the candidate can send to their connection at ${companyName}. The message should be ready to copy and paste. NEVER use any placeholders like [Your Name] - use actual values or omit if not available.
+Use {{connection_first_name}} for recipient first name salutation so the app can personalize per connection.
 `;
 }

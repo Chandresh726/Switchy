@@ -55,16 +55,9 @@ export default function ProfilePage() {
     },
   });
 
-  const handleResumeParsed = (data: ResumeData, autofill: boolean) => {
+  const handleResumeParsed = (data: ResumeData, _autofill: boolean) => {
     setParsedResumeData(data);
     toast.success("Resume uploaded. Review the extracted data below.");
-
-    // Trigger autofill if the user has enabled it
-    if (autofill) {
-      // The data is already being passed to ProfileForm, SkillsEditor, and ExperienceList
-      // through parsedResumeData state, which triggers their initialData props
-      console.log("[Profile] Autofill enabled - form fields populated from resume");
-    }
   };
 
   const handleDeleteResume = async (id: number) => {
@@ -108,23 +101,23 @@ export default function ProfilePage() {
         initialData={
           parsedResumeData
             ? {
-                name: parsedResumeData.name,
-                email: parsedResumeData.email || "",
-                phone: parsedResumeData.phone || "",
-                location: parsedResumeData.location || "",
-                linkedinUrl: parsedResumeData.linkedinUrl || "",
-                githubUrl: parsedResumeData.githubUrl || "",
-                portfolioUrl: parsedResumeData.portfolioUrl || "",
-                summary: parsedResumeData.summary || "",
-              }
+              name: parsedResumeData.name,
+              email: parsedResumeData.email || "",
+              phone: parsedResumeData.phone || "",
+              location: parsedResumeData.location || "",
+              linkedinUrl: parsedResumeData.linkedinUrl || "",
+              githubUrl: parsedResumeData.githubUrl || "",
+              portfolioUrl: parsedResumeData.portfolioUrl || "",
+              summary: parsedResumeData.summary || "",
+            }
             : undefined
         }
       />
 
-      {/* Skills */}
-      <SkillsEditor
+      {/* Education */}
+      <EducationEditor
         profileId={profile?.id || null}
-        initialSkills={parsedResumeData?.skills}
+        initialEducation={parsedResumeData?.education}
       />
 
       {/* Experience */}
@@ -133,10 +126,10 @@ export default function ProfilePage() {
         initialExperience={parsedResumeData?.experience}
       />
 
-      {/* Education */}
-      <EducationEditor
+      {/* Skills */}
+      <SkillsEditor
         profileId={profile?.id || null}
-        initialEducation={parsedResumeData?.education}
+        initialSkills={parsedResumeData?.skills}
       />
     </div>
   );

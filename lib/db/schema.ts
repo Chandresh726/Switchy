@@ -235,6 +235,58 @@ export const aiGenerationHistory = sqliteTable("aiGenerationHistory", {
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
+export const linkedinConnections = sqliteTable("linkedin_connections", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  identityKey: text("identity_key").notNull().unique(),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  fullName: text("full_name").notNull(),
+  profileUrl: text("profile_url").notNull(),
+  profileUrlNormalized: text("profile_url_normalized").notNull(),
+  email: text("email"),
+  companyRaw: text("company_raw"),
+  companyNormalized: text("company_normalized"),
+  position: text("position"),
+  connectedOn: integer("connected_on", { mode: "timestamp" }),
+  mappedCompanyId: integer("mapped_company_id").references(() => companies.id, { onDelete: "set null" }),
+  isStarred: integer("is_starred", { mode: "boolean" }).notNull().default(false),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  notes: text("notes"),
+  lastSeenAt: integer("last_seen_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+}, (table) => ({
+  mappedCompanyIdIdx: index("linkedin_connections_mapped_company_idx").on(table.mappedCompanyId),
+  isActiveIdx: index("linkedin_connections_active_idx").on(table.isActive),
+  isStarredIdx: index("linkedin_connections_star_idx").on(table.isStarred),
+  companyNormalizedIdx: index("linkedin_connections_company_norm_idx").on(table.companyNormalized),
+  unmatchedLookupIdx: index("linkedin_connections_unmatched_lookup_idx").on(
+    table.isActive,
+    table.mappedCompanyId,
+    table.companyNormalized
+  ),
+  unmatchedCompanyDetailIdx: index("linkedin_connections_unmatched_company_idx").on(
+    table.companyNormalized,
+    table.mappedCompanyId,
+    table.isActive
+  ),
+}));
+
+export const connectionImportSessions = sqliteTable("connection_import_sessions", {
+  id: text("id").primaryKey(),
+  fileName: text("file_name").notNull(),
+  totalRows: integer("total_rows").notNull().default(0),
+  insertedRows: integer("inserted_rows").notNull().default(0),
+  updatedRows: integer("updated_rows").notNull().default(0),
+  deactivatedRows: integer("deactivated_rows").notNull().default(0),
+  invalidRows: integer("invalid_rows").notNull().default(0),
+  unmatchedCompanyRows: integer("unmatched_company_rows").notNull().default(0),
+  startedAt: integer("started_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+  status: text("status").notNull().default("in_progress"),
+  errorMessage: text("error_message"),
+});
+
 // Relations
 export const profileRelations = relations(profile, ({ many }) => ({
   skills: many(skills),
@@ -274,6 +326,7 @@ export const educationRelations = relations(education, ({ one }) => ({
 export const companiesRelations = relations(companies, ({ many }) => ({
   jobs: many(jobs),
   scrapingLogs: many(scrapingLogs),
+  linkedinConnections: many(linkedinConnections),
 }));
 
 export const jobsRelations = relations(jobs, ({ one }) => ({
@@ -336,6 +389,13 @@ export const aiGenerationHistoryRelations = relations(aiGenerationHistory, ({ on
   }),
 }));
 
+export const linkedinConnectionsRelations = relations(linkedinConnections, ({ one }) => ({
+  mappedCompany: one(companies, {
+    fields: [linkedinConnections.mappedCompanyId],
+    references: [companies.id],
+  }),
+}));
+
 // Type exports
 export type Profile = typeof profile.$inferSelect;
 export type NewProfile = typeof profile.$inferInsert;
@@ -367,3 +427,7 @@ export type AIGenerationHistory = typeof aiGenerationHistory.$inferSelect;
 export type NewAIGenerationHistory = typeof aiGenerationHistory.$inferInsert;
 export type AIProviderRecord = typeof aiProviders.$inferSelect;
 export type NewAIProviderRecord = typeof aiProviders.$inferInsert;
+export type LinkedinConnection = typeof linkedinConnections.$inferSelect;
+export type NewLinkedinConnection = typeof linkedinConnections.$inferInsert;
+export type ConnectionImportSession = typeof connectionImportSessions.$inferSelect;
+export type NewConnectionImportSession = typeof connectionImportSessions.$inferInsert;

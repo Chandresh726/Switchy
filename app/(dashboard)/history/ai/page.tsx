@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -211,6 +212,7 @@ function AIHistoryCard({ content, onDelete, isDeleting, onClick }: AIHistoryCard
 }
 
 export default function AIHistoryPage() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [selectedContent, setSelectedContent] = useState<ContentResponse | null>(null);
@@ -250,6 +252,16 @@ export default function AIHistoryPage() {
 
   const handleCardClick = (content: ContentResponse) => {
     window.scrollTo({ top: 0, behavior: "instant" });
+    if (content.type === "referral") {
+      const latestVariantId = content.history[content.history.length - 1]?.id;
+      const params = new URLSearchParams();
+      if (latestVariantId) {
+        params.set("variantId", String(latestVariantId));
+      }
+      const query = params.toString();
+      router.push(`/jobs/${content.jobId}/referral-send${query ? `?${query}` : ""}`);
+      return;
+    }
     setSelectedContent(content);
     setIsDrawerOpen(true);
   };

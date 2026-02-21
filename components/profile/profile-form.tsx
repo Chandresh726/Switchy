@@ -251,7 +251,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
             </div>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 mb-2">
             <Label htmlFor="summary">Professional Summary</Label>
             <Textarea
               id="summary"

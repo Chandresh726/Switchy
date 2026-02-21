@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
 import { MessageCircle, FileText } from "lucide-react";
 import { toast } from "sonner";
+
 import { AIContentEditor } from "@/components/ai-content-editor";
+import { Button } from "@/components/ui/button";
 import type { GeneratedContent } from "@/lib/ai/writing/types";
 
 interface JobAIActionsProps {
@@ -16,12 +18,12 @@ interface JobAIActionsProps {
 type AIAction = "referral" | "cover-letter";
 
 export function JobAIActions({ jobId, jobTitle, companyName }: JobAIActionsProps) {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
-  const [currentAction, setCurrentAction] = useState<AIAction | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent | null>(null);
 
-  const apiType = currentAction === "referral" ? "referral" : "cover_letter";
+  const apiType = "cover_letter";
 
   const generateContent = useCallback(async (userPrompt?: string, hadContentBefore: boolean = false) => {
     setIsLoading(true);
@@ -74,10 +76,10 @@ export function JobAIActions({ jobId, jobTitle, companyName }: JobAIActionsProps
   }, [jobId, apiType, generateContent]);
 
   useEffect(() => {
-    if (isOpen && currentAction) {
+    if (isOpen) {
       checkExistingContent();
     }
-  }, [isOpen, currentAction, checkExistingContent]);
+  }, [isOpen, checkExistingContent]);
 
   const saveEdit = async (newContent: string, userPrompt?: string) => {
     if (!generatedContent) return;
@@ -101,28 +103,23 @@ export function JobAIActions({ jobId, jobTitle, companyName }: JobAIActionsProps
   };
 
   const handleGenerate = async (action: AIAction) => {
+    if (action === "referral") {
+      router.push(`/jobs/${jobId}/referral-send`);
+      return;
+    }
     window.scrollTo({ top: 0, behavior: "instant" });
-    setCurrentAction(action);
     setIsOpen(true);
     setGeneratedContent(null);
   };
 
-  const title = currentAction === "referral" ? "Referral Message" : "Cover Letter";
-  const description = currentAction === "referral"
-    ? `Message to send to your connection at ${companyName} requesting a referral`
-    : `Cover letter for ${jobTitle} at ${companyName}`;
+  const title = "Cover Letter";
+  const description = `Cover letter for ${jobTitle} at ${companyName}`;
 
-  const typeConfig = currentAction === "referral"
-    ? {
-        icon: MessageCircle,
-        color: "text-purple-400",
-        bgColor: "bg-purple-500/10",
-      }
-    : {
-        icon: FileText,
-        color: "text-emerald-400",
-        bgColor: "bg-emerald-500/10",
-      };
+  const typeConfig = {
+    icon: FileText,
+    color: "text-emerald-400",
+    bgColor: "bg-emerald-500/10",
+  };
 
   return (
     <>

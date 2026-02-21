@@ -269,15 +269,12 @@ export function AIProvidersManager({
                     </div>
                   ) : (
                     <div className="flex items-center justify-between p-4">
-                      <div className="flex items-center gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{metadata?.displayName || provider.provider}</span>
-                          </div>
-                          <p className="text-sm text-muted-foreground">
-                            {requiresApiKey ? "API Key" : "No API key required"}
-                          </p>
-                        </div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-medium">{metadata?.displayName || provider.provider}</span>
+                        <span className="h-4 w-px bg-border" />
+                        <span className="text-sm text-muted-foreground">
+                          {requiresApiKey ? "API Key" : "No API key required"}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2">
                         {requiresApiKey ? (

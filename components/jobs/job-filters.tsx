@@ -1,6 +1,7 @@
 "use client";
 
 import { Input } from "@/components/ui/input";
+import { TogglePill } from "@/components/ui/toggle-pill";
 import { Search, X, ArrowUpDown, MapPin, Building2, Loader2, Briefcase } from "lucide-react";
 import { useMemo, useState, useRef, useEffect } from "react";
 
@@ -75,39 +76,16 @@ function FilterChip({
   onRemove: () => void;
 }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-1 text-xs text-emerald-400">
+    <span className="inline-flex items-center gap-1 bg-emerald-500/20 px-2.5 py-1 text-xs text-emerald-400">
       {label}
       <button
         onClick={onRemove}
-        className="rounded-full p-0.5 hover:bg-emerald-500/30"
+        className="p-0.5 hover:bg-emerald-500/30"
         aria-label={`Remove ${label} filter`}
       >
         <X className="h-3 w-3" />
       </button>
     </span>
-  );
-}
-
-function TogglePill({
-  selected,
-  onClick,
-  children,
-}: {
-  selected: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-        selected
-          ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-          : "bg-muted text-muted-foreground border border-border hover:bg-muted hover:text-foreground"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -152,11 +130,10 @@ function CompanyMultiSelect({
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-          selectedCount > 0
+        className={`flex items-center gap-2 px-3 py-1 text-xs font-medium transition-colors ${selectedCount > 0
             ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
             : "bg-muted text-muted-foreground border border-border hover:bg-muted hover:text-foreground"
-        }`}
+          }`}
       >
         <Building2 className="h-3 w-3" />
         {selectedCount > 0 ? `${selectedCount} Companies` : "Companies"}
@@ -180,18 +157,16 @@ function CompanyMultiSelect({
                 <button
                   key={company.id}
                   onClick={() => toggleCompany(company.id.toString())}
-                  className={`flex w-full items-center gap-2 rounded px-3 py-1.5 text-left text-xs transition-colors ${
-                    selectedIds.includes(company.id.toString())
+                  className={`flex w-full items-center gap-2 rounded px-3 py-1.5 text-left text-xs transition-colors ${selectedIds.includes(company.id.toString())
                       ? "bg-emerald-500/20 text-emerald-400"
                       : "text-foreground/80 hover:bg-muted"
-                  }`}
+                    }`}
                 >
                   <div
-                    className={`h-3 w-3 rounded border ${
-                      selectedIds.includes(company.id.toString())
+                    className={`h-3 w-3 rounded border ${selectedIds.includes(company.id.toString())
                         ? "border-emerald-500 bg-emerald-500"
                         : "border-border"
-                    }`}
+                      }`}
                   >
                     {selectedIds.includes(company.id.toString()) && (
                       <svg className="h-3 w-3 text-foreground" viewBox="0 0 12 12">
@@ -263,11 +238,10 @@ function OptionMultiSelect({
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-          selectedCount > 0
+        className={`flex items-center gap-2 px-3 py-1 text-xs font-medium transition-colors ${selectedCount > 0
             ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
             : "bg-muted text-muted-foreground border border-border hover:bg-muted hover:text-foreground"
-        }`}
+          }`}
       >
         {Icon && <Icon className="h-3 w-3" />}
         {selectedCount > 0 ? `${selectedCount} ${label}` : label}
@@ -280,18 +254,16 @@ function OptionMultiSelect({
               <button
                 key={opt.value}
                 onClick={() => toggleOption(opt.value)}
-                className={`flex w-full items-center gap-2 rounded px-3 py-1.5 text-left text-xs transition-colors ${
-                  selectedValues.includes(opt.value)
+                className={`flex w-full items-center gap-2 rounded px-3 py-1.5 text-left text-xs transition-colors ${selectedValues.includes(opt.value)
                     ? "bg-emerald-500/20 text-emerald-400"
                     : "text-foreground/80 hover:bg-muted"
-                }`}
+                  }`}
               >
                 <div
-                  className={`h-3 w-3 rounded border ${
-                    selectedValues.includes(opt.value)
+                  className={`h-3 w-3 rounded border ${selectedValues.includes(opt.value)
                       ? "border-emerald-500 bg-emerald-500"
                       : "border-border"
-                  }`}
+                    }`}
                 >
                   {selectedValues.includes(opt.value) && (
                     <svg className="h-3 w-3 text-foreground" viewBox="0 0 12 12">
@@ -535,7 +507,7 @@ export function JobFilters({
           onChange={(e) =>
             onFiltersChange({ ...filters, minScore: e.target.value })
           }
-          className="h-7 rounded-full border border-border bg-muted px-3 text-xs text-foreground/80"
+          className="h-7 border border-border bg-muted px-3 text-xs text-foreground/80"
         >
           {SCORE_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -555,7 +527,7 @@ export function JobFilters({
             onChange={(e) =>
               onFiltersChange({ ...filters, sortBy: e.target.value })
             }
-            className="h-7 rounded-full border border-border bg-muted px-3 text-xs text-foreground/80"
+            className="h-7 border border-border bg-muted px-3 text-xs text-foreground/80"
           >
             {SORT_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -570,7 +542,7 @@ export function JobFilters({
                 sortOrder: filters.sortOrder === "desc" ? "asc" : "desc",
               })
             }
-            className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             title={filters.sortOrder === "desc" ? "Descending" : "Ascending"}
           >
             {filters.sortOrder === "desc" ? "↓" : "↑"}

@@ -144,7 +144,7 @@ export function ScraperSettings({
         <div className="space-y-4 pt-4 border-t border-border">
           <Label>Location Filter</Label>
           <p className="text-xs text-muted-foreground -mt-2">Only matching jobs are added. Remote jobs always included.</p>
-          
+
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="filter-country" className="text-sm text-muted-foreground">Country</Label>
@@ -193,13 +193,13 @@ export function ScraperSettings({
               {filterTitleKeywords.map((keyword, index) => (
                 <span
                   key={`${keyword}-${index}`}
-                  className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-1 text-xs text-emerald-400"
+                  className="inline-flex items-center gap-1 bg-emerald-500/20 px-2.5 py-1 text-xs text-emerald-400"
                 >
                   {keyword}
                   <button
                     type="button"
                     onClick={() => onFilterTitleKeywordsChange(filterTitleKeywords.filter((_, i) => i !== index))}
-                    className="rounded-full p-0.5 hover:bg-emerald-500/30"
+                    className="p-0.5 hover:bg-emerald-500/30"
                     aria-label={`Remove ${keyword}`}
                   >
                     <X className="h-3 w-3" />

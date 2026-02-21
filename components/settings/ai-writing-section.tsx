@@ -134,8 +134,8 @@ export function AIWritingSection({
                     ))}
                   </SelectContent>
                 </Select>
-                <Select 
-                  value={currentModel} 
+                <Select
+                  value={currentModel}
                   onValueChange={(value) => onAIWritingSettingsChange({ aiWritingModel: value })}
                   disabled={modelsLoading || models.length === 0}
                 >
@@ -163,8 +163,8 @@ export function AIWritingSection({
                   </SelectContent>
                 </Select>
                 {supportsReasoning && (
-                  <Select 
-                    value={aiWritingSettings.aiWritingReasoningEffort || "medium"} 
+                  <Select
+                    value={aiWritingSettings.aiWritingReasoningEffort || "medium"}
                     onValueChange={(value) => onAIWritingSettingsChange({ aiWritingReasoningEffort: value as ReasoningEffort })}
                   >
                     <SelectTrigger className="w-32 bg-background/60 border-border">
@@ -196,128 +196,128 @@ export function AIWritingSection({
 
             <Separator className="bg-muted" />
 
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <FileText className="h-4 w-4 text-emerald-400" />
-            <h3 className="text-sm font-medium text-foreground">Cover Letter</h3>
-          </div>
-          
-          <div className="grid gap-4">
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-2">
-                <Label className="text-muted-foreground">Tone</Label>
-                <Select
-                  value={aiWritingSettings.coverLetterTone}
-                  onValueChange={(value) => onAIWritingSettingsChange({ coverLetterTone: value })}
-                >
-                  <SelectTrigger className="w-full bg-background/60 border-border">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {COVER_LETTER_TONE_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="space-y-2">
-                <Label className="text-muted-foreground">Length</Label>
-                <Select
-                  value={aiWritingSettings.coverLetterLength}
-                  onValueChange={(value) => onAIWritingSettingsChange({ coverLetterLength: value })}
-                >
-                  <SelectTrigger className="w-full bg-background/60 border-border">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {COVER_LETTER_LENGTH_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-emerald-400" />
+                <h3 className="text-sm font-medium text-foreground">Cover Letter</h3>
               </div>
 
-              <div className="space-y-2">
-                <Label className="text-muted-foreground">Focus</Label>
-                <div className="flex flex-wrap gap-2">
-                  {COVER_LETTER_FOCUS_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => toggleFocus(option.value)}
-                      className={cn(
-                        "inline-flex items-center rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
-                        isFocusSelected(option.value)
-                          ? "bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30"
-                          : "bg-muted text-muted-foreground hover:bg-muted hover:text-foreground/80"
-                      )}
+              <div className="grid gap-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Tone</Label>
+                    <Select
+                      value={aiWritingSettings.coverLetterTone}
+                      onValueChange={(value) => onAIWritingSettingsChange({ coverLetterTone: value })}
                     >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <Separator className="bg-muted" />
-
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <MessageCircle className="h-4 w-4 text-purple-400" />
-            <h3 className="text-sm font-medium text-foreground">Referral Message</h3>
-          </div>
-          
-          <div className="grid gap-4">
-            <div className="flex gap-4 items-end">
-              <div className="flex gap-3 flex-1">
-                <div className="space-y-2 flex-1">
-                  <Label className="text-muted-foreground">Tone</Label>
-                  <Select
-                    value={aiWritingSettings.referralTone}
-                    onValueChange={(value) => onAIWritingSettingsChange({ referralTone: value })}
-                  >
-                    <SelectTrigger className="w-full bg-background/60 border-border">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {REFERRAL_TONE_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div className="space-y-2 flex-1">
-                  <Label className="text-muted-foreground">Length</Label>
-                  <Select
-                    value={aiWritingSettings.referralLength}
-                    onValueChange={(value) => onAIWritingSettingsChange({ referralLength: value })}
-                  >
-                    <SelectTrigger className="w-full bg-background/60 border-border">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {REFERRAL_LENGTH_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
+                      <SelectTrigger className="w-full bg-background/60 border-border">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {COVER_LETTER_TONE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Length</Label>
+                    <Select
+                      value={aiWritingSettings.coverLetterLength}
+                      onValueChange={(value) => onAIWritingSettingsChange({ coverLetterLength: value })}
+                    >
+                      <SelectTrigger className="w-full bg-background/60 border-border">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {COVER_LETTER_LENGTH_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Focus</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {COVER_LETTER_FOCUS_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => toggleFocus(option.value)}
+                          className={cn(
+                            "inline-flex items-center px-3 py-1.5 text-xs font-medium transition-colors",
+                            isFocusSelected(option.value)
+                              ? "bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30"
+                              : "bg-muted text-muted-foreground hover:bg-muted hover:text-foreground/80"
+                          )}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+
+            <Separator className="bg-muted" />
+
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <MessageCircle className="h-4 w-4 text-purple-400" />
+                <h3 className="text-sm font-medium text-foreground">Referral Message</h3>
+              </div>
+
+              <div className="grid gap-4">
+                <div className="flex gap-4 items-end">
+                  <div className="flex gap-3 flex-1">
+                    <div className="space-y-2 flex-1">
+                      <Label className="text-muted-foreground">Tone</Label>
+                      <Select
+                        value={aiWritingSettings.referralTone}
+                        onValueChange={(value) => onAIWritingSettingsChange({ referralTone: value })}
+                      >
+                        <SelectTrigger className="w-full bg-background/60 border-border">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {REFERRAL_TONE_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2 flex-1">
+                      <Label className="text-muted-foreground">Length</Label>
+                      <Select
+                        value={aiWritingSettings.referralLength}
+                        onValueChange={(value) => onAIWritingSettingsChange({ referralLength: value })}
+                      >
+                        <SelectTrigger className="w-full bg-background/60 border-border">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {REFERRAL_LENGTH_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </>
         ) : (
           <div className="flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed border-border bg-background/20">

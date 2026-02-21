@@ -1,0 +1,2 @@
+CREATE INDEX `linkedin_connections_unmatched_lookup_idx` ON `linkedin_connections` (`is_active`,`mapped_company_id`,`company_normalized`);--> statement-breakpoint
+CREATE INDEX `linkedin_connections_unmatched_company_idx` ON `linkedin_connections` (`company_normalized`,`mapped_company_id`,`is_active`);

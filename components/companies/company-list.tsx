@@ -34,6 +34,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { PLATFORM_COLORS } from "@/lib/constants";
 
 export interface Company {
   id: number;
@@ -59,15 +60,6 @@ interface CompanyListProps {
   isRefreshing: boolean;
   isMatching: boolean;
 }
-
-const PLATFORM_COLORS: Record<string, string> = {
-  greenhouse: "bg-green-500/10 text-green-400 border-green-500/20",
-  lever: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  ashby: "bg-purple-500/10 text-purple-400 border-purple-500/20",
-  eightfold: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
-  workday: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  custom: "bg-muted text-muted-foreground border-border",
-};
 
 function truncateUrl(url: string, maxLength: number = 30): string {
   try {
@@ -250,9 +242,9 @@ export function CompanyList({
                   )}
                   <div>
                     <Link
-                      href={`/jobs?companyIds=${company.id}`}
+                      href={`/companies/${company.id}`}
                       className="font-medium text-foreground hover:text-emerald-400 transition-colors"
-                      title={`View jobs at ${company.name}`}
+                      title={`View company details for ${company.name}`}
                       onClick={(e) => selectionMode && e.preventDefault()}
                     >
                       {company.name}

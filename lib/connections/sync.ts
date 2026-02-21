@@ -1,0 +1,16 @@
+export {
+  deleteAllConnections,
+  importConnectionsCsv,
+  getConnectionsList,
+  getIgnoredUnmatchedCompaniesList,
+  getUnmatchedCompaniesList,
+  getUnmatchedCompaniesSummary,
+  getUnmatchedCompanyConnections,
+  mapUnmatchedCompanyGroup,
+  setUnmatchedCompanyIgnored,
+  type ConnectionListFilters,
+  type UnmatchedCompanyConnection,
+  type UnmatchedCompanyGroup,
+  type UnmatchedCompaniesResponse,
+  type UnmatchedCompaniesSummary,
+} from "./sync/index";

@@ -14,11 +14,13 @@ import {
   ArrowRight,
   Send,
   Sparkles,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { MatchBadge } from "@/components/jobs/match-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatRelativeTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
 
 interface ScrapeSession {
@@ -43,6 +45,11 @@ interface Stats {
   savedJobs: number;
   jobsWithScore: number;
   lastScan: ScrapeSession | null;
+  // Connection stats
+  totalConnections: number;
+  starredConnections: number;
+  mappedConnections: number;
+  unmatchedCompanyCount: number;
 }
 
 interface Profile {
@@ -65,20 +72,6 @@ interface Job {
     name: string;
     logoUrl: string | null;
   };
-}
-
-function formatRelativeTime(date: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 function StatCard({
@@ -181,6 +174,7 @@ function JobRow({ job, type = "default" }: { job: Job; type?: "default" | "appli
   );
 }
 
+
 export default function DashboardPage() {
   const { data: profile, isLoading: isProfileLoading } = useQuery<Profile>({
     queryKey: ["profile"],
@@ -256,45 +250,20 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {isInitialLoading ? (
           <>
-            <div className="rounded-xl border border-border bg-card p-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-3">
-                  <Skeleton className="h-4 w-20" />
-                  <Skeleton className="h-8 w-12" />
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="rounded-xl border border-border bg-card p-6">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-3">
+                    <Skeleton className="h-4 w-20" />
+                    <Skeleton className="h-8 w-12" />
+                  </div>
+                  <Skeleton className="h-12 w-12 rounded-lg" />
                 </div>
-                <Skeleton className="h-12 w-12 rounded-lg" />
               </div>
-            </div>
-            <div className="rounded-xl border border-border bg-card p-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-3">
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-8 w-12" />
-                </div>
-                <Skeleton className="h-12 w-12 rounded-lg" />
-              </div>
-            </div>
-            <div className="rounded-xl border border-border bg-card p-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-3">
-                  <Skeleton className="h-4 w-16" />
-                  <Skeleton className="h-8 w-12" />
-                </div>
-                <Skeleton className="h-12 w-12 rounded-lg" />
-              </div>
-            </div>
-            <div className="rounded-xl border border-border bg-card p-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-3">
-                  <Skeleton className="h-4 w-20" />
-                  <Skeleton className="h-8 w-12" />
-                </div>
-                <Skeleton className="h-12 w-12 rounded-lg" />
-              </div>
-            </div>
+            ))}
           </>
         ) : (
           <>
@@ -323,6 +292,13 @@ export default function DashboardPage() {
               value={stats?.totalCompanies ?? 0}
               icon={Building2}
               color="text-purple-500"
+            />
+            <StatCard
+              title="Connections"
+              value={stats?.totalConnections ?? 0}
+              icon={Users}
+              color="text-cyan-500"
+              href="/connections"
             />
           </>
         )}
@@ -466,9 +442,8 @@ export default function DashboardPage() {
               <div className="flex items-center justify-between bg-background/60 rounded-lg border border-border p-4">
                 <div className="flex items-center gap-4">
                   <div
-                    className={`flex h-10 w-10 items-center justify-center rounded-lg ${
-                      lastScanStatusConfig?.bgColor ?? "bg-muted"
-                    }`}
+                    className={`flex h-10 w-10 items-center justify-center rounded-lg ${lastScanStatusConfig?.bgColor ?? "bg-muted"
+                      }`}
                   >
                     {lastScan.status === "in_progress" ? (
                       <RefreshCw className="h-5 w-5 animate-spin text-blue-500" />
@@ -556,24 +531,24 @@ export default function DashboardPage() {
               <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50">
                 <span className="text-sm text-muted-foreground">Saved Jobs</span>
                 <div className="flex items-center gap-2">
-                  <Star className="h-3.5 w-3.5 text-purple-500" />
                   <span className="text-sm font-medium text-foreground">{stats?.savedJobs || "-"}</span>
+                  <Star className="h-3.5 w-3.5 text-purple-500" />
                 </div>
               </div>
 
               <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50">
                 <span className="text-sm text-muted-foreground">Viewed Jobs</span>
                 <div className="flex items-center gap-2">
-                  <Eye className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-sm font-medium text-foreground">{stats?.viewedJobs || "-"}</span>
+                  <Eye className="h-3.5 w-3.5 text-muted-foreground" />
                 </div>
               </div>
 
               <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50">
                 <span className="text-sm text-muted-foreground">Scored Jobs</span>
                 <div className="flex items-center gap-2">
-                  <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-sm font-medium text-foreground">{stats?.jobsWithScore || "-"}</span>
+                  <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
                 </div>
               </div>
 
@@ -587,6 +562,33 @@ export default function DashboardPage() {
                   </p>
                 </div>
               ) : null}
+
+              {/* Connections divider */}
+              {stats && (
+                <>
+                  <div className="flex items-center gap-2 pt-1">
+                    <div className="h-px flex-1 bg-border" />
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Connections</span>
+                    <div className="h-px flex-1 bg-border" />
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50">
+                    <span className="text-sm text-muted-foreground">Total Active</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-foreground">{stats.totalConnections || "-"}</span>
+                      <Users className="h-3.5 w-3.5 text-cyan-500" />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50">
+                    <span className="text-sm text-muted-foreground">Starred</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-foreground">{stats.starredConnections || "-"}</span>
+                      <Star className="h-3.5 w-3.5 text-amber-400" />
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

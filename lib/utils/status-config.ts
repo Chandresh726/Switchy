@@ -75,7 +75,10 @@ export const MATCHER_STATUS_CONFIG: Record<string, { label: string; color: strin
 };
 
 export function getSessionStatusConfig(status: string): StatusConfig {
-  return SESSION_STATUS_CONFIG[status] || SESSION_STATUS_CONFIG.in_progress;
+  let normalized = status.toLowerCase();
+  if (normalized === "success") normalized = "completed";
+  if (normalized === "error") normalized = "failed";
+  return SESSION_STATUS_CONFIG[normalized] || SESSION_STATUS_CONFIG.in_progress;
 }
 
 export function getLogStatusConfig(status: string): { icon: LucideIcon; color: string } {

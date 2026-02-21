@@ -29,6 +29,20 @@
       "when": 1771587935652,
       "tag": "0003_hot_masque",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1771651408494,
+      "tag": "0004_typical_devos",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1771658616393,
+      "tag": "0005_marvelous_smiling_tiger",
+      "breakpoints": true
     }
   ]
 }
