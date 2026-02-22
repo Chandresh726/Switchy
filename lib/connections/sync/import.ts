@@ -117,15 +117,14 @@ export async function importConnectionsCsv(content: string, fileName: string): P
 
     for (let i = 0; i < toUpdate.length; i += BATCH_SIZE) {
       const batch = toUpdate.slice(i, i + BATCH_SIZE);
-      await db.transaction(async (tx) => {
-        await Promise.all(
-          batch.map((item) =>
-            tx
-              .update(linkedinConnections)
-              .set(item.data)
-              .where(eq(linkedinConnections.id, item.id))
-          )
-        );
+      db.transaction((tx) => {
+        for (const item of batch) {
+          tx
+            .update(linkedinConnections)
+            .set(item.data)
+            .where(eq(linkedinConnections.id, item.id))
+            .run();
+        }
       });
       updatedRows += batch.length;
     }
