@@ -7,6 +7,7 @@ export {
   getUnmatchedCompaniesSummary,
   getUnmatchedCompanyConnections,
   mapUnmatchedCompanyGroup,
+  refreshUnmatchedCompanyMappings,
   setUnmatchedCompanyIgnored,
   type ConnectionListFilters,
   type UnmatchedCompanyConnection,

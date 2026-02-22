@@ -6,6 +6,7 @@ export {
   getUnmatchedCompaniesSummary,
   getUnmatchedCompanyConnections,
   mapUnmatchedCompanyGroup,
+  refreshUnmatchedCompanyMappings,
   setUnmatchedCompanyIgnored,
   type UnmatchedCompanyConnection,
   type UnmatchedCompanyGroup,

@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { companies } from "@/lib/db/schema";
+import { refreshUnmatchedCompanyMappings } from "@/lib/connections/sync";
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 
 const ParamsSchema = z.object({
@@ -17,6 +18,8 @@ const PLATFORM_VALUES = [
   "workday",
   "eightfold",
   "uber",
+  "google",
+  "atlassian",
   "custom",
 ] as const;
 
@@ -48,7 +51,17 @@ type CompanyUpdatePayload = {
   careersUrl?: string;
   logoUrl?: string | null;
   isActive?: boolean;
-  platform?: "greenhouse" | "lever" | "ashby" | "workday" | "eightfold" | "uber" | "custom" | null;
+  platform?:
+    | "greenhouse"
+    | "lever"
+    | "ashby"
+    | "workday"
+    | "eightfold"
+    | "uber"
+    | "google"
+    | "atlassian"
+    | "custom"
+    | null;
   boardToken?: string | null;
   updatedAt: Date;
 };
@@ -168,6 +181,14 @@ export async function PUT(
       return NextResponse.json({ error: "Company not found" }, { status: 404 });
     }
 
+    try {
+      await refreshUnmatchedCompanyMappings({
+        companyIds: [updated.id],
+      });
+    } catch (error) {
+      console.error("Failed to refresh unmatched company mappings:", error);
+    }
+
     return NextResponse.json(updated);
   } catch (error) {
     if (error instanceof Error && error.message === "Invalid company id") {
@@ -249,6 +270,16 @@ export async function PATCH(
       .set(updateData)
       .where(eq(companies.id, id))
       .returning();
+
+    if (updated && payload.name !== undefined) {
+      try {
+        await refreshUnmatchedCompanyMappings({
+          companyIds: [updated.id],
+        });
+      } catch (error) {
+        console.error("Failed to refresh unmatched company mappings:", error);
+      }
+    }
 
     return NextResponse.json(updated);
   } catch (error) {

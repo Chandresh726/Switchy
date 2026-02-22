@@ -4,6 +4,7 @@ import { desc, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { companies } from "@/lib/db/schema";
+import { refreshUnmatchedCompanyMappings } from "@/lib/connections/sync";
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 
 const PLATFORM_VALUES = [
@@ -13,6 +14,8 @@ const PLATFORM_VALUES = [
   "workday",
   "eightfold",
   "uber",
+  "google",
+  "atlassian",
   "custom",
 ] as const;
 
@@ -159,6 +162,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (results.length > 0) {
+      try {
+        await refreshUnmatchedCompanyMappings({
+          companyIds: results.map((company) => company.id),
+        });
+      } catch (error) {
+        console.error("Failed to refresh unmatched company mappings:", error);
+      }
+    }
+
     if (!isBulk) {
       if (results.length === 0) {
         return NextResponse.json(
@@ -199,6 +212,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const incomingUrls = new Set(validated.map((item) => item.careersUrl));
+    const touchedCompanyIds: number[] = [];
 
     for (const item of validated) {
       const detectedFromUrl = detectPlatformFromUrl(item.careersUrl);
@@ -209,7 +223,10 @@ export async function PUT(request: NextRequest) {
         continue;
       }
 
-      await upsertCompany(item);
+      const upserted = await upsertCompany(item);
+      if (upserted?.id) {
+        touchedCompanyIds.push(upserted.id);
+      }
     }
 
     const allCompanies = await db.select().from(companies);
@@ -222,6 +239,16 @@ export async function PUT(request: NextRequest) {
             updatedAt: new Date(),
           })
           .where(eq(companies.id, company.id));
+      }
+    }
+
+    if (touchedCompanyIds.length > 0) {
+      try {
+        await refreshUnmatchedCompanyMappings({
+          companyIds: touchedCompanyIds,
+        });
+      } catch (error) {
+        console.error("Failed to refresh unmatched company mappings:", error);
       }
     }
 

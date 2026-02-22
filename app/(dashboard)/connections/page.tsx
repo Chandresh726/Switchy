@@ -9,6 +9,7 @@ import {
   Linkedin,
   Loader2,
   Pencil,
+  RefreshCw,
   Save,
   Search,
   Star,
@@ -65,6 +66,11 @@ interface EmailCellProps {
   email: string | null;
   onSave: (id: number, email: string | null) => void;
   onCopy: (email: string) => void;
+}
+
+interface RefreshMappingsResponse {
+  mappedConnectionCount: number;
+  mappedCompanyCount: number;
 }
 
 function EmailCell({ connectionId, email, onSave, onCopy }: EmailCellProps) {
@@ -323,6 +329,41 @@ export default function ConnectionsPage() {
     },
   });
 
+  const refreshMappingsMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/connections/unmatched-companies", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "refresh" }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to refresh mappings");
+      }
+
+      return (await res.json()) as RefreshMappingsResponse;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: connectionKeys.unmatchedCompanies.all() });
+      queryClient.invalidateQueries({ queryKey: connectionKeys.ignoredCompanies() });
+      queryClient.invalidateQueries({ queryKey: connectionKeys.all });
+      queryClient.invalidateQueries({ queryKey: companyKeys.all });
+
+      if (result.mappedConnectionCount > 0) {
+        toast.success(
+          `Mapped ${result.mappedConnectionCount} connection${result.mappedConnectionCount === 1 ? "" : "s"} across ${result.mappedCompanyCount} compan${result.mappedCompanyCount === 1 ? "y" : "ies"}`
+        );
+        return;
+      }
+
+      toast.success("No new mappings found");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Failed to refresh mappings");
+    },
+  });
+
   const connections = data?.connections || [];
   const totalCount = data?.totalCount || 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
@@ -508,17 +549,33 @@ export default function ConnectionsPage() {
             </button>
           ) : null}
 
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
             {(unmatchedSummary?.summary.unmatchedCompanyCount || 0) > 0 ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
-                onClick={() => setIsUnmatchedModalOpen(true)}
-              >
-                <AlertCircle className="h-3.5 w-3.5" />
-                {unmatchedSummary?.summary.unmatchedCompanyCount || 0} Unmapped Companies
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7"
+                  onClick={() => refreshMappingsMutation.mutate()}
+                  disabled={refreshMappingsMutation.isPending}
+                >
+                  {refreshMappingsMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  Refresh Mapping
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+                  onClick={() => setIsUnmatchedModalOpen(true)}
+                >
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  {unmatchedSummary?.summary.unmatchedCompanyCount || 0} Unmapped Companies
+                </Button>
+              </>
             ) : (
               <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300">
                 <CheckCircle2 className="h-3.5 w-3.5" />

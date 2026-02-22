@@ -37,8 +37,12 @@ function CompaniesPageContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  
-  const filters = useMemo(() => parseFiltersFromParams(searchParams), [searchParams]);
+
+  const searchParamsString = searchParams.toString();
+  const filters = useMemo(
+    () => parseFiltersFromParams(new URLSearchParams(searchParamsString)),
+    [searchParamsString]
+  );
   const [view, setView] = useState<"list" | "json">("list");
   const [isAdding, setIsAdding] = useState(false);
   const [addPanelTab, setAddPanelTab] = useState<"quick" | "manual">("quick");
@@ -123,15 +127,6 @@ function CompaniesPageContent() {
     );
   }, []);
 
-  const [allActiveFilteredIds, setAllActiveFilteredIds] = useState<number[]>([]);
-
-  const selectAllFiltered = useCallback(() => {
-    setSelectedIds(allActiveFilteredIds);
-    if (!selectionMode) {
-      setSelectionMode(true);
-    }
-  }, [allActiveFilteredIds, selectionMode]);
-
   const { data: companies = [], isLoading: isCompaniesLoading } = useQuery<Company[]>({
     queryKey: ["companies"],
     queryFn: async () => {
@@ -189,12 +184,17 @@ function CompaniesPageContent() {
     return result;
   }, [companies, filters]);
 
-  useEffect(() => {
-    const activeFilteredIds = filteredAndSortedCompanies
-      .filter((c) => c.isActive)
-      .map((c) => c.id);
-    setAllActiveFilteredIds(activeFilteredIds);
-  }, [filteredAndSortedCompanies]);
+  const allActiveFilteredIds = useMemo(
+    () => filteredAndSortedCompanies.filter((c) => c.isActive).map((c) => c.id),
+    [filteredAndSortedCompanies]
+  );
+
+  const selectAllFiltered = useCallback(() => {
+    setSelectedIds(allActiveFilteredIds);
+    if (!selectionMode) {
+      setSelectionMode(true);
+    }
+  }, [allActiveFilteredIds, selectionMode]);
 
   const importMutation = useMutation({
     mutationFn: async (companies: unknown[]) => {

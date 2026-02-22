@@ -11,6 +11,14 @@ describe("platform detection", () => {
     expect(detectPlatformFromUrl("https://jobs.ashbyhq.com/acme")).toBe("ashby");
     expect(detectPlatformFromUrl("https://acme.wd5.myworkdayjobs.com/en-US/careers")).toBe("workday");
     expect(detectPlatformFromUrl("https://acme.eightfold.ai/careers")).toBe("eightfold");
+    expect(
+      detectPlatformFromUrl(
+        "https://www.google.com/about/careers/applications/jobs/results?q=software"
+      )
+    ).toBe("google");
+    expect(
+      detectPlatformFromUrl("https://www.atlassian.com/company/careers/all-jobs?team=Engineering")
+    ).toBe("atlassian");
     expect(detectPlatformFromUrl("https://www.uber.com/global/en/careers/list/")).toBe("uber");
     expect(detectPlatformFromUrl("https://careers.example.com")).toBe("custom");
   });

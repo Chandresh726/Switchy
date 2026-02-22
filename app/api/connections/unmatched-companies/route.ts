@@ -7,6 +7,7 @@ import {
   getUnmatchedCompaniesList,
   getUnmatchedCompaniesSummary,
   mapUnmatchedCompanyGroup,
+  refreshUnmatchedCompanyMappings,
   setUnmatchedCompanyIgnored,
 } from "@/lib/connections/sync";
 import { db } from "@/lib/db";
@@ -32,6 +33,9 @@ const PatchBodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("unignore"),
     companyNormalized: z.string().min(1),
+  }),
+  z.object({
+    action: z.literal("refresh"),
   }),
 ]);
 
@@ -71,6 +75,11 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = PatchBodySchema.parse(await request.json());
+
+    if (body.action === "refresh") {
+      const result = await refreshUnmatchedCompanyMappings();
+      return NextResponse.json(result);
+    }
 
     if (body.action === "map") {
       const [mappedCompany] = await db

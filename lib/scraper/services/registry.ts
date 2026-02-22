@@ -10,6 +10,8 @@ import {
   EightfoldScraper,
   WorkdayScraper,
   UberScraper,
+  GoogleScraper,
+  AtlassianScraper,
 } from "@/lib/scraper/platforms";
 
 export interface IScraperRegistry {
@@ -87,6 +89,8 @@ export function createScraperRegistry(config: ScraperRegistryConfig): IScraperRe
   registry.register(new EightfoldScraper(config.httpClient, config.browserClient));
   registry.register(new WorkdayScraper(config.httpClient, config.browserClient));
   registry.register(new UberScraper(config.httpClient));
+  registry.register(new GoogleScraper(config.httpClient));
+  registry.register(new AtlassianScraper(config.httpClient));
 
   return registry;
 }

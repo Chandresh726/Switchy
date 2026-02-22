@@ -221,7 +221,7 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
                   This company uses a known ATS
                 </Label>
                 <p className="text-xs text-muted-foreground">
-                  Enable if a careers page routes to Greenhouse, Lever, Ashby, Workday, or Eightfold.
+                  Enable if a custom careers URL should be scraped using a supported platform.
                 </p>
               </div>
             </div>

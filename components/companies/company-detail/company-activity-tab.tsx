@@ -5,12 +5,11 @@ import { Activity, Building2, Sparkles, Clock, Target, Plus, CheckCircle, XCircl
 
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
-import { formatRelativeTime, formatDurationFromDates, formatDate, formatTime } from "@/lib/utils/format";
+import { formatDurationFromDates, formatDate, formatTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
 import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
 
-import type { ActivityItem, CompanyActivity } from "./types";
+import type { CompanyActivity, ScrapeLog, MatchSession } from "./types";
 
 function parseDate(value: string | null): Date | null {
   if (!value) return null;
@@ -63,13 +62,12 @@ export function CompanyActivityTab({ activity }: CompanyActivityTabProps) {
       {activityFeed.map((item) => {
         const isScrape = item.type === "scrape";
         const statusConfig = getSessionStatusConfig(item.data.status);
-        const StatusIcon = statusConfig.icon;
 
         const startedDate = parseDate(item.startedAt);
         const completedDate = parseDate(item.completedAt);
 
-        const scrapeData = isScrape ? item.data as any : null;
-        const matchData = !isScrape ? item.data as any : null;
+        const scrapeData = isScrape ? (item.data as ScrapeLog) : null;
+        const matchData = !isScrape ? (item.data as MatchSession) : null;
 
         const triggerSource = item.data.triggerSource || "manual";
 

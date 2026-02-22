@@ -208,4 +208,5 @@ describe("EightfoldScraper", () => {
     );
     expect(detailCall?.[1]?.headers).not.toHaveProperty("Cookie");
   });
+
 });

@@ -426,55 +426,47 @@ export default function DashboardPage() {
         <div className="space-y-6">
           {/* Recent Activity / Last Scan */}
           {lastScan && (
-            <div className="rounded-xl border border-border bg-card p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-medium text-foreground flex items-center gap-2">
-                  <RefreshCw className="h-4 w-4 text-muted-foreground" />
-                  Latest Scan
-                </h2>
-                <Link href={`/history/scrape/${lastScan.id}`}>
-                  <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground h-8">
-                    View Details <ArrowRight className="ml-1 h-3.5 w-3.5" />
-                  </Button>
-                </Link>
-              </div>
-
-              <div className="flex items-center justify-between bg-background/60 rounded-lg border border-border p-4">
-                <div className="flex items-center gap-4">
-                  <div
-                    className={`flex h-10 w-10 items-center justify-center rounded-lg ${lastScanStatusConfig?.bgColor ?? "bg-muted"
-                      }`}
-                  >
-                    {lastScan.status === "in_progress" ? (
-                      <RefreshCw className="h-5 w-5 animate-spin text-blue-500" />
-                    ) : lastScanStatusConfig ? (
-                      <lastScanStatusConfig.icon className={`h-5 w-5 ${lastScanStatusConfig.color}`} />
-                    ) : (
-                      <AlertCircle className="h-5 w-5 text-red-500" />
-                    )}
+            <Link
+              href={`/history/scrape/${lastScan.id}`}
+              className="group flex items-center justify-between rounded-xl border border-border bg-card p-5 transition-all hover:border-border/80 hover:bg-muted/30"
+            >
+              <div className="flex items-center gap-4">
+                <div
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${lastScanStatusConfig?.bgColor ?? "bg-muted"}`}
+                >
+                  {lastScan.status === "in_progress" ? (
+                    <RefreshCw className="h-5 w-5 animate-spin text-blue-500" />
+                  ) : lastScanStatusConfig ? (
+                    <lastScanStatusConfig.icon className={`h-5 w-5 ${lastScanStatusConfig.color}`} />
+                  ) : (
+                    <AlertCircle className="h-5 w-5 text-red-500" />
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Latest Scan</span>
+                    <span className="text-xs text-muted-foreground">&bull;</span>
+                    <span className="text-xs text-muted-foreground">{formatRelativeTime(new Date(lastScan.startedAt))}</span>
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-foreground">
-                        {lastScan.status === "in_progress"
-                          ? "Scanning..."
-                          : (lastScanStatusConfig?.label ?? "Failed")}
-                      </span>
-                      <span className="text-xs text-muted-foreground">&bull;</span>
-                      <span className="text-xs text-muted-foreground">{formatRelativeTime(new Date(lastScan.startedAt))}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
-                      <span>{lastScan.companiesCompleted}/{lastScan.companiesTotal} Companies</span>
-                    </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="font-medium text-foreground group-hover:text-foreground/80 transition-colors">
+                      {lastScan.status === "in_progress"
+                        ? "Scanning..."
+                        : (lastScanStatusConfig?.label ?? "Failed")}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{lastScan.companiesCompleted}/{lastScan.companiesTotal} companies</span>
                   </div>
                 </div>
+              </div>
 
+              <div className="flex items-center gap-4">
                 <div className="text-right">
                   <p className="text-lg font-semibold text-emerald-400">+{lastScan.totalJobsAdded}</p>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider">New</p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">New Jobs</p>
                 </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
               </div>
-            </div>
+            </Link>
           )}
 
           {/* Recently Applied */}
@@ -493,7 +485,7 @@ export default function DashboardPage() {
 
             <div className="space-y-3">
               {appliedJobs.length > 0 ? (
-                appliedJobs.map((job) => (
+                appliedJobs.slice(0, 3).map((job) => (
                   <Link
                     key={job.id}
                     href={`/jobs/${job.id}`}

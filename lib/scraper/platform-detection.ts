@@ -5,6 +5,9 @@ export type DetectedPlatform = Platform | "custom";
 export function detectPlatformFromUrl(url: string): DetectedPlatform {
   const urlLower = url.toLowerCase();
 
+  if (urlLower.includes("google.com/about/careers/applications/jobs")) {
+    return "google";
+  }
   if (urlLower.includes("greenhouse.io") || urlLower.includes("boards.greenhouse")) {
     return "greenhouse";
   }
@@ -19,6 +22,12 @@ export function detectPlatformFromUrl(url: string): DetectedPlatform {
   }
   if (urlLower.includes("eightfold.ai")) {
     return "eightfold";
+  }
+  if (
+    urlLower.includes("atlassian.com/company/careers/all-jobs") ||
+    urlLower.includes("atlassian.com/company/careers/details")
+  ) {
+    return "atlassian";
   }
   if (
     urlLower.includes("uber.com/careers") ||
@@ -38,6 +47,8 @@ export function getPlatformLabel(platform: DetectedPlatform): string {
     eightfold: "Eightfold",
     workday: "Workday",
     uber: "Uber",
+    google: "Google",
+    atlassian: "Atlassian",
     custom: "Custom",
   };
 

@@ -7,6 +7,8 @@ const PLATFORM_VALUES = [
   "workday",
   "eightfold",
   "uber",
+  "google",
+  "atlassian",
   "custom",
 ] as const;
 

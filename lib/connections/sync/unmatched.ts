@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { linkedinConnections, settings } from "@/lib/db/schema";
+import { companies, linkedinConnections, settings } from "@/lib/db/schema";
 import { normalizeCompanyName } from "@/lib/connections/normalize";
 
 const IGNORED_UNMATCHED_COMPANIES_KEY = "connections_ignored_unmatched_companies";
@@ -39,6 +39,10 @@ interface GetUnmatchedCompaniesOptions {
   search?: string;
   limit?: number;
   offset?: number;
+}
+
+interface RefreshUnmatchedCompanyMappingsOptions {
+  companyIds?: number[];
 }
 
 async function getIgnoredUnmatchedCompanies(): Promise<Set<string>> {
@@ -405,6 +409,89 @@ export async function mapUnmatchedCompanyGroup(
   }
 
   return { updatedCount: updated.length };
+}
+
+export async function refreshUnmatchedCompanyMappings(
+  options: RefreshUnmatchedCompanyMappingsOptions = {}
+): Promise<{ mappedConnectionCount: number; mappedCompanyCount: number }> {
+  const normalizedCompanyIds = Array.from(
+    new Set(
+      (options.companyIds ?? []).filter(
+        (id): id is number => Number.isInteger(id) && id > 0
+      )
+    )
+  );
+
+  const trackedCompanies = normalizedCompanyIds.length > 0
+    ? await db
+      .select({
+        id: companies.id,
+        name: companies.name,
+      })
+      .from(companies)
+      .where(inArray(companies.id, normalizedCompanyIds))
+    : await db
+      .select({
+        id: companies.id,
+        name: companies.name,
+      })
+      .from(companies);
+
+  const companyNameMap = new Map<string, number>();
+  for (const company of trackedCompanies) {
+    const companyNormalized = normalizeCompanyName(company.name);
+    if (companyNormalized) {
+      companyNameMap.set(companyNormalized, company.id);
+    }
+  }
+
+  if (companyNameMap.size === 0) {
+    return {
+      mappedConnectionCount: 0,
+      mappedCompanyCount: 0,
+    };
+  }
+
+  const ignoredCompanies = await getIgnoredUnmatchedCompanies();
+  let ignoredCompaniesChanged = false;
+  let mappedConnectionCount = 0;
+  let mappedCompanyCount = 0;
+
+  for (const [companyNormalized, mappedCompanyId] of companyNameMap) {
+    const updated = await db
+      .update(linkedinConnections)
+      .set({
+        mappedCompanyId,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(linkedinConnections.companyNormalized, companyNormalized),
+          sql`${linkedinConnections.mappedCompanyId} IS NULL`
+        )
+      )
+      .returning({ id: linkedinConnections.id });
+
+    if (updated.length === 0) {
+      continue;
+    }
+
+    mappedConnectionCount += updated.length;
+    mappedCompanyCount += 1;
+
+    if (ignoredCompanies.delete(companyNormalized)) {
+      ignoredCompaniesChanged = true;
+    }
+  }
+
+  if (ignoredCompaniesChanged) {
+    await saveIgnoredUnmatchedCompanies(ignoredCompanies);
+  }
+
+  return {
+    mappedConnectionCount,
+    mappedCompanyCount,
+  };
 }
 
 export async function setUnmatchedCompanyIgnored(
