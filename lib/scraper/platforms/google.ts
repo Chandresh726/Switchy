@@ -49,7 +49,12 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
   }
 
   validate(url: string): boolean {
-    return url.toLowerCase().includes("google.com/about/careers/applications/jobs");
+    const lower = url.toLowerCase();
+    return (
+      lower.includes("google.com/about/careers/applications/jobs") ||
+      lower.includes("google.com/about/careers") ||
+      lower.includes("careers.google.com")
+    );
   }
 
   extractIdentifier(url: string): string | null {
@@ -191,9 +196,18 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
 
   private resolveListingUrl(url: string): string {
     const parsed = new URL(url);
-    if (parsed.pathname.includes("/jobs/results/")) {
+    const normalizedPath = parsed.pathname.toLowerCase().replace(/\/+$/, "");
+
+    if (normalizedPath.includes("/jobs/results/")) {
+      parsed.pathname = "/about/careers/applications/jobs/results";
+    } else if (!normalizedPath.includes("/about/careers/applications/jobs/results")) {
       parsed.pathname = "/about/careers/applications/jobs/results";
     }
+
+    if (parsed.hostname === "careers.google.com") {
+      parsed.hostname = "www.google.com";
+    }
+
     return parsed.toString();
   }
 

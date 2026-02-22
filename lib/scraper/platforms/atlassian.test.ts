@@ -119,4 +119,33 @@ describe("AtlassianScraper", () => {
     expect(result.openExternalIds).toEqual(["atlassian-201"]);
     expect(result.openExternalIdsComplete).toBe(true);
   });
+
+  it("supports generic Atlassian careers URLs", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/endpoint/careers/listings")) {
+        return new Response(
+          JSON.stringify([
+            {
+              id: 301,
+              title: "Security Engineer",
+              category: "Engineering",
+              locations: ["Bengaluru, India"],
+              overview: "<p>Protect products.</p>",
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    const scraper = new AtlassianScraper(createHttpClient(fetchMock), {
+      detailDelayMs: 0,
+    });
+    const result = await scraper.scrape("https://www.atlassian.com/company/careers");
+
+    expect(result.success).toBe(true);
+    expect(result.jobs[0]?.externalId).toBe("atlassian-301");
+  });
 });

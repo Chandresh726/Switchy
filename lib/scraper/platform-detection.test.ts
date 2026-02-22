@@ -16,9 +16,12 @@ describe("platform detection", () => {
         "https://www.google.com/about/careers/applications/jobs/results?q=software"
       )
     ).toBe("google");
+    expect(detectPlatformFromUrl("https://www.google.com/about/careers/")).toBe("google");
+    expect(detectPlatformFromUrl("https://careers.google.com/jobs/results/")).toBe("google");
     expect(
       detectPlatformFromUrl("https://www.atlassian.com/company/careers/all-jobs?team=Engineering")
     ).toBe("atlassian");
+    expect(detectPlatformFromUrl("https://www.atlassian.com/company/careers")).toBe("atlassian");
     expect(detectPlatformFromUrl("https://www.uber.com/global/en/careers/list/")).toBe("uber");
     expect(detectPlatformFromUrl("https://careers.example.com")).toBe("custom");
   });

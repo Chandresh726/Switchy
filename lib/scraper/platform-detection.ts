@@ -5,7 +5,11 @@ export type DetectedPlatform = Platform | "custom";
 export function detectPlatformFromUrl(url: string): DetectedPlatform {
   const urlLower = url.toLowerCase();
 
-  if (urlLower.includes("google.com/about/careers/applications/jobs")) {
+  if (
+    urlLower.includes("google.com/about/careers/applications/jobs") ||
+    urlLower.includes("google.com/about/careers") ||
+    urlLower.includes("careers.google.com")
+  ) {
     return "google";
   }
   if (urlLower.includes("greenhouse.io") || urlLower.includes("boards.greenhouse")) {
@@ -25,7 +29,8 @@ export function detectPlatformFromUrl(url: string): DetectedPlatform {
   }
   if (
     urlLower.includes("atlassian.com/company/careers/all-jobs") ||
-    urlLower.includes("atlassian.com/company/careers/details")
+    urlLower.includes("atlassian.com/company/careers/details") ||
+    urlLower.includes("atlassian.com/company/careers")
   ) {
     return "atlassian";
   }

@@ -145,4 +145,42 @@ describe("GoogleScraper", () => {
     expect(result.openExternalIds).toEqual(["google-10"]);
     expect(result.openExternalIdsComplete).toBe(true);
   });
+
+  it("normalizes generic Google careers URLs to the jobs listing endpoint", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/jobs/results") && !url.includes("/jobs/results/")) {
+        return new Response(
+          `
+            <html><body>
+              <a href="/about/careers/applications/jobs/results/20-role-twenty">Role Twenty</a>
+            </body></html>
+          `,
+          { status: 200, headers: { "Content-Type": "text/html" } }
+        );
+      }
+
+      if (url.includes("/jobs/results/20-role-twenty")) {
+        return new Response(
+          `
+            <main>
+              <h2>Role Twenty</h2>
+              <h3>About the job</h3>
+              <p>Build systems.</p>
+            </main>
+          `,
+          { status: 200, headers: { "Content-Type": "text/html" } }
+        );
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    const scraper = new GoogleScraper(createHttpClient(fetchMock), {
+      detailDelayMs: 0,
+    });
+    const result = await scraper.scrape("https://www.google.com/about/careers");
+
+    expect(result.success).toBe(true);
+    expect(result.jobs[0]?.externalId).toBe("google-20");
+  });
 });

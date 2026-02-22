@@ -52,7 +52,8 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
     const lower = url.toLowerCase();
     return (
       lower.includes("atlassian.com/company/careers/all-jobs") ||
-      lower.includes("atlassian.com/company/careers/details")
+      lower.includes("atlassian.com/company/careers/details") ||
+      lower.includes("atlassian.com/company/careers")
     );
   }
 
