@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { MessageCircle, FileText } from "lucide-react";
+import Link from "next/link";
+import { MessageCircle, FileText, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { AIContentEditor } from "@/components/ai-content-editor";
@@ -13,11 +14,12 @@ interface JobAIActionsProps {
   jobId: number;
   jobTitle: string;
   companyName: string;
+  companyId: number;
 }
 
 type AIAction = "referral" | "cover-letter";
 
-export function JobAIActions({ jobId, jobTitle, companyName }: JobAIActionsProps) {
+export function JobAIActions({ jobId, jobTitle, companyName, companyId }: JobAIActionsProps) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -83,7 +85,7 @@ export function JobAIActions({ jobId, jobTitle, companyName }: JobAIActionsProps
 
   const saveEdit = async (newContent: string, userPrompt?: string) => {
     if (!generatedContent) return;
-    
+
     const res = await fetch(`/api/ai/content/${generatedContent.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -133,7 +135,19 @@ export function JobAIActions({ jobId, jobTitle, companyName }: JobAIActionsProps
           <MessageCircle className="h-4 w-4" />
           Get Referral
         </Button>
-        
+
+        <Button
+          variant="outline"
+          size="sm"
+          asChild
+          className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+        >
+          <Link href={`/companies/${companyId}/connections`}>
+            <Users className="h-4 w-4" />
+            View Connections
+          </Link>
+        </Button>
+
         <Button
           variant="outline"
           size="sm"

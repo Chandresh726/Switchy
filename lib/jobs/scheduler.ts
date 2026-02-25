@@ -3,7 +3,7 @@ import { CronExpressionParser } from "cron-parser";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { getScrapingModule } from "@/lib/scraper";
+import { createScrapingModule } from "@/lib/scraper";
 
 const DEFAULT_CRON = "0 */6 * * *";
 const SCHEDULER_ENABLED_KEY = "scheduler_enabled";
@@ -177,7 +177,9 @@ export async function runScheduledRefresh(): Promise<void> {
     return;
   }
 
-  const { orchestrator, repository } = getScrapingModule();
+  // Build a fresh scraping module per run to avoid stale in-memory registry state
+  // in long-lived scheduler processes.
+  const { orchestrator, repository } = createScrapingModule();
   const ownerId = `scheduler-${process.pid}-${crypto.randomUUID()}`;
   const lockToken = await repository.acquireSchedulerLock(ownerId);
 

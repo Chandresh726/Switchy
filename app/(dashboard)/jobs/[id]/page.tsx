@@ -165,7 +165,7 @@ export default function JobDetailPage() {
       <div className="mb-6 border-b border-border pb-6">
         <div className="flex items-start gap-4">
           <Link
-            href={`/companies/${job.company.id}`}
+            href={`/companies/${job.company.id}/jobs`}
             className="transition-opacity hover:opacity-85"
             title={`View company details for ${job.company.name}`}
             aria-label={`View company details for ${job.company.name}`}
@@ -322,6 +322,7 @@ export default function JobDetailPage() {
             jobId={job.id}
             jobTitle={job.title}
             companyName={job.company.name}
+            companyId={job.company.id}
           />
 
           <ApplyButton
@@ -332,10 +333,10 @@ export default function JobDetailPage() {
               isReadOnlyPostingAction
                 ? undefined
                 : () => {
-                    if (job.status !== "applied") {
-                      updateStatusMutation.mutate("applied");
-                    }
+                  if (job.status !== "applied") {
+                    updateStatusMutation.mutate("applied");
                   }
+                }
             }
           />
         </div>

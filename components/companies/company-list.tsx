@@ -106,14 +106,12 @@ function ToggleSwitch({
         e.stopPropagation();
         onChange(!checked);
       }}
-      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 ${
-        checked ? "bg-emerald-500" : "bg-muted"
-      }`}
+      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 ${checked ? "bg-emerald-500" : "bg-muted"
+        }`}
     >
       <span
-        className={`pointer-events-none block h-3.5 w-3.5 rounded-full bg-white shadow-lg ring-0 transition-transform ${
-          checked ? "translate-x-4" : "translate-x-0.5"
-        }`}
+        className={`pointer-events-none block h-3.5 w-3.5 rounded-full bg-white shadow-lg ring-0 transition-transform ${checked ? "translate-x-4" : "translate-x-0.5"
+          }`}
       />
     </button>
   );
@@ -207,18 +205,17 @@ export function CompanyList({
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {companies.map((company) => {
           const isSelected = selectedIds.includes(company.id);
-          
+
           return (
             <div
               key={company.id}
               onClick={() => handleCardClick(company)}
-              className={`group relative rounded-lg border bg-card/70 p-4 transition-all ${
-                selectionMode
+              className={`group relative rounded-lg border bg-card/70 p-4 transition-all ${selectionMode
                   ? isSelected
                     ? "border-emerald-500 ring-1 ring-emerald-500/50 bg-emerald-500/5"
                     : "border-border hover:border-emerald-500/50 cursor-pointer"
                   : "border-border hover:border-border"
-              } ${!company.isActive && !isSelected ? "opacity-60 grayscale" : ""}`}
+                } ${!company.isActive && !isSelected ? "opacity-60 grayscale" : ""}`}
             >
               {isSelected && (
                 <div className="absolute right-2 top-2">
@@ -242,7 +239,7 @@ export function CompanyList({
                   )}
                   <div>
                     <Link
-                      href={`/companies/${company.id}`}
+                      href={`/companies/${company.id}/jobs`}
                       className="font-medium text-foreground hover:text-emerald-400 transition-colors"
                       title={`View company details for ${company.name}`}
                       onClick={(e) => selectionMode && e.preventDefault()}
@@ -252,85 +249,85 @@ export function CompanyList({
                   </div>
                 </div>
 
-              {!selectionMode && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="opacity-0 transition-opacity group-hover:opacity-100"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="end"
-                    className="w-56"
-                    onCloseAutoFocus={(event) => {
-                      if (suppressCloseAutoFocusRef.current) {
-                        event.preventDefault();
-                        suppressCloseAutoFocusRef.current = false;
-                      }
-                    }}
-                  >
-                    <DropdownMenuItem
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onRefreshJobs(company.id);
+                {!selectionMode && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="opacity-0 transition-opacity group-hover:opacity-100"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      className="w-56"
+                      onCloseAutoFocus={(event) => {
+                        if (suppressCloseAutoFocusRef.current) {
+                          event.preventDefault();
+                          suppressCloseAutoFocusRef.current = false;
+                        }
                       }}
-                      disabled={isRefreshing}
-                      className="cursor-pointer"
                     >
-                      <RefreshCw className="mr-2 h-4 w-4" />
-                      <span className="truncate">Refresh Jobs</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onRefreshMatches(company.id);
-                      }}
-                      disabled={isMatching}
-                      className="text-purple-400 focus:text-purple-400 cursor-pointer"
-                    >
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      <span className="truncate">Refresh Matching</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteJobsCompanyId(company.id);
-                      }}
-                      className="text-orange-400 focus:text-orange-400 cursor-pointer"
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      <span className="truncate">Delete All Jobs</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        suppressCloseAutoFocusRef.current = true;
-                        onEditCompany(company);
-                      }}
-                      className="cursor-pointer"
-                    >
-                      <Pencil className="mr-2 h-4 w-4" />
-                      <span className="truncate">Edit</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteMutation.mutate(company.id);
-                      }}
-                      className="text-red-400 focus:text-red-400 cursor-pointer"
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      <span className="truncate">Delete</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRefreshJobs(company.id);
+                        }}
+                        disabled={isRefreshing}
+                        className="cursor-pointer"
+                      >
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        <span className="truncate">Refresh Jobs</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRefreshMatches(company.id);
+                        }}
+                        disabled={isMatching}
+                        className="text-purple-400 focus:text-purple-400 cursor-pointer"
+                      >
+                        <Sparkles className="mr-2 h-4 w-4" />
+                        <span className="truncate">Refresh Matching</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteJobsCompanyId(company.id);
+                        }}
+                        className="text-orange-400 focus:text-orange-400 cursor-pointer"
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        <span className="truncate">Delete All Jobs</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          suppressCloseAutoFocusRef.current = true;
+                          onEditCompany(company);
+                        }}
+                        className="cursor-pointer"
+                      >
+                        <Pencil className="mr-2 h-4 w-4" />
+                        <span className="truncate">Edit</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteMutation.mutate(company.id);
+                        }}
+                        className="text-red-400 focus:text-red-400 cursor-pointer"
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        <span className="truncate">Delete</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </div>
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
