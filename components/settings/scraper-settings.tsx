@@ -30,6 +30,8 @@ interface ScraperSettingsProps {
   onSchedulerEnabledChange: (value: boolean) => void;
   schedulerCron: string;
   onSchedulerCronChange: (value: string) => void;
+  maxParallelScrapes: number;
+  onMaxParallelScrapesChange: (value: number) => void;
   filterCountry: string;
   filterCity: string;
   onFilterCountryChange: (value: string) => void;
@@ -47,6 +49,8 @@ export function ScraperSettings({
   onSchedulerEnabledChange,
   schedulerCron,
   onSchedulerCronChange,
+  maxParallelScrapes,
+  onMaxParallelScrapesChange,
   filterCountry,
   filterCity,
   onFilterCountryChange,
@@ -139,6 +143,27 @@ export function ScraperSettings({
               <ScrapeCountdown />
             )}
           </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-6 pt-4 border-t border-border">
+          <div className="space-y-1">
+            <Label htmlFor="max-parallel-scrapes">Max Parallel Scrapes</Label>
+            <p className="text-xs text-muted-foreground">
+              Max concurrent company scrapes.
+            </p>
+          </div>
+          <Input
+            id="max-parallel-scrapes"
+            type="number"
+            min={1}
+            max={10}
+            value={maxParallelScrapes}
+            onChange={(e) => {
+              const parsed = parseInt(e.target.value, 10);
+              onMaxParallelScrapesChange(Math.min(10, Math.max(1, Number.isNaN(parsed) ? 1 : parsed)));
+            }}
+            className="bg-background/60 border-border w-[100px] text-center shrink-0"
+          />
         </div>
 
         <div className="space-y-4 pt-4 border-t border-border">

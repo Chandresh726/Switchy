@@ -26,6 +26,7 @@ export interface SettingsRecord {
   matcher_auto_match_after_scrape: string;
   scheduler_enabled: string;
   scheduler_cron: string;
+  scraper_max_parallel_scrapes: string;
   scraper_filter_country?: string;
   scraper_filter_city?: string;
   scraper_filter_title_keywords?: string;

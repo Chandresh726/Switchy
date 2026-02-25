@@ -11,6 +11,7 @@ describe("settings service", () => {
     expect(DEFAULT_SETTINGS.matcher_reasoning_effort).toBe("medium");
     expect(DEFAULT_SETTINGS.resume_parser_reasoning_effort).toBe("medium");
     expect(DEFAULT_SETTINGS.ai_writing_reasoning_effort).toBe("medium");
+    expect(DEFAULT_SETTINGS.scraper_max_parallel_scrapes).toBe("3");
   });
 
   it("parses scheduler toggles and numeric matcher settings", () => {
@@ -44,6 +45,19 @@ describe("settings service", () => {
     ]);
   });
 
+  it("parses scraper max parallel scrapes setting", () => {
+    const parsed = parseSettingsUpdateBody({
+      scraper_max_parallel_scrapes: 4,
+    });
+
+    expect(parsed.updates).toEqual([
+      {
+        key: "scraper_max_parallel_scrapes",
+        value: "4",
+      },
+    ]);
+  });
+
   it("normalizes cover letter focus arrays and removes unsupported values", () => {
     const parsed = parseSettingsUpdateBody({
       cover_letter_focus: ["skills", "all", "experience", "invalid"],
@@ -69,6 +83,14 @@ describe("settings service", () => {
     expect(() =>
       parseSettingsUpdateBody({
         matcher_circuit_breaker_threshold: 100,
+      })
+    ).toThrow(APIValidationError);
+  });
+
+  it("throws validation errors for out-of-range scraper parallel scrapes", () => {
+    expect(() =>
+      parseSettingsUpdateBody({
+        scraper_max_parallel_scrapes: 20,
       })
     ).toThrow(APIValidationError);
   });

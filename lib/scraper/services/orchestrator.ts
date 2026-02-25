@@ -35,6 +35,10 @@ const ARCHIVABLE_JOB_STATUSES = ["new", "viewed", "interested", "rejected"];
 const UBER_ARCHIVE_MISSING_ABSOLUTE_THRESHOLD = 5;
 const UBER_ARCHIVE_MISSING_RATIO_THRESHOLD = 0.05;
 const SAFE_HYDRATION_MATCH_REASONS: DeduplicationMatchReason[] = ["externalId", "url"];
+const SCRAPER_MAX_PARALLEL_SCRAPES_KEY = "scraper_max_parallel_scrapes";
+const DEFAULT_MAX_PARALLEL_SCRAPES = 3;
+const MIN_PARALLEL_SCRAPES = 1;
+const MAX_PARALLEL_SCRAPES = 10;
 
 export interface IScrapeOrchestrator {
   scrapeAllCompanies(trigger: TriggerSource): Promise<BatchFetchResult>;
@@ -163,33 +167,68 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       companiesTotal: companiesToScrape.length,
     });
 
-    const results: FetchResult[] = [];
+    const maxParallelScrapes = await this.loadMaxParallelScrapes();
+    const workerCount = Math.min(maxParallelScrapes, companiesToScrape.length);
+    const resultsByIndex: Array<FetchResult | undefined> = new Array(companiesToScrape.length);
+    let nextCompanyIndex = 0;
+    let stopRequested = false;
+    let progressUpdateChain = Promise.resolve();
 
-    for (const company of companiesToScrape) {
-      const isSessionActive = await this.repository.isSessionInProgress(sessionId);
-      if (!isSessionActive) {
-        console.log(`[ScrapeOrchestrator] Session ${sessionId} stop requested`);
-        break;
+    const processNextCompany = async (): Promise<void> => {
+      while (true) {
+        if (stopRequested) {
+          return;
+        }
+
+        const companyIndex = nextCompanyIndex;
+        if (companyIndex >= companiesToScrape.length) {
+          return;
+        }
+
+        nextCompanyIndex += 1;
+
+        const isSessionActive = await this.repository.isSessionInProgress(sessionId);
+        if (!isSessionActive) {
+          stopRequested = true;
+          console.log(`[ScrapeOrchestrator] Session ${sessionId} stop requested`);
+          return;
+        }
+
+        const company = companiesToScrape[companyIndex];
+        const result = this.isCustomPlatform(company.platform)
+          ? this.createSkippedResult(company.id, company.name, "Skipping custom platform company")
+          : await this.scrapeCompanyInternal(
+              company.id,
+              company.name,
+              company.careersUrl,
+              this.resolvePlatform(company.platform),
+              company.boardToken,
+              { sessionId, triggerSource: trigger }
+            );
+
+        resultsByIndex[companyIndex] = result;
+        const completedResults = resultsByIndex.filter(
+          (entry): entry is FetchResult => entry !== undefined
+        );
+        const progress = this.calculateBatchProgress(completedResults);
+
+        progressUpdateChain = progressUpdateChain.then(async () => {
+          await this.repository.updateSessionProgress(sessionId, progress);
+        });
+        await progressUpdateChain;
       }
+    };
 
-      const result = this.isCustomPlatform(company.platform)
-        ? this.createSkippedResult(company.id, company.name, "Skipping custom platform company")
-        : await this.scrapeCompanyInternal(
-            company.id,
-            company.name,
-            company.careersUrl,
-            this.resolvePlatform(company.platform),
-            company.boardToken,
-            { sessionId, triggerSource: trigger }
-          );
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        await processNextCompany();
+      })
+    );
+    await progressUpdateChain;
 
-      results.push(result);
-
-      await this.repository.updateSessionProgress(
-        sessionId,
-        this.calculateBatchProgress(results)
-      );
-    }
+    const results = resultsByIndex.filter(
+      (entry): entry is FetchResult => entry !== undefined
+    );
 
     const shouldCompleteSession = await this.repository.isSessionInProgress(sessionId);
 
@@ -738,6 +777,21 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
           ? titleKeywords
           : this.config.defaultFilters.titleKeywords,
     };
+  }
+
+  private async loadMaxParallelScrapes(): Promise<number> {
+    const configuredValue = await this.repository.getSetting(SCRAPER_MAX_PARALLEL_SCRAPES_KEY);
+    const parsed = parseInt(configuredValue ?? "", 10);
+
+    if (
+      Number.isNaN(parsed) ||
+      parsed < MIN_PARALLEL_SCRAPES ||
+      parsed > MAX_PARALLEL_SCRAPES
+    ) {
+      return DEFAULT_MAX_PARALLEL_SCRAPES;
+    }
+
+    return parsed;
   }
 
   private runBackgroundMatching(

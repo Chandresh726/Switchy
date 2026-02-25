@@ -28,6 +28,11 @@ import type {
 
 const getDefaultReasoningEffort = (): ReasoningEffort => "medium";
 const PROVIDER_MODELS_STALE_TIME_MS = 15 * 60 * 1000;
+const DEFAULT_SCRAPER_MAX_PARALLEL_SCRAPES = 3;
+
+function clampScraperParallelScrapes(value: number): number {
+  return Math.min(10, Math.max(1, value));
+}
 
 interface MatcherLocalEdits {
   matcherModel?: string;
@@ -52,6 +57,7 @@ interface ResumeParserLocalEdits {
 interface ScraperLocalEdits {
   schedulerEnabled?: boolean;
   schedulerCron?: string;
+  maxParallelScrapes?: number;
   filterCountry?: string;
   filterCity?: string;
   filterTitleKeywords?: string[];
@@ -394,6 +400,15 @@ function SettingsContent() {
       schedulerCron:
         scraperLocalEdits.schedulerCron ??
         (settings?.scheduler_cron || "0 */6 * * *"),
+      maxParallelScrapes:
+        scraperLocalEdits.maxParallelScrapes ??
+        clampScraperParallelScrapes(
+          parseInt(
+            settings?.scraper_max_parallel_scrapes ||
+              String(DEFAULT_SCRAPER_MAX_PARALLEL_SCRAPES),
+            10
+          ) || DEFAULT_SCRAPER_MAX_PARALLEL_SCRAPES
+        ),
       filterCountry: scraperLocalEdits.filterCountry ?? (settings?.scraper_filter_country || "India"),
       filterCity: scraperLocalEdits.filterCity ?? (settings?.scraper_filter_city || ""),
       filterTitleKeywords: (() => {
@@ -435,7 +450,7 @@ function SettingsContent() {
 
   const {
     matcherModel, matcherProviderId, resumeParserModel, resumeParserProviderId, matcherReasoningEffort, resumeParserReasoningEffort, bulkEnabled, serializeOperations, batchSize, maxRetries, concurrencyLimit, timeoutMs,
-    circuitBreakerThreshold, autoMatchAfterScrape, schedulerEnabled, schedulerCron, filterCountry, filterCity, filterTitleKeywords,
+    circuitBreakerThreshold, autoMatchAfterScrape, schedulerEnabled, schedulerCron, maxParallelScrapes, filterCountry, filterCity, filterTitleKeywords,
     aiWritingModel, aiWritingProviderId, aiWritingReasoningEffort, referralTone, referralLength,
     coverLetterTone, coverLetterLength, coverLetterFocus
   } = derivedValues;
@@ -615,6 +630,7 @@ function SettingsContent() {
 
   const scraperHasUnsavedChanges =
     scraperLocalEdits.schedulerCron !== undefined ||
+    scraperLocalEdits.maxParallelScrapes !== undefined ||
     scraperLocalEdits.filterCountry !== undefined ||
     scraperLocalEdits.filterCity !== undefined ||
     scraperLocalEdits.filterTitleKeywords !== undefined;
@@ -660,6 +676,8 @@ function SettingsContent() {
     setResumeParserLocalEdits(prev => ({ ...prev, resumeParserReasoningEffort: value }));
   const setSchedulerCron = (value: string) =>
     setScraperLocalEdits((prev) => ({ ...prev, schedulerCron: value }));
+  const setMaxParallelScrapes = (value: number) =>
+    setScraperLocalEdits((prev) => ({ ...prev, maxParallelScrapes: clampScraperParallelScrapes(value) }));
   const setFilterCountry = (value: string) =>
     setScraperLocalEdits((prev) => ({ ...prev, filterCountry: value }));
   const setFilterCity = (value: string) =>
@@ -845,6 +863,7 @@ function SettingsContent() {
         "/api/settings",
         {
           scheduler_cron: schedulerCron,
+          scraper_max_parallel_scrapes: maxParallelScrapes,
           scraper_filter_country: filterCountry,
           scraper_filter_city: filterCity,
           scraper_filter_title_keywords: JSON.stringify(filterTitleKeywords),
@@ -857,6 +876,7 @@ function SettingsContent() {
       setScraperLocalEdits((prev) => ({
         ...prev,
         schedulerCron: undefined,
+        maxParallelScrapes: undefined,
         filterCountry: undefined,
         filterCity: undefined,
         filterTitleKeywords: undefined,
@@ -1109,6 +1129,8 @@ function SettingsContent() {
             onSchedulerEnabledChange={handleSchedulerEnabledChange}
             schedulerCron={schedulerCron}
             onSchedulerCronChange={setSchedulerCron}
+            maxParallelScrapes={maxParallelScrapes}
+            onMaxParallelScrapesChange={setMaxParallelScrapes}
             filterCountry={filterCountry}
             filterCity={filterCity}
             onFilterCountryChange={setFilterCountry}

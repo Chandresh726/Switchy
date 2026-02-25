@@ -49,6 +49,7 @@ interface RepositoryMockOptions {
   matchableJobIds?: number[];
   existingJobs?: ExistingJob[];
   updatedExistingJobsCount?: number;
+  settingValues?: Record<string, string | null | undefined>;
 }
 
 function createRepositoryMock(options: RepositoryMockOptions = {}) {
@@ -57,12 +58,13 @@ function createRepositoryMock(options: RepositoryMockOptions = {}) {
   const matchableJobIds = options.matchableJobIds ?? insertedJobIds;
   const existingJobs = options.existingJobs ?? [];
   const updatedExistingJobsCount = options.updatedExistingJobsCount ?? 0;
+  const settingValues = options.settingValues ?? {};
 
   return {
     getCompany: vi.fn(async (id: number) => activeCompanies.find((item) => item.id === id) ?? null),
     getActiveCompanies: vi.fn(async () => activeCompanies),
     getExistingJobs: vi.fn(async () => existingJobs),
-    getSetting: vi.fn(async () => null),
+    getSetting: vi.fn(async (key: string) => settingValues[key] ?? null),
     reopenScraperArchivedJobs: vi.fn(async () => 0),
     archiveMissingJobs: vi.fn(async () => 0),
     insertJobs: vi.fn(async () => insertedJobIds),
@@ -80,6 +82,15 @@ function createRepositoryMock(options: RepositoryMockOptions = {}) {
     refreshSchedulerLock: vi.fn(async () => null),
     releaseSchedulerLock: vi.fn(async () => undefined),
   };
+}
+
+function createActiveCompanies(count: number): Company[] {
+  return Array.from({ length: count }, (_, index) => ({
+    ...company,
+    id: index + 1,
+    name: `Company ${index + 1}`,
+    careersUrl: `https://jobs.example.com/${index + 1}`,
+  }));
 }
 
 function createRegistryMock(
@@ -353,6 +364,88 @@ describe("ScrapeOrchestrator", () => {
 
     expect(result.summary.failedCompanies).toBe(1);
     expect(repository.completeSession).toHaveBeenCalledWith(result.sessionId, "partial");
+  });
+
+  it("respects configured max parallel scrapes for batch runs", async () => {
+    const activeCompanies = createActiveCompanies(6);
+    const repository = createRepositoryMock({
+      activeCompanies,
+      insertedJobIds: [],
+      settingValues: {
+        scraper_max_parallel_scrapes: "2",
+      },
+    });
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+
+    const registry = createRegistryMock(async () => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      inFlight -= 1;
+      return {
+        success: true,
+        outcome: "success",
+        jobs: [],
+        openExternalIds: [],
+        openExternalIdsComplete: true,
+      };
+    });
+
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    const result = await orchestrator.scrapeAllCompanies("manual");
+
+    expect(result.summary.totalCompanies).toBe(6);
+    expect(maxInFlight).toBeLessThanOrEqual(2);
+  });
+
+  it("falls back to default parallel scrapes when setting is invalid", async () => {
+    const activeCompanies = createActiveCompanies(8);
+    const repository = createRepositoryMock({
+      activeCompanies,
+      insertedJobIds: [],
+      settingValues: {
+        scraper_max_parallel_scrapes: "100",
+      },
+    });
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+
+    const registry = createRegistryMock(async () => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      inFlight -= 1;
+      return {
+        success: true,
+        outcome: "success",
+        jobs: [],
+        openExternalIds: [],
+        openExternalIdsComplete: true,
+      };
+    });
+
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    const result = await orchestrator.scrapeAllCompanies("manual");
+
+    expect(result.summary.totalCompanies).toBe(8);
+    expect(maxInFlight).toBeLessThanOrEqual(3);
   });
 
   it("does not trigger auto-match when inserted jobs have no descriptions", async () => {
