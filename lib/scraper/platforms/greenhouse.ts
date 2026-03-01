@@ -44,10 +44,33 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
   }
 
   extractIdentifier(url: string): string | null {
+    try {
+      const parsedUrl = new URL(url);
+      const hostname = parsedUrl.hostname.toLowerCase();
+      const firstPathSegment = parsedUrl.pathname.split("/").filter(Boolean)[0];
+
+      const isBoardsHost = /^boards(?:\.[^.]+)?\.greenhouse\.io$/i.test(hostname);
+      const isJobBoardsHost = /^job-boards(?:\.[^.]+)?\.greenhouse\.io$/i.test(hostname);
+
+      if ((isBoardsHost || isJobBoardsHost) && firstPathSegment) {
+        return decodeURIComponent(firstPathSegment);
+      }
+
+      const greenhouseSubdomainMatch = hostname.match(/^([^.]+)\.greenhouse\.io$/i);
+      if (greenhouseSubdomainMatch?.[1]) {
+        const subdomain = greenhouseSubdomainMatch[1].toLowerCase();
+        if (subdomain !== "boards" && subdomain !== "job-boards") {
+          return subdomain;
+        }
+      }
+    } catch {
+      // Fall through to regex parsing for non-standard input.
+    }
+
     const patterns = [
-      /boards\.greenhouse\.io\/([^\/\?]+)/i,
-      /job-boards\.greenhouse\.io\/([^\/\?]+)/i,
-      /([^\.]+)\.greenhouse\.io/i,
+      /boards(?:\.[^\/\.]+)?\.greenhouse\.io\/([^\/\?]+)/i,
+      /job-boards(?:\.[^\/\.]+)?\.greenhouse\.io\/([^\/\?]+)/i,
+      /(?:https?:\/\/)?([^\.\/\?]+)\.greenhouse\.io/i,
     ];
 
     for (const pattern of patterns) {
