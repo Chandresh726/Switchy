@@ -2,12 +2,14 @@
 
 import { Lightbulb } from "lucide-react";
 
-import { CompanyConnectionCard } from "./company-connection-card";
+import { isRecruiterPosition } from "@/lib/people/position";
 
-import type { CompanyConnection } from "./types";
+import { CompanyPersonCard } from "./company-person-card";
+
+import type { CompanyPerson } from "./types";
 
 interface CompanyOutreachSuggestionsProps {
-  connections: CompanyConnection[];
+  people: CompanyPerson[];
 }
 
 const SENIORITY_KEYWORDS: Record<string, number> = {
@@ -24,13 +26,14 @@ const SENIORITY_KEYWORDS: Record<string, number> = {
   developer: 2,
 };
 
-function getOutreachScore(connection: CompanyConnection): number {
+function getOutreachScore(person: CompanyPerson): number {
   let score = 0;
 
-  if (connection.isStarred) score += 10;
+  if (person.isStarred) score += 10;
+  if (isRecruiterPosition(person.position)) score += 8;
 
-  if (connection.position) {
-    const positionLower = connection.position.toLowerCase();
+  if (person.position) {
+    const positionLower = person.position.toLowerCase();
     for (const [keyword, value] of Object.entries(SENIORITY_KEYWORDS)) {
       if (positionLower.includes(keyword)) {
         score += value;
@@ -39,18 +42,18 @@ function getOutreachScore(connection: CompanyConnection): number {
     }
   }
 
-  if (connection.email) score += 2;
+  if (person.email) score += 2;
 
   return score;
 }
 
-export function CompanyOutreachSuggestions({ connections }: CompanyOutreachSuggestionsProps) {
-  const suggestedConnections = [...connections]
-    .map((conn) => ({ ...conn, _score: getOutreachScore(conn) }))
+export function CompanyOutreachSuggestions({ people }: CompanyOutreachSuggestionsProps) {
+  const suggestedPeople = [...people]
+    .map((person) => ({ ...person, _score: getOutreachScore(person) }))
     .sort((a, b) => b._score - a._score)
     .slice(0, 3);
 
-  if (suggestedConnections.length === 0) return null;
+  if (suggestedPeople.length === 0) return null;
 
   return (
     <div className="space-y-3">
@@ -58,15 +61,15 @@ export function CompanyOutreachSuggestions({ connections }: CompanyOutreachSugge
         <Lightbulb className="h-4 w-4 text-purple-400" />
         <h3 className="text-sm font-medium text-foreground">Outreach Suggestions</h3>
         <span className="text-xs text-muted-foreground">
-          Best connections for referral requests
+          Best people for referral requests
         </span>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        {suggestedConnections.map((connection) => (
-          <CompanyConnectionCard
-            key={connection.id}
-            connection={connection}
+        {suggestedPeople.map((person) => (
+          <CompanyPersonCard
+            key={person.id}
+            person={person}
             showOutreachBadge
           />
         ))}

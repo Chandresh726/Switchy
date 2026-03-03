@@ -4,7 +4,7 @@ export { CompanyActions } from "./company-actions";
 export { CompanyTabs } from "./company-tabs";
 export { CompanyLayoutClient } from "./company-layout-client";
 export { CompanyJobsTab } from "./company-jobs-tab";
-export { CompanyConnectionsTab } from "./company-connections-tab";
+export { CompanyPeopleTab } from "./company-people-tab";
 export { CompanyActivityTab } from "./company-activity-tab";
 
 export * from "./types";

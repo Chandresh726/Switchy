@@ -19,22 +19,22 @@ export const jobKeys = {
   archivedCount: () => [...jobKeys.all, "archived-count"] as const,
 };
 
-export const connectionKeys = {
-  all: ["connections"] as const,
-  list: () => [...connectionKeys.all] as const,
-  listWithParams: (params: Record<string, unknown>) => [...connectionKeys.all, params] as const,
-  totalCount: () => [...connectionKeys.all, "total-count"] as const,
-  byCompany: (companyId: number) => [...connectionKeys.all, "company", companyId] as const,
-  importSessions: () => ["connection-import-sessions"] as const,
+export const peopleKeys = {
+  all: ["people"] as const,
+  list: () => [...peopleKeys.all] as const,
+  listWithParams: (params: Record<string, unknown>) => [...peopleKeys.all, params] as const,
+  totalCount: () => [...peopleKeys.all, "total-count"] as const,
+  byCompany: (companyId: number) => [...peopleKeys.all, "company", companyId] as const,
+  importSessions: () => ["people-import-sessions"] as const,
   unmatchedCompanies: {
-    all: () => ["unmatched-linkedin-companies"] as const,
-    summary: () => [...connectionKeys.unmatchedCompanies.all(), "summary"] as const,
+    all: () => ["unmatched-people-companies"] as const,
+    summary: () => [...peopleKeys.unmatchedCompanies.all(), "summary"] as const,
     list: (mode: string, search: string, page: number, pageSize: number) =>
-      [`${mode}-linkedin-companies`, search, page, pageSize] as const,
-    connections: (companyNormalized: string, page: number, pageSize: number) =>
-      ["unmatched-company-connections", companyNormalized, page, pageSize] as const,
+      [`${mode}-people-companies`, search, page, pageSize] as const,
+    people: (companyNormalized: string, page: number, pageSize: number) =>
+      ["unmatched-company-people", companyNormalized, page, pageSize] as const,
   },
-  ignoredCompanies: () => ["ignored-linkedin-companies"] as const,
+  ignoredCompanies: () => ["ignored-unmatched-people-companies"] as const,
 };
 
 export const profileKeys = {

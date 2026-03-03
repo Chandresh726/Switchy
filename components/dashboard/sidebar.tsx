@@ -34,7 +34,7 @@ const mainNavigation = [
   { name: "Profile", href: "/profile", icon: User },
 ];
 
-const connectionsNavigation = { name: "Connections", href: "/connections", icon: Users };
+const peopleNavigation = { name: "People", href: "/people", icon: Users };
 const historyNavigation = { name: "History", href: "/history", icon: History };
 const settingsNavigation = { name: "Settings", href: "/settings", icon: Settings };
 
@@ -77,7 +77,7 @@ export function Sidebar() {
 
       {/* Bottom Navigation */}
       <div className="space-y-1 border-t border-sidebar-border px-3 py-4">
-        {renderNavItem(connectionsNavigation)}
+        {renderNavItem(peopleNavigation)}
         {renderNavItem(historyNavigation)}
         {renderNavItem(settingsNavigation)}
         <ThemeToggle />

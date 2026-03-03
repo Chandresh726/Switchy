@@ -13,7 +13,7 @@ interface CompanyLayoutClientProps {
 
 const TABS = [
     { id: "jobs", label: "Jobs", icon: Briefcase, href: (id: number) => `/companies/${id}/jobs` },
-    { id: "connections", label: "Connections", icon: Users, href: (id: number) => `/companies/${id}/connections` },
+    { id: "people", label: "People", icon: Users, href: (id: number) => `/companies/${id}/people` },
     { id: "activity", label: "Activity", icon: Activity, href: (id: number) => `/companies/${id}/activity` },
 ] as const;
 

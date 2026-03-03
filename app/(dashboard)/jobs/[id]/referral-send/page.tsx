@@ -24,8 +24,9 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { canOpenLinkedInProfile } from "@/lib/connections/message";
-import { applyConnectionPlaceholder } from "@/lib/connections/referral-template";
+import { canOpenLinkedInProfile } from "@/lib/people/message";
+import { isRecruiterPosition } from "@/lib/people/position";
+import { applyConnectionPlaceholder } from "@/lib/people/referral-template";
 import { cn } from "@/lib/utils";
 
 interface JobResponse {
@@ -57,8 +58,8 @@ interface ReferralContentResponse {
   content: ReferralContent | null;
 }
 
-interface ConnectionResponse {
-  connections: Array<{
+interface PeopleResponse {
+  people: Array<{
     id: number;
     firstName: string;
     fullName: string;
@@ -104,13 +105,13 @@ export default function ReferralSendPage() {
 
   const job = jobData?.jobs?.[0];
 
-  const { data: connectionsData, isLoading: isConnectionsLoading } = useQuery<ConnectionResponse>({
-    queryKey: ["connections", "company", job?.company.id],
+  const { data: peopleData, isLoading: isPeopleLoading } = useQuery<PeopleResponse>({
+    queryKey: ["people", "company", job?.company.id],
     queryFn: async () => {
       const res = await fetch(
-        `/api/connections?companyId=${job?.company.id}&active=true&limit=200&sortBy=isStarred&sortOrder=desc`
+        `/api/people?companyId=${job?.company.id}&active=true&limit=200&sortBy=isStarred&sortOrder=desc`
       );
-      if (!res.ok) throw new Error("Failed to fetch company connections");
+      if (!res.ok) throw new Error("Failed to fetch company people");
       return res.json();
     },
     enabled: Boolean(job?.company.id),
@@ -118,7 +119,7 @@ export default function ReferralSendPage() {
 
   const starMutation = useMutation({
     mutationFn: async ({ id, isStarred }: { id: number; isStarred: boolean }) => {
-      const res = await fetch(`/api/connections/${id}`, {
+      const res = await fetch(`/api/people/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isStarred }),
@@ -127,9 +128,18 @@ export default function ReferralSendPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["people"] });
     },
   });
+
+  const prioritizedPeople = useMemo(() => {
+    const rows = peopleData?.people || [];
+    return [...rows].sort((a, b) => {
+      const recruiterDelta = Number(isRecruiterPosition(b.position)) - Number(isRecruiterPosition(a.position));
+      if (recruiterDelta !== 0) return recruiterDelta;
+      return Number(b.isStarred) - Number(a.isStarred);
+    });
+  }, [peopleData]);
 
   const selectVariantByIndex = useCallback(
     (index: number, content?: ReferralContent | null) => {
@@ -402,7 +412,7 @@ export default function ReferralSendPage() {
                 disabled={!currentTemplate.trim() || isContentLoading || isSending || isSaving}
               >
                 <Linkedin className="h-4 w-4" />
-                Ask Connections
+                Ask People
               </Button>
             )}
           </div>
@@ -517,31 +527,31 @@ export default function ReferralSendPage() {
         <div className="rounded-xl border border-border bg-card/70 p-4">
           <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
             <div>
-              <h2 className="text-base font-medium text-foreground">Connections at {job.company.name}</h2>
+              <h2 className="text-base font-medium text-foreground">People at {job.company.name}</h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 Copy a personalized message and open their profile to send manually.
               </p>
             </div>
             <Button variant="outline" asChild>
-              <Link href="/connections">Open Connections</Link>
+              <Link href="/people">Open People</Link>
             </Button>
           </div>
 
           <div className="space-y-3">
-            {isConnectionsLoading ? (
+            {isPeopleLoading ? (
               <div className="space-y-3 py-1">
                 <Skeleton className="h-16 w-full" />
                 <Skeleton className="h-16 w-full" />
                 <Skeleton className="h-16 w-full" />
               </div>
-            ) : connectionsData?.connections.length ? (
-              connectionsData.connections.map((connection) => {
-                const personalizedMessage = applyConnectionPlaceholder(currentTemplate, connection.firstName);
-                const canOpenProfile = canOpenLinkedInProfile(connection.profileUrl);
+            ) : prioritizedPeople.length ? (
+              prioritizedPeople.map((person) => {
+                const personalizedMessage = applyConnectionPlaceholder(currentTemplate, person.firstName);
+                const canOpenProfile = canOpenLinkedInProfile(person.profileUrl);
 
                 return (
                   <div
-                    key={connection.id}
+                    key={person.id}
                     className={cn(
                       "flex flex-wrap items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
                     )}
@@ -551,21 +561,21 @@ export default function ReferralSendPage() {
                         type="button"
                         className="text-muted-foreground hover:text-yellow-300"
                         onClick={() =>
-                          starMutation.mutate({ id: connection.id, isStarred: !connection.isStarred })
+                          starMutation.mutate({ id: person.id, isStarred: !person.isStarred })
                         }
-                        title={connection.isStarred ? "Unstar connection" : "Star connection"}
+                        title={person.isStarred ? "Unstar person" : "Star person"}
                       >
                         <Star
-                          className={cn("h-4 w-4", connection.isStarred && "fill-yellow-300 text-yellow-300")}
+                          className={cn("h-4 w-4", person.isStarred && "fill-yellow-300 text-yellow-300")}
                         />
                       </button>
                       <div>
-                        <p className="font-medium text-foreground">{connection.fullName}</p>
+                        <p className="font-medium text-foreground">{person.fullName}</p>
                         <p className="text-xs text-muted-foreground">
-                          {connection.position || "Position N/A"}
-                          {connection.email && (
+                          {person.position || "Position N/A"}
+                          {person.email && (
                             <span className="ml-2 text-muted-foreground/70">
-                              • {connection.email}
+                              • {person.email}
                             </span>
                           )}
                         </p>
@@ -576,7 +586,7 @@ export default function ReferralSendPage() {
                         variant="outline"
                         size="xs"
                         onClick={() =>
-                          copyText(personalizedMessage, `Copied message for ${connection.fullName}`)
+                          copyText(personalizedMessage, `Copied message for ${person.fullName}`)
                         }
                       >
                         <Copy className="h-3.5 w-3.5" />
@@ -588,7 +598,7 @@ export default function ReferralSendPage() {
                         disabled={!canOpenProfile}
                         title={canOpenProfile ? "Open LinkedIn profile" : "Invalid LinkedIn URL"}
                         onClick={() =>
-                          window.open(connection.profileUrl, "_blank", "noopener,noreferrer")
+                          window.open(person.profileUrl, "_blank", "noopener,noreferrer")
                         }
                       >
                         <Linkedin className="h-3.5 w-3.5" />
@@ -601,11 +611,11 @@ export default function ReferralSendPage() {
             ) : (
               <EmptyState
                 icon={UserRound}
-                title="No mapped connections for this company"
-                description="Import and map connections on the Connections page, then return here for one-click outreach."
+                title="No mapped people for this company"
+                description="Import and map people on the People page, then return here for one-click outreach."
                 action={{
-                  label: "Go to Connections",
-                  onClick: () => router.push("/connections"),
+                  label: "Go to People",
+                  onClick: () => router.push("/people"),
                 }}
               />
             )}

@@ -1,12 +1,12 @@
 import { db } from "@/lib/db";
-import { jobs, companies, scrapeSessions, linkedinConnections } from "@/lib/db/schema";
+import { jobs, companies, scrapeSessions, people } from "@/lib/db/schema";
 import { count, sql, desc } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { getUnmatchedCompaniesSummary } from "@/lib/connections/sync/unmatched";
+import { getUnmatchedCompaniesSummary } from "@/lib/people/sync/unmatched";
 
 export async function GET() {
   try {
-    const [jobStatsResult, companyStatsResult, lastSessionResult, connectionStatsResult] = await Promise.all([
+    const [jobStatsResult, companyStatsResult, lastSessionResult, peopleStatsResult] = await Promise.all([
       db
         .select({
           totalJobs: count(),
@@ -22,21 +22,21 @@ export async function GET() {
       db.select().from(scrapeSessions).orderBy(desc(scrapeSessions.startedAt)).limit(1),
       db
         .select({
-          totalConnections: sql<number>`SUM(CASE WHEN ${linkedinConnections.isActive} = 1 THEN 1 ELSE 0 END)`,
-          starredConnections: sql<number>`SUM(CASE WHEN ${linkedinConnections.isActive} = 1 AND ${linkedinConnections.isStarred} = 1 THEN 1 ELSE 0 END)`,
-          mappedConnections: sql<number>`SUM(CASE WHEN ${linkedinConnections.isActive} = 1 AND ${linkedinConnections.mappedCompanyId} IS NOT NULL THEN 1 ELSE 0 END)`,
+          totalPeople: sql<number>`SUM(CASE WHEN ${people.isActive} = 1 THEN 1 ELSE 0 END)`,
+          starredPeople: sql<number>`SUM(CASE WHEN ${people.isActive} = 1 AND ${people.isStarred} = 1 THEN 1 ELSE 0 END)`,
+          mappedPeople: sql<number>`SUM(CASE WHEN ${people.isActive} = 1 AND ${people.mappedCompanyId} IS NOT NULL THEN 1 ELSE 0 END)`,
         })
-        .from(linkedinConnections),
+        .from(people),
     ]);
 
     const jobStats = jobStatsResult[0];
     const companyStats = companyStatsResult[0];
     const lastSession = lastSessionResult;
-    const connectionStats = connectionStatsResult[0];
+    const peopleStats = peopleStatsResult[0];
 
-    const unmatchedSummary = (connectionStats?.totalConnections ?? 0) > 0
+    const unmatchedSummary = (peopleStats?.totalPeople ?? 0) > 0
       ? await getUnmatchedCompaniesSummary()
-      : { unmatchedCompanyCount: 0, unmatchedConnectionCount: 0, ignoredCompanyCount: 0 };
+      : { unmatchedCompanyCount: 0, unmatchedPeopleCount: 0, ignoredCompanyCount: 0 };
 
     return NextResponse.json({
       totalJobs: jobStats?.totalJobs ?? 0,
@@ -48,10 +48,11 @@ export async function GET() {
       savedJobs: jobStats?.savedJobs ?? 0,
       jobsWithScore: jobStats?.jobsWithScore ?? 0,
       lastScan: lastSession[0] || null,
-      totalConnections: connectionStats?.totalConnections ?? 0,
-      starredConnections: connectionStats?.starredConnections ?? 0,
-      mappedConnections: connectionStats?.mappedConnections ?? 0,
+      totalPeople: peopleStats?.totalPeople ?? 0,
+      starredPeople: peopleStats?.starredPeople ?? 0,
+      mappedPeople: peopleStats?.mappedPeople ?? 0,
       unmatchedCompanyCount: unmatchedSummary.unmatchedCompanyCount,
+      unmatchedPeopleCount: unmatchedSummary.unmatchedPeopleCount,
     });
   } catch (error) {
     console.error("Failed to fetch stats:", error);

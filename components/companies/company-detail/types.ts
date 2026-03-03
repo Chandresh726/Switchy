@@ -1,4 +1,4 @@
-export type Tab = "jobs" | "connections" | "activity";
+export type Tab = "jobs" | "people" | "activity";
 
 export interface CompanyOverview {
   id: number;
@@ -13,8 +13,8 @@ export interface CompanyOverview {
 export interface CompanyStats {
   openJobs: number;
   highMatchJobs: number;
-  mappedConnections: number;
-  starredConnections: number;
+  mappedPeople: number;
+  starredPeople: number;
 }
 
 export interface CompanyJob {
@@ -28,8 +28,9 @@ export interface CompanyJob {
   discoveredAt: string | null;
 }
 
-export interface CompanyConnection {
+export interface CompanyPerson {
   id: number;
+  source: "linkedin" | "apollo" | "manual";
   fullName: string;
   firstName: string;
   lastName: string;
@@ -72,7 +73,7 @@ export interface CompanyOverviewResponse {
   company: CompanyOverview;
   stats: CompanyStats;
   jobs: CompanyJob[];
-  connections: CompanyConnection[];
+  people: CompanyPerson[];
   activity: CompanyActivity;
 }
 

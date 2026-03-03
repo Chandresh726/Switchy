@@ -47,14 +47,14 @@ export function CompanyStats({ stats }: CompanyStatsProps) {
         iconClassName="text-emerald-400"
       />
       <StatCard
-        label="Connections"
-        value={stats.mappedConnections}
+        label="People"
+        value={stats.mappedPeople}
         icon={Users}
         iconClassName="text-purple-400"
       />
       <StatCard
         label="Starred"
-        value={stats.starredConnections}
+        value={stats.starredPeople}
         icon={Star}
         iconClassName="text-yellow-400"
       />

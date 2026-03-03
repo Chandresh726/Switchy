@@ -4,7 +4,7 @@ import { desc, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { companies } from "@/lib/db/schema";
-import { refreshUnmatchedCompanyMappings } from "@/lib/connections/sync";
+import { refreshUnmatchedCompanyMappings } from "@/lib/people/sync";
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 
 const PLATFORM_VALUES = [

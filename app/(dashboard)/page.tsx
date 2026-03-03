@@ -46,9 +46,9 @@ interface Stats {
   jobsWithScore: number;
   lastScan: ScrapeSession | null;
   // Connection stats
-  totalConnections: number;
-  starredConnections: number;
-  mappedConnections: number;
+  totalPeople: number;
+  starredPeople: number;
+  mappedPeople: number;
   unmatchedCompanyCount: number;
 }
 
@@ -294,11 +294,11 @@ export default function DashboardPage() {
               color="text-purple-500"
             />
             <StatCard
-              title="Connections"
-              value={stats?.totalConnections ?? 0}
+              title="People"
+              value={stats?.totalPeople ?? 0}
               icon={Users}
               color="text-cyan-500"
-              href="/connections"
+              href="/people"
             />
           </>
         )}
@@ -555,19 +555,19 @@ export default function DashboardPage() {
                 </div>
               ) : null}
 
-              {/* Connections divider */}
+              {/* People divider */}
               {stats && (
                 <>
                   <div className="flex items-center gap-2 pt-1">
                     <div className="h-px flex-1 bg-border" />
-                    <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Connections</span>
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">People</span>
                     <div className="h-px flex-1 bg-border" />
                   </div>
 
                   <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50">
                     <span className="text-sm text-muted-foreground">Total Active</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-foreground">{stats.totalConnections || "-"}</span>
+                      <span className="text-sm font-medium text-foreground">{stats.totalPeople || "-"}</span>
                       <Users className="h-3.5 w-3.5 text-cyan-500" />
                     </div>
                   </div>
@@ -575,7 +575,7 @@ export default function DashboardPage() {
                   <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50">
                     <span className="text-sm text-muted-foreground">Starred</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-foreground">{stats.starredConnections || "-"}</span>
+                      <span className="text-sm font-medium text-foreground">{stats.starredPeople || "-"}</span>
                       <Star className="h-3.5 w-3.5 text-amber-400" />
                     </div>
                   </div>

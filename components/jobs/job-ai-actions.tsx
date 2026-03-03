@@ -142,9 +142,9 @@ export function JobAIActions({ jobId, jobTitle, companyName, companyId }: JobAIA
           asChild
           className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
         >
-          <Link href={`/companies/${companyId}/connections`}>
+          <Link href={`/companies/${companyId}/people`}>
             <Users className="h-4 w-4" />
-            View Connections
+            View People
           </Link>
         </Button>
 

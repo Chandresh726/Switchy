@@ -15,7 +15,7 @@ interface CompanyTabsProps {
 
 const TAB_OPTIONS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
   { id: "jobs", label: "Jobs", icon: Briefcase },
-  { id: "connections", label: "Connections", icon: Users },
+  { id: "people", label: "People", icon: Users },
   { id: "activity", label: "Activity", icon: Activity },
 ];
 

@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { handleApiError } from "@/lib/api";
 import { db } from "@/lib/db";
-import { companies, jobs, linkedinConnections, matchSessions, scrapingLogs } from "@/lib/db/schema";
+import { companies, jobs, people, matchSessions, scrapingLogs } from "@/lib/db/schema";
 
 const ParamsSchema = z.object({
   id: z.coerce.number().int().positive(),
@@ -28,9 +28,9 @@ export async function GET(
 
     const [
       jobStatsResult,
-      connectionStatsResult,
+      peopleStatsResult,
       companyJobs,
-      companyConnections,
+      companyPeople,
       recentScrapeLogs,
       recentMatchSessions,
     ] = await Promise.all([
@@ -43,14 +43,14 @@ export async function GET(
         .where(eq(jobs.companyId, parsedParams.id)),
       db
         .select({
-          mappedConnections: sql<number>`count(*)`,
-          starredConnections: sql<number>`sum(case when ${linkedinConnections.isStarred} = 1 then 1 else 0 end)`,
+          mappedPeople: sql<number>`count(*)`,
+          starredPeople: sql<number>`sum(case when ${people.isStarred} = 1 then 1 else 0 end)`,
         })
-        .from(linkedinConnections)
+        .from(people)
         .where(
           and(
-            eq(linkedinConnections.mappedCompanyId, parsedParams.id),
-            eq(linkedinConnections.isActive, true)
+            eq(people.mappedCompanyId, parsedParams.id),
+            eq(people.isActive, true)
           )
         ),
       db
@@ -70,25 +70,26 @@ export async function GET(
         .limit(50),
       db
         .select({
-          id: linkedinConnections.id,
-          fullName: linkedinConnections.fullName,
-          firstName: linkedinConnections.firstName,
-          lastName: linkedinConnections.lastName,
-          profileUrl: linkedinConnections.profileUrl,
-          email: linkedinConnections.email,
-          position: linkedinConnections.position,
-          connectedOn: linkedinConnections.connectedOn,
-          isStarred: linkedinConnections.isStarred,
-          notes: linkedinConnections.notes,
+          id: people.id,
+          fullName: people.fullName,
+          firstName: people.firstName,
+          lastName: people.lastName,
+          profileUrl: people.profileUrl,
+          email: people.email,
+          position: people.position,
+          source: people.source,
+          connectedOn: people.connectedOn,
+          isStarred: people.isStarred,
+          notes: people.notes,
         })
-        .from(linkedinConnections)
+        .from(people)
         .where(
           and(
-            eq(linkedinConnections.mappedCompanyId, parsedParams.id),
-            eq(linkedinConnections.isActive, true)
+            eq(people.mappedCompanyId, parsedParams.id),
+            eq(people.isActive, true)
           )
         )
-        .orderBy(desc(linkedinConnections.isStarred), linkedinConnections.fullName)
+        .orderBy(desc(people.isStarred), people.fullName)
         .limit(200),
       db
         .select({
@@ -123,18 +124,18 @@ export async function GET(
     ]);
 
     const jobStats = jobStatsResult[0];
-    const connectionStats = connectionStatsResult[0];
+    const peopleStats = peopleStatsResult[0];
 
     return NextResponse.json({
       company,
       stats: {
         openJobs: jobStats?.openJobs || 0,
         highMatchJobs: jobStats?.highMatchJobs || 0,
-        mappedConnections: connectionStats?.mappedConnections || 0,
-        starredConnections: connectionStats?.starredConnections || 0,
+        mappedPeople: peopleStats?.mappedPeople || 0,
+        starredPeople: peopleStats?.starredPeople || 0,
       },
       jobs: companyJobs,
-      connections: companyConnections,
+      people: companyPeople,
       activity: {
         scrapeLogs: recentScrapeLogs,
         matchSessions: recentMatchSessions,

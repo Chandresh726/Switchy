@@ -235,9 +235,11 @@ export const aiGenerationHistory = sqliteTable("aiGenerationHistory", {
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
-export const linkedinConnections = sqliteTable("linkedin_connections", {
+export const people = sqliteTable("linkedin_connections", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   identityKey: text("identity_key").notNull().unique(),
+  source: text("source").notNull().default("linkedin"), // "linkedin" | "apollo" | "manual"
+  sourceRecordKey: text("source_record_key"),
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   fullName: text("full_name").notNull(),
@@ -251,6 +253,8 @@ export const linkedinConnections = sqliteTable("linkedin_connections", {
   mappedCompanyId: integer("mapped_company_id").references(() => companies.id, { onDelete: "set null" }),
   isStarred: integer("is_starred", { mode: "boolean" }).notNull().default(false),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  roleTag: text("role_tag"),
+  roleTagSource: text("role_tag_source"), // "manual" | "inferred"
   notes: text("notes"),
   lastSeenAt: integer("last_seen_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
@@ -270,11 +274,16 @@ export const linkedinConnections = sqliteTable("linkedin_connections", {
     table.mappedCompanyId,
     table.isActive
   ),
+  sourceRecordKeyIdx: index("people_source_record_key_idx").on(table.sourceRecordKey),
+  sourceActiveIdx: index("people_source_active_idx").on(table.source, table.isActive),
+  mappedCompanyActiveIdx: index("people_mapped_company_active_idx").on(table.mappedCompanyId, table.isActive),
+  roleTagActiveIdx: index("people_role_tag_active_idx").on(table.roleTag, table.isActive),
 }));
 
-export const connectionImportSessions = sqliteTable("connection_import_sessions", {
+export const peopleImportSessions = sqliteTable("connection_import_sessions", {
   id: text("id").primaryKey(),
   fileName: text("file_name").notNull(),
+  source: text("source").notNull().default("linkedin"), // "linkedin" | "apollo"
   totalRows: integer("total_rows").notNull().default(0),
   insertedRows: integer("inserted_rows").notNull().default(0),
   updatedRows: integer("updated_rows").notNull().default(0),
@@ -326,7 +335,7 @@ export const educationRelations = relations(education, ({ one }) => ({
 export const companiesRelations = relations(companies, ({ many }) => ({
   jobs: many(jobs),
   scrapingLogs: many(scrapingLogs),
-  linkedinConnections: many(linkedinConnections),
+  people: many(people),
 }));
 
 export const jobsRelations = relations(jobs, ({ one }) => ({
@@ -389,9 +398,9 @@ export const aiGenerationHistoryRelations = relations(aiGenerationHistory, ({ on
   }),
 }));
 
-export const linkedinConnectionsRelations = relations(linkedinConnections, ({ one }) => ({
+export const peopleRelations = relations(people, ({ one }) => ({
   mappedCompany: one(companies, {
-    fields: [linkedinConnections.mappedCompanyId],
+    fields: [people.mappedCompanyId],
     references: [companies.id],
   }),
 }));
@@ -427,7 +436,7 @@ export type AIGenerationHistory = typeof aiGenerationHistory.$inferSelect;
 export type NewAIGenerationHistory = typeof aiGenerationHistory.$inferInsert;
 export type AIProviderRecord = typeof aiProviders.$inferSelect;
 export type NewAIProviderRecord = typeof aiProviders.$inferInsert;
-export type LinkedinConnection = typeof linkedinConnections.$inferSelect;
-export type NewLinkedinConnection = typeof linkedinConnections.$inferInsert;
-export type ConnectionImportSession = typeof connectionImportSessions.$inferSelect;
-export type NewConnectionImportSession = typeof connectionImportSessions.$inferInsert;
+export type Person = typeof people.$inferSelect;
+export type NewPerson = typeof people.$inferInsert;
+export type PeopleImportSession = typeof peopleImportSessions.$inferSelect;
+export type NewPeopleImportSession = typeof peopleImportSessions.$inferInsert;
