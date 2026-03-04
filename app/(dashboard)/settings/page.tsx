@@ -66,6 +66,8 @@ interface ScraperLocalEdits {
 interface AIWritingLocalEdits {
   referralTone?: string;
   referralLength?: string;
+  followUpTone?: string;
+  followUpLength?: string;
   coverLetterTone?: string;
   coverLetterLength?: string;
   coverLetterFocus?: string[];
@@ -433,6 +435,8 @@ function SettingsContent() {
       aiWritingReasoningEffort: aiWritingLocalEdits.aiWritingReasoningEffort ?? ((settings?.ai_writing_reasoning_effort as ReasoningEffort) || getDefaultReasoningEffort()),
       referralTone: aiWritingLocalEdits.referralTone ?? (settings?.referral_tone || "professional"),
       referralLength: aiWritingLocalEdits.referralLength ?? (settings?.referral_length || "medium"),
+      followUpTone: aiWritingLocalEdits.followUpTone ?? (settings?.follow_up_tone || "professional"),
+      followUpLength: aiWritingLocalEdits.followUpLength ?? (settings?.follow_up_length || "medium"),
       coverLetterTone: aiWritingLocalEdits.coverLetterTone ?? (settings?.cover_letter_tone || "professional"),
       coverLetterLength: aiWritingLocalEdits.coverLetterLength ?? (settings?.cover_letter_length || "medium"),
       coverLetterFocus: aiWritingLocalEdits.coverLetterFocus ?? (() => {
@@ -452,7 +456,7 @@ function SettingsContent() {
     matcherModel, matcherProviderId, resumeParserModel, resumeParserProviderId, matcherReasoningEffort, resumeParserReasoningEffort, bulkEnabled, serializeOperations, batchSize, maxRetries, concurrencyLimit, timeoutMs,
     circuitBreakerThreshold, autoMatchAfterScrape, schedulerEnabled, schedulerCron, maxParallelScrapes, filterCountry, filterCity, filterTitleKeywords,
     aiWritingModel, aiWritingProviderId, aiWritingReasoningEffort, referralTone, referralLength,
-    coverLetterTone, coverLetterLength, coverLetterFocus
+    followUpTone, followUpLength, coverLetterTone, coverLetterLength, coverLetterFocus
   } = derivedValues;
 
   const providerOptions = useMemo(() => {
@@ -650,6 +654,8 @@ function SettingsContent() {
   const aiWritingHasUnsavedChanges =
     aiWritingLocalEdits.referralTone !== undefined ||
     aiWritingLocalEdits.referralLength !== undefined ||
+    aiWritingLocalEdits.followUpTone !== undefined ||
+    aiWritingLocalEdits.followUpLength !== undefined ||
     aiWritingLocalEdits.coverLetterTone !== undefined ||
     aiWritingLocalEdits.coverLetterLength !== undefined ||
     aiWritingLocalEdits.coverLetterFocus !== undefined ||
@@ -894,6 +900,8 @@ function SettingsContent() {
         {
           referral_tone: updates.referralTone,
           referral_length: updates.referralLength,
+          follow_up_tone: updates.followUpTone,
+          follow_up_length: updates.followUpLength,
           cover_letter_tone: updates.coverLetterTone,
           cover_letter_length: updates.coverLetterLength,
           cover_letter_focus: updates.coverLetterFocus,
@@ -916,6 +924,8 @@ function SettingsContent() {
     aiWritingMutation.mutate({
       referralTone,
       referralLength,
+      followUpTone,
+      followUpLength,
       coverLetterTone,
       coverLetterLength,
       coverLetterFocus,
@@ -1093,6 +1103,8 @@ function SettingsContent() {
             aiWritingSettings={{
               referralTone,
               referralLength,
+              followUpTone,
+              followUpLength,
               coverLetterTone,
               coverLetterLength,
               coverLetterFocus,

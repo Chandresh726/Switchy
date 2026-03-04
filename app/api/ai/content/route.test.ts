@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { APIValidationError } from "@/lib/api/ai-error-handler";
 
 const mocks = vi.hoisted(() => ({
   getContentByJobAndType: vi.fn(),
@@ -36,6 +37,36 @@ describe("POST /api/ai/content", () => {
     expect(mocks.generateContent).not.toHaveBeenCalled();
   });
 
+  it("accepts recruiter follow-up payloads", async () => {
+    mocks.generateContent.mockResolvedValue({
+      id: 11,
+      jobId: 42,
+      type: "recruiter_follow_up",
+      content: "Hi {{connection_first_name}}, I applied and would value a quick review.",
+      settingsSnapshot: "{}",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      history: [],
+    });
+
+    const request = new Request("http://localhost/api/ai/content", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId: 42, type: "recruiter_follow_up" }),
+    });
+
+    const response = await POST(request as NextRequest);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.content.type).toBe("recruiter_follow_up");
+    expect(mocks.generateContent).toHaveBeenCalledWith({
+      jobId: 42,
+      type: "recruiter_follow_up",
+      userPrompt: undefined,
+    });
+  });
+
   it("returns existing content when query is valid", async () => {
     mocks.getContentByJobAndType.mockResolvedValue({
       id: 1,
@@ -57,6 +88,20 @@ describe("POST /api/ai/content", () => {
     expect(body.content.content).toBe("hello");
   });
 
+  it("accepts recruiter follow-up type in query params", async () => {
+    mocks.getContentByJobAndType.mockResolvedValue(null);
+
+    const request = new Request(
+      "http://localhost/api/ai/content?jobId=42&type=recruiter_follow_up"
+    );
+    const response = await GET(request as NextRequest);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ exists: false, content: null });
+    expect(mocks.getContentByJobAndType).toHaveBeenCalledWith(42, "recruiter_follow_up");
+  });
+
   it("maps delete failures to typed internal error payload", async () => {
     mocks.clearAllGeneratedContent.mockRejectedValue(new Error("boom"));
 
@@ -67,6 +112,31 @@ describe("POST /api/ai/content", () => {
     expect(body).toEqual({
       error: "boom",
       code: "ai_content_delete_all_failed",
+    });
+  });
+
+  it("maps APIValidationError to 400 payload", async () => {
+    mocks.generateContent.mockRejectedValue(
+      new APIValidationError(
+        "Recruiter follow-up is only available for applied jobs.",
+        "invalid_request",
+        400
+      )
+    );
+
+    const request = new Request("http://localhost/api/ai/content", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId: 1458, type: "recruiter_follow_up" }),
+    });
+
+    const response = await POST(request as NextRequest);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual({
+      error: "Recruiter follow-up is only available for applied jobs.",
+      code: "invalid_request",
     });
   });
 });

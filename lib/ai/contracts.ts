@@ -1,7 +1,8 @@
 import { z } from "zod";
 
-export const AI_CONTENT_TYPE_VALUES = ["cover_letter", "referral"] as const;
+export const AI_CONTENT_TYPE_VALUES = ["cover_letter", "referral", "recruiter_follow_up"] as const;
 export const AIContentTypeSchema = z.enum(AI_CONTENT_TYPE_VALUES);
+export type AIContentType = z.infer<typeof AIContentTypeSchema>;
 
 export const MatchRouteBodySchema = z.union([
   z.object({
@@ -50,6 +51,8 @@ export const AISettingsUpdateSchema = z.object({
   ai_writing_reasoning_effort: ReasoningEffortSchema.optional(),
   referral_tone: z.enum(["professional", "casual", "friendly", "flexible"]).optional(),
   referral_length: z.enum(["short", "medium", "long"]).optional(),
+  follow_up_tone: z.enum(["professional", "casual", "friendly", "flexible"]).optional(),
+  follow_up_length: z.enum(["short", "medium", "long"]).optional(),
   cover_letter_tone: z.enum(["professional", "formal", "casual", "flexible"]).optional(),
   cover_letter_length: z.enum(["short", "medium", "long"]).optional(),
   cover_letter_focus: z.union([

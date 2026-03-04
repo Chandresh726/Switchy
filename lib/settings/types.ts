@@ -32,6 +32,8 @@ export interface SettingsRecord {
   scraper_filter_title_keywords?: string;
   referral_tone?: string;
   referral_length?: string;
+  follow_up_tone?: string;
+  follow_up_length?: string;
   cover_letter_tone?: string;
   cover_letter_length?: string;
   cover_letter_focus?: string;

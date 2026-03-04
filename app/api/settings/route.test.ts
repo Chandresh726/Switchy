@@ -94,6 +94,36 @@ describe("settings route", () => {
     ]);
   });
 
+  it("accepts follow-up writing settings payload", async () => {
+    mocks.parseSettingsUpdateBody.mockReturnValue({
+      updates: [
+        { key: "follow_up_tone", value: "friendly" },
+        { key: "follow_up_length", value: "short" },
+      ],
+      cronUpdated: false,
+      enabledChanged: false,
+      newEnabledValue: null,
+    });
+
+    const request = new Request("http://localhost/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        follow_up_tone: "friendly",
+        follow_up_length: "short",
+      }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(200);
+    expect(mocks.parseSettingsUpdateBody).toHaveBeenCalledTimes(1);
+    expect(mocks.upsertSettings).toHaveBeenCalledWith([
+      { key: "follow_up_tone", value: "friendly" },
+      { key: "follow_up_length", value: "short" },
+    ]);
+  });
+
   it("stops scheduler when scheduler_enabled changes to false", async () => {
     mocks.parseSettingsUpdateBody.mockReturnValue({
       updates: [{ key: "scheduler_enabled", value: "false" }],

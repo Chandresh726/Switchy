@@ -11,6 +11,8 @@ describe("settings service", () => {
     expect(DEFAULT_SETTINGS.matcher_reasoning_effort).toBe("medium");
     expect(DEFAULT_SETTINGS.resume_parser_reasoning_effort).toBe("medium");
     expect(DEFAULT_SETTINGS.ai_writing_reasoning_effort).toBe("medium");
+    expect(DEFAULT_SETTINGS.follow_up_tone).toBe("professional");
+    expect(DEFAULT_SETTINGS.follow_up_length).toBe("medium");
     expect(DEFAULT_SETTINGS.scraper_max_parallel_scrapes).toBe("3");
   });
 
@@ -69,6 +71,20 @@ describe("settings service", () => {
         value: JSON.stringify(["skills", "experience"]),
       },
     ]);
+  });
+
+  it("parses follow-up writing settings", () => {
+    const parsed = parseSettingsUpdateBody({
+      follow_up_tone: "friendly",
+      follow_up_length: "short",
+    });
+
+    expect(parsed.updates).toEqual(
+      expect.arrayContaining([
+        { key: "follow_up_tone", value: "friendly" },
+        { key: "follow_up_length", value: "short" },
+      ])
+    );
   });
 
   it("throws validation errors for invalid cron expressions", () => {

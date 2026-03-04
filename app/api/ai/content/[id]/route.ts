@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { asc, eq } from "drizzle-orm";
 
-import { AIContentPatchBodySchema, ProviderRouteParamsSchema } from "@/lib/ai/contracts";
+import { AIContentPatchBodySchema, ProviderRouteParamsSchema, type AIContentType } from "@/lib/ai/contracts";
 import { handleAIAPIError } from "@/lib/api/ai-error-handler";
 import { db } from "@/lib/db";
 import { aiGeneratedContent, aiGenerationHistory } from "@/lib/db/schema";
@@ -54,7 +54,7 @@ export async function PATCH(
       content: {
         id: parsedId,
         jobId: existingContent[0].jobId,
-        type: existingContent[0].type,
+        type: existingContent[0].type as AIContentType,
         content: body.content,
         settingsSnapshot: existingContent[0].settingsSnapshot,
         createdAt: existingContent[0].createdAt

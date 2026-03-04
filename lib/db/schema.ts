@@ -215,7 +215,7 @@ export const matchLogs = sqliteTable("match_logs", {
 export const aiGeneratedContent = sqliteTable("aiGeneratedContent", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   jobId: integer("job_id").references(() => jobs.id, { onDelete: "cascade" }).notNull(),
-  type: text("type").notNull(), // "cover_letter" | "referral"
+  type: text("type").notNull(), // "cover_letter" | "referral" | "recruiter_follow_up"
   content: text("content").notNull(),
   settingsSnapshot: text("settings_snapshot"), // JSON - stores tone, length, focus used
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),

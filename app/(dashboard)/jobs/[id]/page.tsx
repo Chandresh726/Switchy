@@ -320,9 +320,8 @@ export default function JobDetailPage() {
 
           <JobAIActions
             jobId={job.id}
-            jobTitle={job.title}
-            companyName={job.company.name}
             companyId={job.company.id}
+            jobStatus={job.status}
           />
 
           <ApplyButton

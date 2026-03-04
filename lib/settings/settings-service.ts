@@ -32,6 +32,8 @@ export const DEFAULT_SETTINGS = {
   scraper_filter_title_keywords: "[]",
   referral_tone: "professional",
   referral_length: "medium",
+  follow_up_tone: "professional",
+  follow_up_length: "medium",
   cover_letter_tone: "professional",
   cover_letter_length: "medium",
   cover_letter_focus: "[\"skills\",\"experience\",\"cultural_fit\"]",
@@ -235,6 +237,7 @@ function parseSettingValue(
     case "scraper_filter_title_keywords":
       return { value: normalizeTitleKeywords(value), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     case "referral_tone":
+    case "follow_up_tone":
       return {
         value: ensureEnum(key, value, ["professional", "casual", "friendly", "flexible"] as const),
         cronUpdated: false,
@@ -242,6 +245,7 @@ function parseSettingValue(
         newEnabledValue: null,
       };
     case "referral_length":
+    case "follow_up_length":
     case "cover_letter_length":
       return {
         value: ensureEnum(key, value, ["short", "medium", "long"] as const),

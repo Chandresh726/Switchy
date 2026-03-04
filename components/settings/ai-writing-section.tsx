@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, FileText, Loader2, MessageCircle, Save, Wand2 } from "lucide-react";
+import { AlertTriangle, FileText, Loader2, MessageCircle, Save, Send, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { REASONING_EFFORT_OPTIONS } from "@/lib/ai/providers/metadata";
 import type { ReasoningEffort } from "@/lib/settings/types";
@@ -14,6 +14,8 @@ import type { Provider, ProviderModelOption } from "@/lib/types";
 export interface AIWritingSettings {
   referralTone: string;
   referralLength: string;
+  followUpTone: string;
+  followUpLength: string;
   coverLetterTone: string;
   coverLetterLength: string;
   coverLetterFocus: string[];
@@ -51,6 +53,9 @@ const REFERRAL_LENGTH_OPTIONS = [
   { value: "medium", label: "Medium" },
   { value: "long", label: "Long" },
 ];
+
+const FOLLOW_UP_TONE_OPTIONS = REFERRAL_TONE_OPTIONS;
+const FOLLOW_UP_LENGTH_OPTIONS = REFERRAL_LENGTH_OPTIONS;
 
 const COVER_LETTER_TONE_OPTIONS = [
   { value: "professional", label: "Professional" },
@@ -113,7 +118,7 @@ export function AIWritingSection({
           <CardTitle>AI Writing</CardTitle>
         </div>
         <CardDescription>
-          Configure AI-generated referral messages and cover letters
+          Configure AI-generated referral messages, recruiter follow-ups, and cover letters
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -307,6 +312,59 @@ export function AIWritingSection({
                         </SelectTrigger>
                         <SelectContent>
                           {REFERRAL_LENGTH_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <Separator className="bg-muted" />
+
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Send className="h-4 w-4 text-blue-400" />
+                <h3 className="text-sm font-medium text-foreground">Recruiter Follow-up</h3>
+              </div>
+
+              <div className="grid gap-4">
+                <div className="flex gap-4 items-end">
+                  <div className="flex gap-3 flex-1">
+                    <div className="space-y-2 flex-1">
+                      <Label className="text-muted-foreground">Tone</Label>
+                      <Select
+                        value={aiWritingSettings.followUpTone}
+                        onValueChange={(value) => onAIWritingSettingsChange({ followUpTone: value })}
+                      >
+                        <SelectTrigger className="w-full bg-background/60 border-border">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {FOLLOW_UP_TONE_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2 flex-1">
+                      <Label className="text-muted-foreground">Length</Label>
+                      <Select
+                        value={aiWritingSettings.followUpLength}
+                        onValueChange={(value) => onAIWritingSettingsChange({ followUpLength: value })}
+                      >
+                        <SelectTrigger className="w-full bg-background/60 border-border">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {FOLLOW_UP_LENGTH_OPTIONS.map((option) => (
                             <SelectItem key={option.value} value={option.value}>
                               {option.label}
                             </SelectItem>

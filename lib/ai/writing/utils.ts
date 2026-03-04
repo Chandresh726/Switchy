@@ -42,6 +42,7 @@ export interface JobDataWithCompany {
   title: string;
   description: string | null;
   companyName: string;
+  status: string;
   location: string | null;
   employmentType: string | null;
   url: string | null;
@@ -55,6 +56,7 @@ export async function fetchJobWithCompany(jobId: number): Promise<JobDataWithCom
       title: jobs.title,
       description: jobs.description,
       companyName: companies.name,
+      status: jobs.status,
       location: jobs.location,
       employmentType: jobs.employmentType,
       url: jobs.url,

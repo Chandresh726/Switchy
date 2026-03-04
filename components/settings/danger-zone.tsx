@@ -50,7 +50,7 @@ export function DangerZone({ onClearAIContent, onClearMatchData, onClearJobs }: 
             <div className="space-y-1">
               <h4 className="text-sm font-medium text-foreground">Delete AI Generated Content</h4>
               <p className="text-xs text-muted-foreground max-w-md">
-                Permanently removes all AI-generated cover letters and referral messages. Job listings and match data are preserved.
+                Permanently removes all AI-generated cover letters, referral messages, and recruiter follow-ups. Job listings and match data are preserved.
               </p>
             </div>
           </div>
@@ -74,6 +74,7 @@ export function DangerZone({ onClearAIContent, onClearMatchData, onClearJobs }: 
                     <ul className="list-disc list-inside text-muted-foreground ml-2">
                       <li>All generated cover letters</li>
                       <li>All generated referral messages</li>
+                      <li>All recruiter follow-up messages</li>
                       <li>Generation history and variants</li>
                     </ul>
                     <p className="mt-2 font-medium text-foreground/80">
@@ -186,7 +187,7 @@ export function DangerZone({ onClearAIContent, onClearMatchData, onClearJobs }: 
                     <ul className="list-disc list-inside text-muted-foreground ml-2">
                       <li>All scraped job postings</li>
                       <li>Match scores and AI reasoning for jobs</li>
-                      <li>AI-generated cover letters and referrals</li>
+                      <li>AI-generated cover letters, referrals, and recruiter follow-ups</li>
                     </ul>
                     <p className="mt-2 font-medium text-foreground/80">
                       Your tracked companies will NOT be deleted.

@@ -1,3 +1,5 @@
+import type { AIContentType } from "@/lib/ai/contracts";
+
 export interface HistoryVariant {
   id: number;
   variant: string;
@@ -8,7 +10,7 @@ export interface HistoryVariant {
 export interface GeneratedContent {
   id: number;
   jobId: number;
-  type: string;
+  type: AIContentType;
   content: string;
   createdAt: string;
   updatedAt: string;
@@ -21,7 +23,7 @@ export interface GeneratedContent {
 export interface ContentResponse {
   id: number;
   jobId: number;
-  type: string;
+  type: AIContentType;
   content: string;
   settingsSnapshot: string | null;
   createdAt: string;

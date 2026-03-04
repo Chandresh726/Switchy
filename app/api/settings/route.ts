@@ -28,6 +28,8 @@ const AI_SETTING_KEYS: ReadonlySet<SettingKey> = new Set([
   "ai_writing_reasoning_effort",
   "referral_tone",
   "referral_length",
+  "follow_up_tone",
+  "follow_up_length",
   "cover_letter_tone",
   "cover_letter_length",
   "cover_letter_focus",

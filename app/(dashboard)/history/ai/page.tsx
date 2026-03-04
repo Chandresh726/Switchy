@@ -1,11 +1,27 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Building2,
+  Clock,
+  ExternalLink,
+  FileText,
+  Layers,
+  Loader2,
+  MessageCircle,
+  Send,
+  Trash2,
+  Wand2,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import type { AIContentType } from "@/lib/ai/contracts";
+import { getContentTypeLabel, getWorkspacePathWithVariant } from "@/lib/ai/writing/workspace/routes";
+import type { ContentResponse } from "@/lib/ai/writing/types";
+import { cn } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,21 +33,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import {
-  Wand2,
-  MessageCircle,
-  FileText,
-  Trash2,
-  Clock,
-  ExternalLink,
-  Building2,
-  Layers,
-  Loader2,
-} from "lucide-react";
-import { toast } from "sonner";
-import { cn } from "@/lib/utils";
-import { AIContentEditor } from "@/components/ai-content-editor";
-import type { ContentResponse } from "@/lib/ai/writing/types";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 function formatDate(dateStr: string) {
   const date = new Date(dateStr);
@@ -47,46 +50,52 @@ function formatDate(dateStr: string) {
   if (diffDays < 7) return `${diffDays}d ago`;
 
   return date.toLocaleDateString("en-US", {
-    month: "short",
     day: "numeric",
+    month: "short",
   });
 }
 
-function getTypeConfig(type: string) {
+function getTypeConfig(type: AIContentType) {
   if (type === "referral") {
     return {
-      icon: MessageCircle,
-      label: "Referral Message",
-      color: "text-purple-400",
       bgColor: "bg-purple-500/10",
-      borderColor: "border-purple-500/20",
+      color: "text-purple-400",
       hoverBorderColor: "hover:border-purple-500/40",
+      icon: MessageCircle,
     };
   }
+
+  if (type === "recruiter_follow_up") {
+    return {
+      bgColor: "bg-blue-500/10",
+      color: "text-blue-400",
+      hoverBorderColor: "hover:border-blue-500/40",
+      icon: Send,
+    };
+  }
+
   return {
-    icon: FileText,
-    label: "Cover Letter",
-    color: "text-emerald-400",
     bgColor: "bg-emerald-500/10",
-    borderColor: "border-emerald-500/20",
+    color: "text-emerald-400",
     hoverBorderColor: "hover:border-emerald-500/40",
+    icon: FileText,
   };
 }
 
 interface AIHistoryCardProps {
   content: ContentResponse;
-  onDelete: (id: number) => void;
   isDeleting: boolean;
   onClick: () => void;
+  onDelete: (id: number) => void;
 }
 
-function AIHistoryCard({ content, onDelete, isDeleting, onClick }: AIHistoryCardProps) {
+function AIHistoryCard({ content, isDeleting, onClick, onDelete }: AIHistoryCardProps) {
   const typeConfig = getTypeConfig(content.type);
   const TypeIcon = typeConfig.icon;
 
-  const handleDelete = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleDelete = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
     onDelete(content.id);
   };
 
@@ -95,22 +104,20 @@ function AIHistoryCard({ content, onDelete, isDeleting, onClick }: AIHistoryCard
       role="button"
       tabIndex={0}
       onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
           onClick();
         }
       }}
       className={cn(
-        "group flex flex-col gap-3 p-4 rounded-lg border transition-all duration-200 cursor-pointer",
+        "group flex cursor-pointer flex-col gap-3 rounded-lg border p-4 transition-all duration-200",
         "bg-card/70 hover:bg-card",
         "border-border hover:border-border",
         typeConfig.hoverBorderColor
       )}
     >
-      {/* Logo + Header Row */}
       <div className="flex items-start gap-3">
-        {/* Company Logo */}
         <div className="shrink-0">
           {content.companyLogoUrl ? (
             /* eslint-disable-next-line @next/next/no-img-element */
@@ -126,26 +133,24 @@ function AIHistoryCard({ content, onDelete, isDeleting, onClick }: AIHistoryCard
           )}
         </div>
 
-        {/* Header */}
-        <div className="flex-1 flex items-start justify-between gap-3 min-w-0">
+        <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
           <div className="min-w-0">
-            <h4 className="font-medium text-foreground truncate">
+            <h4 className="truncate font-medium text-foreground">
               {content.jobTitle || "Untitled Job"}
             </h4>
-            <div className="flex items-center gap-2 mt-0.5 text-sm text-muted-foreground">
+            <div className="mt-0.5 flex items-center gap-2 text-sm text-muted-foreground">
               <Building2 className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">{content.companyName || "Unknown Company"}</span>
             </div>
           </div>
 
-          {/* Delete Button */}
-          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+          <div className="shrink-0" onClick={(event) => event.stopPropagation()}>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="h-8 w-8 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-400"
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -161,7 +166,7 @@ function AIHistoryCard({ content, onDelete, isDeleting, onClick }: AIHistoryCard
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction
                     onClick={handleDelete}
-                    className="bg-red-500 hover:bg-red-600 text-foreground"
+                    className="bg-red-500 text-foreground hover:bg-red-600"
                     disabled={isDeleting}
                   >
                     {isDeleting ? "Deleting..." : "Delete"}
@@ -173,33 +178,29 @@ function AIHistoryCard({ content, onDelete, isDeleting, onClick }: AIHistoryCard
         </div>
       </div>
 
-      {/* Preview & Metadata */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
-        {/* Variants Indicator */}
-        {content.history.length > 1 && (
+        {content.history.length > 1 ? (
           <span className="flex items-center gap-1 text-muted-foreground">
             <Layers className="h-3 w-3" />
             {content.history.length} variants
           </span>
-        )}
+        ) : null}
 
-        {/* Preview */}
-        <span className="truncate flex-1 min-w-0 mr-4">
-          {(content.history[0]?.variant || content.content).slice(0, 80)}...
+        <span className="mr-4 min-w-0 flex-1 truncate">
+          {(content.history[content.history.length - 1]?.variant || content.content).slice(0, 80)}...
         </span>
 
-        {/* Type Badge & Duration */}
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex shrink-0 items-center gap-3">
           <Badge
             variant="outline"
             className={cn(
-              "text-[10px] h-5 px-1.5 border-0",
+              "h-5 border-0 px-1.5 text-[10px]",
               typeConfig.bgColor,
               typeConfig.color
             )}
           >
-            <TypeIcon className="h-3 w-3 mr-1" />
-            {typeConfig.label}
+            <TypeIcon className="mr-1 h-3 w-3" />
+            {getContentTypeLabel(content.type)}
           </Badge>
           <span className="flex items-center gap-1.5">
             <Clock className="h-3.5 w-3.5 text-muted-foreground" />
@@ -215,8 +216,6 @@ export default function AIHistoryPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [selectedContent, setSelectedContent] = useState<ContentResponse | null>(null);
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   const { data, isLoading } = useQuery<{ contents: ContentResponse[] }>({
     queryKey: ["ai-history-all"],
@@ -237,7 +236,6 @@ export default function AIHistoryPage() {
       queryClient.invalidateQueries({ queryKey: ["ai-history-all"] });
       toast.success("Deleted successfully");
       setDeletingId(null);
-      setSelectedContent(null);
     },
     onError: () => {
       toast.error("Failed to delete");
@@ -245,87 +243,8 @@ export default function AIHistoryPage() {
     },
   });
 
-  const handleDelete = (id: number) => {
-    setDeletingId(id);
-    deleteMutation.mutate(id);
-  };
-
-  const handleCardClick = (content: ContentResponse) => {
-    window.scrollTo({ top: 0, behavior: "instant" });
-    if (content.type === "referral") {
-      const latestVariantId = content.history[content.history.length - 1]?.id;
-      const params = new URLSearchParams();
-      if (latestVariantId) {
-        params.set("variantId", String(latestVariantId));
-      }
-      const query = params.toString();
-      router.push(`/jobs/${content.jobId}/referral-send${query ? `?${query}` : ""}`);
-      return;
-    }
-    setSelectedContent(content);
-    setIsDrawerOpen(true);
-  };
-
-  const handleDrawerOpenChange = (open: boolean) => {
-    setIsDrawerOpen(open);
-    if (!open) {
-      setSelectedContent(null);
-    }
-  };
-
-  const handleGenerate = async (userPrompt?: string) => {
-    if (!selectedContent) return;
-
-    try {
-      const res = await fetch("/api/ai/content", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jobId: selectedContent.jobId,
-          type: selectedContent.type,
-          userPrompt: userPrompt || null,
-        }),
-      });
-
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Failed to generate");
-      }
-
-      const data = await res.json();
-      setSelectedContent(data.content);
-      queryClient.invalidateQueries({ queryKey: ["ai-history-all"] });
-    } catch (error) {
-      console.error("Generation error:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to generate content");
-    }
-  };
-
-  const handleSaveEdit = async (newContent: string, userPrompt?: string) => {
-    if (!selectedContent) return;
-
-    const res = await fetch(`/api/ai/content/${selectedContent.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        content: newContent,
-        userPrompt: userPrompt || "Manual edit",
-      }),
-    });
-
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.error || "Failed to save");
-    }
-
-    const data = await res.json();
-    setSelectedContent(data.content);
-    queryClient.invalidateQueries({ queryKey: ["ai-history-all"] });
-  };
-
   const contents = data?.contents || [];
 
-  // Group by date
   const groupedContents = contents.reduce((acc, content) => {
     const date = new Date(content.updatedAt);
     const today = new Date();
@@ -346,7 +265,15 @@ export default function AIHistoryPage() {
     return acc;
   }, {} as Record<string, ContentResponse[]>);
 
-  const selectedTypeConfig = selectedContent ? getTypeConfig(selectedContent.type) : null;
+  const handleDelete = (id: number) => {
+    setDeletingId(id);
+    deleteMutation.mutate(id);
+  };
+
+  const handleCardClick = (content: ContentResponse) => {
+    const latestVariantId = content.history[content.history.length - 1]?.id;
+    router.push(getWorkspacePathWithVariant(content.jobId, content.type, latestVariantId));
+  };
 
   if (isLoading) {
     return (
@@ -358,17 +285,17 @@ export default function AIHistoryPage() {
 
   if (contents.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 px-4">
-        <div className="w-16 h-16 rounded-2xl bg-card flex items-center justify-center mb-4">
+      <div className="flex flex-col items-center justify-center px-4 py-16">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-card">
           <Wand2 className="h-8 w-8 text-muted-foreground" />
         </div>
-        <h3 className="text-lg font-medium text-foreground mb-1">No AI-generated content yet</h3>
-        <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
-          Generate referral messages and cover letters from job pages to see them here
+        <h3 className="mb-1 text-lg font-medium text-foreground">No AI-generated content yet</h3>
+        <p className="mb-6 max-w-md text-center text-sm text-muted-foreground">
+          Generate referral messages, recruiter follow-ups, and cover letters from job pages to see them here
         </p>
         <Link href="/jobs">
           <Button variant="outline" className="border-border hover:bg-muted">
-            <ExternalLink className="h-4 w-4 mr-2" />
+            <ExternalLink className="mr-2 h-4 w-4" />
             Browse Jobs
           </Button>
         </Link>
@@ -377,45 +304,25 @@ export default function AIHistoryPage() {
   }
 
   return (
-    <>
-      <div className="space-y-8">
-        {Object.entries(groupedContents).map(([date, items]) => (
-          <div key={date}>
-            <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3 sticky top-0 bg-background py-2 z-10">
-              {date}
-            </h3>
-            <div className="space-y-3">
-              {items.map((content) => (
-                <AIHistoryCard
-                  key={content.id}
-                  content={content}
-                  onDelete={handleDelete}
-                  isDeleting={deletingId === content.id}
-                  onClick={() => handleCardClick(content)}
-                />
-              ))}
-            </div>
+    <div className="space-y-8">
+      {Object.entries(groupedContents).map(([date, items]) => (
+        <div key={date}>
+          <h3 className="sticky top-0 z-10 mb-3 bg-background py-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            {date}
+          </h3>
+          <div className="space-y-3">
+            {items.map((content) => (
+              <AIHistoryCard
+                key={content.id}
+                content={content}
+                isDeleting={deletingId === content.id}
+                onClick={() => handleCardClick(content)}
+                onDelete={handleDelete}
+              />
+            ))}
           </div>
-        ))}
-      </div>
-
-      {selectedContent && selectedTypeConfig && (
-        <AIContentEditor
-          isOpen={isDrawerOpen}
-          onOpenChange={handleDrawerOpenChange}
-          content={selectedContent}
-          isLoading={false}
-          onGenerate={handleGenerate}
-          onSaveEdit={handleSaveEdit}
-          title={selectedTypeConfig.label}
-          description={
-            selectedContent.type === "referral"
-              ? `Message to send to your connection at ${selectedContent.companyName || "Unknown Company"} requesting a referral`
-              : `Cover letter for ${selectedContent.jobTitle || "Untitled Job"} at ${selectedContent.companyName || "Unknown Company"}`
-          }
-          typeConfig={selectedTypeConfig}
-        />
-      )}
-    </>
+        </div>
+      ))}
+    </div>
   );
 }
