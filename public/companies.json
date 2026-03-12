@@ -1,5 +1,12 @@
 [
   {
+    "name": "Rippling",
+    "careersUrl": "https://www.rippling.com/en-IN/careers/open-roles",
+    "logoUrl": "https://rippling2.imgix.net/RipplingGoogleAvatar_250.png",
+    "platform": "rippling",
+    "isActive": true
+  },
+  {
     "name": "Nvidia",
     "careersUrl": "https://nvidia.eightfold.ai/careers?start=0&pid=893392882405&sort_by=timestamp",
     "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ_0aejgeY3GpEtmRtjhc44-PaplsZeWYbJ_Q&s",

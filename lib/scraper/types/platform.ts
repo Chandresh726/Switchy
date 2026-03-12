@@ -6,7 +6,8 @@ export type Platform =
   | "workday"
   | "uber"
   | "google"
-  | "atlassian";
+  | "atlassian"
+  | "rippling";
 
 export type TriggerSource = "manual" | "scheduler" | "company_refresh";
 
@@ -37,6 +38,7 @@ export const PLATFORMS: readonly Platform[] = [
   "uber",
   "google",
   "atlassian",
+  "rippling",
 ] as const;
 
 export const TRIGGER_SOURCES: readonly TriggerSource[] = [

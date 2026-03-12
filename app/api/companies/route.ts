@@ -16,6 +16,7 @@ const PLATFORM_VALUES = [
   "uber",
   "google",
   "atlassian",
+  "rippling",
   "custom",
 ] as const;
 

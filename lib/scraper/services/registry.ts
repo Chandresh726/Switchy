@@ -12,6 +12,7 @@ import {
   UberScraper,
   GoogleScraper,
   AtlassianScraper,
+  RipplingScraper,
 } from "@/lib/scraper/platforms";
 
 export interface IScraperRegistry {
@@ -91,6 +92,7 @@ export function createScraperRegistry(config: ScraperRegistryConfig): IScraperRe
   registry.register(new UberScraper(config.httpClient));
   registry.register(new GoogleScraper(config.httpClient));
   registry.register(new AtlassianScraper(config.httpClient));
+  registry.register(new RipplingScraper(config.httpClient));
 
   return registry;
 }

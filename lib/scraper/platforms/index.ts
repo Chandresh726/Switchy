@@ -6,3 +6,4 @@ export { WorkdayScraper, createWorkdayScraper, DEFAULT_WORKDAY_CONFIG, type Work
 export { UberScraper, createUberScraper, DEFAULT_UBER_CONFIG, type UberConfig } from "./uber";
 export { GoogleScraper, createGoogleScraper, DEFAULT_GOOGLE_CONFIG, type GoogleConfig } from "./google";
 export { AtlassianScraper, createAtlassianScraper, DEFAULT_ATLASSIAN_CONFIG, type AtlassianConfig } from "./atlassian";
+export { RipplingScraper, createRipplingScraper, DEFAULT_RIPPLING_CONFIG, type RipplingConfig } from "./rippling";

@@ -41,6 +41,13 @@ export function detectPlatformFromUrl(url: string): DetectedPlatform {
   ) {
     return "uber";
   }
+  if (
+    urlLower.includes("rippling.com/careers/open-roles") ||
+    urlLower.includes("rippling.com/careers") ||
+    (urlLower.includes("rippling.com") && urlLower.includes("career"))
+  ) {
+    return "rippling";
+  }
   return "custom";
 }
 
@@ -54,6 +61,7 @@ export function getPlatformLabel(platform: DetectedPlatform): string {
     uber: "Uber",
     google: "Google",
     atlassian: "Atlassian",
+    rippling: "Rippling",
     custom: "Custom",
   };
 

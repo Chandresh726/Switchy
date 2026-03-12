@@ -14,6 +14,7 @@ export const PLATFORM_OPTIONS = [
   { value: "uber", label: "Uber" },
   { value: "google", label: "Google" },
   { value: "atlassian", label: "Atlassian" },
+  { value: "rippling", label: "Rippling" },
   { value: "custom", label: "Custom" },
 ] as const;
 
