@@ -7,3 +7,4 @@ export { UberScraper, createUberScraper, DEFAULT_UBER_CONFIG, type UberConfig } 
 export { GoogleScraper, createGoogleScraper, DEFAULT_GOOGLE_CONFIG, type GoogleConfig } from "./google";
 export { AtlassianScraper, createAtlassianScraper, DEFAULT_ATLASSIAN_CONFIG, type AtlassianConfig } from "./atlassian";
 export { RipplingScraper, createRipplingScraper, DEFAULT_RIPPLING_CONFIG, type RipplingConfig } from "./rippling";
+export { NutanixScraper, createNutanixScraper, DEFAULT_NUTANIX_CONFIG, type NutanixConfig } from "./nutanix";

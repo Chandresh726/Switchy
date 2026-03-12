@@ -21,6 +21,7 @@ const PLATFORM_VALUES = [
   "google",
   "atlassian",
   "rippling",
+  "nutanix",
   "custom",
 ] as const;
 
@@ -62,6 +63,7 @@ type CompanyUpdatePayload = {
     | "google"
     | "atlassian"
     | "rippling"
+    | "nutanix"
     | "custom"
     | null;
   boardToken?: string | null;

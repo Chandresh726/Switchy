@@ -7,6 +7,13 @@
     "isActive": true
   },
   {
+    "name": "Nutanix",
+    "careersUrl": "https://careers.nutanix.com/en/jobs/",
+    "logoUrl": "https://yt3.googleusercontent.com/OFaWeOdCeKYSJxO6I7RnEqQlIna_PyJSIkJ4mqAUaH3U2f-YAi5A1JHWreQzeEz6-OaXxHfgkxw=s900-c-k-c0x00ffffff-no-rj",
+    "platform": "nutanix",
+    "isActive": true
+  },
+  {
     "name": "Nvidia",
     "careersUrl": "https://nvidia.eightfold.ai/careers?start=0&pid=893392882405&sort_by=timestamp",
     "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ_0aejgeY3GpEtmRtjhc44-PaplsZeWYbJ_Q&s",

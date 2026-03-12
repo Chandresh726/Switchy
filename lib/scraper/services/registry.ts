@@ -13,6 +13,7 @@ import {
   GoogleScraper,
   AtlassianScraper,
   RipplingScraper,
+  NutanixScraper,
 } from "@/lib/scraper/platforms";
 
 export interface IScraperRegistry {
@@ -93,6 +94,7 @@ export function createScraperRegistry(config: ScraperRegistryConfig): IScraperRe
   registry.register(new GoogleScraper(config.httpClient));
   registry.register(new AtlassianScraper(config.httpClient));
   registry.register(new RipplingScraper(config.httpClient));
+  registry.register(new NutanixScraper(config.httpClient));
 
   return registry;
 }

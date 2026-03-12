@@ -10,6 +10,7 @@ const PLATFORM_VALUES = [
   "google",
   "atlassian",
   "rippling",
+  "nutanix",
   "custom",
 ] as const;
 

@@ -48,6 +48,9 @@ export function detectPlatformFromUrl(url: string): DetectedPlatform {
   ) {
     return "rippling";
   }
+  if (urlLower.includes("careers.nutanix.com") || urlLower.includes("nutanix.com") && urlLower.includes("career")) {
+    return "nutanix";
+  }
   return "custom";
 }
 
@@ -62,6 +65,7 @@ export function getPlatformLabel(platform: DetectedPlatform): string {
     google: "Google",
     atlassian: "Atlassian",
     rippling: "Rippling",
+    nutanix: "Nutanix",
     custom: "Custom",
   };
 
