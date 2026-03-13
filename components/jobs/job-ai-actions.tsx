@@ -20,6 +20,7 @@ export function JobAIActions({
   jobStatus,
 }: JobAIActionsProps) {
   const router = useRouter();
+  const showCoverLetterAction = jobStatus !== "applied";
   const primaryType: AIContentType =
     jobStatus === "applied" ? "recruiter_follow_up" : "referral";
   const primaryLabel =
@@ -54,15 +55,17 @@ export function JobAIActions({
         </Link>
       </Button>
 
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => router.push(getWorkspacePath(jobId, "cover_letter"))}
-        className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
-      >
-        <FileText className="h-4 w-4" />
-        Cover Letter
-      </Button>
+      {showCoverLetterAction ? (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => router.push(getWorkspacePath(jobId, "cover_letter"))}
+          className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+        >
+          <FileText className="h-4 w-4" />
+          Cover Letter
+        </Button>
+      ) : null}
     </div>
   );
 }
