@@ -4,13 +4,15 @@ import { useState, useMemo } from "react";
 import { Briefcase, ArrowUp, ArrowDown } from "lucide-react";
 
 import { EmptyState } from "@/components/ui/empty-state";
+import { formatRelativeTime } from "@/lib/utils/format";
 
 import { CompanyJobCard } from "./company-job-card";
 import { CompanyTopMatches } from "./company-top-matches";
 
-import type { CompanyJob } from "./types";
+import type { CompanyJob, CompanyOverview } from "./types";
 
 interface CompanyJobsTabProps {
+  company: CompanyOverview;
   jobs: CompanyJob[];
 }
 
@@ -49,10 +51,18 @@ function sortJobs(jobs: CompanyJob[], key: SortKey, dir: SortDir): CompanyJob[] 
   });
 }
 
-export function CompanyJobsTab({ jobs }: CompanyJobsTabProps) {
+function parseDate(value: string | null): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+export function CompanyJobsTab({ company, jobs }: CompanyJobsTabProps) {
   const [sortKey, setSortKey] = useState<SortKey>("discoveredAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const lastScrapedDate = parseDate(company.lastScrapedAt);
 
   const filteredAndSorted = useMemo(() => {
     const filtered =
@@ -61,6 +71,21 @@ export function CompanyJobsTab({ jobs }: CompanyJobsTabProps) {
   }, [jobs, sortKey, sortDir, statusFilter]);
 
   if (jobs.length === 0) {
+    if (!company.canScrapeJobs) {
+      return (
+        <div className="rounded-lg border border-border bg-muted/20 py-12 text-center">
+          <div className="flex flex-col items-center gap-3">
+            <span className="inline-flex items-center rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-300">
+              Scraping unavailable
+            </span>
+            <p className="max-w-md text-sm text-muted-foreground">
+              This company does not support job scraping. Use the careers link to review openings manually.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <EmptyState
         icon={Briefcase}
@@ -74,6 +99,17 @@ export function CompanyJobsTab({ jobs }: CompanyJobsTabProps) {
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-end gap-2 text-xs">
+        {!company.canScrapeJobs && (
+          <span className="inline-flex items-center rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 font-medium text-amber-300">
+            Scraping unavailable
+          </span>
+        )}
+        <span className="text-muted-foreground">
+          {lastScrapedDate ? `Last scraped ${formatRelativeTime(lastScrapedDate)}` : "Never scraped"}
+        </span>
+      </div>
+
       <CompanyTopMatches jobs={jobs} />
 
       <div className="space-y-3">

@@ -343,14 +343,6 @@ export function CompanyList({
                       {company.platform}
                     </Badge>
                   )}
-                  {!canScrapeJobs && (
-                    <Badge
-                      variant="outline"
-                      className="border-amber-500/30 bg-amber-500/10 text-amber-300"
-                    >
-                      Scraping unavailable
-                    </Badge>
-                  )}
                 </div>
 
                 <a
@@ -379,11 +371,18 @@ export function CompanyList({
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span>
-                    {company.lastScrapedAt
-                      ? `Scraped ${getRelativeTime(company.lastScrapedAt)}`
-                      : "Never scraped"}
-                  </span>
+                  {company.lastScrapedAt ? (
+                    <span>{`Scraped ${getRelativeTime(company.lastScrapedAt)}`}</span>
+                  ) : canScrapeJobs ? (
+                    <span>Never scraped</span>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="border-amber-500/30 bg-amber-500/10 text-amber-300"
+                    >
+                      Scraping unavailable
+                    </Badge>
+                  )}
                 </div>
               </div>
             </div>

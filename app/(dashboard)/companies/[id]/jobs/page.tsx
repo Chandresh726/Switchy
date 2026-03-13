@@ -28,5 +28,5 @@ export default function CompanyJobsPage() {
         );
     }
 
-    return <CompanyJobsTab jobs={data.jobs} />;
+    return <CompanyJobsTab company={data.company} jobs={data.jobs} />;
 }
