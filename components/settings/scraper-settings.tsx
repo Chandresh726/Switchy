@@ -149,7 +149,7 @@ export function ScraperSettings({
           <div className="space-y-1">
             <Label htmlFor="max-parallel-scrapes">Max Parallel Scrapes</Label>
             <p className="text-xs text-muted-foreground">
-              Max concurrent company scrapes.
+              Max concurrent API and standard browser scrapes (Workday/Eightfold run serially).
             </p>
           </div>
           <Input

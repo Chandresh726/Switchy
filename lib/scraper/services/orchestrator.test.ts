@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Company } from "@/lib/db/schema";
 import type { ExistingJob } from "@/lib/scraper/infrastructure/types";
-import type { ScraperResult } from "@/lib/scraper/types";
+import type { Platform, ScraperResult } from "@/lib/scraper/types";
 import { TitleBasedDeduplicationService } from "@/lib/scraper/services/deduplication-service";
 import { DefaultFilterService } from "@/lib/scraper/services/filter-service";
 import { ScrapeOrchestrator } from "@/lib/scraper/services/orchestrator";
@@ -93,21 +93,43 @@ function createActiveCompanies(count: number): Company[] {
   }));
 }
 
+interface RegistryMockOptions {
+  scrapersByPlatform?: Partial<Record<Platform, { requiresBrowser: boolean }>>;
+}
+
+const DEFAULT_SCRAPER_MAP: Partial<Record<Platform, { requiresBrowser: boolean }>> = {
+  greenhouse: { requiresBrowser: false },
+};
+
 function createRegistryMock(
   result:
     | ScraperResult
-    | ((...args: unknown[]) => Promise<ScraperResult>)
+    | ((...args: unknown[]) => Promise<ScraperResult>),
+  options: RegistryMockOptions = {}
 ) {
   const scrape = typeof result === "function"
     ? vi.fn(result)
     : vi.fn(async () => result);
 
+  const scraperMap = { ...DEFAULT_SCRAPER_MAP, ...options.scrapersByPlatform };
+  const getScraperByPlatform = vi.fn((platform: Platform) => {
+    const config = scraperMap[platform];
+    if (!config) return null;
+    return {
+      platform,
+      requiresBrowser: config.requiresBrowser,
+      validate: vi.fn(),
+      scrape: vi.fn(),
+      extractIdentifier: vi.fn(),
+    };
+  });
+
   return {
     register: vi.fn(),
     getScraperForUrl: vi.fn(),
-    getScraperByPlatform: vi.fn(),
+    getScraperByPlatform,
     scrape,
-    getSupportedPlatforms: vi.fn(() => ["greenhouse"]),
+    getSupportedPlatforms: vi.fn(() => Object.keys(scraperMap) as Platform[]),
   };
 }
 
@@ -446,6 +468,245 @@ describe("ScrapeOrchestrator", () => {
 
     expect(result.summary.totalCompanies).toBe(8);
     expect(maxInFlight).toBeLessThanOrEqual(3);
+  });
+
+  it("runs api tier before browser and serial tiers", async () => {
+    const activeCompanies: Company[] = [
+      {
+        ...company,
+        id: 1,
+        name: "ApiOne",
+        platform: "greenhouse",
+        careersUrl: "https://boards.greenhouse.io/acme",
+      },
+      {
+        ...company,
+        id: 2,
+        name: "ApiTwo",
+        platform: "lever",
+        careersUrl: "https://jobs.lever.co/globex",
+      },
+      {
+        ...company,
+        id: 3,
+        name: "Browser",
+        platform: "atlassian",
+        careersUrl: "https://www.atlassian.com/company/careers",
+      },
+      {
+        ...company,
+        id: 4,
+        name: "Serial",
+        platform: "workday",
+        careersUrl: "https://acme.wd1.myworkdayjobs.com/en-US/careers",
+      },
+    ];
+    const repository = createRepositoryMock({
+      activeCompanies,
+      insertedJobIds: [],
+      settingValues: {
+        scraper_max_parallel_scrapes: "3",
+      },
+    });
+
+    const starts: Record<string, number[]> = {};
+    const ends: Record<string, number[]> = {};
+
+    const recordTime = (bucket: Record<string, number[]>, key: string) => {
+      if (!bucket[key]) {
+        bucket[key] = [];
+      }
+      bucket[key].push(Date.now());
+    };
+
+    const registry = createRegistryMock(
+      async (_url, platform) => {
+        const key = platform ?? "unknown";
+        recordTime(starts, key);
+        const delay = platform === "greenhouse" || platform === "lever" ? 20 : 5;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        recordTime(ends, key);
+        return {
+          success: true,
+          outcome: "success",
+          jobs: [],
+          openExternalIds: [],
+          openExternalIdsComplete: true,
+        };
+      },
+      {
+        scrapersByPlatform: {
+          greenhouse: { requiresBrowser: false },
+          lever: { requiresBrowser: false },
+          atlassian: { requiresBrowser: true },
+          workday: { requiresBrowser: true },
+        },
+      }
+    );
+
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    await orchestrator.scrapeAllCompanies("manual");
+
+    const apiEnd = Math.max(
+      Math.max(...(ends.greenhouse ?? [0])),
+      Math.max(...(ends.lever ?? [0]))
+    );
+    const browserStart = Math.min(...(starts.atlassian ?? [Number.POSITIVE_INFINITY]));
+    const browserEnd = Math.max(...(ends.atlassian ?? [0]));
+    const serialStart = Math.min(...(starts.workday ?? [Number.POSITIVE_INFINITY]));
+
+    expect(browserStart).toBeGreaterThanOrEqual(apiEnd);
+    expect(serialStart).toBeGreaterThanOrEqual(browserEnd);
+  });
+
+  it("runs workday and eightfold serially regardless of max parallel", async () => {
+    const activeCompanies: Company[] = [
+      {
+        ...company,
+        id: 1,
+        name: "WorkdayCo",
+        platform: "workday",
+        careersUrl: "https://acme.wd1.myworkdayjobs.com/en-US/careers",
+      },
+      {
+        ...company,
+        id: 2,
+        name: "EightfoldCo",
+        platform: "eightfold",
+        careersUrl: "https://jobs.eightfold.ai/careers",
+      },
+    ];
+    const repository = createRepositoryMock({
+      activeCompanies,
+      insertedJobIds: [],
+      settingValues: {
+        scraper_max_parallel_scrapes: "4",
+      },
+    });
+
+    let serialInFlight = 0;
+    let maxSerialInFlight = 0;
+
+    const registry = createRegistryMock(
+      async (_url, platform) => {
+        if (platform === "workday" || platform === "eightfold") {
+          serialInFlight += 1;
+          maxSerialInFlight = Math.max(maxSerialInFlight, serialInFlight);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        if (platform === "workday" || platform === "eightfold") {
+          serialInFlight -= 1;
+        }
+        return {
+          success: true,
+          outcome: "success",
+          jobs: [],
+          openExternalIds: [],
+          openExternalIdsComplete: true,
+        };
+      },
+      {
+        scrapersByPlatform: {
+          workday: { requiresBrowser: true },
+          eightfold: { requiresBrowser: true },
+        },
+      }
+    );
+
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    await orchestrator.scrapeAllCompanies("manual");
+
+    expect(maxSerialInFlight).toBeLessThanOrEqual(1);
+  });
+
+  it("classifies missing platforms by URL and queues unknowns last", async () => {
+    const detectedUrl = "https://boards.greenhouse.io/acme";
+    const apiUrl = "https://jobs.lever.co/globex";
+    const unknownUrl = "https://careers.example.com";
+
+    const activeCompanies: Company[] = [
+      {
+        ...company,
+        id: 1,
+        name: "Detected",
+        platform: null,
+        careersUrl: detectedUrl,
+      },
+      {
+        ...company,
+        id: 2,
+        name: "Lever",
+        platform: "lever",
+        careersUrl: apiUrl,
+      },
+      {
+        ...company,
+        id: 3,
+        name: "Unknown",
+        platform: null,
+        careersUrl: unknownUrl,
+      },
+    ];
+    const repository = createRepositoryMock({
+      activeCompanies,
+      insertedJobIds: [],
+      settingValues: {
+        scraper_max_parallel_scrapes: "2",
+      },
+    });
+
+    const starts: Record<string, number> = {};
+    const ends: Record<string, number> = {};
+
+    const registry = createRegistryMock(
+      async (url) => {
+        starts[url] = Date.now();
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        ends[url] = Date.now();
+        return {
+          success: true,
+          outcome: "success",
+          jobs: [],
+          openExternalIds: [],
+          openExternalIdsComplete: true,
+        };
+      },
+      {
+        scrapersByPlatform: {
+          greenhouse: { requiresBrowser: false },
+          lever: { requiresBrowser: false },
+        },
+      }
+    );
+
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    await orchestrator.scrapeAllCompanies("manual");
+
+    const maxApiEnd = Math.max(ends[detectedUrl], ends[apiUrl]);
+
+    expect(starts[detectedUrl]).toBeLessThanOrEqual(ends[apiUrl]);
+    expect(starts[unknownUrl]).toBeGreaterThanOrEqual(maxApiEnd);
   });
 
   it("does not trigger auto-match when inserted jobs have no descriptions", async () => {

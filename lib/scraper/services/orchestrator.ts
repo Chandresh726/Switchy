@@ -13,6 +13,7 @@ import {
   type ScraperResult,
   type ScrapedJob,
 } from "@/lib/scraper/types";
+import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 import { ScraperLogger } from "@/lib/scraper/utils/logger";
 import { getMatcherConfig, matchWithTracking } from "@/lib/ai/matcher";
 
@@ -39,6 +40,9 @@ const SCRAPER_MAX_PARALLEL_SCRAPES_KEY = "scraper_max_parallel_scrapes";
 const DEFAULT_MAX_PARALLEL_SCRAPES = 3;
 const MIN_PARALLEL_SCRAPES = 1;
 const MAX_PARALLEL_SCRAPES = 10;
+const SERIAL_PLATFORMS: Platform[] = ["workday", "eightfold"];
+
+type ScrapeTier = "api" | "browser" | "serial";
 
 export interface IScrapeOrchestrator {
   scrapeAllCompanies(trigger: TriggerSource): Promise<BatchFetchResult>;
@@ -168,62 +172,91 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     });
 
     const maxParallelScrapes = await this.loadMaxParallelScrapes();
-    const workerCount = Math.min(maxParallelScrapes, companiesToScrape.length);
+    const queueItems = companiesToScrape.map((company, index) => ({ company, index }));
+    const apiQueue: Array<{ company: Company; index: number }> = [];
+    const browserQueue: Array<{ company: Company; index: number }> = [];
+    const serialQueue: Array<{ company: Company; index: number }> = [];
+
+    for (const item of queueItems) {
+      const tier = this.resolveScrapeTier(item.company);
+      if (tier === "api") {
+        apiQueue.push(item);
+      } else if (tier === "browser") {
+        browserQueue.push(item);
+      } else {
+        serialQueue.push(item);
+      }
+    }
+
     const resultsByIndex: Array<FetchResult | undefined> = new Array(companiesToScrape.length);
-    let nextCompanyIndex = 0;
     let stopRequested = false;
     let progressUpdateChain = Promise.resolve();
 
-    const processNextCompany = async (): Promise<void> => {
-      while (true) {
-        if (stopRequested) {
-          return;
+    const runQueue = async (
+      queue: Array<{ company: Company; index: number }>,
+      workerLimit: number
+    ): Promise<void> => {
+      if (queue.length === 0 || stopRequested) return;
+      const workerCount = Math.min(workerLimit, queue.length);
+      if (workerCount <= 0) return;
+      let nextQueueIndex = 0;
+
+      const processNextCompany = async (): Promise<void> => {
+        while (true) {
+          if (stopRequested) {
+            return;
+          }
+
+          const queueIndex = nextQueueIndex;
+          if (queueIndex >= queue.length) {
+            return;
+          }
+
+          nextQueueIndex += 1;
+
+          const isSessionActive = await this.repository.isSessionInProgress(sessionId);
+          if (!isSessionActive) {
+            stopRequested = true;
+            console.log(`[ScrapeOrchestrator] Session ${sessionId} stop requested`);
+            return;
+          }
+
+          const { company, index: resultIndex } = queue[queueIndex];
+          const result = this.isCustomPlatform(company.platform)
+            ? this.createSkippedResult(company.id, company.name, "Skipping custom platform company")
+            : await this.scrapeCompanyInternal(
+                company.id,
+                company.name,
+                company.careersUrl,
+                this.resolvePlatform(company.platform),
+                company.boardToken,
+                { sessionId, triggerSource: trigger }
+              );
+
+          resultsByIndex[resultIndex] = result;
+          const completedResults = resultsByIndex.filter(
+            (entry): entry is FetchResult => entry !== undefined
+          );
+          const progress = this.calculateBatchProgress(completedResults);
+
+          progressUpdateChain = progressUpdateChain.then(async () => {
+            await this.repository.updateSessionProgress(sessionId, progress);
+          });
+          await progressUpdateChain;
         }
+      };
 
-        const companyIndex = nextCompanyIndex;
-        if (companyIndex >= companiesToScrape.length) {
-          return;
-        }
-
-        nextCompanyIndex += 1;
-
-        const isSessionActive = await this.repository.isSessionInProgress(sessionId);
-        if (!isSessionActive) {
-          stopRequested = true;
-          console.log(`[ScrapeOrchestrator] Session ${sessionId} stop requested`);
-          return;
-        }
-
-        const company = companiesToScrape[companyIndex];
-        const result = this.isCustomPlatform(company.platform)
-          ? this.createSkippedResult(company.id, company.name, "Skipping custom platform company")
-          : await this.scrapeCompanyInternal(
-              company.id,
-              company.name,
-              company.careersUrl,
-              this.resolvePlatform(company.platform),
-              company.boardToken,
-              { sessionId, triggerSource: trigger }
-            );
-
-        resultsByIndex[companyIndex] = result;
-        const completedResults = resultsByIndex.filter(
-          (entry): entry is FetchResult => entry !== undefined
-        );
-        const progress = this.calculateBatchProgress(completedResults);
-
-        progressUpdateChain = progressUpdateChain.then(async () => {
-          await this.repository.updateSessionProgress(sessionId, progress);
-        });
-        await progressUpdateChain;
-      }
+      await Promise.all(
+        Array.from({ length: workerCount }, async () => {
+          await processNextCompany();
+        })
+      );
     };
 
-    await Promise.all(
-      Array.from({ length: workerCount }, async () => {
-        await processNextCompany();
-      })
-    );
+    await runQueue(apiQueue, maxParallelScrapes);
+    await runQueue(browserQueue, maxParallelScrapes);
+    await runQueue(serialQueue, 1);
+
     await progressUpdateChain;
 
     const results = resultsByIndex.filter(
@@ -259,6 +292,42 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
         totalDuration: Date.now() - sessionStartTime,
       },
     };
+  }
+
+  private resolveScrapeTier(company: Company): ScrapeTier {
+    if (this.isCustomPlatform(company.platform)) {
+      return "serial";
+    }
+
+    const platform = this.resolvePlatformForTier(company);
+    if (!platform) {
+      return "serial";
+    }
+
+    if (SERIAL_PLATFORMS.includes(platform)) {
+      return "serial";
+    }
+
+    const scraper = this.registry.getScraperByPlatform(platform);
+    if (!scraper) {
+      return "serial";
+    }
+
+    return scraper.requiresBrowser ? "browser" : "api";
+  }
+
+  private resolvePlatformForTier(company: Company): Platform | null {
+    const resolved = this.resolvePlatform(company.platform);
+    if (resolved) {
+      return resolved;
+    }
+
+    const detected = detectPlatformFromUrl(company.careersUrl);
+    if (detected === "custom") {
+      return null;
+    }
+
+    return detected;
   }
 
   private calculateBatchProgress(results: FetchResult[]): ScrapeBatchProgress {
