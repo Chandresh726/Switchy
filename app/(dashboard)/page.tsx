@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Briefcase,
@@ -66,6 +67,7 @@ interface Job {
   matchScore: number | null;
   status: string;
   discoveredAt: string;
+  viewedAt: string | null;
   appliedAt: string | null;
   company: {
     id: number;
@@ -73,6 +75,9 @@ interface Job {
     logoUrl: string | null;
   };
 }
+
+const NEW_JOB_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const DASHBOARD_LIST_MAX_ITEMS = 20;
 
 function StatCard({
   title,
@@ -128,7 +133,23 @@ function StatCard({
 }
 
 /* eslint-disable @next/next/no-img-element */
-function JobRow({ job, type = "default" }: { job: Job; type?: "default" | "applied" }) {
+function JobRow({
+  job,
+  type = "default",
+  currentTime,
+  showNewTag = false,
+}: {
+  job: Job;
+  type?: "default" | "applied";
+  currentTime: number;
+  showNewTag?: boolean;
+}) {
+  const discoveredAt = new Date(job.discoveredAt);
+  const isNewJob = showNewTag
+    && job.status === "new"
+    && !job.viewedAt
+    && currentTime - discoveredAt.getTime() <= NEW_JOB_WINDOW_MS;
+
   return (
     <Link
       href={`/jobs/${job.id}`}
@@ -147,9 +168,16 @@ function JobRow({ job, type = "default" }: { job: Job; type?: "default" | "appli
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-medium text-foreground group-hover:text-emerald-400 transition-colors">
-            {job.title}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="truncate text-sm font-medium text-foreground group-hover:text-emerald-400 transition-colors">
+              {job.title}
+            </h3>
+            {isNewJob && (
+              <span className="shrink-0 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-400">
+                New
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
             <span>{job.company.name}</span>
             {job.location && (
@@ -176,6 +204,8 @@ function JobRow({ job, type = "default" }: { job: Job; type?: "default" | "appli
 
 
 export default function DashboardPage() {
+  const [currentTime] = useState(() => Date.now());
+
   const { data: profile, isLoading: isProfileLoading } = useQuery<Profile>({
     queryKey: ["profile"],
     queryFn: async () => {
@@ -200,7 +230,7 @@ export default function DashboardPage() {
   const { data: highMatchData } = useQuery({
     queryKey: ["jobs", "high-match"],
     queryFn: async () => {
-      const res = await fetch("/api/jobs?minScore=75&excludeStatus=applied,archived&sortBy=matchScore&sortOrder=desc&limit=5");
+      const res = await fetch(`/api/jobs?minScore=75&excludeStatus=applied,archived&sortBy=matchScore&sortOrder=desc&limit=${DASHBOARD_LIST_MAX_ITEMS}`);
       if (!res.ok) throw new Error("Failed to fetch jobs");
       return res.json();
     },
@@ -210,7 +240,7 @@ export default function DashboardPage() {
   const { data: recentJobsData } = useQuery({
     queryKey: ["jobs", "recent"],
     queryFn: async () => {
-      const res = await fetch("/api/jobs?excludeStatus=applied,archived&sortBy=discoveredAt&sortOrder=desc&limit=5");
+      const res = await fetch(`/api/jobs?excludeStatus=applied,archived&sortBy=discoveredAt&sortOrder=desc&limit=${DASHBOARD_LIST_MAX_ITEMS}`);
       if (!res.ok) throw new Error("Failed to fetch jobs");
       return res.json();
     },
@@ -373,10 +403,10 @@ export default function DashboardPage() {
               </Link>
             </div>
 
-            <div className="space-y-2">
+            <div className="max-h-[23rem] space-y-2 overflow-y-auto pr-1">
               {highMatchJobs.length > 0 ? (
                 highMatchJobs.map((job) => (
-                  <JobRow key={job.id} job={job} />
+                  <JobRow key={job.id} job={job} currentTime={currentTime} showNewTag />
                 ))
               ) : (
                 <div className="flex flex-col items-center justify-center py-8 text-center border border-dashed border-border rounded-lg">
@@ -407,10 +437,10 @@ export default function DashboardPage() {
               </Link>
             </div>
 
-            <div className="space-y-2">
+            <div className="max-h-[23rem] space-y-2 overflow-y-auto pr-1">
               {recentJobs.length > 0 ? (
                 recentJobs.map((job) => (
-                  <JobRow key={job.id} job={job} />
+                  <JobRow key={job.id} job={job} currentTime={currentTime} />
                 ))
               ) : (
                 <div className="flex flex-col items-center justify-center py-8 text-center border border-dashed border-border rounded-lg">
