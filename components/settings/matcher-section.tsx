@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ModelCombobox } from "@/components/settings/model-combobox";
 import { Separator } from "@/components/ui/separator";
 import { AlertTriangle, Cpu, Loader2, Save, Settings2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -157,34 +158,15 @@ export function MatcherSection({
                       ))}
                     </SelectContent>
                   </Select>
-                  <Select
+                  <ModelCombobox
+                    models={models}
                     value={matcherModel}
                     onValueChange={onMatcherModelChange}
                     disabled={modelsLoading || models.length === 0}
-                  >
-                    <SelectTrigger className="flex-1 bg-background/60 border-border">
-                      <SelectValue placeholder="Select model" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {modelsLoading ? (
-                        <SelectItem value="loading" disabled>Loading models...</SelectItem>
-                      ) : modelsError && models.length === 0 ? (
-                        <SelectItem value="error" disabled>Failed to load models</SelectItem>
-                      ) : models.length === 0 ? (
-                        <SelectItem value="none" disabled>No models available for selected provider</SelectItem>
-                      ) : (
-                        models.map((model) => (
-                          <SelectItem key={model.modelId} value={model.modelId}>
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">{model.label}</span>
-                              <span className="text-muted-foreground text-xs">•</span>
-                              <span className="text-xs text-muted-foreground">{model.description}</span>
-                            </div>
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
+                    loading={modelsLoading}
+                    error={modelsError}
+                    placeholder="Select model"
+                  />
                   {supportsReasoning && (
                     <Select value={matcherReasoningEffort} onValueChange={onMatcherReasoningEffortChange}>
                       <SelectTrigger className="w-32 bg-background/60 border-border">

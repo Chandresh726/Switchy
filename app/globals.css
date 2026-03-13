@@ -125,6 +125,11 @@
   }
 }
 
+@keyframes marquee-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(-50% - 1.5em)); }
+}
+
 @layer components {
   .json-editor textarea,
   .json-editor pre {

@@ -3,6 +3,7 @@
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ModelCombobox } from "@/components/settings/model-combobox";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, FileText, Loader2, MessageCircle, Save, Send, Wand2 } from "lucide-react";
@@ -139,34 +140,15 @@ export function AIWritingSection({
                     ))}
                   </SelectContent>
                 </Select>
-                <Select
+                <ModelCombobox
+                  models={models}
                   value={currentModel}
                   onValueChange={(value) => onAIWritingSettingsChange({ aiWritingModel: value })}
                   disabled={modelsLoading || models.length === 0}
-                >
-                  <SelectTrigger className="flex-1 bg-background/60 border-border">
-                    <SelectValue placeholder="Select model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {modelsLoading ? (
-                      <SelectItem value="loading" disabled>Loading models...</SelectItem>
-                    ) : modelsError && models.length === 0 ? (
-                      <SelectItem value="error" disabled>Failed to load models</SelectItem>
-                    ) : models.length === 0 ? (
-                      <SelectItem value="none" disabled>Select a provider first</SelectItem>
-                    ) : (
-                      models.map((model) => (
-                        <SelectItem key={model.modelId} value={model.modelId}>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{model.label}</span>
-                            <span className="text-muted-foreground text-xs">•</span>
-                            <span className="text-xs text-muted-foreground">{model.description}</span>
-                          </div>
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
+                  loading={modelsLoading}
+                  error={modelsError}
+                  placeholder="Select model"
+                />
                 {supportsReasoning && (
                   <Select
                     value={aiWritingSettings.aiWritingReasoningEffort || "medium"}

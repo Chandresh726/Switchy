@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ModelCombobox } from "@/components/settings/model-combobox";
 import { AlertTriangle, Terminal } from "lucide-react";
 import { REASONING_EFFORT_OPTIONS } from "@/lib/ai/providers/metadata";
 import type { ReasoningEffort } from "@/lib/settings/types";
@@ -83,30 +84,15 @@ export function ResumeParserSection({
             <div className="space-y-2">
               <Label>Model</Label>
               <div className="flex gap-2">
-                <Select
+                <ModelCombobox
+                  models={models}
                   value={resumeParserModel}
                   onValueChange={onResumeParserModelChange}
                   disabled={modelsLoading || models.length === 0}
-                >
-                  <SelectTrigger className="flex-1 bg-background/60 border-border">
-                    <SelectValue placeholder="Select model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {modelsLoading ? (
-                      <SelectItem value="loading" disabled>Loading models...</SelectItem>
-                    ) : modelsError && models.length === 0 ? (
-                      <SelectItem value="error" disabled>Failed to load models</SelectItem>
-                    ) : models.length === 0 ? (
-                      <SelectItem value="none" disabled>Select a provider first</SelectItem>
-                    ) : (
-                      models.map((model) => (
-                        <SelectItem key={model.modelId} value={model.modelId}>
-                          {model.label}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
+                  loading={modelsLoading}
+                  error={modelsError}
+                  placeholder="Select model"
+                />
                 {supportsReasoning && (
                   <Select value={resumeParserReasoningEffort} onValueChange={onResumeParserReasoningEffortChange}>
                     <SelectTrigger className="w-32 bg-background/60 border-border">
