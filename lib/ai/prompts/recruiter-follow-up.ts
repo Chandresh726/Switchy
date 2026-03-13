@@ -8,7 +8,7 @@ function toMarkdownLink(url?: string | null): string | null {
   const trimmed = url.trim();
   if (!trimmed) return null;
   const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  return `[application link](${normalized})`;
+  return `[${normalized}](${normalized})`;
 }
 
 function getLengthInstruction(length: string): string {
@@ -50,7 +50,8 @@ Output requirements:
    - Links as [text](https://...)
 3. Do not use headings, lists, tables, or code blocks.
 4. Do not use placeholders except {{connection_first_name}}.
-5. Return message body only (no subject line).`;
+5. Return message body only (no subject line).
+6. If you include a link, use the full URL as the link text and put it in its own sentence.`;
 
 export function buildRecruiterFollowUpPromptFromProfileData(
   jobTitle: string,

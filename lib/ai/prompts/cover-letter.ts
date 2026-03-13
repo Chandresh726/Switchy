@@ -9,7 +9,7 @@ function toMarkdownLink(url?: string | null): string | null {
   const trimmed = url.trim();
   if (!trimmed) return null;
   const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  return `[job posting](${normalized})`;
+  return `[${normalized}](${normalized})`;
 }
 
 function getLengthInstruction(length: string): string {
@@ -87,7 +87,8 @@ Output requirements:
    - Links as [text](https://...)
 3. Do not use headings, lists, tables, or code blocks.
 4. Do not include placeholders.
-5. Return letter body only.`;
+5. Return letter body only.
+6. If you include a link, use the full URL as the link text and put it in its own sentence.`;
 
 export function buildCoverLetterPromptFromProfileData(
   jobTitle: string,

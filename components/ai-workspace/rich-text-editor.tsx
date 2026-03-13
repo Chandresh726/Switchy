@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type MouseEvent } from "react";
 import { Bold, Link2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -68,6 +68,16 @@ export function RichTextEditor({
     emitChange();
   };
 
+  const handleEditorClick = (event: MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null;
+    const link = target?.closest("a");
+    if (!link) return;
+    const href = link.getAttribute("href");
+    if (!href) return;
+    event.preventDefault();
+    window.open(href, "_blank", "noopener,noreferrer");
+  };
+
   const isLocked = readOnly || disabled;
   const showToolbar = !readOnly;
 
@@ -107,13 +117,14 @@ export function RichTextEditor({
       <div
         ref={editorRef}
         className={cn(
-          "max-w-none px-4 py-3 text-sm leading-relaxed text-foreground focus:outline-none [&_p]:my-2 [&_strong]:font-semibold [&_a]:text-blue-400 [&_a]:underline",
+          "max-w-none px-4 py-3 text-sm leading-relaxed text-foreground focus:outline-none [&_p]:my-2 [&_strong]:font-semibold [&_a]:cursor-pointer [&_a]:text-blue-400 [&_a]:underline hover:[&_a]:text-blue-300",
           minHeightClassName,
           isLocked ? "cursor-default" : "cursor-text"
         )}
         contentEditable={!isLocked}
         suppressContentEditableWarning
         onInput={emitChange}
+        onClick={handleEditorClick}
         aria-readonly={isLocked}
       />
     </div>

@@ -199,7 +199,7 @@ export function AIWorkspacePage({
     await sendModification();
   };
 
-  if (isJobLoading || (isContentLoading && !content)) {
+  if (isJobLoading) {
     return (
       <div className="space-y-6">
         <div className="space-y-2">
@@ -260,7 +260,6 @@ export function AIWorkspacePage({
           <p className="mt-1 text-muted-foreground">
             {job.title} at {job.company.name}
           </p>
-          <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -278,12 +277,6 @@ export function AIWorkspacePage({
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground">{workspaceHint}</p>
-            {contentStatusText ? (
-              <p className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                {contentStatusText}
-              </p>
-            ) : null}
           </div>
 
           <div className="flex items-center gap-2">
@@ -362,6 +355,12 @@ export function AIWorkspacePage({
 
         <div className="pt-4">
           <div className="relative">
+            {isContentLoading && !currentContent.trim() ? (
+              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md border border-dashed border-border bg-background/60 text-xs text-muted-foreground">
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                Generating your message...
+              </div>
+            ) : null}
             {hasChanges && !isPreviewMode ? (
               <div className="absolute bottom-2 right-2 z-10 flex items-center gap-2">
                 <Button
