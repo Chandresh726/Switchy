@@ -18,6 +18,11 @@ turndownService.addRule("paragraphs", {
   replacement: (content) => `\n\n${content}\n\n`,
 });
 
+turndownService.addRule("divs", {
+  filter: "div",
+  replacement: (content) => `\n\n${content}\n\n`,
+});
+
 /**
  * Decode HTML entities like &lt; &gt; &amp; to their actual characters
  */
@@ -41,7 +46,9 @@ export function sanitizeHtmlContent(html: string): string {
 
   return sanitizeHtml(decoded, {
     allowedTags: [
+      "div",
       "p",
+      "span",
       "br",
       "ul",
       "ol",

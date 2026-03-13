@@ -160,10 +160,13 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
     const htmlDescription = this.buildHtmlDescription(job);
     if (htmlDescription) {
       const processed = processDescription(htmlDescription, "html");
-      return {
-        description: processed.text ?? undefined,
-        descriptionFormat: processed.format,
-      };
+      const text = processed.text?.trim();
+      if (text) {
+        return {
+          description: text,
+          descriptionFormat: processed.format,
+        };
+      }
     }
 
     const plainDescription = this.buildPlainDescription(job);
@@ -180,10 +183,23 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
 
   private buildHtmlDescription(job: LeverJob): string | null {
     const parts: string[] = [];
-    const base = job.descriptionBody || job.description || job.opening;
+    const baseHtml = job.descriptionBody || job.description || job.opening;
+    const basePlain =
+      job.descriptionBodyPlain || job.descriptionPlain || job.openingPlain;
 
-    if (base?.trim()) {
-      parts.push(base.trim());
+    const hasListContent = Boolean(
+      job.lists?.some((list) => list.content?.trim())
+    );
+    const hasHtmlContent = Boolean(baseHtml?.trim() || job.additional?.trim() || hasListContent);
+
+    if (!hasHtmlContent) {
+      return null;
+    }
+
+    if (baseHtml?.trim()) {
+      parts.push(baseHtml.trim());
+    } else if (basePlain?.trim()) {
+      parts.push(`<p>${escapeHtml(basePlain.trim())}</p>`);
     }
 
     if (job.lists?.length) {
@@ -207,6 +223,8 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
 
     if (job.additional?.trim()) {
       parts.push(job.additional.trim());
+    } else if (job.additionalPlain?.trim()) {
+      parts.push(`<p>${escapeHtml(job.additionalPlain.trim())}</p>`);
     }
 
     return parts.length ? parts.join("\n\n") : null;

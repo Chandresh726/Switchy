@@ -58,4 +58,40 @@ describe("LeverScraper", () => {
     expect(job.description).toContain("About Us");
     expect(job.description).toContain("We build streaming tech.");
   });
+
+  it("falls back to plain descriptions when html fields are missing", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/v0/postings/umbrella?mode=json")) {
+        return new Response(
+          JSON.stringify([
+            {
+              id: "plain-only-job",
+              text: "Support Engineer",
+              hostedUrl: "https://jobs.lever.co/umbrella/plain-only-job",
+              categories: {
+                location: "Remote",
+              },
+              descriptionPlain: "Plain description only.",
+              additionalPlain: "Additional details in plain text.",
+              createdAt: 1710000000000,
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    const scraper = new LeverScraper(createHttpClient(fetchMock));
+    const result = await scraper.scrape("https://jobs.lever.co/umbrella");
+
+    expect(result.success).toBe(true);
+    expect(result.jobs).toHaveLength(1);
+
+    const job = result.jobs[0];
+    expect(job.descriptionFormat).toBe("plain");
+    expect(job.description).toContain("Plain description only.");
+    expect(job.description).toContain("Additional details in plain text.");
+  });
 });
