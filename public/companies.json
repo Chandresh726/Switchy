@@ -385,5 +385,43 @@
     "platform": "greenhouse",
     "boardToken": "twilio",
     "isActive": true
+  },
+  {
+    "name": "Toast",
+    "careersUrl": "https://careers.toasttab.com/jobs/search",
+    "logoUrl": "",
+    "platform": "custom",
+    "isActive": true
+  },
+  {
+    "name": "Tide",
+    "careersUrl": "https://job-boards.greenhouse.io/tide?offices%5B%5D=4052070003",
+    "logoUrl": "",
+    "platform": "greenhouse",
+    "boardToken": "tide",
+    "isActive": true
+  },
+  {
+    "name": "Groww",
+    "careersUrl": "https://job-boards.eu.greenhouse.io/groww",
+    "logoUrl": "",
+    "platform": "greenhouse",
+    "boardToken": "groww",
+    "isActive": true
+  },
+  {
+    "name": "Bloomreach",
+    "careersUrl": "https://www.bloomreach.com/en/careers#operations",
+    "logoUrl": "",
+    "platform": "custom",
+    "isActive": true
+  },
+  {
+    "name": "Confluent",
+    "careersUrl": "https://jobs.ashbyhq.com/confluent",
+    "logoUrl": "",
+    "platform": "ashby",
+    "boardToken": "confluent",
+    "isActive": true
   }
 ]

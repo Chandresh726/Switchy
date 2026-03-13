@@ -16,7 +16,7 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { PLATFORM_OPTIONS } from "@/lib/constants";
+import { COMPANY_FILTER_PLATFORM_OPTIONS } from "@/lib/constants";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -123,7 +123,7 @@ export function CompanyFilters({
     const chips: { key: string; label: string; onRemove: () => void }[] = [];
 
     filters.platforms.forEach((p) => {
-      const label = PLATFORM_OPTIONS.find((o) => o.value === p)?.label || p;
+      const label = COMPANY_FILTER_PLATFORM_OPTIONS.find((o) => o.value === p)?.label || p;
       chips.push({
         key: `platform-${p}`,
         label,
@@ -200,7 +200,7 @@ export function CompanyFilters({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {PLATFORM_OPTIONS.map((opt) => (
+        {COMPANY_FILTER_PLATFORM_OPTIONS.map((opt) => (
           <TogglePill
             key={opt.value}
             selected={filters.platforms.includes(opt.value)}

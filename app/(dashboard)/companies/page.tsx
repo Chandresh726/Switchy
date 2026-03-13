@@ -12,11 +12,28 @@ import { CompanyForm } from "@/components/companies/company-form";
 import { CompanyQuickAdd } from "@/components/companies/company-quick-add";
 import { CompanyList, type Company } from "@/components/companies/company-list";
 import { JsonEditor } from "@/components/companies/json-editor";
+import { CUSTOM_SCRAPER_PLATFORMS } from "@/lib/constants";
+
+const CUSTOM_PLATFORM_SET = new Set<string>(["custom", ...CUSTOM_SCRAPER_PLATFORMS]);
+
+function normalizePlatformFilters(platforms: string[]): string[] {
+  const normalized = new Set<string>();
+  for (const platform of platforms) {
+    if (CUSTOM_PLATFORM_SET.has(platform)) {
+      normalized.add("custom");
+    } else {
+      normalized.add(platform);
+    }
+  }
+  return Array.from(normalized);
+}
 
 function parseFiltersFromParams(searchParams: URLSearchParams): CompanyFiltersType {
   return {
     search: searchParams.get("search") || "",
-    platforms: searchParams.get("platforms")?.split(",").filter(Boolean) || [],
+    platforms: normalizePlatformFilters(
+      searchParams.get("platforms")?.split(",").filter(Boolean) || []
+    ),
     status: searchParams.get("status")?.split(",").filter(Boolean) || [],
     sortBy: (searchParams.get("sortBy") as CompanyFiltersType["sortBy"]) || "name",
     sortOrder: (searchParams.get("sortOrder") as CompanyFiltersType["sortOrder"]) || "asc",
@@ -61,7 +78,11 @@ function CompaniesPageContent() {
 
   const handleFiltersChange = useCallback(
     (newFilters: CompanyFiltersType) => {
-      const params = serializeFiltersToParams(newFilters);
+      const normalized = {
+        ...newFilters,
+        platforms: normalizePlatformFilters(newFilters.platforms),
+      };
+      const params = serializeFiltersToParams(normalized);
       const paramString = params.toString();
       router.replace(`${pathname}${paramString ? `?${paramString}` : ""}`);
     },
@@ -147,8 +168,11 @@ function CompaniesPageContent() {
     }
 
     if (filters.platforms.length > 0) {
+      const wantsCustom = filters.platforms.includes("custom");
+      const platformSet = new Set(filters.platforms);
       result = result.filter((c) =>
-        c.platform && filters.platforms.includes(c.platform)
+        c.platform &&
+        (platformSet.has(c.platform) || (wantsCustom && CUSTOM_PLATFORM_SET.has(c.platform)))
       );
     }
 
