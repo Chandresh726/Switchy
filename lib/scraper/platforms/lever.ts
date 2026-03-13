@@ -1,7 +1,14 @@
+import { processDescription } from "@/lib/jobs/description-processor";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import { parseEmploymentType } from "@/lib/scraper/types";
+
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig } from "../core/types";
+
+interface LeverList {
+  text?: string;
+  content?: string;
+}
 
 interface LeverJob {
   id: string;
@@ -13,7 +20,15 @@ interface LeverJob {
     department?: string;
     commitment?: string;
   };
+  description?: string;
+  descriptionBody?: string;
+  descriptionBodyPlain?: string;
   descriptionPlain?: string;
+  additional?: string;
+  additionalPlain?: string;
+  opening?: string;
+  openingPlain?: string;
+  lists?: LeverList[];
   createdAt: number;
 }
 
@@ -111,6 +126,7 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
       const { location, locationType } = this.normalizeLocation(
         job.categories?.location
       );
+      const { description, descriptionFormat } = this.buildDescription(job);
 
       return {
         externalId: this.generateExternalId(this.platform, companySlug, job.id),
@@ -120,8 +136,8 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
         locationType,
         department: job.categories?.team || job.categories?.department,
         employmentType: parseEmploymentType(job.categories?.commitment),
-        description: job.descriptionPlain,
-        descriptionFormat: "plain",
+        description,
+        descriptionFormat,
         postedDate: job.createdAt ? new Date(job.createdAt) : undefined,
       };
     });
@@ -137,6 +153,101 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
       openExternalIdsComplete: true,
     };
   }
+
+  private buildDescription(
+    job: LeverJob
+  ): { description: string | undefined; descriptionFormat: "markdown" | "plain" } {
+    const htmlDescription = this.buildHtmlDescription(job);
+    if (htmlDescription) {
+      const processed = processDescription(htmlDescription, "html");
+      return {
+        description: processed.text ?? undefined,
+        descriptionFormat: processed.format,
+      };
+    }
+
+    const plainDescription = this.buildPlainDescription(job);
+    if (!plainDescription) {
+      return { description: undefined, descriptionFormat: "plain" };
+    }
+
+    const processed = processDescription(plainDescription, "plain");
+    return {
+      description: processed.text ?? undefined,
+      descriptionFormat: processed.format,
+    };
+  }
+
+  private buildHtmlDescription(job: LeverJob): string | null {
+    const parts: string[] = [];
+    const base = job.descriptionBody || job.description || job.opening;
+
+    if (base?.trim()) {
+      parts.push(base.trim());
+    }
+
+    if (job.lists?.length) {
+      for (const list of job.lists) {
+        const title = list.text?.trim();
+        const content = list.content?.trim();
+
+        if (!title && !content) {
+          continue;
+        }
+
+        if (title) {
+          parts.push(`<h3>${escapeHtml(title)}</h3>`);
+        }
+
+        if (content) {
+          parts.push(normalizeListHtml(content));
+        }
+      }
+    }
+
+    if (job.additional?.trim()) {
+      parts.push(job.additional.trim());
+    }
+
+    return parts.length ? parts.join("\n\n") : null;
+  }
+
+  private buildPlainDescription(job: LeverJob): string | null {
+    const parts: string[] = [];
+    const basePlain =
+      job.descriptionBodyPlain || job.descriptionPlain || job.openingPlain;
+
+    if (basePlain?.trim()) {
+      parts.push(basePlain.trim());
+    }
+
+    if (job.additionalPlain?.trim()) {
+      parts.push(job.additionalPlain.trim());
+    }
+
+    return parts.length ? parts.join("\n\n") : null;
+  }
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function normalizeListHtml(content: string): string {
+  const trimmed = content.trim();
+  const hasWrapper =
+    /<(ul|ol)[\s>]/i.test(trimmed) || /<\/(ul|ol)>/i.test(trimmed);
+
+  if (!hasWrapper && /<li[\s>]/i.test(trimmed)) {
+    return `<ul>${trimmed}</ul>`;
+  }
+
+  return trimmed;
 }
 
 export function createLeverScraper(
