@@ -131,6 +131,30 @@
 }
 
 @layer components {
+  .company-note-editor {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .company-note-editor:empty::before {
+    content: attr(data-placeholder);
+    color: var(--color-muted-foreground);
+    pointer-events: none;
+  }
+
+  .company-note-link {
+    color: oklch(0.76 0.12 235);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    transition: color 150ms ease;
+  }
+
+  .company-note-link:hover {
+    color: oklch(0.82 0.1 220);
+  }
+
   .json-editor textarea,
   .json-editor pre {
     color: oklch(0.24 0.02 265);
@@ -158,6 +182,14 @@
   .dark .json-editor textarea,
   .dark .json-editor pre {
     color: oklch(0.94 0.01 255);
+  }
+
+  .dark .company-note-link {
+    color: oklch(0.78 0.1 220);
+  }
+
+  .dark .company-note-link:hover {
+    color: oklch(0.84 0.08 205);
   }
 
   .dark .json-editor .token.property {

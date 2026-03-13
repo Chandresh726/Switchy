@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Briefcase, Users, Activity } from "lucide-react";
+import { Briefcase, Users, Activity, NotebookPen } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -17,6 +17,7 @@ const TAB_OPTIONS: Array<{ id: Tab; label: string; icon: React.ElementType }> = 
   { id: "jobs", label: "Jobs", icon: Briefcase },
   { id: "people", label: "People", icon: Users },
   { id: "activity", label: "Activity", icon: Activity },
+  { id: "notes", label: "Notes", icon: NotebookPen },
 ];
 
 export function CompanyTabs({ activeTab, onTabChange, rightSlot }: CompanyTabsProps) {

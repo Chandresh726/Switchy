@@ -20,16 +20,34 @@ export async function POST(request: NextRequest) {
     const { orchestrator } = getScrapingModule();
 
     const result = await orchestrator.scrapeCompanies(parsed.data.companyIds, "manual");
+    const { summary } = result;
+    const messageParts = [
+      `Refreshed ${summary.successfulCompanies} compan${summary.successfulCompanies === 1 ? "y" : "ies"}`,
+    ];
+
+    if (summary.skippedCompanies > 0) {
+      messageParts.push(
+        `skipped ${summary.skippedCompanies} custom compan${summary.skippedCompanies === 1 ? "y" : "ies"} without scraping support`
+      );
+    }
+
+    if (summary.failedCompanies > 0) {
+      messageParts.push(
+        `${summary.failedCompanies} compan${summary.failedCompanies === 1 ? "y failed" : "ies failed"}`
+      );
+    }
 
     return NextResponse.json({
-      success: result.summary.failedCompanies === 0,
+      success: summary.failedCompanies === 0,
       sessionId: result.sessionId,
-      totalCompanies: result.summary.totalCompanies,
-      totalJobsFound: result.summary.totalJobsFound,
-      totalJobsAdded: result.summary.totalJobsAdded,
-      totalJobsFiltered: result.summary.totalJobsFiltered,
-      failedCompanies: result.summary.failedCompanies,
-      message: `Refreshed jobs for ${result.summary.totalCompanies} companies. Found ${result.summary.totalJobsFound} jobs, added ${result.summary.totalJobsAdded} new.`,
+      totalCompanies: summary.totalCompanies,
+      refreshedCompanies: summary.successfulCompanies,
+      skippedCompanies: summary.skippedCompanies,
+      totalJobsFound: summary.totalJobsFound,
+      totalJobsAdded: summary.totalJobsAdded,
+      totalJobsFiltered: summary.totalJobsFiltered,
+      failedCompanies: summary.failedCompanies,
+      message: `${messageParts.join(", ")}. Found ${summary.totalJobsFound} jobs, added ${summary.totalJobsAdded} new.`,
     });
   } catch (error) {
     return handleApiError(error);

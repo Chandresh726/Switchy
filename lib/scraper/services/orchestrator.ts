@@ -91,11 +91,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
 
   async scrapeAllCompanies(trigger: TriggerSource): Promise<BatchFetchResult> {
     const activeCompanies = await this.repository.getActiveCompanies();
-    const scrapeableCompanies = activeCompanies.filter(
-      (company) => !this.isCustomPlatform(company.platform)
-    );
-
-    return this.scrapeBatch(scrapeableCompanies, trigger);
+    return this.scrapeBatch(activeCompanies, trigger);
   }
 
   async scrapeCompanies(companyIds: number[], trigger: TriggerSource): Promise<BatchFetchResult> {
@@ -272,8 +268,11 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       );
     }
 
-    const successfulCompanies = results.filter((result) => result.outcome === "success").length;
-    const failedCompanies = results.length - successfulCompanies;
+    const skippedCompanies = results.filter((result) => result.skipped).length;
+    const successfulCompanies = results.filter(
+      (result) => result.outcome === "success" && !result.skipped
+    ).length;
+    const failedCompanies = results.filter((result) => result.outcome !== "success").length;
     const progress = this.calculateBatchProgress(results);
 
     logger.batchComplete(successfulCompanies, companiesToScrape.length, progress.totalJobsAdded);
@@ -284,6 +283,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       summary: {
         totalCompanies: companiesToScrape.length,
         successfulCompanies,
+        skippedCompanies,
         failedCompanies,
         totalJobsFound: progress.totalJobsFound,
         totalJobsAdded: progress.totalJobsAdded,
@@ -798,6 +798,8 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     companyName: string;
     platform: Platform | null;
     outcome: ScrapeOutcome;
+    skipped?: boolean;
+    skippedReason?: string;
     jobsFound: number;
     jobsAdded: number;
     jobsUpdated: number;
@@ -812,6 +814,8 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       companyName: params.companyName,
       success: params.outcome === "success",
       outcome: params.outcome,
+      skipped: params.skipped,
+      skippedReason: params.skippedReason,
       jobsFound: params.jobsFound,
       jobsAdded: params.jobsAdded,
       jobsUpdated: params.jobsUpdated,
@@ -956,6 +960,8 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       companyName,
       platform: null,
       outcome: "success",
+      skipped: true,
+      skippedReason: reason,
       jobsFound: 0,
       jobsAdded: 0,
       jobsUpdated: 0,

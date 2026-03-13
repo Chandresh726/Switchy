@@ -76,6 +76,11 @@ export function CompanyHeader({ company }: CompanyHeaderProps) {
                 Last scraped {formatRelativeTime(lastScrapedDate)}
               </span>
             )}
+            {!company.canScrapeJobs && (
+              <span className="text-xs text-amber-300">
+                Custom company: scraping not available
+              </span>
+            )}
           </div>
         </div>
       </div>

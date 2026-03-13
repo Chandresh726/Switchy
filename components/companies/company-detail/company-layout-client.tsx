@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { Briefcase, Users, Activity } from "lucide-react";
+import { Briefcase, Users, Activity, NotebookPen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface CompanyLayoutClientProps {
@@ -15,6 +15,7 @@ const TABS = [
     { id: "jobs", label: "Jobs", icon: Briefcase, href: (id: number) => `/companies/${id}/jobs` },
     { id: "people", label: "People", icon: Users, href: (id: number) => `/companies/${id}/people` },
     { id: "activity", label: "Activity", icon: Activity, href: (id: number) => `/companies/${id}/activity` },
+    { id: "notes", label: "Notes", icon: NotebookPen, href: (id: number) => `/companies/${id}/notes` },
 ] as const;
 
 export function CompanyLayoutClient({ companyId, rightSlot, children }: CompanyLayoutClientProps) {
@@ -59,7 +60,7 @@ export function CompanyLayoutClient({ companyId, rightSlot, children }: CompanyL
             </div>
 
             {/* Tab content */}
-            <div className="pt-2">{children}</div>
+            <div className={cn(activeTab === "notes" ? "pt-0" : "pt-2")}>{children}</div>
         </>
     );
 }

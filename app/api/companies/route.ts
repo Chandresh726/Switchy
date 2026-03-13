@@ -30,6 +30,7 @@ const CompanyInputSchema = z.object({
   name: z.string().trim().min(1),
   careersUrl: z.string().trim().url(),
   logoUrl: z.string().trim().url().optional().or(z.literal("")),
+  notes: z.string().optional().or(z.literal("")),
   platform: PlatformOverrideSchema,
   boardToken: z.string().trim().optional().or(z.literal("")),
 });
@@ -77,6 +78,7 @@ async function upsertCompany(input: CompanyInput) {
       .set({
         name: input.name,
         logoUrl: normalizeOptionalText(input.logoUrl),
+        notes: normalizeOptionalText(input.notes),
         platform: resolvedPlatform,
         boardToken,
         isActive: true,
@@ -94,6 +96,7 @@ async function upsertCompany(input: CompanyInput) {
       name: input.name,
       careersUrl: input.careersUrl,
       logoUrl: normalizeOptionalText(input.logoUrl),
+      notes: normalizeOptionalText(input.notes),
       platform: resolvedPlatform,
       boardToken,
       isActive: true,

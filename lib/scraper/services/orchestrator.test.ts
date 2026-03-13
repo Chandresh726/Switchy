@@ -22,6 +22,7 @@ const company: Company = {
   name: "Acme",
   careersUrl: "https://jobs.example.com",
   logoUrl: null,
+  notes: null,
   platform: "greenhouse",
   boardToken: null,
   isActive: true,
@@ -41,6 +42,14 @@ const uberCompany = {
   id: 3,
   name: "Uber",
   platform: "uber",
+} as Company;
+
+const customCompany = {
+  ...company,
+  id: 4,
+  name: "Custom Co",
+  careersUrl: "https://careers.example.com",
+  platform: "custom",
 } as Company;
 
 interface RepositoryMockOptions {
@@ -204,6 +213,41 @@ describe("ScrapeOrchestrator", () => {
     expect(result.summary.totalCompanies).toBe(1);
     expect(result.summary.failedCompanies).toBe(1);
     expect(repository.completeSession).toHaveBeenCalledWith(result.sessionId, "partial");
+  });
+
+  it("reports unsupported custom companies as skipped without scraping", async () => {
+    const repository = createRepositoryMock({
+      activeCompanies: [customCompany],
+    });
+    const registry = createRegistryMock({
+      success: true,
+      outcome: "success",
+      jobs: [],
+      openExternalIds: [],
+      openExternalIdsComplete: true,
+    });
+
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    const result = await orchestrator.scrapeCompanies([customCompany.id], "manual");
+
+    expect(result.summary.totalCompanies).toBe(1);
+    expect(result.summary.successfulCompanies).toBe(0);
+    expect(result.summary.skippedCompanies).toBe(1);
+    expect(result.summary.failedCompanies).toBe(0);
+    expect(result.results[0]).toMatchObject({
+      companyId: customCompany.id,
+      skipped: true,
+      skippedReason: "Skipping custom platform company",
+    });
+    expect(registry.scrape).not.toHaveBeenCalled();
+    expect(repository.createScrapingLog).not.toHaveBeenCalled();
   });
 
   it("skips uber archiving when missing open jobs exceed conservative threshold", async () => {

@@ -62,6 +62,8 @@ export interface FetchResult {
   companyName: string;
   success: boolean;
   outcome: ScrapeOutcome;
+  skipped?: boolean;
+  skippedReason?: string;
   jobsFound: number;
   jobsAdded: number;
   jobsUpdated: number;
@@ -79,6 +81,7 @@ export interface BatchFetchResult {
   summary: {
     totalCompanies: number;
     successfulCompanies: number;
+    skippedCompanies: number;
     failedCompanies: number;
     totalJobsFound: number;
     totalJobsAdded: number;

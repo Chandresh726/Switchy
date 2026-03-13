@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { PLATFORM_OPTIONS } from "@/lib/constants";
 import { detectPlatformFromUrl, getPlatformLabel } from "@/lib/scraper/platform-detection";
 
@@ -16,6 +17,7 @@ interface Company {
   name: string;
   careersUrl: string;
   logoUrl: string | null;
+  notes: string | null;
   platform: string | null;
   boardToken: string | null;
   isActive: boolean;
@@ -59,6 +61,7 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
     name: "",
     careersUrl: "",
     logoUrl: "",
+    notes: "",
     platform: "",
     boardToken: "",
   });
@@ -85,6 +88,7 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
         name: company.name,
         careersUrl: company.careersUrl,
         logoUrl: company.logoUrl || "",
+        notes: company.notes || "",
         platform: company.platform || "",
         boardToken: company.boardToken || "",
       });
@@ -192,6 +196,17 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
             )}
           </div>
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="notes">Notes</Label>
+        <Textarea
+          id="notes"
+          value={formData.notes}
+          onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
+          placeholder="Anything useful about this company..."
+          rows={5}
+        />
       </div>
 
       {/* Platform Override Section */}

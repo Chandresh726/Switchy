@@ -34,6 +34,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { isCompanyScrapeSupported } from "@/lib/companies/scrape-support";
 import { PLATFORM_COLORS } from "@/lib/constants";
 
 export interface Company {
@@ -41,6 +42,7 @@ export interface Company {
   name: string;
   careersUrl: string;
   logoUrl: string | null;
+  notes: string | null;
   platform: string | null;
   boardToken: string | null;
   isActive: boolean;
@@ -205,6 +207,7 @@ export function CompanyList({
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {companies.map((company) => {
           const isSelected = selectedIds.includes(company.id);
+          const canScrapeJobs = isCompanyScrapeSupported(company.careersUrl, company.platform);
 
           return (
             <div
@@ -276,7 +279,7 @@ export function CompanyList({
                           e.stopPropagation();
                           onRefreshJobs(company.id);
                         }}
-                        disabled={isRefreshing}
+                        disabled={isRefreshing || !canScrapeJobs}
                         className="cursor-pointer"
                       >
                         <RefreshCw className="mr-2 h-4 w-4" />
@@ -338,6 +341,14 @@ export function CompanyList({
                       className={PLATFORM_COLORS[company.platform] || PLATFORM_COLORS.custom}
                     >
                       {company.platform}
+                    </Badge>
+                  )}
+                  {!canScrapeJobs && (
+                    <Badge
+                      variant="outline"
+                      className="border-amber-500/30 bg-amber-500/10 text-amber-300"
+                    >
+                      Scraping unavailable
                     </Badge>
                   )}
                 </div>

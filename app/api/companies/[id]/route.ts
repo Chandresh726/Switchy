@@ -34,6 +34,7 @@ const PutBodySchema = z.object({
   name: z.string().trim().min(1),
   careersUrl: z.string().trim().url(),
   logoUrl: z.string().trim().url().nullable().optional().or(z.literal("")),
+  notes: z.string().nullable().optional().or(z.literal("")),
   isActive: z.boolean().optional(),
   platform: PlatformOverrideSchema,
   boardToken: z.string().trim().nullable().optional().or(z.literal("")),
@@ -43,6 +44,7 @@ const PatchBodySchema = z.object({
   name: z.string().trim().min(1).optional(),
   careersUrl: z.string().trim().url().optional(),
   logoUrl: z.string().trim().url().nullable().optional().or(z.literal("")),
+  notes: z.string().nullable().optional().or(z.literal("")),
   isActive: z.boolean().optional(),
   platform: PlatformOverrideSchema,
   boardToken: z.string().trim().nullable().optional().or(z.literal("")),
@@ -52,6 +54,7 @@ type CompanyUpdatePayload = {
   name?: string;
   careersUrl?: string;
   logoUrl?: string | null;
+  notes?: string | null;
   isActive?: boolean;
   platform?:
     | "greenhouse"
@@ -159,6 +162,7 @@ export async function PUT(
       name: payload.name,
       careersUrl: payload.careersUrl,
       logoUrl: normalizeOptionalText(payload.logoUrl),
+      notes: normalizeOptionalText(payload.notes),
       isActive: payload.isActive,
       platform: payload.platform,
       boardToken: normalizeOptionalText(payload.boardToken),
@@ -231,6 +235,7 @@ export async function PATCH(
     if (payload.name !== undefined) updateData.name = payload.name;
     if (payload.careersUrl !== undefined) updateData.careersUrl = payload.careersUrl;
     if (payload.logoUrl !== undefined) updateData.logoUrl = normalizeOptionalText(payload.logoUrl);
+    if (payload.notes !== undefined) updateData.notes = normalizeOptionalText(payload.notes);
     if (payload.isActive !== undefined) updateData.isActive = payload.isActive;
     if (payload.platform !== undefined) updateData.platform = payload.platform;
     if (payload.boardToken !== undefined) updateData.boardToken = normalizeOptionalText(payload.boardToken);

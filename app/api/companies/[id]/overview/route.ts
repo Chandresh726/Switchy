@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { handleApiError } from "@/lib/api";
+import { isCompanyScrapeSupported } from "@/lib/companies/scrape-support";
 import { db } from "@/lib/db";
 import { companies, jobs, people, matchSessions, scrapingLogs } from "@/lib/db/schema";
 
@@ -125,9 +126,13 @@ export async function GET(
 
     const jobStats = jobStatsResult[0];
     const peopleStats = peopleStatsResult[0];
+    const canScrapeJobs = isCompanyScrapeSupported(company.careersUrl, company.platform);
 
     return NextResponse.json({
-      company,
+      company: {
+        ...company,
+        canScrapeJobs,
+      },
       stats: {
         openJobs: jobStats?.openJobs || 0,
         highMatchJobs: jobStats?.highMatchJobs || 0,

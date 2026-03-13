@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -10,19 +10,31 @@ import {
     CompanyHeader,
     CompanyStats,
     CompanyActions,
+    CompanyNoteSaveIndicator,
+    CompanyNotesProvider,
+    useCompanyNotesContext,
     type CompanyOverviewResponse,
 } from "@/components/companies/company-detail";
 import { CompanyLayoutClient } from "@/components/companies/company-detail/company-layout-client";
 
-export default function CompanyLayout({
+function CompanyLayoutContent({
     children,
 }: {
     children: React.ReactNode;
 }) {
     const params = useParams();
+    const pathname = usePathname();
     const queryClient = useQueryClient();
+    const { noteSaveIndicator } = useCompanyNotesContext();
 
     const companyId = Number(params.id);
+    const activeTab = pathname?.startsWith(`/companies/${companyId}/people`)
+        ? "people"
+        : pathname?.startsWith(`/companies/${companyId}/activity`)
+            ? "activity"
+            : pathname?.startsWith(`/companies/${companyId}/notes`)
+                ? "notes"
+                : "jobs";
 
     const { data, isLoading } = useQuery<CompanyOverviewResponse>({
         queryKey: ["company-overview", companyId],
@@ -102,16 +114,34 @@ export default function CompanyLayout({
             <CompanyLayoutClient
                 companyId={companyId}
                 rightSlot={
-                    <CompanyActions
-                        isRefreshing={refreshJobsMutation.isPending}
-                        isMatching={runMatchingMutation.isPending}
-                        onRefreshJobs={() => refreshJobsMutation.mutate()}
-                        onRunMatching={() => runMatchingMutation.mutate()}
-                    />
+                    activeTab === "jobs" ? (
+                        <CompanyActions
+                            canRefreshJobs={data.company.canScrapeJobs}
+                            canRunMatching={data.stats.openJobs > 0}
+                            isRefreshing={refreshJobsMutation.isPending}
+                            isMatching={runMatchingMutation.isPending}
+                            onRefreshJobs={() => refreshJobsMutation.mutate()}
+                            onRunMatching={() => runMatchingMutation.mutate()}
+                        />
+                    ) : activeTab === "notes" ? (
+                        <CompanyNoteSaveIndicator state={noteSaveIndicator} />
+                    ) : null
                 }
             >
                 {children}
             </CompanyLayoutClient>
         </div>
+    );
+}
+
+export default function CompanyLayout({
+    children,
+}: {
+    children: React.ReactNode;
+}) {
+    return (
+        <CompanyNotesProvider>
+            <CompanyLayoutContent>{children}</CompanyLayoutContent>
+        </CompanyNotesProvider>
     );
 }

@@ -50,6 +50,13 @@
       "when": 1772551673685,
       "tag": "0006_tidy_microchip",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1773404535938,
+      "tag": "0007_elite_zzzax",
+      "breakpoints": true
     }
   ]
 }

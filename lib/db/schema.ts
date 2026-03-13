@@ -73,6 +73,7 @@ export const companies = sqliteTable("companies", {
   name: text("name").notNull(),
   careersUrl: text("careers_url").notNull(),
   logoUrl: text("logo_url"),
+  notes: text("notes"),
   platform: text("platform"), // "greenhouse", "lever", "custom"
   boardToken: text("board_token"), // Manual board token for platforms like Greenhouse (when URL doesn't contain it)
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),

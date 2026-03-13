@@ -1,11 +1,13 @@
-export type Tab = "jobs" | "people" | "activity";
+export type Tab = "jobs" | "people" | "activity" | "notes";
 
 export interface CompanyOverview {
   id: number;
   name: string;
   careersUrl: string;
   logoUrl: string | null;
+  notes: string | null;
   platform: string | null;
+  canScrapeJobs: boolean;
   isActive: boolean;
   lastScrapedAt: string | null;
 }
