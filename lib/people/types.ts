@@ -1,4 +1,5 @@
 export type PersonSource = "linkedin" | "apollo" | "manual";
+export type ImportMode = "merge" | "replace";
 
 export interface ParseRowError {
   rowNumber: number;

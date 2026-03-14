@@ -66,6 +66,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
         externalId: jobs.externalId,
         title: jobs.title,
         url: jobs.url,
+        location: jobs.location,
         status: jobs.status,
         description: jobs.description,
       })

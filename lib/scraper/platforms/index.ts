@@ -3,8 +3,12 @@ export { LeverScraper, createLeverScraper, DEFAULT_LEVER_CONFIG, type LeverConfi
 export { AshbyScraper, createAshbyScraper, DEFAULT_ASHBY_CONFIG, type AshbyConfig } from "./ashby";
 export { EightfoldScraper, createEightfoldScraper, DEFAULT_EIGHTFOLD_CONFIG, type EightfoldConfig } from "./eightfold";
 export { WorkdayScraper, createWorkdayScraper, DEFAULT_WORKDAY_CONFIG, type WorkdayConfig } from "./workday";
+export { ServiceNowScraper, createServiceNowScraper, DEFAULT_SERVICENOW_CONFIG, type ServiceNowConfig } from "./servicenow";
+export { ZwayamScraper, createZwayamScraper, DEFAULT_ZWAYAM_CONFIG, type ZwayamConfig } from "./zwayam";
+export { MynextHireScraper, createMynextHireScraper, DEFAULT_MYNEXTHIRE_CONFIG, type MynextHireConfig } from "./mynexthire";
 export { UberScraper, createUberScraper, DEFAULT_UBER_CONFIG, type UberConfig } from "./uber";
 export { GoogleScraper, createGoogleScraper, DEFAULT_GOOGLE_CONFIG, type GoogleConfig } from "./google";
 export { AtlassianScraper, createAtlassianScraper, DEFAULT_ATLASSIAN_CONFIG, type AtlassianConfig } from "./atlassian";
 export { RipplingScraper, createRipplingScraper, DEFAULT_RIPPLING_CONFIG, type RipplingConfig } from "./rippling";
+export { VisaScraper, createVisaScraper, DEFAULT_VISA_CONFIG, type VisaConfig } from "./visa";
 export { NutanixScraper, createNutanixScraper, DEFAULT_NUTANIX_CONFIG, type NutanixConfig } from "./nutanix";

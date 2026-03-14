@@ -57,6 +57,13 @@
       "when": 1773404535938,
       "tag": "0007_elite_zzzax",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1773497206677,
+      "tag": "0008_green_exiles",
+      "breakpoints": true
     }
   ]
 }

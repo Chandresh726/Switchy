@@ -108,6 +108,10 @@ interface RegistryMockOptions {
 
 const DEFAULT_SCRAPER_MAP: Partial<Record<Platform, { requiresBrowser: boolean }>> = {
   greenhouse: { requiresBrowser: false },
+  servicenow: { requiresBrowser: true },
+  zwayam: { requiresBrowser: false },
+  mynexthire: { requiresBrowser: false },
+  visa: { requiresBrowser: false },
 };
 
 function createRegistryMock(
@@ -250,12 +254,67 @@ describe("ScrapeOrchestrator", () => {
     expect(repository.createScrapingLog).not.toHaveBeenCalled();
   });
 
+  it("passes new supported platforms through to the registry", async () => {
+    const serviceNowCompany = {
+      ...company,
+      id: 5,
+      name: "ServiceNow",
+      careersUrl: "https://careers.servicenow.com/jobs",
+      platform: "servicenow",
+    } as Company;
+    const repository = createRepositoryMock({
+      activeCompanies: [serviceNowCompany],
+    });
+    const registry = createRegistryMock({
+      success: true,
+      outcome: "success",
+      jobs: [
+        {
+          externalId: "servicenow-1",
+          title: "Software Engineer",
+          url: "https://careers.servicenow.com/jobs/1/software-engineer/",
+        },
+      ],
+      openExternalIds: ["servicenow-1"],
+      openExternalIdsComplete: true,
+    });
+
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    const result = await orchestrator.scrapeCompany(serviceNowCompany.id, {
+      sessionId: "session-servicenow",
+      triggerSource: "manual",
+    });
+
+    expect(result.success).toBe(true);
+    expect(registry.scrape).toHaveBeenCalledWith(
+      serviceNowCompany.careersUrl,
+      "servicenow",
+      expect.objectContaining({
+        boardToken: undefined,
+        existingExternalIds: expect.any(Set),
+        filters: expect.objectContaining({
+          city: undefined,
+          country: undefined,
+          titleKeywords: undefined,
+        }),
+      })
+    );
+  });
+
   it("skips uber archiving when missing open jobs exceed conservative threshold", async () => {
     const existingJobs: ExistingJob[] = Array.from({ length: 100 }, (_, index) => ({
       id: index + 1,
       externalId: `uber-${index + 1}`,
       title: `Role ${index + 1}`,
       url: `https://jobs.example.com/${index + 1}`,
+      location: null,
       status: "new",
       description: "Existing description",
     }));
@@ -295,6 +354,7 @@ describe("ScrapeOrchestrator", () => {
       externalId: `uber-${index + 1}`,
       title: `Role ${index + 1}`,
       url: `https://jobs.example.com/${index + 1}`,
+      location: null,
       status: "new",
       description: "Existing description",
     }));
@@ -855,6 +915,7 @@ describe("ScrapeOrchestrator", () => {
         externalId: "greenhouse-acme-1",
         title: "Software Engineer",
         url: "https://jobs.example.com/1",
+        location: null,
         status: "new",
         description: null,
       },
@@ -925,6 +986,7 @@ describe("ScrapeOrchestrator", () => {
         externalId: "greenhouse-acme-existing",
         title: "Software Engineer",
         url: "https://jobs.example.com/existing",
+        location: null,
         status: "new",
         description: "Existing description",
       },

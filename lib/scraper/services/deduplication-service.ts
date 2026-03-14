@@ -19,6 +19,15 @@ export const DEFAULT_DEDUPLICATION_CONFIG: DeduplicationConfig = {
   titleSimilarityThreshold: 0.9,
 };
 
+function locationsMatch(locA: string | null | undefined, locB: string | null | undefined): boolean {
+  if (!locA && !locB) return true;
+  if (!locA || !locB) return true;
+  const a = locA.toLowerCase().trim();
+  const b = locB.toLowerCase().trim();
+  if (a === b) return true;
+  return a.includes(b) || b.includes(a);
+}
+
 export class TitleBasedDeduplicationService implements IDeduplicationService {
   constructor(private readonly config: DeduplicationConfig = DEFAULT_DEDUPLICATION_CONFIG) {}
 
@@ -60,7 +69,11 @@ export class TitleBasedDeduplicationService implements IDeduplicationService {
       }
     }
 
-    if (highestSimilarity > this.config.titleSimilarityThreshold && mostSimilarJob) {
+    if (
+      highestSimilarity > this.config.titleSimilarityThreshold &&
+      mostSimilarJob &&
+      locationsMatch(job.location, mostSimilarJob.location)
+    ) {
       return {
         isNew: false,
         existingJobId: mostSimilarJob.id,
@@ -91,6 +104,7 @@ export class TitleBasedDeduplicationService implements IDeduplicationService {
           externalId: job.externalId,
           title: job.title,
           url: job.url,
+          location: job.location ?? null,
           status: "new",
           description: null,
         });

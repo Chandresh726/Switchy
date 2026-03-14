@@ -5,13 +5,19 @@ import { handleApiError, ValidationError } from "@/lib/api";
 import type { ApolloColumnMapping } from "@/lib/people/import/parsers/apollo";
 import { importPeopleCsv } from "@/lib/people/sync";
 import { MAX_CSV_FILE_SIZE } from "@/lib/constants";
+import type { ImportMode } from "@/lib/people/types";
 
 const SourceSchema = z.enum(["linkedin", "apollo"]);
+const ImportModeSchema = z.enum(["merge", "replace"]);
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const source = SourceSchema.parse(formData.get("source") ?? "linkedin");
+    const importModeRaw = formData.get("importMode");
+    const importMode: ImportMode = importModeRaw
+      ? ImportModeSchema.parse(importModeRaw)
+      : "merge";
     const mappingRaw = formData.get("mapping");
     const file = formData.get("file");
     if (!(file instanceof File)) {
@@ -40,6 +46,7 @@ export async function POST(request: NextRequest) {
       content,
       fileName: file.name,
       mapping,
+      importMode,
     });
     return NextResponse.json(result);
   } catch (error) {

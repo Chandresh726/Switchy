@@ -1,6 +1,7 @@
 export { CompanyHeader } from "./company-header";
 export { CompanyStats } from "./company-stats";
 export { CompanyActions } from "./company-actions";
+export { CompanyAddPerson } from "./company-add-person";
 export { CompanyTabs } from "./company-tabs";
 export { CompanyLayoutClient } from "./company-layout-client";
 export { CompanyJobsTab } from "./company-jobs-tab";

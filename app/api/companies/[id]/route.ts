@@ -17,10 +17,14 @@ const PLATFORM_VALUES = [
   "ashby",
   "workday",
   "eightfold",
+  "servicenow",
+  "zwayam",
+  "mynexthire",
   "uber",
   "google",
   "atlassian",
   "rippling",
+  "visa",
   "nutanix",
   "custom",
 ] as const;
@@ -62,10 +66,14 @@ type CompanyUpdatePayload = {
     | "ashby"
     | "workday"
     | "eightfold"
+    | "servicenow"
+    | "zwayam"
+    | "mynexthire"
     | "uber"
     | "google"
     | "atlassian"
     | "rippling"
+    | "visa"
     | "nutanix"
     | "custom"
     | null;

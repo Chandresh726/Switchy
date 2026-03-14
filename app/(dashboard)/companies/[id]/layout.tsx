@@ -10,6 +10,7 @@ import {
     CompanyHeader,
     CompanyStats,
     CompanyActions,
+    CompanyAddPerson,
     CompanyNoteSaveIndicator,
     CompanyNotesProvider,
     useCompanyNotesContext,
@@ -122,6 +123,14 @@ function CompanyLayoutContent({
                             isMatching={runMatchingMutation.isPending}
                             onRefreshJobs={() => refreshJobsMutation.mutate()}
                             onRunMatching={() => runMatchingMutation.mutate()}
+                        />
+                    ) : activeTab === "people" ? (
+                        <CompanyAddPerson
+                            companyId={companyId}
+                            companyName={data.company.name}
+                            onAdded={() => {
+                                queryClient.invalidateQueries({ queryKey: ["company-overview", companyId] });
+                            }}
                         />
                     ) : activeTab === "notes" ? (
                         <CompanyNoteSaveIndicator state={noteSaveIndicator} />

@@ -11,7 +11,6 @@ export default function CoverLetterPage() {
       emptyStateDescription="Unable to load the job for cover letter generation."
       icon={FileText}
       iconClassName="text-emerald-400"
-      subtitle="Generate, edit, and save rich-text cover letter variants."
       title="Cover Letter Workspace"
       workspaceHint="Create polished cover letters with bold emphasis and links when useful."
     />

@@ -23,7 +23,7 @@ function getRecruiterFacingJobReference(jobExternalId?: string | null): string |
   if (!trimmed) return null;
 
   // Ignore obvious internal/import identifiers that should never be sent to recruiters.
-  if (/^(lever|greenhouse|ashby|workday|eightfold)-/i.test(trimmed)) return null;
+  if (/^(lever|greenhouse|ashby|workday|eightfold|servicenow|zwayam|mynexthire|visa)-/i.test(trimmed)) return null;
   if (/^[a-f0-9]{8}-[a-f0-9-]{27,}$/i.test(trimmed)) return null;
   if (trimmed.length > 40) return null;
 

@@ -15,7 +15,6 @@ export default function ReferralSendPage() {
       peoplePanelEnabled
       peoplePanelTitle="People at this company"
       peoplePanelToggleLabel="Ask People"
-      subtitle="Generate and refine referral outreach with rich formatting."
       title="Referral Workspace"
       workspaceHint="Generate variants, iterate edits, then lock a message to send to your network."
     />

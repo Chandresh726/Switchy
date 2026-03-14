@@ -297,6 +297,16 @@ export const peopleImportSessions = sqliteTable("connection_import_sessions", {
   errorMessage: text("error_message"),
 });
 
+export const companyAliases = sqliteTable("company_aliases", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  companyNormalized: text("company_normalized").notNull(),
+  mappedCompanyId: integer("mapped_company_id").references(() => companies.id, { onDelete: "cascade" }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+}, (table) => ({
+  companyNormalizedUnique: unique("company_aliases_company_normalized_unique").on(table.companyNormalized),
+  mappedCompanyIdIdx: index("company_aliases_mapped_company_id_idx").on(table.mappedCompanyId),
+}));
+
 // Relations
 export const profileRelations = relations(profile, ({ many }) => ({
   skills: many(skills),
@@ -337,6 +347,14 @@ export const companiesRelations = relations(companies, ({ many }) => ({
   jobs: many(jobs),
   scrapingLogs: many(scrapingLogs),
   people: many(people),
+  companyAliases: many(companyAliases),
+}));
+
+export const companyAliasesRelations = relations(companyAliases, ({ one }) => ({
+  mappedCompany: one(companies, {
+    fields: [companyAliases.mappedCompanyId],
+    references: [companies.id],
+  }),
 }));
 
 export const jobsRelations = relations(jobs, ({ one }) => ({
@@ -441,3 +459,5 @@ export type Person = typeof people.$inferSelect;
 export type NewPerson = typeof people.$inferInsert;
 export type PeopleImportSession = typeof peopleImportSessions.$inferSelect;
 export type NewPeopleImportSession = typeof peopleImportSessions.$inferInsert;
+export type CompanyAlias = typeof companyAliases.$inferSelect;
+export type NewCompanyAlias = typeof companyAliases.$inferInsert;

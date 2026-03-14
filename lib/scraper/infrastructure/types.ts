@@ -16,6 +16,7 @@ export interface ExistingJob {
   externalId: string | null;
   title: string;
   url: string;
+  location?: string | null;
   status: string;
   description: string | null;
 }

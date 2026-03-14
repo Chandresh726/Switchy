@@ -11,18 +11,25 @@ export const PLATFORM_OPTIONS = [
   { value: "ashby", label: "Ashby" },
   { value: "eightfold", label: "Eightfold" },
   { value: "workday", label: "Workday" },
+  { value: "servicenow", label: "ServiceNow" },
+  { value: "zwayam", label: "Zwayam" },
+  { value: "mynexthire", label: "MynextHire" },
   { value: "uber", label: "Uber" },
   { value: "google", label: "Google" },
   { value: "atlassian", label: "Atlassian" },
   { value: "rippling", label: "Rippling" },
+  { value: "visa", label: "Visa" },
+  { value: "nutanix", label: "Nutanix" },
   { value: "custom", label: "Custom" },
 ] as const;
 
 export const CUSTOM_SCRAPER_PLATFORMS = [
+  "servicenow",
   "uber",
   "google",
   "atlassian",
   "rippling",
+  "visa",
   "nutanix",
 ] as const;
 
@@ -42,10 +49,14 @@ export const PLATFORM_COLORS: Record<string, string> = {
   ashby: "border-sky-500/30 bg-sky-500/10 text-sky-300",
   eightfold: "border-cyan-500/30 bg-cyan-500/10 text-cyan-300",
   workday: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+  servicenow: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+  zwayam: "border-orange-500/30 bg-orange-500/10 text-orange-300",
+  mynexthire: "border-teal-500/30 bg-teal-500/10 text-teal-300",
   uber: "border-neutral-400/30 bg-neutral-400/10 text-neutral-200",
   google: "border-rose-500/30 bg-rose-500/10 text-rose-300",
   atlassian: "border-blue-400/30 bg-blue-400/10 text-blue-200",
   rippling: "border-yellow-500/30 bg-yellow-500/10 text-yellow-300",
+  visa: "border-indigo-500/30 bg-indigo-500/10 text-indigo-300",
   nutanix: "border-violet-500/30 bg-violet-500/10 text-violet-300",
   custom: "border-border bg-muted/40 text-muted-foreground",
 };

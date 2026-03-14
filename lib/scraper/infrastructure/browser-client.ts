@@ -19,6 +19,7 @@ export interface BrowserSession {
 
 export interface IBrowserClient {
   bootstrap(url: string): Promise<BrowserSession | null>;
+  withBrowser<T>(callback: (page: Page) => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
 
@@ -39,6 +40,17 @@ export abstract class PlaywrightBrowserClient implements IBrowserClient {
   }
 
   abstract bootstrap(url: string): Promise<BrowserSession | null>;
+
+  async withBrowser<T>(callback: (page: Page) => Promise<T>): Promise<T> {
+    await this.launchBrowser();
+    try {
+      const page = this.context?.pages()[0];
+      if (!page) throw new Error("Failed to create browser page");
+      return await callback(page);
+    } finally {
+      await this.close();
+    }
+  }
 
   async close(): Promise<void> {
     if (this.context) {

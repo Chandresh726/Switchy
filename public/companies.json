@@ -423,5 +423,33 @@
     "platform": "ashby",
     "boardToken": "confluent",
     "isActive": true
+  },
+  {
+    "name": "ServiceNow",
+    "careersUrl": "https://careers.servicenow.com/jobs",
+    "logoUrl": "https://monkedo-static.s3.eu-central-1.amazonaws.com/component-icons/service-now.png",
+    "platform": "servicenow",
+    "isActive": true
+  },
+  {
+    "name": "Flipkart",
+    "careersUrl": "https://www.flipkartcareers.com/flipkart/jobslist",
+    "logoUrl": "https://www.citypng.com/public/uploads/preview/hd-flipkart-round-logo-icon-transparent-png-701751694966204grvmunpzzf.png",
+    "platform": "zwayam",
+    "isActive": true
+  },
+  {
+    "name": "Swiggy",
+    "careersUrl": "https://careers.swiggy.com/#/careers",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSOqDecYNB4XzOS5TFHmIBXBgf_DMPzKttsmw&s",
+    "platform": "mynexthire",
+    "isActive": true
+  },
+  {
+    "name": "Visa",
+    "careersUrl": "https://www.visa.co.uk/en_gb/jobs/",
+    "logoUrl": "https://cdn-icons-png.flaticon.com/512/5968/5968397.png",
+    "platform": "visa",
+    "isActive": true
   }
 ]

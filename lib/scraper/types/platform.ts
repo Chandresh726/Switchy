@@ -4,10 +4,14 @@ export type Platform =
   | "ashby"
   | "eightfold"
   | "workday"
+  | "servicenow"
+  | "zwayam"
+  | "mynexthire"
   | "uber"
   | "google"
   | "atlassian"
   | "rippling"
+  | "visa"
   | "nutanix";
 
 export type TriggerSource = "manual" | "scheduler" | "company_refresh";
@@ -36,10 +40,14 @@ export const PLATFORMS: readonly Platform[] = [
   "ashby",
   "eightfold",
   "workday",
+  "servicenow",
+  "zwayam",
+  "mynexthire",
   "uber",
   "google",
   "atlassian",
   "rippling",
+  "visa",
   "nutanix",
 ] as const;
 

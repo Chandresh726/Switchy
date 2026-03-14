@@ -44,6 +44,19 @@ export abstract class AbstractApiScraper<
     });
   }
 
+  protected async post<T>(
+    url: string,
+    body: unknown,
+    options: HttpRequestOptions = {}
+  ): Promise<T> {
+    return this.httpClient.post<T>(url, body, {
+      timeout: this.config.timeout,
+      retries: this.config.retries,
+      baseDelay: this.config.baseDelay,
+      ...options,
+    });
+  }
+
   protected normalizeLocation = normalizeLocation;
 
   protected generateExternalId = generateExternalId;

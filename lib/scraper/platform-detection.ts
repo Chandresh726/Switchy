@@ -24,6 +24,25 @@ export function detectPlatformFromUrl(url: string): DetectedPlatform {
   if (urlLower.includes("myworkdayjobs.com") || /\.wd\d*\.myworkdayjobs\.com/.test(urlLower)) {
     return "workday";
   }
+  if (
+    urlLower.includes("careers.servicenow.com/jobs") ||
+    (urlLower.includes("servicenow.com") && urlLower.includes("/jobs/"))
+  ) {
+    return "servicenow";
+  }
+  if (
+    urlLower.includes(".mynexthire.com") ||
+    urlLower.includes("careers.swiggy.com")
+  ) {
+    return "mynexthire";
+  }
+  if (
+    urlLower.includes(".zwayam.com") ||
+    urlLower.includes("public.zwayam.com") ||
+    urlLower.includes("flipkartcareers.com/flipkart/jobslist")
+  ) {
+    return "zwayam";
+  }
   if (urlLower.includes("eightfold.ai")) {
     return "eightfold";
   }
@@ -48,6 +67,17 @@ export function detectPlatformFromUrl(url: string): DetectedPlatform {
   ) {
     return "rippling";
   }
+  if (urlLower.includes("/jobs")) {
+    try {
+      const hostname = new URL(urlLower).hostname;
+      if (hostname === "visa.com" || hostname === "www.visa.com" ||
+          hostname.endsWith(".visa.com") || hostname.endsWith(".visa.co.uk")) {
+        return "visa";
+      }
+    } catch {
+      // fall through
+    }
+  }
   if (urlLower.includes("careers.nutanix.com") || urlLower.includes("nutanix.com") && urlLower.includes("career")) {
     return "nutanix";
   }
@@ -61,10 +91,14 @@ export function getPlatformLabel(platform: DetectedPlatform): string {
     ashby: "Ashby",
     eightfold: "Eightfold",
     workday: "Workday",
+    servicenow: "ServiceNow",
+    zwayam: "Zwayam",
+    mynexthire: "MynextHire",
     uber: "Uber",
     google: "Google",
     atlassian: "Atlassian",
     rippling: "Rippling",
+    visa: "Visa",
     nutanix: "Nutanix",
     custom: "Custom",
   };

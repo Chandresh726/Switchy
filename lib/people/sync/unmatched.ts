@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { companies, people, settings } from "@/lib/db/schema";
+import { companies, companyAliases, people, settings } from "@/lib/db/schema";
 import { normalizeCompanyName } from "@/lib/people/normalize";
 
 const IGNORED_UNMATCHED_COMPANIES_KEY = "people_ignored_unmatched_companies";
@@ -407,6 +407,17 @@ export async function mapUnmatchedCompanyGroup(
     ignoredCompanies.delete(companyNormalized);
     await saveIgnoredUnmatchedCompanies(ignoredCompanies);
   }
+
+  await db
+    .insert(companyAliases)
+    .values({
+      companyNormalized,
+      mappedCompanyId,
+    })
+    .onConflictDoUpdate({
+      target: companyAliases.companyNormalized,
+      set: { mappedCompanyId },
+    });
 
   return { updatedCount: updated.length };
 }

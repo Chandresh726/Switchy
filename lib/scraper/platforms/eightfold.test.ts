@@ -4,6 +4,18 @@ import type { IBrowserClient } from "@/lib/scraper/infrastructure/browser-client
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import { EightfoldScraper } from "@/lib/scraper/platforms/eightfold";
 
+function createMockBrowserClient(
+  bootstrapResult: Awaited<ReturnType<IBrowserClient["bootstrap"]>>
+): IBrowserClient {
+  return {
+    bootstrap: vi.fn(async () => bootstrapResult),
+    withBrowser: vi.fn(async () => {
+      throw new Error("not used in this test");
+    }),
+    close: vi.fn(async () => undefined),
+  };
+}
+
 vi.mock("@/lib/scraper/services", () => ({
   hasEarlyFilters: vi.fn(() => false),
   applyEarlyFilters: vi.fn((items: unknown[]) => ({
@@ -80,14 +92,11 @@ describe("EightfoldScraper", () => {
       get: vi.fn(),
       post: vi.fn(),
     };
-    const browserClient: IBrowserClient = {
-      bootstrap: vi.fn(async () => ({
-        baseUrl: "https://apply.careers.microsoft.com",
-        cookies: "session=abc",
-        domain: "microsoft.com",
-      })),
-      close: vi.fn(async () => undefined),
-    };
+    const browserClient = createMockBrowserClient({
+      baseUrl: "https://apply.careers.microsoft.com",
+      cookies: "session=abc",
+      domain: "microsoft.com",
+    });
     const scraper = new EightfoldScraper(httpClient, browserClient, {
       detailBatchSize: 4,
       requestDelayMs: 0,
@@ -142,14 +151,11 @@ describe("EightfoldScraper", () => {
       get: vi.fn(),
       post: vi.fn(),
     };
-    const browserClient: IBrowserClient = {
-      bootstrap: vi.fn(async () => ({
-        baseUrl: "https://apply.careers.microsoft.com",
-        cookies: "session=abc",
-        domain: "microsoft.com",
-      })),
-      close: vi.fn(async () => undefined),
-    };
+    const browserClient = createMockBrowserClient({
+      baseUrl: "https://apply.careers.microsoft.com",
+      cookies: "session=abc",
+      domain: "microsoft.com",
+    });
     const scraper = new EightfoldScraper(httpClient, browserClient, {
       detailBatchSize: 4,
       requestDelayMs: 0,
@@ -181,14 +187,11 @@ describe("EightfoldScraper", () => {
       get: vi.fn(),
       post: vi.fn(),
     };
-    const browserClient: IBrowserClient = {
-      bootstrap: vi.fn(async () => ({
-        baseUrl: "https://apply.careers.microsoft.com",
-        cookies: "",
-        domain: "microsoft.com",
-      })),
-      close: vi.fn(async () => undefined),
-    };
+    const browserClient = createMockBrowserClient({
+      baseUrl: "https://apply.careers.microsoft.com",
+      cookies: "",
+      domain: "microsoft.com",
+    });
     const scraper = new EightfoldScraper(httpClient, browserClient, {
       detailBatchSize: 1,
       requestDelayMs: 0,

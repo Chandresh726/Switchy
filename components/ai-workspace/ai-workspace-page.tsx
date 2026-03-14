@@ -66,7 +66,6 @@ interface AIWorkspacePageProps {
   peoplePanelToggleLabel?: string;
   peoplePanelEnabled?: boolean;
   requireApplied?: boolean;
-  subtitle: string;
   title: string;
   workspaceHint: string;
 }
@@ -87,7 +86,6 @@ export function AIWorkspacePage({
   peoplePanelTitle,
   peoplePanelToggleLabel,
   requireApplied = false,
-  subtitle,
   title,
   workspaceHint,
 }: AIWorkspacePageProps) {
@@ -115,7 +113,6 @@ export function AIWorkspacePage({
 
   const {
     content,
-    contentStatusText,
     currentContent,
     currentVariantIndex,
     currentVariantPrompt,

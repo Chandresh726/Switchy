@@ -4,9 +4,9 @@ import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { parseApolloCsv, type ApolloColumnMapping } from "@/lib/people/import/parsers/apollo";
 import { parseLinkedinCsv } from "@/lib/people/import/parsers/linkedin";
 import { normalizeCompanyName, normalizeLinkedInProfileUrl } from "@/lib/people/normalize";
-import type { PersonImportSummary, PersonSource } from "@/lib/people/types";
+import type { PersonImportSummary, PersonSource, ImportMode } from "@/lib/people/types";
 import { db } from "@/lib/db";
-import { companies, people, peopleImportSessions } from "@/lib/db/schema";
+import { companies, companyAliases, people, peopleImportSessions } from "@/lib/db/schema";
 
 type CsvImportSource = Exclude<PersonSource, "manual">;
 
@@ -15,6 +15,7 @@ export interface ImportPeopleCsvInput {
   content: string;
   fileName: string;
   mapping?: ApolloColumnMapping;
+  importMode?: ImportMode;
 }
 
 export interface ManualPersonInput {
@@ -72,29 +73,47 @@ export async function importPeopleCsv(input: ImportPeopleCsvInput): Promise<Pers
       }
     }
 
+    const aliases = await db
+      .select({
+        companyNormalized: companyAliases.companyNormalized,
+        mappedCompanyId: companyAliases.mappedCompanyId,
+      })
+      .from(companyAliases);
+
+    for (const alias of aliases) {
+      if (alias.companyNormalized && !companyMap.has(alias.companyNormalized)) {
+        companyMap.set(alias.companyNormalized, alias.mappedCompanyId);
+      }
+    }
+
     const existingPeople = await db
       .select({
         id: people.id,
         identityKey: people.identityKey,
+        mappedCompanyId: people.mappedCompanyId,
+        email: people.email,
       })
       .from(people)
       .where(eq(people.source, input.source));
 
-    const existingMap = new Map(existingPeople.map((item) => [item.identityKey, item.id]));
+    const existingMap = new Map(
+      existingPeople.map((item) => [item.identityKey, { id: item.id, mappedCompanyId: item.mappedCompanyId, email: item.email }])
+    );
     const seenIdentityKeys = new Set<string>();
 
     let unmatchedCompanyRows = 0;
     const toInsert: (typeof people.$inferInsert)[] = [];
     const toUpdate: { id: number; data: Partial<typeof people.$inferSelect> }[] = [];
+    const importMode = input.importMode ?? "merge";
 
     for (const row of parsed.rows) {
       seenIdentityKeys.add(row.identityKey);
-      const mappedCompanyId = row.companyNormalized ? (companyMap.get(row.companyNormalized) ?? null) : null;
-      if (row.companyNormalized && !mappedCompanyId) {
+      const csvMappedCompanyId = row.companyNormalized ? (companyMap.get(row.companyNormalized) ?? null) : null;
+      if (row.companyNormalized && !csvMappedCompanyId) {
         unmatchedCompanyRows += 1;
       }
 
-      const existingId = existingMap.get(row.identityKey);
+      const existing = existingMap.get(row.identityKey);
       const commonData = {
         source: row.source,
         sourceRecordKey: row.sourceRecordKey,
@@ -109,16 +128,25 @@ export async function importPeopleCsv(input: ImportPeopleCsvInput): Promise<Pers
         position: row.position,
         connectedOn: row.connectedOn,
         notes: row.notes,
-        mappedCompanyId,
+        mappedCompanyId: csvMappedCompanyId,
         isActive: true,
         lastSeenAt: now,
         updatedAt: now,
       } as const;
 
-      if (existingId) {
+      if (existing) {
+        const shouldPreserveMappings = importMode === "merge";
         toUpdate.push({
-          id: existingId,
-          data: commonData,
+          id: existing.id,
+          data: {
+            ...commonData,
+            mappedCompanyId: shouldPreserveMappings
+              ? (existing.mappedCompanyId ?? csvMappedCompanyId)
+              : csvMappedCompanyId,
+            email: shouldPreserveMappings
+              ? (existing.email ?? row.email)
+              : row.email,
+          },
         });
       } else {
         toInsert.push({

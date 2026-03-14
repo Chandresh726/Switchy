@@ -16,7 +16,6 @@ export default function RecruiterFollowUpPage() {
       peoplePanelTitle="People at this company"
       peoplePanelToggleLabel="Message Recruiters"
       requireApplied
-      subtitle="Follow up after applying and ask for a review of your application."
       title="Recruiter Follow-up Workspace"
       workspaceHint="Generate concise post-application outreach and tailor it per recruiter."
     />
