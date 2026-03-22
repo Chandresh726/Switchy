@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 type Theme = "dark" | "light";
 
@@ -15,6 +15,51 @@ function getSystemPreference(): Theme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
+// Module-level shared store so all useTheme() instances stay in sync
+const listeners = new Set<() => void>();
+let currentTheme: Theme = "dark";
+let initialized = false;
+
+function initStore() {
+  if (initialized || typeof window === "undefined") return;
+  initialized = true;
+
+  const stored = localStorage.getItem("theme");
+  currentTheme = (stored === "light" || stored === "dark") ? stored : getSystemPreference();
+
+  const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  mediaQuery.addEventListener("change", (e) => {
+    const stored = localStorage.getItem("theme");
+    if (!stored) {
+      setThemeInternal(e.matches ? "dark" : "light");
+    }
+  });
+}
+
+function setThemeInternal(theme: Theme) {
+  currentTheme = theme;
+  localStorage.setItem("theme", theme);
+  document.documentElement.classList.remove("dark", "light");
+  document.documentElement.classList.add(theme);
+  listeners.forEach((l) => l());
+}
+
+function subscribe(listener: () => void) {
+  initStore();
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function getSnapshot(): Theme {
+  initStore();
+  return currentTheme;
+}
+
+function getServerSnapshot(): Theme {
+  return "dark";
+}
+
+// Hydration detection
 const emptySubscribe = () => () => {};
 
 function useHydration() {
@@ -27,50 +72,19 @@ function useHydration() {
 
 export function useTheme(): UseThemeReturn {
   const isHydrated = useHydration();
-  
-  const [theme, setTheme] = useState<Theme>(() => {
-    if (typeof window === "undefined") return "dark";
-    const stored = localStorage.getItem("theme");
-    return (stored === "light" || stored === "dark") ? stored : getSystemPreference();
-  });
-
-  useEffect(() => {
-    if (isHydrated) {
-      document.documentElement.classList.remove("dark", "light");
-      document.documentElement.classList.add(theme);
-    }
-  }, [isHydrated, theme]);
-
-  useEffect(() => {
-    const handleChange = (e: MediaQueryListEvent) => {
-      const stored = localStorage.getItem("theme");
-      if (!stored) {
-        const next = e.matches ? "dark" : "light";
-        setTheme(next);
-      }
-    };
-    
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    mediaQuery.addEventListener("change", handleChange);
-    return () => mediaQuery.removeEventListener("change", handleChange);
-  }, []);
+  const theme = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   const toggleTheme = useCallback(() => {
-    setTheme((prev) => {
-      const next = prev === "dark" ? "light" : "dark";
-      localStorage.setItem("theme", next);
-      return next;
-    });
+    setThemeInternal(currentTheme === "dark" ? "light" : "dark");
   }, []);
 
-  const setThemeValue = useCallback((newTheme: Theme) => {
-    setTheme(newTheme);
-    localStorage.setItem("theme", newTheme);
+  const setTheme = useCallback((newTheme: Theme) => {
+    setThemeInternal(newTheme);
   }, []);
 
-  return { 
-    theme: isHydrated ? theme : "dark", 
-    toggleTheme, 
-    setTheme: setThemeValue 
+  return {
+    theme: isHydrated ? theme : "dark",
+    toggleTheme,
+    setTheme,
   };
 }

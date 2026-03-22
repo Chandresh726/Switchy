@@ -35,7 +35,8 @@ export interface PlatformItem {
 }
 
 export interface ScreenshotImage {
-  src: string;
+  darkSrc: string;
+  lightSrc: string;
   url: string;
 }
 

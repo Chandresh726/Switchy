@@ -6,8 +6,10 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 
 import { SCREENSHOTS } from "@/lib/constants";
 import { fadeInY, imageSlide } from "@/lib/animations";
+import { useTheme } from "@/lib/use-theme";
 
 export function Screenshots() {
+  const { theme } = useTheme();
   const [currentFeatureIndex, setCurrentFeatureIndex] = useState(0);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isVisible, setIsVisible] = useState(false);
@@ -16,6 +18,7 @@ export function Screenshots() {
 
   const currentFeature = SCREENSHOTS[currentFeatureIndex];
   const currentImage = currentFeature.images[currentImageIndex];
+  const activeSrc = theme === "dark" ? currentImage.darkSrc : currentImage.lightSrc;
 
   const totalImages = SCREENSHOTS.reduce(
     (acc, feature) => acc + feature.images.length,
@@ -135,7 +138,7 @@ export function Screenshots() {
                   animate="animate"
                   exit="exit"
                   transition={{ duration: 0.3 }}
-                  src={currentImage.src}
+                  src={activeSrc}
                   alt={currentFeature.title}
                   className="absolute inset-0 w-full h-full object-cover object-top"
                   loading="lazy"

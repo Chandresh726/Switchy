@@ -7,7 +7,8 @@ export const SCREENSHOTS: ScreenshotItem[] = [
       "Your job search at a glance—new jobs, top matches, and recent applications.",
     images: [
       {
-        src: "/screenshots/dashboard.png",
+        darkSrc: "/screenshots/dashboard-dark.png",
+        lightSrc: "/screenshots/dashboard-light.png",
         url: "localhost:3000",
       },
     ],
@@ -17,11 +18,13 @@ export const SCREENSHOTS: ScreenshotItem[] = [
     description: "Upload your resume and let AI parse your skills and experience.",
     images: [
       {
-        src: "/screenshots/profile-1.png",
+        darkSrc: "/screenshots/profile-1-dark.png",
+        lightSrc: "/screenshots/profile-1-light.png",
         url: "localhost:3000/profile",
       },
       {
-        src: "/screenshots/profile-2.png",
+        darkSrc: "/screenshots/profile-2-dark.png",
+        lightSrc: "/screenshots/profile-2-light.png",
         url: "localhost:3000/profile",
       },
     ],
@@ -31,7 +34,8 @@ export const SCREENSHOTS: ScreenshotItem[] = [
     description: "Browse and discover companies hiring for your skills.",
     images: [
       {
-        src: "/screenshots/companies.png",
+        darkSrc: "/screenshots/companies-dark.png",
+        lightSrc: "/screenshots/companies-light.png",
         url: "localhost:3000/companies",
       },
     ],
@@ -41,11 +45,13 @@ export const SCREENSHOTS: ScreenshotItem[] = [
     description: "Filter, sort, and discover opportunities with powerful search tools.",
     images: [
       {
-        src: "/screenshots/jobs.png",
+        darkSrc: "/screenshots/jobs-dark.png",
+        lightSrc: "/screenshots/jobs-light.png",
         url: "localhost:3000/jobs",
       },
       {
-        src: "/screenshots/job-id.png",
+        darkSrc: "/screenshots/job-id-dark.png",
+        lightSrc: "/screenshots/job-id-light.png",
         url: "localhost:3000/jobs/{job-id}",
       },
     ],
@@ -56,11 +62,13 @@ export const SCREENSHOTS: ScreenshotItem[] = [
       "Generate AI-powered cover letters and referral messages tailored to each job.",
     images: [
       {
-        src: "/screenshots/ai-referral.png",
+        darkSrc: "/screenshots/ai-referral-dark.png",
+        lightSrc: "/screenshots/ai-referral-light.png",
         url: "localhost:3000/jobs/{job-id}",
       },
       {
-        src: "/screenshots/ai-cover-letter.png",
+        darkSrc: "/screenshots/ai-cover-letter-dark.png",
+        lightSrc: "/screenshots/ai-cover-letter-light.png",
         url: "localhost:3000/jobs/{job-id}",
       },
     ],
@@ -70,11 +78,13 @@ export const SCREENSHOTS: ScreenshotItem[] = [
     description: "Track all scraping and matching operations with detailed logs.",
     images: [
       {
-        src: "/screenshots/history-scrape.png",
+        darkSrc: "/screenshots/history-scrape-dark.png",
+        lightSrc: "/screenshots/history-scrape-light.png",
         url: "localhost:3000/history/scrape",
       },
       {
-        src: "/screenshots/history-matcher.png",
+        darkSrc: "/screenshots/history-matcher-dark.png",
+        lightSrc: "/screenshots/history-matcher-light.png",
         url: "localhost:3000/history/match",
       },
     ],
@@ -85,7 +95,8 @@ export const SCREENSHOTS: ScreenshotItem[] = [
       "Configure AI providers, scraping schedules, and matching preferences.",
     images: [
       {
-        src: "/screenshots/settings.png",
+        darkSrc: "/screenshots/settings-dark.png",
+        lightSrc: "/screenshots/settings-light.png",
         url: "localhost:3000/settings",
       },
     ],
