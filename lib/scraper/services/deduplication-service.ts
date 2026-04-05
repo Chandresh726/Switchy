@@ -19,6 +19,10 @@ export const DEFAULT_DEDUPLICATION_CONFIG: DeduplicationConfig = {
   titleSimilarityThreshold: 0.9,
 };
 
+function hasMeaningfulExternalId(externalId: string | null | undefined): externalId is string {
+  return typeof externalId === "string" && externalId.trim().length > 0;
+}
+
 function locationsMatch(locA: string | null | undefined, locB: string | null | undefined): boolean {
   if (!locA && !locB) return true;
   if (!locA || !locB) return true;
@@ -72,6 +76,7 @@ export class TitleBasedDeduplicationService implements IDeduplicationService {
     if (
       highestSimilarity > this.config.titleSimilarityThreshold &&
       mostSimilarJob &&
+      (!hasMeaningfulExternalId(job.externalId) || !hasMeaningfulExternalId(mostSimilarJob.externalId)) &&
       locationsMatch(job.location, mostSimilarJob.location)
     ) {
       return {

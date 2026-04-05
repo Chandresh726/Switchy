@@ -40,7 +40,7 @@ describe("deduplication service", () => {
     const existingJobs = [
       {
         id: 1,
-        externalId: "greenhouse-acme-1",
+        externalId: null,
         title: "Software Engineer",
         url: "https://jobs.example.com/existing",
         status: "new",
@@ -50,7 +50,7 @@ describe("deduplication service", () => {
 
     const result = service.deduplicate(
       {
-        externalId: "greenhouse-acme-2",
+        externalId: undefined,
         title: "Software Engineer II",
         url: "https://jobs.example.com/new",
       },
@@ -60,5 +60,33 @@ describe("deduplication service", () => {
     expect(result.isNew).toBe(false);
     expect(result.existingJobId).toBe(1);
     expect(result.matchReason).toBe("titleSimilarity");
+  });
+
+  it("does not collapse distinct Greenhouse jobs with different external IDs into a fuzzy duplicate", () => {
+    const service = new TitleBasedDeduplicationService();
+    const existingJobs = [
+      {
+        id: 1,
+        externalId: "greenhouse-observeai-5077208008",
+        title: "Software Development Engineer III - Backend",
+        url: "https://www.observe.ai/position?gh_jid=5077208008",
+        location: "Bengaluru",
+        status: "archived",
+        description: "existing description",
+      },
+    ];
+
+    const result = service.deduplicate(
+      {
+        externalId: "greenhouse-observeai-4173619008",
+        title: "Software Development Engineer II - Backend",
+        url: "https://www.observe.ai/position?gh_jid=4173619008",
+        location: "Bengaluru",
+      },
+      existingJobs
+    );
+
+    expect(result.isNew).toBe(true);
+    expect(result.matchReason).toBeUndefined();
   });
 });
