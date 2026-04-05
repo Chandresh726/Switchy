@@ -18,9 +18,11 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { NewJobBadge } from "@/components/jobs/new-job-badge";
 import { MatchBadge } from "@/components/jobs/match-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isNewJob } from "@/lib/jobs/is-new-job";
 import { formatRelativeTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
 
@@ -76,7 +78,6 @@ interface Job {
   };
 }
 
-const NEW_JOB_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const DASHBOARD_LIST_MAX_ITEMS = 20;
 
 function StatCard({
@@ -144,11 +145,12 @@ function JobRow({
   currentTime: number;
   showNewTag?: boolean;
 }) {
-  const discoveredAt = new Date(job.discoveredAt);
-  const isNewJob = showNewTag
-    && job.status === "new"
-    && !job.viewedAt
-    && currentTime - discoveredAt.getTime() <= NEW_JOB_WINDOW_MS;
+  const shouldShowNewTag = showNewTag && isNewJob({
+    discoveredAt: job.discoveredAt,
+    viewedAt: job.viewedAt,
+    status: job.status,
+    currentTime,
+  });
 
   return (
     <Link
@@ -172,11 +174,7 @@ function JobRow({
             <h3 className="truncate text-sm font-medium text-foreground group-hover:text-emerald-400 transition-colors">
               {job.title}
             </h3>
-            {isNewJob && (
-              <span className="shrink-0 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-400">
-                New
-              </span>
-            )}
+            {shouldShowNewTag && <NewJobBadge />}
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
             <span>{job.company.name}</span>

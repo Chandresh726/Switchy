@@ -64,6 +64,7 @@ export async function GET(
           location: jobs.location,
           locationType: jobs.locationType,
           discoveredAt: jobs.discoveredAt,
+          viewedAt: jobs.viewedAt,
         })
         .from(jobs)
         .where(eq(jobs.companyId, parsedParams.id))

@@ -28,6 +28,7 @@ export interface CompanyJob {
   location: string | null;
   locationType: string | null;
   discoveredAt: string | null;
+  viewedAt: string | null;
 }
 
 export interface CompanyPerson {

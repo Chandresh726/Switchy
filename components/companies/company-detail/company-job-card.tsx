@@ -4,8 +4,10 @@ import Link from "next/link";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { MapPin, CheckCircle, Star, Loader2, CalendarDays } from "lucide-react";
 
+import { NewJobBadge } from "@/components/jobs/new-job-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { isNewJob } from "@/lib/jobs/is-new-job";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/utils/format";
 
@@ -13,6 +15,7 @@ import type { CompanyJob } from "./types";
 
 interface CompanyJobCardProps {
   job: CompanyJob;
+  currentTime: number;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -58,9 +61,15 @@ function getMatchScoreConfig(score: number | null): { label: string; className: 
   };
 }
 
-export function CompanyJobCard({ job }: CompanyJobCardProps) {
+export function CompanyJobCard({ job, currentTime }: CompanyJobCardProps) {
   const queryClient = useQueryClient();
   const matchConfig = getMatchScoreConfig(job.matchScore);
+  const shouldShowNewTag = isNewJob({
+    discoveredAt: job.discoveredAt,
+    viewedAt: job.viewedAt,
+    status: job.status,
+    currentTime,
+  });
 
   const updateStatusMutation = useMutation({
     mutationFn: async (newStatus: string) => {
@@ -87,14 +96,16 @@ export function CompanyJobCard({ job }: CompanyJobCardProps) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h3 className="font-medium text-foreground truncate">{job.title}</h3>
-            {job.status !== "new" && (
+            {shouldShowNewTag ? (
+              <NewJobBadge />
+            ) : job.status !== "new" ? (
               <Badge
                 variant="outline"
                 className={cn("text-[11px]", STATUS_COLORS[job.status] || STATUS_COLORS.new)}
               >
                 {job.status}
               </Badge>
-            )}
+            ) : null}
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

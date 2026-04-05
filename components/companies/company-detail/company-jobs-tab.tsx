@@ -18,7 +18,7 @@ interface CompanyJobsTabProps {
 
 type SortKey = "matchScore" | "discoveredAt";
 type SortDir = "desc" | "asc";
-type StatusFilter = "all" | "new" | "viewed" | "interested" | "applied" | "rejected" | "archived";
+type StatusFilter = "active" | "all" | "new" | "viewed" | "interested" | "applied" | "rejected" | "archived";
 
 const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
   { key: "matchScore", label: "Match Score" },
@@ -26,6 +26,7 @@ const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
 ];
 
 const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
+  { value: "active", label: "Active Jobs" },
   { value: "all", label: "All Statuses" },
   { value: "new", label: "New" },
   { value: "viewed", label: "Viewed" },
@@ -59,18 +60,34 @@ function parseDate(value: string | null): Date | null {
 }
 
 export function CompanyJobsTab({ company, jobs }: CompanyJobsTabProps) {
+  const [currentTime] = useState(() => Date.now());
   const [sortKey, setSortKey] = useState<SortKey>("discoveredAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const lastScrapedDate = parseDate(company.lastScrapedAt);
 
   const filteredAndSorted = useMemo(() => {
-    const filtered =
-      statusFilter === "all" ? jobs : jobs.filter((j) => j.status === statusFilter);
+    const filtered = jobs.filter((job) => {
+      if (statusFilter === "active") {
+        return job.status !== "archived";
+      }
+
+      if (statusFilter === "all") {
+        return true;
+      }
+
+      return job.status === statusFilter;
+    });
+
     return sortJobs(filtered, sortKey, sortDir);
   }, [jobs, sortKey, sortDir, statusFilter]);
 
-  if (jobs.length === 0) {
+  const activeJobsCount = useMemo(
+    () => jobs.filter((job) => job.status !== "archived").length,
+    [jobs]
+  );
+
+  if (activeJobsCount === 0) {
     if (!company.canScrapeJobs) {
       return (
         <div className="rounded-lg border border-border bg-muted/20 py-12 text-center">
@@ -95,7 +112,7 @@ export function CompanyJobsTab({ company, jobs }: CompanyJobsTabProps) {
     );
   }
 
-  const isFiltered = statusFilter !== "all";
+  const isFiltered = statusFilter !== "active";
 
   return (
     <div className="space-y-6">
@@ -120,7 +137,7 @@ export function CompanyJobsTab({ company, jobs }: CompanyJobsTabProps) {
             <span className="text-foreground">
               ({filteredAndSorted.length}
               {isFiltered && (
-                <span className="text-muted-foreground"> / {jobs.length}</span>
+                <span className="text-muted-foreground"> / {activeJobsCount}</span>
               )}
               )
             </span>
@@ -180,7 +197,7 @@ export function CompanyJobsTab({ company, jobs }: CompanyJobsTabProps) {
         ) : (
           <div className="grid gap-3">
             {filteredAndSorted.map((job) => (
-              <CompanyJobCard key={job.id} job={job} />
+              <CompanyJobCard key={job.id} job={job} currentTime={currentTime} />
             ))}
           </div>
         )}
