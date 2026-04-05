@@ -16,6 +16,9 @@ export async function GET() {
       lastRun: status.lastRun?.toISOString() || null,
       nextRun: status.nextRun?.toISOString() || null,
       cronExpression: status.cronExpression,
+      pendingMissedCount: status.pendingMissedCount,
+      oldestMissedRun: status.oldestMissedRun?.toISOString() || null,
+      latestMissedRun: status.latestMissedRun?.toISOString() || null,
     }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     console.error("[Scheduler Status API] Error:", error);

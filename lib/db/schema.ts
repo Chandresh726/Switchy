@@ -123,14 +123,16 @@ export const jobs = sqliteTable("jobs", {
 // Scrape Sessions - Track batch scrape operations
 export const scrapeSessions = sqliteTable("scrape_sessions", {
   id: text("id").primaryKey(), // UUID
-  triggerSource: text("trigger_source").notNull(), // "manual" | "auto_match" | "company_refresh" | "match_unmatched"
-  status: text("status").notNull().default("in_progress"), // "in_progress" | "completed" | "partial" | "failed"
+  triggerSource: text("trigger_source").notNull(), // "manual" | "scheduler" | "scheduler_recovery" | "company_refresh"
+  status: text("status").notNull().default("in_progress"), // "in_progress" | "completed" | "partial" | "failed" | "skipped"
   companiesTotal: integer("companies_total").default(0),
   companiesCompleted: integer("companies_completed").default(0),
   totalJobsFound: integer("total_jobs_found").default(0),
   totalJobsAdded: integer("total_jobs_added").default(0),
   totalJobsFiltered: integer("total_jobs_filtered").default(0),
   totalJobsArchived: integer("total_jobs_archived").default(0),
+  skipReason: text("skip_reason"),
+  scheduledForAt: integer("scheduled_for_at", { mode: "timestamp" }),
   startedAt: integer("started_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   completedAt: integer("completed_at", { mode: "timestamp" }),
 });

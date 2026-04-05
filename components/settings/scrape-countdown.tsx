@@ -12,6 +12,9 @@ interface SchedulerStatus {
   lastRun: string | null;
   nextRun: string | null;
   cronExpression: string;
+  pendingMissedCount: number;
+  oldestMissedRun: string | null;
+  latestMissedRun: string | null;
 }
 
 interface ScrapeCountdownProps {
@@ -109,6 +112,17 @@ export function ScrapeCountdown({ className }: ScrapeCountdownProps) {
       <div className={cn("flex items-center gap-2 text-sm text-emerald-400", className)}>
         <Clock className="h-4 w-4 animate-spin" />
         <span>Scraping now...</span>
+      </div>
+    );
+  }
+
+  if (status.pendingMissedCount > 0) {
+    return (
+      <div className={cn("flex items-center gap-2 text-sm text-amber-400", className)}>
+        <AlertCircle className="h-4 w-4" />
+        <span>
+          Recovery pending for {status.pendingMissedCount} missed run{status.pendingMissedCount === 1 ? "" : "s"}
+        </span>
       </div>
     );
   }

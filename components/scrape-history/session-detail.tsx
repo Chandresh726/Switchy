@@ -61,6 +61,8 @@ interface ScrapeSession {
   totalJobsAdded: number | null;
   totalJobsFiltered: number | null;
   totalJobsArchived: number | null;
+  skipReason?: string | null;
+  scheduledForAt?: Date | string | null;
   startedAt: Date | null;
   completedAt: Date | null;
 }
@@ -152,6 +154,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
   const { session, logs } = data;
   const sessionStatusConfig = getSessionStatusConfig(session.status);
   const SessionStatusIcon = sessionStatusConfig.icon;
+  const sessionDisplayTime = session.scheduledForAt ? new Date(session.scheduledForAt) : session.startedAt;
   const progress = session.companiesTotal
     ? Math.round(((session.companiesCompleted || 0) / session.companiesTotal) * 100)
     : 0;
@@ -206,7 +209,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
               <div className="flex items-center gap-3 mt-1.5 text-sm text-muted-foreground">
                 <span className="flex items-center gap-1.5">
                   <Clock className="h-3.5 w-3.5" />
-                  {formatDateTime(session.startedAt)}
+                  {formatDateTime(sessionDisplayTime)}
                 </span>
                 <span className="text-muted-foreground">&bull;</span>
                 <span>{TRIGGER_LABELS[session.triggerSource] || session.triggerSource}</span>
@@ -220,6 +223,12 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
             {sessionStatusConfig.label}
           </Badge>
         </div>
+
+        {session.skipReason && (
+          <div className="mb-6 rounded-lg border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-300">
+            {session.skipReason}
+          </div>
+        )}
 
         {/* Progress Bar */}
         {session.status === "in_progress" && (

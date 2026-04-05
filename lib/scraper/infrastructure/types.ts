@@ -46,8 +46,17 @@ export interface SessionProgressUpdate {
 export interface ScrapeSessionCreate {
   id: string;
   triggerSource: TriggerSource;
-  status: "in_progress";
+  status: "in_progress" | "skipped";
   companiesTotal: number;
+  companiesCompleted?: number;
+  totalJobsFound?: number;
+  totalJobsAdded?: number;
+  totalJobsFiltered?: number;
+  totalJobsArchived?: number;
+  skipReason?: string;
+  scheduledForAt?: Date;
+  startedAt?: Date;
+  completedAt?: Date;
 }
 
 export interface ScrapingLogCreate {

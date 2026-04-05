@@ -19,6 +19,9 @@ export async function POST() {
       lastRun: newStatus.lastRun?.toISOString() || null,
       nextRun: newStatus.nextRun?.toISOString() || null,
       cronExpression: newStatus.cronExpression,
+      pendingMissedCount: newStatus.pendingMissedCount,
+      oldestMissedRun: newStatus.oldestMissedRun?.toISOString() || null,
+      latestMissedRun: newStatus.latestMissedRun?.toISOString() || null,
       message: currentStatus.isActive ? "Scheduler restarted" : "Scheduler started",
     });
   } catch (error) {

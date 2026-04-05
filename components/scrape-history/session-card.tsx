@@ -47,6 +47,8 @@ interface ScrapeSession {
   totalJobsAdded: number | null;
   totalJobsFiltered: number | null;
   totalJobsArchived: number | null;
+  skipReason?: string | null;
+  scheduledForAt?: Date | string | null;
   startedAt: Date | null;
   completedAt: Date | null;
 }
@@ -61,6 +63,7 @@ export function SessionCard({ session }: SessionCardProps) {
   const queryClient = useQueryClient();
   const statusConfig = getSessionStatusConfig(session.status);
   const StatusIcon = statusConfig.icon;
+  const displayTime = session.scheduledForAt ? new Date(session.scheduledForAt) : session.startedAt;
 
   const progress = session.companiesTotal
     ? Math.round(((session.companiesCompleted || 0) / session.companiesTotal) * 100)
@@ -160,12 +163,17 @@ export function SessionCard({ session }: SessionCardProps) {
             </div>
             <div>
               <h3 className="font-medium text-foreground">
-                {formatDate(session.startedAt)} <span className="text-muted-foreground">at</span> {formatTime(session.startedAt)}
+                {formatDate(displayTime)} <span className="text-muted-foreground">at</span> {formatTime(displayTime)}
               </h3>
               <p className="flex items-center gap-1 text-sm text-muted-foreground">
                 <Play className="h-3 w-3" />
                 {TRIGGER_LABELS[session.triggerSource] || session.triggerSource}
               </p>
+              {session.skipReason && (
+                <p className="mt-1 max-w-xl text-xs text-amber-400">
+                  {session.skipReason}
+                </p>
+              )}
             </div>
           </div>
 

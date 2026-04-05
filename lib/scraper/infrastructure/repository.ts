@@ -211,11 +211,15 @@ export class DrizzleScraperRepository implements IScraperRepository {
       triggerSource: session.triggerSource,
       status: session.status,
       companiesTotal: session.companiesTotal,
-      companiesCompleted: 0,
-      totalJobsFound: 0,
-      totalJobsAdded: 0,
-      totalJobsFiltered: 0,
-      totalJobsArchived: 0,
+      companiesCompleted: session.companiesCompleted ?? 0,
+      totalJobsFound: session.totalJobsFound ?? 0,
+      totalJobsAdded: session.totalJobsAdded ?? 0,
+      totalJobsFiltered: session.totalJobsFiltered ?? 0,
+      totalJobsArchived: session.totalJobsArchived ?? 0,
+      skipReason: session.skipReason,
+      scheduledForAt: session.scheduledForAt,
+      startedAt: session.startedAt,
+      completedAt: session.completedAt,
     });
   }
 

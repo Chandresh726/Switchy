@@ -43,6 +43,13 @@ export const SESSION_STATUS_CONFIG: Record<string, StatusConfig> = {
     bgColor: "bg-yellow-500/10",
     borderColor: "border-yellow-500/20",
   },
+  skipped: {
+    icon: AlertCircle,
+    label: "Skipped",
+    color: "text-amber-400",
+    bgColor: "bg-amber-500/10",
+    borderColor: "border-amber-500/20",
+  },
   queued: {
     icon: Clock,
     label: "In Queue",

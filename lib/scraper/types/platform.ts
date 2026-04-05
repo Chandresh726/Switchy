@@ -14,7 +14,7 @@ export type Platform =
   | "visa"
   | "nutanix";
 
-export type TriggerSource = "manual" | "scheduler" | "company_refresh";
+export type TriggerSource = "manual" | "scheduler" | "scheduler_recovery" | "company_refresh";
 
 export type JobStatus = "new" | "viewed" | "interested" | "applied" | "rejected" | "archived";
 
@@ -28,7 +28,7 @@ export type SeniorityLevel = "entry" | "mid" | "senior" | "lead" | "manager";
 
 export type ScrapeLogStatus = "success" | "error" | "partial";
 
-export type SessionStatus = "in_progress" | "completed" | "partial" | "failed";
+export type SessionStatus = "in_progress" | "completed" | "partial" | "failed" | "skipped";
 
 export type MatcherStatus = "pending" | "in_progress" | "completed" | "failed";
 
@@ -54,6 +54,7 @@ export const PLATFORMS: readonly Platform[] = [
 export const TRIGGER_SOURCES: readonly TriggerSource[] = [
   "manual",
   "scheduler",
+  "scheduler_recovery",
   "company_refresh",
 ] as const;
 
