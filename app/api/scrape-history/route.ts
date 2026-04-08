@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
     const sessions = await db
       .select()
       .from(scrapeSessions)
-      .orderBy(desc(scrapeSessions.startedAt))
+      .orderBy(desc(sql`coalesce(${scrapeSessions.scheduledForAt}, ${scrapeSessions.startedAt})`))
       .limit(limit)
       .offset(offset);
 

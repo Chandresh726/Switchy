@@ -136,7 +136,7 @@ describe("scheduler recovery", () => {
 
     await scheduler.startScheduler();
     await store.task?.listeners.get("execution:missed")?.({
-      date: new Date("2026-04-05T00:00:00.000Z"),
+      date: new Date("2026-04-05T06:30:00.000Z"),
     });
 
     const status = await scheduler.getSchedulerStatus();
@@ -144,8 +144,10 @@ describe("scheduler recovery", () => {
     expect(store.sessions).toHaveLength(1);
     expect(store.sessions[0]?.status).toBe("skipped");
     expect(store.sessions[0]?.triggerSource).toBe("scheduler");
+    expect((store.sessions[0]?.scheduledForAt as Date)?.toISOString()).toBe("2026-04-05T00:30:00.000Z");
+    expect((store.sessions[0]?.startedAt as Date)?.toISOString()).toBe("2026-04-05T00:30:00.000Z");
     expect(status.pendingMissedCount).toBe(1);
-    expect(status.oldestMissedRun?.toISOString()).toBe("2026-04-05T00:00:00.000Z");
+    expect(status.oldestMissedRun?.toISOString()).toBe("2026-04-05T00:30:00.000Z");
   });
 
   it("coalesces multiple missed executions into one recovery batch and clears pending state", async () => {
@@ -153,8 +155,8 @@ describe("scheduler recovery", () => {
 
     await scheduler.startScheduler();
     const missedListener = store.task?.listeners.get("execution:missed");
-    await missedListener?.({ date: new Date("2026-04-05T00:00:00.000Z") });
-    await missedListener?.({ date: new Date("2026-04-05T03:00:00.000Z") });
+    await missedListener?.({ date: new Date("2026-04-05T06:30:00.000Z") });
+    await missedListener?.({ date: new Date("2026-04-05T12:30:00.000Z") });
 
     const result = await scheduler.recoverMissedSchedulerRuns();
     const status = await scheduler.getSchedulerStatus();
@@ -183,7 +185,7 @@ describe("scheduler recovery", () => {
 
     await scheduler.startScheduler();
     await store.task?.listeners.get("execution:missed")?.({
-      date: new Date("2026-04-05T00:00:00.000Z"),
+      date: new Date("2026-04-05T06:30:00.000Z"),
     });
 
     let resolveRun: (() => void) | null = null;

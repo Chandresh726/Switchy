@@ -137,6 +137,19 @@ async function clearRecoveryState(): Promise<void> {
   });
 }
 
+function inferMissedExecutionTime(context: TaskContext): Date {
+  const emittedDate = context.date instanceof Date ? context.date : new Date(context.date);
+
+  try {
+    return CronExpressionParser.parse(currentCronExpression, {
+      currentDate: emittedDate,
+    }).prev().toDate();
+  } catch (error) {
+    console.error("[Scheduler] Failed to infer missed execution time from cron context:", error);
+    return emittedDate;
+  }
+}
+
 async function recordMissedExecution(scheduledFor: Date): Promise<void> {
   const recoveryState = await getRecoveryState();
   const nextState: SchedulerRecoveryState = {
@@ -223,7 +236,7 @@ export async function getSchedulerStatus(): Promise<SchedulerStatus> {
 }
 
 async function handleMissedExecution(context: TaskContext): Promise<void> {
-  const scheduledFor = context.date instanceof Date ? context.date : new Date(context.date);
+  const scheduledFor = inferMissedExecutionTime(context);
   try {
     await recordMissedExecution(scheduledFor);
     console.warn(

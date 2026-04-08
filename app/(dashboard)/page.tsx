@@ -34,6 +34,7 @@ interface ScrapeSession {
   companiesCompleted: number;
   totalJobsFound: number;
   totalJobsAdded: number;
+  scheduledForAt?: string | null;
   startedAt: string;
   completedAt: string | null;
 }
@@ -262,6 +263,9 @@ export default function DashboardPage() {
   const lastScanStatusConfig = lastScan
     ? getSessionStatusConfig(lastScan.status)
     : null;
+  const lastScanDisplayTime = lastScan
+    ? new Date(lastScan.scheduledForAt ?? lastScan.startedAt)
+    : null;
 
   return (
     <div className="space-y-8">
@@ -474,7 +478,9 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Latest Scan</span>
                     <span className="text-xs text-muted-foreground">&bull;</span>
-                    <span className="text-xs text-muted-foreground">{formatRelativeTime(new Date(lastScan.startedAt))}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {lastScanDisplayTime ? formatRelativeTime(lastScanDisplayTime) : "-"}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="font-medium text-foreground group-hover:text-foreground/80 transition-colors">

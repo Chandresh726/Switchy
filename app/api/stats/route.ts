@@ -19,7 +19,11 @@ export async function GET() {
         })
         .from(jobs),
       db.select({ totalCompanies: count() }).from(companies),
-      db.select().from(scrapeSessions).orderBy(desc(scrapeSessions.startedAt)).limit(1),
+      db
+        .select()
+        .from(scrapeSessions)
+        .orderBy(desc(sql`coalesce(${scrapeSessions.scheduledForAt}, ${scrapeSessions.startedAt})`))
+        .limit(1),
       db
         .select({
           totalPeople: sql<number>`SUM(CASE WHEN ${people.isActive} = 1 THEN 1 ELSE 0 END)`,

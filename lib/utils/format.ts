@@ -68,6 +68,7 @@ export function formatDateTime(date: Date | null): string {
 }
 
 interface SessionWithDates {
+  scheduledForAt?: Date | string | null;
   startedAt: Date | null;
   completedAt: Date | null;
 }
@@ -81,7 +82,7 @@ export function groupSessionsByDate<T extends SessionWithDates>(
   yesterday.setDate(yesterday.getDate() - 1);
 
   for (const session of sessions) {
-    const referenceDate = session.startedAt || session.completedAt;
+    const referenceDate = session.scheduledForAt || session.startedAt || session.completedAt;
     if (!referenceDate) {
       const pendingLabel = "Pending";
       if (!groups.has(pendingLabel)) {
