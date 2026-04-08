@@ -53,6 +53,7 @@ import type {
   PersonSource,
 } from "@/lib/people/types";
 import { companyKeys, peopleKeys } from "@/lib/query-keys";
+import { copyTextToClipboard } from "@/lib/utils/clipboard";
 import { formatDateTime } from "@/lib/utils/format";
 
 type MappingScope = "mapped" | "all" | "unmapped";
@@ -351,7 +352,7 @@ export default function PeoplePage() {
 
   const copyToClipboard = async (value: string, successMessage: string) => {
     try {
-      await navigator.clipboard.writeText(value);
+      await copyTextToClipboard(value);
       toast.success(successMessage);
     } catch (error) {
       console.error("Failed to copy to clipboard:", error);

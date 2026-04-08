@@ -2,10 +2,12 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Linkedin, Star, Mail } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { canOpenLinkedInProfile } from "@/lib/people/message";
 import { cn } from "@/lib/utils";
+import { copyTextToClipboard } from "@/lib/utils/clipboard";
 import { formatRelativeTime } from "@/lib/utils/format";
 
 import type { CompanyPerson } from "./types";
@@ -29,6 +31,7 @@ function getInitials(firstName: string, lastName: string): string {
 export function CompanyPersonCard({ person, showOutreachBadge = false }: CompanyPersonCardProps) {
   const queryClient = useQueryClient();
   const connectedDate = parseDate(person.connectedOn);
+  const email = person.email;
 
   const patchMutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
@@ -45,6 +48,16 @@ export function CompanyPersonCard({ person, showOutreachBadge = false }: Company
       queryClient.invalidateQueries({ queryKey: ["people"] });
     },
   });
+
+  const handleCopyEmail = async (email: string) => {
+    try {
+      await copyTextToClipboard(email);
+      toast.success("Email copied");
+    } catch (error) {
+      console.error("Failed to copy email:", error);
+      toast.error("Failed to copy");
+    }
+  };
 
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border bg-card/70 px-4 py-3 transition-colors hover:bg-card/90">
@@ -76,13 +89,19 @@ export function CompanyPersonCard({ person, showOutreachBadge = false }: Company
 
       {/* Actions */}
       <div className="flex shrink-0 items-center gap-2">
-        {person.email && (
-          <Button variant="ghost" size="sm" asChild>
-            <a href={`mailto:${person.email}`}>
-              <Mail className="size-5" />
-            </a>
-          </Button>
-        )}
+        {email
+          ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleCopyEmail(email)}
+                aria-label={`Copy email for ${person.fullName}`}
+                title="Copy email"
+              >
+                <Mail className="size-5" />
+              </Button>
+            )
+          : null}
         <Button
           variant="ghost"
           size="sm"
