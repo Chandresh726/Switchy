@@ -451,5 +451,96 @@
     "logoUrl": "https://cdn-icons-png.flaticon.com/512/5968/5968397.png",
     "platform": "visa",
     "isActive": true
+  },
+  {
+    "name": "Bolt.new",
+    "careersUrl": "https://job-boards.greenhouse.io/stackblitz",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRoEl3tlybhoChhb7c5PkbDYYiK5yxT1T-ulA&s",
+    "platform": "greenhouse",
+    "boardToken": "stackblitz",
+    "isActive": true
+  },
+  {
+    "name": "eBay",
+    "careersUrl": "https://jobs.ebayinc.com/us/en/jobs-in-india?from=40&s=1&rk=l-indiabangalore",
+    "logoUrl": "https://cdn-icons-png.flaticon.com/512/5977/5977581.png",
+    "platform": "custom",
+    "isActive": true
+  },
+  {
+    "name": "EightFold AI",
+    "careersUrl": "https://app.eightfold.ai/careers?start=0&pid=68760176651&sort_by=hot",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRhTzqVfaNY71kC6K0nVNxutdhN0fc4hBedGQ&s",
+    "platform": "eightfold",
+    "isActive": true
+  },
+  {
+    "name": "Everpure",
+    "careersUrl": "https://job-boards.greenhouse.io/purestorage?offices%5B%5D=43857",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQuL9FOde2Qa24QkoFlED-SnChMn0e9B3kIzA&s",
+    "platform": "greenhouse",
+    "boardToken": "purestorage",
+    "isActive": true
+  },
+  {
+    "name": "Goldman Sach",
+    "careersUrl": "https://higher.gs.com/results?DIVISION=Engineering%20Division&EXPERIENCE_LEVEL=Associate&LOCATION=Bengaluru%7CHyderabad%7CMumbai&page=1&sort=RELEVANCE",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRq9S9DP4i3kJDBywUdbdTIwFx8_Mk1unaE-g&s",
+    "platform": "custom",
+    "isActive": true
+  },
+  {
+    "name": "Headout LinkedIn",
+    "careersUrl": "https://job-boards.greenhouse.io/headoutlinkedin",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTYwgH5YP6oWkwJiQjX-rseLHeMeAs5EaXU2w&s",
+    "platform": "greenhouse",
+    "boardToken": "headoutlinkedin",
+    "isActive": true
+  },
+  {
+    "name": "Intuit",
+    "careersUrl": "https://careers.intuit.com/",
+    "logoUrl": "https://images.seeklogo.com/logo-png/27/2/intuit-logo-png_seeklogo-270874.png",
+    "platform": "custom",
+    "isActive": true
+  },
+  {
+    "name": "iSpot",
+    "careersUrl": "https://job-boards.greenhouse.io/ispottv/",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSRqGuLbcz_y8tNjtN0YH4ZBOQGssr2wVwXfw&s",
+    "platform": "greenhouse",
+    "boardToken": "ispottv",
+    "isActive": true
+  },
+  {
+    "name": "LegalZoom",
+    "careersUrl": "https://www.legalzoom.com/careers#open-positions",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTOqG7M6fWtx0wQf2v9GOpGiq3WUhBAGO9P3g&s",
+    "platform": "custom",
+    "isActive": true
+  },
+  {
+    "name": "Quince",
+    "careersUrl": "https://job-boards.greenhouse.io/quince?offices%5B%5D=4045689008",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQaAwGKttWgLcX3Xp_iSUnHGKYVkoNxZz425Q&s",
+    "platform": "greenhouse",
+    "boardToken": "quince",
+    "isActive": true
+  },
+  {
+    "name": "RazorPay",
+    "careersUrl": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQhI5ggwVY7mlYgj0sDP6ZoFBkfWN-2LS-tWw&s",
+    "platform": "greenhouse",
+    "boardToken": "razorpaysoftwareprivatelimited",
+    "isActive": true
+  },
+  {
+    "name": "Telus Digital",
+    "careersUrl": "https://jobs.ashbyhq.com/telus-digital",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTNI4ilO9gA2yAGZBiQX3hVUfsYb-U_3rxDBA&s",
+    "platform": "ashby",
+    "boardToken": "telus-digital",
+    "isActive": true
   }
 ]
