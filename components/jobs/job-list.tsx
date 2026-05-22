@@ -53,9 +53,9 @@ function loadFiltersFromStorage(): Filters {
   return defaultFilters;
 }
 
-function parseFiltersFromSearchParams(searchParams: URLSearchParams): Filters {
-  const filters: Filters = { ...defaultFilters };
-  
+function parseFiltersFromSearchParams(searchParams: URLSearchParams): Partial<Filters> {
+  const filters: Partial<Filters> = {};
+
   const search = searchParams.get("search");
   const status = searchParams.get("status");
   const companyId = searchParams.get("companyId");
@@ -68,7 +68,7 @@ function parseFiltersFromSearchParams(searchParams: URLSearchParams): Filters {
   const locationSearch = searchParams.get("locationSearch");
   const sortBy = searchParams.get("sortBy");
   const sortOrder = searchParams.get("sortOrder");
-  
+
   if (search) filters.search = search;
   if (status) filters.status = status;
   // Handle both companyId (legacy) and companyIds (preferred)
@@ -85,7 +85,7 @@ function parseFiltersFromSearchParams(searchParams: URLSearchParams): Filters {
   if (locationSearch) filters.locationSearch = locationSearch;
   if (sortBy) filters.sortBy = sortBy;
   if (sortOrder) filters.sortOrder = sortOrder;
-  
+
   return filters;
 }
 
@@ -108,9 +108,13 @@ function buildQueryString(filters: Filters, tab: TabType): string {
   if (filters.minScore) params.set("minScore", filters.minScore);
   if (filters.department) params.set("department", filters.department);
   if (filters.locationSearch) params.set("locationSearch", filters.locationSearch);
-  if (filters.sortBy) params.set("sortBy", filters.sortBy);
-  if (filters.sortOrder) params.set("sortOrder", filters.sortOrder);
-  
+  if (filters.sortBy && filters.sortBy !== defaultFilters.sortBy) {
+    params.set("sortBy", filters.sortBy);
+  }
+  if (filters.sortOrder && filters.sortOrder !== defaultFilters.sortOrder) {
+    params.set("sortOrder", filters.sortOrder);
+  }
+
   const queryString = params.toString();
   return queryString ? `?${queryString}` : "";
 }

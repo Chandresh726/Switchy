@@ -386,6 +386,39 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {/* New Jobs */}
+          <div className="rounded-xl border border-border bg-card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-md bg-blue-500/10">
+                  <Clock className="h-4 w-4 text-blue-500" />
+                </div>
+                <div>
+                  <h2 className="text-base font-medium text-foreground">Recently Found</h2>
+                  <p className="text-xs text-muted-foreground">Latest jobs from your companies</p>
+                </div>
+              </div>
+              <Link href="/jobs?status=new&sortBy=discoveredAt&sortOrder=desc">
+                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground h-8">
+                  View All
+                </Button>
+              </Link>
+            </div>
+
+            <div className="max-h-[23rem] space-y-2 overflow-y-auto pr-1">
+              {recentJobs.length > 0 ? (
+                recentJobs.map((job) => (
+                  <JobRow key={job.id} job={job} currentTime={currentTime} />
+                ))
+              ) : (
+                <div className="flex flex-col items-center justify-center py-8 text-center border border-dashed border-border rounded-lg">
+                  <Briefcase className="h-8 w-8 text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground">No new jobs found recently</p>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* High Match Jobs */}
           <div className="rounded-xl border border-border bg-card p-6">
             <div className="flex items-center justify-between mb-4">
@@ -415,39 +448,6 @@ export default function DashboardPage() {
                   <Star className="h-8 w-8 text-muted-foreground mb-2" />
                   <p className="text-sm text-muted-foreground">No high-match jobs found yet</p>
                   <p className="text-xs text-muted-foreground">Try adding more companies or skills</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* New Jobs */}
-          <div className="rounded-xl border border-border bg-card p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-md bg-blue-500/10">
-                  <Clock className="h-4 w-4 text-blue-500" />
-                </div>
-                <div>
-                  <h2 className="text-base font-medium text-foreground">Recently Found</h2>
-                  <p className="text-xs text-muted-foreground">Latest jobs from your companies</p>
-                </div>
-              </div>
-              <Link href="/jobs?status=new&sortBy=discoveredAt&sortOrder=desc">
-                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground h-8">
-                  View All
-                </Button>
-              </Link>
-            </div>
-
-            <div className="max-h-[23rem] space-y-2 overflow-y-auto pr-1">
-              {recentJobs.length > 0 ? (
-                recentJobs.map((job) => (
-                  <JobRow key={job.id} job={job} currentTime={currentTime} />
-                ))
-              ) : (
-                <div className="flex flex-col items-center justify-center py-8 text-center border border-dashed border-border rounded-lg">
-                  <Briefcase className="h-8 w-8 text-muted-foreground mb-2" />
-                  <p className="text-sm text-muted-foreground">No new jobs found recently</p>
                 </div>
               )}
             </div>
