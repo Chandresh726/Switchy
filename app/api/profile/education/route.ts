@@ -4,6 +4,26 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { education } from "@/lib/db/schema";
 
+function parseDateValue(date: string | null) {
+  if (!date) return Number.POSITIVE_INFINITY;
+
+  const normalized = date.trim().toLowerCase();
+  if (["present", "current", "now"].includes(normalized)) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const parsed = Date.parse(date);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function sortByMostRecent<T extends { startDate: string | null; endDate: string | null; id: number }>(a: T, b: T) {
+  return (
+    parseDateValue(b.endDate) - parseDateValue(a.endDate) ||
+    parseDateValue(b.startDate) - parseDateValue(a.startDate) ||
+    b.id - a.id
+  );
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -21,7 +41,7 @@ export async function GET(request: NextRequest) {
       .from(education)
       .where(eq(education.profileId, parseInt(profileId)));
 
-    return NextResponse.json(educationData);
+    return NextResponse.json(educationData.sort(sortByMostRecent));
   } catch (error) {
     console.error("Failed to fetch education:", error);
     return NextResponse.json(

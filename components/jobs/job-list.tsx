@@ -173,9 +173,10 @@ export function JobList() {
 
     const urlFilters = parseFiltersFromSearchParams(searchParams);
     const urlTab = parseTabFromSearchParams(searchParams);
-    const storageFilters = loadFiltersFromStorage();
-    
-    // Priority: URL params > localStorage > defaults
+    const hasUrlFilters = searchParams.toString().length > 0;
+    const storageFilters = hasUrlFilters ? defaultFilters : loadFiltersFromStorage();
+
+    // URL-linked views should be reproducible and not inherit saved local filters.
     const finalFilters = { ...defaultFilters, ...storageFilters, ...urlFilters };
     const finalTab = urlTab;
     

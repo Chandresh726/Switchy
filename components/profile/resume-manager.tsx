@@ -189,14 +189,27 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
               </CardDescription>
             </div>
           </div>
-          {currentResume && (
-            <Badge
-              variant="outline"
-              className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-            >
-              v{currentResume.version} Current
-            </Badge>
-          )}
+          <div className="flex flex-col items-end gap-3 sm:flex-row sm:items-center">
+            {currentResume && (
+              <Badge
+                variant="outline"
+                className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+              >
+                v{currentResume.version} Current
+              </Badge>
+            )}
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="autofill-mode"
+                checked={autofill}
+                onCheckedChange={setAutofill}
+                disabled={isUploading}
+              />
+              <Label htmlFor="autofill-mode" className="text-sm font-medium text-foreground/80">
+                Autofill
+              </Label>
+            </div>
+          </div>
         </div>
       </CardHeader>
 
@@ -253,19 +266,6 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
               <p className="text-xs text-muted-foreground">Supports PDF, DOCX, and TXT files</p>
             </>
           )}
-        </div>
-
-        {/* Autofill Toggle */}
-        <div className="flex items-center justify-center space-x-2">
-          <Switch
-            id="autofill-mode"
-            checked={autofill}
-            onCheckedChange={setAutofill}
-            disabled={isUploading}
-          />
-          <Label htmlFor="autofill-mode" className="text-sm font-medium text-foreground/80">
-            Autofill profile with parsed data
-          </Label>
         </div>
 
         {/* Current Resume */}

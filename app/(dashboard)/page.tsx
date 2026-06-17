@@ -398,7 +398,7 @@ export default function DashboardPage() {
                   <p className="text-xs text-muted-foreground">Latest jobs from your companies</p>
                 </div>
               </div>
-              <Link href="/jobs?status=new&sortBy=discoveredAt&sortOrder=desc">
+              <Link href="/jobs?sortBy=discoveredAt&sortOrder=desc">
                 <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground h-8">
                   View All
                 </Button>

@@ -3,6 +3,26 @@ import { experience } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
+function parseDateValue(date: string | null) {
+  if (!date) return Number.POSITIVE_INFINITY;
+
+  const normalized = date.trim().toLowerCase();
+  if (["present", "current", "now"].includes(normalized)) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const parsed = Date.parse(date);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function sortByMostRecent<T extends { startDate: string | null; endDate: string | null; id: number }>(a: T, b: T) {
+  return (
+    parseDateValue(b.endDate) - parseDateValue(a.endDate) ||
+    parseDateValue(b.startDate) - parseDateValue(a.startDate) ||
+    b.id - a.id
+  );
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -20,7 +40,7 @@ export async function GET(request: NextRequest) {
       .from(experience)
       .where(eq(experience.profileId, parseInt(profileId)));
 
-    return NextResponse.json(experienceData);
+    return NextResponse.json(experienceData.sort(sortByMostRecent));
   } catch (error) {
     console.error("Failed to fetch experience:", error);
     return NextResponse.json(
