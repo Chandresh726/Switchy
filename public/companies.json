@@ -11,6 +11,7 @@
     "careersUrl": "https://careers.nutanix.com/en/jobs/",
     "logoUrl": "https://yt3.googleusercontent.com/OFaWeOdCeKYSJxO6I7RnEqQlIna_PyJSIkJ4mqAUaH3U2f-YAi5A1JHWreQzeEz6-OaXxHfgkxw=s900-c-k-c0x00ffffff-no-rj",
     "platform": "nutanix",
+    "boardToken": "nutanix",
     "isActive": true
   },
   {
@@ -149,8 +150,8 @@
   },
   {
     "name": "Morgan Stanley",
-    "careersUrl": "https://morganstanley.eightfold.ai/careers?source=mscom&start=0&pid=549795976654&sort_by=timestamp",
-    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT5uDFLt7hnIDntDdN7_I62afU4lHkyP7Jn2g&s",
+    "careersUrl": "https://morganstanley.eightfold.ai/careers?start=0&pid=549795788543&sort_by=timestamp",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTcCTX_BvplfeKhZt5l8fp6Io_SLoCtNwo76w&s",
     "platform": "eightfold",
     "boardToken": "morganstanley.com",
     "isActive": true
@@ -389,14 +390,15 @@
   {
     "name": "Toast",
     "careersUrl": "https://careers.toasttab.com/jobs/search",
-    "logoUrl": "",
-    "platform": "custom",
+    "logoUrl": "https://res.cloudinary.com/apideck/icons/toasttab-pos",
+    "platform": "greenhouse",
+    "boardToken": "toast",
     "isActive": true
   },
   {
     "name": "Tide",
     "careersUrl": "https://job-boards.greenhouse.io/tide?offices%5B%5D=4052070003",
-    "logoUrl": "",
+    "logoUrl": "https://media.instahyre.com/images/profile/base/employer/17979/5d17d2a224/0.webp",
     "platform": "greenhouse",
     "boardToken": "tide",
     "isActive": true
@@ -404,7 +406,7 @@
   {
     "name": "Groww",
     "careersUrl": "https://job-boards.eu.greenhouse.io/groww",
-    "logoUrl": "",
+    "logoUrl": "https://cdn.prod.website-files.com/6400f5db669916305f63913b/65978df76bf8b6c1c84bb3a2_64842a64dbce6ce5606cad35_Screen%2520Shot%25202023-06-10%2520at%252012.46.32%2520AM.png",
     "platform": "greenhouse",
     "boardToken": "groww",
     "isActive": true
@@ -412,14 +414,15 @@
   {
     "name": "Bloomreach",
     "careersUrl": "https://www.bloomreach.com/en/careers#operations",
-    "logoUrl": "",
-    "platform": "custom",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTiv8sFZdcvKMk4QK_itBuU0mOPhnHpJWeKlw&s",
+    "platform": "greenhouse",
+    "boardToken": "bloomreach",
     "isActive": true
   },
   {
     "name": "Confluent",
     "careersUrl": "https://jobs.ashbyhq.com/confluent",
-    "logoUrl": "",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSewVtfJRrjK8czAA3H5ZIU0ea883nkualDYQ&s",
     "platform": "ashby",
     "boardToken": "confluent",
     "isActive": true
@@ -436,6 +439,7 @@
     "careersUrl": "https://www.flipkartcareers.com/flipkart/jobslist",
     "logoUrl": "https://www.citypng.com/public/uploads/preview/hd-flipkart-round-logo-icon-transparent-png-701751694966204grvmunpzzf.png",
     "platform": "zwayam",
+    "boardToken": "flipkart",
     "isActive": true
   },
   {
@@ -443,6 +447,7 @@
     "careersUrl": "https://careers.swiggy.com/#/careers",
     "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSOqDecYNB4XzOS5TFHmIBXBgf_DMPzKttsmw&s",
     "platform": "mynexthire",
+    "boardToken": "swiggy",
     "isActive": true
   },
   {
@@ -472,6 +477,7 @@
     "careersUrl": "https://app.eightfold.ai/careers?start=0&pid=68760176651&sort_by=hot",
     "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRhTzqVfaNY71kC6K0nVNxutdhN0fc4hBedGQ&s",
     "platform": "eightfold",
+    "boardToken": "volkscience.com",
     "isActive": true
   },
   {
@@ -541,6 +547,196 @@
     "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTNI4ilO9gA2yAGZBiQX3hVUfsYb-U_3rxDBA&s",
     "platform": "ashby",
     "boardToken": "telus-digital",
+    "isActive": true
+  },
+  {
+    "name": "Alteryx",
+    "careersUrl": "http://alteryx.wd108.myworkdayjobs.com/AlteryxCareers",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=alteryx.com&sz=128",
+    "platform": "workday",
+    "isActive": true
+  },
+  {
+    "name": "BackBase",
+    "careersUrl": "https://job-boards.greenhouse.io/workatbackbase",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=backbase.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "workatbackbase",
+    "isActive": true
+  },
+  {
+    "name": "Cloudera",
+    "careersUrl": "https://cloudera.wd5.myworkdayjobs.com/External_Career",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=cloudera.com&sz=128",
+    "platform": "workday",
+    "boardToken": "cloudera/External_Career",
+    "isActive": true
+  },
+  {
+    "name": "CouchBase",
+    "careersUrl": "https://job-boards.greenhouse.io/couchbaseinc?offices%5B%5D=4006115006",
+    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ5h-JO-KPWebEJGpKnt8uX_Oc73sHu4qoyaA&s",
+    "platform": "greenhouse",
+    "boardToken": "couchbaseinc",
+    "isActive": true
+  },
+  {
+    "name": "Coupang",
+    "careersUrl": "https://job-boards.greenhouse.io/coupang",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=coupang.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "coupang",
+    "isActive": true
+  },
+  {
+    "name": "Edreports",
+    "careersUrl": "https://edreports.org/about/join-our-team/opportunities",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=edreports.org&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "edreports",
+    "isActive": true
+  },
+  {
+    "name": "Five9",
+    "careersUrl": "https://www.five9.com/about/careers/jobs",
+    "logoUrl": "https://www.five9.com/sites/default/files/inline-images/five9-logo-media-resources.png",
+    "platform": "greenhouse",
+    "boardToken": "five9",
+    "isActive": true
+  },
+  {
+    "name": "HackerRank",
+    "careersUrl": "https://job-boards.greenhouse.io/hackerrank",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=hackerrank.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "hackerrank",
+    "isActive": true
+  },
+  {
+    "name": "Hopper",
+    "careersUrl": "https://jobs.ashbyhq.com/hopper?locationId=33867149-c00a-4eaf-87a7-e3679e89ea66",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=hopper.com&sz=128",
+    "platform": "ashby",
+    "boardToken": "hopper",
+    "isActive": true
+  },
+  {
+    "name": "JioStar",
+    "careersUrl": "https://jiostar.wd102.myworkdayjobs.com/en-US/JioStar?jobFamilyGroup=8df5dc1586541000539b236955f10000",
+    "logoUrl": "https://cdn.brandfetch.io/domain/viacom18.com/fallback/lettermark/theme/dark/h/400/w/400/icon?c=1bfwsmEH20zzEfSNTed",
+    "platform": "workday",
+    "boardToken": "jiostar/JioStar",
+    "isActive": true
+  },
+  {
+    "name": "Pair Team",
+    "careersUrl": "https://job-boards.greenhouse.io/pairteam",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=pairteam.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "pairteam",
+    "isActive": true
+  },
+  {
+    "name": "Pragmatike",
+    "careersUrl": "https://jobs.ashbyhq.com/pragmatike",
+    "logoUrl": "https://app.ashbyhq.com/api/images/org-theme-logo/18ee68f5-76b4-4ff7-aa42-d4fc953bb083/4852d2ec-ac1d-45ed-9ae5-2d81dc411321/b566c10e-12f4-47ff-92b7-8c90fea2ef23.png",
+    "platform": "ashby",
+    "boardToken": "pragmatike",
+    "isActive": true
+  },
+  {
+    "name": "Ramp",
+    "careersUrl": "https://jobs.ashbyhq.com/ramp",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=ramp.com&sz=128",
+    "platform": "ashby",
+    "boardToken": "ramp",
+    "isActive": true
+  },
+  {
+    "name": "RedHat",
+    "careersUrl": "https://redhat.wd5.myworkdayjobs.com/en-US/jobs/jobs?a=c4f78be1a8f14da0ab49ce1162348a5e&d=c18026e77576010f6ef6126f4e43ec4a",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=redhat.com&sz=128",
+    "platform": "workday",
+    "boardToken": "redhat/jobs",
+    "isActive": true
+  },
+  {
+    "name": "Sardine",
+    "careersUrl": "https://jobs.ashbyhq.com/sardine/",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=sardine.ai&sz=128",
+    "platform": "ashby",
+    "boardToken": "sardine",
+    "isActive": true
+  },
+  {
+    "name": "SingleStore",
+    "careersUrl": "https://job-boards.greenhouse.io/singlestore",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=singlestore.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "singlestore",
+    "isActive": true
+  },
+  {
+    "name": "Tilt",
+    "careersUrl": "https://jobs.ashbyhq.com/tilthq?locationId=dac1dfb9-ccd4-4d51-931c-555188798e67",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=hellotilt.com&sz=128",
+    "platform": "ashby",
+    "boardToken": "tilthq",
+    "isActive": true
+  },
+  {
+    "name": "Tower Research",
+    "careersUrl": "https://tower-research.com/open-positions/",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=tower-research.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "towerresearchcapital",
+    "isActive": true
+  },
+  {
+    "name": "Tradeify",
+    "careersUrl": "https://jobs.ashbyhq.com/tradeify",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=tradeify.co&sz=128",
+    "platform": "ashby",
+    "boardToken": "tradeify",
+    "isActive": true
+  },
+  {
+    "name": "Veeam Software",
+    "careersUrl": "https://job-boards.eu.greenhouse.io/veeamsoftware",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=veeam.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "veeamsoftware",
+    "isActive": true
+  },
+  {
+    "name": "Weave",
+    "careersUrl": "https://jobs.ashbyhq.com/weave?employmentType=FullTime&locationId=efd16dc3-9146-410b-899f-75ca810de563",
+    "logoUrl": "https://media.licdn.com/dms/image/v2/C560BAQE5qU-CsUolLQ/company-logo_200_200/company-logo_200_200/0/1660170006736?e=2147483647&v=beta&t=gtDappaa9n80dUM1IBY3Wp5rkiD7FQPKuT66mMS9ZVU",
+    "platform": "ashby",
+    "boardToken": "weave",
+    "isActive": true
+  },
+  {
+    "name": "WisdomAI",
+    "careersUrl": "https://jobs.ashbyhq.com/Wisdom%20AI",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=wisdomai.com&sz=128",
+    "platform": "ashby",
+    "isActive": true
+  },
+  {
+    "name": "Wispr Flow",
+    "careersUrl": "https://jobs.ashbyhq.com/wispr-flow?locationId=305a2113-f09d-418a-b66f-5cbffc82b27f",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=wisprflow.ai&sz=128",
+    "platform": "ashby",
+    "boardToken": "wispr-flow",
+    "isActive": true
+  },
+  {
+    "name": "Zscaler",
+    "careersUrl": "https://job-boards.greenhouse.io/zscaler",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=zscaler.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "zscaler",
     "isActive": true
   }
 ]
