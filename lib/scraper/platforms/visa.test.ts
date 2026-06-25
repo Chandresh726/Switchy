@@ -3,24 +3,27 @@ import { describe, expect, it, vi } from "vitest";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import { VisaScraper } from "@/lib/scraper/platforms/visa";
 
-function createHttpClient(postMock: ReturnType<typeof vi.fn>): IHttpClient {
+type PostMock = ReturnType<typeof vi.fn<(url: string, body: unknown) => Promise<unknown>>>;
+
+function createHttpClient(postMock: PostMock): IHttpClient {
   return {
-    fetch: vi.fn(),
-    get: vi.fn(),
-    post: postMock,
+    fetch: vi.fn() as IHttpClient["fetch"],
+    get: vi.fn() as IHttpClient["get"],
+    post: postMock as IHttpClient["post"],
   };
 }
 
 describe("VisaScraper", () => {
   it("builds paginated search requests and parses job details", async () => {
-    const postMock = vi.fn(async (_url: string, body: { from: number; size: number }) => {
-      if (body.from === 0) {
+    const postMock = vi.fn(async (_url: string, body: unknown) => {
+      const payload = body as { from: number; size: number };
+      if (payload.from === 0) {
         return {
           successful: true,
           totalRecords: 2,
           recordsMatched: 2,
-          pageSize: body.size,
-          from: body.from,
+          pageSize: payload.size,
+          from: payload.from,
           jobDetails: [
             {
               refNumber: "REF-1",
@@ -42,8 +45,8 @@ describe("VisaScraper", () => {
         successful: true,
         totalRecords: 2,
         recordsMatched: 2,
-        pageSize: body.size,
-        from: body.from,
+        pageSize: payload.size,
+        from: payload.from,
         jobDetails: [
           {
             refNumber: "REF-2",

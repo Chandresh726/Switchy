@@ -211,6 +211,8 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
 
   useEffect(() => {
     if (initialEducation && initialEducation.length > 0) {
+      // Keep parsed resume education available after the profile is saved.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPendingEducation(initialEducation);
     }
   }, [initialEducation]);

@@ -1,3 +1,14 @@
-ignoredBuiltDependencies:
-  - sharp
-  - unrs-resolver
+allowBuilds:
+  better-sqlite3: true
+  esbuild: false
+  msw: false
+  sharp: false
+  unrs-resolver: false
+
+minimumReleaseAgeExclude:
+  - vite@7.3.6
+
+overrides:
+  esbuild: ^0.28.1
+  postcss: ^8.5.15
+  vite: ^7.3.5

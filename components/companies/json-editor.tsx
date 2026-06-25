@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Loader2, Save, AlertCircle } from "lucide-react";
@@ -19,11 +19,6 @@ interface Company {
 }
 
 export function JsonEditor({ onSuccess }: { onSuccess: () => void }) {
-  const queryClient = useQueryClient();
-  const [jsonValue, setJsonValue] = useState<string>("");
-  const [originalValue, setOriginalValue] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
-
   const { data: companies, isLoading: isLoadingCompanies } = useQuery<Company[]>({
     queryKey: ["companies"],
     queryFn: async () => {
@@ -33,24 +28,37 @@ export function JsonEditor({ onSuccess }: { onSuccess: () => void }) {
     },
   });
 
-  useEffect(() => {
-    if (companies) {
-      // Filter out system fields for the editor
-      const editableCompanies = companies.map(
-        ({ name, careersUrl, logoUrl, platform, boardToken, isActive }) => ({
-          name,
-          careersUrl,
-          logoUrl: logoUrl || undefined,
-          platform: platform || undefined,
-          boardToken: boardToken || undefined,
-          isActive: isActive !== undefined ? isActive : true,
-        })
-      );
-      const jsonString = JSON.stringify(editableCompanies, null, 2);
-      setJsonValue(jsonString);
-      setOriginalValue(jsonString);
-    }
-  }, [companies]);
+  if (isLoadingCompanies) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return <JsonEditorContent companies={companies ?? []} onSuccess={onSuccess} />;
+}
+
+function serializeCompanies(companies: Company[]): string {
+  const editableCompanies = companies.map(
+    ({ name, careersUrl, logoUrl, platform, boardToken, isActive }) => ({
+      name,
+      careersUrl,
+      logoUrl: logoUrl || undefined,
+      platform: platform || undefined,
+      boardToken: boardToken || undefined,
+      isActive: isActive !== undefined ? isActive : true,
+    })
+  );
+
+  return JSON.stringify(editableCompanies, null, 2);
+}
+
+function JsonEditorContent({ companies, onSuccess }: { companies: Company[]; onSuccess: () => void }) {
+  const queryClient = useQueryClient();
+  const [jsonValue, setJsonValue] = useState<string>(() => serializeCompanies(companies));
+  const [originalValue, setOriginalValue] = useState<string>(() => serializeCompanies(companies));
+  const [error, setError] = useState<string | null>(null);
 
   const hasChanges = jsonValue !== originalValue;
 
@@ -100,14 +108,6 @@ export function JsonEditor({ onSuccess }: { onSuccess: () => void }) {
       setError((e as Error).message);
     }
   };
-
-  if (isLoadingCompanies) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
 
   return (
     <div className="flex h-full flex-col">

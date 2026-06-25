@@ -10,7 +10,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
-  Linkedin,
   Loader2,
   Pencil,
   Save,
@@ -20,6 +19,7 @@ import {
 import { toast } from "sonner";
 
 import { RichTextEditor } from "@/components/ai-workspace/rich-text-editor";
+import { LinkedinIcon } from "@/components/icons/linkedin-icon";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -306,7 +306,7 @@ export function AIWorkspacePage({
                   onClick={() => setIsPreviewMode(true)}
                   disabled={!currentContent.trim() || isBusy}
                 >
-                  <Linkedin className="h-4 w-4" />
+                  <LinkedinIcon className="h-4 w-4" />
                   {peoplePanelToggleLabel || "Ask People"}
                 </Button>
               )
@@ -518,7 +518,7 @@ export function AIWorkspacePage({
                           window.open(person.profileUrl, "_blank", "noopener,noreferrer");
                         }}
                       >
-                        <Linkedin className="h-3.5 w-3.5" />
+                        <LinkedinIcon className="h-3.5 w-3.5" />
                         Open Profile
                       </Button>
                     </div>

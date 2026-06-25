@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
+import type { IHttpClient, HttpRequestOptions } from "@/lib/scraper/infrastructure/http-client";
 import { GoogleScraper } from "@/lib/scraper/platforms/google";
 
 const earlyFilterMocks = vi.hoisted(() => ({
@@ -15,11 +15,13 @@ vi.mock("@/lib/scraper/services", () => ({
   toEarlyFilterStats: earlyFilterMocks.toEarlyFilterStats,
 }));
 
-function createHttpClient(fetchMock: ReturnType<typeof vi.fn>): IHttpClient {
+type FetchMock = ReturnType<typeof vi.fn<(url: string, options?: HttpRequestOptions) => Promise<Response>>>;
+
+function createHttpClient(fetchMock: FetchMock): IHttpClient {
   return {
     fetch: fetchMock,
-    get: vi.fn(),
-    post: vi.fn(),
+    get: vi.fn() as IHttpClient["get"],
+    post: vi.fn() as IHttpClient["post"],
   };
 }
 

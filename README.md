@@ -27,7 +27,7 @@ It helps you discover jobs from multiple ATS platforms, match them against your 
 
 ## Prerequisites
 
-- Node.js `v20+`
+- Node.js `v24`
 - `pnpm`
 - Native build tools for `better-sqlite3` (Python + C/C++ toolchain)
 - Internet access on first install (Playwright Chromium is auto-installed)
@@ -72,6 +72,10 @@ No `.env` setup is required for standard local usage.
 | `pnpm build` | Build for production |
 | `pnpm start` | Start production server |
 | `pnpm lint` | Run ESLint |
+| `pnpm typecheck` | Run TypeScript without emitting files |
+| `pnpm test:run` | Run tests once |
+| `pnpm audit` | Check dependencies for known vulnerabilities |
+| `pnpm verify` | Run lint, typecheck, tests, audit, and production build |
 | `pnpm db:generate` | Generate Drizzle migrations from schema changes |
 | `pnpm db:migrate` | Apply Drizzle migrations |
 | `pnpm db:studio` | Open Drizzle Studio |

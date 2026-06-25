@@ -208,7 +208,11 @@ describe("scheduler recovery", () => {
 
     const firstRecovery = scheduler.recoverMissedSchedulerRuns();
     const secondRecovery = await scheduler.recoverMissedSchedulerRuns();
-    resolveRun?.();
+    const completeRun = resolveRun as (() => void) | null;
+    if (!completeRun) {
+      throw new Error("Expected recovery run to be pending");
+    }
+    completeRun();
     await firstRecovery;
 
     expect(secondRecovery.status).toBe("already_running");

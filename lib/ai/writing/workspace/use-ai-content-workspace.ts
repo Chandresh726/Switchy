@@ -57,6 +57,7 @@ export function useAIContentWorkspace({
   const [isContentLoading, setIsContentLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isReady, setIsReady] = useState(false);
 
   const hasInitialized = useRef(false);
   const hasChanges =
@@ -105,6 +106,7 @@ export function useAIContentWorkspace({
 
         setContent(nextContent);
         hasInitialized.current = true;
+        setIsReady(true);
         selectVariantByIndex(nextContent.history.length - 1, nextContent);
       } catch (error) {
         console.error("Generation error:", error);
@@ -142,6 +144,7 @@ export function useAIContentWorkspace({
 
         selectVariantByIndex(targetIndex, nextContent);
         hasInitialized.current = true;
+        setIsReady(true);
         return;
       }
 
@@ -251,7 +254,7 @@ export function useAIContentWorkspace({
     currentVariantPrompt,
     hasChanges,
     isContentLoading,
-    isReady: hasInitialized.current,
+    isReady,
     isSaving,
     isSending,
     modificationPrompt,

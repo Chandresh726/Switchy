@@ -1,13 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
+import type { IHttpClient, HttpRequestOptions } from "@/lib/scraper/infrastructure/http-client";
 import { ZwayamScraper } from "@/lib/scraper/platforms/zwayam";
 
-function createHttpClient(fetchMock: ReturnType<typeof vi.fn>): IHttpClient {
+type FetchMock = ReturnType<typeof vi.fn<(url: string, options?: HttpRequestOptions) => Promise<Response>>>;
+
+function createHttpClient(fetchMock: FetchMock): IHttpClient {
   return {
     fetch: fetchMock,
-    get: vi.fn(),
-    post: vi.fn(),
+    get: vi.fn() as IHttpClient["get"],
+    post: vi.fn() as IHttpClient["post"],
   };
 }
 

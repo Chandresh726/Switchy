@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { IBrowserClient } from "@/lib/scraper/infrastructure/browser-client";
-import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
+import type { IHttpClient, HttpRequestOptions } from "@/lib/scraper/infrastructure/http-client";
 import { EightfoldScraper } from "@/lib/scraper/platforms/eightfold";
 
 function createMockBrowserClient(
@@ -25,6 +25,21 @@ vi.mock("@/lib/scraper/services", () => ({
   })),
   toEarlyFilterStats: vi.fn(() => undefined),
 }));
+
+type FetchMock = ReturnType<typeof vi.fn<(url: string, options?: HttpRequestOptions) => Promise<Response>>>;
+type FetchCall = [url: string, options?: HttpRequestOptions];
+
+function getFetchCalls(fetchMock: FetchMock): FetchCall[] {
+  return fetchMock.mock.calls as FetchCall[];
+}
+
+function createHttpClient(fetchMock: FetchMock): IHttpClient {
+  return {
+    fetch: fetchMock,
+    get: vi.fn() as IHttpClient["get"],
+    post: vi.fn() as IHttpClient["post"],
+  };
+}
 
 function createSearchResponse(positionIds: number[]): Response {
   return new Response(
@@ -87,11 +102,7 @@ describe("EightfoldScraper", () => {
 
       return createDetailResponse(requestedId);
     });
-    const httpClient: IHttpClient = {
-      fetch: fetchMock,
-      get: vi.fn(),
-      post: vi.fn(),
-    };
+    const httpClient = createHttpClient(fetchMock);
     const browserClient = createMockBrowserClient({
       baseUrl: "https://apply.careers.microsoft.com",
       cookies: "session=abc",
@@ -113,12 +124,12 @@ describe("EightfoldScraper", () => {
     expect(describedJobs).toHaveLength(2);
     expect(missingDescriptionJobs).toHaveLength(2);
 
-    const searchCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/api/pcsx/search"));
+    const searchCall = getFetchCalls(fetchMock).find(([url]) => String(url).includes("/api/pcsx/search"));
     expect(searchCall?.[1]?.headers).toMatchObject({
       Cookie: "session=abc",
     });
 
-    const detailCalls = fetchMock.mock.calls.filter(([url]) =>
+    const detailCalls = getFetchCalls(fetchMock).filter(([url]) =>
       String(url).includes("/api/pcsx/position_details")
     );
     expect(detailCalls.length).toBe(4);
@@ -146,11 +157,7 @@ describe("EightfoldScraper", () => {
 
       return createDetailResponse(requestedId, `Detailed description ${requestedId}`);
     });
-    const httpClient: IHttpClient = {
-      fetch: fetchMock,
-      get: vi.fn(),
-      post: vi.fn(),
-    };
+    const httpClient = createHttpClient(fetchMock);
     const browserClient = createMockBrowserClient({
       baseUrl: "https://apply.careers.microsoft.com",
       cookies: "session=abc",
@@ -169,7 +176,7 @@ describe("EightfoldScraper", () => {
     expect(result.jobs.find((job) => job.externalId === "eightfold-microsoft-8")?.description).toContain(
       "Detailed description 8"
     );
-    expect(fetchMock.mock.calls.filter(([url]) => url.includes("/api/pcsx/position_details")).length).toBe(8);
+    expect(getFetchCalls(fetchMock).filter(([url]) => url.includes("/api/pcsx/position_details")).length).toBe(8);
   });
 
   it("continues scraping with empty session cookies and omits Cookie header", async () => {
@@ -182,11 +189,7 @@ describe("EightfoldScraper", () => {
       const requestedId = Number(new URL(url).searchParams.get("position_id"));
       return createDetailResponse(requestedId);
     });
-    const httpClient: IHttpClient = {
-      fetch: fetchMock,
-      get: vi.fn(),
-      post: vi.fn(),
-    };
+    const httpClient = createHttpClient(fetchMock);
     const browserClient = createMockBrowserClient({
       baseUrl: "https://apply.careers.microsoft.com",
       cookies: "",
@@ -203,10 +206,10 @@ describe("EightfoldScraper", () => {
     expect(result.outcome).toBe("success");
     expect(result.jobs).toHaveLength(1);
 
-    const searchCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/api/pcsx/search"));
+    const searchCall = getFetchCalls(fetchMock).find(([url]) => String(url).includes("/api/pcsx/search"));
     expect(searchCall?.[1]?.headers).not.toHaveProperty("Cookie");
 
-    const detailCall = fetchMock.mock.calls.find(([url]) =>
+    const detailCall = getFetchCalls(fetchMock).find(([url]) =>
       String(url).includes("/api/pcsx/position_details")
     );
     expect(detailCall?.[1]?.headers).not.toHaveProperty("Cookie");

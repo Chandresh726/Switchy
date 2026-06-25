@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Loader2, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
@@ -156,12 +156,6 @@ export function CompanyQuickAdd({ existingCompanies }: CompanyQuickAddProps) {
     }
     return map;
   }, [addableCompanies]);
-
-  useEffect(() => {
-    setSelectedUrls((previous) =>
-      previous.filter((url) => addableCompanyByUrl.has(url))
-    );
-  }, [addableCompanyByUrl]);
 
   const selectedCompanies = useMemo(() => {
     return selectedUrls

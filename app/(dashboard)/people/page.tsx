@@ -6,7 +6,6 @@ import {
   AlertCircle,
   CheckCircle2,
   Copy,
-  Linkedin,
   Loader2,
   Pencil,
   RefreshCw,
@@ -21,6 +20,7 @@ import {
 import { toast } from "sonner";
 
 import { UnmatchedPeopleModal } from "@/components/companies/unmatched-people-modal";
+import { LinkedinIcon } from "@/components/icons/linkedin-icon";
 import { ImportPeopleModal } from "@/components/people/import-people-modal";
 import {
   AlertDialog,
@@ -574,7 +574,7 @@ export default function PeoplePage() {
                           disabled={!canOpenLinkedInProfile(item.profileUrl)}
                           onClick={() => window.open(item.profileUrl, "_blank", "noopener,noreferrer")}
                         >
-                          <Linkedin className="h-3.5 w-3.5" />
+                          <LinkedinIcon className="h-3.5 w-3.5" />
                           Profile
                         </Button>
                       </td>

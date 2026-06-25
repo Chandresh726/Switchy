@@ -1,9 +1,10 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Linkedin, Star, Mail } from "lucide-react";
+import { Star, Mail } from "lucide-react";
 import { toast } from "sonner";
 
+import { LinkedinIcon } from "@/components/icons/linkedin-icon";
 import { Button } from "@/components/ui/button";
 import { canOpenLinkedInProfile } from "@/lib/people/message";
 import { cn } from "@/lib/utils";
@@ -108,7 +109,7 @@ export function CompanyPersonCard({ person, showOutreachBadge = false }: Company
           disabled={!canOpenLinkedInProfile(person.profileUrl)}
           onClick={() => window.open(person.profileUrl, "_blank", "noopener,noreferrer")}
         >
-          <Linkedin className="size-5" />
+          <LinkedinIcon className="size-5" />
         </Button>
         <button
           type="button"

@@ -1,4 +1,3 @@
-import stringSimilarity from "string-similarity";
 import type { ExistingJob } from "@/lib/scraper/infrastructure/types";
 import type {
   ScrapedJob,
@@ -32,6 +31,29 @@ function locationsMatch(locA: string | null | undefined, locB: string | null | u
   return a.includes(b) || b.includes(a);
 }
 
+function compareTitleSimilarity(a: string, b: string): number {
+  if (a === b) return 1;
+  if (a.length < 2 || b.length < 2) return 0;
+
+  const firstBigrams = new Map<string, number>();
+  for (let i = 0; i < a.length - 1; i++) {
+    const bigram = a.slice(i, i + 2);
+    firstBigrams.set(bigram, (firstBigrams.get(bigram) ?? 0) + 1);
+  }
+
+  let intersectionSize = 0;
+  for (let i = 0; i < b.length - 1; i++) {
+    const bigram = b.slice(i, i + 2);
+    const count = firstBigrams.get(bigram) ?? 0;
+    if (count > 0) {
+      firstBigrams.set(bigram, count - 1);
+      intersectionSize++;
+    }
+  }
+
+  return (2 * intersectionSize) / (a.length + b.length - 2);
+}
+
 export class TitleBasedDeduplicationService implements IDeduplicationService {
   constructor(private readonly config: DeduplicationConfig = DEFAULT_DEDUPLICATION_CONFIG) {}
 
@@ -62,10 +84,7 @@ export class TitleBasedDeduplicationService implements IDeduplicationService {
     let mostSimilarJob: ExistingJob | null = null;
 
     for (const ej of existingJobs) {
-      const similarity = stringSimilarity.compareTwoStrings(
-        job.title.toLowerCase(),
-        ej.title.toLowerCase()
-      );
+      const similarity = compareTitleSimilarity(job.title.toLowerCase(), ej.title.toLowerCase());
 
       if (similarity > highestSimilarity) {
         highestSimilarity = similarity;

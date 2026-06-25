@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("server-only", () => ({}), { virtual: true });
+vi.mock("server-only", () => ({}));
 
 import type { IBrowserClient } from "@/lib/scraper/infrastructure/browser-client";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
@@ -8,9 +8,9 @@ import { createScraperRegistry } from "@/lib/scraper/services/registry";
 
 function createHttpClient(): IHttpClient {
   return {
-    fetch: vi.fn(),
-    get: vi.fn(),
-    post: vi.fn(),
+    fetch: vi.fn() as IHttpClient["fetch"],
+    get: vi.fn() as IHttpClient["get"],
+    post: vi.fn() as IHttpClient["post"],
   };
 }
 

@@ -55,7 +55,9 @@ export default function ProfilePage() {
     },
   });
 
-  const handleResumeParsed = (data: ResumeData) => {
+  const handleResumeParsed = (data: ResumeData, autofill: boolean) => {
+    if (!autofill) return;
+
     setParsedResumeData(data);
     toast.success("Resume uploaded. Review the extracted data below.");
   };

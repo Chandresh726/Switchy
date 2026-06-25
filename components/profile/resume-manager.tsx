@@ -91,6 +91,7 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
       try {
         const formData = new FormData();
         formData.append("file", file);
+        formData.append("autofill", String(autofill));
 
         const response = await fetch("/api/profile/parse-resume", {
           method: "POST",
@@ -103,13 +104,16 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
         }
 
         const result = await response.json();
-        const parsedData: ResumeData = result.parsedData || result;
 
         setSuccess(true);
-        onParsed(parsedData, autofill);
+        if (autofill && result.parsedData) {
+          onParsed(result.parsedData, autofill);
+        } else {
+          toast.success("Resume uploaded without autofill.");
+        }
         onRefresh();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to parse resume");
+        setError(err instanceof Error ? err.message : "Failed to upload resume");
       } finally {
         setIsUploading(false);
       }
@@ -236,7 +240,9 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
           {isUploading ? (
             <>
               <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
-              <p className="mt-2 text-sm text-muted-foreground">Parsing resume...</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {autofill ? "Parsing resume..." : "Uploading resume..."}
+              </p>
               <p className="text-xs text-muted-foreground">{fileName}</p>
             </>
           ) : success ? (

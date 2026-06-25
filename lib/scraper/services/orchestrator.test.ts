@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Company } from "@/lib/db/schema";
 import type { ExistingJob } from "@/lib/scraper/infrastructure/types";
+import type { IScraper } from "@/lib/scraper/core/types";
 import type { Platform, ScraperResult } from "@/lib/scraper/types";
 import { TitleBasedDeduplicationService } from "@/lib/scraper/services/deduplication-service";
 import { DefaultFilterService } from "@/lib/scraper/services/filter-service";
@@ -117,7 +118,7 @@ const DEFAULT_SCRAPER_MAP: Partial<Record<Platform, { requiresBrowser: boolean }
 function createRegistryMock(
   result:
     | ScraperResult
-    | ((...args: unknown[]) => Promise<ScraperResult>),
+    | ((url: string, platform?: Platform | null) => Promise<ScraperResult>),
   options: RegistryMockOptions = {}
 ) {
   const scrape = typeof result === "function"
@@ -134,7 +135,7 @@ function createRegistryMock(
       validate: vi.fn(),
       scrape: vi.fn(),
       extractIdentifier: vi.fn(),
-    };
+    } satisfies IScraper;
   });
 
   return {

@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useMemo, useRef, useState, type ComponentType, type DragEvent, type SVGProps } from "react";
 import {
   ChevronDown,
   ChevronUp,
   FileSpreadsheet,
   FileUp,
   Globe,
-  Linkedin,
   Link as LinkIcon,
   Loader2,
   Upload,
@@ -38,6 +37,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { LinkedinIcon } from "@/components/icons/linkedin-icon";
 import type { ImportMode, ImportSummary, PeopleImportPreviewResponse } from "@/lib/people/types";
 import { cn } from "@/lib/utils";
 
@@ -79,9 +79,9 @@ const SOURCE_OPTIONS: Array<{
   value: ImportSource;
   label: string;
   hint: string;
-  icon: typeof Linkedin;
+  icon: ComponentType<SVGProps<SVGSVGElement>>;
 }> = [
-  { value: "linkedin", label: "LinkedIn", hint: "Connections.csv", icon: Linkedin },
+  { value: "linkedin", label: "LinkedIn", hint: "Connections.csv", icon: LinkedinIcon },
   { value: "apollo", label: "Apollo", hint: "CSV export", icon: Globe },
   { value: "manual", label: "Manual", hint: "Add one person", icon: UserRoundPlus },
 ];
@@ -282,18 +282,22 @@ export function ImportPeopleModal({
 
   const handleSourceChange = (nextSource: ImportSource) => {
     setSource(nextSource);
-    setFile(null);
     setPreview(null);
     setMapping({});
+    if (nextSource === "apollo" && file) {
+      void runPreview(file, nextSource);
+      return;
+    }
+    setFile(null);
   };
 
-  const runPreview = async (targetFile?: File) => {
+  const runPreview = async (targetFile?: File, targetSource: ImportSource = source) => {
     const fileToPreview = targetFile || file;
-    if (!fileToPreview || source !== "apollo") return;
+    if (!fileToPreview || targetSource !== "apollo") return;
     setIsPreviewing(true);
     try {
       const formData = new FormData();
-      formData.append("source", source);
+      formData.append("source", targetSource);
       formData.append("file", fileToPreview);
       const res = await fetch("/api/people/import/preview", {
         method: "POST",
@@ -322,14 +326,6 @@ export function ImportPeopleModal({
       void runPreview(nextFile);
     }
   };
-
-  // Auto-preview when switching to apollo with an existing file
-  useEffect(() => {
-    if (source === "apollo" && file && !preview && !isPreviewing) {
-      void runPreview(file);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source]);
 
   const submitImport = async () => {
     if (!file || source === "manual") return;

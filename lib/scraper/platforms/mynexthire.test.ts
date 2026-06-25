@@ -3,11 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import { MynextHireScraper } from "@/lib/scraper/platforms/mynexthire";
 
-function createHttpClient(postMock: ReturnType<typeof vi.fn>): IHttpClient {
+type PostMock = ReturnType<typeof vi.fn<(url: string, body: unknown) => Promise<unknown>>>;
+
+function createHttpClient(postMock: PostMock): IHttpClient {
   return {
-    fetch: vi.fn(),
-    get: vi.fn(),
-    post: postMock,
+    fetch: vi.fn() as IHttpClient["fetch"],
+    get: vi.fn() as IHttpClient["get"],
+    post: postMock as IHttpClient["post"],
   };
 }
 

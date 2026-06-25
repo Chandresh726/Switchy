@@ -40,7 +40,7 @@ describe("deduplication service", () => {
     const existingJobs = [
       {
         id: 1,
-        externalId: null,
+        externalId: "existing-external-id",
         title: "Software Engineer",
         url: "https://jobs.example.com/existing",
         status: "new",
@@ -50,7 +50,7 @@ describe("deduplication service", () => {
 
     const result = service.deduplicate(
       {
-        externalId: undefined,
+        externalId: "",
         title: "Software Engineer II",
         url: "https://jobs.example.com/new",
       },
