@@ -1,8 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ArrowRight, Github, Sparkles } from "lucide-react";
+import { ArrowRight, Sparkles } from "lucide-react";
 
+import { GithubIcon } from "@/components/icons";
 import { SITE_CONFIG, SOCIAL_LINKS } from "@/lib/constants";
 import { fadeInScale, fadeInY } from "@/lib/animations";
 
@@ -55,7 +56,7 @@ export function Hero() {
             rel="noopener noreferrer"
             className="geo-card-solid inline-flex items-center gap-3 px-8 py-4 text-black font-bold text-lg"
           >
-            <Github className="w-5 h-5" />
+            <GithubIcon className="w-5 h-5" />
             VIEW ON GITHUB
             <ArrowRight className="w-5 h-5" />
           </a>

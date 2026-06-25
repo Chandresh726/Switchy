@@ -6,23 +6,29 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "audit": "pnpm audit",
+    "verify": "pnpm lint && pnpm typecheck && pnpm audit --prod && pnpm build"
   },
   "dependencies": {
-    "@vercel/analytics": "^1.6.1",
-    "framer-motion": "^12.34.0",
-    "lucide-react": "^0.564.0",
-    "next": "^16.1.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "@fontsource-variable/dm-sans": "^5.2.8",
+    "@fontsource-variable/space-grotesk": "^5.2.10",
+    "@vercel/analytics": "^2.0.1",
+    "framer-motion": "^12.41.0",
+    "lucide-react": "^1.21.0",
+    "next": "16.2.9",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.3",
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^22.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "tailwindcss": "^4.1.18",
-    "typescript": "^5.9.3"
+    "@tailwindcss/postcss": "^4.3.1",
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "16.2.9",
+    "tailwindcss": "^4.3.1",
+    "typescript": "^6.0.3"
   }
 }

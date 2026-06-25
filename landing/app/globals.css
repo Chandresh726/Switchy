@@ -1,8 +1,10 @@
+@import "@fontsource-variable/space-grotesk";
+@import "@fontsource-variable/dm-sans";
 @import "tailwindcss";
 
 @theme {
-  --font-display: "Space Grotesk", system-ui, sans-serif;
-  --font-body: "DM Sans", system-ui, sans-serif;
+  --font-display: "Space Grotesk Variable", "Space Grotesk", system-ui, sans-serif;
+  --font-body: "DM Sans Variable", "DM Sans", system-ui, sans-serif;
   
   --color-black: #000000;
   --color-black-2: #0a0a0a;

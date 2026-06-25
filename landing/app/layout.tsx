@@ -1,20 +1,10 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, DM_Sans } from "next/font/google";
 import Script from "next/script";
+
 import { Analytics } from "@vercel/analytics/next";
 
 import { SITE_CONFIG } from "@/lib/constants";
 import "./globals.css";
-
-const spaceGrotesk = Space_Grotesk({
-  subsets: ["latin"],
-  variable: "--font-display",
-});
-
-const dmSans = DM_Sans({
-  subsets: ["latin"],
-  variable: "--font-body",
-});
 
 const jsonLd = {
   "@context": "https://schema.org",
@@ -91,7 +81,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${spaceGrotesk.variable} ${dmSans.variable}`} suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <Script
           id="theme-script"

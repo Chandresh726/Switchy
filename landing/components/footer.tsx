@@ -1,8 +1,8 @@
 "use client";
 
-import { Github } from "lucide-react";
 import Image from "next/image";
 
+import { GithubIcon } from "@/components/icons";
 import { SITE_CONFIG, SOCIAL_LINKS } from "@/lib/constants";
 
 export function Footer() {
@@ -29,7 +29,7 @@ export function Footer() {
           
           <div className="hidden sm:flex items-center gap-4">
             <a href={SOCIAL_LINKS.github} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-[var(--text-primary)] hover:text-[#10b981] transition-colors font-bold text-sm">
-              <Github className="w-4 h-4" />
+              <GithubIcon className="w-4 h-4" />
               GitHub
             </a>
           </div>

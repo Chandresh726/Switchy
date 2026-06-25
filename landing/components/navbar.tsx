@@ -1,13 +1,15 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { Github, Sun, Moon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
+import { motion } from "framer-motion";
+import { Sun, Moon } from "lucide-react";
+
+import { GithubIcon } from "@/components/icons";
+import { navVariants } from "@/lib/animations";
 import { NAV_LINKS, SITE_CONFIG, SOCIAL_LINKS } from "@/lib/constants";
 import { useTheme } from "@/lib/use-theme";
-import { navVariants } from "@/lib/animations";
 
 function scrollToTop(e: React.MouseEvent) {
   e.preventDefault();
@@ -72,7 +74,7 @@ export function Navbar() {
               rel="noopener noreferrer"
               className="hidden sm:flex items-center gap-2 px-5 py-2 border-2 border-[var(--border-color)] bg-[#10b981] hover:bg-[#34d399] hover:text-black transition-colors font-bold"
             >
-              <Github className="w-4 h-4" />
+              <GithubIcon className="w-4 h-4" />
               GitHub
             </a>
           </div>
