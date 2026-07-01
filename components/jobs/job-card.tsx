@@ -2,6 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MatchBadge } from "./match-badge";
@@ -76,7 +77,7 @@ export function JobCard({ job }: JobCardProps) {
     mutationFn: async (newStatus: string) => {
       const res = await fetch("/api/jobs", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({ id: job.id, status: newStatus }),
       });
       if (!res.ok) throw new Error("Failed to update status");
@@ -92,7 +93,7 @@ export function JobCard({ job }: JobCardProps) {
     mutationFn: async () => {
       const res = await fetch("/api/match", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({ jobId: job.id }),
       });
       if (!res.ok) throw new Error("Failed to calculate match");
@@ -112,7 +113,7 @@ export function JobCard({ job }: JobCardProps) {
   return (
     <Link
       href={`/jobs/${job.id}`}
-      className="group block rounded-lg border border-border bg-card/70 p-4 transition-all hover:border-border"
+      className="group block rounded-lg border border-border bg-card/70 p-3 transition-all hover:border-border"
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
@@ -123,10 +124,10 @@ export function JobCard({ job }: JobCardProps) {
             <img
               src={job.company.logoUrl}
               alt={job.company.name}
-              className="h-10 w-10 rounded bg-muted object-contain p-1"
+              className="h-9 w-9 rounded bg-muted object-contain p-1"
             />
           ) : (
-            <div className="flex h-10 w-10 items-center justify-center rounded bg-muted text-lg font-medium text-muted-foreground">
+            <div className="flex h-9 w-9 items-center justify-center rounded bg-muted text-base font-medium text-muted-foreground">
               {job.company.name.charAt(0).toUpperCase()}
             </div>
           )}
@@ -154,7 +155,7 @@ export function JobCard({ job }: JobCardProps) {
       </div>
 
       {/* Meta */}
-      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
         {job.salary && (
           <span className="flex items-center gap-1 text-emerald-400">
             <DollarSign className="h-3.5 w-3.5" />
@@ -192,7 +193,7 @@ export function JobCard({ job }: JobCardProps) {
       </div>
 
       {/* Actions */}
-      <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
+      <div className="mt-3 flex items-center justify-between border-t border-border pt-2.5">
         {/* Left side - Save and Mark Applied buttons */}
         <div className="flex items-center gap-2" onClick={(e) => e.preventDefault()}>
           {/* Save/Unsave Button */}

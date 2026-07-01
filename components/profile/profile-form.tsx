@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { useState, useEffect, useMemo } from "react";
 import { Loader2, Save, User } from "lucide-react";
 import { toast } from "sonner";
@@ -105,7 +106,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
     mutationFn: async (data: ProfileData) => {
       const res = await fetch("/api/profile", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error("Failed to save profile");

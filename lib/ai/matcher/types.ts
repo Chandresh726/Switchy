@@ -79,7 +79,7 @@ export interface CandidateProfile {
   name?: string;
   summary?: string;
   totalExperienceYears?: number;
-  skills: Array<{ name: string; proficiency: number; category?: string; yearsOfExperience?: number }>;
+  skills: Array<{ name: string; category?: string }>;
   experience: Array<{
     title: string;
     company: string;
@@ -132,9 +132,7 @@ export interface ProfileData {
   profile: { id: number; summary: string | null };
   skills: Array<{
     name: string;
-    proficiency: number;
     category: string | null;
-    yearsOfExperience: number | null;
   }>;
   experience: Array<{
     title: string;

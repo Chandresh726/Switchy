@@ -1,3 +1,5 @@
+import { APP_REQUEST_HEADERS } from "./request-headers";
+
 export interface APIClientErrorPayload {
   error?: string;
   code?: string;
@@ -68,6 +70,7 @@ export async function apiPost<T>(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...APP_REQUEST_HEADERS,
       },
       body: JSON.stringify(body),
     },
@@ -86,6 +89,7 @@ export async function apiPatch<T>(
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
+        ...APP_REQUEST_HEADERS,
       },
       body: JSON.stringify(body),
     },
@@ -98,6 +102,7 @@ export async function apiDelete<T>(input: string, fallbackErrorMessage: string):
     input,
     {
       method: "DELETE",
+      headers: APP_REQUEST_HEADERS,
     },
     fallbackErrorMessage
   );

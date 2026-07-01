@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,7 +32,6 @@ interface ResumeData {
   skills: Array<{
     name: string;
     category?: string;
-    proficiency?: number;
   }>;
   experience: Array<{
     company: string;
@@ -95,6 +95,7 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
 
         const response = await fetch("/api/profile/parse-resume", {
           method: "POST",
+          headers: APP_REQUEST_HEADERS,
           body: formData,
         });
 

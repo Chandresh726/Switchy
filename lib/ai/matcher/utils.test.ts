@@ -40,11 +40,9 @@ describe("matcher utils", () => {
     vi.useRealTimers();
   });
 
-  it("derives candidate years from role and skill years", () => {
-    expect(deriveCandidateExperienceYears(3, [1, 2, 4])).toBe(4);
-    expect(deriveCandidateExperienceYears(3, [null, undefined])).toBe(3);
-    expect(deriveCandidateExperienceYears(null, [null, undefined, 2])).toBe(2);
-    expect(deriveCandidateExperienceYears(null, [null, undefined])).toBeNull();
+  it("derives candidate years from role history", () => {
+    expect(deriveCandidateExperienceYears(3)).toBe(3);
+    expect(deriveCandidateExperienceYears(null)).toBeNull();
   });
 
   it("estimates required years using range and minimum hints", () => {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { desc, eq } from "drizzle-orm";
 
+import { assertAppRequest } from "@/lib/api";
 import { db } from "@/lib/db";
 import { companies } from "@/lib/db/schema";
 import { refreshUnmatchedCompanyMappings } from "@/lib/people/sync";
@@ -129,6 +130,8 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = await request.json();
     const isBulk = Array.isArray(body);
     const rawItems = isBulk ? body : [body];
@@ -203,6 +206,8 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = await request.json();
 
     if (!Array.isArray(body)) {

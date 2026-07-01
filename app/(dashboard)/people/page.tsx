@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { UnmatchedPeopleModal } from "@/components/companies/unmatched-people-modal";
 import { LinkedinIcon } from "@/components/icons/linkedin-icon";
 import { ImportPeopleModal } from "@/components/people/import-people-modal";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -266,7 +267,7 @@ export default function PeoplePage() {
     mutationFn: async (payload: { id: number; body: Record<string, unknown> }) => {
       const res = await fetch(`/api/people/${payload.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify(payload.body),
       });
       if (!res.ok) {
@@ -288,6 +289,7 @@ export default function PeoplePage() {
     mutationFn: async () => {
       const res = await fetch("/api/people", {
         method: "DELETE",
+        headers: APP_REQUEST_HEADERS,
       });
       if (!res.ok) {
         const error = await res.json();
@@ -315,7 +317,7 @@ export default function PeoplePage() {
     mutationFn: async () => {
       const res = await fetch("/api/people/unmatched-companies", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({ action: "refresh" }),
       });
 

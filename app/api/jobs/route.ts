@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { jobs, companies } from "@/lib/db/schema";
 import { eq, desc, and, gte, lte, like, or, sql, asc, count, notInArray } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
+import { assertAppRequest } from "@/lib/api";
 import { safeJsonStringArray } from "@/lib/utils/safe-json";
 
 export async function GET(request: NextRequest) {
@@ -24,8 +25,9 @@ export async function GET(request: NextRequest) {
     const locationSearch = searchParams.get("locationSearch");
     const sortBy = searchParams.get("sortBy") || "matchScore";
     const sortOrder = searchParams.get("sortOrder") || "desc";
-    const offset = parseInt(searchParams.get("offset") || "0");
-    const limit = parseInt(searchParams.get("limit") || "25");
+    const offset = Math.max(0, parseInt(searchParams.get("offset") || "0"));
+    const requestedLimit = parseInt(searchParams.get("limit") || "25");
+    const limit = Math.min(Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : 25), id ? 1 : 100);
 
     // Build conditions array
     const conditions = [];
@@ -166,7 +168,34 @@ export async function GET(request: NextRequest) {
     // Execute query with joins and offset-based pagination
     const jobsData = await db
       .select({
-        job: jobs,
+        job: {
+          id: jobs.id,
+          companyId: jobs.companyId,
+          externalId: jobs.externalId,
+          title: jobs.title,
+          description: id ? jobs.description : sql<string | null>`NULL`,
+          descriptionFormat: jobs.descriptionFormat,
+          url: jobs.url,
+          location: jobs.location,
+          locationType: jobs.locationType,
+          salary: jobs.salary,
+          department: jobs.department,
+          employmentType: jobs.employmentType,
+          seniorityLevel: jobs.seniorityLevel,
+          status: jobs.status,
+          matchScore: jobs.matchScore,
+          matchReasons: id ? jobs.matchReasons : sql<string | null>`NULL`,
+          matchedSkills: id ? jobs.matchedSkills : sql<string | null>`NULL`,
+          missingSkills: id ? jobs.missingSkills : sql<string | null>`NULL`,
+          recommendations: id ? jobs.recommendations : sql<string | null>`NULL`,
+          postedDate: jobs.postedDate,
+          discoveredAt: jobs.discoveredAt,
+          updatedAt: jobs.updatedAt,
+          archivedAt: jobs.archivedAt,
+          archiveSource: jobs.archiveSource,
+          viewedAt: jobs.viewedAt,
+          appliedAt: jobs.appliedAt,
+        },
         company: {
           id: companies.id,
           name: companies.name,
@@ -210,6 +239,8 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = await request.json();
     const { id, status, viewedAt, appliedAt } = body;
 
@@ -257,8 +288,10 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     await db.delete(jobs);
     return NextResponse.json({ success: true });
   } catch (error) {

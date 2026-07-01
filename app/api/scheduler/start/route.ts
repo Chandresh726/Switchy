@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { assertAppRequest } from "@/lib/api";
 import { startScheduler, restartScheduler, getSchedulerStatus } from "@/lib/jobs/scheduler";
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const currentStatus = await getSchedulerStatus();
 
     if (currentStatus.isActive) {

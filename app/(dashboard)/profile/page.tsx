@@ -6,6 +6,7 @@ import { SkillsEditor } from "@/components/profile/skills-editor";
 import { ExperienceList } from "@/components/profile/experience-list";
 import { EducationEditor } from "@/components/profile/education-editor";
 import { ResumeManager } from "@/components/profile/resume-manager";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -21,7 +22,6 @@ interface ResumeData {
   skills: Array<{
     name: string;
     category?: string;
-    proficiency?: number;
   }>;
   experience: Array<{
     company: string;
@@ -63,7 +63,10 @@ export default function ProfilePage() {
   };
 
   const handleDeleteResume = async (id: number) => {
-    const res = await fetch(`/api/profile/resumes?id=${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/profile/resumes?id=${id}`, {
+      method: "DELETE",
+      headers: APP_REQUEST_HEADERS,
+    });
     if (!res.ok) throw new Error("Failed to delete resume");
   };
 

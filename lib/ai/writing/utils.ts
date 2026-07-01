@@ -7,7 +7,7 @@ import { jobs, companies } from "@/lib/db/schema";
 export interface CandidateProfileData {
   name: string;
   summary: string | null;
-  skills: Array<{ name: string; proficiency: number; category: string | null }>;
+  skills: Array<{ name: string; category: string | null }>;
   experience: Array<{ title: string; company: string; description: string | null }>;
   education: Array<{ degree: string; institution: string; field: string | null }>;
 }
@@ -21,7 +21,6 @@ export async function fetchCandidateProfile(): Promise<CandidateProfileData | nu
     summary: snapshot.profile.summary,
     skills: snapshot.skills.map((s) => ({
       name: s.name,
-      proficiency: s.proficiency,
       category: s.category,
     })),
     experience: snapshot.experience.map((e) => ({

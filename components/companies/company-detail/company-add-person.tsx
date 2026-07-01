@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 
 interface CompanyAddPersonProps {
   companyId: number;
@@ -54,7 +55,7 @@ export function CompanyAddPerson({ companyId, companyName, onAdded }: CompanyAdd
     try {
       const res = await fetch("/api/people", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({
           fullName: form.fullName,
           email: form.email || undefined,

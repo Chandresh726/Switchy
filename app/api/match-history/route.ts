@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { matchSessions, matchLogs, jobs, companies } from "@/lib/db/schema";
-import { and, eq, desc, count, inArray } from "drizzle-orm";
+import { and, eq, desc, count, inArray, sql } from "drizzle-orm";
 import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
+import { assertAppRequest } from "@/lib/api";
 
 /**
  * GET /api/match-history
@@ -105,48 +106,20 @@ export async function GET(request: NextRequest) {
       .from(matchSessions);
     const total = totalResult?.count || 0;
 
-    // Calculate aggregate stats
-    const allSessions = await db
+    const [statsResult] = await db
       .select({
-        status: matchSessions.status,
-        jobsSucceeded: matchSessions.jobsSucceeded,
-        jobsTotal: matchSessions.jobsTotal,
-        startedAt: matchSessions.startedAt,
-        completedAt: matchSessions.completedAt,
+        totalJobsMatched: sql<number>`coalesce(sum(${matchSessions.jobsSucceeded}), 0)`,
+        totalJobsAttempted: sql<number>`coalesce(sum(${matchSessions.jobsTotal}), 0)`,
+        avgDuration: sql<number>`coalesce(avg(case when ${matchSessions.status} = 'completed' and ${matchSessions.startedAt} is not null and ${matchSessions.completedAt} is not null then (${matchSessions.completedAt} - ${matchSessions.startedAt}) * 1000 end), 0)`,
       })
       .from(matchSessions);
 
-    const completedSessions = allSessions.filter(
-      (s) => s.status === "completed"
-    );
-    const totalJobsMatched = allSessions.reduce(
-      (sum, s) => sum + (s.jobsSucceeded || 0),
-      0
-    );
-    const totalJobsAttempted = allSessions.reduce(
-      (sum, s) => sum + (s.jobsTotal || 0),
-      0
-    );
+    const totalJobsMatched = Number(statsResult?.totalJobsMatched ?? 0);
+    const totalJobsAttempted = Number(statsResult?.totalJobsAttempted ?? 0);
     const successRate = totalJobsAttempted > 0
       ? Math.round((totalJobsMatched / totalJobsAttempted) * 100)
       : 0;
-
-    // Calculate average duration for completed sessions
-    let avgDuration = 0;
-    if (completedSessions.length > 0) {
-      const durations = completedSessions
-        .filter((s) => s.startedAt && s.completedAt)
-        .map((s) => {
-          const start = new Date(s.startedAt!).getTime();
-          const end = new Date(s.completedAt!).getTime();
-          return end - start;
-        });
-      if (durations.length > 0) {
-        avgDuration = Math.round(
-          durations.reduce((a, b) => a + b, 0) / durations.length
-        );
-      }
-    }
+    const avgDuration = Math.round(Number(statsResult?.avgDuration ?? 0));
 
     return NextResponse.json({
       sessions,
@@ -174,6 +147,8 @@ export async function GET(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get("sessionId");
 
@@ -195,6 +170,8 @@ export async function DELETE(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get("sessionId");
 

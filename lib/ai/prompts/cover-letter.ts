@@ -39,7 +39,7 @@ function getFocusInstruction(focus: string | string[]): string {
 function buildCandidateSnapshot(profileData: {
   education: Array<{ degree: string; institution: string; field: string | null }>;
   experience: Array<{ title: string; company: string; description: string | null }>;
-  skills: Array<{ name: string; proficiency: number; category: string | null }>;
+  skills: Array<{ name: string; category: string | null }>;
   summary: string | null;
 }): string {
   const lines: string[] = [];
@@ -98,7 +98,7 @@ export function buildCoverLetterPromptFromProfileData(
     education: Array<{ degree: string; institution: string; field: string | null }>;
     experience: Array<{ title: string; company: string; description: string | null }>;
     name?: string;
-    skills: Array<{ name: string; proficiency: number; category: string | null }>;
+    skills: Array<{ name: string; category: string | null }>;
     summary: string | null;
   },
   settings: CoverLetterSettings,

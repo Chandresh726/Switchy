@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import type { AIContentType } from "@/lib/ai/contracts";
 import { getContentTypeLabel, getWorkspacePathWithVariant } from "@/lib/ai/writing/workspace/routes";
 import type { ContentResponse } from "@/lib/ai/writing/types";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { cn } from "@/lib/utils";
 import {
   AlertDialog,
@@ -228,7 +229,10 @@ export default function AIHistoryPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/ai/content/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/ai/content/${id}`, {
+        method: "DELETE",
+        headers: APP_REQUEST_HEADERS,
+      });
       if (!res.ok) throw new Error("Failed to delete");
       return res.json();
     },

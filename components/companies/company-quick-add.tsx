@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import {
   excludeExistingPresetCompanies,
   normalizeCareersUrl,
@@ -104,7 +105,7 @@ export function CompanyQuickAdd({ existingCompanies }: CompanyQuickAddProps) {
     mutationFn: async (payload: Record<string, unknown> | Record<string, unknown>[]) => {
       const response = await fetch("/api/companies", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify(payload),
       });
 

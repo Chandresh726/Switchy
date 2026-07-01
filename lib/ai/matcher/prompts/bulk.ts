@@ -1,5 +1,9 @@
 import type { MatchJob, CandidateProfile } from "../types";
 
+function formatSkill(skill: CandidateProfile["skills"][number]): string {
+  return skill.category ? `- ${skill.name} (${skill.category})` : `- ${skill.name}`;
+}
+
 export const BULK_MATCH_SYSTEM_PROMPT = `You are an expert job matching assistant. Your task is to analyze MULTIPLE job descriptions and compare each against a candidate's profile to determine match scores.
 
 You will receive:
@@ -55,10 +59,7 @@ ${typeof candidateProfile.totalExperienceYears === "number" ? `${candidateProfil
 ${
   candidateProfile.skills.length > 0
     ? candidateProfile.skills
-        .map(
-          (s) =>
-            `- ${s.name} (${["Beginner", "Elementary", "Intermediate", "Advanced", "Expert"][s.proficiency - 1]}${s.category ? `, ${s.category}` : ""}${typeof s.yearsOfExperience === "number" ? `, ${s.yearsOfExperience.toFixed(1)} years` : ""})`
-        )
+        .map(formatSkill)
         .join("\n")
     : "No skills listed"
 }

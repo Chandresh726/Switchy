@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { assertAppRequest } from "@/lib/api";
 import { saveFile, deleteFile } from "@/lib/storage/files";
 
 export async function POST(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const type = formData.get("type") as string | null;
@@ -25,6 +28,8 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const { searchParams } = new URL(request.url);
     const path = searchParams.get("path");
 

@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import { companyKeys } from "@/lib/query-keys";
 
@@ -107,7 +108,7 @@ export function CompanyNotesTab({ companyId, note }: CompanyNotesTabProps) {
     mutationFn: async (nextNote: string) => {
       const res = await fetch(`/api/companies/${companyId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({ notes: nextNote }),
       });
 

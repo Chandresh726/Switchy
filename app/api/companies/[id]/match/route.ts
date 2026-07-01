@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { jobs, companies } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { matchWithTracking } from "@/lib/ai/matcher";
+import { assertAppRequest } from "@/lib/api";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -10,6 +11,8 @@ interface RouteParams {
 
 export async function POST(request: Request, { params }: RouteParams) {
   try {
+    assertAppRequest(request);
+
     const { id } = await params;
     const companyId = parseInt(id, 10);
 

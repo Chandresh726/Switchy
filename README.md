@@ -6,7 +6,7 @@ It helps you discover jobs from multiple ATS platforms, match them against your 
 
 ## Current Capabilities
 
-- Scrape jobs from `Greenhouse`, `Lever`, `Ashby`, `Eightfold`, and `Workday`
+- Scrape jobs from `Greenhouse`, `Lever`, `Ashby`, `Eightfold`, `Workday`, `ServiceNow`, `Zwayam`, `MynextHire`, `Uber`, `Google`, `Atlassian`, `Rippling`, `Visa`, and `Nutanix`
 - Track companies (single and bulk operations), with support for custom career pages + manual ATS override
 - Manage a job pipeline with filters, search, sorting, saved/applied tabs, and match score views
 - Upload and parse resumes, then manage profile, skills, experience, and education data
@@ -76,6 +76,16 @@ No `.env` setup is required for standard local usage.
 | `pnpm test:run` | Run tests once |
 | `pnpm audit` | Check dependencies for known vulnerabilities |
 | `pnpm verify` | Run lint, typecheck, tests, audit, and production build |
+| `pnpm verify:all` | Run root verification plus landing app verification |
 | `pnpm db:generate` | Generate Drizzle migrations from schema changes |
 | `pnpm db:migrate` | Apply Drizzle migrations |
 | `pnpm db:studio` | Open Drizzle Studio |
+
+## Encryption Secret
+
+Switchy stores the API-key encryption secret in the local state directory, not in `.env`:
+
+- Development: `~/.switchy/dev/encryption.secret`
+- Production: `~/.switchy/encryption.secret`
+
+Back up this file with the matching database. Losing it means stored provider API keys cannot be decrypted and must be re-entered.

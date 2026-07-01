@@ -3,6 +3,12 @@ import type { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { APIValidationError } from "@/lib/api/ai-error-handler";
 
+const APP_HEADERS = {
+  "Content-Type": "application/json",
+  origin: "http://localhost",
+  "x-switchy-request": "true",
+};
+
 const mocks = vi.hoisted(() => ({
   getContentByJobAndType: vi.fn(),
   generateContent: vi.fn(),
@@ -25,7 +31,7 @@ describe("POST /api/ai/content", () => {
   it("returns 400 with typed code for invalid request payload", async () => {
     const request = new Request("http://localhost/api/ai/content", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: APP_HEADERS,
       body: JSON.stringify({ jobId: "bad", type: "invalid-type" }),
     });
 
@@ -51,7 +57,7 @@ describe("POST /api/ai/content", () => {
 
     const request = new Request("http://localhost/api/ai/content", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: APP_HEADERS,
       body: JSON.stringify({ jobId: 42, type: "recruiter_follow_up" }),
     });
 
@@ -105,7 +111,12 @@ describe("POST /api/ai/content", () => {
   it("maps delete failures to typed internal error payload", async () => {
     mocks.clearAllGeneratedContent.mockRejectedValue(new Error("boom"));
 
-    const response = await DELETE();
+    const response = await DELETE(new Request("http://localhost/api/ai/content", {
+      headers: {
+        origin: "http://localhost",
+        "x-switchy-request": "true",
+      },
+    }) as NextRequest);
     const body = await response.json();
 
     expect(response.status).toBe(500);
@@ -126,7 +137,7 @@ describe("POST /api/ai/content", () => {
 
     const request = new Request("http://localhost/api/ai/content", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: APP_HEADERS,
       body: JSON.stringify({ jobId: 1458, type: "recruiter_follow_up" }),
     });
 

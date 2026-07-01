@@ -3,10 +3,19 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { getUploadTypeDir, getUploadFilePath } from "../state/paths";
 
+const ALLOWED_UPLOAD_TYPES = new Set(["uploads", "resumes"]);
+
+function assertAllowedUploadType(type: string): void {
+  if (!ALLOWED_UPLOAD_TYPES.has(type)) {
+    throw new Error("Invalid upload type");
+  }
+}
+
 export async function saveFile(
   file: File,
   type: string = "uploads"
 ): Promise<{ path: string; filename: string }> {
+  assertAllowedUploadType(type);
   const bytes = await file.arrayBuffer();
   const buffer = Buffer.from(bytes);
 
@@ -19,7 +28,7 @@ export async function saveFile(
   const filePath = path.join(typeDir, filename);
 
   // Write file
-  fs.writeFileSync(filePath, buffer);
+  fs.writeFileSync(filePath, buffer, { mode: 0o600 });
 
   // Return relative path from uploads directory
   const relativePath = path.join(type, filename);

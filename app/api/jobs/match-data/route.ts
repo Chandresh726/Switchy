@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { assertAppRequest } from "@/lib/api";
 import { db } from "@/lib/db";
 import { jobs, matchSessions, matchLogs } from "@/lib/db/schema";
 
@@ -6,8 +8,10 @@ import { jobs, matchSessions, matchLogs } from "@/lib/db/schema";
  * DELETE /api/jobs/match-data
  * Deletes all match sessions, match logs, and clears match data from jobs
  */
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     // Delete all match logs first (due to foreign key constraint)
     await db.delete(matchLogs);
 

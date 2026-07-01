@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { MatchRouteBodySchema } from "@/lib/ai/contracts";
 import { matchBulk, matchSingle } from "@/lib/ai/matcher";
+import { assertAppRequest } from "@/lib/api";
 import { handleAIAPIError } from "@/lib/api/ai-error-handler";
 
 export async function POST(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = MatchRouteBodySchema.parse(await request.json());
 
     if ("jobId" in body) {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { handleApiError, ValidationError } from "@/lib/api";
+import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
 import { suggestApolloMapping } from "@/lib/people/import/parsers/apollo";
 import { parsePeopleCsvRows } from "@/lib/people/csv";
 import { MAX_CSV_FILE_SIZE } from "@/lib/constants";
@@ -22,6 +22,8 @@ function toSampleRows(rows: string[][], limit = 5): Record<string, string>[] {
 
 export async function POST(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const formData = await request.formData();
     const source = SourceSchema.parse(formData.get("source") ?? "linkedin");
     const file = formData.get("file");

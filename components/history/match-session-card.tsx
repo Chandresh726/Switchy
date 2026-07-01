@@ -28,6 +28,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
 import {
   formatDurationFromDates,
@@ -74,6 +75,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
     try {
       const res = await fetch(`/api/match-history?sessionId=${session.id}`, {
         method: "DELETE",
+        headers: APP_REQUEST_HEADERS,
       });
 
       if (!res.ok) throw new Error("Failed to delete session");
@@ -128,6 +130,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
     try {
       const res = await fetch(`/api/match-history?sessionId=${encodeURIComponent(session.id)}`, {
         method: "PATCH",
+        headers: APP_REQUEST_HEADERS,
       });
 
       if (!res.ok) throw new Error("Failed to stop session");

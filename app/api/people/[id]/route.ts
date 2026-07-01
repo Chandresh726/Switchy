@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { handleApiError, ValidationError } from "@/lib/api";
+import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { companies, people } from "@/lib/db/schema";
 
@@ -22,6 +22,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    assertAppRequest(request);
+
     const parsedParams = ParamsSchema.parse(await params);
     const body = PatchBodySchema.parse(await request.json());
 

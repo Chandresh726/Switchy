@@ -6,14 +6,17 @@ import {
   getProviderValidationContext,
 } from "@/lib/ai/providers/provider-service";
 import { providerRegistry } from "@/lib/ai/providers";
+import { assertAppRequest } from "@/lib/api";
 import { APIValidationError, handleAIAPIError } from "@/lib/api/ai-error-handler";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-export async function POST(_request: NextRequest, { params }: RouteParams) {
+export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
+    assertAppRequest(request);
+
     const parsedParams = ProviderRouteParamsSchema.parse(await params);
     const context = await getProviderValidationContext(parsedParams.id);
     const providerInstance = providerRegistry.get(context.providerType);

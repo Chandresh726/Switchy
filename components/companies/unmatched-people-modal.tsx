@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
 
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { cn } from "@/lib/utils";
 import { peopleKeys } from "@/lib/query-keys";
 
@@ -374,7 +375,7 @@ export function UnmatchedPeopleModal({
     mutationFn: async (payload: { companyNormalized: string; mappedCompanyId: number }) => {
       const res = await fetch("/api/people/unmatched-companies", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({
           action: "map",
           companyNormalized: payload.companyNormalized,
@@ -407,7 +408,7 @@ export function UnmatchedPeopleModal({
     mutationFn: async (payload: { companyNormalized: string; ignored: boolean }) => {
       const res = await fetch("/api/people/unmatched-companies", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({
           action: payload.ignored ? "ignore" : "unignore",
           companyNormalized: payload.companyNormalized,

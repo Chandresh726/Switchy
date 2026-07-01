@@ -20,6 +20,7 @@
     "audit": "pnpm audit",
     "audit:prod": "pnpm audit --prod",
     "verify": "pnpm lint && pnpm typecheck && pnpm test:run && pnpm audit && pnpm build",
+    "verify:all": "pnpm verify && pnpm landing:verify",
     "landing:lint": "pnpm --filter switchy-landing lint",
     "landing:typecheck": "pnpm --filter switchy-landing typecheck",
     "landing:audit": "pnpm --filter switchy-landing audit",

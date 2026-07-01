@@ -95,20 +95,13 @@ export function calculateTotalExperienceYears(experience: ExperienceEntry[]): nu
 }
 
 export function deriveCandidateExperienceYears(
-  roleYears: number | null,
-  skillYears: Array<number | null | undefined>
+  roleYears: number | null
 ): number | null {
-  const skillMax = skillYears.reduce<number | null>((max, years) => {
-    if (typeof years !== "number" || Number.isNaN(years) || years < 0) return max;
-    return max === null ? years : Math.max(max, years);
-  }, null);
-
   if (typeof roleYears === "number" && !Number.isNaN(roleYears) && roleYears >= 0) {
-    if (skillMax === null) return roleYears;
-    return Math.max(roleYears, skillMax);
+    return roleYears;
   }
 
-  return skillMax;
+  return null;
 }
 
 function collectNumbers(regex: RegExp, text: string, mapper: (match: RegExpExecArray) => number | null): number[] {

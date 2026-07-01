@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import Editor from "react-simple-code-editor";
 import { highlight, languages } from "prismjs";
 import "prismjs/components/prism-json";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 
 interface Company {
   name: string;
@@ -66,7 +67,7 @@ function JsonEditorContent({ companies, onSuccess }: { companies: Company[]; onS
     mutationFn: async (data: Company[]) => {
       const res = await fetch("/api/companies", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify(data),
       });
       if (!res.ok) {

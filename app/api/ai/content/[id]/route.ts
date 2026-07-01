@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { asc, eq } from "drizzle-orm";
 
 import { AIContentPatchBodySchema, ProviderRouteParamsSchema, type AIContentType } from "@/lib/ai/contracts";
+import { assertAppRequest } from "@/lib/api";
 import { handleAIAPIError } from "@/lib/api/ai-error-handler";
 import { db } from "@/lib/db";
 import { aiGeneratedContent, aiGenerationHistory } from "@/lib/db/schema";
@@ -11,6 +12,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    assertAppRequest(request);
+
     const parsedParams = ProviderRouteParamsSchema.parse(await params);
     const parsedId = parseInt(parsedParams.id, 10);
     if (Number.isNaN(parsedId)) {
@@ -75,10 +78,12 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    assertAppRequest(request);
+
     const parsedParams = ProviderRouteParamsSchema.parse(await params);
     const parsedId = parseInt(parsedParams.id, 10);
     if (Number.isNaN(parsedId)) {

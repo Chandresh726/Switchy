@@ -4,6 +4,8 @@ export const DB_PATH = process.env.NODE_ENV === "development"
   : "~/.switchy/switchy.db";
 
 export const MAX_CSV_FILE_SIZE = 10 * 1024 * 1024;
+export const MAX_RESUME_FILE_SIZE = 5 * 1024 * 1024;
+export const MAX_RESUME_TEXT_LENGTH = 60_000;
 
 export const PLATFORM_OPTIONS = [
   { value: "greenhouse", label: "Greenhouse" },

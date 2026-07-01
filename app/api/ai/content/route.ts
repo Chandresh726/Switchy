@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { AIContentPostBodySchema, AIContentQuerySchema } from "@/lib/ai/contracts";
+import { assertAppRequest } from "@/lib/api";
 import { handleAIAPIError } from "@/lib/api/ai-error-handler";
 import {
   clearAllGeneratedContent,
@@ -31,6 +32,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = AIContentPostBodySchema.parse(await request.json());
     const content = await generateContent({
       jobId: body.jobId,
@@ -44,8 +47,10 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const result = await clearAllGeneratedContent();
     return NextResponse.json(result);
   } catch (error) {

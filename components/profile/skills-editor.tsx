@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { useState, useEffect } from "react";
 import { Loader2, Plus, X, Sparkles, Zap, Save } from "lucide-react";
 import { toast } from "sonner";
@@ -13,14 +14,11 @@ interface Skill {
   id: number;
   name: string;
   category: string | null;
-  proficiency: number;
-  yearsOfExperience: number | null;
 }
 
 interface InitialSkill {
   name: string;
   category?: string;
-  proficiency?: number;
 }
 
 interface SkillsEditorProps {
@@ -41,20 +39,11 @@ const SKILL_CATEGORIES = [
   "other",
 ];
 
-const PROFICIENCY_LEVELS = [
-  { value: 1, label: "Beginner" },
-  { value: 2, label: "Elementary" },
-  { value: 3, label: "Intermediate" },
-  { value: 4, label: "Advanced" },
-  { value: 5, label: "Expert" },
-];
-
 export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
   const queryClient = useQueryClient();
   const [newSkill, setNewSkill] = useState({
     name: "",
     category: "other",
-    proficiency: 3,
   });
   const [pendingSkills, setPendingSkills] = useState<InitialSkill[]>([]);
   const [isBulkAdding, setIsBulkAdding] = useState(false);
@@ -84,7 +73,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
     mutationFn: async (skill: typeof newSkill) => {
       const res = await fetch("/api/profile/skills", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({ ...skill, profileId }),
       });
       if (!res.ok) throw new Error("Failed to add skill");
@@ -92,7 +81,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["skills", profileId] });
-      setNewSkill({ name: "", category: "other", proficiency: 3 });
+      setNewSkill({ name: "", category: "other" });
     },
   });
 
@@ -101,11 +90,10 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
       for (const skill of skillsToAdd) {
         const res = await fetch("/api/profile/skills", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
           body: JSON.stringify({
             name: skill.name,
             category: skill.category || "other",
-            proficiency: skill.proficiency || 3,
             profileId,
           }),
         });
@@ -130,6 +118,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
     mutationFn: async (id: number) => {
       const res = await fetch(`/api/profile/skills?id=${id}`, {
         method: "DELETE",
+        headers: APP_REQUEST_HEADERS,
       });
       if (!res.ok) throw new Error("Failed to delete skill");
       return res.json();
@@ -258,19 +247,6 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
               </option>
             ))}
           </select>
-          <select
-            value={newSkill.proficiency}
-            onChange={(e) =>
-              setNewSkill((prev) => ({ ...prev, proficiency: parseInt(e.target.value) }))
-            }
-            className="h-8 rounded border border-border bg-card px-2 text-xs text-foreground"
-          >
-            {PROFICIENCY_LEVELS.map((level) => (
-              <option key={level.value} value={level.value}>
-                {level.label}
-              </option>
-            ))}
-          </select>
           <Button type="submit" disabled={addMutation.isPending || !newSkill.name.trim()}>
             {addMutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -287,9 +263,9 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
             <p className="text-sm text-muted-foreground">No skills added yet. Add your first skill above.</p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="gap-6 space-y-4 sm:columns-2">
             {Object.entries(skillsByCategory).map(([category, categorySkills]) => (
-              <div key={category}>
+              <div key={category} className="mb-4 break-inside-avoid">
                 <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   {category}
                 </h4>
@@ -301,9 +277,6 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
                       className="group flex items-center gap-1 pl-2 pr-1"
                     >
                       {skill.name}
-                      <span className="text-muted-foreground">
-                        ({PROFICIENCY_LEVELS.find((l) => l.value === skill.proficiency)?.label})
-                      </span>
                       <button
                         type="button"
                         onClick={() => deleteMutation.mutate(skill.id)}

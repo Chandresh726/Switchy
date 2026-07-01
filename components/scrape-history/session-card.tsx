@@ -30,6 +30,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { TRIGGER_LABELS } from "./constants";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import {
   formatDurationFromDates,
   formatTime,
@@ -74,6 +75,7 @@ export function SessionCard({ session }: SessionCardProps) {
     try {
       const res = await fetch(`/api/scrape-history?sessionId=${session.id}`, {
         method: "DELETE",
+        headers: APP_REQUEST_HEADERS,
       });
 
       if (!res.ok) throw new Error("Failed to delete session");
@@ -128,6 +130,7 @@ export function SessionCard({ session }: SessionCardProps) {
     try {
       const res = await fetch(`/api/scrape-history?sessionId=${encodeURIComponent(session.id)}`, {
         method: "PATCH",
+        headers: APP_REQUEST_HEADERS,
       });
 
       if (!res.ok) throw new Error("Failed to stop session");

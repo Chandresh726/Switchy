@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { profile, skills, experience, education, resumes } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
+import { assertAppRequest } from "@/lib/api";
 
 export async function GET() {
   try {
@@ -38,6 +39,8 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = await request.json();
     const {
       name,

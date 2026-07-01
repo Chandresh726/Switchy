@@ -186,26 +186,30 @@ export async function importPeopleCsv(input: ImportPeopleCsvInput): Promise<Pers
       updatedRows += batch.length;
     }
 
-    const seenKeys = Array.from(seenIdentityKeys);
-    const toDeactivate = await db
-      .select({ id: people.id })
-      .from(people)
-      .where(
-        and(
-          eq(people.source, input.source),
-          eq(people.isActive, true),
-          notInArray(people.identityKey, seenKeys)
-        )
-      );
+    let deactivatedRows = 0;
+    if (importMode === "replace") {
+      const seenKeys = Array.from(seenIdentityKeys);
+      const toDeactivate = await db
+        .select({ id: people.id })
+        .from(people)
+        .where(
+          and(
+            eq(people.source, input.source),
+            eq(people.isActive, true),
+            notInArray(people.identityKey, seenKeys)
+          )
+        );
 
-    if (toDeactivate.length > 0) {
-      await db
-        .update(people)
-        .set({
-          isActive: false,
-          updatedAt: now,
-        })
-        .where(inArray(people.id, toDeactivate.map((row) => row.id)));
+      if (toDeactivate.length > 0) {
+        await db
+          .update(people)
+          .set({
+            isActive: false,
+            updatedAt: now,
+          })
+          .where(inArray(people.id, toDeactivate.map((row) => row.id)));
+        deactivatedRows = toDeactivate.length;
+      }
     }
 
     const summary: PersonImportSummary = {
@@ -215,7 +219,7 @@ export async function importPeopleCsv(input: ImportPeopleCsvInput): Promise<Pers
       totalRows: parsed.totalRows,
       insertedRows,
       updatedRows,
-      deactivatedRows: toDeactivate.length,
+      deactivatedRows,
       invalidRows: parsed.errors.length,
       unmatchedCompanyRows,
       errors: parsed.errors.slice(0, 100),

@@ -18,6 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 
 interface HistoryLayoutClientProps {
   children: React.ReactNode;
@@ -77,6 +78,7 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
 
       const res = await fetch(endpoint, {
         method: "DELETE",
+        headers: APP_REQUEST_HEADERS,
       });
 
       if (!res.ok) throw new Error("Failed to clear history");

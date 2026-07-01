@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { handleApiError, ValidationError } from "@/lib/api";
+import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
 import {
   getUnmatchedCompaniesList,
   getUnmatchedCompaniesSummary,
@@ -74,6 +74,8 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = PatchBodySchema.parse(await request.json());
 
     if (body.action === "refresh") {

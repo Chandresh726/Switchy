@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
   recoverMissedSchedulerRuns: vi.fn(),
@@ -23,7 +24,12 @@ describe("scheduler recover route", () => {
       latestMissedRun: null,
     });
 
-    const response = await POST();
+    const response = await POST(new Request("http://localhost/api/scheduler/recover", {
+      headers: {
+        origin: "http://localhost",
+        "x-switchy-request": "true",
+      },
+    }) as NextRequest);
     const body = await response.json();
 
     expect(response.status).toBe(200);

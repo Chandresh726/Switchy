@@ -27,7 +27,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getAllProviderMetadata, type ProviderMetadata } from "@/lib/ai/providers/metadata";
-import { apiGet } from "@/lib/api/client";
 import type { ProviderSettingsListItem } from "@/lib/settings/types";
 
 interface AIProvidersManagerProps {
@@ -79,12 +78,13 @@ export function AIProvidersManager({
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [editApiKey, setEditApiKey] = useState("");
   const [isEditLoading, setIsEditLoading] = useState(false);
-  const [showEditApiKey, setShowEditApiKey] = useState(false);
-  const [isFetchingApiKey, setIsFetchingApiKey] = useState(false);
   const [refreshingProviderIds, setRefreshingProviderIds] = useState<Record<string, boolean>>({});
 
   const providerMetadata = getAllProviderMetadata();
   const selectedProviderMetadata = providerMetadata.find((p) => p.id === selectedProviderType);
+
+  const requiresProviderApiKey = (providerId: string) =>
+    providerMetadata.find((metadata) => metadata.id === providerId)?.requiresApiKey ?? true;
 
   const availableProviders = providerMetadata.filter(
     (metadata) => !providers.some((provider) => provider.provider === metadata.id)
@@ -134,10 +134,13 @@ export function AIProvidersManager({
 
     try {
       const apiKeyToSave = editApiKey.trim() || undefined;
+      if (requiresProviderApiKey(provider.provider) && !apiKeyToSave) {
+        setError("Enter a replacement API key to update this provider.");
+        return;
+      }
       await onUpdateProviderApiKey(provider.id, apiKeyToSave);
       setEditingProviderId(null);
       setEditApiKey("");
-      setShowEditApiKey(false);
     } catch (err) {
       console.error("Failed to update provider:", err);
     } finally {
@@ -145,29 +148,15 @@ export function AIProvidersManager({
     }
   };
 
-  const startEditing = async (provider: ProviderSettingsListItem) => {
+  const startEditing = (provider: ProviderSettingsListItem) => {
     setEditingProviderId(provider.id);
     setEditApiKey("");
-    setShowEditApiKey(false);
-    setIsFetchingApiKey(true);
-
-    try {
-      const data = await apiGet<{ apiKey?: string | null }>(
-        `/api/providers/${provider.id}/api-key`,
-        "Failed to fetch API key"
-      );
-      setEditApiKey(data.apiKey || "");
-    } catch (err) {
-      console.error("Failed to fetch API key:", err);
-    } finally {
-      setIsFetchingApiKey(false);
-    }
+    setError(null);
   };
 
   const cancelEditing = () => {
     setEditingProviderId(null);
     setEditApiKey("");
-    setShowEditApiKey(false);
   };
 
   const handleRefreshProviderModels = async (providerId: string) => {
@@ -229,21 +218,18 @@ export function AIProvidersManager({
                           <div className="relative">
                             <Key className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                             <Input
-                              type={showEditApiKey ? "text" : "password"}
-                              placeholder={isFetchingApiKey ? "Loading..." : (provider.hasApiKey ? "••••••••••••" : "Enter API key")}
+                              type="password"
+                              placeholder={provider.hasApiKey ? "Enter replacement API key" : "Enter API key"}
                               value={editApiKey}
                               onChange={(e) => setEditApiKey(e.target.value)}
-                              disabled={isFetchingApiKey}
-                              className="w-full pl-9 pr-10 bg-background/60 border-border"
+                              className="w-full pl-9 pr-3 bg-background/60 border-border"
                             />
-                            <button
-                              type="button"
-                              onClick={() => setShowEditApiKey(!showEditApiKey)}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                            >
-                              {showEditApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                            </button>
                           </div>
+                          {provider.hasApiKey && (
+                            <p className="text-xs text-muted-foreground">
+                              Existing API keys are stored encrypted and are not shown again. Enter a replacement key to update this provider.
+                            </p>
+                          )}
                         </div>
                       ) : (
                         <p className="text-sm text-muted-foreground">This provider does not require an API key.</p>

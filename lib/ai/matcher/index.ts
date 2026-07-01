@@ -15,6 +15,7 @@ export {
   fetchProfileData,
   fetchJobsData,
   updateJobWithMatchResult,
+  getUnmatchedJobCount,
   getUnmatchedJobIds,
   createMatchSession,
   updateMatchSession,

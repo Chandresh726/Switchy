@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { Button } from "@/components/ui/button";
 import { Upload, Loader2, Check, AlertCircle } from "lucide-react";
 
@@ -16,7 +17,6 @@ interface ResumeData {
   skills: Array<{
     name: string;
     category?: string;
-    proficiency?: number;
   }>;
   experience: Array<{
     company: string;
@@ -67,6 +67,7 @@ export function ResumeUpload({ onParsed, disabled }: ResumeUploadProps) {
 
         const response = await fetch("/api/profile/parse-resume", {
           method: "POST",
+          headers: APP_REQUEST_HEADERS,
           body: formData,
         });
 

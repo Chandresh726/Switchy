@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { AIContentType } from "@/lib/ai/contracts";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { canonicalizeMarkdown } from "@/lib/ai/writing/rich-text";
 import type { GeneratedContent } from "@/lib/ai/writing/types";
 
@@ -88,7 +89,7 @@ export function useAIContentWorkspace({
       try {
         const res = await fetch("/api/ai/content", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
           body: JSON.stringify({
             jobId,
             type: contentType,
@@ -170,7 +171,7 @@ export function useAIContentWorkspace({
     try {
       const res = await fetch(`/api/ai/content/${content.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({
           content: editedContent,
           userPrompt: "Manual edit",

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { handleApiError, ValidationError } from "@/lib/api";
+import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
 import { getScrapingModule } from "@/lib/scraper";
 
 const RefreshJobsSchema = z.object({
@@ -10,6 +10,8 @@ const RefreshJobsSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = await request.json();
     const parsed = RefreshJobsSchema.safeParse(body);
 

@@ -61,11 +61,9 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
 
   const candidateProfile: CandidateProfile = {
     summary: profileData.profile.summary || undefined,
-    skills: profileData.skills.map((s: { name: string; proficiency: number; category: string | null; yearsOfExperience: number | null }) => ({
+    skills: profileData.skills.map((s: { name: string; category: string | null }) => ({
       name: s.name,
-      proficiency: s.proficiency,
       category: s.category || undefined,
-      yearsOfExperience: s.yearsOfExperience ?? undefined,
     })),
     experience: profileData.experience.map((e: { title: string; company: string; description: string | null; startDate: string; endDate: string | null }) => ({
       title: e.title,
@@ -81,8 +79,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
     })),
   };
   candidateProfile.totalExperienceYears = deriveCandidateExperienceYears(
-    calculateTotalExperienceYears(candidateProfile.experience),
-    candidateProfile.skills.map((skill) => skill.yearsOfExperience)
+    calculateTotalExperienceYears(candidateProfile.experience)
   ) ?? undefined;
 
   const matchJobs: MatchJob[] = jobIds

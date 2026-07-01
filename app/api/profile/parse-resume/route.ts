@@ -3,13 +3,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { extractText } from "unpdf";
 
+import { assertAppRequest } from "@/lib/api";
 import { parseResume } from "@/lib/ai/resume-parser";
-import { saveFile } from "@/lib/storage/files";
+import { MAX_RESUME_FILE_SIZE, MAX_RESUME_TEXT_LENGTH } from "@/lib/constants";
+import { deleteFile, saveFile } from "@/lib/storage/files";
 import { db } from "@/lib/db";
 import { profile, resumes } from "@/lib/db/schema";
 
 export async function POST(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const shouldAutofill = formData.get("autofill") !== "false";
@@ -19,6 +23,13 @@ export async function POST(request: NextRequest) {
     }
 
     const fileName = file.name.toLowerCase();
+
+    if (file.size > MAX_RESUME_FILE_SIZE) {
+      return NextResponse.json(
+        { error: "File too large. Maximum resume size is 5MB." },
+        { status: 400 }
+      );
+    }
 
     if (!fileName.endsWith(".pdf") && !fileName.endsWith(".docx") && !fileName.endsWith(".doc") && !fileName.endsWith(".txt") && !fileName.endsWith(".md")) {
       return NextResponse.json(
@@ -64,6 +75,13 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+
+      if (resumeText.length > MAX_RESUME_TEXT_LENGTH) {
+        return NextResponse.json(
+          { error: "Resume text is too long to parse safely. Please upload a shorter resume." },
+          { status: 400 }
+        );
+      }
     }
 
     const parsedData = shouldAutofill ? await parseResume(resumeText) : null;
@@ -85,42 +103,48 @@ export async function POST(request: NextRequest) {
     }
 
     // Atomically determine version, clear isCurrent, and insert new resume
-    const resumeRecord = db.transaction((tx) => {
-      // Determine version number using core query API
-      const lastResume = tx
-        .select({ version: resumes.version })
-        .from(resumes)
-        .where(eq(resumes.profileId, currentProfile.id))
-        .orderBy(desc(resumes.version))
-        .get();
-
-      const nextVersion = (lastResume?.version || 0) + 1;
-
-      // Mark all previous resumes as not current
-      if (nextVersion > 1) {
-        tx
-          .update(resumes)
-          .set({ isCurrent: false })
+    let resumeRecord;
+    try {
+      resumeRecord = db.transaction((tx) => {
+        // Determine version number using core query API
+        const lastResume = tx
+          .select({ version: resumes.version })
+          .from(resumes)
           .where(eq(resumes.profileId, currentProfile.id))
-          .run();
-      }
+          .orderBy(desc(resumes.version))
+          .get();
 
-      // Save resume record
-      const record = tx
-        .insert(resumes)
-        .values({
-          profileId: currentProfile.id,
-          fileName: file.name,
-          filePath: savedFile.path,
-          parsedData: JSON.stringify(parsedData),
-          version: nextVersion,
-          isCurrent: true,
-        })
-        .returning()
-        .get();
+        const nextVersion = (lastResume?.version || 0) + 1;
 
-      return record;
-    });
+        // Mark all previous resumes as not current
+        if (nextVersion > 1) {
+          tx
+            .update(resumes)
+            .set({ isCurrent: false })
+            .where(eq(resumes.profileId, currentProfile.id))
+            .run();
+        }
+
+        // Save resume record
+        const record = tx
+          .insert(resumes)
+          .values({
+            profileId: currentProfile.id,
+            fileName: file.name,
+            filePath: savedFile.path,
+            parsedData: JSON.stringify(parsedData),
+            version: nextVersion,
+            isCurrent: true,
+          })
+          .returning()
+          .get();
+
+        return record;
+      });
+    } catch (error) {
+      await deleteFile(savedFile.path);
+      throw error;
+    }
 
     return NextResponse.json({
       parsedData,

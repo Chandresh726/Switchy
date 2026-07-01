@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { experience } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
+import { assertAppRequest } from "@/lib/api";
 
 function parseDateValue(date: string | null) {
   if (!date) return Number.POSITIVE_INFINITY;
@@ -52,6 +53,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = await request.json();
     const { profileId, company, title, location, startDate, endDate, description, highlights } = body;
 
@@ -88,6 +91,8 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 
@@ -109,6 +114,8 @@ export async function DELETE(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = await request.json();
     const { id, company, title, location, startDate, endDate, description, highlights } = body;
 

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { handleApiError, ValidationError } from "@/lib/api";
+import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { companies } from "@/lib/db/schema";
 import { createManualPerson, deleteAllPeople, getPeopleList } from "@/lib/people/sync";
@@ -68,6 +68,8 @@ const ManualPersonSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = ManualPersonSchema.parse(await request.json());
     if (typeof body.mappedCompanyId === "number") {
       const [mappedCompany] = await db
@@ -98,8 +100,10 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const result = await deleteAllPeople();
     return NextResponse.json(result);
   } catch (error) {

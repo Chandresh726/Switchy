@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { PLATFORM_OPTIONS } from "@/lib/constants";
 import { detectPlatformFromUrl, getPlatformLabel } from "@/lib/scraper/platform-detection";
 
@@ -104,7 +105,7 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
     mutationFn: async (data: typeof formData) => {
       const res = await fetch("/api/companies", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -125,7 +126,7 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
     mutationFn: async (data: typeof formData) => {
       const res = await fetch(`/api/companies/${company!.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify(data),
       });
       if (!res.ok) {

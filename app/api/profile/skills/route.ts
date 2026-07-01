@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { skills } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
+import { assertAppRequest } from "@/lib/api";
 
 export async function GET(request: NextRequest) {
   try {
@@ -32,8 +33,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = await request.json();
-    const { profileId, name, category, proficiency, yearsOfExperience } = body;
+    const { profileId, name, category } = body;
 
     if (!profileId || !name) {
       return NextResponse.json(
@@ -48,8 +51,6 @@ export async function POST(request: NextRequest) {
         profileId,
         name,
         category,
-        proficiency: proficiency || 3,
-        yearsOfExperience,
       })
       .returning();
 
@@ -65,6 +66,8 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 

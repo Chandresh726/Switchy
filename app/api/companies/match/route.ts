@@ -3,10 +3,12 @@ import { jobs } from "@/lib/db/schema";
 import { inArray } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { matchWithTracking } from "@/lib/ai/matcher";
-import { handleApiError, ValidationError } from "@/lib/api";
+import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
 
 export async function POST(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = await request.json();
     const { companyIds } = body as { companyIds: number[] };
 

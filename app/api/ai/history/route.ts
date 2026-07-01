@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { assertAppRequest } from "@/lib/api";
 import { db } from "@/lib/db";
 import { aiGeneratedContent, aiGenerationHistory, jobs, companies } from "@/lib/db/schema";
 import { desc, eq, asc, inArray } from "drizzle-orm";
@@ -58,8 +59,10 @@ export async function GET() {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     // Get all content IDs first
     const allContent = await db.select({ id: aiGeneratedContent.id }).from(aiGeneratedContent);
     const contentIds = allContent.map((c) => c.id);

@@ -21,6 +21,7 @@ import {
 import Link from "next/link";
 import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
 import { toast } from "sonner";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { formatDurationMs, formatDurationFromDates, formatDateTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
 
@@ -99,6 +100,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
     mutationFn: async () => {
       const res = await fetch(`/api/match-history?sessionId=${encodeURIComponent(sessionId)}`, {
         method: "PATCH",
+        headers: APP_REQUEST_HEADERS,
       });
       if (!res.ok) throw new Error("Failed to stop session");
       return res.json();
@@ -117,6 +119,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
     mutationFn: async () => {
       const res = await fetch(`/api/match-history?sessionId=${encodeURIComponent(sessionId)}`, {
         method: "DELETE",
+        headers: APP_REQUEST_HEADERS,
       });
       if (!res.ok) throw new Error("Failed to delete session");
       if (res.status !== 204) {

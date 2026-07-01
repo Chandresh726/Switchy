@@ -2,12 +2,15 @@ import { db } from "@/lib/db";
 import { jobs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
+import { assertAppRequest } from "@/lib/api";
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    assertAppRequest(request);
+
     const { id } = await params;
     const companyId = parseInt(id);
 

@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, count, eq, inArray, isNull } from "drizzle-orm";
 
 import { fetchCandidateProfileSnapshot } from "@/lib/ai/profile/profile-snapshot";
 import { db } from "@/lib/db";
@@ -51,6 +51,15 @@ export async function getUnmatchedJobIds(): Promise<number[]> {
     .where(isNull(jobs.matchScore));
 
   return unmatchedJobs.map((j) => j.id);
+}
+
+export async function getUnmatchedJobCount(): Promise<number> {
+  const [result] = await db
+    .select({ value: count() })
+    .from(jobs)
+    .where(isNull(jobs.matchScore));
+
+  return result?.value ?? 0;
 }
 
 export async function createMatchSession(

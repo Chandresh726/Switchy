@@ -63,7 +63,12 @@ export function getEncryptionSecretPath(): string {
  * @param relativePath - path relative to uploads dir (e.g., "resumes/file.pdf")
  */
 export function getUploadFilePath(relativePath: string): string {
-  return path.join(UPLOADS_DIR, relativePath);
+  const resolvedPath = path.resolve(UPLOADS_DIR, relativePath);
+  const uploadRoot = path.resolve(UPLOADS_DIR);
+  if (resolvedPath !== uploadRoot && !resolvedPath.startsWith(`${uploadRoot}${path.sep}`)) {
+    throw new Error("Upload path escapes uploads directory");
+  }
+  return resolvedPath;
 }
 
 /**
@@ -72,10 +77,10 @@ export function getUploadFilePath(relativePath: string): string {
  */
 export function ensureStateDir(): void {
   if (!fs.existsSync(STATE_DIR)) {
-    fs.mkdirSync(STATE_DIR, { recursive: true });
+    fs.mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
   }
   if (!fs.existsSync(UPLOADS_DIR)) {
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true, mode: 0o700 });
   }
 }
 
@@ -84,9 +89,12 @@ export function ensureStateDir(): void {
  * @param type - upload type (e.g., "resumes", "documents")
  */
 export function getUploadTypeDir(type: string): string {
-  const typeDir = path.join(UPLOADS_DIR, type);
+  if (!/^[a-zA-Z0-9_-]+$/.test(type)) {
+    throw new Error("Invalid upload type");
+  }
+  const typeDir = getUploadFilePath(type);
   if (!fs.existsSync(typeDir)) {
-    fs.mkdirSync(typeDir, { recursive: true });
+    fs.mkdirSync(typeDir, { recursive: true, mode: 0o700 });
   }
   return typeDir;
 }

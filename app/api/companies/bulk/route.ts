@@ -2,9 +2,12 @@ import { db } from "@/lib/db";
 import { companies, jobs } from "@/lib/db/schema";
 import { inArray } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
+import { assertAppRequest } from "@/lib/api";
 
 export async function DELETE(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = await request.json();
     const { companyIds } = body as { companyIds: number[] };
 
@@ -42,6 +45,8 @@ export async function DELETE(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = await request.json();
     const { companyIds, isActive } = body as {
       companyIds: number[];

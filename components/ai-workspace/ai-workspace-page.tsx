@@ -27,6 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { copyMarkdownToClipboard } from "@/lib/ai/writing/rich-text";
 import { useAIContentWorkspace } from "@/lib/ai/writing/workspace/use-ai-content-workspace";
 import type { AIContentType } from "@/lib/ai/contracts";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { canOpenLinkedInProfile } from "@/lib/people/message";
 import { isRecruiterPosition } from "@/lib/people/position";
 import { applyConnectionPlaceholder } from "@/lib/people/referral-template";
@@ -150,7 +151,7 @@ export function AIWorkspacePage({
     mutationFn: async ({ id, isStarred }: { id: number; isStarred: boolean }) => {
       const res = await fetch(`/api/people/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({ isStarred }),
       });
       if (!res.ok) throw new Error("Failed to update star");

@@ -3,10 +3,12 @@ import { NextResponse } from "next/server";
 import { MatchUnmatchedQuerySchema } from "@/lib/ai/contracts";
 import {
   createMatchSession,
+  getUnmatchedJobCount,
   getMatchSessionStatus,
   getUnmatchedJobIds,
   matchWithTracking,
 } from "@/lib/ai/matcher";
+import { assertAppRequest } from "@/lib/api";
 import { handleAIAPIError } from "@/lib/api/ai-error-handler";
 
 const NO_STORE_HEADERS = {
@@ -44,8 +46,8 @@ export async function GET(request: Request) {
       );
     }
 
-    const unmatchedJobIds = await getUnmatchedJobIds();
-    return NextResponse.json({ count: unmatchedJobIds.length }, { headers: NO_STORE_HEADERS });
+    const unmatchedJobCount = await getUnmatchedJobCount();
+    return NextResponse.json({ count: unmatchedJobCount }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     return handleAIAPIError(
       error,
@@ -56,8 +58,10 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
+    assertAppRequest(request);
+
     const unmatchedJobIds = await getUnmatchedJobIds();
 
     if (unmatchedJobIds.length === 0) {

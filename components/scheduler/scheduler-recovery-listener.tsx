@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+
 const RECOVERY_COOLDOWN_MS = 15_000;
 const SLEEP_DRIFT_THRESHOLD_MS = 75_000;
 const TICK_INTERVAL_MS = 30_000;
@@ -9,6 +11,7 @@ const TICK_INTERVAL_MS = 30_000;
 async function requestRecovery(): Promise<void> {
   await fetch("/api/scheduler/recover", {
     method: "POST",
+    headers: APP_REQUEST_HEADERS,
     cache: "no-store",
   });
 }

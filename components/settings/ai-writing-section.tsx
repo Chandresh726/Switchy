@@ -190,8 +190,8 @@ export function AIWritingSection({
               </div>
 
               <div className="grid gap-4">
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="space-y-2">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                  <div className="space-y-2 sm:flex-1 sm:min-w-0">
                     <Label className="text-muted-foreground">Tone</Label>
                     <Select
                       value={aiWritingSettings.coverLetterTone}
@@ -210,7 +210,7 @@ export function AIWritingSection({
                     </Select>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-2 sm:flex-1 sm:min-w-0">
                     <Label className="text-muted-foreground">Length</Label>
                     <Select
                       value={aiWritingSettings.coverLetterLength}
@@ -229,16 +229,16 @@ export function AIWritingSection({
                     </Select>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-2 sm:flex-[2] sm:min-w-0">
                     <Label className="text-muted-foreground">Focus</Label>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex gap-2">
                       {COVER_LETTER_FOCUS_OPTIONS.map((option) => (
                         <button
                           key={option.value}
                           type="button"
                           onClick={() => toggleFocus(option.value)}
                           className={cn(
-                            "inline-flex items-center px-3 py-1.5 text-xs font-medium transition-colors",
+                            "inline-flex flex-1 items-center justify-center px-3 py-1.5 text-xs font-medium transition-colors",
                             isFocusSelected(option.value)
                               ? "bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30"
                               : "bg-muted text-muted-foreground hover:bg-muted hover:text-foreground/80"

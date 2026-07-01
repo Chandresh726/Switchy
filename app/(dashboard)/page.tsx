@@ -98,20 +98,20 @@ function StatCard({
 }) {
   const content = (
     <div className="flex h-full items-center justify-between">
-      <div className="flex flex-col justify-center px-6 py-4">
+      <div className="flex min-w-0 flex-col justify-center px-4 py-3.5">
         <p className="text-sm font-medium text-muted-foreground">{title}</p>
-        <div className="mt-2 flex items-baseline gap-2">
-          <span className="text-3xl font-semibold text-foreground tracking-tight">{value}</span>
-          {subtitle && <span className="text-xs text-muted-foreground font-medium">{subtitle}</span>}
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="text-2xl font-semibold text-foreground tracking-tight tabular-nums">{value}</span>
+          {subtitle && <span className="whitespace-nowrap text-xs text-muted-foreground font-medium">{subtitle}</span>}
         </div>
       </div>
-      <div className="pr-6">
+      <div className="pr-4 shrink-0">
         <div
-          className={`flex h-12 w-12 items-center justify-center rounded-lg ${color
+          className={`flex h-10 w-10 items-center justify-center rounded-lg ${color
             .replace("text-", "bg-")
             .replace("500", "500/10")} ${color}`}
         >
-          <Icon className="h-7 w-7" />
+          <Icon className="h-5 w-5" />
         </div>
       </div>
     </div>
@@ -156,17 +156,17 @@ function JobRow({
   return (
     <Link
       href={`/jobs/${job.id}`}
-      className="group flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-3 transition-all hover:border-border hover:bg-card"
+      className="group flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-2.5 transition-all hover:border-border hover:bg-card"
     >
       <div className="flex items-center gap-3 min-w-0 flex-1">
         {job.company.logoUrl ? (
           <img
             src={job.company.logoUrl}
             alt={job.company.name}
-            className="h-9 w-9 rounded-md bg-muted object-contain p-1"
+            className="h-8 w-8 rounded-md bg-muted object-contain p-1"
           />
         ) : (
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted text-xs font-medium text-muted-foreground">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-xs font-medium text-muted-foreground">
             {job.company.name.charAt(0).toUpperCase()}
           </div>
         )}
@@ -268,9 +268,9 @@ export default function DashboardPage() {
     : null;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-foreground tracking-tight">
             Dashboard
@@ -279,20 +279,67 @@ export default function DashboardPage() {
             Welcome back, {userName}. Here&apos;s what&apos;s happening with your job search.
           </p>
         </div>
+
+        {/* Recent Activity / Last Scan */}
+        {lastScan && (
+          <Link
+            href={`/history/scrape/${lastScan.id}`}
+            className="group flex w-full shrink-0 items-center justify-between gap-4 rounded-xl border border-border bg-card p-4 transition-all hover:border-border/80 hover:bg-muted/30 lg:w-[calc((100%-2rem)/3)]"
+          >
+            <div className="flex items-center gap-4">
+              <div
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${lastScanStatusConfig?.bgColor ?? "bg-muted"}`}
+              >
+                {lastScan.status === "in_progress" ? (
+                  <RefreshCw className="h-5 w-5 animate-spin text-blue-500" />
+                ) : lastScanStatusConfig ? (
+                  <lastScanStatusConfig.icon className={`h-5 w-5 ${lastScanStatusConfig.color}`} />
+                ) : (
+                  <AlertCircle className="h-5 w-5 text-red-500" />
+                )}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Latest Scan</span>
+                  <span className="text-xs text-muted-foreground">&bull;</span>
+                  <span className="text-xs text-muted-foreground">
+                    {lastScanDisplayTime ? formatRelativeTime(lastScanDisplayTime) : "-"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="font-medium text-foreground group-hover:text-foreground/80 transition-colors">
+                    {lastScan.status === "in_progress"
+                      ? "Scanning..."
+                      : (lastScanStatusConfig?.label ?? "Failed")}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{lastScan.companiesCompleted}/{lastScan.companiesTotal} companies</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-lg font-semibold text-emerald-400">+{lastScan.totalJobsAdded}</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">New Jobs</p>
+              </div>
+              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
+            </div>
+          </Link>
+        )}
       </div>
 
       {/* Stats Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {isInitialLoading ? (
           <>
             {[...Array(5)].map((_, i) => (
-              <div key={i} className="rounded-xl border border-border bg-card p-6">
+              <div key={i} className="rounded-xl border border-border bg-card p-4">
                 <div className="flex items-center justify-between">
                   <div className="space-y-3">
                     <Skeleton className="h-4 w-20" />
-                    <Skeleton className="h-8 w-12" />
+                    <Skeleton className="h-7 w-12" />
                   </div>
-                  <Skeleton className="h-12 w-12 rounded-lg" />
+                  <Skeleton className="h-10 w-10 rounded-lg" />
                 </div>
               </div>
             ))}
@@ -336,25 +383,25 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-3">
         {/* Main Content Column (2/3 width) */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-4">
           {/* Getting Started (Conditional) */}
           {!isInitialLoading && (!profile?.name || (stats?.totalCompanies ?? 0) === 0) && (
-            <div className="mb-6 rounded-xl border border-border bg-gradient-to-br from-card to-muted/40 p-6">
+            <div className="mb-4 rounded-xl border border-border bg-gradient-to-br from-card to-muted/40 p-4">
               <div className="flex items-start justify-between">
                 <div>
                   <h2 className="text-base font-medium text-foreground mb-1">Getting Started</h2>
-                  <p className="text-sm text-muted-foreground mb-4">Complete these steps to start finding your dream job.</p>
+                  <p className="text-sm text-muted-foreground mb-3">Complete these steps to start finding your dream job.</p>
                 </div>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
                 <Link
                   href="/profile"
-                  className="flex items-center gap-4 rounded-lg border border-border bg-card p-4 transition-colors hover:bg-muted hover:border-border"
+                  className="flex items-center gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:bg-muted hover:border-border"
                 >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-foreground/80 font-medium text-sm border border-border">1</div>
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-foreground/80 font-medium text-sm border border-border">1</div>
                   <div>
                     <p className="text-sm font-medium text-foreground">Upload Resume</p>
                     <p className="text-xs text-muted-foreground">To match skills</p>
@@ -363,9 +410,9 @@ export default function DashboardPage() {
 
                 <Link
                   href="/companies"
-                  className="flex items-center gap-4 rounded-lg border border-border bg-card p-4 transition-colors hover:bg-muted hover:border-border"
+                  className="flex items-center gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:bg-muted hover:border-border"
                 >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-foreground/80 font-medium text-sm border border-border">2</div>
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-foreground/80 font-medium text-sm border border-border">2</div>
                   <div>
                     <p className="text-sm font-medium text-foreground">Add Companies</p>
                     <p className="text-xs text-muted-foreground">To track jobs</p>
@@ -374,9 +421,9 @@ export default function DashboardPage() {
 
                 <Link
                   href="/jobs"
-                  className="flex items-center gap-4 rounded-lg border border-border bg-card p-4 transition-colors hover:bg-muted hover:border-border"
+                  className="flex items-center gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:bg-muted hover:border-border"
                 >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-foreground/80 font-medium text-sm border border-border">3</div>
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-foreground/80 font-medium text-sm border border-border">3</div>
                   <div>
                     <p className="text-sm font-medium text-foreground">Review Matches</p>
                     <p className="text-xs text-muted-foreground">And apply</p>
@@ -387,8 +434,8 @@ export default function DashboardPage() {
           )}
 
           {/* New Jobs */}
-          <div className="rounded-xl border border-border bg-card p-6">
-            <div className="flex items-center justify-between mb-4">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <div className="p-1.5 rounded-md bg-blue-500/10">
                   <Clock className="h-4 w-4 text-blue-500" />
@@ -405,7 +452,7 @@ export default function DashboardPage() {
               </Link>
             </div>
 
-            <div className="max-h-[23rem] space-y-2 overflow-y-auto pr-1">
+            <div className="max-h-[17rem] space-y-1.5 overflow-y-auto pr-1">
               {recentJobs.length > 0 ? (
                 recentJobs.map((job) => (
                   <JobRow key={job.id} job={job} currentTime={currentTime} />
@@ -420,8 +467,8 @@ export default function DashboardPage() {
           </div>
 
           {/* High Match Jobs */}
-          <div className="rounded-xl border border-border bg-card p-6">
-            <div className="flex items-center justify-between mb-4">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <div className="p-1.5 rounded-md bg-amber-500/10">
                   <Zap className="h-4 w-4 text-amber-500" />
@@ -438,7 +485,7 @@ export default function DashboardPage() {
               </Link>
             </div>
 
-            <div className="max-h-[23rem] space-y-2 overflow-y-auto pr-1">
+            <div className="max-h-[17rem] space-y-1.5 overflow-y-auto pr-1">
               {highMatchJobs.length > 0 ? (
                 highMatchJobs.map((job) => (
                   <JobRow key={job.id} job={job} currentTime={currentTime} showNewTag />
@@ -455,57 +502,10 @@ export default function DashboardPage() {
         </div>
 
         {/* Sidebar Column (1/3 width) */}
-        <div className="space-y-6">
-          {/* Recent Activity / Last Scan */}
-          {lastScan && (
-            <Link
-              href={`/history/scrape/${lastScan.id}`}
-              className="group flex items-center justify-between rounded-xl border border-border bg-card p-5 transition-all hover:border-border/80 hover:bg-muted/30"
-            >
-              <div className="flex items-center gap-4">
-                <div
-                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${lastScanStatusConfig?.bgColor ?? "bg-muted"}`}
-                >
-                  {lastScan.status === "in_progress" ? (
-                    <RefreshCw className="h-5 w-5 animate-spin text-blue-500" />
-                  ) : lastScanStatusConfig ? (
-                    <lastScanStatusConfig.icon className={`h-5 w-5 ${lastScanStatusConfig.color}`} />
-                  ) : (
-                    <AlertCircle className="h-5 w-5 text-red-500" />
-                  )}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Latest Scan</span>
-                    <span className="text-xs text-muted-foreground">&bull;</span>
-                    <span className="text-xs text-muted-foreground">
-                      {lastScanDisplayTime ? formatRelativeTime(lastScanDisplayTime) : "-"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="font-medium text-foreground group-hover:text-foreground/80 transition-colors">
-                      {lastScan.status === "in_progress"
-                        ? "Scanning..."
-                        : (lastScanStatusConfig?.label ?? "Failed")}
-                    </span>
-                    <span className="text-xs text-muted-foreground">{lastScan.companiesCompleted}/{lastScan.companiesTotal} companies</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <p className="text-lg font-semibold text-emerald-400">+{lastScan.totalJobsAdded}</p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">New Jobs</p>
-                </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
-              </div>
-            </Link>
-          )}
-
+        <div className="space-y-4">
           {/* Recently Applied */}
-          <div className="rounded-xl border border-border bg-card p-6">
-            <div className="flex items-center justify-between mb-4">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Send className="h-4 w-4 text-emerald-500" />
                 <h2 className="text-base font-medium text-foreground">Recent Applications</h2>
@@ -519,7 +519,7 @@ export default function DashboardPage() {
 
             <div className="space-y-3">
               {appliedJobs.length > 0 ? (
-                appliedJobs.slice(0, 3).map((job) => (
+                appliedJobs.slice(0, 5).map((job) => (
                   <Link
                     key={job.id}
                     href={`/jobs/${job.id}`}
@@ -547,14 +547,14 @@ export default function DashboardPage() {
           </div>
 
           {/* Quick Insights */}
-          <div className="rounded-xl border border-border bg-card p-6">
-            <div className="flex items-center gap-2 mb-4">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="flex items-center gap-2 mb-3">
               <TrendingUp className="h-4 w-4 text-purple-500" />
               <h2 className="text-base font-medium text-foreground">Insights</h2>
             </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50">
+            <div className="space-y-2">
+                <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/50 border border-border/50">
                 <span className="text-sm text-muted-foreground">Saved Jobs</span>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-foreground">{stats?.savedJobs || "-"}</span>
@@ -562,7 +562,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50">
+                <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/50 border border-border/50">
                 <span className="text-sm text-muted-foreground">Viewed Jobs</span>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-foreground">{stats?.viewedJobs || "-"}</span>
@@ -570,7 +570,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50">
+                <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/50 border border-border/50">
                 <span className="text-sm text-muted-foreground">Scored Jobs</span>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-foreground">{stats?.jobsWithScore || "-"}</span>
@@ -579,12 +579,12 @@ export default function DashboardPage() {
               </div>
 
               {stats?.totalJobs && stats.totalJobs > 0 && stats.highMatchJobs > 0 ? (
-                <div className="mt-4 p-3 rounded-lg bg-gradient-to-br from-amber-500/10 to-transparent border border-amber-500/20">
-                  <p className="text-xs text-foreground/80 leading-relaxed">
+                <div className="mt-3 p-2.5 rounded-lg bg-gradient-to-br from-amber-500/10 to-transparent border border-amber-500/20">
+                  <p className="text-xs text-foreground/80 leading-relaxed text-center">
                     <span className="font-semibold text-amber-400 text-sm">
                       {Math.round((stats.highMatchJobs / stats.totalJobs) * 100)}%
                     </span>{" "}
-                    of your tracked jobs are a high match for your profile.
+                    of tracked jobs are a high match.
                   </p>
                 </div>
               ) : null}
@@ -598,7 +598,7 @@ export default function DashboardPage() {
                     <div className="h-px flex-1 bg-border" />
                   </div>
 
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50">
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/50 border border-border/50">
                     <span className="text-sm text-muted-foreground">Total Active</span>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-foreground">{stats.totalPeople || "-"}</span>
@@ -606,7 +606,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50">
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/50 border border-border/50">
                     <span className="text-sm text-muted-foreground">Starred</span>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-foreground">{stats.starredPeople || "-"}</span>

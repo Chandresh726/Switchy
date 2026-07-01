@@ -4,12 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireProviderById: vi.fn(),
-  decryptProviderApiKey: vi.fn(),
 }));
 
 vi.mock("@/lib/ai/providers/provider-service", () => ({
   requireProviderById: mocks.requireProviderById,
-  decryptProviderApiKey: mocks.decryptProviderApiKey,
 }));
 
 import { GET } from "@/app/api/providers/[id]/api-key/route";
@@ -40,7 +38,7 @@ describe("GET /api/providers/[id]/api-key", () => {
     expect(mocks.requireProviderById).not.toHaveBeenCalled();
   });
 
-  it("returns API key for same-origin request with strict no-cache headers", async () => {
+  it("returns provider key metadata for same-origin request with strict no-cache headers", async () => {
     mocks.requireProviderById.mockResolvedValue({
       id: "provider-1",
       provider: "openai",
@@ -50,7 +48,6 @@ describe("GET /api/providers/[id]/api-key", () => {
       createdAt: new Date("2026-02-20T00:00:00.000Z"),
       updatedAt: new Date("2026-02-20T00:00:00.000Z"),
     });
-    mocks.decryptProviderApiKey.mockReturnValue("sk-live");
 
     const request = new NextRequest("http://localhost/api/providers/provider-1/api-key", {
       headers: {
@@ -64,7 +61,8 @@ describe("GET /api/providers/[id]/api-key", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.apiKey).toBe("sk-live");
+    expect(body.apiKey).toBeUndefined();
+    expect(body.hasApiKey).toBe(true);
     expect(response.headers.get("cache-control")).toContain("no-store");
     expect(response.headers.get("pragma")).toBe("no-cache");
     expect(response.headers.get("expires")).toBe("0");

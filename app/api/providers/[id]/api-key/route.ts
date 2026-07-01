@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { ProviderRouteParamsSchema } from "@/lib/ai/contracts";
 import {
-  decryptProviderApiKey,
   requireProviderById,
 } from "@/lib/ai/providers/provider-service";
 import { APIValidationError, handleAIAPIError } from "@/lib/api/ai-error-handler";
@@ -54,7 +53,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const parsedParams = ProviderRouteParamsSchema.parse(await params);
     const provider = await requireProviderById(parsedParams.id);
-    const apiKey = decryptProviderApiKey(provider) ?? null;
 
     return NextResponse.json(
       {
@@ -63,7 +61,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         isActive: provider.isActive,
         isDefault: provider.isDefault,
         hasApiKey: !!provider.apiKey,
-        apiKey,
         createdAt: provider.createdAt,
         updatedAt: provider.updatedAt,
       },

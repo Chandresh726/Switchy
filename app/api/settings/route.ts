@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { AISettingsUpdateSchema } from "@/lib/ai/contracts";
+import { assertAppRequest } from "@/lib/api";
 import { handleAIAPIError } from "@/lib/api/ai-error-handler";
 import {
   clearSchedulerEnabledCache,
@@ -58,6 +59,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    assertAppRequest(request);
+
     const body = await request.json();
 
     if (typeof body !== "object" || body === null) {

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 
 interface Education {
   id: number;
@@ -238,7 +239,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
       try {
         const res = await fetch("/api/profile/education", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
           body: JSON.stringify({
             ...edu,
             profileId,
@@ -266,7 +267,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
       try {
         const res = await fetch("/api/profile/education", {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
           body: JSON.stringify({
             id,
             ...edu,
@@ -295,7 +296,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
         for (const edu of educationToAdd) {
           const res = await fetch("/api/profile/education", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
             body: JSON.stringify({
               institution: edu.institution,
               degree: edu.degree,
@@ -333,6 +334,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
       try {
         const res = await fetch(`/api/profile/education?id=${id}`, {
           method: "DELETE",
+          headers: APP_REQUEST_HEADERS,
         });
         if (!res.ok) throw new Error("Failed to delete education");
         return res.json();

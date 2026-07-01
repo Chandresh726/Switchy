@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { handleApiError, ValidationError } from "@/lib/api";
+import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
 import type { ApolloColumnMapping } from "@/lib/people/import/parsers/apollo";
 import { importPeopleCsv } from "@/lib/people/sync";
 import { MAX_CSV_FILE_SIZE } from "@/lib/constants";
@@ -12,6 +12,8 @@ const ImportModeSchema = z.enum(["merge", "replace"]);
 
 export async function POST(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const formData = await request.formData();
     const source = SourceSchema.parse(formData.get("source") ?? "linkedin");
     const importModeRaw = formData.get("importMode");

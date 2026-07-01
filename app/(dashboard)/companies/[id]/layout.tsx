@@ -17,6 +17,7 @@ import {
     type CompanyOverviewResponse,
 } from "@/components/companies/company-detail";
 import { CompanyLayoutClient } from "@/components/companies/company-detail/company-layout-client";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 
 function CompanyLayoutContent({
     children,
@@ -51,7 +52,7 @@ function CompanyLayoutContent({
         mutationFn: async () => {
             const res = await fetch("/api/companies/refresh-jobs", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
                 body: JSON.stringify({ companyIds: [companyId] }),
             });
             if (!res.ok) throw new Error("Failed to refresh jobs");
@@ -71,7 +72,7 @@ function CompanyLayoutContent({
         mutationFn: async () => {
             const res = await fetch("/api/companies/match", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
                 body: JSON.stringify({ companyIds: [companyId] }),
             });
             if (!res.ok) throw new Error("Failed to run matching");

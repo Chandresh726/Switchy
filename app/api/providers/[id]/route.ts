@@ -8,6 +8,7 @@ import {
   toProviderPublic,
   updateProviderApiKey,
 } from "@/lib/ai/providers/provider-service";
+import { assertAppRequest } from "@/lib/api";
 import { handleAIAPIError } from "@/lib/api/ai-error-handler";
 
 interface RouteParams {
@@ -34,6 +35,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
+    assertAppRequest(request);
+
     const parsedParams = ProviderRouteParamsSchema.parse(await params);
     const parsedBody = PatchProviderBodySchema.parse(await request.json());
 
@@ -46,8 +49,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
+    assertAppRequest(request);
+
     const parsedParams = ProviderRouteParamsSchema.parse(await params);
     await deleteProvider(parsedParams.id);
     return NextResponse.json({ success: true });

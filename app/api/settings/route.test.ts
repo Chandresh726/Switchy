@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  assertAppRequest: vi.fn(),
   clearSchedulerEnabledCache: vi.fn(),
   getSchedulerEnabled: vi.fn(),
   restartScheduler: vi.fn(),
@@ -8,6 +9,10 @@ const mocks = vi.hoisted(() => ({
   getSettingsWithDefaults: vi.fn(),
   parseSettingsUpdateBody: vi.fn(),
   upsertSettings: vi.fn(),
+}));
+
+vi.mock("@/lib/api", () => ({
+  assertAppRequest: mocks.assertAppRequest,
 }));
 
 vi.mock("@/lib/jobs/scheduler", () => ({

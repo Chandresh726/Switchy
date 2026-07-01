@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 
+import { assertAppRequest } from "@/lib/api";
 import { db } from "@/lib/db";
 import { companies } from "@/lib/db/schema";
 import { refreshUnmatchedCompanyMappings } from "@/lib/people/sync";
@@ -120,10 +121,12 @@ async function getIdFromParams(params: Promise<{ id: string }>): Promise<number>
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    assertAppRequest(request);
+
     const id = await getIdFromParams(params);
 
     const [company] = await db
@@ -154,6 +157,8 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    assertAppRequest(request);
+
     const id = await getIdFromParams(params);
     const body = await request.json();
     const parsed = PutBodySchema.safeParse(body);
@@ -224,6 +229,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    assertAppRequest(request);
+
     const id = await getIdFromParams(params);
     const body = await request.json();
     const parsed = PatchBodySchema.safeParse(body);
@@ -313,10 +320,12 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    assertAppRequest(request);
+
     const id = await getIdFromParams(params);
     await db.delete(companies).where(eq(companies.id, id));
 

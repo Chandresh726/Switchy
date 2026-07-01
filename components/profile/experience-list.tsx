@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { useState, useEffect } from "react";
 import { Building2, Calendar, Loader2, MapPin, Pencil, Plus, Save, Trash2, X, Sparkles, Briefcase } from "lucide-react";
 import { toast } from "sonner";
@@ -219,7 +220,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
     mutationFn: async (exp: ExperienceFormData) => {
       const res = await fetch("/api/profile/experience", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({
           ...exp,
           profileId,
@@ -240,7 +241,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
     mutationFn: async ({ id, exp }: { id: number; exp: ExperienceFormData }) => {
       const res = await fetch("/api/profile/experience", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({
           id,
           ...exp,
@@ -262,7 +263,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
       for (const exp of experiencesToAdd) {
         const res = await fetch("/api/profile/experience", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
           body: JSON.stringify({
             company: exp.company,
             title: exp.title,
@@ -294,6 +295,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
     mutationFn: async (id: number) => {
       const res = await fetch(`/api/profile/experience?id=${id}`, {
         method: "DELETE",
+        headers: APP_REQUEST_HEADERS,
       });
       if (!res.ok) throw new Error("Failed to delete experience");
       return res.json();

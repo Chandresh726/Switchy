@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { AIError } from "@/lib/ai/shared/errors";
+import { AppError } from "./error-handler";
 
 export interface APIErrorPayload {
   error: string;
@@ -88,6 +89,17 @@ export function handleAIAPIError(
         error: error.message,
         code: error.code,
         ...(error.details !== undefined ? { details: error.details } : {}),
+      },
+      error.statusCode,
+      headers
+    );
+  }
+
+  if (error instanceof AppError) {
+    return apiErrorResponse(
+      {
+        error: error.message,
+        code: error.code,
       },
       error.statusCode,
       headers

@@ -16,7 +16,6 @@ const ResumeDataSchema = z.object({
     z.object({
       name: z.string(),
       category: z.string().optional(),
-      proficiency: z.number().min(1).max(5).optional(),
     })
   ),
   experience: z.array(
@@ -52,12 +51,6 @@ const RESUME_PARSING_SYSTEM_PROMPT = `You are an expert resume parser. Your job 
 Guidelines:
 - Extract all relevant information accurately
 - For skills, identify both technical skills (programming languages, frameworks, tools) and soft skills
-- Estimate proficiency levels (1-5) based on context:
-  - 5: Explicitly mentioned as expert, lead, or architect level
-  - 4: Senior experience, multiple years mentioned
-  - 3: Moderate experience, listed prominently
-  - 2: Listed but minimal context
-  - 1: Mentioned in passing or learning
 - Categorize skills appropriately (frontend, backend, devops, database, cloud, mobile, soft skills, etc.)
 - For dates, use YYYY-MM format when possible
 - Leave fields empty/null if information is not present

@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
+import { assertAppRequest } from "@/lib/api";
 import { db } from "@/lib/db";
 import { education } from "@/lib/db/schema";
 
@@ -53,6 +54,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = await request.json();
     const { profileId, institution, degree, field, startDate, endDate, gpa, honors } = body;
 
@@ -89,6 +92,8 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 
@@ -110,6 +115,8 @@ export async function DELETE(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = await request.json();
     const { id, institution, degree, field, startDate, endDate, gpa, honors } = body;
 

@@ -12,6 +12,7 @@ import { CompanyForm } from "@/components/companies/company-form";
 import { CompanyQuickAdd } from "@/components/companies/company-quick-add";
 import { CompanyList, type Company } from "@/components/companies/company-list";
 import { JsonEditor } from "@/components/companies/json-editor";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { CUSTOM_SCRAPER_PLATFORMS } from "@/lib/constants";
 
 const CUSTOM_PLATFORM_SET = new Set<string>(["custom", ...CUSTOM_SCRAPER_PLATFORMS]);
@@ -224,7 +225,7 @@ function CompaniesPageContent() {
     mutationFn: async (companies: unknown[]) => {
       const res = await fetch("/api/companies", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify(companies),
       });
       if (!res.ok) throw new Error("Failed to import companies");
@@ -243,7 +244,7 @@ function CompaniesPageContent() {
     mutationFn: async (companyIds: number[]) => {
       const res = await fetch("/api/companies/refresh-jobs", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({ companyIds }),
       });
       if (!res.ok) throw new Error("Failed to refresh jobs");
@@ -263,7 +264,7 @@ function CompaniesPageContent() {
     mutationFn: async (companyIds: number[]) => {
       const res = await fetch("/api/companies/match", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({ companyIds }),
       });
       if (!res.ok) throw new Error("Failed to match jobs");
@@ -284,7 +285,7 @@ function CompaniesPageContent() {
     mutationFn: async (companyIds: number[]) => {
       const res = await fetch("/api/companies/bulk/jobs", {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({ companyIds }),
       });
       if (!res.ok) throw new Error("Failed to delete jobs");
@@ -304,7 +305,7 @@ function CompaniesPageContent() {
     mutationFn: async (companyIds: number[]) => {
       const res = await fetch("/api/companies/bulk", {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({ companyIds }),
       });
       if (!res.ok) throw new Error("Failed to delete companies");
@@ -326,7 +327,7 @@ function CompaniesPageContent() {
     mutationFn: async ({ companyIds, isActive }: { companyIds: number[]; isActive: boolean }) => {
       const res = await fetch("/api/companies/bulk", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({ companyIds, isActive }),
       });
       if (!res.ok) throw new Error("Failed to update companies");

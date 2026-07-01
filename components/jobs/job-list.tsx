@@ -468,7 +468,7 @@ export function JobList() {
       />
 
       {/* Job List and Pagination - scrollable together */}
-      <div className="mt-4 space-y-3">
+      <div className="mt-4 space-y-2.5">
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />

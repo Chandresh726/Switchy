@@ -7,6 +7,7 @@ import { MapPin, CheckCircle, Star, Loader2, CalendarDays } from "lucide-react";
 import { NewJobBadge } from "@/components/jobs/new-job-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { isNewJob } from "@/lib/jobs/is-new-job";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/utils/format";
@@ -75,7 +76,7 @@ export function CompanyJobCard({ job, currentTime }: CompanyJobCardProps) {
     mutationFn: async (newStatus: string) => {
       const res = await fetch("/api/jobs", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({ id: job.id, status: newStatus }),
       });
       if (!res.ok) throw new Error("Failed to update status");

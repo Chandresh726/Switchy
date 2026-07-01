@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { LinkedinIcon } from "@/components/icons/linkedin-icon";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import type { ImportMode, ImportSummary, PeopleImportPreviewResponse } from "@/lib/people/types";
 import { cn } from "@/lib/utils";
 
@@ -301,6 +302,7 @@ export function ImportPeopleModal({
       formData.append("file", fileToPreview);
       const res = await fetch("/api/people/import/preview", {
         method: "POST",
+        headers: APP_REQUEST_HEADERS,
         body: formData,
       });
       if (!res.ok) {
@@ -341,6 +343,7 @@ export function ImportPeopleModal({
 
       const res = await fetch("/api/people/import", {
         method: "POST",
+        headers: APP_REQUEST_HEADERS,
         body: formData,
       });
       if (!res.ok) {
@@ -365,7 +368,7 @@ export function ImportPeopleModal({
     try {
       const res = await fetch("/api/people", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({
           fullName: manualForm.fullName,
           email: manualForm.email || undefined,

@@ -34,6 +34,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { isCompanyScrapeSupported } from "@/lib/companies/scrape-support";
 import { PLATFORM_COLORS } from "@/lib/constants";
 
@@ -139,6 +140,7 @@ export function CompanyList({
     mutationFn: async (id: number) => {
       const res = await fetch(`/api/companies/${id}`, {
         method: "DELETE",
+        headers: APP_REQUEST_HEADERS,
       });
       if (!res.ok) throw new Error("Failed to delete company");
       return res.json();
@@ -152,7 +154,7 @@ export function CompanyList({
     mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
       const res = await fetch(`/api/companies/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({ isActive }),
       });
       if (!res.ok) throw new Error("Failed to update company");
@@ -165,7 +167,10 @@ export function CompanyList({
 
   const deleteJobsMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/companies/${id}/jobs`, { method: "DELETE" });
+      const res = await fetch(`/api/companies/${id}/jobs`, {
+        method: "DELETE",
+        headers: APP_REQUEST_HEADERS,
+      });
       if (!res.ok) throw new Error("Failed to delete jobs");
       return res.json();
     },

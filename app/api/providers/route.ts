@@ -9,6 +9,7 @@ import {
   toProviderPublic,
 } from "@/lib/ai/providers/provider-service";
 import { isAIProvider } from "@/lib/ai/providers/types";
+import { assertAppRequest } from "@/lib/api";
 import { APIValidationError, handleAIAPIError } from "@/lib/api/ai-error-handler";
 import { upsertSettings } from "@/lib/settings/settings-service";
 
@@ -28,6 +29,8 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const body = await request.json();
     const parsedBody = CreateProviderBodySchema.parse(body);
 

@@ -10,6 +10,7 @@ import { MatchBadge } from "@/components/jobs/match-badge";
 import { ApplyButton } from "@/components/jobs/apply-button";
 import { JobAIActions } from "@/components/jobs/job-ai-actions";
 import { MarkdownRenderer } from "@/components/jobs/markdown-renderer";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { sanitizeHtmlContent } from "@/lib/jobs/description-processor";
 import {
   Building2,
@@ -85,7 +86,7 @@ export default function JobDetailPage() {
     mutationFn: async (newStatus: string) => {
       const res = await fetch("/api/jobs", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({ id: jobId, status: newStatus }),
       });
       if (!res.ok) throw new Error("Failed to update status");
@@ -102,7 +103,7 @@ export default function JobDetailPage() {
     mutationFn: async () => {
       const res = await fetch("/api/match", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({ jobId }),
       });
       if (!res.ok) throw new Error("Failed to calculate match");

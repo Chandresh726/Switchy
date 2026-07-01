@@ -4,6 +4,7 @@ import { getScrapingModule } from "@/lib/scraper";
 import { desc, eq, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
+import { assertAppRequest } from "@/lib/api";
 
 export async function GET(request: NextRequest) {
   try {
@@ -102,6 +103,8 @@ export async function GET(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get("sessionId");
 
@@ -123,6 +126,8 @@ export async function DELETE(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get("sessionId");
 

@@ -31,14 +31,12 @@ export const resumes = sqliteTable("resumes", {
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
-// Skills - User skills with proficiency levels
+// Skills - User skills
 export const skills = sqliteTable("skills", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   profileId: integer("profile_id").references(() => profile.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   category: text("category"), // e.g., "frontend", "backend", "devops", "soft skills"
-  proficiency: integer("proficiency").notNull().default(3), // 1-5 scale
-  yearsOfExperience: real("years_of_experience"),
 });
 
 // Experience - Work history

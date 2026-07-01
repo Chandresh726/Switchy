@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MatchBadge } from "./match-badge";
@@ -70,7 +71,7 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
     mutationFn: async (newStatus: string) => {
       const res = await fetch("/api/jobs", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({ id: job.id, status: newStatus }),
       });
       if (!res.ok) throw new Error("Failed to update status");
@@ -86,7 +87,7 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
     mutationFn: async () => {
       const res = await fetch("/api/match", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
         body: JSON.stringify({ jobId: job.id }),
       });
       if (!res.ok) throw new Error("Failed to calculate match");

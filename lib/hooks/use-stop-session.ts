@@ -3,6 +3,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+
 interface UseStopSessionOptions {
   sessionId: string;
   apiEndpoint: string;
@@ -52,6 +54,7 @@ export function useStopSession({
 
       const res = await fetch(`${apiEndpoint}?sessionId=${encodeURIComponent(sessionId)}`, {
         method: "PATCH",
+        headers: APP_REQUEST_HEADERS,
       });
 
       if (!res.ok) throw new Error("Failed to stop session");

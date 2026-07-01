@@ -13,8 +13,13 @@ Switchy is a local-first job scraping, matching, and tracking tool built with Ne
 pnpm build            # Production build
 pnpm start            # Start production server
 
-# Linting
-pnpm lint             # Run ESLint (no separate typecheck command - TypeScript is checked via ESLint)
+# Verification
+pnpm lint             # Run ESLint
+pnpm typecheck        # Run TypeScript without emitting files
+pnpm test:run         # Run Vitest once
+pnpm audit            # Check dependencies for known vulnerabilities
+pnpm verify           # Run lint, typecheck, tests, audit, and production build
+pnpm verify:all       # Run root verification plus landing app verification
 
 # Database (Drizzle ORM)
 pnpm db:generate      # Generate migrations from schema changes
@@ -25,7 +30,7 @@ pnpm db:studio        # Open Drizzle Studio to inspect data
 ## Agent Execution Rules
 
 - **NEVER run `pnpm dev`** - the dev server is a long-running process not suitable for agent execution
-- For verification, use `pnpm lint` and `pnpm build` only
+- For root verification, use `pnpm verify` when feasible; for whole-workspace verification, use `pnpm verify:all`
 - Do not start any long-running processes or servers
 - **NEVER commit or push changes** - unless explicitly instructed by the user
 - **NEVER write raw SQL or manually create migration files** - all database changes must use the Drizzle commands below
@@ -185,9 +190,12 @@ components/
 
 ## Data Storage
 
-- SQLite database stored in `~/.switchy/switchy.db`
-- User uploads (resumes) stored in `~/.switchy/uploads/`
-- API keys stored in local SQLite, never committed to git
+- Development state stored in `~/.switchy/dev/`
+- Production state stored in `~/.switchy/`
+- SQLite database: `switchy.db`
+- User uploads: `uploads/`
+- API-key encryption secret: `encryption.secret`
+- API keys are encrypted in local SQLite and never committed to git
 
 ## Common Patterns
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { assertAppRequest } from "@/lib/api";
 import { db } from "@/lib/db";
 import { resumes } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -6,6 +7,8 @@ import { deleteFile } from "@/lib/storage/files";
 
 export async function DELETE(request: NextRequest) {
   try {
+    assertAppRequest(request);
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 
