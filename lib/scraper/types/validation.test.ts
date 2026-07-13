@@ -34,4 +34,13 @@ describe("scraper payload validation", () => {
       error: { code, retryable, statusCode: status },
     });
   });
+
+  it("distinguishes user cancellation from request timeout", () => {
+    expect(
+      createFailureFromUnknown(new DOMException("Scrape cancelled", "AbortError"))
+    ).toMatchObject({ error: { code: "cancelled", retryable: false } });
+    expect(
+      createFailureFromUnknown(new DOMException("Request timed out", "AbortError"))
+    ).toMatchObject({ error: { code: "timeout", retryable: true } });
+  });
 });

@@ -94,4 +94,75 @@ describe("GenericBrowserClient", () => {
     expect(browserMocks.context.close).toHaveBeenCalledTimes(1);
     expect(browserMocks.browser.close).toHaveBeenCalledTimes(1);
   });
+
+  it("tracks concurrent browser sessions independently", async () => {
+    const client = new GenericBrowserClient();
+    let finishFirst: (() => void) | undefined;
+    const first = client.withBrowser(
+      () => new Promise<string>((resolve) => {
+        finishFirst = () => resolve("first");
+      })
+    );
+    await vi.waitFor(() => expect(browserMocks.launch).toHaveBeenCalledTimes(1));
+
+    const second = client.withBrowser(async () => "second");
+    await expect(second).resolves.toBe("second");
+    expect(browserMocks.context.close).toHaveBeenCalledTimes(1);
+
+    finishFirst?.();
+    await expect(first).resolves.toBe("first");
+    expect(browserMocks.context.close).toHaveBeenCalledTimes(2);
+    expect(browserMocks.browser.close).toHaveBeenCalledTimes(2);
+  });
+
+  it("closes a scoped browser session when cancellation is requested", async () => {
+    const client = new GenericBrowserClient();
+    const controller = new AbortController();
+    const operation = client.runWithSignal(controller.signal, () =>
+      client.withBrowser(() => new Promise<never>(() => undefined))
+    );
+    await vi.waitFor(() => expect(browserMocks.launch).toHaveBeenCalledTimes(1));
+
+    controller.abort(new DOMException("Scrape cancelled", "AbortError"));
+
+    await expect(operation).rejects.toMatchObject({ name: "AbortError" });
+    expect(browserMocks.context.close).toHaveBeenCalledTimes(1);
+    expect(browserMocks.browser.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not launch Chromium for an already-cancelled scrape", async () => {
+    const client = new GenericBrowserClient();
+    const controller = new AbortController();
+    controller.abort(new DOMException("Scrape cancelled", "AbortError"));
+
+    await expect(
+      client.runWithSignal(controller.signal, () =>
+        client.withBrowser(async () => "unused")
+      )
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(browserMocks.launch).not.toHaveBeenCalled();
+  });
+
+  it("closes a browser that finishes launching after cancellation", async () => {
+    const client = new GenericBrowserClient();
+    const controller = new AbortController();
+    let finishLaunch: ((browser: typeof browserMocks.browser) => void) | undefined;
+    browserMocks.launch.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        finishLaunch = resolve;
+      })
+    );
+    const operation = client.runWithSignal(controller.signal, () =>
+      client.withBrowser(async () => "unused")
+    );
+    const rejection = expect(operation).rejects.toMatchObject({ name: "AbortError" });
+    await vi.waitFor(() => expect(browserMocks.launch).toHaveBeenCalledTimes(1));
+
+    controller.abort(new DOMException("Scrape cancelled", "AbortError"));
+    await rejection;
+    finishLaunch?.(browserMocks.browser);
+
+    await vi.waitFor(() => expect(browserMocks.browser.close).toHaveBeenCalledTimes(1));
+    expect(browserMocks.browser.newContext).not.toHaveBeenCalled();
+  });
 });

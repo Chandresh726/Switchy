@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { IBrowserClient } from "@/lib/scraper/infrastructure/browser-client";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
+import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 import { processDescription } from "@/lib/jobs/description-processor";
 import {
   parseExternalPayload,
@@ -125,7 +126,8 @@ export class ServiceNowScraper extends AbstractBrowserScraper<ServiceNowConfig> 
             await page.waitForTimeout(this.config.requestDelayMs);
             const detail = this.parseDetailHtml(item, await page.content());
             jobs.push(detail);
-          } catch {
+          } catch (error) {
+            throwIfScrapeAborted(error);
             hadPartialFailures = true;
             jobs.push({
               externalId: this.generateExternalId(this.platform, item.id),

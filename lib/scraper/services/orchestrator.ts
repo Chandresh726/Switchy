@@ -40,20 +40,30 @@ const SCRAPER_MAX_PARALLEL_SCRAPES_KEY = "scraper_max_parallel_scrapes";
 const DEFAULT_MAX_PARALLEL_SCRAPES = 3;
 const MIN_PARALLEL_SCRAPES = 1;
 const MAX_PARALLEL_SCRAPES = 10;
-const SERIAL_PLATFORMS: Platform[] = ["workday", "eightfold"];
-
 type ScrapeTier = "api" | "browser" | "serial";
 
 export interface IScrapeOrchestrator {
-  scrapeAllCompanies(trigger: TriggerSource): Promise<BatchFetchResult>;
-  scrapeCompanies(companyIds: number[], trigger: TriggerSource): Promise<BatchFetchResult>;
+  scrapeAllCompanies(
+    trigger: TriggerSource,
+    options?: ScrapeBatchOptions
+  ): Promise<BatchFetchResult>;
+  scrapeCompanies(
+    companyIds: number[],
+    trigger: TriggerSource,
+    options?: ScrapeBatchOptions
+  ): Promise<BatchFetchResult>;
   scrapeCompany(companyId: number, options?: ScrapeCompanyOptions): Promise<FetchResult>;
+}
+
+export interface ScrapeBatchOptions {
+  signal?: AbortSignal;
 }
 
 export interface ScrapeCompanyOptions {
   sessionId?: string;
   triggerSource?: TriggerSource;
   filters?: JobFilters;
+  signal?: AbortSignal;
 }
 
 interface ScrapeExecutionResult {
@@ -89,17 +99,24 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     private readonly config: OrchestratorConfig
   ) {}
 
-  async scrapeAllCompanies(trigger: TriggerSource): Promise<BatchFetchResult> {
+  async scrapeAllCompanies(
+    trigger: TriggerSource,
+    options?: ScrapeBatchOptions
+  ): Promise<BatchFetchResult> {
     const activeCompanies = await this.repository.getActiveCompanies();
-    return this.scrapeBatch(activeCompanies, trigger);
+    return this.scrapeBatch(activeCompanies, trigger, options?.signal);
   }
 
-  async scrapeCompanies(companyIds: number[], trigger: TriggerSource): Promise<BatchFetchResult> {
+  async scrapeCompanies(
+    companyIds: number[],
+    trigger: TriggerSource,
+    options?: ScrapeBatchOptions
+  ): Promise<BatchFetchResult> {
     const companyIdsSet = new Set(companyIds);
     const activeCompanies = await this.repository.getActiveCompanies();
     const selectedCompanies = activeCompanies.filter((company) => companyIdsSet.has(company.id));
 
-    return this.scrapeBatch(selectedCompanies, trigger);
+    return this.scrapeBatch(selectedCompanies, trigger, options?.signal);
   }
 
   async scrapeCompany(companyId: number, options?: ScrapeCompanyOptions): Promise<FetchResult> {
@@ -130,7 +147,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
           company.careersUrl,
           this.resolvePlatform(company.platform),
           company.boardToken,
-          { sessionId, triggerSource, filters: options?.filters }
+          { sessionId, triggerSource, filters: options?.filters, signal: options?.signal }
         );
 
     if (isStandaloneRefresh) {
@@ -153,7 +170,11 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     return result;
   }
 
-  private async scrapeBatch(companiesToScrape: Company[], trigger: TriggerSource): Promise<BatchFetchResult> {
+  private async scrapeBatch(
+    companiesToScrape: Company[],
+    trigger: TriggerSource,
+    externalSignal?: AbortSignal
+  ): Promise<BatchFetchResult> {
     const sessionId = crypto.randomUUID();
     const sessionStartTime = Date.now();
 
@@ -187,6 +208,37 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     const resultsByIndex: Array<FetchResult | undefined> = new Array(companiesToScrape.length);
     let stopRequested = false;
     let progressUpdateChain = Promise.resolve();
+    const batchController = new AbortController();
+    const requestStop = (message: string) => {
+      stopRequested = true;
+      if (!batchController.signal.aborted) {
+        batchController.abort(new DOMException(message, "AbortError"));
+      }
+    };
+    const onExternalAbort = () => requestStop("Batch scrape cancelled");
+    if (externalSignal?.aborted) onExternalAbort();
+    else externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
+
+    let sessionMonitorStopped = false;
+    let sessionMonitorPromise: Promise<void> | null = null;
+    const checkSession = async () => {
+      try {
+        const isActive = await this.repository.isSessionInProgress(sessionId);
+        if (!sessionMonitorStopped && !isActive) {
+          requestStop("Scrape session stopped");
+        }
+      } catch (error) {
+        console.error(`[ScrapeOrchestrator] Failed to monitor session ${sessionId}:`, error);
+      }
+    };
+    const sessionMonitor = setInterval(() => {
+      if (sessionMonitorStopped || sessionMonitorPromise || stopRequested) return;
+      const currentCheck = checkSession();
+      sessionMonitorPromise = currentCheck;
+      void currentCheck.finally(() => {
+        if (sessionMonitorPromise === currentCheck) sessionMonitorPromise = null;
+      });
+    }, 250);
 
     const runQueue = async (
       queue: Array<{ company: Company; index: number }>,
@@ -199,7 +251,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
 
       const processNextCompany = async (): Promise<void> => {
         while (true) {
-          if (stopRequested) {
+          if (stopRequested || batchController.signal.aborted) {
             return;
           }
 
@@ -211,8 +263,11 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
           nextQueueIndex += 1;
 
           const isSessionActive = await this.repository.isSessionInProgress(sessionId);
+          if (stopRequested || batchController.signal.aborted) {
+            return;
+          }
           if (!isSessionActive) {
-            stopRequested = true;
+            requestStop("Scrape session stopped");
             console.log(`[ScrapeOrchestrator] Session ${sessionId} stop requested`);
             return;
           }
@@ -226,7 +281,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
                 company.careersUrl,
                 this.resolvePlatform(company.platform),
                 company.boardToken,
-                { sessionId, triggerSource: trigger }
+                { sessionId, triggerSource: trigger, signal: batchController.signal }
               );
 
           resultsByIndex[resultIndex] = result;
@@ -249,11 +304,17 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       );
     };
 
-    await runQueue(apiQueue, maxParallelScrapes);
-    await runQueue(browserQueue, maxParallelScrapes);
-    await runQueue(serialQueue, 1);
-
-    await progressUpdateChain;
+    try {
+      await runQueue(apiQueue, maxParallelScrapes);
+      await runQueue(browserQueue, maxParallelScrapes);
+      await runQueue(serialQueue, 1);
+      await progressUpdateChain;
+    } finally {
+      sessionMonitorStopped = true;
+      clearInterval(sessionMonitor);
+      await sessionMonitorPromise;
+      externalSignal?.removeEventListener("abort", onExternalAbort);
+    }
 
     const results = resultsByIndex.filter(
       (entry): entry is FetchResult => entry !== undefined
@@ -264,7 +325,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     if (shouldCompleteSession) {
       await this.repository.completeSession(
         sessionId,
-        this.resolveBatchSessionStatus(results)
+        batchController.signal.aborted ? "failed" : this.resolveBatchSessionStatus(results)
       );
     }
 
@@ -304,16 +365,16 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       return "serial";
     }
 
-    if (SERIAL_PLATFORMS.includes(platform)) {
-      return "serial";
-    }
-
     const scraper = this.registry.getScraperByPlatform(platform);
     if (!scraper) {
       return "serial";
     }
 
-    return scraper.requiresBrowser ? "browser" : "api";
+    if (scraper.capabilities.concurrency === "serial") {
+      return "serial";
+    }
+
+    return scraper.capabilities.transport === "browser" ? "browser" : "api";
   }
 
   private resolvePlatformForTier(company: Company): Platform | null {
@@ -368,7 +429,12 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     careersUrl: string,
     platform: Platform | null,
     boardToken: string | null,
-    options: { sessionId: string; triggerSource: TriggerSource; filters?: JobFilters }
+    options: {
+      sessionId: string;
+      triggerSource: TriggerSource;
+      filters?: JobFilters;
+      signal?: AbortSignal;
+    }
   ): Promise<FetchResult> {
     const startTime = Date.now();
     const logger = new ScraperLogger(companyName, platform || "auto-detect");
@@ -385,7 +451,12 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       );
 
       const filters = await this.loadFilters(options.filters);
-      const scraperOptions = this.createScraperOptions(boardToken, filters, existingExternalIds);
+      const scraperOptions = this.createScraperOptions(
+        boardToken,
+        filters,
+        existingExternalIds,
+        options.signal
+      );
 
       const scraperResult = await this.registry.scrape(
         careersUrl,
@@ -452,12 +523,14 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
   private createScraperOptions(
     boardToken: string | null,
     filters: JobFilters,
-    existingExternalIds: Set<string>
+    existingExternalIds: Set<string>,
+    signal?: AbortSignal
   ): ScrapeOptions {
     return {
       boardToken: boardToken ?? undefined,
       filters,
       existingExternalIds,
+      signal,
     };
   }
 

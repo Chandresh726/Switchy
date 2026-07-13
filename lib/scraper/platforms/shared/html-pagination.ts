@@ -1,6 +1,7 @@
 import { load } from "cheerio";
 
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
+import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 
 export interface HtmlPageResult {
   page: number;
@@ -129,7 +130,8 @@ export async function fetchPaginatedHtmlByPageParam(
         url: pageUrl,
         html,
       });
-    } catch {
+    } catch (error) {
+      throwIfScrapeAborted(error);
       failedPages.push(page);
     }
   }

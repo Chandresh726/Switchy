@@ -5,6 +5,7 @@ import {
   type IHttpClient,
 } from "@/lib/scraper/infrastructure/http-client";
 import type { IBrowserClient, BrowserSession } from "@/lib/scraper/infrastructure/browser-client";
+import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 import {
   parseExternalPayload,
   ScraperPayloadError,
@@ -135,6 +136,11 @@ export const DEFAULT_EIGHTFOLD_CONFIG: EightfoldConfig = {
 
 export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
   readonly platform = "eightfold" as const;
+  override readonly capabilities = {
+    transport: "browser",
+    concurrency: "serial",
+    supportsCancellation: true,
+  } as const;
 
   constructor(
     httpClient: IHttpClient,
@@ -419,7 +425,8 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       }
 
       return null;
-    } catch {
+    } catch (error) {
+      throwIfScrapeAborted(error);
       return null;
     }
   }
@@ -454,6 +461,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       );
     } catch (error) {
       if (error instanceof HttpError || error instanceof ScraperPayloadError) throw error;
+      throwIfScrapeAborted(error);
       return null;
     }
   }
@@ -488,7 +496,8 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         await this.delay(index * 50);
         try {
           return await this.fetchJobList(baseUrl, domain, cookies, offset);
-        } catch {
+        } catch (error) {
+          throwIfScrapeAborted(error);
           return null;
         }
       };
@@ -561,7 +570,8 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         },
         status: response.status,
       };
-    } catch {
+    } catch (error) {
+      throwIfScrapeAborted(error);
       return { position: null, status: null };
     }
   }

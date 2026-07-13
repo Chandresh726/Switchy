@@ -14,12 +14,19 @@ export type {
   ScrapedJob,
 };
 
+export interface ScraperCapabilities {
+  transport: "http" | "browser";
+  concurrency: "parallel" | "serial";
+  supportsCancellation: boolean;
+}
+
 export interface IScraper<
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   TScraperConfig extends ScraperConfig = ScraperConfig
 > {
   readonly platform: Platform;
   readonly requiresBrowser: boolean;
+  readonly capabilities: ScraperCapabilities;
   
   validate(url: string): boolean;
   scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult>;

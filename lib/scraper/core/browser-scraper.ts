@@ -1,4 +1,10 @@
-import type { IScraper, ScraperConfig, ScrapeOptions, ScraperResult } from "./types";
+import type {
+  IScraper,
+  ScraperCapabilities,
+  ScraperConfig,
+  ScrapeOptions,
+  ScraperResult,
+} from "./types";
 import type { Platform } from "../types";
 import { createScraperFailure } from "../types";
 import {
@@ -7,6 +13,7 @@ import {
 } from "../types/validation";
 import type { IHttpClient, HttpRequestOptions } from "@/lib/scraper/infrastructure/http-client";
 import type { IBrowserClient, BrowserSession } from "@/lib/scraper/infrastructure/browser-client";
+import { abortableDelay } from "@/lib/scraper/infrastructure/cancellation";
 import { normalizeLocation, generateExternalId } from "../utils";
 
 export abstract class AbstractBrowserScraper<
@@ -14,6 +21,11 @@ export abstract class AbstractBrowserScraper<
 > implements IScraper<TConfig> {
   abstract readonly platform: Platform;
   readonly requiresBrowser = true;
+  readonly capabilities: ScraperCapabilities = {
+    transport: "browser",
+    concurrency: "parallel",
+    supportsCancellation: true,
+  };
 
   constructor(
     protected readonly httpClient: IHttpClient,
@@ -60,7 +72,7 @@ export abstract class AbstractBrowserScraper<
   protected generateExternalId = generateExternalId;
 
   protected async delay(ms: number): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, ms));
+    await abortableDelay(ms);
   }
 
   protected failure(

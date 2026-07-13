@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Company } from "@/lib/db/schema";
 import type { ExistingJob } from "@/lib/scraper/infrastructure/types";
 import type { IScraper } from "@/lib/scraper/core/types";
-import type { Platform, ScraperResult } from "@/lib/scraper/types";
+import type { Platform, ScrapeOptions, ScraperResult } from "@/lib/scraper/types";
 import { TitleBasedDeduplicationService } from "@/lib/scraper/services/deduplication-service";
 import { DefaultFilterService } from "@/lib/scraper/services/filter-service";
 import { ScrapeOrchestrator } from "@/lib/scraper/services/orchestrator";
@@ -118,7 +118,11 @@ const DEFAULT_SCRAPER_MAP: Partial<Record<Platform, { requiresBrowser: boolean }
 function createRegistryMock(
   result:
     | ScraperResult
-    | ((url: string, platform?: Platform | null) => Promise<ScraperResult>),
+    | ((
+        url: string,
+        platform?: Platform | null,
+        options?: ScrapeOptions
+      ) => Promise<ScraperResult>),
   options: RegistryMockOptions = {}
 ) {
   const scrape = typeof result === "function"
@@ -132,6 +136,12 @@ function createRegistryMock(
     return {
       platform,
       requiresBrowser: config.requiresBrowser,
+      capabilities: {
+        transport: config.requiresBrowser ? "browser" : "http",
+        concurrency:
+          platform === "workday" || platform === "eightfold" ? "serial" : "parallel",
+        supportsCancellation: true,
+      },
       validate: vi.fn(),
       scrape: vi.fn(),
       extractIdentifier: vi.fn(),
@@ -193,6 +203,156 @@ describe("ScrapeOrchestrator", () => {
       expect.objectContaining({ status: "partial" })
     );
     expect(repository.archiveMissingJobs).not.toHaveBeenCalled();
+  });
+
+  it("passes a standalone cancellation signal into the scraper registry", async () => {
+    const repository = createRepositoryMock();
+    const registry = createRegistryMock({
+      outcome: "success",
+      jobs: [],
+      totalListings: 0,
+      openExternalIds: [],
+      listingCompleteness: "complete",
+    });
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} }
+    );
+    const controller = new AbortController();
+
+    await orchestrator.scrapeCompany(company.id, { signal: controller.signal });
+
+    expect(registry.scrape).toHaveBeenCalledWith(
+      company.careersUrl,
+      company.platform,
+      expect.objectContaining({ signal: controller.signal })
+    );
+  });
+
+  it("aborts an in-flight batch scrape and does not start the next company", async () => {
+    const repository = createRepositoryMock({
+      activeCompanies: createActiveCompanies(2),
+      insertedJobIds: [],
+      settingValues: { scraper_max_parallel_scrapes: "1" },
+    });
+    const registry = createRegistryMock(async (_url, _platform, options) => {
+      const signal = options?.signal;
+      return new Promise<ScraperResult>((resolve) => {
+        const finish = () => resolve({
+          outcome: "error",
+          jobs: [],
+          listingCompleteness: "unknown",
+          error: {
+            code: "cancelled",
+            message: "Batch scrape cancelled",
+            retryable: false,
+          },
+        });
+        if (signal?.aborted) finish();
+        else signal?.addEventListener("abort", finish, { once: true });
+      });
+    });
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} }
+    );
+    const controller = new AbortController();
+    const batch = orchestrator.scrapeAllCompanies("manual", {
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(registry.scrape).toHaveBeenCalledTimes(1));
+
+    controller.abort(new DOMException("Batch scrape cancelled", "AbortError"));
+    await batch;
+
+    expect(registry.scrape).toHaveBeenCalledTimes(1);
+    expect(repository.completeSession).toHaveBeenCalledWith(expect.any(String), "failed");
+  });
+
+  it("rechecks cancellation after the persisted session lookup", async () => {
+    const repository = createRepositoryMock({
+      activeCompanies: [company],
+      insertedJobIds: [],
+    });
+    let finishSessionLookup: ((active: boolean) => void) | undefined;
+    repository.isSessionInProgress.mockImplementationOnce(
+      () => new Promise<boolean>((resolve) => {
+        finishSessionLookup = resolve;
+      })
+    );
+    const registry = createRegistryMock({
+      outcome: "success",
+      jobs: [],
+      totalListings: 0,
+      openExternalIds: [],
+      listingCompleteness: "complete",
+    });
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} }
+    );
+    const controller = new AbortController();
+    const batch = orchestrator.scrapeAllCompanies("manual", {
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(repository.isSessionInProgress).toHaveBeenCalled());
+
+    controller.abort(new DOMException("Batch scrape cancelled", "AbortError"));
+    finishSessionLookup?.(true);
+    await batch;
+
+    expect(registry.scrape).not.toHaveBeenCalled();
+  });
+
+  it("aborts an active company when the persisted batch session is stopped", async () => {
+    const repository = createRepositoryMock({
+      activeCompanies: createActiveCompanies(2),
+      insertedJobIds: [],
+      settingValues: { scraper_max_parallel_scrapes: "1" },
+    });
+    repository.isSessionInProgress
+      .mockResolvedValueOnce(true)
+      .mockResolvedValue(false);
+    let activeSignal: AbortSignal | undefined;
+    const registry = createRegistryMock(async (_url, _platform, options) => {
+      activeSignal = options?.signal;
+      return new Promise<ScraperResult>((resolve) => {
+        const finish = () => resolve({
+          outcome: "error",
+          jobs: [],
+          listingCompleteness: "unknown",
+          error: {
+            code: "cancelled",
+            message: "Scrape session stopped",
+            retryable: false,
+          },
+        });
+        if (activeSignal?.aborted) finish();
+        else activeSignal?.addEventListener("abort", finish, { once: true });
+      });
+    });
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} }
+    );
+
+    await orchestrator.scrapeAllCompanies("manual");
+
+    expect(activeSignal?.aborted).toBe(true);
+    expect(registry.scrape).toHaveBeenCalledTimes(1);
+    expect(repository.completeSession).not.toHaveBeenCalled();
   });
 
   it("includes early-filtered listings in persisted and returned jobsFound totals", async () => {

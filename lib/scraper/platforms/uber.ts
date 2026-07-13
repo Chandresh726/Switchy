@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
+import { abortableDelay } from "@/lib/scraper/infrastructure/cancellation";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig } from "../core/types";
 import {
@@ -191,7 +192,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
         } else {
           page++;
           // Rate limiting: 500ms delay between calls
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          await abortableDelay(500);
         }
       }
 

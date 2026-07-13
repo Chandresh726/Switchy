@@ -5,6 +5,7 @@ import {
   type IHttpClient,
 } from "@/lib/scraper/infrastructure/http-client";
 import type { IBrowserClient, BrowserSession } from "@/lib/scraper/infrastructure/browser-client";
+import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 import {
   parseExternalPayload,
   ScraperPayloadError,
@@ -102,6 +103,11 @@ export const DEFAULT_WORKDAY_CONFIG: WorkdayConfig = {
 
 export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
   readonly platform = "workday" as const;
+  override readonly capabilities = {
+    transport: "browser",
+    concurrency: "serial",
+    supportsCancellation: true,
+  } as const;
 
   constructor(
     httpClient: IHttpClient,
@@ -353,6 +359,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       );
     } catch (error) {
       if (error instanceof HttpError || error instanceof ScraperPayloadError) throw error;
+      throwIfScrapeAborted(error);
       return null;
     }
   }
@@ -383,7 +390,8 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         await this.delay(staggerDelay);
         try {
           return await this.fetchJobListPage(session, offset, this.config.listPageSize);
-        } catch {
+        } catch (error) {
+          throwIfScrapeAborted(error);
           return null;
         }
       };
@@ -434,7 +442,8 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         payload,
         "Workday job detail"
       );
-    } catch {
+    } catch (error) {
+      throwIfScrapeAborted(error);
       return null;
     }
   }
@@ -476,7 +485,8 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           employmentType: parseEmploymentType(detail.jobPostingInfo.timeType),
           postedDate: this.parsePostedDate(job.postedOn),
         };
-      } catch {
+      } catch (error) {
+        throwIfScrapeAborted(error);
         failedDetails++;
         return null;
       }

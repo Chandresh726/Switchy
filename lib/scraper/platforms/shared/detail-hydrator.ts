@@ -1,3 +1,8 @@
+import {
+  abortableDelay,
+  throwIfScrapeAborted,
+} from "@/lib/scraper/infrastructure/cancellation";
+
 export interface DetailHydratorOptions<TItem, TResult> {
   items: TItem[];
   initialBatchSize: number;
@@ -41,7 +46,8 @@ export async function hydrateDetailsInBatches<TItem, TResult>(
       batch.map(async (item) => {
         try {
           return await fetcher(item);
-        } catch {
+        } catch (error) {
+          throwIfScrapeAborted(error);
           return null;
         }
       })
@@ -67,13 +73,9 @@ export async function hydrateDetailsInBatches<TItem, TResult>(
 
     index += batch.length;
     if (index < items.length) {
-      await delay(currentDelayMs);
+      await abortableDelay(currentDelayMs);
     }
   }
 
   return { results, failures };
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

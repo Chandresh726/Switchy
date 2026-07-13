@@ -1,4 +1,10 @@
-import type { IScraper, ScraperConfig, ScrapeOptions, ScraperResult } from "./types";
+import type {
+  IScraper,
+  ScraperCapabilities,
+  ScraperConfig,
+  ScrapeOptions,
+  ScraperResult,
+} from "./types";
 import type { Platform } from "../types";
 import { createScraperFailure } from "../types";
 import {
@@ -13,6 +19,11 @@ export abstract class AbstractApiScraper<
 > implements IScraper<TConfig> {
   abstract readonly platform: Platform;
   readonly requiresBrowser = false;
+  readonly capabilities: ScraperCapabilities = {
+    transport: "http",
+    concurrency: "parallel",
+    supportsCancellation: true,
+  };
 
   constructor(
     protected readonly httpClient: IHttpClient,

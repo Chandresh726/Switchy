@@ -45,7 +45,11 @@ export function createFailureFromUnknown(error: unknown): ScraperErrorResult {
   }
 
   if (error instanceof DOMException && error.name === "AbortError") {
-    return createScraperFailure("timeout", error.message || "Request timed out");
+    const isTimeout = /timed?\s*out/i.test(error.message);
+    return createScraperFailure(
+      isTimeout ? "timeout" : "cancelled",
+      error.message || (isTimeout ? "Request timed out" : "Scrape cancelled")
+    );
   }
 
   if (error instanceof HttpError) {

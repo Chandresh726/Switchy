@@ -4,6 +4,7 @@ import {
   HttpError,
   type IHttpClient,
 } from "@/lib/scraper/infrastructure/http-client";
+import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 import { containsHtml, decodeHtmlEntities, processDescription } from "@/lib/jobs/description-processor";
 import { parseExternalPayload } from "@/lib/scraper/types";
 
@@ -232,7 +233,8 @@ export class ZwayamScraper extends AbstractApiScraper<ZwayamConfig> {
             entry.job.description = detail.text ?? undefined;
             entry.job.descriptionFormat = detail.format;
           }
-        } catch {
+        } catch (error) {
+          throwIfScrapeAborted(error);
           hadDetailFailures = true;
         }
       }

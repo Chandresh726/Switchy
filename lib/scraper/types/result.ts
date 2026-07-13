@@ -14,6 +14,7 @@ export type ScraperErrorCode =
   | "browser_error"
   | "csrf_error"
   | "timeout"
+  | "cancelled"
   | "unknown";
 
 export interface ScraperError {
