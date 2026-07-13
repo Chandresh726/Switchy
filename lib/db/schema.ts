@@ -205,6 +205,38 @@ export const scrapingLogs = sqliteTable("scraping_logs", {
   companyIdIdx: index("scraping_logs_company_id_idx").on(table.companyId),
 }));
 
+// Scrape Match Outbox - Durable handoff from committed jobs to background AI matching
+export const scrapeMatchOutbox = sqliteTable("scrape_match_outbox", {
+  id: text("id")
+    .primaryKey()
+    .references(() => matchSessions.id, { onDelete: "cascade" }),
+  scrapingLogId: integer("scraping_log_id")
+    .references(() => scrapingLogs.id, { onDelete: "restrict" })
+    .notNull(),
+  companyId: integer("company_id")
+    .references(() => companies.id, { onDelete: "restrict" })
+    .notNull(),
+  jobIdsJson: text("job_ids_json").notNull(),
+  status: text("status").notNull().default("pending"), // "pending" | "running" | "completed" | "failed"
+  attemptCount: integer("attempt_count").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  availableAt: integer("available_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  workerId: text("worker_id"),
+  leaseExpiresAt: integer("lease_expires_at", { mode: "timestamp" }),
+  lastError: text("last_error"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+}, (table) => ({
+  scrapingLogUnique: unique("scrape_match_outbox_log_unique").on(table.scrapingLogId),
+  pendingIdx: index("scrape_match_outbox_pending_idx").on(
+    table.status,
+    table.availableAt,
+    table.createdAt
+  ),
+  leaseIdx: index("scrape_match_outbox_lease_idx").on(table.status, table.leaseExpiresAt),
+}));
+
 // Match Sessions - Track batch match operations
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
@@ -391,6 +423,7 @@ export const companiesRelations = relations(companies, ({ many }) => ({
   people: many(people),
   companyAliases: many(companyAliases),
   scrapeQueueItems: many(scrapeQueueItems),
+  scrapeMatchOutbox: many(scrapeMatchOutbox),
 }));
 
 export const companyAliasesRelations = relations(companyAliases, ({ one }) => ({
@@ -416,6 +449,22 @@ export const scrapingLogsRelations = relations(scrapingLogs, ({ one }) => ({
     fields: [scrapingLogs.sessionId],
     references: [scrapeSessions.id],
   }),
+  matchOutbox: one(scrapeMatchOutbox),
+}));
+
+export const scrapeMatchOutboxRelations = relations(scrapeMatchOutbox, ({ one }) => ({
+  scrapingLog: one(scrapingLogs, {
+    fields: [scrapeMatchOutbox.scrapingLogId],
+    references: [scrapingLogs.id],
+  }),
+  company: one(companies, {
+    fields: [scrapeMatchOutbox.companyId],
+    references: [companies.id],
+  }),
+  matchSession: one(matchSessions, {
+    fields: [scrapeMatchOutbox.id],
+    references: [matchSessions.id],
+  }),
 }));
 
 export const scrapeSessionsRelations = relations(scrapeSessions, ({ many }) => ({
@@ -440,6 +489,7 @@ export const matchSessionsRelations = relations(matchSessions, ({ one, many }) =
     references: [companies.id],
   }),
   logs: many(matchLogs),
+  scrapeMatchOutbox: one(scrapeMatchOutbox),
 }));
 
 export const matchLogsRelations = relations(matchLogs, ({ one }) => ({
@@ -494,6 +544,8 @@ export type Job = typeof jobs.$inferSelect;
 export type NewJob = typeof jobs.$inferInsert;
 export type ScrapingLog = typeof scrapingLogs.$inferSelect;
 export type NewScrapingLog = typeof scrapingLogs.$inferInsert;
+export type ScrapeMatchOutboxItem = typeof scrapeMatchOutbox.$inferSelect;
+export type NewScrapeMatchOutboxItem = typeof scrapeMatchOutbox.$inferInsert;
 export type ScrapeSession = typeof scrapeSessions.$inferSelect;
 export type NewScrapeSession = typeof scrapeSessions.$inferInsert;
 export type ScrapeQueueItem = typeof scrapeQueueItems.$inferSelect;

@@ -9,7 +9,12 @@ import type {
   StrategyResultMap,
 } from "../types";
 import { singleStrategy, bulkStrategy, parallelStrategy, selectStrategy, type StrategyProgressCallback } from "../strategies";
-import { fetchJobsData, updateJobWithMatchResult, logMatchSuccess, logMatchFailure } from "../tracking";
+import {
+  fetchJobsData,
+  logMatchFailure,
+  persistMatchSuccess,
+  updateJobWithMatchResult,
+} from "../tracking";
 import {
   applyExperienceScoreGuardrails,
   calculateTotalExperienceYears,
@@ -295,16 +300,16 @@ async function persistJobResult(
     return;
   }
 
-  await updateJobWithMatchResult(jobId, item.result);
-
   if (sessionId) {
-    await logMatchSuccess(
+    await persistMatchSuccess(
       sessionId,
       jobId,
-      item.result.score,
+      item.result,
       item.attemptCount ?? 1,
       item.duration,
       modelUsed
     );
+  } else {
+    await updateJobWithMatchResult(jobId, item.result);
   }
 }

@@ -10,8 +10,8 @@ const mocks = vi.hoisted(() => ({
   parallelStrategy: vi.fn(),
   fetchJobsData: vi.fn(),
   fetchProfileData: vi.fn(),
+  persistMatchSuccess: vi.fn(),
   updateJobWithMatchResult: vi.fn(),
-  logMatchSuccess: vi.fn(),
   logMatchFailure: vi.fn(),
 }));
 
@@ -34,8 +34,8 @@ vi.mock("@/lib/ai/matcher/strategies", () => ({
 vi.mock("@/lib/ai/matcher/tracking", () => ({
   fetchJobsData: mocks.fetchJobsData,
   fetchProfileData: mocks.fetchProfileData,
+  persistMatchSuccess: mocks.persistMatchSuccess,
   updateJobWithMatchResult: mocks.updateJobWithMatchResult,
-  logMatchSuccess: mocks.logMatchSuccess,
   logMatchFailure: mocks.logMatchFailure,
 }));
 
@@ -100,8 +100,8 @@ describe("executeMatch integration", () => {
     const item = results.get(101);
     expect(item).toBeInstanceOf(Error);
     expect((item as Error).message).toBe("No profile found");
+    expect(mocks.persistMatchSuccess).not.toHaveBeenCalled();
     expect(mocks.updateJobWithMatchResult).not.toHaveBeenCalled();
-    expect(mocks.logMatchSuccess).not.toHaveBeenCalled();
     expect(mocks.logMatchFailure).not.toHaveBeenCalled();
   });
 
@@ -187,13 +187,16 @@ describe("executeMatch integration", () => {
     expect(results.get(1)).toMatchObject({ score: 82 });
     expect(results.get(2)).toBeInstanceOf(Error);
 
-    expect(mocks.updateJobWithMatchResult).toHaveBeenCalledTimes(1);
-    expect(mocks.updateJobWithMatchResult).toHaveBeenCalledWith(
+    expect(mocks.updateJobWithMatchResult).not.toHaveBeenCalled();
+    expect(mocks.persistMatchSuccess).toHaveBeenCalledTimes(1);
+    expect(mocks.persistMatchSuccess).toHaveBeenCalledWith(
+      "session-2",
       1,
-      expect.objectContaining({ score: 82 })
+      expect.objectContaining({ score: 82 }),
+      1,
+      15,
+      "gpt-4.1-mini"
     );
-
-    expect(mocks.logMatchSuccess).toHaveBeenCalledTimes(1);
     expect(mocks.logMatchFailure).toHaveBeenCalledTimes(1);
     expect(mocks.logMatchFailure).toHaveBeenCalledWith(
       "session-2",

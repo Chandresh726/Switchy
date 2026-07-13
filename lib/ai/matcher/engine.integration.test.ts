@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   finalizeMatchSession: vi.fn(),
   getUnmatchedJobIds: vi.fn(),
   createProgressTracker: vi.fn(),
+  getMatchSessionCheckpoint: vi.fn(),
   getMatchSessionStatus: vi.fn(),
   updateMatchSessionIfActive: vi.fn(),
 }));
@@ -31,6 +32,7 @@ vi.mock("@/lib/ai/matcher/tracking", () => ({
   finalizeMatchSession: mocks.finalizeMatchSession,
   getUnmatchedJobIds: mocks.getUnmatchedJobIds,
   createProgressTracker: mocks.createProgressTracker,
+  getMatchSessionCheckpoint: mocks.getMatchSessionCheckpoint,
   getMatchSessionStatus: mocks.getMatchSessionStatus,
   updateMatchSessionIfActive: mocks.updateMatchSessionIfActive,
 }));
@@ -78,6 +80,11 @@ describe("match engine integration", () => {
     });
 
     mocks.updateMatchSessionIfActive.mockResolvedValue(true);
+    mocks.getMatchSessionCheckpoint.mockResolvedValue({
+      completedJobIds: [],
+      succeeded: 0,
+      failed: 0,
+    });
     mocks.executeMatch.mockResolvedValue(new Map());
     mocks.finalizeMatchSession.mockResolvedValue({
       sessionId: "session-1",
@@ -115,6 +122,103 @@ describe("match engine integration", () => {
 
     expect(mocks.executeMatch).not.toHaveBeenCalled();
     expect(mocks.finalizeMatchSession).not.toHaveBeenCalled();
+  });
+
+  it("skips paid matching when a recovered session already checkpointed every job", async () => {
+    mocks.getMatchSessionStatus.mockResolvedValue({
+      id: "session-1",
+      status: "in_progress",
+      jobsTotal: 2,
+      jobsCompleted: 2,
+      jobsSucceeded: 1,
+      jobsFailed: 1,
+      startedAt: new Date("2026-02-20T00:00:00.000Z"),
+      completedAt: null,
+    });
+    mocks.getMatchSessionCheckpoint.mockResolvedValue({
+      completedJobIds: [11, 22],
+      succeeded: 1,
+      failed: 1,
+    });
+    mocks.finalizeMatchSession.mockResolvedValue({
+      sessionId: "session-1",
+      total: 2,
+      succeeded: 1,
+      failed: 1,
+    });
+
+    const engine = await createMatchEngine();
+    const result = await engine.matchWithTracking([11, 22], {
+      sessionId: "session-1",
+      triggerSource: "auto_match",
+    });
+
+    expect(result).toEqual({
+      sessionId: "session-1",
+      total: 2,
+      succeeded: 1,
+      failed: 1,
+    });
+    expect(mocks.executeMatch).not.toHaveBeenCalled();
+    expect(mocks.finalizeMatchSession).toHaveBeenCalledWith("session-1", 1, 1, 2);
+  });
+
+  it("matches only jobs missing from a recovered session checkpoint", async () => {
+    mocks.getMatchSessionStatus.mockResolvedValue({
+      id: "session-1",
+      status: "in_progress",
+      jobsTotal: 2,
+      jobsCompleted: 1,
+      jobsSucceeded: 1,
+      jobsFailed: 0,
+      startedAt: new Date("2026-02-20T00:00:00.000Z"),
+      completedAt: null,
+    });
+    mocks.getMatchSessionCheckpoint.mockResolvedValue({
+      completedJobIds: [11],
+      succeeded: 1,
+      failed: 0,
+    });
+    mocks.executeMatch.mockResolvedValue(
+      new Map([
+        [
+          22,
+          {
+            score: 88,
+            reasons: [],
+            matchedSkills: [],
+            missingSkills: [],
+            recommendations: [],
+          },
+        ],
+      ])
+    );
+    mocks.finalizeMatchSession.mockResolvedValue({
+      sessionId: "session-1",
+      total: 2,
+      succeeded: 2,
+      failed: 0,
+    });
+
+    const engine = await createMatchEngine();
+    const result = await engine.matchWithTracking([11, 22], {
+      sessionId: "session-1",
+      triggerSource: "auto_match",
+    });
+
+    expect(result).toEqual({
+      sessionId: "session-1",
+      total: 2,
+      succeeded: 2,
+      failed: 0,
+    });
+    expect(mocks.executeMatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobIds: [22],
+        sessionId: "session-1",
+      })
+    );
+    expect(mocks.finalizeMatchSession).toHaveBeenCalledWith("session-1", 2, 0, 2);
   });
 
   it("persists queued state before transitioning to in_progress", async () => {

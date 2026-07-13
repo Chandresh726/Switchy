@@ -1,10 +1,17 @@
-import { db } from "@/lib/db";
-import { scrapeSessions, scrapingLogs, companies } from "@/lib/db/schema";
-import { getScrapingModule } from "@/lib/scraper";
-import { desc, eq, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
-import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
+import { desc, eq, inArray, sql } from "drizzle-orm";
+
 import { assertAppRequest } from "@/lib/api";
+import { db } from "@/lib/db";
+import {
+  companies,
+  matchSessions,
+  scrapeMatchOutbox,
+  scrapeSessions,
+  scrapingLogs,
+} from "@/lib/db/schema";
+import { getScrapingModule } from "@/lib/scraper";
+import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
 export async function GET(request: NextRequest) {
   try {
@@ -108,13 +115,28 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get("sessionId");
 
-    if (sessionId) {
-      await db.delete(scrapeSessions).where(eq(scrapeSessions.id, sessionId));
-      return NextResponse.json({ success: true }, { headers: NO_STORE_HEADERS });
-    } else {
-      await db.delete(scrapeSessions);
-      return NextResponse.json({ success: true }, { headers: NO_STORE_HEADERS });
-    }
+    db.transaction((tx) => {
+      const matchSessionIds = tx
+        .select({ id: scrapeMatchOutbox.id })
+        .from(scrapeMatchOutbox)
+        .innerJoin(scrapingLogs, eq(scrapeMatchOutbox.scrapingLogId, scrapingLogs.id))
+        .where(sessionId ? eq(scrapingLogs.sessionId, sessionId) : undefined)
+        .all()
+        .map((row) => row.id);
+      if (matchSessionIds.length > 0) {
+        tx.delete(matchSessions)
+          .where(inArray(matchSessions.id, matchSessionIds))
+          .run();
+      }
+
+      const deletion = tx.delete(scrapeSessions);
+      if (sessionId) {
+        deletion.where(eq(scrapeSessions.id, sessionId)).run();
+      } else {
+        deletion.run();
+      }
+    }, { behavior: "immediate" });
+    return NextResponse.json({ success: true }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     console.error("Failed to delete scrape history:", error);
     return NextResponse.json(

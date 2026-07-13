@@ -7,5 +7,12 @@ export async function register() {
     } catch (error) {
       console.error("[Instrumentation] Failed to start scheduler:", error);
     }
+
+    try {
+      const { dispatchPendingScrapeMatches } = await import("@/lib/scraper/matching");
+      dispatchPendingScrapeMatches();
+    } catch (error) {
+      console.error("[Instrumentation] Failed to recover matcher outbox:", error);
+    }
   }
 }

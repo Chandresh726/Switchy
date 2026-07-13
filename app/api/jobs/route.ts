@@ -3,6 +3,7 @@ import { jobs, companies } from "@/lib/db/schema";
 import { eq, desc, and, gte, lte, like, or, sql, asc, count, notInArray } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { assertAppRequest } from "@/lib/api";
+import { deleteAllJobsAndTerminateMatches } from "@/lib/scraper/matching";
 import { safeJsonStringArray } from "@/lib/utils/safe-json";
 
 export async function GET(request: NextRequest) {
@@ -292,7 +293,7 @@ export async function DELETE(request: NextRequest) {
   try {
     assertAppRequest(request);
 
-    await db.delete(jobs);
+    deleteAllJobsAndTerminateMatches();
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Failed to delete all jobs:", error);

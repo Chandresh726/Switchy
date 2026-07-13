@@ -7,6 +7,7 @@ import {
   finalizeMatchSession,
   getUnmatchedJobIds,
   createProgressTracker,
+  getMatchSessionCheckpoint,
   getMatchSessionStatus,
   updateMatchSessionIfActive,
 } from "./tracking";
@@ -84,6 +85,37 @@ export async function createMatchEngine(): Promise<MatchEngine> {
       const progressTracker = createProgressTracker(jobIds.length, onProgress);
       let progressWriteChain: Promise<void> = Promise.resolve();
 
+      const initialSession = providedSessionId
+        ? await getMatchSessionStatus(sessionId)
+        : null;
+      if (providedSessionId && !initialSession) {
+        throw new Error(`Match session ${sessionId} does not exist.`);
+      }
+      if (
+        initialSession &&
+        initialSession.status !== "in_progress" &&
+        initialSession.status !== "queued"
+      ) {
+        return {
+          sessionId,
+          total: initialSession.jobsTotal ?? jobIds.length,
+          succeeded: initialSession.jobsSucceeded ?? 0,
+          failed: initialSession.jobsFailed ?? 0,
+        };
+      }
+
+      const checkpoint = providedSessionId
+        ? await getMatchSessionCheckpoint(sessionId, jobIds)
+        : { completedJobIds: [], succeeded: 0, failed: 0 };
+      const completedJobIds = new Set(checkpoint.completedJobIds);
+      const pendingJobIds = jobIds.filter((jobId) => !completedJobIds.has(jobId));
+      const baseCompleted = checkpoint.succeeded + checkpoint.failed;
+      progressTracker.setStats({
+        completed: baseCompleted,
+        succeeded: checkpoint.succeeded,
+        failed: checkpoint.failed,
+      });
+
       const persistProgress = (completed: number, succeeded: number, failed: number) => {
         progressWriteChain = progressWriteChain
           .then(async () => {
@@ -117,6 +149,16 @@ export async function createMatchEngine(): Promise<MatchEngine> {
       );
 
       try {
+        if (pendingJobIds.length === 0) {
+          progressTracker.complete();
+          return finalizeMatchSession(
+            sessionId,
+            checkpoint.succeeded,
+            checkpoint.failed,
+            jobIds.length
+          );
+        }
+
         const results = await withQueue(
           config,
           async () => {
@@ -125,10 +167,10 @@ export async function createMatchEngine(): Promise<MatchEngine> {
             const started = await updateMatchSessionIfActive(sessionId, {
               startedAt: new Date(),
               status: "in_progress",
-              jobsCompleted: 0,
-              jobsSucceeded: 0,
-              jobsFailed: 0,
-              errorCount: 0,
+              jobsCompleted: baseCompleted,
+              jobsSucceeded: checkpoint.succeeded,
+              jobsFailed: checkpoint.failed,
+              errorCount: checkpoint.failed,
             });
 
             if (!started) {
@@ -139,7 +181,7 @@ export async function createMatchEngine(): Promise<MatchEngine> {
 
             return executeMatch({
               config,
-              jobIds,
+              jobIds: pendingJobIds,
               sessionId,
               shouldStop: async () => {
                 const currentSession = await getMatchSessionStatus(sessionId);
@@ -150,8 +192,19 @@ export async function createMatchEngine(): Promise<MatchEngine> {
                 );
               },
               onProgress: (completed, total, succeeded, failed) => {
-                progressTracker.setStats({ completed, succeeded, failed });
-                persistProgress(completed, succeeded, failed);
+                const cumulativeCompleted = baseCompleted + completed;
+                const cumulativeSucceeded = checkpoint.succeeded + succeeded;
+                const cumulativeFailed = checkpoint.failed + failed;
+                progressTracker.setStats({
+                  completed: cumulativeCompleted,
+                  succeeded: cumulativeSucceeded,
+                  failed: cumulativeFailed,
+                });
+                persistProgress(
+                  cumulativeCompleted,
+                  cumulativeSucceeded,
+                  cumulativeFailed
+                );
               },
             });
           },
@@ -162,8 +215,10 @@ export async function createMatchEngine(): Promise<MatchEngine> {
           }
         );
 
-        const succeeded = Array.from(results.values()).filter((r) => !(r instanceof Error)).length;
-        const failed = jobIds.length - succeeded;
+        const succeeded =
+          checkpoint.succeeded +
+          Array.from(results.values()).filter((result) => !(result instanceof Error)).length;
+        const failed = checkpoint.failed + pendingJobIds.length - (succeeded - checkpoint.succeeded);
 
         progressTracker.complete();
         await progressWriteChain;
@@ -189,7 +244,20 @@ export async function createMatchEngine(): Promise<MatchEngine> {
         return finalizeMatchSession(sessionId, succeeded, failed, jobIds.length);
       } catch (error) {
         console.error(`[MatchEngine] Session ${sessionId} failed:`, error);
-        await finalizeMatchSession(sessionId, 0, jobIds.length, jobIds.length);
+        if (triggerSource === "auto_match" && providedSessionId) {
+          await progressWriteChain;
+          const latestCheckpoint = await getMatchSessionCheckpoint(sessionId, jobIds);
+          await updateMatchSessionIfActive(sessionId, {
+            status: "queued",
+            jobsCompleted:
+              latestCheckpoint.succeeded + latestCheckpoint.failed,
+            jobsSucceeded: latestCheckpoint.succeeded,
+            jobsFailed: latestCheckpoint.failed,
+            errorCount: latestCheckpoint.failed,
+          });
+        } else {
+          await finalizeMatchSession(sessionId, 0, jobIds.length, jobIds.length);
+        }
         throw error;
       }
     },

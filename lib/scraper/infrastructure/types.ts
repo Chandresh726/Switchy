@@ -1,15 +1,12 @@
+import type { Company, NewJob } from "@/lib/db/schema";
 import type {
   Platform,
   TriggerSource,
   ScrapeLogStatus,
   MatcherStatus,
   SessionStatus,
-  DescriptionFormat,
-  EmploymentType,
-  LocationType,
+  ScrapedJob,
 } from "@/lib/scraper/types";
-import type { Company, NewJob } from "@/lib/db/schema";
-import type { ScrapedJob } from "@/lib/scraper/types";
 
 export interface ExistingJob {
   id: number;
@@ -19,20 +16,6 @@ export interface ExistingJob {
   location?: string | null;
   status: string;
   description: string | null;
-}
-
-export interface ExistingJobUpdate {
-  existingJobId: number;
-  title: string;
-  url: string;
-  location?: string;
-  locationType?: LocationType;
-  department?: string;
-  description?: string;
-  descriptionFormat: DescriptionFormat;
-  salary?: string;
-  employmentType?: EmploymentType;
-  postedDate?: Date;
 }
 
 export interface SessionProgressUpdate {
@@ -78,18 +61,43 @@ export interface ScrapingLogCreate {
   matcherJobsCompleted?: number;
 }
 
-export interface ScrapingLogUpdate {
-  matcherStatus?: MatcherStatus | null;
-  matcherJobsCompleted?: number;
-  matcherJobsTotal?: number | null;
-  matcherErrorCount?: number;
-  matcherDuration?: number;
+export type ScrapeResultLogCreate = Omit<
+  ScrapingLogCreate,
+  | "companyId"
+  | "jobsAdded"
+  | "jobsUpdated"
+  | "jobsArchived"
+  | "duration"
+  | "completedAt"
+  | "matcherStatus"
+  | "matcherJobsTotal"
+  | "matcherJobsCompleted"
+>;
+
+export interface PersistScrapeResultInput {
+  companyId: number;
+  openExternalIds: string[];
+  archiveMissing: boolean;
+  statusesToArchive: string[];
+  jobsToInsert: Omit<
+    NewJob,
+    "id" | "companyId" | "discoveredAt" | "updatedAt"
+  >[];
+  existingJobUpdates: Array<{ existingJobId: number; job: ScrapedJob }>;
+  companyBoardToken?: string;
+  startedAtMs: number;
+  enableMatching: boolean;
+  log: ScrapeResultLogCreate;
 }
 
-export interface CompanyUpdate {
-  lastScrapedAt: Date;
-  updatedAt: Date;
-  boardToken?: string;
+export interface PersistScrapeResultOutput {
+  insertedJobIds: number[];
+  matchableJobIds: number[];
+  jobsAdded: number;
+  jobsUpdated: number;
+  jobsArchived: number;
+  logId: number;
+  matchOutboxId: string | null;
 }
 
 export interface IScraperRepository {
@@ -97,19 +105,7 @@ export interface IScraperRepository {
   getActiveCompanies(): Promise<Company[]>;
   getExistingJobs(companyId: number): Promise<ExistingJob[]>;
   getSetting(key: string): Promise<string | null>;
-  reopenScraperArchivedJobs(companyId: number, openExternalIds: string[]): Promise<number>;
-  archiveMissingJobs(
-    companyId: number,
-    openExternalIds: string[],
-    statusesToArchive: string[]
-  ): Promise<number>;
-  
-  insertJobs(jobs: Omit<NewJob, "discoveredAt" | "updatedAt">[]): Promise<number[]>;
-  updateExistingJobsFromScrape(
-    updates: Array<{ existingJobId: number; job: ScrapedJob }>
-  ): Promise<number>;
-  getMatchableJobIds(jobIds: number[]): Promise<number[]>;
-  updateCompany(id: number, updates: CompanyUpdate): Promise<void>;
+  persistScrapeResult(input: PersistScrapeResultInput): Promise<PersistScrapeResultOutput>;
   
   createSession(session: ScrapeSessionCreate): Promise<void>;
   isSessionInProgress(id: string): Promise<boolean>;
@@ -121,8 +117,6 @@ export interface IScraperRepository {
   ): Promise<void>;
   
   createScrapingLog(log: ScrapingLogCreate): Promise<number>;
-  updateScrapingLog(id: number, updates: ScrapingLogUpdate): Promise<void>;
-  
   acquireSchedulerLock(ownerId: string): Promise<string | null>;
   refreshSchedulerLock(lockToken: string): Promise<string | null>;
   releaseSchedulerLock(lockToken: string): Promise<void>;

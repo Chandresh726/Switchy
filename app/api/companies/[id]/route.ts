@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 import { assertAppRequest } from "@/lib/api";
 import { db } from "@/lib/db";
-import { companies } from "@/lib/db/schema";
+import { companies, matchSessions, scrapeMatchOutbox } from "@/lib/db/schema";
 import { refreshUnmatchedCompanyMappings } from "@/lib/people/sync";
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 
@@ -327,7 +327,20 @@ export async function DELETE(
     assertAppRequest(request);
 
     const id = await getIdFromParams(params);
-    await db.delete(companies).where(eq(companies.id, id));
+    db.transaction((tx) => {
+      const matchSessionIds = tx
+        .select({ id: scrapeMatchOutbox.id })
+        .from(scrapeMatchOutbox)
+        .where(eq(scrapeMatchOutbox.companyId, id))
+        .all()
+        .map((row) => row.id);
+      if (matchSessionIds.length > 0) {
+        tx.delete(matchSessions)
+          .where(inArray(matchSessions.id, matchSessionIds))
+          .run();
+      }
+      tx.delete(companies).where(eq(companies.id, id)).run();
+    }, { behavior: "immediate" });
 
     return NextResponse.json({ success: true });
   } catch (error) {

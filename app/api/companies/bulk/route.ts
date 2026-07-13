@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { companies, jobs } from "@/lib/db/schema";
+import { companies, jobs, matchSessions, scrapeMatchOutbox } from "@/lib/db/schema";
 import { inArray } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { assertAppRequest } from "@/lib/api";
@@ -18,15 +18,30 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const deletedJobs = await db
-      .delete(jobs)
-      .where(inArray(jobs.companyId, companyIds))
-      .returning({ id: jobs.id });
-
-    const deletedCompanies = await db
-      .delete(companies)
-      .where(inArray(companies.id, companyIds))
-      .returning({ id: companies.id });
+    const { deletedJobs, deletedCompanies } = db.transaction((tx) => {
+      const matchSessionIds = tx
+        .select({ id: scrapeMatchOutbox.id })
+        .from(scrapeMatchOutbox)
+        .where(inArray(scrapeMatchOutbox.companyId, companyIds))
+        .all()
+        .map((row) => row.id);
+      if (matchSessionIds.length > 0) {
+        tx.delete(matchSessions)
+          .where(inArray(matchSessions.id, matchSessionIds))
+          .run();
+      }
+      const removedJobs = tx
+        .delete(jobs)
+        .where(inArray(jobs.companyId, companyIds))
+        .returning({ id: jobs.id })
+        .all();
+      const removedCompanies = tx
+        .delete(companies)
+        .where(inArray(companies.id, companyIds))
+        .returning({ id: companies.id })
+        .all();
+      return { deletedJobs: removedJobs, deletedCompanies: removedCompanies };
+    }, { behavior: "immediate" });
 
     return NextResponse.json({
       success: true,

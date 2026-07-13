@@ -14,8 +14,9 @@ import {
   type ScrapedJob,
 } from "@/lib/scraper/types";
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
+import { dispatchPendingScrapeMatches } from "@/lib/scraper/matching";
 import { ScraperLogger } from "@/lib/scraper/utils/logger";
-import { getMatcherConfig, matchWithTracking } from "@/lib/ai/matcher";
+import { getMatcherConfig } from "@/lib/ai/matcher";
 
 import { parseTitleKeywords } from "./filter-service";
 import type { IScraperRegistry } from "./registry";
@@ -626,21 +627,22 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       )
     );
 
-    const jobsArchived = await this.syncArchivedJobs(
-      companyId,
-      openExternalIds,
-      scraperResult.listingCompleteness,
-      platform,
+    const archiveMissing =
+      scraperResult.listingCompleteness === "complete" &&
+      !(
+        platform === "uber" &&
+        this.shouldSkipUberArchival(openExternalIds, existingJobs)
+      );
+
+    const dedupeResult = this.deduplicationService.batchDeduplicate(
+      scraperResult.jobs,
       existingJobs
     );
-
-    const dedupeResult = this.deduplicationService.batchDeduplicate(scraperResult.jobs, existingJobs);
     const filterResult = this.filterService.applyFilters(dedupeResult.newJobs, filters);
     const duplicateHydrationCandidates = this.getDuplicateHydrationCandidates(
       dedupeResult.duplicates,
       existingJobs
     );
-    const jobsUpdated = await this.repository.updateExistingJobsFromScrape(duplicateHydrationCandidates);
 
     if (filterResult.filteredOut > 0 && !hasEarlyFilter) {
       logger.filtered({
@@ -650,95 +652,60 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       });
     }
 
-    const insertedJobIds = await this.insertFilteredJobs(companyId, filterResult.filtered);
-    const jobsAdded = insertedJobIds.length;
-
-    await this.updateCompanyScrapeMetadata(companyId, boardToken, scraperResult.detectedBoardToken);
-
-    logger.added(jobsAdded, dedupeResult.duplicates.length);
-
     const matcherConfig = await getMatcherConfig();
-    let matchableJobIds: number[] = [];
-
-    if (
-      insertedJobIds.length > 0 &&
-      this.config.autoMatchAfterScrape &&
-      matcherConfig.autoMatchAfterScrape
-    ) {
-      matchableJobIds = await this.repository.getMatchableJobIds(insertedJobIds);
-    }
-
-    const shouldMatch = matchableJobIds.length > 0;
-
     const logStatus = outcome === "success" ? "success" : "partial";
     const jobsFiltered = filterResult.filteredOut + (scraperResult.earlyFiltered?.total || 0);
-
-    const logId = await this.repository.createScrapingLog({
+    const persistenceResult = await this.repository.persistScrapeResult({
       companyId,
-      sessionId,
-      triggerSource,
-      platform,
-      status: logStatus,
-      jobsFound: totalFetched,
-      jobsAdded,
-      jobsUpdated,
-      jobsFiltered,
-      jobsArchived,
-      duration: Date.now() - startTime,
-      completedAt: new Date(),
-      matcherStatus: shouldMatch ? "pending" : null,
-      matcherJobsTotal: shouldMatch ? matchableJobIds.length : null,
-      matcherJobsCompleted: 0,
+      openExternalIds,
+      archiveMissing,
+      statusesToArchive: ARCHIVABLE_JOB_STATUSES,
+      jobsToInsert: filterResult.filtered.map((job) => ({
+        externalId: job.externalId,
+        title: job.title,
+        url: job.url,
+        location: job.location,
+        locationType: job.locationType,
+        department: job.department,
+        description: job.description,
+        descriptionFormat: job.descriptionFormat ?? "plain",
+        salary: job.salary,
+        employmentType: job.employmentType,
+        postedDate: job.postedDate,
+        status: "new" as const,
+      })),
+      existingJobUpdates: duplicateHydrationCandidates,
+      companyBoardToken:
+        scraperResult.detectedBoardToken && !boardToken
+          ? scraperResult.detectedBoardToken
+          : undefined,
+      startedAtMs: startTime,
+      enableMatching:
+        this.config.autoMatchAfterScrape && matcherConfig.autoMatchAfterScrape,
+      log: {
+        sessionId,
+        triggerSource,
+        platform,
+        status: logStatus,
+        jobsFound: totalFetched,
+        jobsFiltered,
+      },
     });
 
-    if (shouldMatch) {
-      this.runBackgroundMatching(matchableJobIds, logId, companyId);
+    logger.added(persistenceResult.jobsAdded, dedupeResult.duplicates.length);
+    if (persistenceResult.matchOutboxId) {
+      dispatchPendingScrapeMatches();
     }
 
     return {
       outcome,
       jobsFound: totalFetched,
-      jobsAdded,
-      jobsUpdated,
+      jobsAdded: persistenceResult.jobsAdded,
+      jobsUpdated: persistenceResult.jobsUpdated,
       jobsFiltered,
-      jobsArchived,
-      logId,
+      jobsArchived: persistenceResult.jobsArchived,
+      logId: persistenceResult.logId,
     };
-  }
-
-  private async syncArchivedJobs(
-    companyId: number,
-    openExternalIds: string[],
-    listingCompleteness: ScraperResult["listingCompleteness"],
-    platform: Platform | null,
-    existingJobs: Array<{
-      id: number;
-      externalId: string | null;
-      title: string;
-      url: string;
-      status: string;
-      description: string | null;
-    }>
-  ): Promise<number> {
-    let archivedCount = 0;
-
-    if (openExternalIds.length > 0) {
-      await this.repository.reopenScraperArchivedJobs(companyId, openExternalIds);
-    }
-
-    if (listingCompleteness === "complete") {
-      if (platform === "uber" && this.shouldSkipUberArchival(openExternalIds, existingJobs)) {
-        return 0;
-      }
-
-      archivedCount = await this.repository.archiveMissingJobs(
-        companyId,
-        openExternalIds,
-        ARCHIVABLE_JOB_STATUSES
-      );
-    }
-
-    return archivedCount;
   }
 
   private shouldSkipUberArchival(
@@ -820,46 +787,6 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     return typeof description === "string" && description.trim().length > 0;
   }
 
-  private async insertFilteredJobs(companyId: number, jobs: ScrapedJob[]): Promise<number[]> {
-    if (jobs.length === 0) {
-      return [];
-    }
-
-    return this.repository.insertJobs(
-      jobs.map((job) => ({
-        companyId,
-        externalId: job.externalId,
-        title: job.title,
-        url: job.url,
-        location: job.location,
-        locationType: job.locationType,
-        department: job.department,
-        description: job.description,
-        descriptionFormat: job.descriptionFormat ?? "plain",
-        salary: job.salary,
-        employmentType: job.employmentType,
-        postedDate: job.postedDate,
-        status: "new" as const,
-      }))
-    );
-  }
-
-  private async updateCompanyScrapeMetadata(
-    companyId: number,
-    boardToken: string | null,
-    detectedBoardToken?: string
-  ): Promise<void> {
-    const companyUpdates: { lastScrapedAt: Date; updatedAt: Date; boardToken?: string } = {
-      lastScrapedAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    if (detectedBoardToken && !boardToken) {
-      companyUpdates.boardToken = detectedBoardToken;
-    }
-
-    await this.repository.updateCompany(companyId, companyUpdates);
-  }
 
   private createFetchResult(params: {
     companyId: number;
@@ -933,44 +860,6 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     }
 
     return parsed;
-  }
-
-  private runBackgroundMatching(
-    jobIds: number[],
-    logId: number,
-    companyId: number
-  ): void {
-    void (async () => {
-      try {
-        await this.repository.updateScrapingLog(logId, { matcherStatus: "in_progress" });
-
-        const matcherStartTime = Date.now();
-
-        const result = await matchWithTracking(jobIds, {
-          triggerSource: "auto_match",
-          companyId,
-          onProgress: (progress) => {
-            void this.repository
-              .updateScrapingLog(logId, { matcherJobsCompleted: progress.completed })
-              .catch((e) => console.error("[Matcher] Failed to persist progress:", e));
-          },
-        });
-
-        await this.repository.updateScrapingLog(logId, {
-          matcherStatus: result.failed === result.total ? "failed" : "completed",
-          matcherJobsCompleted: result.total,
-          matcherErrorCount: result.failed,
-          matcherDuration: Date.now() - matcherStartTime,
-        });
-
-        console.log(`[Matcher] Completed: ${result.succeeded}/${result.total} jobs matched`);
-      } catch (err) {
-        console.error("[Matcher] Background matching failed:", err);
-        await this.repository.updateScrapingLog(logId, {
-          matcherStatus: "failed",
-        });
-      }
-    })();
   }
 
   private createErrorResult(

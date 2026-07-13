@@ -4,8 +4,9 @@ export type {
   SessionProgressUpdate,
   ScrapeSessionCreate,
   ScrapingLogCreate,
-  ScrapingLogUpdate,
-  CompanyUpdate,
+  PersistScrapeResultInput,
+  PersistScrapeResultOutput,
+  ScrapeResultLogCreate,
 } from "./types";
 
 export { DrizzleScraperRepository, createScraperRepository } from "./repository";

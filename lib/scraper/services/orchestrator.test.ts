@@ -10,12 +10,18 @@ import { ScrapeOrchestrator } from "@/lib/scraper/services/orchestrator";
 
 const matcherMocks = vi.hoisted(() => ({
   getMatcherConfig: vi.fn(),
-  matchWithTracking: vi.fn(),
+}));
+
+const outboxMocks = vi.hoisted(() => ({
+  dispatchPendingScrapeMatches: vi.fn(),
 }));
 
 vi.mock("@/lib/ai/matcher", () => ({
   getMatcherConfig: matcherMocks.getMatcherConfig,
-  matchWithTracking: matcherMocks.matchWithTracking,
+}));
+
+vi.mock("@/lib/scraper/matching", () => ({
+  dispatchPendingScrapeMatches: outboxMocks.dispatchPendingScrapeMatches,
 }));
 
 const company: Company = {
@@ -59,6 +65,7 @@ interface RepositoryMockOptions {
   matchableJobIds?: number[];
   existingJobs?: ExistingJob[];
   updatedExistingJobsCount?: number;
+  jobsArchived?: number;
   settingValues?: Record<string, string | null | undefined>;
 }
 
@@ -68,6 +75,7 @@ function createRepositoryMock(options: RepositoryMockOptions = {}) {
   const matchableJobIds = options.matchableJobIds ?? insertedJobIds;
   const existingJobs = options.existingJobs ?? [];
   const updatedExistingJobsCount = options.updatedExistingJobsCount ?? 0;
+  const jobsArchived = options.jobsArchived ?? 0;
   const settingValues = options.settingValues ?? {};
 
   return {
@@ -75,19 +83,24 @@ function createRepositoryMock(options: RepositoryMockOptions = {}) {
     getActiveCompanies: vi.fn(async () => activeCompanies),
     getExistingJobs: vi.fn(async () => existingJobs),
     getSetting: vi.fn(async (key: string) => settingValues[key] ?? null),
-    reopenScraperArchivedJobs: vi.fn(async () => 0),
-    archiveMissingJobs: vi.fn(async () => 0),
-    insertJobs: vi.fn(async () => insertedJobIds),
-    updateExistingJobsFromScrape: vi.fn(async () => updatedExistingJobsCount),
-    getMatchableJobIds: vi.fn(async () => matchableJobIds),
-    updateCompany: vi.fn(async () => undefined),
+    persistScrapeResult: vi.fn(async (input: { enableMatching: boolean }) => {
+      const persistedMatchableJobIds = input.enableMatching ? matchableJobIds : [];
+      return {
+        insertedJobIds,
+        matchableJobIds: persistedMatchableJobIds,
+        jobsAdded: insertedJobIds.length,
+        jobsUpdated: updatedExistingJobsCount,
+        jobsArchived,
+        logId: 7,
+        matchOutboxId: persistedMatchableJobIds.length > 0 ? "outbox-1" : null,
+      };
+    }),
     createSession: vi.fn(async () => undefined),
     isSessionInProgress: vi.fn(async () => true),
     stopSession: vi.fn(async () => true),
     updateSessionProgress: vi.fn(async () => undefined),
     completeSession: vi.fn(async () => undefined),
     createScrapingLog: vi.fn(async () => 7),
-    updateScrapingLog: vi.fn(async () => undefined),
     acquireSchedulerLock: vi.fn(async () => null),
     refreshSchedulerLock: vi.fn(async () => null),
     releaseSchedulerLock: vi.fn(async () => undefined),
@@ -161,11 +174,6 @@ describe("ScrapeOrchestrator", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     matcherMocks.getMatcherConfig.mockResolvedValue({ autoMatchAfterScrape: false });
-    matcherMocks.matchWithTracking.mockResolvedValue({
-      total: 0,
-      succeeded: 0,
-      failed: 0,
-    });
   });
 
   it("maps partial scraper results to failed FetchResult and partial log status", async () => {
@@ -199,10 +207,12 @@ describe("ScrapeOrchestrator", () => {
 
     expect(result.outcome).toBe("partial");
     expect(result.success).toBe(false);
-    expect(repository.createScrapingLog).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "partial" })
+    expect(repository.persistScrapeResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        archiveMissing: false,
+        log: expect.objectContaining({ status: "partial" }),
+      })
     );
-    expect(repository.archiveMissingJobs).not.toHaveBeenCalled();
   });
 
   it("passes a standalone cancellation signal into the scraper registry", async () => {
@@ -388,8 +398,10 @@ describe("ScrapeOrchestrator", () => {
     });
 
     expect(result.jobsFound).toBe(9);
-    expect(repository.createScrapingLog).toHaveBeenCalledWith(
-      expect.objectContaining({ jobsFound: 9, jobsFiltered: 4 })
+    expect(repository.persistScrapeResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        log: expect.objectContaining({ jobsFound: 9, jobsFiltered: 4 }),
+      })
     );
   });
 
@@ -544,7 +556,9 @@ describe("ScrapeOrchestrator", () => {
       triggerSource: "manual",
     });
 
-    expect(repository.archiveMissingJobs).not.toHaveBeenCalled();
+    expect(repository.persistScrapeResult).toHaveBeenCalledWith(
+      expect.objectContaining({ archiveMissing: false })
+    );
   });
 
   it("archives uber jobs when missing open jobs stay below conservative threshold", async () => {
@@ -584,7 +598,9 @@ describe("ScrapeOrchestrator", () => {
       triggerSource: "manual",
     });
 
-    expect(repository.archiveMissingJobs).toHaveBeenCalledTimes(1);
+    expect(repository.persistScrapeResult).toHaveBeenCalledWith(
+      expect.objectContaining({ archiveMissing: true })
+    );
   });
 
   it("marks standalone partial sessions as partial", async () => {
@@ -1054,13 +1070,10 @@ describe("ScrapeOrchestrator", () => {
       triggerSource: "manual",
     });
 
-    expect(repository.createScrapingLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        matcherStatus: null,
-        matcherJobsTotal: null,
-      })
+    expect(repository.persistScrapeResult).toHaveBeenCalledWith(
+      expect.objectContaining({ enableMatching: true })
     );
-    expect(matcherMocks.matchWithTracking).not.toHaveBeenCalled();
+    expect(outboxMocks.dispatchPendingScrapeMatches).not.toHaveBeenCalled();
   });
 
   it("only auto-matches inserted jobs that have descriptions", async () => {
@@ -1097,22 +1110,11 @@ describe("ScrapeOrchestrator", () => {
       triggerSource: "manual",
     });
 
-    expect(repository.createScrapingLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        matcherStatus: "pending",
-        matcherJobsTotal: 2,
-      })
+    expect(repository.persistScrapeResult).toHaveBeenCalledWith(
+      expect.objectContaining({ enableMatching: true })
     );
 
-    await vi.waitFor(() => {
-      expect(matcherMocks.matchWithTracking).toHaveBeenCalledWith(
-        [102, 103],
-        expect.objectContaining({
-          triggerSource: "auto_match",
-          companyId: company.id,
-        })
-      );
-    });
+    expect(outboxMocks.dispatchPendingScrapeMatches).toHaveBeenCalledOnce();
   });
 
   it("heals duplicate jobs when existing description is empty", async () => {
@@ -1169,19 +1171,16 @@ describe("ScrapeOrchestrator", () => {
       })
     );
 
-    expect(repository.updateExistingJobsFromScrape).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({
-          existingJobId: 41,
-          job: expect.objectContaining({
-            description: "Updated role details",
-          }),
-        }),
-      ])
-    );
-    expect(repository.createScrapingLog).toHaveBeenCalledWith(
+    expect(repository.persistScrapeResult).toHaveBeenCalledWith(
       expect.objectContaining({
-        jobsUpdated: 1,
+        existingJobUpdates: expect.arrayContaining([
+          expect.objectContaining({
+            existingJobId: 41,
+            job: expect.objectContaining({
+              description: "Updated role details",
+            }),
+          }),
+        ]),
       })
     );
   });
@@ -1232,10 +1231,9 @@ describe("ScrapeOrchestrator", () => {
       triggerSource: "manual",
     });
 
-    expect(repository.updateExistingJobsFromScrape).toHaveBeenCalledWith([]);
-    expect(repository.createScrapingLog).toHaveBeenCalledWith(
+    expect(repository.persistScrapeResult).toHaveBeenCalledWith(
       expect.objectContaining({
-        jobsUpdated: 0,
+        existingJobUpdates: [],
       })
     );
   });

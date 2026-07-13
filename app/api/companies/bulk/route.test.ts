@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   assertAppRequest: vi.fn(),
   delete: vi.fn(),
+  select: vi.fn(),
+  transaction: vi.fn(),
   update: vi.fn(),
 }));
 
@@ -15,6 +17,8 @@ vi.mock("@/lib/api", () => ({
 vi.mock("@/lib/db", () => ({
   db: {
     delete: mocks.delete,
+    select: mocks.select,
+    transaction: mocks.transaction,
     update: mocks.update,
   },
 }));
@@ -32,6 +36,9 @@ function createJsonRequest(body: Record<string, unknown>): NextRequest {
 describe("companies bulk route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.transaction.mockImplementation((operation) =>
+      operation({ delete: mocks.delete, select: mocks.select })
+    );
   });
 
   it("rejects bulk delete without company IDs", async () => {
@@ -44,8 +51,13 @@ describe("companies bulk route", () => {
   });
 
   it("deletes jobs before companies and reports counts", async () => {
-    const jobsReturning = vi.fn().mockResolvedValue([{ id: 10 }, { id: 11 }]);
-    const companiesReturning = vi.fn().mockResolvedValue([{ id: 1 }]);
+    mocks.select.mockReturnValue({
+      from: () => ({
+        where: () => ({ all: () => [] }),
+      }),
+    });
+    const jobsReturning = vi.fn(() => ({ all: () => [{ id: 10 }, { id: 11 }] }));
+    const companiesReturning = vi.fn(() => ({ all: () => [{ id: 1 }] }));
     const jobsWhere = vi.fn(() => ({ returning: jobsReturning }));
     const companiesWhere = vi.fn(() => ({ returning: companiesReturning }));
 

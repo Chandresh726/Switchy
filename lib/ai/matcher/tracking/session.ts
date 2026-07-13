@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull } from "drizzle-orm";
 
 import { fetchCandidateProfileSnapshot } from "@/lib/ai/profile/profile-snapshot";
 import { db } from "@/lib/db";
@@ -42,6 +42,47 @@ export async function updateJobWithMatchResult(
       updatedAt: new Date(),
     })
     .where(eq(jobs.id, jobId));
+}
+
+export async function persistMatchSuccess(
+  sessionId: string,
+  jobId: number,
+  result: {
+    score: number;
+    reasons: string[];
+    matchedSkills: string[];
+    missingSkills: string[];
+    recommendations: string[];
+  },
+  attemptCount: number,
+  duration: number,
+  modelUsed: string
+): Promise<void> {
+  db.transaction((tx) => {
+    tx.update(jobs)
+      .set({
+        matchScore: result.score,
+        matchReasons: JSON.stringify(result.reasons),
+        matchedSkills: JSON.stringify(result.matchedSkills),
+        missingSkills: JSON.stringify(result.missingSkills),
+        recommendations: JSON.stringify(result.recommendations),
+        updatedAt: new Date(),
+      })
+      .where(eq(jobs.id, jobId))
+      .run();
+
+    tx.insert(matchLogs)
+      .values({
+        sessionId,
+        jobId,
+        status: "success",
+        score: result.score,
+        attemptCount,
+        duration,
+        modelUsed,
+      })
+      .run();
+  }, { behavior: "immediate" });
 }
 
 export async function getUnmatchedJobIds(): Promise<number[]> {
@@ -218,4 +259,41 @@ export async function getMatchSessionStatus(sessionId: string) {
     .limit(1);
 
   return session || null;
+}
+
+export interface MatchSessionCheckpoint {
+  completedJobIds: number[];
+  succeeded: number;
+  failed: number;
+}
+
+export async function getMatchSessionCheckpoint(
+  sessionId: string,
+  jobIds: number[]
+): Promise<MatchSessionCheckpoint> {
+  if (jobIds.length === 0) {
+    return { completedJobIds: [], succeeded: 0, failed: 0 };
+  }
+
+  const logs = await db
+    .select({ id: matchLogs.id, jobId: matchLogs.jobId, status: matchLogs.status })
+    .from(matchLogs)
+    .where(
+      and(
+        eq(matchLogs.sessionId, sessionId),
+        inArray(matchLogs.jobId, jobIds)
+      )
+    )
+    .orderBy(asc(matchLogs.id));
+  const finalStatusByJob = new Map<number, string>();
+  for (const log of logs) {
+    if (log.jobId !== null) finalStatusByJob.set(log.jobId, log.status);
+  }
+
+  const statuses = Array.from(finalStatusByJob.values());
+  return {
+    completedJobIds: Array.from(finalStatusByJob.keys()),
+    succeeded: statuses.filter((status) => status === "success").length,
+    failed: statuses.filter((status) => status !== "success").length,
+  };
 }
