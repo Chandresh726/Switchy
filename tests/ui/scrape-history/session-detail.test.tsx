@@ -128,18 +128,22 @@ describe("SessionDetail", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
-        jsonResponse(sessionResponse("completed", [queueItem()]))
+        jsonResponse(
+          sessionResponse("completed", [queueItem()], [sessionLog()])
+        )
       )
     );
 
     renderWithQueryClient(<SessionDetail sessionId={SESSION_ID} />);
 
-    expect(await screen.findByText("Durable Work Queue")).toBeTruthy();
-    expect(
-      screen.getByText((_, element) => element?.textContent === "Attempt 2/3")
-    ).toBeTruthy();
-    expect(screen.getByText(/Lease through/)).toBeTruthy();
+    expect(await screen.findByText("Company progress")).toBeTruthy();
+    expect(screen.queryByText("Durable Work Queue")).toBeNull();
+    expect(screen.queryByText("Company Logs")).toBeNull();
+    expect(screen.getAllByText("Acme")).toHaveLength(1);
+    expect(screen.getByText("Attempt 2 of 3")).toBeTruthy();
+    expect(screen.getByText(/Lease until/)).toBeTruthy();
     expect(screen.getByText("previous attempt failed")).toBeTruthy();
+    expect(screen.getByText("browser session failed")).toBeTruthy();
     const deleteButton = screen.getByRole("button", { name: "Delete Session" });
     expect((deleteButton as HTMLButtonElement).disabled).toBe(true);
     expect(deleteButton.getAttribute("title")).toBe(
@@ -168,8 +172,8 @@ describe("SessionDetail", () => {
 
     renderWithQueryClient(<SessionDetail sessionId={SESSION_ID} />);
 
-    expect(await screen.findByText("Attempt 1 of 2 · superseded")).toBeTruthy();
-    expect(screen.getByText("Attempt 2 of 2 · final")).toBeTruthy();
+    expect(await screen.findByText("Attempt 1 · superseded")).toBeTruthy();
+    expect(screen.getByText("Attempt 2 · final")).toBeTruthy();
     expect(screen.getByText("one detail request failed")).toBeTruthy();
   });
 

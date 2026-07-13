@@ -130,7 +130,12 @@ describe("DrizzleScrapeHistoryStore", () => {
     const database = createTestDatabase();
     const company = database
       .insert(companies)
-      .values({ name: "History Co", careersUrl: "https://example.com/history" })
+      .values({
+        name: "History Co",
+        careersUrl: "https://example.com/history",
+        logoUrl: "https://example.com/logo.png",
+        platform: "greenhouse",
+      })
       .returning({ id: companies.id })
       .get();
     database.insert(scrapeSessions).values({
@@ -162,7 +167,14 @@ describe("DrizzleScrapeHistoryStore", () => {
     expect(store.getDetail("history-session")).toMatchObject({
       session: { id: "history-session", triggerSource: "company_refresh" },
       logs: [{ companyName: "History Co", status: "success", jobsFound: 3 }],
-      queueItems: [{ id: "history-item", companyName: "History Co" }],
+      queueItems: [
+        {
+          id: "history-item",
+          companyName: "History Co",
+          companyLogoUrl: "https://example.com/logo.png",
+          platform: "greenhouse",
+        },
+      ],
     });
     expect(store.getSessionStatus("history-session")).toEqual({
       id: "history-session",

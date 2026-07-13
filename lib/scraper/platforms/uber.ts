@@ -37,9 +37,27 @@ interface UberSearchResponse {
   status: string;
   data: {
     results: UberJob[];
-    total: number;
+    total?: number;
+    totalResults?: number;
   };
 }
+
+const UberTotalResultsSchema = z
+  .union([
+    z.number().int().nonnegative(),
+    z
+      .object({
+        low: z.number().int(),
+        high: z.number().int(),
+        unsigned: z.boolean().optional(),
+      })
+      .passthrough(),
+  ])
+  .transform((value) => {
+    if (typeof value === "number") return value;
+    const total = (value.high >>> 0) * 2 ** 32 + (value.low >>> 0);
+    return Number.isSafeInteger(total) ? total : undefined;
+  });
 
 const UberLocationSchema = z
   .object({
@@ -71,7 +89,8 @@ const UberSearchResponseSchema = z
             })
             .passthrough()
         ),
-        total: z.number(),
+        total: z.number().int().nonnegative().optional(),
+        totalResults: UberTotalResultsSchema.optional(),
       })
       .passthrough(),
   })
@@ -178,12 +197,16 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
         }
 
         allJobs.push(...data.data.results);
-        expectedTotal = Math.max(expectedTotal ?? 0, data.data.total);
+        const advertisedTotal = data.data.total ?? data.data.totalResults;
+        if (advertisedTotal !== undefined) {
+          expectedTotal = Math.max(expectedTotal ?? 0, advertisedTotal);
+        }
 
-        if (allJobs.length >= expectedTotal) {
+        if (expectedTotal !== undefined && allJobs.length >= expectedTotal) {
           hasMore = false;
         } else if (data.data.results.length === 0 || data.data.results.length < limit) {
-          isComplete = false;
+          isComplete =
+            expectedTotal === undefined || allJobs.length >= expectedTotal;
           hasMore = false;
         } else {
           page++;

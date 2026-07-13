@@ -58,6 +58,8 @@ export interface ScrapeHistoryDetail {
     id: string;
     companyId: number;
     companyName: string | null;
+    companyLogoUrl: string | null;
+    platform: string | null;
     status: string;
     attemptCount: number;
     maxAttempts: number;
@@ -140,6 +142,8 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
         id: scrapeQueueItems.id,
         companyId: scrapeQueueItems.companyId,
         companyName: companies.name,
+        companyLogoUrl: companies.logoUrl,
+        platform: companies.platform,
         status: scrapeQueueItems.status,
         attemptCount: scrapeQueueItems.attemptCount,
         maxAttempts: scrapeQueueItems.maxAttempts,

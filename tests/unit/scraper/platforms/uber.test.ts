@@ -82,4 +82,41 @@ describe("UberScraper", () => {
     expect(result).toMatchObject({ outcome: "success", totalListings: 1 });
     expect(result.jobs[0]?.location).toBeUndefined();
   });
+
+  it("accepts the current totalResults long object returned by Uber", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createUberResponse([1], 1, { totalShape: "long" })
+      );
+
+    const result = await new UberScraper(
+      createHttpClientStub({ fetch: fetchMock })
+    ).scrape("https://www.uber.com/in/en/careers/list/");
+
+    expect(result).toMatchObject({
+      outcome: "success",
+      totalListings: 1,
+      listingCompleteness: "complete",
+      openExternalIds: ["uber-1"],
+    });
+  });
+
+  it("infers completeness from a short final page when no total is advertised", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createUberResponse([1], 1, { totalShape: "omitted" })
+      );
+
+    const result = await new UberScraper(
+      createHttpClientStub({ fetch: fetchMock })
+    ).scrape("https://www.uber.com/in/en/careers/list/");
+
+    expect(result).toMatchObject({
+      outcome: "success",
+      totalListings: 1,
+      listingCompleteness: "complete",
+    });
+  });
 });

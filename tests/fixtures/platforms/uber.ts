@@ -31,13 +31,23 @@ function createUberJob(id: number, nullableLocation = false) {
 export function createUberResponse(
   jobIds: number[],
   total = jobIds.length,
-  options: { nullableLocation?: boolean } = {}
+  options: {
+    nullableLocation?: boolean;
+    totalShape?: "number" | "long" | "omitted";
+  } = {}
 ): Response {
+  const totalFields =
+    options.totalShape === "long"
+      ? { totalResults: { low: total, high: 0, unsigned: false } }
+      : options.totalShape === "omitted"
+        ? {}
+        : { total };
+
   return new Response(
     JSON.stringify({
       status: "success",
       data: {
-        total,
+        ...totalFields,
         results: jobIds.map((id) =>
           createUberJob(id, options.nullableLocation)
         ),
