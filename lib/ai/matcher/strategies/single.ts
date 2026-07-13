@@ -27,7 +27,7 @@ export const singleStrategy: SingleStrategy = async (ctx) => {
             const generated = await generateStructured({
               model,
               schema: MatchResultSchema,
-              system: SINGLE_MATCH_SYSTEM_PROMPT,
+              instructions: SINGLE_MATCH_SYSTEM_PROMPT,
               prompt,
               providerOptions,
             });

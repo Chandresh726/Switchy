@@ -187,7 +187,7 @@ async function processBatch(
             const generated = await generateStructured({
               model,
               schema: BulkMatchResultSchema,
-              system: BULK_MATCH_SYSTEM_PROMPT,
+              instructions: BULK_MATCH_SYSTEM_PROMPT,
               prompt,
               providerOptions,
             });

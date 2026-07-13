@@ -14,4 +14,4 @@ minimumReleaseAgeExclude:
 overrides:
   esbuild: ^0.28.1
   postcss: ^8.5.15
-  vite: ^7.3.5
+  vite: ^8.1.4

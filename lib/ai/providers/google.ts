@@ -1,4 +1,4 @@
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createGoogle } from "@ai-sdk/google";
 import type { LanguageModel } from "ai";
 import { BaseProvider } from "./base-provider";
 import type { AIProvider, ModelConfig, ProviderConfig } from "./types";
@@ -33,7 +33,7 @@ export class GoogleProvider extends BaseProvider {
     config: ModelConfig,
     _providerConfig: ProviderConfig
   ): LanguageModel {
-    const google = createGoogleGenerativeAI({
+    const google = createGoogle({
       apiKey: _providerConfig.apiKey,
     });
 
