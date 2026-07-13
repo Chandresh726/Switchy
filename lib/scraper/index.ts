@@ -19,11 +19,9 @@ import { ScrapeWorkHandler } from "./application/scrape-work-handler";
 import { DrizzleScrapeHistoryStore } from "./history";
 import { createHttpClient, createScraperRepository } from "./infrastructure";
 import { createBrowserClient } from "./infrastructure";
-import {
-  DrizzleLocalScrapeQueueRepository,
-  LocalScrapeQueueService,
-} from "./queue";
 import { DrizzleScrapeSessionProjectionStore } from "./queue/projection-store";
+import { DrizzleLocalScrapeQueueRepository } from "./queue/repository";
+import { LocalScrapeQueueService } from "./queue/service";
 import {
   createDeduplicationService,
   createFilterService,
@@ -124,19 +122,3 @@ export function getLocalScrapeQueueService(): LocalScrapeQueueService {
   }
   return defaultQueueService;
 }
-
-export {
-  DrizzleLocalScrapeQueueRepository,
-  LocalScrapeQueueService,
-} from "./queue";
-export {
-  deleteScrapeHistory,
-  pruneScrapeHistory,
-  type DeleteScrapeHistoryResult,
-  type PruneScrapeHistoryResult,
-} from "./history";
-export type {
-  ILocalScrapeQueueRepository,
-  QueueCancellationResult,
-  QueueRunSummary,
-} from "./queue";

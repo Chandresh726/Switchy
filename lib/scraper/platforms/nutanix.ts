@@ -62,14 +62,8 @@ export class NutanixScraper extends AbstractApiScraper<NutanixConfig> {
     try {
       const feedUrl = `${this.config.baseUrl}?rss=true`;
 
-      const response = await this.httpClient.fetch(feedUrl, {
-        timeout: this.config.timeout,
-        retries: this.config.retries,
-        baseDelay: this.config.baseDelay,
-        headers: {
-          Accept: "application/xml, text/xml, */*",
-          "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-        },
+      const response = await this.fetchResponse(feedUrl, {
+        headers: this.requestHeaders("application/xml, text/xml, */*"),
       });
 
       if (!response.ok) {
@@ -174,11 +168,4 @@ export class NutanixScraper extends AbstractApiScraper<NutanixConfig> {
     const parsed = new Date(dateStr);
     return isNaN(parsed.getTime()) ? null : parsed;
   }
-}
-
-export function createNutanixScraper(
-  httpClient: IHttpClient,
-  config?: Partial<NutanixConfig>
-): NutanixScraper {
-  return new NutanixScraper(httpClient, config);
 }

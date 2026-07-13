@@ -20,7 +20,7 @@ vi.mock("@/lib/ai/matcher", () => ({
   getMatcherConfig: matcherMocks.getMatcherConfig,
 }));
 
-vi.mock("@/lib/scraper/matching", () => ({
+vi.mock("@/lib/scraper/matching/outbox", () => ({
   dispatchPendingScrapeMatches: outboxMocks.dispatchPendingScrapeMatches,
 }));
 

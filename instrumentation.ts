@@ -23,7 +23,9 @@ export async function register() {
     }
 
     try {
-      const { dispatchPendingScrapeMatches } = await import("@/lib/scraper/matching");
+      const { dispatchPendingScrapeMatches } = await import(
+        "@/lib/scraper/matching/outbox"
+      );
       dispatchPendingScrapeMatches();
     } catch (error) {
       console.error("[Instrumentation] Failed to recover matcher outbox:", error);

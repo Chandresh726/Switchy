@@ -1,25 +1,26 @@
 import { z } from "zod";
 
+import { containsHtml, processDescription } from "@/lib/jobs/description-processor";
+import type {
+  BrowserSession,
+  IBrowserClient,
+} from "@/lib/scraper/infrastructure/browser-client";
+import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 import {
   HttpError,
   type IHttpClient,
 } from "@/lib/scraper/infrastructure/http-client";
-import type { IBrowserClient, BrowserSession } from "@/lib/scraper/infrastructure/browser-client";
-import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 import {
+  parseEmploymentType,
   parseExternalPayload,
   ScraperPayloadError,
-  type ScraperResult,
+  type BrowserScraperConfig,
   type ScrapeOptions,
   type ScrapedJob,
-  type BrowserScraperConfig,
-  type EarlyFilterStats,
-  type JobFilters,
+  type ScraperResult,
 } from "@/lib/scraper/types";
-import { processDescription, containsHtml } from "@/lib/jobs/description-processor";
-import { parseEmploymentType } from "@/lib/scraper/types";
-import { applyEarlyFilters, hasEarlyFilters, toEarlyFilterStats } from "@/lib/scraper/services";
 import { AbstractBrowserScraper, DEFAULT_BROWSER_CONFIG } from "../core";
+import { selectListingsForHydration } from "./shared/listing-selection";
 
 type WorkdayJobListItem = {
   title: string;
@@ -173,9 +174,6 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         board: parsedUrl.board,
       };
 
-      const filters: JobFilters | undefined = options?.filters;
-      const existingExternalIds = options?.existingExternalIds;
-
       const listResult = await this.fetchAllJobListItems(workdaySession);
       if (!listResult) {
         return this.failure("network_error", "Failed to fetch Workday jobs list.");
@@ -207,45 +205,26 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         };
       }
 
-      let jobsToProcess = allJobListItems;
-      let earlyFilterStats: EarlyFilterStats | undefined;
-
-      if (hasEarlyFilters(filters)) {
-        const filterableJobs = allJobListItems.map((job) => ({
-          ...job,
+      const selection = selectListingsForHydration({
+        listings: allJobListItems,
+        filters: options?.filters,
+        existingExternalIds: options?.existingExternalIds,
+        toFilterable: (job) => ({
           title: job.title,
           location: job.locationsText,
-        }));
-
-        const earlyFilterResult = applyEarlyFilters(filterableJobs, filters);
-        const { filtered } = earlyFilterResult;
-        jobsToProcess = filtered as WorkdayJobListItem[];
-        earlyFilterStats = toEarlyFilterStats(earlyFilterResult);
-      }
-
-      if (jobsToProcess.length === 0) {
-        const baseOutcome = listResult.isComplete ? "success" : "partial";
-        return {
-          outcome: baseOutcome,
-          jobs: [],
-          totalListings: allJobListItems.length,
-          detectedBoardToken,
-          earlyFiltered: earlyFilterStats,
-          openExternalIds,
-          listingCompleteness: listResult.isComplete ? "complete" : "partial",
-        };
-      }
-
-      let jobsToFetch = jobsToProcess;
-
-      if (existingExternalIds && existingExternalIds.size > 0) {
-        jobsToFetch = jobsToProcess.filter((job) => {
+        }),
+        getExternalId: (job) => {
           const jobPostingId = this.getJobPostingId(job);
-          if (!jobPostingId) return false;
-          const externalId = this.generateExternalId(this.platform, workdaySession.board, jobPostingId);
-          return !existingExternalIds.has(externalId);
-        });
-      }
+          return jobPostingId
+            ? this.generateExternalId(
+                this.platform,
+                workdaySession.board,
+                jobPostingId
+              )
+            : null;
+        },
+      });
+      const jobsToFetch = selection.listings;
 
       if (jobsToFetch.length === 0) {
         const baseOutcome = listResult.isComplete ? "success" : "partial";
@@ -254,7 +233,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           jobs: [],
           totalListings: allJobListItems.length,
           detectedBoardToken,
-          earlyFiltered: earlyFilterStats,
+          earlyFiltered: selection.earlyFiltered,
           openExternalIds,
           listingCompleteness: listResult.isComplete ? "complete" : "partial",
         };
@@ -281,7 +260,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         jobs: scrapedJobs,
         totalListings: allJobListItems.length,
         detectedBoardToken,
-        earlyFiltered: earlyFilterStats,
+        earlyFiltered: selection.earlyFiltered,
         openExternalIds,
         listingCompleteness: listResult.isComplete ? "complete" : "partial",
       };
@@ -568,12 +547,4 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       this.config.requestDelayJitterMs;
     await this.delay(this.config.requestDelayBaseMs + jitter);
   }
-}
-
-export function createWorkdayScraper(
-  httpClient: IHttpClient,
-  browserClient: IBrowserClient,
-  config?: Partial<WorkdayConfig>
-): WorkdayScraper {
-  return new WorkdayScraper(httpClient, browserClient, config);
 }

@@ -128,28 +128,16 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
 
       const apiUrl = `${this.config.baseUrl}/v1/boards/${boardToken}/jobs?content=true`;
 
-      const response = await this.httpClient.fetch(apiUrl, {
-        timeout: this.config.timeout,
-        retries: this.config.retries,
-        baseDelay: this.config.baseDelay,
-        headers: {
-          Accept: "application/json",
-          "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-        },
+      const response = await this.fetchResponse(apiUrl, {
+        headers: this.jsonRequestHeaders(),
       });
 
       let data: GreenhouseResponse;
 
       if (!response.ok) {
         const altApiUrl = `https://boards.greenhouse.io/${boardToken}/embed/job_board/jobs.json`;
-        const altResponse = await this.httpClient.fetch(altApiUrl, {
-          timeout: this.config.timeout,
-          retries: this.config.retries,
-          baseDelay: this.config.baseDelay,
-          headers: {
-            Accept: "application/json",
-            "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-          },
+        const altResponse = await this.fetchResponse(altApiUrl, {
+          headers: this.jsonRequestHeaders(),
         });
 
         if (!altResponse.ok) {
@@ -241,11 +229,4 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
       listingCompleteness: "complete",
     };
   }
-}
-
-export function createGreenhouseScraper(
-  httpClient: IHttpClient,
-  config?: Partial<GreenhouseConfig>
-): GreenhouseScraper {
-  return new GreenhouseScraper(httpClient, config);
 }

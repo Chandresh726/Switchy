@@ -147,21 +147,17 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
       while (hasMore) {
         const apiUrl = `${this.config.baseUrl}/api/loadSearchJobsResults?localeCode=en`;
 
-        const response = await this.httpClient.fetch(apiUrl, {
+        const response = await this.fetchResponse(apiUrl, {
           method: "POST",
-          headers: {
+          headers: this.jsonRequestHeaders({
             "Content-Type": "application/json",
             "x-csrf-token": "x",
-            "Accept": "application/json",
-          },
+          }),
           body: JSON.stringify({
             page,
             limit,
             params: this.emptySearchParams,
           }),
-          timeout: this.config.timeout,
-          retries: this.config.retries,
-          baseDelay: this.config.baseDelay,
         });
 
         if (!response.ok) {
@@ -313,11 +309,4 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
 
     return "mid";
   }
-}
-
-export function createUberScraper(
-  httpClient: IHttpClient,
-  config?: Partial<UberConfig>
-): UberScraper {
-  return new UberScraper(httpClient, config);
 }

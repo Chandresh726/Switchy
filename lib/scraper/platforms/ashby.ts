@@ -105,14 +105,8 @@ export class AshbyScraper extends AbstractApiScraper<AshbyConfig> {
         boardName
       )}?includeCompensation=true`;
 
-      const response = await this.httpClient.fetch(apiUrl, {
-        timeout: this.config.timeout,
-        retries: this.config.retries,
-        baseDelay: this.config.baseDelay,
-        headers: {
-          Accept: "application/json",
-          "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-        },
+      const response = await this.fetchResponse(apiUrl, {
+        headers: this.jsonRequestHeaders(),
       });
 
       if (!response.ok) {
@@ -203,11 +197,4 @@ export class AshbyScraper extends AbstractApiScraper<AshbyConfig> {
       listingCompleteness: "complete",
     };
   }
-}
-
-export function createAshbyScraper(
-  httpClient: IHttpClient,
-  config?: Partial<AshbyConfig>
-): AshbyScraper {
-  return new AshbyScraper(httpClient, config);
 }

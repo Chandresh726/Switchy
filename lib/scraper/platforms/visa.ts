@@ -125,11 +125,9 @@ export class VisaScraper extends AbstractApiScraper<VisaConfig> {
             size: this.config.pageSize,
           },
           {
-            headers: {
-              Accept: "application/json, text/plain, */*",
+            headers: this.requestHeaders("application/json, text/plain, */*", {
               Referer: url,
-              "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-            },
+            }),
           }
         );
         const page: VisaJobsResponse = parseExternalPayload(
@@ -195,11 +193,4 @@ export class VisaScraper extends AbstractApiScraper<VisaConfig> {
       return true;
     });
   }
-}
-
-export function createVisaScraper(
-  httpClient: IHttpClient,
-  config?: Partial<VisaConfig>
-): VisaScraper {
-  return new VisaScraper(httpClient, config);
 }

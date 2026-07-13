@@ -11,7 +11,7 @@ import {
   type ScraperResult,
   type ScrapedJob,
 } from "@/lib/scraper/types";
-import { dispatchPendingScrapeMatches } from "@/lib/scraper/matching";
+import { dispatchPendingScrapeMatches } from "@/lib/scraper/matching/outbox";
 import type { ScrapeSettingsProvider } from "@/lib/scraper/settings/provider";
 import { ScraperLogger } from "@/lib/scraper/utils/logger";
 import { getMatcherConfig } from "@/lib/ai/matcher";

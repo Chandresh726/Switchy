@@ -119,14 +119,8 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
 
       const apiUrl = `${this.config.baseUrl}/v0/postings/${companySlug}?mode=json`;
 
-      const response = await this.httpClient.fetch(apiUrl, {
-        timeout: this.config.timeout,
-        retries: this.config.retries,
-        baseDelay: this.config.baseDelay,
-        headers: {
-          Accept: "application/json",
-          "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-        },
+      const response = await this.fetchResponse(apiUrl, {
+        headers: this.jsonRequestHeaders(),
       });
 
       if (!response.ok) {
@@ -296,11 +290,4 @@ function normalizeListHtml(content: string): string {
   }
 
   return trimmed;
-}
-
-export function createLeverScraper(
-  httpClient: IHttpClient,
-  config?: Partial<LeverConfig>
-): LeverScraper {
-  return new LeverScraper(httpClient, config);
 }

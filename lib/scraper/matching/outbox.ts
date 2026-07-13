@@ -98,7 +98,3 @@ const scheduledDispatcher = new ScheduledSingleFlightDispatcher({
 export function dispatchPendingScrapeMatches(): void {
   void scheduledDispatcher.request();
 }
-
-export async function recoverPendingScrapeMatches(): Promise<ScrapeMatchOutboxRunSummary> {
-  return scheduledDispatcher.request({ rerunIfActive: false });
-}

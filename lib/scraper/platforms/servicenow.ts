@@ -313,11 +313,3 @@ export class ServiceNowScraper extends AbstractBrowserScraper<ServiceNowConfig> 
     return fragment.html() ?? null;
   }
 }
-
-export function createServiceNowScraper(
-  httpClient: IHttpClient,
-  browserClient: IBrowserClient,
-  config?: Partial<ServiceNowConfig>
-): ServiceNowScraper {
-  return new ServiceNowScraper(httpClient, browserClient, config);
-}

@@ -1,6 +1,7 @@
 import { load, type CheerioAPI } from "cheerio";
 import { z } from "zod";
 
+import { containsHtml, processDescription } from "@/lib/jobs/description-processor";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import {
   parseExternalPayload,
@@ -8,14 +9,12 @@ import {
   type ScrapeOptions,
   type ScrapedJob,
   type ApiScraperConfig,
-  type EarlyFilterStats,
   type SeniorityLevel,
 } from "@/lib/scraper/types";
-import { applyEarlyFilters, hasEarlyFilters, toEarlyFilterStats } from "@/lib/scraper/services";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
 import { fetchPaginatedHtmlByPageParam, resolveUrl } from "./shared/html-pagination";
-import { normalizeDescription } from "./shared/job-normalizers";
+import { selectListingsForHydration } from "./shared/listing-selection";
 
 interface GoogleListingJob {
   id: string;
@@ -99,7 +98,7 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
       const pagedResult = await fetchPaginatedHtmlByPageParam({
         httpClient: this.httpClient,
         startUrl: listingUrl,
-        headers: this.createHtmlHeaders(),
+        headers: this.requestHeaders("text/html"),
         timeout: this.config.timeout,
         retries: this.config.retries,
         baseDelay: this.config.baseDelay,
@@ -156,47 +155,25 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
       }
 
       const filters = options?.filters;
-      const existingExternalIds = options?.existingExternalIds;
-      let jobsToProcess = listings;
-      let earlyFilterStats: EarlyFilterStats | undefined;
-
-      if (hasEarlyFilters(filters)) {
-        const earlyFilterResult = applyEarlyFilters(
-          listings.map((job) => ({
-            ...job,
-            title: job.title,
-            location: job.location || "",
-          })),
-          filters
-        );
-        jobsToProcess = earlyFilterResult.filtered as GoogleListingJob[];
-        earlyFilterStats = toEarlyFilterStats(earlyFilterResult);
-      }
-
-      if (jobsToProcess.length === 0) {
-        return {
-          outcome: listingIsComplete ? "success" : "partial",
-          jobs: [],
-          totalListings: listings.length,
-          earlyFiltered: earlyFilterStats,
-          openExternalIds,
-          listingCompleteness: listingIsComplete ? "complete" : "partial",
-        };
-      }
-
-      const jobsToFetch = existingExternalIds
-        ? jobsToProcess.filter((job) => {
-            const externalId = this.generateExternalId(this.platform, job.id);
-            return !existingExternalIds.has(externalId);
-          })
-        : jobsToProcess;
+      const selection = selectListingsForHydration({
+        listings,
+        filters,
+        existingExternalIds: options?.existingExternalIds,
+        toFilterable: (listing) => ({
+          title: listing.title,
+          location: listing.location,
+        }),
+        getExternalId: (listing) =>
+          this.generateExternalId(this.platform, listing.id),
+      });
+      const jobsToFetch = selection.listings;
 
       if (jobsToFetch.length === 0) {
         return {
           outcome: listingIsComplete ? "success" : "partial",
           jobs: [],
           totalListings: listings.length,
-          earlyFiltered: earlyFilterStats,
+          earlyFiltered: selection.earlyFiltered,
           openExternalIds,
           listingCompleteness: listingIsComplete ? "complete" : "partial",
         };
@@ -221,7 +198,7 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
         outcome,
         jobs: scrapedJobs,
         totalListings: listings.length,
-        earlyFiltered: earlyFilterStats,
+        earlyFiltered: selection.earlyFiltered,
         openExternalIds,
         listingCompleteness: listingIsComplete ? "complete" : "partial",
       };
@@ -386,11 +363,8 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
   private async fetchAndHydrateJob(listing: GoogleListingJob): Promise<GoogleHydratedJob> {
     const fallback = this.mapListingToJob(listing);
 
-    const response = await this.httpClient.fetch(listing.url, {
-      timeout: this.config.timeout,
-      retries: this.config.retries,
-      baseDelay: this.config.baseDelay,
-      headers: this.createHtmlHeaders(),
+    const response = await this.fetchResponse(listing.url, {
+      headers: this.requestHeaders("text/html"),
     });
 
     if (!response.ok) {
@@ -401,8 +375,10 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
     const $ = load(html);
     const jsonLd = this.extractJobPostingJsonLd($);
     const sectionHtml = this.extractDetailSectionHtml($);
-    const { description, descriptionFormat } = normalizeDescription(
-      jsonLd?.description || sectionHtml
+    const rawDescription = jsonLd?.description || sectionHtml;
+    const processedDescription = processDescription(
+      rawDescription,
+      containsHtml(rawDescription) ? "html" : "plain"
     );
     const detailTitle =
       jsonLd?.title || $("main h2").first().text().trim() || $("h1").first().text().trim();
@@ -416,8 +392,8 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
         url: listing.url,
         location: normalizedLocation.location,
         locationType: normalizedLocation.locationType,
-        description,
-        descriptionFormat,
+        description: processedDescription.text ?? undefined,
+        descriptionFormat: processedDescription.format,
         seniorityLevel: listing.seniority,
       },
     };
@@ -481,18 +457,4 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
 
     return undefined;
   }
-
-  private createHtmlHeaders(): Record<string, string> {
-    return {
-      Accept: "text/html",
-      "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-    };
-  }
-}
-
-export function createGoogleScraper(
-  httpClient: IHttpClient,
-  config?: Partial<GoogleConfig>
-): GoogleScraper {
-  return new GoogleScraper(httpClient, config);
 }

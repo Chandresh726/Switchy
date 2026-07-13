@@ -17,6 +17,9 @@ pnpm start            # Start production server
 pnpm lint             # Run ESLint
 pnpm typecheck        # Run TypeScript without emitting files
 pnpm test:run         # Run Vitest once
+pnpm test:unit        # Run isolated Node tests
+pnpm test:integration # Run temporary-SQLite integration tests
+pnpm test:ui          # Run jsdom UI tests
 pnpm audit            # Check dependencies for known vulnerabilities
 pnpm verify           # Run lint, typecheck, tests, audit, and production build
 pnpm verify:all       # Run root verification plus landing app verification
@@ -181,12 +184,20 @@ lib/
   ai/                # AI providers and matching logic
   db/                # Database schema and connection
   hooks/             # Custom React hooks
-  scrapers/          # Job board scrapers
+  scraper/           # Scraper pipeline, runtime, stores, and platforms
   utils.ts           # Shared utilities (cn function)
 components/
   ui/                # Shadcn UI components
   [feature]/         # Feature-specific components
+tests/
+  unit/              # Isolated Node tests
+  integration/       # Real temporary-SQLite tests
+  ui/                # jsdom component and hook tests
+  helpers/           # Test-only shared setup and stubs
+  fixtures/          # Platform-specific payload builders
 ```
+
+Production modules must not import `@test/*`; the alias is reserved for files under `tests/`.
 
 ## Data Storage
 

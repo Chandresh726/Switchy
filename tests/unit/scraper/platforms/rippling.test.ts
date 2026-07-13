@@ -10,16 +10,6 @@ import {
 } from "@test/fixtures/platforms/rippling";
 import { createHttpClientStub } from "@test/helpers/scraper-clients";
 
-vi.mock("@/lib/scraper/services", () => ({
-  hasEarlyFilters: vi.fn(() => false),
-  applyEarlyFilters: vi.fn((items: unknown[]) => ({
-    filtered: items,
-    filteredOut: 0,
-    breakdown: { country: 0, city: 0, title: 0 },
-  })),
-  toEarlyFilterStats: vi.fn(() => undefined),
-}));
-
 function createHttpMock(
   responses: Response[]
 ): { httpClient: IHttpClient; fetchMock: ReturnType<typeof vi.fn> } {

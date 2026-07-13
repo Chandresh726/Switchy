@@ -1,6 +1,7 @@
 import { load } from "cheerio";
 import { z } from "zod";
 
+import { processDescription } from "@/lib/jobs/description-processor";
 import {
   HttpError,
   type IHttpClient,
@@ -9,17 +10,14 @@ import {
   parseEmploymentType,
   parseExternalPayload,
   type ApiScraperConfig,
-  type EarlyFilterStats,
   type EmploymentType,
   type ScrapeOptions,
   type ScrapedJob,
   type ScraperResult,
 } from "@/lib/scraper/types";
-import { applyEarlyFilters, hasEarlyFilters, toEarlyFilterStats } from "@/lib/scraper/services";
-
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
-import { normalizeDescription } from "./shared/job-normalizers";
+import { selectListingsForHydration } from "./shared/listing-selection";
 
 interface RipplingLocation {
   name: string;
@@ -158,51 +156,25 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
       }
 
       const filters = options?.filters;
-      const existingExternalIds = options?.existingExternalIds;
-      let jobsToProcess = listings;
-      let earlyFilterStats: EarlyFilterStats | undefined;
-
-      if (hasEarlyFilters(filters)) {
-        const earlyFilterResult = applyEarlyFilters(
-          listings.map((job) => ({
-            title: job.title,
-            location: job.location,
-          })),
-          filters
-        );
-        const filteredIds = new Set(
-          earlyFilterResult.filtered.map((item) => item.title + "|" + item.location)
-        );
-        jobsToProcess = listings.filter((job) =>
-          filteredIds.has(job.title + "|" + job.location)
-        );
-        earlyFilterStats = toEarlyFilterStats(earlyFilterResult);
-      }
-
-      if (jobsToProcess.length === 0) {
-        return {
-          outcome: "success",
-          jobs: [],
-          totalListings: listings.length,
-          earlyFiltered: earlyFilterStats,
-          openExternalIds,
-          listingCompleteness: "complete",
-        };
-      }
-
-      const jobsToFetch = existingExternalIds
-        ? jobsToProcess.filter((job) => {
-            const externalId = this.generateExternalId(this.platform, job.id);
-            return !existingExternalIds.has(externalId);
-          })
-        : jobsToProcess;
+      const selection = selectListingsForHydration({
+        listings,
+        filters,
+        existingExternalIds: options?.existingExternalIds,
+        toFilterable: (listing) => ({
+          title: listing.title,
+          location: listing.location,
+        }),
+        getExternalId: (listing) =>
+          this.generateExternalId(this.platform, listing.id),
+      });
+      const jobsToFetch = selection.listings;
 
       if (jobsToFetch.length === 0) {
         return {
           outcome: "success",
           jobs: [],
           totalListings: listings.length,
-          earlyFiltered: earlyFilterStats,
+          earlyFiltered: selection.earlyFiltered,
           openExternalIds,
           listingCompleteness: "complete",
         };
@@ -228,7 +200,7 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
         outcome: detailFailures > 0 ? "partial" : "success",
         jobs: scrapedJobs,
         totalListings: listings.length,
-        earlyFiltered: earlyFilterStats,
+        earlyFiltered: selection.earlyFiltered,
         openExternalIds,
         listingCompleteness: "complete",
       };
@@ -238,11 +210,8 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
   }
 
   private async fetchBuildId(): Promise<string | null> {
-    const response = await this.httpClient.fetch(this.config.baseUrl, {
-      timeout: this.config.timeout,
-      retries: this.config.retries,
-      baseDelay: this.config.baseDelay,
-      headers: this.createHtmlHeaders(),
+    const response = await this.fetchResponse(this.config.baseUrl, {
+      headers: this.htmlRequestHeaders(),
     });
 
     if (!response.ok) {
@@ -263,11 +232,8 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
     locale: string
   ): Promise<RipplingListingJob[]> {
     const dataUrl = `${this.config.baseUrl}/_next/data/${buildId}/${locale}/careers/open-roles.json`;
-    const response = await this.httpClient.fetch(dataUrl, {
-      timeout: this.config.timeout,
-      retries: this.config.retries,
-      baseDelay: this.config.baseDelay,
-      headers: this.createJsonHeaders(),
+    const response = await this.fetchResponse(dataUrl, {
+      headers: this.jsonRequestHeaders(),
     });
 
     if (!response.ok) {
@@ -339,11 +305,8 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
   ): Promise<RipplingHydratedJob> {
     const fallback = this.mapListingToJob(listing);
 
-    const response = await this.httpClient.fetch(listing.url, {
-      timeout: this.config.timeout,
-      retries: this.config.retries,
-      baseDelay: this.config.baseDelay,
-      headers: this.createHtmlHeaders(),
+    const response = await this.fetchResponse(listing.url, {
+      headers: this.htmlRequestHeaders(),
     });
 
     if (!response.ok) {
@@ -409,10 +372,10 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
       .replace(/Powered by Rippling/gi, "")
       .replace(/Terms of service|Privacy|Cookies/gi, "");
 
-    const normalized = normalizeDescription(cleaned);
+    const processed = processDescription(cleaned, "html");
     return {
-      description: normalized.description,
-      descriptionFormat: normalized.descriptionFormat,
+      description: processed.text ?? undefined,
+      descriptionFormat: processed.format,
     };
   }
 
@@ -444,25 +407,4 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
     }
     return null;
   }
-
-  private createHtmlHeaders(): Record<string, string> {
-    return {
-      Accept: "text/html,application/xhtml+xml",
-      "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-    };
-  }
-
-  private createJsonHeaders(): Record<string, string> {
-    return {
-      Accept: "application/json",
-      "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-    };
-  }
-}
-
-export function createRipplingScraper(
-  httpClient: IHttpClient,
-  config?: Partial<RipplingConfig>
-): RipplingScraper {
-  return new RipplingScraper(httpClient, config);
 }

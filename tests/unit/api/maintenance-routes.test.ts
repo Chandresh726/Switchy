@@ -29,7 +29,7 @@ vi.mock("@/lib/scraper/maintenance", () => ({
   }),
 }));
 
-vi.mock("@/lib/scraper/matching", () => ({
+vi.mock("@/lib/scraper/matching/lifecycle", () => ({
   stopMatchSession: vi.fn(),
 }));
 

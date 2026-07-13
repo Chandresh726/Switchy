@@ -5,7 +5,6 @@ import { scrapeQueueItems, scrapeSessions } from "@/lib/db/schema";
 import { createSqliteBusyRetry } from "@/lib/db/sqlite-utils";
 
 import type {
-  EnqueueScrapeWork,
   EnqueueScrapeSession,
   ILocalScrapeQueueRepository,
   QueueCancellationResult,
@@ -39,32 +38,6 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
       maxRetries: this.config.claimBusyRetries,
       baseDelayMs: this.config.claimBusyRetryDelayMs,
     });
-  }
-
-  async enqueue(input: EnqueueScrapeWork) {
-    if (input.companyIds.length === 0) return [];
-    const now = new Date();
-    return this.retryBusy(() =>
-      this.database
-        .insert(scrapeQueueItems)
-        .values(
-          input.companyIds.map((companyId) => ({
-            id: crypto.randomUUID(),
-            sessionId: input.sessionId,
-            companyId,
-            status: "queued",
-            priority: input.priority ?? 100,
-            maxAttempts: input.maxAttempts ?? 3,
-            availableAt: input.availableAt ?? now,
-            createdAt: now,
-            updatedAt: now,
-          }))
-        )
-        .onConflictDoNothing({
-          target: [scrapeQueueItems.sessionId, scrapeQueueItems.companyId],
-        })
-        .returning()
-    );
   }
 
   async createSessionAndEnqueue(input: EnqueueScrapeSession) {

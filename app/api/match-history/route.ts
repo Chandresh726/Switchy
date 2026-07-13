@@ -10,7 +10,7 @@ import {
   matchSessions,
 } from "@/lib/db/schema";
 import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
-import { stopMatchSession } from "@/lib/scraper/matching";
+import { stopMatchSession } from "@/lib/scraper/matching/lifecycle";
 import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
 /**

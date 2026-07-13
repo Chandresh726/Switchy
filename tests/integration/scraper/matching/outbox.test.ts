@@ -13,11 +13,8 @@ import {
   scrapingLogs,
 } from "@/lib/db/schema";
 import { DrizzleScraperRepository } from "@/lib/scraper/infrastructure/repository";
-import {
-  deleteAllJobsAndTerminateMatches,
-  deleteCompanyJobsAndTerminateWork,
-  stopMatchSession,
-} from "@/lib/scraper/matching/lifecycle";
+import { LocalDataMaintenanceService } from "@/lib/scraper/maintenance";
+import { stopMatchSession } from "@/lib/scraper/matching/lifecycle";
 import { ScrapeMatchOutboxDispatcher } from "@/lib/scraper/matching/outbox";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
@@ -405,7 +402,7 @@ describe("ScrapeMatchOutboxDispatcher", () => {
     const persisted = await persistMatchableJob(database, company.id);
     if (!persisted.matchOutboxId) throw new Error("Expected a durable match handoff.");
 
-    await deleteAllJobsAndTerminateMatches(database);
+    await new LocalDataMaintenanceService(database).deleteAllJobs();
 
     expect(database.select().from(jobs).all()).toHaveLength(0);
     expect(
@@ -459,10 +456,9 @@ describe("ScrapeMatchOutboxDispatcher", () => {
       },
     ]).run();
 
-    const deletedCount = await deleteCompanyJobsAndTerminateWork(
-      [company.id],
+    const deletedCount = await new LocalDataMaintenanceService(
       database
-    );
+    ).deleteCompanyJobs([company.id]);
 
     expect(deletedCount).toBe(1);
     expect(database.select().from(jobs).all()).toHaveLength(0);

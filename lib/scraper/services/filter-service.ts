@@ -3,8 +3,6 @@ import { COUNTRY_MAPPINGS } from "@/lib/scraper/utils";
 
 export type { JobFilters } from "@/lib/scraper/types";
 
-export { COUNTRY_MAPPINGS } from "@/lib/scraper/utils";
-
 export interface FilterResult {
   filtered: ScrapedJob[];
   filteredOut: number;
@@ -178,18 +176,4 @@ export class DefaultFilterService implements IFilterService {
 
 export function createFilterService(): IFilterService {
   return new DefaultFilterService();
-}
-
-export function parseTitleKeywords(value: string | null | undefined): string[] {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((v): v is string => typeof v === "string")
-      .map((v) => String(v).trim().toLowerCase())
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
 }

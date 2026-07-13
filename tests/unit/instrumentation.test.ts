@@ -16,7 +16,7 @@ vi.mock("@/lib/scraper", () => ({
   }),
 }));
 
-vi.mock("@/lib/scraper/matching", () => ({
+vi.mock("@/lib/scraper/matching/outbox", () => ({
   dispatchPendingScrapeMatches: mocks.dispatchPendingScrapeMatches,
 }));
 

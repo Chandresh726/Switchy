@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { runWithScrapeSignal } from "@/lib/scraper/infrastructure/cancellation";
 import { ZwayamScraper } from "@/lib/scraper/platforms/zwayam";
 import { createHttpClientStub } from "@test/helpers/scraper-clients";
 
@@ -302,5 +303,106 @@ describe("ZwayamScraper", () => {
       totalListings: 2,
       listingCompleteness: "partial",
     });
+  });
+
+  it("hydrates at most two details concurrently by default", async () => {
+    let activeDetails = 0;
+    let maxActiveDetails = 0;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/jobs/search")) {
+        return new Response(
+          JSON.stringify({
+            code: 200,
+            data: {
+              data: [1, 2, 3].map((id) => ({
+                _source: { id, designation: `Role ${id}`, jobDescription: "ok" },
+              })),
+              totalCount: 3,
+              hasMoreData: false,
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      activeDetails += 1;
+      maxActiveDetails = Math.max(maxActiveDetails, activeDetails);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      activeDetails -= 1;
+      return new Response(
+        JSON.stringify({ responseStatus: "SUCCESS", responseCode: 200 }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    });
+
+    const scraper = new ZwayamScraper(
+      createHttpClientStub({ fetch: fetchMock }),
+      { detailDelayMs: 0 }
+    );
+    const result = await scraper.scrape(
+      "https://www.flipkartcareers.com/flipkart/jobslist"
+    );
+
+    expect(result.outcome).toBe("success");
+    expect(result.jobs).toHaveLength(3);
+    expect(maxActiveDetails).toBe(2);
+  });
+
+  it("retains jobs and marks partial results when detail hydration fails", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/jobs/search")) {
+        return new Response(
+          JSON.stringify({
+            code: 200,
+            data: {
+              data: [{ _source: { id: 1, designation: "Role", jobDescription: "ok" } }],
+              totalCount: 1,
+              hasMoreData: false,
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      throw new TypeError("detail endpoint unavailable");
+    });
+
+    const result = await new ZwayamScraper(
+      createHttpClientStub({ fetch: fetchMock }),
+      { detailDelayMs: 0 }
+    ).scrape("https://www.flipkartcareers.com/flipkart/jobslist");
+
+    expect(result).toMatchObject({ outcome: "partial", listingCompleteness: "complete" });
+    expect(result.jobs).toHaveLength(1);
+  });
+
+  it("stops detail hydration when the active scrape is cancelled", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/jobs/search")) {
+        return new Response(
+          JSON.stringify({
+            code: 200,
+            data: {
+              data: [{ _source: { id: 1, designation: "Role", jobDescription: "ok" } }],
+              totalCount: 1,
+              hasMoreData: false,
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      controller.abort(new DOMException("stopped", "AbortError"));
+      throw controller.signal.reason;
+    });
+    const scraper = new ZwayamScraper(
+      createHttpClientStub({ fetch: fetchMock }),
+      { detailDelayMs: 0 }
+    );
+
+    const result = await runWithScrapeSignal(controller.signal, () =>
+      scraper.scrape("https://www.flipkartcareers.com/flipkart/jobslist")
+    );
+
+    expect(result).toMatchObject({ outcome: "error", error: { code: "cancelled" } });
   });
 });

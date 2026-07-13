@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { db } from "@/lib/db";
-import { companies, scrapeQueueItems, scrapeSessions } from "@/lib/db/schema";
+import { companies, scrapeQueueItems } from "@/lib/db/schema";
 
 import { DrizzleLocalScrapeQueueRepository } from "@/lib/scraper/queue/repository";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
@@ -65,12 +65,6 @@ describe("DrizzleLocalScrapeQueueRepository", () => {
       .values({ name: "Acme", careersUrl: "https://example.com/jobs" })
       .returning({ id: companies.id })
       .get();
-    firstDatabase.insert(scrapeSessions).values({
-      id: "session-1",
-      triggerSource: "manual",
-      companiesTotal: 1,
-    }).run();
-
     const firstRepository = new DrizzleLocalScrapeQueueRepository(firstDatabase, {
       claimBusyRetries: 3,
       claimBusyRetryDelayMs: 2,
@@ -79,7 +73,12 @@ describe("DrizzleLocalScrapeQueueRepository", () => {
       claimBusyRetries: 3,
       claimBusyRetryDelayMs: 2,
     });
-    await firstRepository.enqueue({ sessionId: "session-1", companyIds: [company.id] });
+    await firstRepository.createSessionAndEnqueue({
+      sessionId: "session-1",
+      triggerSource: "manual",
+      companyIds: [company.id],
+      availableAt: now,
+    });
 
     let contenderClaim: Promise<typeof scrapeQueueItems.$inferSelect | null> | undefined;
     firstConnection.transaction(() => {
@@ -101,13 +100,12 @@ describe("DrizzleLocalScrapeQueueRepository", () => {
       .values({ name: "Acme", careersUrl: "https://example.com/jobs" })
       .returning({ id: companies.id })
       .get();
-    firstDatabase.insert(scrapeSessions).values({
-      id: "session-1",
-      triggerSource: "manual",
-      companiesTotal: 1,
-    }).run();
     const repository = new DrizzleLocalScrapeQueueRepository(firstDatabase);
-    await repository.enqueue({ sessionId: "session-1", companyIds: [company.id] });
+    await repository.createSessionAndEnqueue({
+      sessionId: "session-1",
+      triggerSource: "manual",
+      companyIds: [company.id],
+    });
     const claimed = await repository.claimNext("worker-1", new Date(), 60_000);
 
     const released = await repository.release(

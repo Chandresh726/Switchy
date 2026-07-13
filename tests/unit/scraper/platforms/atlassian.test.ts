@@ -1,32 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { AtlassianScraper } from "@/lib/scraper/platforms/atlassian";
 import { createHttpClientStub } from "@test/helpers/scraper-clients";
 
-const earlyFilterMocks = vi.hoisted(() => ({
-  hasEarlyFilters: vi.fn(),
-  applyEarlyFilters: vi.fn(),
-  toEarlyFilterStats: vi.fn(),
-}));
-
-vi.mock("@/lib/scraper/services", () => ({
-  hasEarlyFilters: earlyFilterMocks.hasEarlyFilters,
-  applyEarlyFilters: earlyFilterMocks.applyEarlyFilters,
-  toEarlyFilterStats: earlyFilterMocks.toEarlyFilterStats,
-}));
-
 describe("AtlassianScraper", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    earlyFilterMocks.hasEarlyFilters.mockReturnValue(false);
-    earlyFilterMocks.applyEarlyFilters.mockImplementation((items: unknown[]) => ({
-      filtered: items,
-      filteredOut: 0,
-      breakdown: { country: 0, city: 0, title: 0 },
-    }));
-    earlyFilterMocks.toEarlyFilterStats.mockReturnValue(undefined);
-  });
-
   it("filters by source URL query and uses listing description fields without details call", async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url.includes("/endpoint/careers/listings")) {

@@ -104,10 +104,7 @@ export class MynextHireScraper extends AbstractApiScraper<MynextHireConfig> {
           filterByBuId: -1,
         },
         {
-          headers: {
-            Accept: "application/json, text/plain, */*",
-            "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-          },
+          headers: this.requestHeaders("application/json, text/plain, */*"),
         }
       );
       const data: MynextHireResponse = parseExternalPayload(
@@ -217,11 +214,4 @@ export class MynextHireScraper extends AbstractApiScraper<MynextHireConfig> {
 
     return `${tenant}.mynexthire.com`;
   }
-}
-
-export function createMynextHireScraper(
-  httpClient: IHttpClient,
-  config?: Partial<MynextHireConfig>
-): MynextHireScraper {
-  return new MynextHireScraper(httpClient, config);
 }

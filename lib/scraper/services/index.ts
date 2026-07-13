@@ -18,8 +18,6 @@ export type {
 export {
   DefaultFilterService,
   createFilterService,
-  parseTitleKeywords,
-  COUNTRY_MAPPINGS,
 } from "./filter-service";
 
 export type {

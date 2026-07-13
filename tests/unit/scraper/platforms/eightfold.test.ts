@@ -21,16 +21,6 @@ function createMockBrowserClient(
   };
 }
 
-vi.mock("@/lib/scraper/services", () => ({
-  hasEarlyFilters: vi.fn(() => false),
-  applyEarlyFilters: vi.fn((items: unknown[]) => ({
-    filtered: items,
-    filteredOut: 0,
-    breakdown: { country: 0, city: 0, title: 0 },
-  })),
-  toEarlyFilterStats: vi.fn(() => undefined),
-}));
-
 type FetchMock = ReturnType<typeof vi.fn<(url: string, options?: HttpRequestOptions) => Promise<Response>>>;
 type FetchCall = [url: string, options?: HttpRequestOptions];
 

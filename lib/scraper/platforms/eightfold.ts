@@ -1,25 +1,30 @@
 import { z } from "zod";
 
+import { processDescription } from "@/lib/jobs/description-processor";
+import type {
+  BrowserSession,
+  IBrowserClient,
+} from "@/lib/scraper/infrastructure/browser-client";
+import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 import {
   HttpError,
   type IHttpClient,
 } from "@/lib/scraper/infrastructure/http-client";
-import type { IBrowserClient, BrowserSession } from "@/lib/scraper/infrastructure/browser-client";
-import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 import {
+  parseEmploymentType,
   parseExternalPayload,
   ScraperPayloadError,
-  type ScraperResult,
+  type BrowserScraperConfig,
   type ScrapeOptions,
   type ScrapedJob,
-  type BrowserScraperConfig,
-  type EarlyFilterStats,
-  type JobFilters,
+  type ScraperResult,
 } from "@/lib/scraper/types";
-import { processDescription } from "@/lib/jobs/description-processor";
-import { parseEmploymentType } from "@/lib/scraper/types";
-import { applyEarlyFilters, hasEarlyFilters, toEarlyFilterStats } from "@/lib/scraper/services";
-import { AbstractBrowserScraper, DEFAULT_BROWSER_CONFIG } from "../core";
+import {
+  AbstractBrowserScraper,
+  DEFAULT_BROWSER_CONFIG,
+  SWITCHY_USER_AGENT,
+} from "../core";
+import { selectListingsForHydration } from "./shared/listing-selection";
 
 interface EightfoldSearchResponse {
   status: number;
@@ -207,8 +212,6 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         return this.failure("board_not_found", "Could not detect Eightfold domain.");
       }
 
-      const filters: JobFilters | undefined = options?.filters;
-      const existingExternalIds = options?.existingExternalIds;
       const resolvedDomain = domain;
       const boardToken = domain.replace(/\.com$/i, "");
       const listResult = await this.fetchAllPositions(baseUrl, resolvedDomain, session.cookies);
@@ -239,41 +242,18 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         };
       }
 
-      let positionsToProcess = allPositions;
-      let earlyFilterStats: EarlyFilterStats | undefined;
-
-      if (hasEarlyFilters(filters)) {
-        const earlyFilterResult = applyEarlyFilters(
-          allPositions.map((pos) => ({
-            ...pos,
-            title: pos.name,
-            location: pos.locations?.join(", ") || "",
-          })),
-          filters
-        );
-        positionsToProcess = earlyFilterResult.filtered as EightfoldNormalizedPosition[];
-        earlyFilterStats = toEarlyFilterStats(earlyFilterResult);
-      }
-
-      if (positionsToProcess.length === 0) {
-        return {
-          outcome: listResult.isComplete ? "success" : "partial",
-          jobs: [],
-          totalListings: allPositions.length,
-          detectedBoardToken: detectedBoardToken || (options?.boardToken ? undefined : resolvedDomain),
-          earlyFiltered: earlyFilterStats,
-          openExternalIds,
-          listingCompleteness: listResult.isComplete ? "complete" : "partial",
-        };
-      }
-
-      const positionsToFetch =
-        existingExternalIds && existingExternalIds.size > 0
-          ? positionsToProcess.filter((pos) => {
-              const externalId = this.generateExternalId(this.platform, boardToken, pos.id);
-              return !existingExternalIds.has(externalId);
-            })
-          : positionsToProcess;
+      const selection = selectListingsForHydration({
+        listings: allPositions,
+        filters: options?.filters,
+        existingExternalIds: options?.existingExternalIds,
+        toFilterable: (position) => ({
+          title: position.name,
+          location: position.locations?.join(", ") || "",
+        }),
+        getExternalId: (position) =>
+          this.generateExternalId(this.platform, boardToken, position.id),
+      });
+      const positionsToFetch = selection.listings;
 
       if (positionsToFetch.length === 0) {
         return {
@@ -281,7 +261,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
           jobs: [],
           totalListings: allPositions.length,
           detectedBoardToken: detectedBoardToken || (options?.boardToken ? undefined : resolvedDomain),
-          earlyFiltered: earlyFilterStats,
+          earlyFiltered: selection.earlyFiltered,
           openExternalIds,
           listingCompleteness: listResult.isComplete ? "complete" : "partial",
         };
@@ -355,7 +335,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         jobs: scrapedJobs,
         totalListings: allPositions.length,
         detectedBoardToken: detectedBoardToken || (options?.boardToken ? undefined : resolvedDomain),
-        earlyFiltered: earlyFilterStats,
+        earlyFiltered: selection.earlyFiltered,
         openExternalIds,
         listingCompleteness: listResult.isComplete ? "complete" : "partial",
       };
@@ -594,7 +574,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
   ): Record<string, string> {
     const headers: Record<string, string> = {
       Accept: accept,
-      "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
+      "User-Agent": SWITCHY_USER_AGENT,
     };
 
     if (cookies.trim().length > 0) {
@@ -668,12 +648,4 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
     const parsed = new Date(ms);
     return Number.isNaN(parsed.getTime()) ? undefined : parsed;
   }
-}
-
-export function createEightfoldScraper(
-  httpClient: IHttpClient,
-  browserClient: IBrowserClient,
-  config?: Partial<EightfoldConfig>
-): EightfoldScraper {
-  return new EightfoldScraper(httpClient, browserClient, config);
 }

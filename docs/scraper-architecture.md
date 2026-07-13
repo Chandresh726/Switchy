@@ -23,6 +23,18 @@ flowchart LR
 
 Manual and scheduled requests use the same in-process supervisor. Each company is represented by a durable queue item with an attempt count, retry time, cancellation flag, worker lease, and serialized result. A process restart recovers expired leases and continues unfinished work.
 
+## Module boundaries
+
+`createLocalScrapeQueueService()` and `getLocalScrapeQueueService()` are the public composition boundary. The queue service is a thin façade for enqueueing, waiting, recovery, and cancellation; batch work never bypasses the durable queue.
+
+- `application/` owns the one-company pipeline, work handler, session projection, and retention policy.
+- `runtime/` owns transport-independent leased work, heartbeats, bounded retry, single-flight dispatch, shared/exclusive resource coordination, and keyed company locks. Scraping and matching use the same runtime.
+- `queue/`, `matching/`, `history.ts`, and `maintenance.ts` adapt the narrow persistence ports to the existing SQLite schema.
+- `platforms/` owns extraction only. Shared listing selection preserves platform object identity while applying early filters and existing-ID exclusion; detail hydration is bounded and cancellation-aware.
+- `settings/` is the typed source for scraper concurrency, filters, and retention defaults.
+
+The durable match handoff is created in the same transaction as committed scrape results. Its handler reports all claim, progress, retry, completion, cancellation, and recovery transitions through `MatchWorkStore`; manual matching keeps its separate session lifecycle.
+
 ## Extraction strategy
 
 The preferred order is:
@@ -68,7 +80,7 @@ For local troubleshooting:
 1. Open **History → Scrape** and inspect the durable queue section.
 2. A `queued` item with attempts remaining will run at its `availableAt` time.
 3. A `running` item with an expired lease is recovered on startup or the next supervisor pass.
-4. Stop a session before deleting it. Deletion remains blocked until running work acknowledges cancellation.
+4. Destructive maintenance signals related in-process work first, then takes an exclusive data-operation fence before deleting records.
 5. Run `pnpm db:studio` when direct local database inspection is needed.
 6. Run `pnpm verify` before releasing scraper changes.
 
@@ -78,7 +90,16 @@ For local troubleshooting:
 2. Return the typed scraper result contract, including listing completeness and structured errors.
 3. Declare transport and concurrency capabilities accurately.
 4. Register the adapter in the scraper registry.
-5. Add fixture-based parser tests, error classification tests, and orchestrator characterization coverage.
+5. Add fixture-based parser tests, error classification tests, and pipeline characterization coverage under `tests/`.
 6. Verify cancellation is passed through every network or browser operation.
 
 Do not put persistence, retry loops, or session management inside a platform adapter. Those concerns belong to the shared pipeline.
+
+## Test layout
+
+- `tests/unit/` contains isolated Node tests for policies, adapters, runtimes, and API mapping.
+- `tests/integration/` contains real temporary-SQLite and migration coverage.
+- `tests/ui/` contains jsdom component and hook tests.
+- `tests/helpers/` contains shared test-only database and client stubs; `tests/fixtures/` contains platform payload builders.
+
+Production code must never import `@test/*`. Use `pnpm test:unit`, `pnpm test:integration`, and `pnpm test:ui` for focused work, then `pnpm verify` before committing scraper changes.
