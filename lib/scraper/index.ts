@@ -93,7 +93,12 @@ export {
   LocalScrapeQueueRunner,
   LocalScrapeQueueService,
 } from "./queue";
-export { deleteScrapeHistory, type DeleteScrapeHistoryResult } from "./history";
+export {
+  deleteScrapeHistory,
+  pruneScrapeHistory,
+  type DeleteScrapeHistoryResult,
+  type PruneScrapeHistoryResult,
+} from "./history";
 export type {
   ILocalScrapeQueueRepository,
   LocalScrapeQueueRunnerConfig,

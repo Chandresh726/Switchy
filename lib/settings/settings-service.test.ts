@@ -14,6 +14,7 @@ describe("settings service", () => {
     expect(DEFAULT_SETTINGS.follow_up_tone).toBe("professional");
     expect(DEFAULT_SETTINGS.follow_up_length).toBe("medium");
     expect(DEFAULT_SETTINGS.scraper_max_parallel_scrapes).toBe("3");
+    expect(DEFAULT_SETTINGS.scraper_history_retention_days).toBe("90");
   });
 
   it("parses scheduler toggles and numeric matcher settings", () => {
@@ -58,6 +59,22 @@ describe("settings service", () => {
         value: "4",
       },
     ]);
+  });
+
+  it("bounds local scrape history retention", () => {
+    const parsed = parseSettingsUpdateBody({
+      scraper_history_retention_days: 120,
+    });
+
+    expect(parsed.updates).toEqual([
+      {
+        key: "scraper_history_retention_days",
+        value: "120",
+      },
+    ]);
+    expect(() =>
+      parseSettingsUpdateBody({ scraper_history_retention_days: 3 })
+    ).toThrow(APIValidationError);
   });
 
   it("normalizes cover letter focus arrays and removes unsupported values", () => {

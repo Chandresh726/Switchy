@@ -68,10 +68,38 @@ interface ScrapeSession {
   completedAt: Date | null;
 }
 
+interface ScrapeQueueItem {
+  id: string;
+  companyId: number;
+  companyName: string | null;
+  status: string;
+  attemptCount: number;
+  maxAttempts: number;
+  availableAt: Date | string;
+  workerId: string | null;
+  lockedAt: Date | string | null;
+  leaseExpiresAt: Date | string | null;
+  cancelRequested: boolean;
+  lastError: string | null;
+  startedAt: Date | string | null;
+  completedAt: Date | string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
 interface SessionDetailResponse {
   session: ScrapeSession;
   logs: SessionLog[];
+  queueItems: ScrapeQueueItem[];
 }
+
+const QUEUE_STATUS_STYLES: Record<string, string> = {
+  queued: "border-amber-500/20 bg-amber-500/10 text-amber-400",
+  running: "border-blue-500/20 bg-blue-500/10 text-blue-400",
+  completed: "border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
+  failed: "border-red-500/20 bg-red-500/10 text-red-400",
+  cancelled: "border-zinc-500/20 bg-zinc-500/10 text-zinc-400",
+};
 
 interface SessionDetailProps {
   sessionId: string;
@@ -91,8 +119,12 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
     },
     refetchInterval: (query) => {
       const session = query.state.data?.session;
+      const queueItems = query.state.data?.queueItems ?? [];
       if (!session) return 1000;
-      return session.status === "in_progress" ? 1000 : false;
+      const hasActiveQueueWork = queueItems.some(
+        (item) => item.status === "queued" || item.status === "running"
+      );
+      return session.status === "in_progress" || hasActiveQueueWork ? 1000 : false;
     },
     refetchIntervalInBackground: true,
   });
@@ -154,13 +186,16 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
     );
   }
 
-  const { session, logs } = data;
+  const { session, logs, queueItems } = data;
   const sessionStatusConfig = getSessionStatusConfig(session.status);
   const SessionStatusIcon = sessionStatusConfig.icon;
   const sessionDisplayTime = session.scheduledForAt ? new Date(session.scheduledForAt) : session.startedAt;
   const progress = session.companiesTotal
     ? Math.round(((session.companiesCompleted || 0) / session.companiesTotal) * 100)
     : 0;
+  const hasActiveQueueWork = queueItems.some(
+    (item) => item.status === "queued" || item.status === "running"
+  );
 
   return (
     <div className="space-y-6">
@@ -190,7 +225,8 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
             size="sm"
             className="border-red-500/20 text-red-400 hover:bg-red-500/10 hover:text-red-300"
             onClick={() => deleteMutation.mutate()}
-            disabled={deleteMutation.isPending}
+            disabled={deleteMutation.isPending || session.status === "in_progress" || hasActiveQueueWork}
+            title={hasActiveQueueWork ? "Wait for running queue work to stop" : undefined}
           >
             <Trash2 className="mr-2 h-4 w-4" />
             {deleteMutation.isPending ? "Deleting..." : "Delete Session"}
@@ -307,6 +343,63 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
           </div>
         </div>
       </div>
+
+      {queueItems.length > 0 && (
+        <div>
+          <div className="mb-4 px-1">
+            <h3 className="text-sm font-medium text-muted-foreground">Durable Work Queue</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Attempts and recovery state persisted in the local SQLite database.
+            </p>
+          </div>
+          <div className="space-y-3">
+            {queueItems.map((item) => (
+              <div
+                key={item.id}
+                className="rounded-lg border border-border bg-card p-4"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h4 className="font-medium text-foreground">
+                      {item.companyName ?? `Company ${item.companyId}`}
+                    </h4>
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                      <span>
+                        Attempt <span className="text-foreground/80">{item.attemptCount}</span>
+                        /{item.maxAttempts}
+                      </span>
+                      {item.startedAt && (
+                        <span>
+                          Started {formatDateTime(new Date(item.startedAt))}
+                        </span>
+                      )}
+                      {item.status === "queued" && item.attemptCount > 0 && (
+                        <span>Retry available {formatDateTime(new Date(item.availableAt))}</span>
+                      )}
+                      {item.status === "running" && item.leaseExpiresAt && (
+                        <span>Lease through {formatDateTime(new Date(item.leaseExpiresAt))}</span>
+                      )}
+                    </div>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={QUEUE_STATUS_STYLES[item.status] ?? "border-border text-muted-foreground"}
+                  >
+                    {item.status}
+                  </Badge>
+                </div>
+                {item.lastError && (
+                  <div className="mt-3 rounded-md border border-red-500/10 bg-red-500/5 p-3">
+                    <p className="break-all font-mono text-xs text-red-700/90 dark:text-red-300">
+                      {item.lastError}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Company Logs List */}
       <div>

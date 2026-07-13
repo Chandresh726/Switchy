@@ -18,6 +18,7 @@ import {
   type TriggerSource,
 } from "@/lib/scraper/types";
 
+import { pruneScrapeHistory } from "../history";
 import { DrizzleLocalScrapeQueueRepository } from "./repository";
 import {
   LocalScrapeQueueRunner,
@@ -34,6 +35,9 @@ const MAX_PARALLEL_SCRAPES_SETTING = "scraper_max_parallel_scrapes";
 const DEFAULT_MAX_PARALLEL_SCRAPES = 3;
 const MAX_PARALLEL_SCRAPES = 10;
 const DISPATCH_FAILURE_RETRY_MS = 5_000;
+const HISTORY_RETENTION_SETTING = "scraper_history_retention_days";
+const DEFAULT_HISTORY_RETENTION_DAYS = 90;
+const HISTORY_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 type ExecutionMode = "shared" | "exclusive";
 
@@ -187,6 +191,7 @@ export class LocalScrapeQueueService {
   private activeDispatch: Promise<QueueRunSummary> | null = null;
   private dispatchRequested = false;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastHistoryPruneAt = 0;
 
   constructor(private readonly dependencies: LocalScrapeQueueServiceDependencies) {
     this.database = dependencies.database ?? db;
@@ -357,6 +362,7 @@ export class LocalScrapeQueueService {
     await this.recoverCommittedQueueItems();
     const summary = await this.runner.runAvailable();
     await this.reconcileInProgressSessions();
+    await this.pruneHistoryIfDue();
     this.scheduleNextDispatch(summary.nextAvailableAt);
     return summary;
   }
@@ -679,5 +685,28 @@ export class LocalScrapeQueueService {
     const parsed = Number.parseInt(value ?? "", 10);
     if (!Number.isFinite(parsed)) return DEFAULT_MAX_PARALLEL_SCRAPES;
     return Math.min(MAX_PARALLEL_SCRAPES, Math.max(1, parsed));
+  }
+
+  private async pruneHistoryIfDue(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastHistoryPruneAt < HISTORY_PRUNE_INTERVAL_MS) return;
+    try {
+      const stored = await this.dependencies.scraperRepository.getSetting(
+        HISTORY_RETENTION_SETTING
+      );
+      const parsed = Number.parseInt(stored ?? "", 10);
+      const retentionDays = Number.isFinite(parsed)
+        ? parsed
+        : DEFAULT_HISTORY_RETENTION_DAYS;
+      const result = pruneScrapeHistory(retentionDays, this.database, new Date(now));
+      this.lastHistoryPruneAt = now;
+      if (result.deleted > 0) {
+        console.log(
+          `[LocalScrapeQueueService] Pruned ${result.deleted} scrape history session(s) older than ${result.cutoff.toISOString()}`
+        );
+      }
+    } catch (error) {
+      console.error("[LocalScrapeQueueService] Failed to prune scrape history:", error);
+    }
   }
 }

@@ -147,6 +147,33 @@ describe("LocalScrapeQueueService", () => {
     });
   });
 
+  it("prunes expired terminal history during normal local queue supervision", async () => {
+    const database = createTestDatabase();
+    const company = database
+      .insert(companies)
+      .values({ name: "One", careersUrl: "https://example.com/one" })
+      .returning({ id: companies.id })
+      .get();
+    database.insert(scrapeSessions).values({
+      id: "expired-history",
+      triggerSource: "manual",
+      status: "completed",
+      companiesTotal: 0,
+      completedAt: new Date("2020-01-01T00:00:00.000Z"),
+    }).run();
+    const { service } = createService(database);
+
+    await service.scrapeCompanies([company.id], "manual");
+
+    expect(
+      database
+        .select()
+        .from(scrapeSessions)
+        .where(eq(scrapeSessions.id, "expired-history"))
+        .get()
+    ).toBeUndefined();
+  });
+
   it("recovers committed queue work after a process restart", async () => {
     const database = createTestDatabase();
     const company = database

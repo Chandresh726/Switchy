@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, ne, or } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import {
@@ -12,6 +12,21 @@ import {
 export interface DeleteScrapeHistoryResult {
   active: boolean;
   deleted: number;
+}
+
+export interface PruneScrapeHistoryResult {
+  deleted: number;
+  cutoff: Date;
+}
+
+const HISTORY_DELETE_BATCH_SIZE = 200;
+
+function chunkValues<T>(values: T[], chunkSize = HISTORY_DELETE_BATCH_SIZE): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += chunkSize) {
+    chunks.push(values.slice(index, index + chunkSize));
+  }
+  return chunks;
 }
 
 export function deleteScrapeHistory(
@@ -37,45 +52,135 @@ export function deleteScrapeHistory(
     if (candidateSessionIds.length === 0) {
       return { active: false, deleted: 0 };
     }
-    const leasedSessionIds = new Set(
-      tx
-        .selectDistinct({ sessionId: scrapeQueueItems.sessionId })
-        .from(scrapeQueueItems)
-        .where(
-          and(
-            inArray(scrapeQueueItems.sessionId, candidateSessionIds),
-            inArray(scrapeQueueItems.status, ["queued", "running"])
+    let deletedCount = 0;
+    for (const candidateBatch of chunkValues(candidateSessionIds)) {
+      const leasedSessionIds = new Set(
+        tx
+          .selectDistinct({ sessionId: scrapeQueueItems.sessionId })
+          .from(scrapeQueueItems)
+          .where(
+            and(
+              inArray(scrapeQueueItems.sessionId, candidateBatch),
+              inArray(scrapeQueueItems.status, ["queued", "running"])
+            )
+          )
+          .all()
+          .map((item) => item.sessionId)
+      );
+      if (sessionId && leasedSessionIds.has(sessionId)) {
+        return { active: true, deleted: 0 };
+      }
+      const sessionIds = candidateBatch.filter(
+        (candidateId) => !leasedSessionIds.has(candidateId)
+      );
+      if (sessionIds.length === 0) continue;
+
+      const matchSessionIds = tx
+        .select({ id: scrapeMatchOutbox.id })
+        .from(scrapeMatchOutbox)
+        .innerJoin(scrapingLogs, eq(scrapeMatchOutbox.scrapingLogId, scrapingLogs.id))
+        .where(inArray(scrapingLogs.sessionId, sessionIds))
+        .all()
+        .map((row) => row.id);
+      for (const matchBatch of chunkValues(matchSessionIds)) {
+        tx.delete(matchSessions)
+          .where(inArray(matchSessions.id, matchBatch))
+          .run();
+      }
+
+      deletedCount += tx
+        .delete(scrapeSessions)
+        .where(inArray(scrapeSessions.id, sessionIds))
+        .returning({ id: scrapeSessions.id })
+        .all().length;
+    }
+    return { active: false, deleted: deletedCount };
+  }, { behavior: "immediate" });
+}
+
+export function pruneScrapeHistory(
+  retentionDays: number,
+  database: typeof db = db,
+  now: Date = new Date()
+): PruneScrapeHistoryResult {
+  const normalizedDays = Math.min(3_650, Math.max(7, Math.floor(retentionDays)));
+  const cutoff = new Date(now.getTime() - normalizedDays * 24 * 60 * 60 * 1000);
+  const deleted = database.transaction((tx) => {
+    const candidateSessionIds = tx
+      .select({ id: scrapeSessions.id })
+      .from(scrapeSessions)
+      .where(
+        and(
+          ne(scrapeSessions.status, "in_progress"),
+          or(
+            lt(scrapeSessions.completedAt, cutoff),
+            and(
+              isNull(scrapeSessions.completedAt),
+              lt(scrapeSessions.startedAt, cutoff)
+            )
           )
         )
-        .all()
-        .map((item) => item.sessionId)
-    );
-    if (sessionId && leasedSessionIds.has(sessionId)) {
-      return { active: true, deleted: 0 };
-    }
-    const sessionIds = candidateSessionIds.filter(
-      (candidateId) => !leasedSessionIds.has(candidateId)
-    );
-    if (sessionIds.length === 0) return { active: false, deleted: 0 };
-
-    const matchSessionIds = tx
-      .select({ id: scrapeMatchOutbox.id })
-      .from(scrapeMatchOutbox)
-      .innerJoin(scrapingLogs, eq(scrapeMatchOutbox.scrapingLogId, scrapingLogs.id))
-      .where(inArray(scrapingLogs.sessionId, sessionIds))
+      )
       .all()
-      .map((row) => row.id);
-    if (matchSessionIds.length > 0) {
-      tx.delete(matchSessions)
-        .where(inArray(matchSessions.id, matchSessionIds))
-        .run();
-    }
+      .map((session) => session.id);
+    if (candidateSessionIds.length === 0) return 0;
 
-    const deleted = tx
-      .delete(scrapeSessions)
-      .where(inArray(scrapeSessions.id, sessionIds))
-      .returning({ id: scrapeSessions.id })
-      .all();
-    return { active: false, deleted: deleted.length };
+    let deletedCount = 0;
+    for (const candidateBatch of chunkValues(candidateSessionIds)) {
+      const leasedSessionIds = new Set(
+        tx
+          .selectDistinct({ sessionId: scrapeQueueItems.sessionId })
+          .from(scrapeQueueItems)
+          .where(
+            and(
+              inArray(scrapeQueueItems.sessionId, candidateBatch),
+              inArray(scrapeQueueItems.status, ["queued", "running"])
+            )
+          )
+          .all()
+          .map((item) => item.sessionId)
+      );
+      const matchingSessionIds = new Set(
+        tx
+          .selectDistinct({ sessionId: scrapingLogs.sessionId })
+          .from(scrapeMatchOutbox)
+          .innerJoin(scrapingLogs, eq(scrapingLogs.id, scrapeMatchOutbox.scrapingLogId))
+          .where(
+            and(
+              inArray(scrapingLogs.sessionId, candidateBatch),
+              inArray(scrapeMatchOutbox.status, ["pending", "running"])
+            )
+          )
+          .all()
+          .flatMap((item) => (item.sessionId ? [item.sessionId] : []))
+      );
+      const sessionIds = candidateBatch.filter(
+        (sessionId) =>
+          !leasedSessionIds.has(sessionId) && !matchingSessionIds.has(sessionId)
+      );
+      if (sessionIds.length === 0) continue;
+
+      const matchSessionIds = tx
+        .select({ id: scrapeMatchOutbox.id })
+        .from(scrapeMatchOutbox)
+        .innerJoin(scrapingLogs, eq(scrapeMatchOutbox.scrapingLogId, scrapingLogs.id))
+        .where(inArray(scrapingLogs.sessionId, sessionIds))
+        .all()
+        .map((row) => row.id);
+      for (const matchBatch of chunkValues(matchSessionIds)) {
+        tx.delete(matchSessions)
+          .where(inArray(matchSessions.id, matchBatch))
+          .run();
+      }
+
+      deletedCount += tx
+        .delete(scrapeSessions)
+        .where(inArray(scrapeSessions.id, sessionIds))
+        .returning({ id: scrapeSessions.id })
+        .all().length;
+    }
+    return deletedCount;
   }, { behavior: "immediate" });
+
+  return { deleted, cutoff };
 }

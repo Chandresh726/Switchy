@@ -59,8 +59,26 @@ export async function GET(request: NextRequest) {
         .where(eq(scrapingLogs.sessionId, sessionId))
         .orderBy(scrapingLogs.startedAt);
       const queueItems = await db
-        .select()
+        .select({
+          id: scrapeQueueItems.id,
+          companyId: scrapeQueueItems.companyId,
+          companyName: companies.name,
+          status: scrapeQueueItems.status,
+          attemptCount: scrapeQueueItems.attemptCount,
+          maxAttempts: scrapeQueueItems.maxAttempts,
+          availableAt: scrapeQueueItems.availableAt,
+          workerId: scrapeQueueItems.workerId,
+          lockedAt: scrapeQueueItems.lockedAt,
+          leaseExpiresAt: scrapeQueueItems.leaseExpiresAt,
+          cancelRequested: scrapeQueueItems.cancelRequested,
+          lastError: scrapeQueueItems.lastError,
+          startedAt: scrapeQueueItems.startedAt,
+          completedAt: scrapeQueueItems.completedAt,
+          createdAt: scrapeQueueItems.createdAt,
+          updatedAt: scrapeQueueItems.updatedAt,
+        })
         .from(scrapeQueueItems)
+        .leftJoin(companies, eq(companies.id, scrapeQueueItems.companyId))
         .where(eq(scrapeQueueItems.sessionId, sessionId))
         .orderBy(scrapeQueueItems.createdAt);
 

@@ -27,6 +27,7 @@ export interface SettingsRecord {
   scheduler_enabled: string;
   scheduler_cron: string;
   scraper_max_parallel_scrapes: string;
+  scraper_history_retention_days: string;
   scraper_filter_country?: string;
   scraper_filter_city?: string;
   scraper_filter_title_keywords?: string;

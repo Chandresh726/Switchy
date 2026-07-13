@@ -27,6 +27,7 @@ export const DEFAULT_SETTINGS = {
   scheduler_enabled: "true",
   scheduler_cron: "0 */6 * * *",
   scraper_max_parallel_scrapes: "3",
+  scraper_history_retention_days: "90",
   scraper_filter_country: "India",
   scraper_filter_city: "",
   scraper_filter_title_keywords: "[]",
@@ -234,6 +235,8 @@ function parseSettingValue(
       return { value: String(value ?? ""), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     case "scraper_max_parallel_scrapes":
       return { value: parseNumberInRange(key, value, 1, 10), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
+    case "scraper_history_retention_days":
+      return { value: parseNumberInRange(key, value, 7, 3_650), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     case "scraper_filter_title_keywords":
       return { value: normalizeTitleKeywords(value), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     case "referral_tone":
