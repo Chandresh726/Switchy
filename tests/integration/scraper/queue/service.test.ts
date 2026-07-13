@@ -120,6 +120,110 @@ describe("LocalScrapeQueueService", () => {
     });
   });
 
+  it("treats malformed durable result JSON as a failed company without crashing recovery", async () => {
+    const database = createTestDatabase();
+    const company = database
+      .insert(companies)
+      .values({ name: "One", careersUrl: "https://example.com/one" })
+      .returning({ id: companies.id })
+      .get();
+    const { queueRepository, service } = createService(database);
+    await queueRepository.createSessionAndEnqueue({
+      sessionId: "malformed-result",
+      triggerSource: "scheduler_recovery",
+      companyIds: [company.id],
+    });
+    database
+      .update(scrapeQueueItems)
+      .set({
+        status: "completed",
+        resultJson: "{not-json",
+        lastError: "result payload was corrupted",
+        completedAt: new Date(),
+      })
+      .run();
+
+    await service.recoverPending();
+
+    expect(database.select().from(scrapeSessions).get()).toMatchObject({
+      status: "failed",
+      companiesCompleted: 1,
+      totalJobsFound: 0,
+      totalJobsAdded: 0,
+    });
+  });
+
+  it("reconstructs mixed durable results into the authoritative session summary", async () => {
+    const database = createTestDatabase();
+    const storedCompanies = database
+      .insert(companies)
+      .values([
+        { name: "One", careersUrl: "https://example.com/one" },
+        { name: "Two", careersUrl: "https://example.com/two" },
+      ])
+      .returning({ id: companies.id })
+      .all();
+    const { queueRepository, service } = createService(database);
+    await queueRepository.createSessionAndEnqueue({
+      sessionId: "mixed-results",
+      triggerSource: "scheduler",
+      companyIds: storedCompanies.map((company) => company.id),
+    });
+    const items = await queueRepository.listSessionItems("mixed-results");
+    const completedAt = new Date();
+    const serializedResults = [
+      {
+        companyId: storedCompanies[0]!.id,
+        companyName: "One",
+        success: true,
+        outcome: "success",
+        jobsFound: 8,
+        jobsAdded: 3,
+        jobsUpdated: 1,
+        jobsFiltered: 2,
+        jobsArchived: 4,
+        platform: "greenhouse",
+        duration: 20,
+      },
+      {
+        companyId: storedCompanies[1]!.id,
+        companyName: "Two",
+        success: false,
+        outcome: "error",
+        jobsFound: 0,
+        jobsAdded: 0,
+        jobsUpdated: 0,
+        jobsFiltered: 0,
+        jobsArchived: 0,
+        platform: "lever",
+        error: "blocked",
+        duration: 10,
+      },
+    ];
+    for (const [index, item] of items.entries()) {
+      database
+        .update(scrapeQueueItems)
+        .set({
+          status: "completed",
+          resultJson: JSON.stringify(serializedResults[index]),
+          completedAt,
+        })
+        .where(eq(scrapeQueueItems.id, item.id))
+        .run();
+    }
+
+    await service.recoverPending();
+
+    expect(database.select().from(scrapeSessions).get()).toMatchObject({
+      status: "partial",
+      companiesCompleted: 2,
+      totalJobsFound: 8,
+      totalJobsAdded: 3,
+      totalJobsFiltered: 2,
+      totalJobsArchived: 4,
+    });
+  });
+
   it("prunes expired terminal history during normal local queue supervision", async () => {
     const database = createTestDatabase();
     const company = database

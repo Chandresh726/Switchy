@@ -12,6 +12,7 @@ const store = vi.hoisted(() => ({
   settings: new Map<string, SettingsRow>(),
   sessions: [] as SessionRow[],
   task: null as {
+    execute: () => Promise<void>;
     stop: ReturnType<typeof vi.fn>;
     on: ReturnType<typeof vi.fn>;
     off: ReturnType<typeof vi.fn>;
@@ -75,6 +76,7 @@ vi.mock("node-cron", () => {
     void fn;
     const listeners = new Map<string, (context: { date: Date }) => Promise<void> | void>();
     const task = {
+      execute: fn,
       stop: vi.fn(),
       on: vi.fn((event: string, listener: (context: { date: Date }) => Promise<void> | void) => {
         listeners.set(event, listener);
@@ -168,6 +170,36 @@ describe("scheduler recovery", () => {
     expect(store.scrapeAllCompanies).toHaveBeenCalledTimes(1);
     expect(store.scrapeAllCompanies).toHaveBeenCalledWith("scheduler_recovery");
     expect(status.pendingMissedCount).toBe(0);
+  });
+
+  it("executes the normal cron callback with the scheduler trigger and releases its lock", async () => {
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    await scheduler.startScheduler();
+    await store.task?.execute();
+
+    expect(store.acquireSchedulerLock).toHaveBeenCalledTimes(1);
+    expect(store.scrapeAllCompanies).toHaveBeenCalledWith("scheduler");
+    expect(store.releaseSchedulerLock).toHaveBeenCalledWith("lock-token");
+    expect(store.settings.get("scheduler.lastRun")?.value).toMatch(
+      /^\d{4}-\d{2}-\d{2}T/
+    );
+  });
+
+  it("releases the scheduler lock when a normal refresh fails", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    store.scrapeAllCompanies.mockRejectedValue(new Error("refresh failed"));
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    await scheduler.startScheduler();
+    await store.task?.execute();
+
+    expect(store.releaseSchedulerLock).toHaveBeenCalledWith("lock-token");
+    expect(store.settings.has("scheduler.lastRun")).toBe(false);
+    expect(consoleError).toHaveBeenCalledWith(
+      "[Scheduler] Error during refresh:",
+      expect.objectContaining({ message: "refresh failed" })
+    );
   });
 
   it("does not recover when scheduler is disabled", async () => {

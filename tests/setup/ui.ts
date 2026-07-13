@@ -1,7 +1,8 @@
+import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
 afterEach(() => {
-  document.body.innerHTML = "";
+  cleanup();
   vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
