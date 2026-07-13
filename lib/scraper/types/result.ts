@@ -1,7 +1,10 @@
-import type { Platform } from "./platform";
+import { z } from "zod";
+
+import { PLATFORMS, type Platform } from "./platform";
 import type { ScrapedJob } from "./job";
 
 export type ScrapeOutcome = "success" | "partial" | "error";
+export type ListingCompleteness = "complete" | "partial" | "unknown";
 
 export type ScraperErrorCode =
   | "invalid_url"
@@ -13,22 +16,24 @@ export type ScraperErrorCode =
   | "browser_error"
   | "csrf_error"
   | "timeout"
+  | "cancelled"
   | "unknown";
 
 export interface ScraperError {
   code: ScraperErrorCode;
   message: string;
-  cause?: Error;
   retryable: boolean;
+  statusCode?: number;
+  retryAfterMs?: number;
 }
 
 export function createScraperError(
   code: ScraperErrorCode,
   message: string,
-  cause?: Error
+  metadata: Pick<ScraperError, "statusCode" | "retryAfterMs"> = {}
 ): ScraperError {
   const retryable = ["rate_limited", "network_error", "timeout", "browser_error"].includes(code);
-  return { code, message, cause, retryable };
+  return { code, message, retryable, ...metadata };
 }
 
 export interface ScraperMetadata {
@@ -45,35 +50,88 @@ export interface EarlyFilterStats {
   title?: number;
 }
 
-export interface ScraperResult<T extends ScrapedJob = ScrapedJob> {
-  success: boolean;
-  outcome: ScrapeOutcome;
+interface ScraperResultBase<T extends ScrapedJob> {
   jobs: T[];
-  error?: string;
   metadata?: ScraperMetadata;
   detectedBoardToken?: string;
   earlyFiltered?: EarlyFilterStats;
-  openExternalIds?: string[];
-  openExternalIdsComplete?: boolean;
 }
 
-export interface FetchResult {
-  companyId: number;
-  companyName: string;
-  success: boolean;
-  outcome: ScrapeOutcome;
-  skipped?: boolean;
-  skippedReason?: string;
-  jobsFound: number;
-  jobsAdded: number;
-  jobsUpdated: number;
-  jobsFiltered: number;
-  jobsArchived: number;
-  platform: Platform | null;
-  error?: string;
-  duration: number;
-  logId?: number;
+type ListingContract =
+  | {
+      listingCompleteness: "complete";
+      openExternalIds: string[];
+    }
+  | {
+      listingCompleteness: "partial" | "unknown";
+      openExternalIds?: string[];
+    };
+
+interface ScraperNonErrorResult<T extends ScrapedJob> extends ScraperResultBase<T> {
+  totalListings: number;
 }
+
+export type ScraperSuccessResult<T extends ScrapedJob = ScrapedJob> =
+  ScraperNonErrorResult<T> & ListingContract & {
+  outcome: "success";
+  error?: never;
+};
+
+export type ScraperPartialResult<T extends ScrapedJob = ScrapedJob> =
+  ScraperNonErrorResult<T> & ListingContract & {
+  outcome: "partial";
+  issues?: ScraperError[];
+  error?: never;
+};
+
+export interface ScraperErrorResult extends ScraperResultBase<never> {
+  outcome: "error";
+  jobs: [];
+  listingCompleteness: "unknown";
+  openExternalIds?: never;
+  error: ScraperError;
+}
+
+export type ScraperResult<T extends ScrapedJob = ScrapedJob> =
+  | ScraperSuccessResult<T>
+  | ScraperPartialResult<T>
+  | ScraperErrorResult;
+
+export function createScraperFailure(
+  code: ScraperErrorCode,
+  message: string,
+  metadata: Pick<ScraperError, "statusCode" | "retryAfterMs"> = {}
+): ScraperErrorResult {
+  return {
+    outcome: "error",
+    jobs: [],
+    listingCompleteness: "unknown",
+    error: createScraperError(code, message, metadata),
+  };
+}
+
+export const FetchResultSchema = z.object({
+  companyId: z.number(),
+  companyName: z.string(),
+  success: z.boolean(),
+  outcome: z.enum(["success", "partial", "error"]),
+  skipped: z.boolean().optional(),
+  skippedReason: z.string().optional(),
+  jobsFound: z.number(),
+  jobsAdded: z.number(),
+  jobsUpdated: z.number(),
+  jobsFiltered: z.number(),
+  jobsArchived: z.number(),
+  platform: z.enum(PLATFORMS).nullable(),
+  error: z.string().optional(),
+  retryable: z.boolean().optional(),
+  retryAfterMs: z.number().optional(),
+  warnings: z.array(z.string()).optional(),
+  duration: z.number(),
+  logId: z.number().optional(),
+});
+
+export type FetchResult = z.infer<typeof FetchResultSchema>;
 
 export interface BatchFetchResult {
   sessionId: string;

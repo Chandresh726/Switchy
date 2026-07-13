@@ -49,8 +49,10 @@ export function getQueuePosition(config: MatcherConfig): number {
 export async function withQueue<T>(
   config: MatcherConfig,
   fn: () => Promise<T>,
-  onQueuePosition?: QueuePositionCallback
+  onQueuePosition?: QueuePositionCallback,
+  signal?: AbortSignal
 ): Promise<T> {
+  signal?.throwIfAborted();
   if (!config.serializeOperations) {
     return fn();
   }
@@ -64,7 +66,7 @@ export async function withQueue<T>(
   
   console.log(`[MatchQueue] Adding to queue (position: ${position})`);
   
-  return queue.add(fn) as Promise<T>;
+  return queue.add(fn, { signal }) as Promise<T>;
 }
 
 export function resetQueue(): void {

@@ -1,11 +1,16 @@
 export type {
   IScraperRepository,
+  CompanyCatalog,
+  ScrapeCompanyStore,
+  ScrapeResultUnitOfWork,
+  ScrapeSessionStore,
+  ScrapeSettingsSource,
   ExistingJob,
   SessionProgressUpdate,
-  ScrapeSessionCreate,
   ScrapingLogCreate,
-  ScrapingLogUpdate,
-  CompanyUpdate,
+  PersistScrapeResultInput,
+  PersistScrapeResultOutput,
+  ScrapeResultLogCreate,
 } from "./types";
 
 export { DrizzleScraperRepository, createScraperRepository } from "./repository";

@@ -5,7 +5,13 @@ export {
   type CircuitBreakerOptions,
 } from "../../shared/circuit-breaker";
 
-export { retryWithBackoff, withTimeout, type RetryOptions } from "./retry";
+export {
+  abortableDelay,
+  retryWithBackoff,
+  throwIfAborted,
+  withTimeout,
+  type RetryOptions,
+} from "./retry";
 
 export {
   categorizeError,

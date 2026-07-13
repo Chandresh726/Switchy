@@ -1,6 +1,8 @@
+import { z } from "zod";
+
 import { processDescription } from "@/lib/jobs/description-processor";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
-import { parseEmploymentType } from "@/lib/scraper/types";
+import { parseEmploymentType, parseExternalPayload } from "@/lib/scraper/types";
 
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig } from "../core/types";
@@ -14,7 +16,7 @@ interface LeverJob {
   id: string;
   text: string;
   hostedUrl: string;
-  categories: {
+  categories?: {
     location?: string;
     team?: string;
     department?: string;
@@ -29,8 +31,41 @@ interface LeverJob {
   opening?: string;
   openingPlain?: string;
   lists?: LeverList[];
-  createdAt: number;
+  createdAt?: number;
 }
+
+const LeverJobsSchema = z.array(
+  z
+    .object({
+      id: z.string(),
+      text: z.string(),
+      hostedUrl: z.string(),
+      categories: z
+        .object({
+          location: z.string().optional(),
+          team: z.string().optional(),
+          department: z.string().optional(),
+          commitment: z.string().optional(),
+        })
+        .passthrough()
+        .optional(),
+      description: z.string().optional(),
+      descriptionBody: z.string().optional(),
+      descriptionBodyPlain: z.string().optional(),
+      descriptionPlain: z.string().optional(),
+      additional: z.string().optional(),
+      additionalPlain: z.string().optional(),
+      opening: z.string().optional(),
+      openingPlain: z.string().optional(),
+      lists: z
+        .array(
+          z.object({ text: z.string().optional(), content: z.string().optional() }).passthrough()
+        )
+        .optional(),
+      createdAt: z.number().optional(),
+    })
+    .passthrough()
+);
 
 export type LeverConfig = ApiScraperConfig;
 
@@ -76,44 +111,33 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
       const detectedBoardToken = !options?.boardToken && companySlug ? companySlug : undefined;
 
       if (!companySlug) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          error: "Could not extract company slug from URL. Please provide the board token manually.",
-        };
+        return this.failure(
+          "invalid_url",
+          "Could not extract company slug from URL. Please provide the board token manually."
+        );
       }
 
       const apiUrl = `${this.config.baseUrl}/v0/postings/${companySlug}?mode=json`;
 
-      const response = await this.httpClient.fetch(apiUrl, {
-        timeout: this.config.timeout,
-        retries: this.config.retries,
-        baseDelay: this.config.baseDelay,
-        headers: {
-          Accept: "application/json",
-          "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-        },
+      const response = await this.fetchResponse(apiUrl, {
+        headers: this.jsonRequestHeaders(),
       });
 
       if (!response.ok) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          error: `Failed to fetch jobs: ${response.status}`,
-        };
+        return this.failureForHttpStatus(
+          response.status,
+          `Failed to fetch jobs: ${response.status}`
+        );
       }
 
-      const data: LeverJob[] = await response.json();
+      const data: LeverJob[] = parseExternalPayload(
+        LeverJobsSchema,
+        await response.json(),
+        "Lever"
+      );
       return this.parseJobs(data, companySlug, detectedBoardToken);
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 
@@ -145,12 +169,12 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
     const openExternalIds = jobs.map((job) => job.externalId);
 
     return {
-      success: true,
       outcome: "success",
       jobs,
+      totalListings: jobs.length,
       detectedBoardToken,
       openExternalIds,
-      openExternalIdsComplete: true,
+      listingCompleteness: "complete",
     };
   }
 
@@ -266,11 +290,4 @@ function normalizeListHtml(content: string): string {
   }
 
   return trimmed;
-}
-
-export function createLeverScraper(
-  httpClient: IHttpClient,
-  config?: Partial<LeverConfig>
-): LeverScraper {
-  return new LeverScraper(httpClient, config);
 }

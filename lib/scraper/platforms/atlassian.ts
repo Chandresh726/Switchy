@@ -1,18 +1,68 @@
-import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
-import type {
-  ApiScraperConfig,
-  EarlyFilterStats,
-  ScrapeOptions,
-  ScrapedJob,
-  ScraperResult,
-} from "@/lib/scraper/types";
-import { applyEarlyFilters, hasEarlyFilters, toEarlyFilterStats } from "@/lib/scraper/services";
+import { z } from "zod";
 
+import { processDescription } from "@/lib/jobs/description-processor";
+import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
+import {
+  parseExternalPayload,
+  type ApiScraperConfig,
+  type ScrapeOptions,
+  type ScrapedJob,
+  type ScraperResult,
+} from "@/lib/scraper/types";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
-import { normalizeDescription } from "./shared/job-normalizers";
+import { selectListingsForHydration } from "./shared/listing-selection";
 
 type AtlassianListingRecord = Record<string, unknown>;
+
+// Require one of the listing containers the mapper understands while
+// tolerating additive upstream fields.
+const AtlassianRecordSchema = z
+  .record(z.string(), z.unknown())
+  .refine(
+    (record) => {
+      const identifiers = [record.id, record.jobId, record.requisitionId];
+      const titles = [record.title, record.name, record.role];
+      const hasIdentifier = identifiers.some(
+        (value) =>
+          (typeof value === "string" && value.trim().length > 0) ||
+          (typeof value === "number" && Number.isFinite(value))
+      );
+      const hasTitle = titles.some(
+        (value) => typeof value === "string" && value.trim().length > 0
+      );
+      return hasIdentifier && hasTitle;
+    },
+    { message: "listing must include a supported identifier and title" }
+  );
+const AtlassianListingsPayloadSchema = z.union([
+  z.array(AtlassianRecordSchema),
+  z.object({ listings: z.array(AtlassianRecordSchema) }).passthrough(),
+  z.object({ jobs: z.array(AtlassianRecordSchema) }).passthrough(),
+  z
+    .object({
+      data: z.union([
+        z.array(AtlassianRecordSchema),
+        z
+          .object({
+            listings: z.array(AtlassianRecordSchema).optional(),
+            jobs: z.array(AtlassianRecordSchema).optional(),
+          })
+          .passthrough()
+          .refine((value) => Boolean(value.listings || value.jobs), {
+            message: "data must contain listings or jobs",
+          }),
+      ]),
+    })
+    .passthrough(),
+]);
+
+const AtlassianDetailRecordSchema = z.record(z.string(), z.unknown());
+const AtlassianDetailPayloadSchema = z.union([
+  AtlassianDetailRecordSchema,
+  z.object({ data: AtlassianDetailRecordSchema }).passthrough(),
+  z.object({ job: AtlassianDetailRecordSchema }).passthrough(),
+]);
 
 interface AtlassianListing {
   id: string;
@@ -67,28 +117,28 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
 
   async scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult> {
     try {
-      const sourceUrl = new URL(url);
+      const sourceUrl = this.parseSourceUrl(url);
+      if (!sourceUrl) {
+        return this.failure("invalid_url", "Invalid Atlassian Careers URL.");
+      }
       const origin = sourceUrl.origin;
       const listingsEndpoint = `${origin}/endpoint/careers/listings`;
-      const response = await this.httpClient.fetch(listingsEndpoint, {
-        timeout: this.config.timeout,
-        retries: this.config.retries,
-        baseDelay: this.config.baseDelay,
-        headers: this.createJsonHeaders(),
+      const response = await this.fetchResponse(listingsEndpoint, {
+        headers: this.jsonRequestHeaders(),
       });
 
       if (!response.ok) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          openExternalIds: [],
-          openExternalIdsComplete: false,
-          error: "Failed to fetch Atlassian jobs list.",
-        };
+        return this.failureForHttpStatus(
+          response.status,
+          "Failed to fetch Atlassian jobs list.",
+        );
       }
 
-      const payload = (await response.json()) as unknown;
+      const payload = parseExternalPayload(
+        AtlassianListingsPayloadSchema,
+        await response.json(),
+        "Atlassian listings"
+      );
       const allListings = this.extractListings(payload);
       const scopedListings = this.applySourceUrlFilters(allListings, sourceUrl.searchParams);
 
@@ -98,57 +148,36 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
 
       if (scopedListings.length === 0) {
         return {
-          success: true,
           outcome: "success",
           jobs: [],
+          totalListings: 0,
           openExternalIds,
-          openExternalIdsComplete: true,
+          listingCompleteness: "complete",
         };
       }
 
       const filters = options?.filters;
-      const existingExternalIds = options?.existingExternalIds;
-      let jobsToProcess = scopedListings;
-      let earlyFilterStats: EarlyFilterStats | undefined;
-
-      if (hasEarlyFilters(filters)) {
-        const earlyFilterResult = applyEarlyFilters(
-          scopedListings.map((job) => ({
-            ...job,
-            location: job.location || "",
-          })),
-          filters
-        );
-        jobsToProcess = earlyFilterResult.filtered as AtlassianListing[];
-        earlyFilterStats = toEarlyFilterStats(earlyFilterResult);
-      }
-
-      if (jobsToProcess.length === 0) {
-        return {
-          success: true,
-          outcome: "success",
-          jobs: [],
-          earlyFiltered: earlyFilterStats,
-          openExternalIds,
-          openExternalIdsComplete: true,
-        };
-      }
-
-      const jobsToFetch = existingExternalIds
-        ? jobsToProcess.filter((job) => {
-            const externalId = this.generateExternalId(this.platform, job.id);
-            return !existingExternalIds.has(externalId);
-          })
-        : jobsToProcess;
+      const selection = selectListingsForHydration({
+        listings: scopedListings,
+        filters,
+        existingExternalIds: options?.existingExternalIds,
+        toFilterable: (listing) => ({
+          title: listing.title,
+          location: listing.location,
+        }),
+        getExternalId: (listing) =>
+          this.generateExternalId(this.platform, listing.id),
+      });
+      const jobsToFetch = selection.listings;
 
       if (jobsToFetch.length === 0) {
         return {
-          success: true,
           outcome: "success",
           jobs: [],
-          earlyFiltered: earlyFilterStats,
+          totalListings: scopedListings.length,
+          earlyFiltered: selection.earlyFiltered,
           openExternalIds,
-          openExternalIdsComplete: true,
+          listingCompleteness: "complete",
         };
       }
 
@@ -166,22 +195,15 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
       });
 
       return {
-        success: true,
         outcome: detailFailures > 0 ? "partial" : "success",
         jobs,
-        earlyFiltered: earlyFilterStats,
+        totalListings: scopedListings.length,
+        earlyFiltered: selection.earlyFiltered,
         openExternalIds,
-        openExternalIdsComplete: true,
+        listingCompleteness: "complete",
       };
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        openExternalIds: [],
-        openExternalIdsComplete: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 
@@ -330,18 +352,19 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
     }
 
     const detailsEndpoint = `${origin}/endpoint/careers/details/${encodeURIComponent(listing.id)}`;
-    const response = await this.httpClient.fetch(detailsEndpoint, {
-      timeout: this.config.timeout,
-      retries: this.config.retries,
-      baseDelay: this.config.baseDelay,
-      headers: this.createJsonHeaders(),
+    const response = await this.fetchResponse(detailsEndpoint, {
+      headers: this.jsonRequestHeaders(),
     });
 
     if (!response.ok) {
       return { job: fallback, failed: true };
     }
 
-    const payload = (await response.json()) as unknown;
+    const payload = parseExternalPayload(
+      AtlassianDetailPayloadSchema,
+      await response.json(),
+      "Atlassian detail"
+    );
     const detailRecord = this.resolveDetailRecord(payload);
     if (!detailRecord) {
       return { job: fallback, failed: true };
@@ -400,10 +423,10 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
 
     if (sections.length === 0) return undefined;
 
-    const normalized = normalizeDescription(sections.join("\n"));
+    const processed = processDescription(sections.join("\n"), "html");
     return {
-      description: normalized.description,
-      descriptionFormat: normalized.descriptionFormat,
+      description: processed.text ?? undefined,
+      descriptionFormat: processed.format,
     };
   }
 
@@ -442,18 +465,4 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
   private isRecord(value: unknown): value is AtlassianListingRecord {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
   }
-
-  private createJsonHeaders(): Record<string, string> {
-    return {
-      Accept: "application/json",
-      "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-    };
-  }
-}
-
-export function createAtlassianScraper(
-  httpClient: IHttpClient,
-  config?: Partial<AtlassianConfig>
-): AtlassianScraper {
-  return new AtlassianScraper(httpClient, config);
 }

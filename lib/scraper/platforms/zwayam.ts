@@ -1,8 +1,24 @@
-import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
-import { containsHtml, decodeHtmlEntities, processDescription } from "@/lib/jobs/description-processor";
+import { z } from "zod";
+
+import {
+  containsHtml,
+  decodeHtmlEntities,
+  processDescription,
+} from "@/lib/jobs/description-processor";
+import {
+  HttpError,
+  type IHttpClient,
+} from "@/lib/scraper/infrastructure/http-client";
+import { parseExternalPayload } from "@/lib/scraper/types";
 
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
-import type { ApiScraperConfig, ScrapeOptions, ScrapedJob, ScraperResult } from "../core/types";
+import type {
+  ApiScraperConfig,
+  ScrapeOptions,
+  ScrapedJob,
+  ScraperResult,
+} from "../core/types";
+import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
 
 type ZwayamJobRecord = {
   id: number;
@@ -38,10 +54,10 @@ type ZwayamSearchHit = {
 
 type ZwayamResponse = {
   code: number;
-  data?: {
+  data: {
     data: ZwayamSearchHit[];
-    totalCount: number;
-    hasMoreData: boolean;
+    totalCount?: number;
+    hasMoreData?: boolean;
   };
 };
 
@@ -63,14 +79,50 @@ type ZwayamDetailResponse = {
   };
 };
 
+const ZwayamJobRecordSchema = z
+  .object({
+    id: z.number(),
+  })
+  .passthrough();
+
+const ZwayamResponseSchema = z
+  .object({
+    code: z.literal(200),
+    data: z
+      .object({
+        data: z.array(z.object({ _source: ZwayamJobRecordSchema }).passthrough()),
+        totalCount: z.number().optional(),
+        hasMoreData: z.boolean().optional(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
+const ZwayamDetailResponseSchema = z
+  .object({
+    responseStatus: z.string(),
+    responseCode: z.number(),
+    reponseObject: z
+      .object({
+        customDetails: z.record(z.string(), z.string()).optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
 export type ZwayamConfig = ApiScraperConfig & {
   pageSize: number;
+  detailBatchSize: number;
+  detailDelayMs: number;
 };
 
 export const DEFAULT_ZWAYAM_CONFIG: ZwayamConfig = {
   ...DEFAULT_API_CONFIG,
   baseUrl: "https://public.zwayam.com",
   pageSize: 10,
+  detailBatchSize: 2,
+  detailDelayMs: 500,
 };
 
 export class ZwayamScraper extends AbstractApiScraper<ZwayamConfig> {
@@ -117,12 +169,10 @@ export class ZwayamScraper extends AbstractApiScraper<ZwayamConfig> {
     try {
       const tenant = options?.boardToken || this.extractIdentifier(url);
       if (!tenant) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          error: "Could not determine Zwayam tenant from URL. Please provide a board token manually.",
-        };
+        return this.failure(
+          "invalid_url",
+          "Could not determine Zwayam tenant from URL. Please provide a board token manually."
+        );
       }
 
       const companyId = this.resolveCompanyId(tenant);
@@ -132,6 +182,7 @@ export class ZwayamScraper extends AbstractApiScraper<ZwayamConfig> {
       let paginationStartNo = 0;
       let isComplete = true;
       let hadDetailFailures = false;
+      let expectedTotal: number | undefined;
 
       while (true) {
         const response = await this.fetchPage({
@@ -143,8 +194,19 @@ export class ZwayamScraper extends AbstractApiScraper<ZwayamConfig> {
 
         const pageJobs = response.data?.data ?? [];
         const totalCount = response.data?.totalCount;
+        const hasMoreData = response.data?.hasMoreData;
+        if (typeof totalCount === "number") {
+          expectedTotal = Math.max(expectedTotal ?? 0, totalCount);
+        }
 
         if (pageJobs.length === 0) {
+          if (
+            hasMoreData === true ||
+            (expectedTotal !== undefined && paginationStartNo < expectedTotal) ||
+            (hasMoreData === undefined && expectedTotal === undefined)
+          ) {
+            isComplete = false;
+          }
           break;
         }
 
@@ -154,53 +216,68 @@ export class ZwayamScraper extends AbstractApiScraper<ZwayamConfig> {
 
         paginationStartNo += pageJobs.length;
 
-        const hasMoreData = response.data?.hasMoreData;
-
         if (hasMoreData === false) {
+          if (expectedTotal !== undefined && paginationStartNo < expectedTotal) {
+            isComplete = false;
+          }
           break;
         }
 
-        if (typeof totalCount === "number" && paginationStartNo >= totalCount && hasMoreData !== true) {
+        if (hasMoreData === true && expectedTotal !== undefined && paginationStartNo >= expectedTotal) {
+          isComplete = false;
+          break;
+        }
+
+        if (expectedTotal !== undefined && paginationStartNo >= expectedTotal) {
           break;
         }
 
         if (hasMoreData === undefined && pageJobs.length < this.config.pageSize) {
-          isComplete = typeof totalCount === "number" ? paginationStartNo >= totalCount : true;
+          isComplete = expectedTotal !== undefined && paginationStartNo >= expectedTotal;
           break;
         }
       }
 
-      for (const entry of jobEntries) {
-        if (!entry.needsDetail) continue;
-        try {
-          const detail = await this.fetchJobDetail(entry.jobId, numericCompanyId);
-          if (detail) {
-            entry.job.description = detail.text ?? undefined;
-            entry.job.descriptionFormat = detail.format;
-          }
-        } catch {
-          hadDetailFailures = true;
+      const detailEntries = jobEntries.filter((entry) => entry.needsDetail);
+      const detailBatchSize = Math.max(
+        1,
+        Math.floor(this.config.detailBatchSize)
+      );
+      const hydrated = await hydrateDetailsInBatches({
+        items: detailEntries,
+        initialBatchSize: detailBatchSize,
+        minBatchSize: 1,
+        maxBatchSize: detailBatchSize,
+        initialDelayMs: this.config.detailDelayMs,
+        minDelayMs: this.config.detailDelayMs,
+        maxDelayMs: this.config.detailDelayMs,
+        fetcher: async (entry) => ({
+          entry,
+          detail: await this.fetchJobDetail(entry.jobId, numericCompanyId),
+        }),
+      });
+
+      for (const { entry, detail } of hydrated.results) {
+        if (detail) {
+          entry.job.description = detail.text ?? undefined;
+          entry.job.descriptionFormat = detail.format;
         }
       }
+      hadDetailFailures = hydrated.failures > 0;
 
       const dedupedJobs = this.deduplicateJobs(jobEntries.map((entry) => entry.job));
       const hasPartialDetails = hadDetailFailures && dedupedJobs.length > 0;
 
       return {
-        success: isComplete && !hasPartialDetails,
         outcome: isComplete && !hasPartialDetails ? "success" : "partial",
         jobs: dedupedJobs,
+        totalListings: expectedTotal ?? dedupedJobs.length,
         detectedBoardToken: !options?.boardToken ? tenant : undefined,
         openExternalIds: dedupedJobs.map((job) => job.externalId),
-        openExternalIdsComplete: isComplete,
+        listingCompleteness: isComplete ? "complete" : "partial",
       };
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 
@@ -225,23 +302,25 @@ export class ZwayamScraper extends AbstractApiScraper<ZwayamConfig> {
     form.set("domain", args.domain);
     form.set("companyId", args.companyId);
 
-    const response = await this.httpClient.fetch(`${this.config.baseUrl}/jobs/search`, {
+    const response = await this.fetchResponse(`${this.config.baseUrl}/jobs/search`, {
       method: "POST",
       body: form,
-      timeout: this.config.timeout,
-      retries: this.config.retries,
-      baseDelay: this.config.baseDelay,
-      headers: {
-        Accept: "application/json, text/plain, */*",
-        "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-      },
+      headers: this.requestHeaders("application/json, text/plain, */*"),
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch Zwayam jobs: ${response.status}`);
+      throw new HttpError(
+        response.status,
+        `Failed to fetch Zwayam jobs: ${response.status}`,
+        response.url
+      );
     }
 
-    return response.json() as Promise<ZwayamResponse>;
+    return parseExternalPayload(
+      ZwayamResponseSchema,
+      await response.json(),
+      "Zwayam search"
+    ) as ZwayamResponse;
   }
 
   private mapJob(
@@ -352,21 +431,19 @@ export class ZwayamScraper extends AbstractApiScraper<ZwayamConfig> {
     companyId: number
   ): Promise<{ text: string | null; format: "markdown" | "plain" } | null> {
     const url = `${this.config.baseUrl}/requisition_service/getReqFieldsForCareersSite/${jobId}/${companyId}`;
-    const response = await this.httpClient.fetch(url, {
-      timeout: this.config.timeout,
-      retries: this.config.retries,
-      baseDelay: this.config.baseDelay,
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-      },
+    const response = await this.fetchResponse(url, {
+      headers: this.jsonRequestHeaders(),
     });
 
     if (!response.ok) {
       return null;
     }
 
-    const data = (await response.json()) as ZwayamDetailResponse;
+    const data = parseExternalPayload(
+      ZwayamDetailResponseSchema,
+      await response.json(),
+      "Zwayam detail"
+    ) as ZwayamDetailResponse;
     const customDetails = data.reponseObject?.customDetails;
     if (!customDetails) {
       return null;
@@ -420,11 +497,4 @@ export class ZwayamScraper extends AbstractApiScraper<ZwayamConfig> {
       return "www.flipkartcareers.com";
     }
   }
-}
-
-export function createZwayamScraper(
-  httpClient: IHttpClient,
-  config?: Partial<ZwayamConfig>
-): ZwayamScraper {
-  return new ZwayamScraper(httpClient, config);
 }

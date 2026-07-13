@@ -1,4 +1,4 @@
-import type { Platform } from "@/lib/scraper/types";
+import type { Platform } from "@/lib/scraper/types/platform";
 
 export type DetectedPlatform = Platform | "custom";
 

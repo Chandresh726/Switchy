@@ -8,6 +8,7 @@ export interface ScrapeOptions {
   boardToken?: string;
   filters?: JobFilters;
   existingExternalIds?: Set<string>;
+  signal?: AbortSignal;
 }
 
 export interface ScraperConfig {

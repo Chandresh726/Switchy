@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { APIValidationError } from "@/lib/api/ai-error-handler";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
+import { SCRAPER_SETTINGS } from "@/lib/scraper/settings/definitions";
 import { safeJsonParse } from "@/lib/utils/safe-json";
 
 export const DEFAULT_SETTINGS = {
@@ -26,7 +27,12 @@ export const DEFAULT_SETTINGS = {
   matcher_auto_match_after_scrape: "true",
   scheduler_enabled: "true",
   scheduler_cron: "0 */6 * * *",
-  scraper_max_parallel_scrapes: "3",
+  scraper_max_parallel_scrapes: String(
+    SCRAPER_SETTINGS.maxParallelScrapes.defaultValue
+  ),
+  scraper_history_retention_days: String(
+    SCRAPER_SETTINGS.historyRetentionDays.defaultValue
+  ),
   scraper_filter_country: "India",
   scraper_filter_city: "",
   scraper_filter_title_keywords: "[]",
@@ -232,8 +238,14 @@ function parseSettingValue(
     case "scraper_filter_country":
     case "scraper_filter_city":
       return { value: String(value ?? ""), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
-    case "scraper_max_parallel_scrapes":
-      return { value: parseNumberInRange(key, value, 1, 10), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
+    case "scraper_max_parallel_scrapes": {
+      const setting = SCRAPER_SETTINGS.maxParallelScrapes;
+      return { value: parseNumberInRange(key, value, setting.minimum, setting.maximum), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
+    }
+    case "scraper_history_retention_days": {
+      const setting = SCRAPER_SETTINGS.historyRetentionDays;
+      return { value: parseNumberInRange(key, value, setting.minimum, setting.maximum), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
+    }
     case "scraper_filter_title_keywords":
       return { value: normalizeTitleKeywords(value), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     case "referral_tone":

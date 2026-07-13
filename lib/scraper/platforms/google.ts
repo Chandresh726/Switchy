@@ -1,12 +1,20 @@
 import { load, type CheerioAPI } from "cheerio";
+import { z } from "zod";
 
+import { containsHtml, processDescription } from "@/lib/jobs/description-processor";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
-import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig, EarlyFilterStats, SeniorityLevel } from "@/lib/scraper/types";
-import { applyEarlyFilters, hasEarlyFilters, toEarlyFilterStats } from "@/lib/scraper/services";
+import {
+  parseExternalPayload,
+  type ScraperResult,
+  type ScrapeOptions,
+  type ScrapedJob,
+  type ApiScraperConfig,
+  type SeniorityLevel,
+} from "@/lib/scraper/types";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
 import { fetchPaginatedHtmlByPageParam, resolveUrl } from "./shared/html-pagination";
-import { normalizeDescription } from "./shared/job-normalizers";
+import { selectListingsForHydration } from "./shared/listing-selection";
 
 interface GoogleListingJob {
   id: string;
@@ -26,6 +34,17 @@ interface GoogleHydratedJob {
   job: ScrapedJob;
   failed: boolean;
 }
+
+const GoogleListingSchema = z
+  .object({
+    id: z.string().min(1),
+    slug: z.string().min(1),
+    url: z.string().min(1),
+    title: z.string().min(1),
+    location: z.string().optional(),
+    seniority: z.enum(["entry", "mid", "senior", "lead", "manager"]).optional(),
+  })
+  .passthrough();
 
 export type GoogleConfig = ApiScraperConfig & {
   detailBatchSize: number;
@@ -71,11 +90,15 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
 
   async scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult> {
     try {
+      if (!this.parseSourceUrl(url)) {
+        return this.failure("invalid_url", "Invalid Google Careers URL.");
+      }
+
       const listingUrl = this.resolveListingUrl(url);
       const pagedResult = await fetchPaginatedHtmlByPageParam({
         httpClient: this.httpClient,
         startUrl: listingUrl,
-        headers: this.createHtmlHeaders(),
+        headers: this.requestHeaders("text/html"),
         timeout: this.config.timeout,
         retries: this.config.retries,
         baseDelay: this.config.baseDelay,
@@ -83,19 +106,26 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
       });
 
       if (pagedResult.pages.length === 0) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          openExternalIds: [],
-          openExternalIdsComplete: false,
-          error: "Failed to fetch Google Careers listing pages.",
-        };
+        const message = "Failed to fetch Google Careers listing pages.";
+        return pagedResult.firstFailureStatus
+          ? this.failureForHttpStatus(pagedResult.firstFailureStatus, message)
+          : this.failure("network_error", message);
       }
 
-      const discoveredListings = this.extractListingsFromPages(
-        pagedResult.pages.map((page) => page.html),
-        listingUrl
+      const listingPages = pagedResult.pages.map((page) => page.html);
+      const extractedByPage = listingPages.map((html) =>
+        this.extractListingsFromPages([html], listingUrl)
+      );
+      const hasUnrecognizedPage = extractedByPage.some(
+        (listings, index) =>
+          listings.length === 0 &&
+          !(listingPages.length === 1 && index === 0 && this.hasExplicitEmptyState([listingPages[0]]))
+      );
+      const listingIsComplete = pagedResult.isComplete && !hasUnrecognizedPage;
+      const discoveredListings = parseExternalPayload(
+        z.array(GoogleListingSchema),
+        extractedByPage.flat(),
+        "Google listings"
       );
       const listings = this.dedupeListings(discoveredListings);
       const openExternalIds = listings.map((listing) =>
@@ -103,61 +133,49 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
       );
 
       if (listings.length === 0) {
-        const outcome = pagedResult.isComplete ? "success" : "error";
+        if (!listingIsComplete) {
+          return this.failure(
+            "parse_error",
+            "Incomplete Google list fetch with no usable jobs."
+          );
+        }
+        if (!this.hasExplicitEmptyState(listingPages)) {
+          return this.failure(
+            "parse_error",
+            "Google listing page did not contain recognized jobs or an explicit empty state."
+          );
+        }
         return {
-          success: outcome !== "error",
-          outcome,
+          outcome: "success",
           jobs: [],
+          totalListings: 0,
           openExternalIds,
-          openExternalIdsComplete: pagedResult.isComplete,
-          error: outcome === "error" ? "Incomplete Google list fetch with no usable jobs." : undefined,
+          listingCompleteness: "complete",
         };
       }
 
       const filters = options?.filters;
-      const existingExternalIds = options?.existingExternalIds;
-      let jobsToProcess = listings;
-      let earlyFilterStats: EarlyFilterStats | undefined;
-
-      if (hasEarlyFilters(filters)) {
-        const earlyFilterResult = applyEarlyFilters(
-          listings.map((job) => ({
-            ...job,
-            title: job.title,
-            location: job.location || "",
-          })),
-          filters
-        );
-        jobsToProcess = earlyFilterResult.filtered as GoogleListingJob[];
-        earlyFilterStats = toEarlyFilterStats(earlyFilterResult);
-      }
-
-      if (jobsToProcess.length === 0) {
-        return {
-          success: true,
-          outcome: pagedResult.isComplete ? "success" : "partial",
-          jobs: [],
-          earlyFiltered: earlyFilterStats,
-          openExternalIds,
-          openExternalIdsComplete: pagedResult.isComplete,
-        };
-      }
-
-      const jobsToFetch = existingExternalIds
-        ? jobsToProcess.filter((job) => {
-            const externalId = this.generateExternalId(this.platform, job.id);
-            return !existingExternalIds.has(externalId);
-          })
-        : jobsToProcess;
+      const selection = selectListingsForHydration({
+        listings,
+        filters,
+        existingExternalIds: options?.existingExternalIds,
+        toFilterable: (listing) => ({
+          title: listing.title,
+          location: listing.location,
+        }),
+        getExternalId: (listing) =>
+          this.generateExternalId(this.platform, listing.id),
+      });
+      const jobsToFetch = selection.listings;
 
       if (jobsToFetch.length === 0) {
         return {
-          success: true,
-          outcome: pagedResult.isComplete ? "success" : "partial",
+          outcome: listingIsComplete ? "success" : "partial",
           jobs: [],
-          earlyFiltered: earlyFilterStats,
+          totalListings: listings.length,
+          earlyFiltered: selection.earlyFiltered,
           openExternalIds,
-          openExternalIdsComplete: pagedResult.isComplete,
+          listingCompleteness: listingIsComplete ? "complete" : "partial",
         };
       }
 
@@ -174,23 +192,18 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
         return result.job;
       });
 
-      const outcome = detailFailures > 0 || !pagedResult.isComplete ? "partial" : "success";
+      const outcome = detailFailures > 0 || !listingIsComplete ? "partial" : "success";
 
       return {
-        success: true,
         outcome,
         jobs: scrapedJobs,
-        earlyFiltered: earlyFilterStats,
+        totalListings: listings.length,
+        earlyFiltered: selection.earlyFiltered,
         openExternalIds,
-        openExternalIdsComplete: pagedResult.isComplete,
+        listingCompleteness: listingIsComplete ? "complete" : "partial",
       };
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 
@@ -209,6 +222,15 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
     }
 
     return parsed.toString();
+  }
+
+  private hasExplicitEmptyState(pages: string[]): boolean {
+    const text = pages
+      .map((html) => load(html).text().replace(/\s+/g, " ").trim())
+      .join(" ");
+    return /(?:no jobs|no matching jobs|no results|0 jobs|zero jobs|currently no open roles)/i.test(
+      text
+    );
   }
 
   private extractListingsFromPages(pages: string[], listingUrl: string): GoogleListingJob[] {
@@ -341,11 +363,8 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
   private async fetchAndHydrateJob(listing: GoogleListingJob): Promise<GoogleHydratedJob> {
     const fallback = this.mapListingToJob(listing);
 
-    const response = await this.httpClient.fetch(listing.url, {
-      timeout: this.config.timeout,
-      retries: this.config.retries,
-      baseDelay: this.config.baseDelay,
-      headers: this.createHtmlHeaders(),
+    const response = await this.fetchResponse(listing.url, {
+      headers: this.requestHeaders("text/html"),
     });
 
     if (!response.ok) {
@@ -356,8 +375,10 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
     const $ = load(html);
     const jsonLd = this.extractJobPostingJsonLd($);
     const sectionHtml = this.extractDetailSectionHtml($);
-    const { description, descriptionFormat } = normalizeDescription(
-      jsonLd?.description || sectionHtml
+    const rawDescription = jsonLd?.description || sectionHtml;
+    const processedDescription = processDescription(
+      rawDescription,
+      containsHtml(rawDescription) ? "html" : "plain"
     );
     const detailTitle =
       jsonLd?.title || $("main h2").first().text().trim() || $("h1").first().text().trim();
@@ -371,8 +392,8 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
         url: listing.url,
         location: normalizedLocation.location,
         locationType: normalizedLocation.locationType,
-        description,
-        descriptionFormat,
+        description: processedDescription.text ?? undefined,
+        descriptionFormat: processedDescription.format,
         seniorityLevel: listing.seniority,
       },
     };
@@ -436,18 +457,4 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
 
     return undefined;
   }
-
-  private createHtmlHeaders(): Record<string, string> {
-    return {
-      Accept: "text/html",
-      "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-    };
-  }
-}
-
-export function createGoogleScraper(
-  httpClient: IHttpClient,
-  config?: Partial<GoogleConfig>
-): GoogleScraper {
-  return new GoogleScraper(httpClient, config);
 }

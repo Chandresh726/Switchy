@@ -58,6 +58,7 @@ export async function POST(request: Request, { params }: RouteParams) {
     const result = await matchWithTracking(jobIds, {
       triggerSource: "company_refresh",
       companyId,
+      signal: request.signal,
     });
 
     return NextResponse.json({

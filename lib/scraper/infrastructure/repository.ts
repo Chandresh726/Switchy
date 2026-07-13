@@ -1,51 +1,34 @@
-import { and, eq, inArray, isNotNull, notInArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
+
 import { db } from "@/lib/db";
-import { companies, jobs, settings, scrapeSessions, scrapingLogs } from "@/lib/db/schema";
-import type { NewJob } from "@/lib/db/schema";
-import type { ScrapedJob } from "@/lib/scraper/types";
+import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
+import {
+  companies,
+  jobs,
+  matchSessions,
+  scrapeMatchOutbox,
+  scrapeSessions,
+  scrapingLogs,
+  settings,
+} from "@/lib/db/schema";
+import { createMatchWorkRecords } from "@/lib/scraper/matching/work-contracts";
+
 import type {
   IScraperRepository,
   ExistingJob,
   SessionProgressUpdate,
-  ScrapeSessionCreate,
   ScrapingLogCreate,
-  ScrapingLogUpdate,
-  CompanyUpdate,
+  PersistScrapeResultInput,
+  PersistScrapeResultOutput,
 } from "./types";
 
-const SCHEDULER_LOCK_KEY = "scheduler.lock";
-const SCHEDULER_LOCK_TIMEOUT_MS = 5 * 60 * 1000;
-
-interface SchedulerLockPayload {
-  ownerId: string;
-  token: string;
-  expiresAt: number;
-}
-
-function parseSchedulerLock(value: string | null): SchedulerLockPayload | null {
-  if (!value) return null;
-  try {
-    const parsed = JSON.parse(value) as SchedulerLockPayload;
-    if (
-      typeof parsed.ownerId !== "string" ||
-      typeof parsed.token !== "string" ||
-      typeof parsed.expiresAt !== "number"
-    ) {
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function createSchedulerLockValue(payload: SchedulerLockPayload): string {
-  return JSON.stringify(payload);
-}
+const SQLITE_INSERT_CHUNK_SIZE = 50;
 
 export class DrizzleScraperRepository implements IScraperRepository {
+  constructor(private readonly database: typeof db = db) {}
+
   async getCompany(id: number) {
-    const [company] = await db
+    const [company] = await this.database
       .select()
       .from(companies)
       .where(eq(companies.id, id));
@@ -53,14 +36,14 @@ export class DrizzleScraperRepository implements IScraperRepository {
   }
 
   async getActiveCompanies() {
-    return db
+    return this.database
       .select()
       .from(companies)
       .where(eq(companies.isActive, true));
   }
 
   async getExistingJobs(companyId: number): Promise<ExistingJob[]> {
-    return db
+    return this.database
       .select({
         id: jobs.id,
         externalId: jobs.externalId,
@@ -75,165 +58,205 @@ export class DrizzleScraperRepository implements IScraperRepository {
   }
 
   async getSetting(key: string): Promise<string | null> {
-    const [setting] = await db
+    const [setting] = await this.database
       .select()
       .from(settings)
       .where(eq(settings.key, key));
     return setting?.value ?? null;
   }
 
-  async reopenScraperArchivedJobs(companyId: number, openExternalIds: string[]): Promise<number> {
-    if (openExternalIds.length === 0) return 0;
-
-    const reopened = await db
-      .update(jobs)
-      .set({
-        status: "new",
-        archivedAt: null,
-        archiveSource: null,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(jobs.companyId, companyId),
-          eq(jobs.status, "archived"),
-          eq(jobs.archiveSource, "scraper"),
-          inArray(jobs.externalId, openExternalIds)
-        )
-      )
-      .returning({ id: jobs.id });
-
-    return reopened.length;
-  }
-
-  async archiveMissingJobs(
-    companyId: number,
-    openExternalIds: string[],
-    statusesToArchive: string[]
-  ): Promise<number> {
-    if (statusesToArchive.length === 0) return 0;
-
-    const baseConditions = [
-      eq(jobs.companyId, companyId),
-      isNotNull(jobs.externalId),
-      inArray(jobs.status, statusesToArchive),
-    ] as const;
-
-    const whereClause = openExternalIds.length > 0
-      ? and(...baseConditions, notInArray(jobs.externalId, openExternalIds))
-      : and(...baseConditions);
-
-    const archived = await db
-      .update(jobs)
-      .set({
-        status: "archived",
-        archivedAt: new Date(),
-        archiveSource: "scraper",
-        updatedAt: new Date(),
-      })
-      .where(whereClause)
-      .returning({ id: jobs.id });
-
-    return archived.length;
-  }
-
-  async insertJobs(jobsToInsert: Omit<NewJob, "discoveredAt" | "updatedAt">[]): Promise<number[]> {
-    if (jobsToInsert.length === 0) return [];
-    
-    const inserted = await db
-      .insert(jobs)
-      .values(jobsToInsert as NewJob[])
-      .onConflictDoNothing()
-      .returning({ id: jobs.id });
-    
-    return inserted.map((j) => j.id);
-  }
-
-  async updateExistingJobsFromScrape(
-    updates: Array<{ existingJobId: number; job: ScrapedJob }>
-  ): Promise<number> {
-    if (updates.length === 0) return 0;
-
-    let updatedCount = 0;
-
-    for (const { existingJobId, job } of updates) {
-      const updated = await db
-        .update(jobs)
-        .set({
-          title: job.title,
-          url: job.url,
-          location: job.location,
-          locationType: job.locationType,
-          department: job.department,
-          description: job.description,
-          descriptionFormat: job.descriptionFormat ?? "plain",
-          salary: job.salary,
-          employmentType: job.employmentType,
-          postedDate: job.postedDate,
-          updatedAt: new Date(),
+  async persistScrapeResult(
+    input: PersistScrapeResultInput
+  ): Promise<PersistScrapeResultOutput> {
+    return this.database.transaction((tx) => {
+      const writeStartedAt = new Date();
+      const activeSession = tx
+        .select({ status: scrapeSessions.status })
+        .from(scrapeSessions)
+        .where(eq(scrapeSessions.id, input.log.sessionId))
+        .limit(1)
+        .get();
+      if (activeSession?.status !== "in_progress") {
+        throw new Error(`Scrape session ${input.log.sessionId} is no longer active.`);
+      }
+      const openExternalIds = new Set(input.openExternalIds);
+      const currentJobs = tx
+        .select({
+          id: jobs.id,
+          externalId: jobs.externalId,
+          status: jobs.status,
+          archiveSource: jobs.archiveSource,
         })
-        .where(eq(jobs.id, existingJobId))
-        .returning({ id: jobs.id });
+        .from(jobs)
+        .where(eq(jobs.companyId, input.companyId))
+        .all();
 
-      updatedCount += updated.length;
-    }
+      const jobIdsToReopen = currentJobs
+        .filter(
+          (job) =>
+            job.status === "archived" &&
+            job.archiveSource === "scraper" &&
+            Boolean(job.externalId && openExternalIds.has(job.externalId))
+        )
+        .map((job) => job.id);
+      const jobIdsToArchive = input.archiveMissing
+        ? currentJobs
+            .filter((job) => {
+              if (!job.externalId) return false;
+              return (
+                input.statusesToArchive.includes(job.status) &&
+                !openExternalIds.has(job.externalId)
+              );
+            })
+            .map((job) => job.id)
+        : [];
 
-    return updatedCount;
-  }
+      for (const jobIdChunk of chunkSqliteParameters(jobIdsToReopen)) {
+        tx.update(jobs)
+          .set({
+            status: "new",
+            archivedAt: null,
+            archiveSource: null,
+            updatedAt: writeStartedAt,
+          })
+          .where(
+            and(
+              eq(jobs.companyId, input.companyId),
+              eq(jobs.status, "archived"),
+              eq(jobs.archiveSource, "scraper"),
+              inArray(jobs.id, jobIdChunk)
+            )
+          )
+          .run();
+      }
 
-  async getMatchableJobIds(jobIds: number[]): Promise<number[]> {
-    if (jobIds.length === 0) return [];
+      let jobsArchived = 0;
+      for (const jobIdChunk of chunkSqliteParameters(jobIdsToArchive)) {
+        jobsArchived += tx
+          .update(jobs)
+          .set({
+            status: "archived",
+            archivedAt: writeStartedAt,
+            archiveSource: "scraper",
+            updatedAt: writeStartedAt,
+          })
+          .where(
+            and(
+              eq(jobs.companyId, input.companyId),
+              inArray(jobs.id, jobIdChunk),
+              inArray(jobs.status, input.statusesToArchive)
+            )
+          )
+          .returning({ id: jobs.id })
+          .all().length;
+      }
 
-    const existingJobs = await db
-      .select({ id: jobs.id, description: jobs.description })
-      .from(jobs)
-      .where(inArray(jobs.id, jobIds));
+      let jobsUpdated = 0;
+      for (const { existingJobId, job } of input.existingJobUpdates) {
+        jobsUpdated += tx
+          .update(jobs)
+          .set({
+            title: job.title,
+            url: job.url,
+            location: job.location,
+            locationType: job.locationType,
+            department: job.department,
+            description: job.description,
+            descriptionFormat: job.descriptionFormat ?? "plain",
+            salary: job.salary,
+            employmentType: job.employmentType,
+            postedDate: job.postedDate,
+            updatedAt: writeStartedAt,
+          })
+          .where(and(eq(jobs.id, existingJobId), eq(jobs.companyId, input.companyId)))
+          .returning({ id: jobs.id })
+          .all().length;
+      }
 
-    const matchableJobIds = new Set(
-      existingJobs
-        .filter((job) => typeof job.description === "string" && job.description.trim().length > 0)
-        .map((job) => job.id)
-    );
+      const insertedJobs: Array<{ id: number; description: string | null }> = [];
+      for (const jobsToInsert of chunkSqliteParameters(
+        input.jobsToInsert,
+        SQLITE_INSERT_CHUNK_SIZE
+      )) {
+        insertedJobs.push(
+          ...tx
+            .insert(jobs)
+            .values(
+              jobsToInsert.map((job) => ({
+                ...job,
+                companyId: input.companyId,
+              }))
+            )
+            .onConflictDoNothing()
+            .returning({ id: jobs.id, description: jobs.description })
+            .all()
+        );
+      }
+      const insertedJobIds = insertedJobs.map((job) => job.id);
+      const matchableJobIds = input.enableMatching
+        ? insertedJobs
+            .filter(
+              (job) =>
+                typeof job.description === "string" && job.description.trim().length > 0
+            )
+            .map((job) => job.id)
+        : [];
 
-    return jobIds.filter((jobId) => matchableJobIds.has(jobId));
-  }
+      const completedAt = new Date();
+      const insertedLog = tx
+        .insert(scrapingLogs)
+        .values({
+          ...input.log,
+          companyId: input.companyId,
+          jobsAdded: insertedJobIds.length,
+          jobsUpdated,
+          jobsArchived,
+          matcherStatus: matchableJobIds.length > 0 ? "pending" : null,
+          matcherJobsTotal: matchableJobIds.length > 0 ? matchableJobIds.length : null,
+          matcherJobsCompleted: 0,
+          duration: Math.max(0, completedAt.getTime() - input.startedAtMs),
+          completedAt,
+        })
+        .returning({ id: scrapingLogs.id })
+        .get();
+      if (!insertedLog) throw new Error("Failed to persist scrape audit log.");
 
-  async updateCompany(id: number, updates: CompanyUpdate): Promise<void> {
-    await db
-      .update(companies)
-      .set(updates)
-      .where(eq(companies.id, id));
-  }
+      tx.update(companies)
+        .set({
+          lastScrapedAt: completedAt,
+          updatedAt: completedAt,
+          ...(input.companyBoardToken ? { boardToken: input.companyBoardToken } : {}),
+        })
+        .where(eq(companies.id, input.companyId))
+        .run();
 
-  async createSession(session: ScrapeSessionCreate): Promise<void> {
-    await db.insert(scrapeSessions).values({
-      id: session.id,
-      triggerSource: session.triggerSource,
-      status: session.status,
-      companiesTotal: session.companiesTotal,
-      companiesCompleted: session.companiesCompleted ?? 0,
-      totalJobsFound: session.totalJobsFound ?? 0,
-      totalJobsAdded: session.totalJobsAdded ?? 0,
-      totalJobsFiltered: session.totalJobsFiltered ?? 0,
-      totalJobsArchived: session.totalJobsArchived ?? 0,
-      skipReason: session.skipReason,
-      scheduledForAt: session.scheduledForAt,
-      startedAt: session.startedAt,
-      completedAt: session.completedAt,
-    });
-  }
+      const matchOutboxId = matchableJobIds.length > 0 ? crypto.randomUUID() : null;
+      if (matchOutboxId) {
+        const matchWork = createMatchWorkRecords({
+          id: matchOutboxId,
+          scrapingLogId: insertedLog.id,
+          companyId: input.companyId,
+          jobIds: matchableJobIds,
+          now: completedAt,
+        });
+        tx.insert(matchSessions).values(matchWork.session).run();
+        tx.insert(scrapeMatchOutbox).values(matchWork.outbox).run();
+      }
 
-  async isSessionInProgress(id: string): Promise<boolean> {
-    const [session] = await db
-      .select({ status: scrapeSessions.status })
-      .from(scrapeSessions)
-      .where(eq(scrapeSessions.id, id));
-
-    return session?.status === "in_progress";
+      return {
+        insertedJobIds,
+        matchableJobIds,
+        jobsAdded: insertedJobIds.length,
+        jobsUpdated,
+        jobsArchived,
+        logId: insertedLog.id,
+        matchOutboxId,
+      };
+    }, { behavior: "immediate" });
   }
 
   async stopSession(id: string): Promise<boolean> {
-    const updated = await db
+    const updated = await this.database
       .update(scrapeSessions)
       .set({
         status: "failed",
@@ -246,7 +269,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
   }
 
   async updateSessionProgress(id: string, progress: SessionProgressUpdate): Promise<void> {
-    await db
+    await this.database
       .update(scrapeSessions)
       .set({
         companiesCompleted: progress.companiesCompleted,
@@ -259,7 +282,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
   }
 
   async completeSession(id: string, status: "completed" | "partial" | "failed"): Promise<void> {
-    await db
+    await this.database
       .update(scrapeSessions)
       .set({
         status,
@@ -269,7 +292,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
   }
 
   async createScrapingLog(log: ScrapingLogCreate): Promise<number> {
-    const [inserted] = await db
+    const [inserted] = await this.database
       .insert(scrapingLogs)
       .values({
         companyId: log.companyId,
@@ -294,89 +317,6 @@ export class DrizzleScraperRepository implements IScraperRepository {
     return inserted?.id ?? 0;
   }
 
-  async updateScrapingLog(id: number, updates: ScrapingLogUpdate): Promise<void> {
-    await db
-      .update(scrapingLogs)
-      .set(updates)
-      .where(eq(scrapingLogs.id, id));
-  }
-
-  async acquireSchedulerLock(ownerId: string): Promise<string | null> {
-    const now = Date.now();
-    const currentRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
-    const currentLock = parseSchedulerLock(currentRaw);
-    const hasUnexpiredLock = currentLock && currentLock.expiresAt > now;
-
-    if (hasUnexpiredLock) {
-      return null;
-    }
-
-    const token = crypto.randomUUID();
-    const nextLock: SchedulerLockPayload = {
-      ownerId,
-      token,
-      expiresAt: now + SCHEDULER_LOCK_TIMEOUT_MS,
-    };
-    const nextRaw = createSchedulerLockValue(nextLock);
-
-    if (!currentRaw) {
-      await db
-        .insert(settings)
-        .values({
-          key: SCHEDULER_LOCK_KEY,
-          value: nextRaw,
-          updatedAt: new Date(),
-        })
-        .onConflictDoNothing();
-
-      const persistedRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
-      return persistedRaw === nextRaw ? token : null;
-    }
-
-    await db
-      .update(settings)
-      .set({ value: nextRaw, updatedAt: new Date() })
-      .where(and(eq(settings.key, SCHEDULER_LOCK_KEY), eq(settings.value, currentRaw)));
-
-    const persistedRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
-    return persistedRaw === nextRaw ? token : null;
-  }
-
-  async refreshSchedulerLock(lockToken: string): Promise<string | null> {
-    const currentRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
-    const currentLock = parseSchedulerLock(currentRaw);
-
-    if (!currentRaw || !currentLock || currentLock.token !== lockToken) {
-      return null;
-    }
-
-    const nextLock: SchedulerLockPayload = {
-      ...currentLock,
-      expiresAt: Date.now() + SCHEDULER_LOCK_TIMEOUT_MS,
-    };
-    const nextRaw = createSchedulerLockValue(nextLock);
-
-    await db
-      .update(settings)
-      .set({ value: nextRaw, updatedAt: new Date() })
-      .where(and(eq(settings.key, SCHEDULER_LOCK_KEY), eq(settings.value, currentRaw)));
-
-    const persistedRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
-    return persistedRaw === nextRaw ? lockToken : null;
-  }
-
-  async releaseSchedulerLock(lockToken: string): Promise<void> {
-    const currentRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
-    const currentLock = parseSchedulerLock(currentRaw);
-
-    if (!currentRaw || !currentLock || currentLock.token !== lockToken) {
-      return;
-    }
-
-    await db
-      .delete(settings)
-      .where(and(eq(settings.key, SCHEDULER_LOCK_KEY), eq(settings.value, currentRaw)));
-  }
 }
 
 export function createScraperRepository(): IScraperRepository {

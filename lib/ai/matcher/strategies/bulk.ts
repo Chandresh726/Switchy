@@ -1,7 +1,15 @@
 import { z } from "zod";
 import { BULK_MATCH_SYSTEM_PROMPT, buildBulkMatchPrompt } from "../prompts";
 import { generateStructured } from "../generation";
-import { retryWithBackoff, withTimeout, isServerError, isRateLimitError, categorizeError } from "../resilience";
+import {
+  abortableDelay,
+  categorizeError,
+  isRateLimitError,
+  isServerError,
+  retryWithBackoff,
+  throwIfAborted,
+  withTimeout,
+} from "../resilience";
 import type { StrategyResultItem, StrategyResultMap, BulkMatchResult, MatchJob } from "../types";
 import { BulkMatchResultSchema } from "../types";
 import { chunkArray } from "../utils";
@@ -42,7 +50,18 @@ function validateBatchResponse(batchResults: BulkMatchResult[], batchJobs: Match
 }
 
 export const bulkStrategy: BulkStrategy = async (ctx) => {
-  const { config, model, providerOptions, circuitBreaker, candidateProfile, jobs, onProgress, onResult, shouldStop } = ctx;
+  const {
+    config,
+    model,
+    providerOptions,
+    circuitBreaker,
+    candidateProfile,
+    jobs,
+    onProgress,
+    onResult,
+    shouldStop,
+    signal,
+  } = ctx;
 
   const results: StrategyResultMap = new Map();
   
@@ -61,11 +80,13 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
     try {
       await onResult(jobId, item);
     } catch (error) {
+      throwIfAborted(signal);
       console.error(`[BulkStrategy] Failed to report result for job ${jobId}:`, error);
     }
   };
 
   for (const batch of batches) {
+    throwIfAborted(signal);
     if (shouldStop && await shouldStop()) {
       console.log("[BulkStrategy] Stop requested, ending remaining batches");
       break;
@@ -91,6 +112,7 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
         model,
         providerOptions,
         candidateProfile,
+        signal,
       });
       const rawBatchResults = batchResult.data.results;
       const batchAttemptCount = batchResult.attemptCount;
@@ -138,6 +160,7 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
       circuitBreaker.recordSuccess();
       console.log(`[BulkStrategy] Batch completed: ${batchResults.length}/${batch.length} jobs`);
     } catch (error) {
+      throwIfAborted(signal);
       const errorObj = error instanceof Error ? error : new Error(String(error));
       const batchDuration = Date.now() - batchStartTime;
       circuitBreaker.recordFailure(errorObj);
@@ -156,7 +179,7 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
     }
 
     if (completed < jobs.length && config.interRequestDelayMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, config.interRequestDelayMs));
+      await abortableDelay(config.interRequestDelayMs, signal);
     }
   }
 
@@ -168,13 +191,14 @@ interface ProcessBatchContext {
   model: Parameters<BulkStrategy>[0]["model"];
   providerOptions: Parameters<BulkStrategy>[0]["providerOptions"];
   candidateProfile: Parameters<BulkStrategy>[0]["candidateProfile"];
+  signal?: AbortSignal;
 }
 
 async function processBatch(
   batch: Parameters<BulkStrategy>[0]["jobs"],
   ctx: ProcessBatchContext
 ): Promise<BulkProcessResult> {
-  const { config, model, providerOptions, candidateProfile } = ctx;
+  const { config, model, providerOptions, candidateProfile, signal } = ctx;
   let attemptCount = 0;
 
   const prompt = buildBulkMatchPrompt(batch, candidateProfile);
@@ -182,6 +206,7 @@ async function processBatch(
   try {
     const result = await retryWithBackoff(
       async () => {
+        throwIfAborted(signal);
         return withTimeout(
           (async () => {
             const generated = await generateStructured({
@@ -190,17 +215,20 @@ async function processBatch(
               instructions: BULK_MATCH_SYSTEM_PROMPT,
               prompt,
               providerOptions,
+              signal,
             });
             return generated.data;
           })(),
           config.timeoutMs * 2,
-          `Match batch of ${batch.length} jobs`
+          `Match batch of ${batch.length} jobs`,
+          signal
         );
       },
       {
         maxRetries: config.maxRetries,
         baseDelay: config.backoffBaseDelay,
         maxDelay: config.backoffMaxDelay,
+        signal,
         onAttempt: (attempt) => {
           attemptCount = attempt;
         },
@@ -219,6 +247,7 @@ async function processBatch(
       attemptCount: Math.max(attemptCount, 1),
     };
   } catch (error) {
+    throwIfAborted(signal);
     const errorObj = error instanceof Error ? error : new Error(String(error));
     (errorObj as Error & { attemptCount?: number }).attemptCount = Math.max(attemptCount, 1);
     throw errorObj;

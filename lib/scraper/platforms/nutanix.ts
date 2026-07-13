@@ -1,6 +1,8 @@
 import { load } from "cheerio";
+import { z } from "zod";
 
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
+import { ScraperPayloadError } from "@/lib/scraper/types";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig } from "../core/types";
 
@@ -20,6 +22,13 @@ interface NutanixJobNode {
   remoteType: string;
   lastActivityDate: string;
 }
+
+const NutanixJobNodeSchema = z
+  .object({
+    title: z.string().min(1),
+    apiJobId: z.string().min(1),
+  })
+  .passthrough();
 
 export type NutanixConfig = ApiScraperConfig;
 
@@ -53,55 +62,59 @@ export class NutanixScraper extends AbstractApiScraper<NutanixConfig> {
     try {
       const feedUrl = `${this.config.baseUrl}?rss=true`;
 
-      const response = await this.httpClient.fetch(feedUrl, {
-        timeout: this.config.timeout,
-        retries: this.config.retries,
-        baseDelay: this.config.baseDelay,
-        headers: {
-          Accept: "application/xml, text/xml, */*",
-          "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-        },
+      const response = await this.fetchResponse(feedUrl, {
+        headers: this.requestHeaders("application/xml, text/xml, */*"),
       });
 
       if (!response.ok) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          error: `Failed to fetch Nutanix jobs: HTTP ${response.status}`,
-        };
+        return this.failureForHttpStatus(
+          response.status,
+          `Failed to fetch Nutanix jobs: HTTP ${response.status}`
+        );
       }
 
       const xmlText = await response.text();
-      const jobs = this.parseXmlJobs(xmlText);
+      const parsedFeed = this.parseXmlJobs(xmlText);
+      const isComplete = parsedFeed.invalidEntries === 0;
 
       return {
-        success: true,
-        outcome: jobs.length > 0 ? "success" : "partial",
-        jobs,
+        outcome: isComplete && parsedFeed.jobs.length > 0 ? "success" : "partial",
+        jobs: parsedFeed.jobs,
+        totalListings: parsedFeed.totalEntries,
         detectedBoardToken: !options?.boardToken ? "nutanix" : undefined,
-        openExternalIds: jobs.map((j) => j.externalId),
-        openExternalIdsComplete: true,
+        openExternalIds: parsedFeed.jobs.map((job) => job.externalId),
+        listingCompleteness:
+          parsedFeed.totalEntries === 0
+            ? "unknown"
+            : isComplete
+              ? "complete"
+              : "partial",
       };
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 
-  private parseXmlJobs(xmlText: string): ScrapedJob[] {
+  private parseXmlJobs(
+    xmlText: string
+  ): { jobs: ScrapedJob[]; invalidEntries: number; totalEntries: number } {
     const $ = load(xmlText, { xmlMode: true });
+    if ($("jobs, rss, source").length === 0) {
+      throw new ScraperPayloadError(
+        "Nutanix XML",
+        "root must be jobs, rss, or source"
+      );
+    }
+
     const jobs: ScrapedJob[] = [];
+    let invalidEntries = 0;
 
     $("job").each((_idx, el) => {
       const $el = $(el);
       const node = this.extractJobNode($el);
 
-      if (!node.title || !node.apiJobId) {
+      if (!NutanixJobNodeSchema.safeParse(node).success) {
+        invalidEntries++;
         return;
       }
 
@@ -123,7 +136,7 @@ export class NutanixScraper extends AbstractApiScraper<NutanixConfig> {
       });
     });
 
-    return jobs;
+    return { jobs, invalidEntries, totalEntries: $("job").length };
   }
 
   private extractJobNode($el: ReturnType<ReturnType<typeof load>>): NutanixJobNode {
@@ -158,11 +171,4 @@ export class NutanixScraper extends AbstractApiScraper<NutanixConfig> {
     const parsed = new Date(dateStr);
     return isNaN(parsed.getTime()) ? null : parsed;
   }
-}
-
-export function createNutanixScraper(
-  httpClient: IHttpClient,
-  config?: Partial<NutanixConfig>
-): NutanixScraper {
-  return new NutanixScraper(httpClient, config);
 }

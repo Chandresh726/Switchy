@@ -1,15 +1,23 @@
+import { z } from "zod";
+
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
+import { abortableDelay } from "@/lib/scraper/infrastructure/cancellation";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig } from "../core/types";
-import { parseEmploymentType, type JobFilters, type SeniorityLevel } from "../types";
+import {
+  parseEmploymentType,
+  parseExternalPayload,
+  type JobFilters,
+  type SeniorityLevel,
+} from "../types";
 import { processDescription } from "@/lib/jobs/description-processor";
 import { applyEarlyFilters, hasEarlyFilters, toEarlyFilterStats } from "@/lib/scraper/services";
 
 interface UberLocation {
-  country: string;
+  country: string | null;
   region: string | null;
-  city: string;
-  countryName: string;
+  city: string | null;
+  countryName: string | null;
 }
 
 interface UberJob {
@@ -17,20 +25,10 @@ interface UberJob {
   title: string;
   description: string;
   department: string;
-  type: string;
-  programAndPlatform: string | null;
   location: UberLocation;
-  featured: boolean;
   level: string | null;
   creationDate: string;
-  otherLevels: string[] | null;
   team: string;
-  portalID: number;
-  isPipeline: boolean;
-  statusID: number;
-  statusName: string;
-  updatedDate: string;
-  uniqueSkills: string[] | null;
   timeType: string;
   allLocations: UberLocation[] | null;
 }
@@ -39,9 +37,64 @@ interface UberSearchResponse {
   status: string;
   data: {
     results: UberJob[];
-    total: number;
+    total?: number;
+    totalResults?: number;
   };
 }
+
+const UberTotalResultsSchema = z
+  .union([
+    z.number().int().nonnegative(),
+    z
+      .object({
+        low: z.number().int(),
+        high: z.number().int(),
+        unsigned: z.boolean().optional(),
+      })
+      .passthrough(),
+  ])
+  .transform((value) => {
+    if (typeof value === "number") return value;
+    const total = (value.high >>> 0) * 2 ** 32 + (value.low >>> 0);
+    return Number.isSafeInteger(total) ? total : undefined;
+  });
+
+const UberLocationSchema = z
+  .object({
+    country: z.string().nullable(),
+    region: z.string().nullable(),
+    city: z.string().nullable(),
+    countryName: z.string().nullable(),
+  })
+  .passthrough();
+
+const UberSearchResponseSchema = z
+  .object({
+    status: z.string(),
+    data: z
+      .object({
+        results: z.array(
+          z
+            .object({
+              id: z.number(),
+              title: z.string(),
+              description: z.string(),
+              department: z.string(),
+              location: UberLocationSchema,
+              level: z.string().nullable(),
+              creationDate: z.string(),
+              team: z.string(),
+              timeType: z.string(),
+              allLocations: z.array(UberLocationSchema).nullable(),
+            })
+            .passthrough()
+        ),
+        total: z.number().int().nonnegative().optional(),
+        totalResults: UberTotalResultsSchema.optional(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
 
 interface NormalizedUberJob {
   job: UberJob;
@@ -107,72 +160,72 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
       let page = 0;
       const limit = 100;
       let hasMore = true;
+      let expectedTotal: number | undefined;
+      let isComplete = true;
 
       while (hasMore) {
         const apiUrl = `${this.config.baseUrl}/api/loadSearchJobsResults?localeCode=en`;
 
-        const response = await this.httpClient.fetch(apiUrl, {
+        const response = await this.fetchResponse(apiUrl, {
           method: "POST",
-          headers: {
+          headers: this.jsonRequestHeaders({
             "Content-Type": "application/json",
             "x-csrf-token": "x",
-            "Accept": "application/json",
-          },
+          }),
           body: JSON.stringify({
             page,
             limit,
             params: this.emptySearchParams,
           }),
-          timeout: this.config.timeout,
-          retries: this.config.retries,
-          baseDelay: this.config.baseDelay,
         });
 
         if (!response.ok) {
-          return {
-            success: false,
-            outcome: "error",
-            jobs: [],
-            error: `Failed to fetch jobs: ${response.status}`,
-          };
+          return this.failureForHttpStatus(
+            response.status,
+            `Failed to fetch jobs: ${response.status}`
+          );
         }
 
-        const data: UberSearchResponse = await response.json();
+        const data = parseExternalPayload(
+          UberSearchResponseSchema,
+          await response.json(),
+          "Uber"
+        ) as UberSearchResponse;
 
         if (data.status !== "success" || !data.data) {
-          return {
-            success: false,
-            outcome: "error",
-            jobs: [],
-            error: "Invalid response from Uber API",
-          };
+          return this.failure("parse_error", "Invalid response from Uber API");
         }
 
         allJobs.push(...data.data.results);
+        const advertisedTotal = data.data.total ?? data.data.totalResults;
+        if (advertisedTotal !== undefined) {
+          expectedTotal = Math.max(expectedTotal ?? 0, advertisedTotal);
+        }
 
-        if (data.data.results.length < limit) {
+        if (expectedTotal !== undefined && allJobs.length >= expectedTotal) {
+          hasMore = false;
+        } else if (data.data.results.length === 0 || data.data.results.length < limit) {
+          isComplete =
+            expectedTotal === undefined || allJobs.length >= expectedTotal;
           hasMore = false;
         } else {
           page++;
           // Rate limiting: 500ms delay between calls
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          await abortableDelay(500);
         }
       }
 
-      return this.parseJobs(allJobs, filters);
+      return this.parseJobs(allJobs, filters, isComplete, expectedTotal ?? allJobs.length);
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 
   private parseJobs(
     jobs: UberJob[],
-    filters: JobFilters | undefined
+    filters: JobFilters | undefined,
+    isComplete: boolean,
+    totalListings: number
   ): ScraperResult {
     const normalizedJobs: NormalizedUberJob[] = jobs.map((job) => {
       const locationStr = this.formatLocation(job.location, job.allLocations);
@@ -222,11 +275,11 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
     );
 
     const result: ScraperResult = {
-      success: true,
-      outcome: "success",
+      outcome: isComplete ? "success" : "partial",
       jobs: filteredJobs,
+      totalListings,
       openExternalIds: allExternalIds,
-      openExternalIdsComplete: true,
+      listingCompleteness: isComplete ? "complete" : "partial",
     };
 
     const earlyFiltered = toEarlyFilterStats(filteredResult);
@@ -242,11 +295,12 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
     allLocations: UberLocation[] | null
   ): string {
     const formatSingleLocation = (loc: UberLocation): string => {
-      const parts = [loc.city];
+      const parts: string[] = [];
+      if (loc.city) parts.push(loc.city);
       if (loc.region && loc.region !== loc.city) {
         parts.push(loc.region);
       }
-      parts.push(loc.countryName);
+      if (loc.countryName) parts.push(loc.countryName);
       return parts.join(", ");
     };
 
@@ -279,11 +333,4 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
 
     return "mid";
   }
-}
-
-export function createUberScraper(
-  httpClient: IHttpClient,
-  config?: Partial<UberConfig>
-): UberScraper {
-  return new UberScraper(httpClient, config);
 }

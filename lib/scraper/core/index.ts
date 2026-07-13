@@ -8,14 +8,8 @@ export type {
   ScraperResult,
   ScrapedJob,
   ScraperMetadata,
+  EarlyFilterStats,
 } from "./types";
-
-export interface EarlyFilterStats {
-  total: number;
-  country?: number;
-  city?: number;
-  title?: number;
-}
 
 export {
   DEFAULT_SCRAPER_CONFIG,
@@ -23,5 +17,5 @@ export {
   DEFAULT_BROWSER_CONFIG,
 } from "./types";
 
-export { AbstractApiScraper } from "./api-scraper";
+export { AbstractApiScraper, SWITCHY_USER_AGENT } from "./api-scraper";
 export { AbstractBrowserScraper } from "./browser-scraper";

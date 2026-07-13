@@ -1,10 +1,26 @@
-import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
-import type { IBrowserClient, BrowserSession } from "@/lib/scraper/infrastructure/browser-client";
-import type { ScraperResult, ScrapeOptions, ScrapedJob, BrowserScraperConfig, EarlyFilterStats, JobFilters } from "@/lib/scraper/types";
-import { processDescription, containsHtml } from "@/lib/jobs/description-processor";
-import { parseEmploymentType } from "@/lib/scraper/types";
-import { applyEarlyFilters, hasEarlyFilters, toEarlyFilterStats } from "@/lib/scraper/services";
+import { z } from "zod";
+
+import { containsHtml, processDescription } from "@/lib/jobs/description-processor";
+import type {
+  BrowserSession,
+  IBrowserClient,
+} from "@/lib/scraper/infrastructure/browser-client";
+import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
+import {
+  HttpError,
+  type IHttpClient,
+} from "@/lib/scraper/infrastructure/http-client";
+import {
+  parseEmploymentType,
+  parseExternalPayload,
+  ScraperPayloadError,
+  type BrowserScraperConfig,
+  type ScrapeOptions,
+  type ScrapedJob,
+  type ScraperResult,
+} from "@/lib/scraper/types";
 import { AbstractBrowserScraper, DEFAULT_BROWSER_CONFIG } from "../core";
+import { selectListingsForHydration } from "./shared/listing-selection";
 
 type WorkdayJobListItem = {
   title: string;
@@ -27,20 +43,41 @@ type WorkdayListFetchResult = {
 
 type WorkdayJobDetailResponse = {
   jobPostingInfo: {
-    id: string;
-    title: string;
     jobDescription: string;
-    location: string;
-    postedOn: string;
-    startDate: string;
     timeType: string;
-    jobReqId: string;
-    jobPostingId: string;
-    remoteType: string;
     externalUrl: string;
-    country?: { descriptor: string };
   };
 };
+
+const WorkdayJobListResponseSchema = z
+  .object({
+    total: z.number(),
+    jobPostings: z.array(
+      z
+        .object({
+          title: z.string(),
+          externalPath: z.string(),
+          locationsText: z.string().default(""),
+          postedOn: z.string().default(""),
+          remoteType: z.string().default(""),
+          bulletFields: z.array(z.string()).default([]),
+        })
+        .passthrough()
+    ),
+  })
+  .passthrough();
+
+const WorkdayJobDetailResponseSchema = z
+  .object({
+    jobPostingInfo: z
+      .object({
+        jobDescription: z.string().default(""),
+        timeType: z.string().default(""),
+        externalUrl: z.string().default(""),
+      })
+      .passthrough(),
+  })
+  .passthrough();
 
 type WorkdaySession = BrowserSession & {
   csrfToken: string;
@@ -67,6 +104,11 @@ export const DEFAULT_WORKDAY_CONFIG: WorkdayConfig = {
 
 export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
   readonly platform = "workday" as const;
+  override readonly capabilities = {
+    transport: "browser",
+    concurrency: "serial",
+    supportsCancellation: true,
+  } as const;
 
   constructor(
     httpClient: IHttpClient,
@@ -104,12 +146,10 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           board,
         };
       } else if (!parsedUrl) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          error: "Could not parse Workday URL. Expected format: https://company.wd5.myworkdayjobs.com/board",
-        };
+        return this.failure(
+          "invalid_url",
+          "Could not parse Workday URL. Expected format: https://company.wd5.myworkdayjobs.com/board"
+        );
       } else {
         detectedBoardToken = `${parsedUrl.tenant}/${parsedUrl.board}`;
       }
@@ -119,12 +159,10 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       );
 
       if (!session || !session.csrfToken || !session.cookies) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          error: "Failed to establish session with Workday. The site may have bot protection enabled.",
-        };
+        return this.failure(
+          "auth_required",
+          "Failed to establish session with Workday. The site may have bot protection enabled."
+        );
       }
 
       console.log(`[Scraper] Unknown - Bootstrapped browser session (tenant: ${parsedUrl.tenant}/${parsedUrl.board})`);
@@ -136,20 +174,9 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         board: parsedUrl.board,
       };
 
-      const filters: JobFilters | undefined = options?.filters;
-      const existingExternalIds = options?.existingExternalIds;
-
       const listResult = await this.fetchAllJobListItems(workdaySession);
       if (!listResult) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          detectedBoardToken,
-          openExternalIds: [],
-          openExternalIdsComplete: false,
-          error: "Failed to fetch Workday jobs list.",
-        };
+        return this.failure("network_error", "Failed to fetch Workday jobs list.");
       }
 
       const allJobListItems = listResult.jobs;
@@ -162,68 +189,53 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         .filter((externalId): externalId is string => Boolean(externalId));
 
       if (allJobListItems.length === 0) {
-        const isError = !listResult.isComplete;
+        if (!listResult.isComplete) {
+          return this.failure(
+            "parse_error",
+            "Incomplete Workday list fetch with no usable job data."
+          );
+        }
         return {
-          success: !isError,
-          outcome: isError ? "error" : "success",
+          outcome: "success",
           jobs: [],
+          totalListings: 0,
           detectedBoardToken,
           openExternalIds,
-          openExternalIdsComplete: listResult.isComplete,
-          error: isError ? "Incomplete Workday list fetch with no usable job data." : undefined,
+          listingCompleteness: "complete",
         };
       }
 
-      let jobsToProcess = allJobListItems;
-      let earlyFilterStats: EarlyFilterStats | undefined;
-
-      if (hasEarlyFilters(filters)) {
-        const filterableJobs = allJobListItems.map((job) => ({
-          ...job,
+      const selection = selectListingsForHydration({
+        listings: allJobListItems,
+        filters: options?.filters,
+        existingExternalIds: options?.existingExternalIds,
+        toFilterable: (job) => ({
           title: job.title,
           location: job.locationsText,
-        }));
-
-        const earlyFilterResult = applyEarlyFilters(filterableJobs, filters);
-        const { filtered } = earlyFilterResult;
-        jobsToProcess = filtered as WorkdayJobListItem[];
-        earlyFilterStats = toEarlyFilterStats(earlyFilterResult);
-      }
-
-      if (jobsToProcess.length === 0) {
-        const baseOutcome = listResult.isComplete ? "success" : "partial";
-        return {
-          success: true,
-          outcome: baseOutcome,
-          jobs: [],
-          detectedBoardToken,
-          earlyFiltered: earlyFilterStats,
-          openExternalIds,
-          openExternalIdsComplete: listResult.isComplete,
-        };
-      }
-
-      let jobsToFetch = jobsToProcess;
-
-      if (existingExternalIds && existingExternalIds.size > 0) {
-        jobsToFetch = jobsToProcess.filter((job) => {
+        }),
+        getExternalId: (job) => {
           const jobPostingId = this.getJobPostingId(job);
-          if (!jobPostingId) return false;
-          const externalId = this.generateExternalId(this.platform, workdaySession.board, jobPostingId);
-          return !existingExternalIds.has(externalId);
-        });
-      }
+          return jobPostingId
+            ? this.generateExternalId(
+                this.platform,
+                workdaySession.board,
+                jobPostingId
+              )
+            : null;
+        },
+      });
+      const jobsToFetch = selection.listings;
 
       if (jobsToFetch.length === 0) {
         const baseOutcome = listResult.isComplete ? "success" : "partial";
         return {
-          success: true,
           outcome: baseOutcome,
           jobs: [],
+          totalListings: allJobListItems.length,
           detectedBoardToken,
-          earlyFiltered: earlyFilterStats,
+          earlyFiltered: selection.earlyFiltered,
           openExternalIds,
-          openExternalIdsComplete: listResult.isComplete,
+          listingCompleteness: listResult.isComplete ? "complete" : "partial",
         };
       }
 
@@ -244,21 +256,16 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
 
       const isPartial = detailFailures > 0 || !listResult.isComplete;
       return {
-        success: true,
         outcome: isPartial ? "partial" : "success",
         jobs: scrapedJobs,
+        totalListings: allJobListItems.length,
         detectedBoardToken,
-        earlyFiltered: earlyFilterStats,
+        earlyFiltered: selection.earlyFiltered,
         openExternalIds,
-        openExternalIdsComplete: listResult.isComplete,
+        listingCompleteness: listResult.isComplete ? "complete" : "partial",
       };
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 
@@ -307,7 +314,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
     const url = `${session.baseUrl}/wday/cxs/${session.tenant}/${session.board}/jobs`;
 
     try {
-      const response = await this.post<WorkdayJobListResponse>(
+      const payload = await this.post<unknown>(
         url,
         {
           appliedFacets: {},
@@ -324,8 +331,14 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         }
       );
 
-      return response;
-    } catch {
+      return parseExternalPayload(
+        WorkdayJobListResponseSchema,
+        payload,
+        "Workday job list"
+      );
+    } catch (error) {
+      if (error instanceof HttpError || error instanceof ScraperPayloadError) throw error;
+      throwIfScrapeAborted(error);
       return null;
     }
   }
@@ -354,7 +367,12 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       const fetchWithDelay = async (offset: number, index: number): Promise<WorkdayJobListResponse | null> => {
         const staggerDelay = 300 + index * 400 + Math.floor(Math.random() * 200);
         await this.delay(staggerDelay);
-        return this.fetchJobListPage(session, offset, this.config.listPageSize);
+        try {
+          return await this.fetchJobListPage(session, offset, this.config.listPageSize);
+        } catch (error) {
+          throwIfScrapeAborted(error);
+          return null;
+        }
       };
 
       const batchSize = this.config.parallelListFetches;
@@ -391,15 +409,20 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
     const url = `${session.baseUrl}/wday/cxs/${session.tenant}/${session.board}/job/${jobPostingId}`;
 
     try {
-      const response = await this.fetch<WorkdayJobDetailResponse>(url, {
+      const payload = await this.fetch<unknown>(url, {
         Accept: "application/json",
         Cookie: session.cookies,
         "x-calypso-csrf-token": session.csrfToken,
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
       });
 
-      return response;
-    } catch {
+      return parseExternalPayload(
+        WorkdayJobDetailResponseSchema,
+        payload,
+        "Workday job detail"
+      );
+    } catch (error) {
+      throwIfScrapeAborted(error);
       return null;
     }
   }
@@ -441,7 +464,8 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           employmentType: parseEmploymentType(detail.jobPostingInfo.timeType),
           postedDate: this.parsePostedDate(job.postedOn),
         };
-      } catch {
+      } catch (error) {
+        throwIfScrapeAborted(error);
         failedDetails++;
         return null;
       }
@@ -523,12 +547,4 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       this.config.requestDelayJitterMs;
     await this.delay(this.config.requestDelayBaseMs + jitter);
   }
-}
-
-export function createWorkdayScraper(
-  httpClient: IHttpClient,
-  browserClient: IBrowserClient,
-  config?: Partial<WorkdayConfig>
-): WorkdayScraper {
-  return new WorkdayScraper(httpClient, browserClient, config);
 }

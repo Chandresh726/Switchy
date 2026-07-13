@@ -1,6 +1,13 @@
 import { chromium } from "playwright";
 import type { Browser, BrowserContext, Page, Request } from "playwright";
 
+import {
+  createScrapeAbortError,
+  getActiveScrapeSignal,
+  runWithScrapeSignal,
+  throwIfScrapeAborted,
+} from "./cancellation";
+
 export interface BrowserSessionConfig {
   headless: boolean;
   timeout: number;
@@ -20,6 +27,7 @@ export interface BrowserSession {
 export interface IBrowserClient {
   bootstrap(url: string): Promise<BrowserSession | null>;
   withBrowser<T>(callback: (page: Page) => Promise<T>): Promise<T>;
+  runWithSignal?<T>(signal: AbortSignal, callback: () => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
 
@@ -30,10 +38,15 @@ export const DEFAULT_BROWSER_CONFIG: BrowserSessionConfig = {
   viewport: { width: 1920, height: 1080 },
 };
 
+interface BrowserResources {
+  browser: Browser;
+  context: BrowserContext;
+  page: Page;
+}
+
 export abstract class PlaywrightBrowserClient implements IBrowserClient {
-  protected browser: Browser | null = null;
-  protected context: BrowserContext | null = null;
   protected readonly config: BrowserSessionConfig;
+  private readonly activeResources = new Set<BrowserResources>();
 
   constructor(config: Partial<BrowserSessionConfig> = {}) {
     this.config = { ...DEFAULT_BROWSER_CONFIG, ...config };
@@ -41,30 +54,28 @@ export abstract class PlaywrightBrowserClient implements IBrowserClient {
 
   abstract bootstrap(url: string): Promise<BrowserSession | null>;
 
+  runWithSignal<T>(signal: AbortSignal, callback: () => Promise<T>): Promise<T> {
+    return runWithScrapeSignal(signal, callback);
+  }
+
   async withBrowser<T>(callback: (page: Page) => Promise<T>): Promise<T> {
-    await this.launchBrowser();
+    const resources = await this.acquireBrowser();
     try {
-      const page = this.context?.pages()[0];
-      if (!page) throw new Error("Failed to create browser page");
-      return await callback(page);
+      return await this.raceWithAbort(callback(resources.page));
     } finally {
-      await this.close();
+      await this.closeResources(resources);
     }
   }
 
   async close(): Promise<void> {
-    if (this.context) {
-      await this.context.close();
-      this.context = null;
-    }
-    if (this.browser) {
-      await this.browser.close();
-      this.browser = null;
-    }
+    const resources = Array.from(this.activeResources);
+    await Promise.allSettled(resources.map((entry) => this.closeResources(entry)));
   }
 
-  protected async launchBrowser(): Promise<{ browser: Browser; context: BrowserContext; page: Page }> {
-    this.browser = await chromium.launch({
+  protected async launchBrowser(): Promise<BrowserResources> {
+    const signal = getActiveScrapeSignal();
+    throwIfScrapeAborted();
+    const browser = await chromium.launch({
       headless: this.config.headless,
       args: [
         "--disable-blink-features=AutomationControlled",
@@ -72,20 +83,83 @@ export abstract class PlaywrightBrowserClient implements IBrowserClient {
       ],
     });
 
-    this.context = await this.browser.newContext({
-      userAgent: this.config.userAgent,
-      viewport: this.config.viewport,
-      locale: "en-US",
-    });
-
-    const page = await this.context.newPage();
-    return { browser: this.browser, context: this.context, page };
+    try {
+      if (signal?.aborted) throw createScrapeAbortError(signal);
+      const context = await browser.newContext({
+        userAgent: this.config.userAgent,
+        viewport: this.config.viewport,
+        locale: "en-US",
+      });
+      if (signal?.aborted) {
+        await context.close();
+        throw createScrapeAbortError(signal);
+      }
+      const page = await context.newPage();
+      if (signal?.aborted) {
+        await context.close();
+        throw createScrapeAbortError(signal);
+      }
+      const resources = { browser, context, page };
+      this.activeResources.add(resources);
+      return resources;
+    } catch (error) {
+      await browser.close();
+      throw error;
+    }
   }
 
-  protected async getCookiesAsString(): Promise<string> {
-    if (!this.context) return "";
-    const allCookies = await this.context.cookies();
-    return allCookies.map((c) => `${c.name}=${c.value}`).join("; ");
+  protected async acquireBrowser(): Promise<BrowserResources> {
+    const signal = getActiveScrapeSignal();
+    if (!signal) return this.launchBrowser();
+    if (signal.aborted) throw createScrapeAbortError(signal);
+
+    const acquisition = this.launchBrowser();
+    try {
+      return await this.raceWithAbort(acquisition);
+    } catch (error) {
+      if (signal.aborted) {
+        void acquisition.then(
+          (resources) => this.closeResources(resources),
+          () => undefined
+        );
+      }
+      throw error;
+    }
+  }
+
+  protected async closeResources(resources: BrowserResources): Promise<void> {
+    if (!this.activeResources.delete(resources)) return;
+    try {
+      await resources.context.close();
+    } finally {
+      await resources.browser.close();
+    }
+  }
+
+  protected async getCookiesAsString(context: BrowserContext): Promise<string> {
+    const allCookies = await context.cookies();
+    return allCookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+  }
+
+  protected async raceWithAbort<T>(operation: Promise<T>): Promise<T> {
+    const signal = getActiveScrapeSignal();
+    if (!signal) return operation;
+    if (signal.aborted) throw this.abortReason(signal);
+
+    return new Promise<T>((resolve, reject) => {
+      const onAbort = () => reject(this.abortReason(signal));
+      signal.addEventListener("abort", onAbort, { once: true });
+      operation.then(
+        (value) => {
+          signal.removeEventListener("abort", onAbort);
+          resolve(value);
+        },
+        (error: unknown) => {
+          signal.removeEventListener("abort", onAbort);
+          reject(error);
+        }
+      );
+    });
   }
 
   protected parseUrl(url: string): { protocol: string; host: string; pathname: string } | null {
@@ -99,6 +173,10 @@ export abstract class PlaywrightBrowserClient implements IBrowserClient {
     } catch {
       return null;
     }
+  }
+
+  private abortReason(signal: AbortSignal): unknown {
+    return createScrapeAbortError(signal);
   }
 }
 
@@ -119,15 +197,13 @@ export class GenericBrowserClient extends PlaywrightBrowserClient {
   }
 
   async bootstrap(url: string): Promise<BrowserSession | null> {
-    try {
-      const { page } = await this.launchBrowser();
-      const parsedUrl = this.parseUrl(url);
-      
-      if (!parsedUrl) {
-        await this.close();
-        return null;
-      }
+    const parsedUrl = this.parseUrl(url);
+    if (!parsedUrl) return null;
 
+    let resources: BrowserResources | null = null;
+    try {
+      resources = await this.acquireBrowser();
+      const { context, page } = resources;
       let csrfToken: string | null = null;
       let detectedDomain: string | null = null;
 
@@ -139,46 +215,43 @@ export class GenericBrowserClient extends PlaywrightBrowserClient {
 
         const requestUrl = request.url();
         if (requestUrl.includes(this.apiPathPattern)) {
-          const urlObj = new URL(requestUrl);
-          const domainParam = urlObj.searchParams.get("domain");
-          if (domainParam && !detectedDomain) {
-            detectedDomain = domainParam;
-          }
+          const domainParam = new URL(requestUrl).searchParams.get("domain");
+          if (domainParam && !detectedDomain) detectedDomain = domainParam;
         }
       });
 
-      await page.goto(url, {
-        waitUntil: "domcontentloaded",
-        timeout: this.config.timeout,
-      });
+      await this.raceWithAbort(
+        page.goto(url, {
+          waitUntil: "domcontentloaded",
+          timeout: this.config.timeout,
+        })
+      );
+      await this.raceWithAbort(page.waitForTimeout(this.waitForMs));
 
-      await page.waitForTimeout(this.waitForMs);
-
-      const finalUrl = page.url();
-      const finalUrlObj = new URL(finalUrl);
+      const finalUrlObj = new URL(page.url());
       const baseUrl = `${finalUrlObj.protocol}//${finalUrlObj.host}`;
 
-      if (!csrfToken && this.context) {
-        const calypsoToken = await this.context
-          .cookies()
-          .then((c) => c.find((x) => x.name === "CALYPSO_CSRF_TOKEN"));
+      if (!csrfToken) {
+        const calypsoToken = (await context.cookies()).find(
+          (cookie) => cookie.name === "CALYPSO_CSRF_TOKEN"
+        );
         if (calypsoToken) csrfToken = calypsoToken.value;
       }
 
-      const cookies = await this.getCookiesAsString();
-
-      await this.close();
-
       return {
         baseUrl,
-        cookies,
+        cookies: await this.getCookiesAsString(context),
         csrfToken: csrfToken ?? undefined,
         domain: detectedDomain ?? undefined,
       };
     } catch (error) {
-      await this.close();
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw error;
+      }
       console.error("[BrowserClient] Bootstrap failed:", error);
       return null;
+    } finally {
+      if (resources) await this.closeResources(resources);
     }
   }
 }

@@ -1,13 +1,15 @@
+import { z } from "zod";
+
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 
-import { parseEmploymentType } from "@/lib/scraper/types";
+import { parseEmploymentType, parseExternalPayload } from "@/lib/scraper/types";
 import { processDescription } from "@/lib/jobs/description-processor";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import type { ApiScraperConfig, ScrapedJob, ScraperResult } from "../core/types";
 
 type VisaJob = {
   refNumber: string;
-  postingId: string;
+  postingId?: string;
   jobTitle: string;
   jobDescription?: string;
   qualifications?: string;
@@ -28,12 +30,45 @@ type VisaJob = {
 
 type VisaJobsResponse = {
   successful: boolean;
-  totalRecords: number;
-  recordsMatched: number;
-  pageSize: number;
-  from: number;
+  totalRecords?: number;
+  recordsMatched?: number;
+  pageSize?: number;
+  from?: number;
   jobDetails: VisaJob[];
 };
+
+const VisaJobsResponseSchema = z
+  .object({
+    successful: z.literal(true),
+    totalRecords: z.number().optional(),
+    recordsMatched: z.number().optional(),
+    pageSize: z.number().optional(),
+    from: z.number().optional(),
+    jobDetails: z.array(
+      z
+        .object({
+          refNumber: z.string(),
+          postingId: z.string().optional(),
+          jobTitle: z.string(),
+          jobDescription: z.string().optional(),
+          qualifications: z.string().optional(),
+          city: z.string().optional(),
+          state: z.string().optional(),
+          country: z.string().optional(),
+          primaryLocation: z.string().optional(),
+          businessUnit: z.string().optional(),
+          category: z.string().optional(),
+          department: z.string().optional(),
+          jobType: z.string().optional(),
+          employmentType: z.string().optional(),
+          workerType: z.string().optional(),
+          postedDate: z.string().optional(),
+          updatedDate: z.string().optional(),
+        })
+        .passthrough()
+    ),
+  })
+  .passthrough();
 
 export type VisaConfig = ApiScraperConfig & {
   pageSize: number;
@@ -68,7 +103,10 @@ export class VisaScraper extends AbstractApiScraper<VisaConfig> {
 
   async scrape(url: string): Promise<ScraperResult> {
     try {
-      const parsed = new URL(url);
+      const parsed = this.parseSourceUrl(url);
+      if (!parsed) {
+        return this.failure("invalid_url", "Invalid Visa Careers URL.");
+      }
       const functions = parsed.searchParams.getAll("functions").filter(Boolean);
       const cities = parsed.searchParams.getAll("cities").filter(Boolean);
 
@@ -78,7 +116,7 @@ export class VisaScraper extends AbstractApiScraper<VisaConfig> {
       let isComplete = true;
 
       while (from < totalRecords) {
-        const page = await this.post<VisaJobsResponse>(
+        const payload = await this.post<unknown>(
           `${this.config.baseUrl}/CAREERS/careers/jobs?q=`,
           {
             filters: functions.length > 0 ? [{ superDepartment: functions }] : [],
@@ -87,12 +125,15 @@ export class VisaScraper extends AbstractApiScraper<VisaConfig> {
             size: this.config.pageSize,
           },
           {
-            headers: {
-              Accept: "application/json, text/plain, */*",
+            headers: this.requestHeaders("application/json, text/plain, */*", {
               Referer: url,
-              "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-            },
+            }),
           }
+        );
+        const page: VisaJobsResponse = parseExternalPayload(
+          VisaJobsResponseSchema,
+          payload,
+          "Visa"
         );
 
         const pageJobs = page.jobDetails ?? [];
@@ -109,19 +150,14 @@ export class VisaScraper extends AbstractApiScraper<VisaConfig> {
       const dedupedJobs = this.deduplicate(jobs);
 
       return {
-        success: isComplete,
         outcome: isComplete ? "success" : "partial",
         jobs: dedupedJobs,
+        totalListings: dedupedJobs.length,
         openExternalIds: dedupedJobs.map((job) => job.externalId),
-        openExternalIdsComplete: isComplete,
+        listingCompleteness: isComplete ? "complete" : "partial",
       };
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 
@@ -157,11 +193,4 @@ export class VisaScraper extends AbstractApiScraper<VisaConfig> {
       return true;
     });
   }
-}
-
-export function createVisaScraper(
-  httpClient: IHttpClient,
-  config?: Partial<VisaConfig>
-): VisaScraper {
-  return new VisaScraper(httpClient, config);
 }

@@ -1,9 +1,6 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Clock,
   ArrowLeft,
@@ -12,45 +9,26 @@ import {
   Filter,
   Archive,
   Sparkles,
-  Plus,
-  AlertCircle,
   Loader2,
   Trash2,
   Square,
 } from "lucide-react";
 import Link from "next/link";
-import { TRIGGER_LABELS } from "./constants";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
-import { formatDurationMs, formatDateTime } from "@/lib/utils/format";
-import {
-  getLogStatusConfig,
-  getSessionStatusConfig,
-  MATCHER_STATUS_CONFIG,
-} from "@/lib/utils/status-config";
 
-interface SessionLog {
-  id: number;
-  companyId: number | null;
-  companyName: string | null;
-  companyLogoUrl: string | null;
-  platform: string | null;
-  status: string;
-  jobsFound: number | null;
-  jobsAdded: number | null;
-  jobsUpdated: number | null;
-  jobsFiltered: number | null;
-  jobsArchived: number | null;
-  errorMessage: string | null;
-  duration: number | null;
-  startedAt: Date | null;
-  completedAt: Date | null;
-  matcherStatus: string | null;
-  matcherJobsTotal: number | null;
-  matcherJobsCompleted: number | null;
-  matcherDuration: number | null;
-  matcherErrorCount: number | null;
-}
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { formatDateTime } from "@/lib/utils/format";
+import { getSessionStatusConfig } from "@/lib/utils/status-config";
+
+import {
+  CompanyProgressList,
+  type ScrapeQueueItem,
+  type SessionLog,
+} from "./company-progress-list";
+import { TRIGGER_LABELS } from "./constants";
 
 interface ScrapeSession {
   id: string;
@@ -71,6 +49,7 @@ interface ScrapeSession {
 interface SessionDetailResponse {
   session: ScrapeSession;
   logs: SessionLog[];
+  queueItems: ScrapeQueueItem[];
 }
 
 interface SessionDetailProps {
@@ -91,8 +70,12 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
     },
     refetchInterval: (query) => {
       const session = query.state.data?.session;
+      const queueItems = query.state.data?.queueItems ?? [];
       if (!session) return 1000;
-      return session.status === "in_progress" ? 1000 : false;
+      const hasActiveQueueWork = queueItems.some(
+        (item) => item.status === "queued" || item.status === "running"
+      );
+      return session.status === "in_progress" || hasActiveQueueWork ? 1000 : false;
     },
     refetchIntervalInBackground: true,
   });
@@ -154,13 +137,16 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
     );
   }
 
-  const { session, logs } = data;
+  const { session, logs, queueItems } = data;
   const sessionStatusConfig = getSessionStatusConfig(session.status);
   const SessionStatusIcon = sessionStatusConfig.icon;
   const sessionDisplayTime = session.scheduledForAt ? new Date(session.scheduledForAt) : session.startedAt;
   const progress = session.companiesTotal
     ? Math.round(((session.companiesCompleted || 0) / session.companiesTotal) * 100)
     : 0;
+  const hasActiveQueueWork = queueItems.some(
+    (item) => item.status === "queued" || item.status === "running"
+  );
 
   return (
     <div className="space-y-6">
@@ -190,7 +176,8 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
             size="sm"
             className="border-red-500/20 text-red-400 hover:bg-red-500/10 hover:text-red-300"
             onClick={() => deleteMutation.mutate()}
-            disabled={deleteMutation.isPending}
+            disabled={deleteMutation.isPending || session.status === "in_progress" || hasActiveQueueWork}
+            title={hasActiveQueueWork ? "Wait for running queue work to stop" : undefined}
           >
             <Trash2 className="mr-2 h-4 w-4" />
             {deleteMutation.isPending ? "Deleting..." : "Delete Session"}
@@ -308,131 +295,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
         </div>
       </div>
 
-      {/* Company Logs List */}
-      <div>
-        <h3 className="text-sm font-medium text-muted-foreground mb-4 px-1">Company Logs</h3>
-        <div className="space-y-3">
-          {logs.map((log) => {
-            const logStatusConfig = getLogStatusConfig(log.status);
-            const LogStatusIcon = logStatusConfig.icon;
-            const matcherConfig = log.matcherStatus
-              ? MATCHER_STATUS_CONFIG[log.matcherStatus] || MATCHER_STATUS_CONFIG.pending
-              : null;
-
-            return (
-              <div
-                key={log.id}
-                className="group rounded-lg border border-border bg-card p-4 transition-all hover:border-border hover:bg-muted/30"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-4">
-                    <div className="mt-1">
-                      {log.companyLogoUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={log.companyLogoUrl}
-                          alt={log.companyName || "Company"}
-                          className="h-10 w-10 rounded-lg bg-muted object-contain p-1.5"
-                        />
-                      ) : (
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-sm font-medium text-muted-foreground">
-                          {(log.companyName || "?").charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-medium text-foreground">{log.companyName || "Unknown"}</h4>
-                        {log.platform && (
-                          <Badge variant="outline" className="border-border bg-card text-muted-foreground text-[10px] h-5 px-1.5">
-                            {log.platform}
-                          </Badge>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-4 mt-2 text-sm">
-                        <div className="flex items-center gap-1.5 text-muted-foreground">
-                          <Briefcase className="h-3.5 w-3.5" />
-                          <span>{log.jobsFound || 0}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-                          <Plus className="h-3.5 w-3.5" />
-                          <span>{log.jobsAdded || 0}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-muted-foreground">
-                          <Filter className="h-3.5 w-3.5" />
-                          <span>{log.jobsFiltered || 0}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-muted-foreground">
-                          <Archive className="h-3.5 w-3.5" />
-                          <span>{log.jobsArchived || 0}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col items-end gap-2">
-                    <div className={`flex items-center gap-1.5 text-xs font-medium ${logStatusConfig.color}`}>
-                      <LogStatusIcon className="h-3.5 w-3.5" />
-                      <span className="capitalize">{log.status}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Clock className="h-3.5 w-3.5" />
-                      {formatDurationMs(log.duration)}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Error Message */}
-                {log.errorMessage && (
-                  <div className="mt-4 rounded-md border border-red-500/10 bg-red-500/5 p-3">
-                    <div className="flex gap-2">
-                      <AlertCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
-                      <p className="text-xs font-mono break-all text-red-700/90 dark:text-red-300">{log.errorMessage}</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Matcher Status */}
-                {matcherConfig && log.matcherJobsTotal && log.matcherJobsTotal > 0 && (
-                  <div className="mt-4 flex items-center justify-between rounded-md border border-border bg-background/30 p-3 text-xs">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="h-3.5 w-3.5 text-purple-400" />
-                      <span className="text-muted-foreground">Matcher:</span>
-                      <span className={`font-medium ${matcherConfig.color}`}>
-                        {matcherConfig.label}
-                      </span>
-                      {log.matcherStatus === "in_progress" && (
-                        <Loader2 className="h-3 w-3 animate-spin text-blue-400" />
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 text-muted-foreground">
-                      <Link
-                        href="/history/match"
-                        className="text-blue-400 hover:text-blue-300 transition-colors"
-                      >
-                        View Match History
-                      </Link>
-                      <span>
-                        <span className="text-foreground/80">{log.matcherJobsCompleted || 0}</span>
-                        <span className="text-muted-foreground mx-0.5">/</span>
-                        {log.matcherJobsTotal}
-                      </span>
-                      {log.matcherErrorCount && log.matcherErrorCount > 0 && (
-                        <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
-                          <AlertCircle className="h-3 w-3" />
-                          {log.matcherErrorCount}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <CompanyProgressList queueItems={queueItems} logs={logs} />
     </div>
   );
 }

@@ -135,6 +135,48 @@ export const scrapeSessions = sqliteTable("scrape_sessions", {
   completedAt: integer("completed_at", { mode: "timestamp" }),
 });
 
+// Scrape Queue Items - Durable local work with leases for crash recovery
+export const scrapeQueueItems = sqliteTable("scrape_queue_items", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id")
+    .references(() => scrapeSessions.id, { onDelete: "cascade" })
+    .notNull(),
+  companyId: integer("company_id")
+    .references(() => companies.id, { onDelete: "cascade" })
+    .notNull(),
+  status: text("status").notNull().default("queued"), // "queued" | "running" | "completed" | "failed" | "cancelled"
+  priority: integer("priority").notNull().default(100),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  availableAt: integer("available_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  workerId: text("worker_id"),
+  lockedAt: integer("locked_at", { mode: "timestamp" }),
+  leaseExpiresAt: integer("lease_expires_at", { mode: "timestamp" }),
+  cancelRequested: integer("cancel_requested", { mode: "boolean" }).notNull().default(false),
+  lastError: text("last_error"),
+  resultJson: text("result_json"),
+  startedAt: integer("started_at", { mode: "timestamp" }),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  sessionCompanyUnique: unique("scrape_queue_session_company_unique").on(
+    table.sessionId,
+    table.companyId
+  ),
+  claimIdx: index("scrape_queue_claim_idx").on(
+    table.status,
+    table.availableAt,
+    table.priority,
+    table.createdAt
+  ),
+  sessionStatusIdx: index("scrape_queue_session_status_idx").on(
+    table.sessionId,
+    table.status
+  ),
+  leaseIdx: index("scrape_queue_lease_idx").on(table.status, table.leaseExpiresAt),
+}));
+
 // Scraping Logs - Audit trail for scraping operations
 export const scrapingLogs = sqliteTable("scraping_logs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -161,6 +203,38 @@ export const scrapingLogs = sqliteTable("scraping_logs", {
 }, (table) => ({
   sessionIdIdx: index("scraping_logs_session_id_idx").on(table.sessionId),
   companyIdIdx: index("scraping_logs_company_id_idx").on(table.companyId),
+}));
+
+// Scrape Match Outbox - Durable handoff from committed jobs to background AI matching
+export const scrapeMatchOutbox = sqliteTable("scrape_match_outbox", {
+  id: text("id")
+    .primaryKey()
+    .references(() => matchSessions.id, { onDelete: "cascade" }),
+  scrapingLogId: integer("scraping_log_id")
+    .references(() => scrapingLogs.id, { onDelete: "restrict" })
+    .notNull(),
+  companyId: integer("company_id")
+    .references(() => companies.id, { onDelete: "restrict" })
+    .notNull(),
+  jobIdsJson: text("job_ids_json").notNull(),
+  status: text("status").notNull().default("pending"), // "pending" | "running" | "completed" | "failed"
+  attemptCount: integer("attempt_count").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  availableAt: integer("available_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  workerId: text("worker_id"),
+  leaseExpiresAt: integer("lease_expires_at", { mode: "timestamp" }),
+  lastError: text("last_error"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+}, (table) => ({
+  scrapingLogUnique: unique("scrape_match_outbox_log_unique").on(table.scrapingLogId),
+  pendingIdx: index("scrape_match_outbox_pending_idx").on(
+    table.status,
+    table.availableAt,
+    table.createdAt
+  ),
+  leaseIdx: index("scrape_match_outbox_lease_idx").on(table.status, table.leaseExpiresAt),
 }));
 
 // Match Sessions - Track batch match operations
@@ -348,6 +422,8 @@ export const companiesRelations = relations(companies, ({ many }) => ({
   scrapingLogs: many(scrapingLogs),
   people: many(people),
   companyAliases: many(companyAliases),
+  scrapeQueueItems: many(scrapeQueueItems),
+  scrapeMatchOutbox: many(scrapeMatchOutbox),
 }));
 
 export const companyAliasesRelations = relations(companyAliases, ({ one }) => ({
@@ -373,10 +449,38 @@ export const scrapingLogsRelations = relations(scrapingLogs, ({ one }) => ({
     fields: [scrapingLogs.sessionId],
     references: [scrapeSessions.id],
   }),
+  matchOutbox: one(scrapeMatchOutbox),
+}));
+
+export const scrapeMatchOutboxRelations = relations(scrapeMatchOutbox, ({ one }) => ({
+  scrapingLog: one(scrapingLogs, {
+    fields: [scrapeMatchOutbox.scrapingLogId],
+    references: [scrapingLogs.id],
+  }),
+  company: one(companies, {
+    fields: [scrapeMatchOutbox.companyId],
+    references: [companies.id],
+  }),
+  matchSession: one(matchSessions, {
+    fields: [scrapeMatchOutbox.id],
+    references: [matchSessions.id],
+  }),
 }));
 
 export const scrapeSessionsRelations = relations(scrapeSessions, ({ many }) => ({
   logs: many(scrapingLogs),
+  queueItems: many(scrapeQueueItems),
+}));
+
+export const scrapeQueueItemsRelations = relations(scrapeQueueItems, ({ one }) => ({
+  session: one(scrapeSessions, {
+    fields: [scrapeQueueItems.sessionId],
+    references: [scrapeSessions.id],
+  }),
+  company: one(companies, {
+    fields: [scrapeQueueItems.companyId],
+    references: [companies.id],
+  }),
 }));
 
 export const matchSessionsRelations = relations(matchSessions, ({ one, many }) => ({
@@ -385,6 +489,7 @@ export const matchSessionsRelations = relations(matchSessions, ({ one, many }) =
     references: [companies.id],
   }),
   logs: many(matchLogs),
+  scrapeMatchOutbox: one(scrapeMatchOutbox),
 }));
 
 export const matchLogsRelations = relations(matchLogs, ({ one }) => ({
@@ -439,8 +544,12 @@ export type Job = typeof jobs.$inferSelect;
 export type NewJob = typeof jobs.$inferInsert;
 export type ScrapingLog = typeof scrapingLogs.$inferSelect;
 export type NewScrapingLog = typeof scrapingLogs.$inferInsert;
+export type ScrapeMatchOutboxItem = typeof scrapeMatchOutbox.$inferSelect;
+export type NewScrapeMatchOutboxItem = typeof scrapeMatchOutbox.$inferInsert;
 export type ScrapeSession = typeof scrapeSessions.$inferSelect;
 export type NewScrapeSession = typeof scrapeSessions.$inferInsert;
+export type ScrapeQueueItem = typeof scrapeQueueItems.$inferSelect;
+export type NewScrapeQueueItem = typeof scrapeQueueItems.$inferInsert;
 export type Setting = typeof settings.$inferSelect;
 export type NewSetting = typeof settings.$inferInsert;
 export type MatchSession = typeof matchSessions.$inferSelect;

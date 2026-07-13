@@ -6,6 +6,7 @@ import { assertAppRequest } from "@/lib/api";
 import { db } from "@/lib/db";
 import { companies } from "@/lib/db/schema";
 import { refreshUnmatchedCompanyMappings } from "@/lib/people/sync";
+import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 
 const ParamsSchema = z.object({
@@ -327,7 +328,7 @@ export async function DELETE(
     assertAppRequest(request);
 
     const id = await getIdFromParams(params);
-    await db.delete(companies).where(eq(companies.id, id));
+    await getLocalDataMaintenanceService().deleteCompanies([id]);
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -1,8 +1,10 @@
-import { db } from "@/lib/db";
-import { companies, jobs } from "@/lib/db/schema";
-import { inArray } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
+import { inArray } from "drizzle-orm";
+
 import { assertAppRequest } from "@/lib/api";
+import { db } from "@/lib/db";
+import { companies } from "@/lib/db/schema";
+import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 
 export async function DELETE(request: NextRequest) {
   try {
@@ -18,21 +20,14 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const deletedJobs = await db
-      .delete(jobs)
-      .where(inArray(jobs.companyId, companyIds))
-      .returning({ id: jobs.id });
-
-    const deletedCompanies = await db
-      .delete(companies)
-      .where(inArray(companies.id, companyIds))
-      .returning({ id: companies.id });
+    const { deletedJobs, deletedCompanies } =
+      await getLocalDataMaintenanceService().deleteCompanies(companyIds);
 
     return NextResponse.json({
       success: true,
-      deletedCompanies: deletedCompanies.length,
-      deletedJobs: deletedJobs.length,
-      message: `Deleted ${deletedCompanies.length} companies and ${deletedJobs.length} jobs`,
+      deletedCompanies,
+      deletedJobs,
+      message: `Deleted ${deletedCompanies} companies and ${deletedJobs} jobs`,
     });
   } catch (error) {
     console.error("Failed to delete companies:", error);

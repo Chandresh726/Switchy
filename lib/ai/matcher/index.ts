@@ -15,6 +15,7 @@ export {
   fetchProfileData,
   fetchJobsData,
   updateJobWithMatchResult,
+  persistMatchSuccess,
   getUnmatchedJobCount,
   getUnmatchedJobIds,
   createMatchSession,
@@ -24,6 +25,8 @@ export {
   finalizeMatchSession,
   createProgressTracker,
   getMatchSessionStatus,
+  getMatchSessionCheckpoint,
+  type MatchSessionCheckpoint,
   type ProgressTracker,
 } from "./tracking";
 

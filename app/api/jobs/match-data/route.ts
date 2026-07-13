@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+
 import { assertAppRequest } from "@/lib/api";
-import { db } from "@/lib/db";
-import { jobs, matchSessions, matchLogs } from "@/lib/db/schema";
+import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 
 /**
  * DELETE /api/jobs/match-data
@@ -12,33 +12,14 @@ export async function DELETE(request: NextRequest) {
   try {
     assertAppRequest(request);
 
-    // Delete all match logs first (due to foreign key constraint)
-    await db.delete(matchLogs);
+    const jobsCleared = await getLocalDataMaintenanceService().deleteMatchData();
 
-    // Delete all match sessions
-    await db.delete(matchSessions);
-
-    // Clear match fields from all jobs
-    await db
-      .update(jobs)
-      .set({
-        matchScore: null,
-        matchReasons: null,
-        matchedSkills: null,
-        missingSkills: null,
-        recommendations: null,
-        updatedAt: new Date(),
-      });
-
-    // Get count of jobs that were updated
-    const allJobs = await db.select({ id: jobs.id }).from(jobs);
-
-    console.log(`[Match Data] Cleared match data from ${allJobs.length} jobs`);
+    console.log(`[Match Data] Cleared match data from ${jobsCleared} jobs`);
 
     return NextResponse.json({
       success: true,
-      jobsCleared: allJobs.length,
-      message: `Cleared match data from ${allJobs.length} jobs`,
+      jobsCleared,
+      message: `Cleared match data from ${jobsCleared} jobs`,
     });
   } catch (error) {
     console.error("[Match Data API] DELETE error:", error);

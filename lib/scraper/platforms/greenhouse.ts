@@ -1,5 +1,12 @@
+import { z } from "zod";
+
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import { processDescription, containsHtml, decodeHtmlEntities } from "@/lib/jobs/description-processor";
+import {
+  createScraperError,
+  parseExternalItems,
+  parseExternalPayload,
+} from "@/lib/scraper/types";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig } from "../core/types";
 
@@ -7,16 +14,49 @@ interface GreenhouseJob {
   id: number;
   title: string;
   absolute_url: string;
-  location: { name: string };
-  departments: { name: string }[];
-  updated_at: string;
-  content?: string;
-  metadata?: { name: string; value: string | string[] }[];
+  location?: { name?: string | null } | null;
+  departments?: { name?: string | null }[] | null;
+  updated_at?: string | null;
+  content?: string | null;
+  metadata?: { name?: string | null; value?: unknown }[] | null;
 }
 
 interface GreenhouseResponse {
   jobs: GreenhouseJob[];
 }
+
+const GreenhouseJobSchema = z
+  .object({
+    id: z.number(),
+    title: z.string(),
+    absolute_url: z.string(),
+    location: z
+      .object({ name: z.string().nullish() })
+      .passthrough()
+      .nullish(),
+    departments: z
+      .array(z.object({ name: z.string().nullish() }).passthrough())
+      .nullish(),
+    updated_at: z.string().nullish(),
+    content: z.string().nullish(),
+    metadata: z
+      .array(
+        z
+          .object({
+            name: z.string().nullish(),
+            value: z.unknown().optional(),
+          })
+          .passthrough()
+      )
+      .nullish(),
+  })
+  .passthrough();
+
+const GreenhouseResponseSchema = z
+  .object({
+    jobs: z.array(z.unknown()),
+  })
+  .passthrough();
 
 export type GreenhouseConfig = ApiScraperConfig;
 
@@ -89,73 +129,73 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
       const detectedBoardToken = !options?.boardToken && boardToken ? boardToken : undefined;
 
       if (!boardToken) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          error: "Could not extract board token from URL. Please provide the board token manually.",
-        };
+        return this.failure(
+          "invalid_url",
+          "Could not extract board token from URL. Please provide the board token manually."
+        );
       }
 
       const apiUrl = `${this.config.baseUrl}/v1/boards/${boardToken}/jobs?content=true`;
 
-      const response = await this.httpClient.fetch(apiUrl, {
-        timeout: this.config.timeout,
-        retries: this.config.retries,
-        baseDelay: this.config.baseDelay,
-        headers: {
-          Accept: "application/json",
-          "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-        },
+      const response = await this.fetchResponse(apiUrl, {
+        headers: this.jsonRequestHeaders(),
       });
 
-      let data: GreenhouseResponse;
+      let payload: { jobs: unknown[] };
 
       if (!response.ok) {
         const altApiUrl = `https://boards.greenhouse.io/${boardToken}/embed/job_board/jobs.json`;
-        const altResponse = await this.httpClient.fetch(altApiUrl, {
-          timeout: this.config.timeout,
-          retries: this.config.retries,
-          baseDelay: this.config.baseDelay,
-          headers: {
-            Accept: "application/json",
-            "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
-          },
+        const altResponse = await this.fetchResponse(altApiUrl, {
+          headers: this.jsonRequestHeaders(),
         });
 
         if (!altResponse.ok) {
-          return {
-            success: false,
-            outcome: "error",
-            jobs: [],
-            error: `Failed to fetch jobs: ${response.status}`,
-          };
+          return this.failureForHttpStatus(
+            altResponse.status,
+            `Failed to fetch jobs: ${altResponse.status}`
+          );
         }
 
-        data = await altResponse.json();
+        payload = parseExternalPayload(
+          GreenhouseResponseSchema,
+          await altResponse.json(),
+          "Greenhouse"
+        );
       } else {
-        data = await response.json();
+        payload = parseExternalPayload(
+          GreenhouseResponseSchema,
+          await response.json(),
+          "Greenhouse"
+        );
       }
 
-      return this.parseJobs(data, boardToken, detectedBoardToken);
+      const parsedJobs = parseExternalItems(
+        GreenhouseJobSchema,
+        payload.jobs,
+        "Greenhouse jobs"
+      );
+      return this.parseJobs(
+        { jobs: parsedJobs.items },
+        boardToken,
+        detectedBoardToken,
+        payload.jobs.length,
+        parsedJobs.invalidCount
+      );
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 
   private parseJobs(
     data: GreenhouseResponse,
     boardToken: string,
-    detectedBoardToken?: string
+    detectedBoardToken: string | undefined,
+    totalListings: number,
+    invalidJobs: number
   ): ScraperResult {
     const jobs: ScrapedJob[] = data.jobs.map((job) => {
       const locationMetadata = job.metadata?.find((m) => {
-        const nameLower = m.name.toLowerCase();
+        const nameLower = m.name?.toLowerCase() ?? "";
         return nameLower.includes("location");
       });
       const actualLocations = locationMetadata?.value || [];
@@ -193,7 +233,7 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
         url: job.absolute_url,
         location,
         locationType,
-        department: job.departments?.[0]?.name,
+        department: job.departments?.[0]?.name ?? undefined,
         description,
         descriptionFormat,
         postedDate: job.updated_at ? new Date(job.updated_at) : undefined,
@@ -203,19 +243,21 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
     const openExternalIds = jobs.map((job) => job.externalId);
 
     return {
-      success: true,
-      outcome: "success",
+      outcome: invalidJobs > 0 ? "partial" : "success",
       jobs,
+      totalListings,
       detectedBoardToken,
       openExternalIds,
-      openExternalIdsComplete: true,
+      listingCompleteness: invalidJobs > 0 ? "partial" : "complete",
+      issues:
+        invalidJobs > 0
+          ? [
+              createScraperError(
+                "parse_error",
+                `${invalidJobs} Greenhouse job${invalidJobs === 1 ? " was" : "s were"} skipped because required fields were invalid.`
+              ),
+            ]
+          : undefined,
     };
   }
-}
-
-export function createGreenhouseScraper(
-  httpClient: IHttpClient,
-  config?: Partial<GreenhouseConfig>
-): GreenhouseScraper {
-  return new GreenhouseScraper(httpClient, config);
 }

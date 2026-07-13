@@ -1,6 +1,7 @@
 import { load } from "cheerio";
 
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
+import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 
 export interface HtmlPageResult {
   page: number;
@@ -11,8 +12,11 @@ export interface HtmlPageResult {
 export interface PaginatedHtmlFetchResult {
   pages: HtmlPageResult[];
   totalPages: number;
+  discoveredTotalPages: number;
   isComplete: boolean;
+  truncatedByMaxPages: boolean;
   failedPages: number[];
+  firstFailureStatus?: number;
 }
 
 export interface FetchPaginatedHtmlOptions {
@@ -89,8 +93,11 @@ export async function fetchPaginatedHtmlByPageParam(
     return {
       pages,
       totalPages: 1,
+      discoveredTotalPages: 1,
       isComplete: false,
+      truncatedByMaxPages: false,
       failedPages: [1],
+      firstFailureStatus: firstResponse.status,
     };
   }
 
@@ -99,6 +106,7 @@ export async function fetchPaginatedHtmlByPageParam(
 
   const discoveredTotal = extractMaxPageFromPagination(firstHtml, firstPageUrl);
   const totalPages = maxPages ? Math.min(discoveredTotal, maxPages) : discoveredTotal;
+  const truncatedByMaxPages = totalPages < discoveredTotal;
 
   for (let page = 2; page <= totalPages; page++) {
     const pageUrl = setPageQueryParam(startUrl, page);
@@ -122,7 +130,8 @@ export async function fetchPaginatedHtmlByPageParam(
         url: pageUrl,
         html,
       });
-    } catch {
+    } catch (error) {
+      throwIfScrapeAborted(error);
       failedPages.push(page);
     }
   }
@@ -130,7 +139,9 @@ export async function fetchPaginatedHtmlByPageParam(
   return {
     pages,
     totalPages,
-    isComplete: failedPages.length === 0,
+    discoveredTotalPages: discoveredTotal,
+    isComplete: failedPages.length === 0 && !truncatedByMaxPages,
+    truncatedByMaxPages,
     failedPages,
   };
 }

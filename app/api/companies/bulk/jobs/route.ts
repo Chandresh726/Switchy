@@ -1,8 +1,7 @@
-import { db } from "@/lib/db";
-import { jobs } from "@/lib/db/schema";
-import { inArray } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
+
 import { assertAppRequest } from "@/lib/api";
+import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 
 export async function DELETE(request: NextRequest) {
   try {
@@ -18,15 +17,13 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const deleted = await db
-      .delete(jobs)
-      .where(inArray(jobs.companyId, companyIds))
-      .returning({ id: jobs.id });
+    const deletedCount =
+      await getLocalDataMaintenanceService().deleteCompanyJobs(companyIds);
 
     return NextResponse.json({
       success: true,
-      deletedCount: deleted.length,
-      message: `Deleted ${deleted.length} jobs from ${companyIds.length} companies`,
+      deletedCount,
+      message: `Deleted ${deletedCount} jobs from ${companyIds.length} companies`,
     });
   } catch (error) {
     console.error("Failed to delete jobs:", error);

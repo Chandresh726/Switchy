@@ -50,14 +50,6 @@ export class ScraperLogger {
     console.log(`[Scraper] ${this.companyName} - Error: ${message}`);
   }
 
-  batchStart(count: number): void {
-    console.log(`[Scraper] Batch scrape starting for ${count} companies`);
-  }
-
-  batchComplete(succeeded: number, total: number, jobsAdded: number): void {
-    console.log(`[Scraper] Batch scrape complete: ${succeeded}/${total} succeeded, ${jobsAdded} jobs added`);
-  }
-
   private formatFilterBreakdown(breakdown: FilterBreakdown): string {
     const parts: string[] = [];
     if (breakdown.country && breakdown.country > 0) parts.push(`country ${breakdown.country}`);

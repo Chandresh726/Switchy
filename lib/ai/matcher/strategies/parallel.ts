@@ -1,10 +1,11 @@
 import PQueue from "p-queue";
+import { throwIfAborted } from "../resilience";
 import { singleStrategy } from "./single";
 import type { StrategyResultItem, StrategyResultMap } from "../types";
 import type { ParallelStrategy } from "./types";
 
 export const parallelStrategy: ParallelStrategy = async (ctx) => {
-  const { config, jobs, onProgress, onResult, shouldStop } = ctx;
+  const { config, jobs, onProgress, onResult, shouldStop, signal } = ctx;
 
   const results: StrategyResultMap = new Map();
   
@@ -28,12 +29,14 @@ export const parallelStrategy: ParallelStrategy = async (ctx) => {
     try {
       await onResult(jobId, item);
     } catch (error) {
+      throwIfAborted(signal);
       console.error(`[ParallelStrategy] Failed to report result for job ${jobId}:`, error);
     }
   };
 
   const jobPromises = jobs.map((job) =>
     queue.add(async () => {
+      throwIfAborted(signal);
       if (shouldStop && await shouldStop()) {
         return;
       }
@@ -49,6 +52,7 @@ export const parallelStrategy: ParallelStrategy = async (ctx) => {
         await reportResult(job.id, item);
         succeeded++;
       } catch (error) {
+        throwIfAborted(signal);
         const errorObj = error instanceof Error ? error : new Error(String(error));
         const item = {
           error: errorObj,
@@ -62,7 +66,7 @@ export const parallelStrategy: ParallelStrategy = async (ctx) => {
       }
       completed++;
       onProgress?.(completed, jobs.length, succeeded, failed);
-    })
+    }, { signal })
   );
 
   await Promise.all(jobPromises);

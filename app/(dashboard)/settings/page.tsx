@@ -29,9 +29,14 @@ import type {
 const getDefaultReasoningEffort = (): ReasoningEffort => "medium";
 const PROVIDER_MODELS_STALE_TIME_MS = 15 * 60 * 1000;
 const DEFAULT_SCRAPER_MAX_PARALLEL_SCRAPES = 3;
+const DEFAULT_SCRAPER_HISTORY_RETENTION_DAYS = 90;
 
 function clampScraperParallelScrapes(value: number): number {
   return Math.min(10, Math.max(1, value));
+}
+
+function clampScraperHistoryRetentionDays(value: number): number {
+  return Math.min(3_650, Math.max(7, value));
 }
 
 interface MatcherLocalEdits {
@@ -58,6 +63,7 @@ interface ScraperLocalEdits {
   schedulerEnabled?: boolean;
   schedulerCron?: string;
   maxParallelScrapes?: number;
+  historyRetentionDays?: number;
   filterCountry?: string;
   filterCity?: string;
   filterTitleKeywords?: string[];
@@ -411,6 +417,15 @@ function SettingsContent() {
             10
           ) || DEFAULT_SCRAPER_MAX_PARALLEL_SCRAPES
         ),
+      historyRetentionDays:
+        scraperLocalEdits.historyRetentionDays ??
+        clampScraperHistoryRetentionDays(
+          parseInt(
+            settings?.scraper_history_retention_days ||
+              String(DEFAULT_SCRAPER_HISTORY_RETENTION_DAYS),
+            10
+          ) || DEFAULT_SCRAPER_HISTORY_RETENTION_DAYS
+        ),
       filterCountry: scraperLocalEdits.filterCountry ?? (settings?.scraper_filter_country || "India"),
       filterCity: scraperLocalEdits.filterCity ?? (settings?.scraper_filter_city || ""),
       filterTitleKeywords: (() => {
@@ -454,7 +469,7 @@ function SettingsContent() {
 
   const {
     matcherModel, matcherProviderId, resumeParserModel, resumeParserProviderId, matcherReasoningEffort, resumeParserReasoningEffort, bulkEnabled, serializeOperations, batchSize, maxRetries, concurrencyLimit, timeoutMs,
-    circuitBreakerThreshold, autoMatchAfterScrape, schedulerEnabled, schedulerCron, maxParallelScrapes, filterCountry, filterCity, filterTitleKeywords,
+    circuitBreakerThreshold, autoMatchAfterScrape, schedulerEnabled, schedulerCron, maxParallelScrapes, historyRetentionDays, filterCountry, filterCity, filterTitleKeywords,
     aiWritingModel, aiWritingProviderId, aiWritingReasoningEffort, referralTone, referralLength,
     followUpTone, followUpLength, coverLetterTone, coverLetterLength, coverLetterFocus
   } = derivedValues;
@@ -635,6 +650,7 @@ function SettingsContent() {
   const scraperHasUnsavedChanges =
     scraperLocalEdits.schedulerCron !== undefined ||
     scraperLocalEdits.maxParallelScrapes !== undefined ||
+    scraperLocalEdits.historyRetentionDays !== undefined ||
     scraperLocalEdits.filterCountry !== undefined ||
     scraperLocalEdits.filterCity !== undefined ||
     scraperLocalEdits.filterTitleKeywords !== undefined;
@@ -684,6 +700,11 @@ function SettingsContent() {
     setScraperLocalEdits((prev) => ({ ...prev, schedulerCron: value }));
   const setMaxParallelScrapes = (value: number) =>
     setScraperLocalEdits((prev) => ({ ...prev, maxParallelScrapes: clampScraperParallelScrapes(value) }));
+  const setHistoryRetentionDays = (value: number) =>
+    setScraperLocalEdits((prev) => ({
+      ...prev,
+      historyRetentionDays: clampScraperHistoryRetentionDays(value),
+    }));
   const setFilterCountry = (value: string) =>
     setScraperLocalEdits((prev) => ({ ...prev, filterCountry: value }));
   const setFilterCity = (value: string) =>
@@ -870,6 +891,7 @@ function SettingsContent() {
         {
           scheduler_cron: schedulerCron,
           scraper_max_parallel_scrapes: maxParallelScrapes,
+          scraper_history_retention_days: historyRetentionDays,
           scraper_filter_country: filterCountry,
           scraper_filter_city: filterCity,
           scraper_filter_title_keywords: JSON.stringify(filterTitleKeywords),
@@ -883,6 +905,7 @@ function SettingsContent() {
         ...prev,
         schedulerCron: undefined,
         maxParallelScrapes: undefined,
+        historyRetentionDays: undefined,
         filterCountry: undefined,
         filterCity: undefined,
         filterTitleKeywords: undefined,
@@ -1143,6 +1166,8 @@ function SettingsContent() {
             onSchedulerCronChange={setSchedulerCron}
             maxParallelScrapes={maxParallelScrapes}
             onMaxParallelScrapesChange={setMaxParallelScrapes}
+            historyRetentionDays={historyRetentionDays}
+            onHistoryRetentionDaysChange={setHistoryRetentionDays}
             filterCountry={filterCountry}
             filterCity={filterCity}
             onFilterCountryChange={setFilterCountry}

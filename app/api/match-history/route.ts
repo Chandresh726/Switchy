@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { matchSessions, matchLogs, jobs, companies } from "@/lib/db/schema";
-import { and, eq, desc, count, inArray, sql } from "drizzle-orm";
-import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
+import { count, desc, eq, sql } from "drizzle-orm";
+
 import { assertAppRequest } from "@/lib/api";
+import { db } from "@/lib/db";
+import {
+  companies,
+  jobs,
+  matchLogs,
+  matchSessions,
+} from "@/lib/db/schema";
+import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
+import { stopMatchSession } from "@/lib/scraper/matching/lifecycle";
+import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
 /**
  * GET /api/match-history
@@ -152,13 +160,10 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get("sessionId");
 
-    if (sessionId) {
-      await db.delete(matchSessions).where(eq(matchSessions.id, sessionId));
-      return NextResponse.json({ success: true }, { headers: NO_STORE_HEADERS });
-    } else {
-      await db.delete(matchSessions);
-      return NextResponse.json({ success: true }, { headers: NO_STORE_HEADERS });
-    }
+    await getLocalDataMaintenanceService().deleteMatchHistory(
+      sessionId ?? undefined
+    );
+    return NextResponse.json({ success: true }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     console.error("Failed to delete match history:", error);
     return NextResponse.json(
@@ -182,30 +187,11 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const updated = await db
-      .update(matchSessions)
-      .set({
-        status: "failed",
-        completedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(matchSessions.id, sessionId),
-          inArray(matchSessions.status, ["in_progress", "queued"])
-        )
-      )
-      .returning({ id: matchSessions.id });
-
-    if (updated.length > 0) {
+    const result = await stopMatchSession(sessionId);
+    if (result.stopped) {
       return NextResponse.json({ success: true, stopped: true }, { headers: NO_STORE_HEADERS });
     }
-
-    const [session] = await db
-      .select({ id: matchSessions.id, status: matchSessions.status })
-      .from(matchSessions)
-      .where(eq(matchSessions.id, sessionId));
-
-    if (!session) {
+    if (!result.exists) {
       return NextResponse.json(
         { error: "Session not found" },
         { status: 404, headers: NO_STORE_HEADERS }
@@ -213,7 +199,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { success: true, stopped: false, status: session.status },
+      { success: true, stopped: false, status: result.status },
       { headers: NO_STORE_HEADERS }
     );
   } catch (error) {

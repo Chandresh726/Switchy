@@ -1,7 +1,8 @@
-import type { Platform } from "@/lib/scraper/types";
+import { createScraperFailure, type Platform } from "@/lib/scraper/types";
 import type { IScraper, ScraperResult, ScrapeOptions } from "@/lib/scraper/core/types";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import type { IBrowserClient } from "@/lib/scraper/infrastructure/browser-client";
+import { runWithScrapeSignal } from "@/lib/scraper/infrastructure/cancellation";
 
 import {
   GreenhouseScraper,
@@ -52,28 +53,35 @@ export class ScraperRegistry implements IScraperRegistry {
     if (platform) {
       const scraper = this.getScraperByPlatform(platform);
       if (scraper) {
-        return scraper.scrape(url, options);
+        return this.executeScraper(scraper, url, options);
       }
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: `No scraper found for platform: ${platform}`,
-      };
+      return createScraperFailure(
+        "board_not_found",
+        `No scraper found for platform: ${platform}`
+      );
     }
 
     const scraper = this.getScraperForUrl(url);
     if (!scraper) {
       const supportedPlatforms = this.getSupportedPlatforms().join(", ");
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: `No scraper found for this URL. Supported platforms: ${supportedPlatforms}`,
-      };
+      return createScraperFailure(
+        "invalid_url",
+        `No scraper found for this URL. Supported platforms: ${supportedPlatforms}`
+      );
     }
 
-    return scraper.scrape(url, options);
+    return this.executeScraper(scraper, url, options);
+  }
+
+  private async executeScraper(
+    scraper: IScraper,
+    url: string,
+    options?: ScrapeOptions
+  ): Promise<ScraperResult> {
+    const execute = () => scraper.scrape(url, options);
+    const signal = options?.signal;
+    if (!signal) return execute();
+    return runWithScrapeSignal(signal, execute);
   }
 
   getSupportedPlatforms(): Platform[] {

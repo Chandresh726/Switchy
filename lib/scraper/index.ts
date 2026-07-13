@@ -1,28 +1,54 @@
 import type { IScraperRepository } from "./infrastructure/types";
 import type { IHttpClient, HttpClientConfig } from "./infrastructure/http-client";
 import type { IBrowserClient, BrowserSessionConfig } from "./infrastructure/browser-client";
-import type { IScrapeOrchestrator, OrchestratorConfig } from "./services";
+import type { LocalLeasedWorkRunnerConfig } from "./runtime/leased-work-runner";
+import type { ScrapeCompanyPipelineConfig } from "./application/scrape-company-pipeline";
+import {
+  StoredScrapeSettingsProvider,
+  type ScrapeSettingsProvider,
+} from "./settings/provider";
 
+import {
+  createScrapeCompanyPipeline,
+  DEFAULT_SCRAPE_COMPANY_PIPELINE_CONFIG,
+  type ScrapeCompanyPipeline,
+} from "./application/scrape-company-pipeline";
+import { HistoryRetentionService } from "./application/history-retention-service";
+import { ScrapeSessionProjector } from "./application/scrape-session-projector";
+import { ScrapeWorkHandler } from "./application/scrape-work-handler";
+import { DrizzleScrapeHistoryStore } from "./history";
 import { createHttpClient, createScraperRepository } from "./infrastructure";
 import { createBrowserClient } from "./infrastructure";
-import { createScraperRegistry, createDeduplicationService, createFilterService, createScrapeOrchestrator, DEFAULT_ORCHESTRATOR_CONFIG } from "./services";
+import { DrizzleScrapeSessionProjectionStore } from "./queue/projection-store";
+import { DrizzleLocalScrapeQueueRepository } from "./queue/repository";
+import { LocalScrapeQueueService } from "./queue/service";
+import {
+  createDeduplicationService,
+  createFilterService,
+  createScraperRegistry,
+} from "./services";
 
-export interface ScrapingModuleConfig {
+interface ScrapingModuleConfig {
   httpClient?: Partial<HttpClientConfig>;
   browserClient?: Partial<BrowserSessionConfig>;
-  orchestrator?: Partial<OrchestratorConfig>;
+  pipeline?: Partial<ScrapeCompanyPipelineConfig>;
   repository?: IScraperRepository;
+  settingsProvider?: ScrapeSettingsProvider;
 }
 
-export interface ScrapingModule {
-  orchestrator: IScrapeOrchestrator;
+interface ScrapingModule {
+  pipeline: ScrapeCompanyPipeline;
   repository: IScraperRepository;
+  settingsProvider: ScrapeSettingsProvider;
   httpClient: IHttpClient;
   browserClient: IBrowserClient;
+  registry: ReturnType<typeof createScraperRegistry>;
 }
 
-export function createScrapingModule(config: ScrapingModuleConfig = {}): ScrapingModule {
+function createScrapingModule(config: ScrapingModuleConfig = {}): ScrapingModule {
   const repository = config.repository ?? createScraperRepository();
+  const settingsProvider =
+    config.settingsProvider ?? new StoredScrapeSettingsProvider(repository);
   const httpClient = createHttpClient(config.httpClient);
   const browserClient = createBrowserClient(config.browserClient);
 
@@ -30,31 +56,69 @@ export function createScrapingModule(config: ScrapingModuleConfig = {}): Scrapin
   const deduplicationService = createDeduplicationService();
   const filterService = createFilterService();
 
-  const orchestrator = createScrapeOrchestrator({
+  const pipeline = createScrapeCompanyPipeline({
     repository,
     registry,
     deduplicationService,
     filterService,
-    config: { ...DEFAULT_ORCHESTRATOR_CONFIG, ...config.orchestrator },
+    settingsProvider,
+    config: {
+      ...DEFAULT_SCRAPE_COMPANY_PIPELINE_CONFIG,
+      ...config.pipeline,
+    },
   });
 
   return {
-    orchestrator,
+    pipeline,
     repository,
+    settingsProvider,
     httpClient,
     browserClient,
+    registry,
   };
 }
 
-let defaultModule: ScrapingModule | null = null;
+let defaultQueueService: LocalScrapeQueueService | null = null;
 
-export function getScrapingModule(): ScrapingModule {
-  if (!defaultModule) {
-    defaultModule = createScrapingModule();
-  }
-  return defaultModule;
+export function createLocalScrapeQueueService(
+  config: ScrapingModuleConfig = {},
+  runnerConfig: Partial<LocalLeasedWorkRunnerConfig> = {}
+): LocalScrapeQueueService {
+  const scrapingModule = createScrapingModule(config);
+  const queueStore = new DrizzleLocalScrapeQueueRepository();
+  const projectionStore = new DrizzleScrapeSessionProjectionStore();
+  const projector = new ScrapeSessionProjector(
+    queueStore,
+    projectionStore,
+    scrapingModule.repository,
+    scrapingModule.repository
+  );
+  const workHandler = new ScrapeWorkHandler(
+    scrapingModule.pipeline,
+    scrapingModule.repository,
+    queueStore,
+    projectionStore,
+    projector,
+    scrapingModule.settingsProvider,
+    scrapingModule.registry
+  );
+  return new LocalScrapeQueueService({
+    companyCatalog: scrapingModule.repository,
+    sessionStore: scrapingModule.repository,
+    queueStore,
+    workHandler,
+    projector,
+    historyRetention: new HistoryRetentionService(
+      new DrizzleScrapeHistoryStore(),
+      scrapingModule.settingsProvider
+    ),
+    runnerConfig: { concurrency: 10, ...runnerConfig },
+  });
 }
 
-export function resetScrapingModule(): void {
-  defaultModule = null;
+export function getLocalScrapeQueueService(): LocalScrapeQueueService {
+  if (!defaultQueueService) {
+    defaultQueueService = createLocalScrapeQueueService();
+  }
+  return defaultQueueService;
 }

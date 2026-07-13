@@ -1,10 +1,32 @@
-import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
-import type { IBrowserClient, BrowserSession } from "@/lib/scraper/infrastructure/browser-client";
-import type { ScraperResult, ScrapeOptions, ScrapedJob, BrowserScraperConfig, EarlyFilterStats, JobFilters } from "@/lib/scraper/types";
+import { z } from "zod";
+
 import { processDescription } from "@/lib/jobs/description-processor";
-import { parseEmploymentType } from "@/lib/scraper/types";
-import { applyEarlyFilters, hasEarlyFilters, toEarlyFilterStats } from "@/lib/scraper/services";
-import { AbstractBrowserScraper, DEFAULT_BROWSER_CONFIG } from "../core";
+import type {
+  BrowserSession,
+  IBrowserClient,
+} from "@/lib/scraper/infrastructure/browser-client";
+import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
+import {
+  HttpError,
+  type IHttpClient,
+} from "@/lib/scraper/infrastructure/http-client";
+import {
+  createScraperError,
+  parseEmploymentType,
+  parseExternalPayload,
+  ScraperPayloadError,
+  type BrowserScraperConfig,
+  type ScrapeOptions,
+  type ScraperError,
+  type ScrapedJob,
+  type ScraperResult,
+} from "@/lib/scraper/types";
+import {
+  AbstractBrowserScraper,
+  DEFAULT_BROWSER_CONFIG,
+  SWITCHY_USER_AGENT,
+} from "../core";
+import { selectListingsForHydration } from "./shared/listing-selection";
 
 interface EightfoldSearchResponse {
   status: number;
@@ -20,8 +42,8 @@ interface EightfoldPosition {
   locations: string[];
   department?: string;
   workLocationOption?: "onsite" | "hybrid" | "remote_local";
-  postedTs: number;
-  positionUrl: string;
+  postedTs?: number;
+  positionUrl?: string;
 }
 
 interface EightfoldPositionDetails {
@@ -37,6 +59,50 @@ interface EightfoldPositionDetails {
     efcustomTextTimeType?: string[];
   };
 }
+
+const EightfoldPositionSchema = z
+  .object({
+    id: z.number(),
+    name: z.string(),
+    locations: z.array(z.string()),
+    department: z.string().optional(),
+    workLocationOption: z.enum(["onsite", "hybrid", "remote_local"]).optional(),
+    postedTs: z.number().optional(),
+    positionUrl: z.string().optional(),
+  })
+  .passthrough();
+
+const EightfoldSearchResponseSchema = z
+  .object({
+    status: z.number(),
+    data: z
+      .object({
+        positions: z.array(EightfoldPositionSchema),
+        count: z.number(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
+const EightfoldPositionDetailsSchema = z
+  .object({
+    status: z.number(),
+    data: z
+      .object({
+        id: z.number(),
+        name: z.string(),
+        locations: z.array(z.string()),
+        jobDescription: z.string(),
+        publicUrl: z.string(),
+        department: z.string().optional(),
+        workLocationOption: z.enum(["onsite", "hybrid", "remote_local"]).optional(),
+        efcustomTextTimeType: z.array(z.string()).optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
 
 interface EightfoldNormalizedPosition {
   id: number;
@@ -77,6 +143,11 @@ export const DEFAULT_EIGHTFOLD_CONFIG: EightfoldConfig = {
 
 export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
   readonly platform = "eightfold" as const;
+  override readonly capabilities = {
+    transport: "browser",
+    concurrency: "serial",
+    supportsCancellation: true,
+  } as const;
 
   constructor(
     httpClient: IHttpClient,
@@ -111,24 +182,14 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
     try {
       const parsedUrl = this.parseUrl(url);
       if (!parsedUrl) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          error: "Could not parse Eightfold URL.",
-        };
+        return this.failure("invalid_url", "Could not parse Eightfold URL.");
       }
 
       const isDirectEightfold = url.toLowerCase().includes("eightfold.ai");
       const session = await this.bootstrapSession(url);
 
       if (!session) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          error: "Failed to establish Eightfold browser session.",
-        };
+        return this.failure("browser_error", "Failed to establish Eightfold browser session.");
       }
 
       let domain: string | undefined = options?.boardToken ?? session.domain;
@@ -150,30 +211,15 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       }
 
       if (!domain) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          error: "Could not detect Eightfold domain.",
-        };
+        return this.failure("board_not_found", "Could not detect Eightfold domain.");
       }
 
-      const filters: JobFilters | undefined = options?.filters;
-      const existingExternalIds = options?.existingExternalIds;
       const resolvedDomain = domain;
       const boardToken = domain.replace(/\.com$/i, "");
       const listResult = await this.fetchAllPositions(baseUrl, resolvedDomain, session.cookies);
 
       if (!listResult) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          detectedBoardToken: detectedBoardToken || (options?.boardToken ? undefined : resolvedDomain),
-          openExternalIds: [],
-          openExternalIdsComplete: false,
-          error: "Failed to fetch Eightfold jobs list.",
-        };
+        return this.failure("network_error", "Failed to fetch Eightfold jobs list.");
       }
 
       const allPositions = listResult.positions;
@@ -182,63 +228,53 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       );
 
       if (allPositions.length === 0) {
-        const isError = !listResult.isComplete;
+        if (!listResult.isComplete) {
+          return this.failure(
+            "parse_error",
+            "Incomplete Eightfold list fetch with no usable job data."
+          );
+        }
         return {
-          success: !isError,
-          outcome: isError ? "error" : "success",
+          outcome: "success",
           jobs: [],
+          totalListings: 0,
           detectedBoardToken: detectedBoardToken || (options?.boardToken ? undefined : resolvedDomain),
           openExternalIds,
-          openExternalIdsComplete: listResult.isComplete,
-          error: isError ? "Incomplete Eightfold list fetch with no usable job data." : undefined,
+          listingCompleteness: "complete",
         };
       }
 
-      let positionsToProcess = allPositions;
-      let earlyFilterStats: EarlyFilterStats | undefined;
-
-      if (hasEarlyFilters(filters)) {
-        const earlyFilterResult = applyEarlyFilters(
-          allPositions.map((pos) => ({
-            ...pos,
-            title: pos.name,
-            location: pos.locations?.join(", ") || "",
-          })),
-          filters
-        );
-        positionsToProcess = earlyFilterResult.filtered as EightfoldNormalizedPosition[];
-        earlyFilterStats = toEarlyFilterStats(earlyFilterResult);
-      }
-
-      if (positionsToProcess.length === 0) {
-        return {
-          success: true,
-          outcome: listResult.isComplete ? "success" : "partial",
-          jobs: [],
-          detectedBoardToken: detectedBoardToken || (options?.boardToken ? undefined : resolvedDomain),
-          earlyFiltered: earlyFilterStats,
-          openExternalIds,
-          openExternalIdsComplete: listResult.isComplete,
-        };
-      }
-
-      const positionsToFetch =
-        existingExternalIds && existingExternalIds.size > 0
-          ? positionsToProcess.filter((pos) => {
-              const externalId = this.generateExternalId(this.platform, boardToken, pos.id);
-              return !existingExternalIds.has(externalId);
-            })
-          : positionsToProcess;
+      const selection = selectListingsForHydration({
+        listings: allPositions,
+        filters: options?.filters,
+        existingExternalIds: options?.existingExternalIds,
+        toFilterable: (position) => ({
+          title: position.name,
+          location: position.locations?.join(", ") || "",
+        }),
+        getExternalId: (position) =>
+          this.generateExternalId(this.platform, boardToken, position.id),
+      });
+      const positionsToFetch = selection.listings;
 
       if (positionsToFetch.length === 0) {
+        const issues = listResult.isComplete
+          ? undefined
+          : [
+              createScraperError(
+                "network_error",
+                "Eightfold listings were only partially fetched."
+              ),
+            ];
         return {
-          success: true,
           outcome: listResult.isComplete ? "success" : "partial",
           jobs: [],
+          totalListings: allPositions.length,
           detectedBoardToken: detectedBoardToken || (options?.boardToken ? undefined : resolvedDomain),
-          earlyFiltered: earlyFilterStats,
+          earlyFiltered: selection.earlyFiltered,
           openExternalIds,
-          openExternalIdsComplete: listResult.isComplete,
+          listingCompleteness: listResult.isComplete ? "complete" : "partial",
+          issues,
         };
       }
 
@@ -304,23 +340,36 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       }
 
       const isPartial = detailFailures > 0 || !listResult.isComplete;
+      const issues: ScraperError[] = [];
+      if (!listResult.isComplete) {
+        issues.push(
+          createScraperError(
+            "network_error",
+            "Eightfold listings were only partially fetched."
+          )
+        );
+      }
+      if (detailFailures > 0) {
+        issues.push(
+          createScraperError(
+            "network_error",
+            `${detailFailures} Eightfold job detail request${detailFailures === 1 ? "" : "s"} failed.`
+          )
+        );
+      }
 
       return {
-        success: true,
         outcome: isPartial ? "partial" : "success",
         jobs: scrapedJobs,
+        totalListings: allPositions.length,
         detectedBoardToken: detectedBoardToken || (options?.boardToken ? undefined : resolvedDomain),
-        earlyFiltered: earlyFilterStats,
+        earlyFiltered: selection.earlyFiltered,
         openExternalIds,
-        openExternalIdsComplete: listResult.isComplete,
+        listingCompleteness: listResult.isComplete ? "complete" : "partial",
+        issues: issues.length > 0 ? issues : undefined,
       };
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 
@@ -385,7 +434,8 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       }
 
       return null;
-    } catch {
+    } catch (error) {
+      throwIfScrapeAborted(error);
       return null;
     }
   }
@@ -406,9 +456,21 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         baseDelay: this.config.baseDelay,
       });
 
-      if (!response.ok) return null;
-      return response.json();
-    } catch {
+      if (!response.ok) {
+        throw new HttpError(
+          response.status,
+          `Failed to fetch Eightfold jobs: HTTP ${response.status}`,
+          url
+        );
+      }
+      return parseExternalPayload(
+        EightfoldSearchResponseSchema,
+        await response.json(),
+        "Eightfold search"
+      );
+    } catch (error) {
+      if (error instanceof HttpError || error instanceof ScraperPayloadError) throw error;
+      throwIfScrapeAborted(error);
       return null;
     }
   }
@@ -441,7 +503,12 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         index: number
       ): Promise<EightfoldSearchResponse | null> => {
         await this.delay(index * 50);
-        return this.fetchJobList(baseUrl, domain, cookies, offset);
+        try {
+          return await this.fetchJobList(baseUrl, domain, cookies, offset);
+        } catch (error) {
+          throwIfScrapeAborted(error);
+          return null;
+        }
       };
 
       for (let i = 0; i < offsets.length; i += this.config.parallelListFetches) {
@@ -490,7 +557,11 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         return { position: null, status: response.status };
       }
 
-      const details = (await response.json()) as EightfoldPositionDetails;
+      const details: EightfoldPositionDetails = parseExternalPayload(
+        EightfoldPositionDetailsSchema,
+        await response.json(),
+        "Eightfold detail"
+      );
       if (!details.data) {
         return { position: null, status: response.status };
       }
@@ -508,7 +579,8 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         },
         status: response.status,
       };
-    } catch {
+    } catch (error) {
+      throwIfScrapeAborted(error);
       return { position: null, status: null };
     }
   }
@@ -531,7 +603,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
   ): Record<string, string> {
     const headers: Record<string, string> = {
       Accept: accept,
-      "User-Agent": "Mozilla/5.0 (compatible; Switchy/1.0)",
+      "User-Agent": SWITCHY_USER_AGENT,
     };
 
     if (cookies.trim().length > 0) {
@@ -605,12 +677,4 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
     const parsed = new Date(ms);
     return Number.isNaN(parsed.getTime()) ? undefined : parsed;
   }
-}
-
-export function createEightfoldScraper(
-  httpClient: IHttpClient,
-  browserClient: IBrowserClient,
-  config?: Partial<EightfoldConfig>
-): EightfoldScraper {
-  return new EightfoldScraper(httpClient, browserClient, config);
 }

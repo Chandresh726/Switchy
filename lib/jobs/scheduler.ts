@@ -4,7 +4,11 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { scrapeSessions, settings } from "@/lib/db/schema";
-import { createScrapingModule } from "@/lib/scraper";
+import {
+  getLocalScrapeQueueService,
+} from "@/lib/scraper";
+
+import { getSchedulerLeaseStore } from "./scheduler-lease-store";
 
 const DEFAULT_CRON = "0 */6 * * *";
 const SCHEDULER_ENABLED_KEY = "scheduler_enabled";
@@ -302,11 +306,12 @@ async function runSchedulerBatch(triggerSource: "scheduler" | "scheduler_recover
     return "already_running";
   }
 
-  // Build a fresh scraping module per run to avoid stale in-memory registry state
-  // in long-lived scheduler processes.
-  const { orchestrator, repository } = createScrapingModule();
+  // Manual requests, startup recovery, and scheduled runs share one in-process
+  // supervisor so the configured local concurrency limit applies to all work.
+  const leaseStore = getSchedulerLeaseStore();
+  const queueService = getLocalScrapeQueueService();
   const ownerId = `scheduler-${process.pid}-${crypto.randomUUID()}`;
-  const lockToken = await repository.acquireSchedulerLock(ownerId);
+  const lockToken = await leaseStore.acquire(ownerId);
 
   if (!lockToken) {
     console.log("[Scheduler] Another instance is running, skipping");
@@ -316,27 +321,30 @@ async function runSchedulerBatch(triggerSource: "scheduler" | "scheduler_recover
   isRunning = true;
   let activeLockToken: string | null = lockToken;
   let lockLost = false;
-  let refreshInFlight = false;
-  const refreshTimer = setInterval(async () => {
+  let refreshInFlight: Promise<void> | null = null;
+  const refreshTimer = setInterval(() => {
     if (!activeLockToken || lockLost || refreshInFlight) {
       return;
     }
 
-    refreshInFlight = true;
-    try {
-      const refreshedToken = await repository.refreshSchedulerLock(activeLockToken);
-      if (!refreshedToken) {
+    const lockTokenToRefresh = activeLockToken;
+    const refresh = (async () => {
+      try {
+        const refreshedToken = await leaseStore.refresh(lockTokenToRefresh);
+        if (refreshedToken) return;
         lockLost = true;
         activeLockToken = null;
         console.error("[Scheduler] Lost scheduler lock while running; run will end without releasing lock token");
+      } catch (error) {
+        lockLost = true;
+        activeLockToken = null;
+        console.error("[Scheduler] Failed to refresh scheduler lock:", error);
       }
-    } catch (error) {
-      lockLost = true;
-      activeLockToken = null;
-      console.error("[Scheduler] Failed to refresh scheduler lock:", error);
-    } finally {
-      refreshInFlight = false;
-    }
+    })();
+    refreshInFlight = refresh;
+    void refresh.finally(() => {
+      if (refreshInFlight === refresh) refreshInFlight = null;
+    });
   }, LOCK_REFRESH_INTERVAL_MS);
 
   if (typeof refreshTimer === "object" && "unref" in refreshTimer) {
@@ -347,7 +355,7 @@ async function runSchedulerBatch(triggerSource: "scheduler" | "scheduler_recover
   console.log(`[Scheduler] Starting ${triggerSource === "scheduler" ? "scheduled" : "recovery"} refresh`);
 
   try {
-    const result = await orchestrator.scrapeAllCompanies(triggerSource);
+    const result = await queueService.scrapeAllCompanies(triggerSource);
 
     if (!lockLost) {
       await saveLastRun(startTime);
@@ -363,9 +371,10 @@ async function runSchedulerBatch(triggerSource: "scheduler" | "scheduler_recover
     console.error("[Scheduler] Error during refresh:", error);
   } finally {
     clearInterval(refreshTimer);
+    await refreshInFlight;
     isRunning = false;
     if (activeLockToken) {
-      await repository.releaseSchedulerLock(activeLockToken);
+      await leaseStore.release(activeLockToken);
     }
   }
 
