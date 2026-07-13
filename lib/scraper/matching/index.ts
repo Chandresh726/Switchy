@@ -9,6 +9,7 @@ export {
 
 export {
   deleteAllJobsAndTerminateMatches,
+  deleteCompanyJobsAndTerminateWork,
   stopMatchSession,
   type StopMatchSessionResult,
 } from "./lifecycle";

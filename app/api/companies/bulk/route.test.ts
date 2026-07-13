@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   assertAppRequest: vi.fn(),
   delete: vi.fn(),
   select: vi.fn(),
+  selectDistinct: vi.fn(),
   transaction: vi.fn(),
   update: vi.fn(),
 }));
@@ -37,7 +38,12 @@ describe("companies bulk route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.transaction.mockImplementation((operation) =>
-      operation({ delete: mocks.delete, select: mocks.select })
+      operation({
+        delete: mocks.delete,
+        select: mocks.select,
+        selectDistinct: mocks.selectDistinct,
+        update: mocks.update,
+      })
     );
   });
 
@@ -54,6 +60,18 @@ describe("companies bulk route", () => {
     mocks.select.mockReturnValue({
       from: () => ({
         where: () => ({ all: () => [] }),
+      }),
+    });
+    mocks.selectDistinct.mockReturnValue({
+      from: () => ({
+        innerJoin: () => ({
+          where: () => ({ all: () => [] }),
+        }),
+      }),
+    });
+    mocks.update.mockReturnValue({
+      set: () => ({
+        where: () => ({ run: () => undefined }),
       }),
     });
     const jobsReturning = vi.fn(() => ({ all: () => [{ id: 10 }, { id: 11 }] }));

@@ -122,6 +122,8 @@ export interface FetchResult {
   jobsArchived: number;
   platform: Platform | null;
   error?: string;
+  retryable?: boolean;
+  retryAfterMs?: number;
   duration: number;
   logId?: number;
 }

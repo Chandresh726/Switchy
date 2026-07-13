@@ -7,6 +7,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { db } from "@/lib/db";
 import * as schema from "@/lib/db/schema";
 import { companies, scrapeQueueItems, scrapeSessions } from "@/lib/db/schema";
 
@@ -50,6 +51,37 @@ function createQueueDatabases() {
 }
 
 describe("DrizzleLocalScrapeQueueRepository", () => {
+  it("retries transient SQLite contention while renewing a worker lease", async () => {
+    let attempts = 0;
+    const returning = vi.fn(async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw Object.assign(new Error("database is locked"), { code: "SQLITE_BUSY" });
+      }
+      return [{ id: "item-1" }];
+    });
+    const fakeDatabase = {
+      update: vi.fn(() => ({
+        set: () => ({
+          where: () => ({ returning }),
+        }),
+      })),
+    } as unknown as typeof db;
+    const repository = new DrizzleLocalScrapeQueueRepository(fakeDatabase, {
+      claimBusyRetries: 1,
+      claimBusyRetryDelayMs: 0,
+    });
+
+    const renewed = await repository.heartbeat(
+      "item-1",
+      "worker-1",
+      new Date(Date.now() + 60_000)
+    );
+
+    expect(renewed).toBe(true);
+    expect(returning).toHaveBeenCalledTimes(2);
+  });
+
   it("retries an immediate claim through lock contention and permits only one owner", async () => {
     const { firstConnection, firstDatabase, secondDatabase } = createQueueDatabases();
     const now = new Date();

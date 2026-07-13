@@ -5,6 +5,7 @@ import type {
   ILocalScrapeQueueRepository,
   QueueRunSummary,
   ScrapeQueueHandler,
+  ScrapeQueueStateChangeCallback,
 } from "./types";
 
 export interface LocalScrapeQueueRunnerConfig {
@@ -32,7 +33,8 @@ export class LocalScrapeQueueRunner<TResult = unknown> {
   constructor(
     private readonly repository: ILocalScrapeQueueRepository,
     private readonly handler: ScrapeQueueHandler<TResult>,
-    config: Partial<LocalScrapeQueueRunnerConfig> = {}
+    config: Partial<LocalScrapeQueueRunnerConfig> = {},
+    private readonly onItemStateChange?: ScrapeQueueStateChangeCallback
   ) {
     const merged = { ...DEFAULT_LOCAL_QUEUE_RUNNER_CONFIG, ...config };
     const leaseDurationMs = Math.max(1_000, merged.leaseDurationMs);
@@ -63,6 +65,7 @@ export class LocalScrapeQueueRunner<TResult = unknown> {
         failed: 0,
         cancelled: 0,
         recovered: await this.repository.recoverExpired(new Date()),
+        nextAvailableAt: null,
       };
 
       const worker = async (workerIndex: number) => {
@@ -104,6 +107,7 @@ export class LocalScrapeQueueRunner<TResult = unknown> {
         (result): result is PromiseRejectedResult => result.status === "rejected"
       );
       if (failedWorker) throw failedWorker.reason;
+      summary.nextAvailableAt = await this.repository.getNextAvailableAt();
       return summary;
     } finally {
       this.running = false;
@@ -195,6 +199,12 @@ export class LocalScrapeQueueRunner<TResult = unknown> {
       summary.completed += 1;
     } catch (error) {
       const now = new Date();
+      if (!cancellationRequested) {
+        cancellationRequested = await this.repository.isCancellationRequested(
+          item.id,
+          workerId
+        );
+      }
       if (cancellationRequested) {
         const cancelled = await this.repository.cancel(item.id, workerId, now);
         if (cancelled) summary.cancelled += 1;
@@ -214,7 +224,9 @@ export class LocalScrapeQueueRunner<TResult = unknown> {
         }
       } else if (item.attemptCount < item.maxAttempts) {
         const message = error instanceof Error ? error.message : "Unknown queue handler error";
-        const retryAt = new Date(now.getTime() + this.retryDelay(item.attemptCount));
+        const retryAt = new Date(
+          now.getTime() + this.retryDelay(item.attemptCount, error)
+        );
         const retried = await this.repository.retry(item.id, workerId, message, retryAt, now);
         if (retried) {
           summary.retried += 1;
@@ -235,13 +247,35 @@ export class LocalScrapeQueueRunner<TResult = unknown> {
       clearInterval(monitorTimer);
       await monitorPromise;
       this.activeControllers.delete(item.id);
+      if (this.onItemStateChange) {
+        try {
+          await this.onItemStateChange(item);
+        } catch (error) {
+          console.error(
+            `[LocalScrapeQueueRunner] Failed to reconcile session ${item.sessionId}:`,
+            error
+          );
+        }
+      }
     }
   }
 
-  private retryDelay(attemptCount: number): number {
-    return Math.min(
+  private retryDelay(attemptCount: number, error?: unknown): number {
+    const exponentialDelay = Math.min(
       this.config.maxRetryDelayMs,
       this.config.baseRetryDelayMs * 2 ** Math.max(0, attemptCount - 1)
+    );
+    const retryAfterMs =
+      error &&
+      typeof error === "object" &&
+      "retryAfterMs" in error &&
+      typeof error.retryAfterMs === "number" &&
+      Number.isFinite(error.retryAfterMs)
+        ? Math.max(0, error.retryAfterMs)
+        : 0;
+    return Math.min(
+      this.config.maxRetryDelayMs,
+      Math.max(exponentialDelay, retryAfterMs)
     );
   }
 

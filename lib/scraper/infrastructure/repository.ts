@@ -107,6 +107,15 @@ export class DrizzleScraperRepository implements IScraperRepository {
   ): Promise<PersistScrapeResultOutput> {
     return this.database.transaction((tx) => {
       const writeStartedAt = new Date();
+      const activeSession = tx
+        .select({ status: scrapeSessions.status })
+        .from(scrapeSessions)
+        .where(eq(scrapeSessions.id, input.log.sessionId))
+        .limit(1)
+        .get();
+      if (activeSession?.status !== "in_progress") {
+        throw new Error(`Scrape session ${input.log.sessionId} is no longer active.`);
+      }
       const openExternalIds = new Set(input.openExternalIds);
       const currentJobs = tx
         .select({

@@ -34,6 +34,7 @@ function createRepository(items: ScrapeQueueItem[]): ILocalScrapeQueueRepository
   const pending = [...items];
   return {
     enqueue: vi.fn(async () => []),
+    createSessionAndEnqueue: vi.fn(async () => []),
     claimNext: vi.fn(async () => pending.shift() ?? null),
     heartbeat: vi.fn(async () => true),
     isCancellationRequested: vi.fn(async () => false),
@@ -45,9 +46,11 @@ function createRepository(items: ScrapeQueueItem[]): ILocalScrapeQueueRepository
     requestSessionCancellation: vi.fn(async () => ({
       cancelledQueued: 0,
       signalledRunning: 0,
+      sessionStopped: false,
     })),
     recoverExpired: vi.fn(async () => ({ requeued: 0, failed: 0, cancelled: 0 })),
     listSessionItems: vi.fn(async () => []),
+    getNextAvailableAt: vi.fn(async () => null),
   };
 }
 
@@ -164,6 +167,24 @@ describe("LocalScrapeQueueRunner", () => {
     expect(repository.complete).not.toHaveBeenCalled();
     expect(repository.cancel).toHaveBeenCalledOnce();
     expect(summary).toMatchObject({ completed: 0, cancelled: 1 });
+  });
+
+  it("does not retry a handler failure after its session is cancelled", async () => {
+    const repository = createRepository([createItem()]);
+    vi.mocked(repository.isCancellationRequested).mockResolvedValue(true);
+    const runner = new LocalScrapeQueueRunner(
+      repository,
+      async () => {
+        throw new Error("session stopped during persistence");
+      },
+      { concurrency: 1 }
+    );
+
+    const summary = await runner.runAvailable();
+
+    expect(repository.retry).not.toHaveBeenCalled();
+    expect(repository.cancel).toHaveBeenCalledOnce();
+    expect(summary).toMatchObject({ retried: 0, cancelled: 1 });
   });
 
   it("releases final-attempt work without consuming the attempt when stopped", async () => {

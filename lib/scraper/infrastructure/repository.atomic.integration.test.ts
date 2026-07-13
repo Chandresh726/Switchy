@@ -262,6 +262,54 @@ describe("DrizzleScraperRepository atomic persistence", () => {
     expect(storedLogs).toHaveLength(0);
   });
 
+  it("rejects persistence after its scrape session has been stopped", async () => {
+    const database = createTestDatabase();
+    const company = seedCompanyAndSession(database);
+    database
+      .update(scrapeSessions)
+      .set({ status: "failed", completedAt: new Date() })
+      .where(eq(scrapeSessions.id, "session-1"))
+      .run();
+    const repository = new DrizzleScraperRepository(database);
+
+    await expect(
+      repository.persistScrapeResult({
+        companyId: company.id,
+        openExternalIds: ["late-role"],
+        archiveMissing: true,
+        statusesToArchive: ["new"],
+        jobsToInsert: [
+          {
+            externalId: "late-role",
+            title: "Late role",
+            url: "https://example.com/late-role",
+            status: "new",
+          },
+        ],
+        existingJobUpdates: [],
+        companyBoardToken: "late-token",
+        startedAtMs: Date.now(),
+        enableMatching: false,
+        log: {
+          sessionId: "session-1",
+          triggerSource: "manual",
+          platform: "greenhouse",
+          status: "success",
+          jobsFound: 1,
+          jobsFiltered: 0,
+        },
+      })
+    ).rejects.toThrow("Scrape session session-1 is no longer active.");
+
+    expect(database.select().from(jobs).all()).toHaveLength(0);
+    expect(database.select().from(scrapingLogs).all()).toHaveLength(0);
+    expect(database.select().from(scrapeMatchOutbox).all()).toHaveLength(0);
+    expect(database.select().from(companies).get()).toMatchObject({
+      boardToken: null,
+      lastScrapedAt: null,
+    });
+  });
+
   it("persists board-sized inserts in bounded SQLite parameter batches", async () => {
     const database = createTestDatabase();
     const company = seedCompanyAndSession(database);

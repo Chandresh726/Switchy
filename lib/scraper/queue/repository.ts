@@ -1,10 +1,11 @@
-import { and, asc, eq, gte, lt, lte } from "drizzle-orm";
+import { and, asc, eq, gte, isNotNull, lt, lte } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { scrapeQueueItems } from "@/lib/db/schema";
+import { scrapeQueueItems, scrapeSessions } from "@/lib/db/schema";
 
 import type {
   EnqueueScrapeWork,
+  EnqueueScrapeSession,
   ILocalScrapeQueueRepository,
   QueueCancellationResult,
   QueueRecoveryResult,
@@ -37,25 +38,69 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
   async enqueue(input: EnqueueScrapeWork) {
     if (input.companyIds.length === 0) return [];
     const now = new Date();
-    return this.database
-      .insert(scrapeQueueItems)
-      .values(
-        input.companyIds.map((companyId) => ({
-          id: crypto.randomUUID(),
-          sessionId: input.sessionId,
-          companyId,
-          status: "queued",
-          priority: input.priority ?? 100,
-          maxAttempts: input.maxAttempts ?? 3,
-          availableAt: input.availableAt ?? now,
-          createdAt: now,
-          updatedAt: now,
-        }))
-      )
-      .onConflictDoNothing({
-        target: [scrapeQueueItems.sessionId, scrapeQueueItems.companyId],
-      })
-      .returning();
+    return this.withBusyRetry(() =>
+      this.database
+        .insert(scrapeQueueItems)
+        .values(
+          input.companyIds.map((companyId) => ({
+            id: crypto.randomUUID(),
+            sessionId: input.sessionId,
+            companyId,
+            status: "queued",
+            priority: input.priority ?? 100,
+            maxAttempts: input.maxAttempts ?? 3,
+            availableAt: input.availableAt ?? now,
+            createdAt: now,
+            updatedAt: now,
+          }))
+        )
+        .onConflictDoNothing({
+          target: [scrapeQueueItems.sessionId, scrapeQueueItems.companyId],
+        })
+        .returning()
+    );
+  }
+
+  async createSessionAndEnqueue(input: EnqueueScrapeSession) {
+    const now = new Date();
+    return this.withBusyRetry(() =>
+      this.database.transaction((tx) => {
+        tx.insert(scrapeSessions)
+          .values({
+            id: input.sessionId,
+            triggerSource: input.triggerSource,
+            status: input.companyIds.length > 0 ? "in_progress" : "completed",
+            companiesTotal: input.companyIds.length,
+            companiesCompleted: 0,
+            totalJobsFound: 0,
+            totalJobsAdded: 0,
+            totalJobsFiltered: 0,
+            totalJobsArchived: 0,
+            startedAt: now,
+            completedAt: input.companyIds.length > 0 ? null : now,
+          })
+          .run();
+        if (input.companyIds.length === 0) return [];
+
+        return tx
+          .insert(scrapeQueueItems)
+          .values(
+            input.companyIds.map((companyId) => ({
+              id: crypto.randomUUID(),
+              sessionId: input.sessionId,
+              companyId,
+              status: "queued",
+              priority: input.priority ?? 100,
+              maxAttempts: input.maxAttempts ?? 3,
+              availableAt: input.availableAt ?? now,
+              createdAt: now,
+              updatedAt: now,
+            }))
+          )
+          .returning()
+          .all();
+      }, { behavior: "immediate" })
+    );
   }
 
   async claimNext(workerId: string, now: Date, leaseDurationMs: number) {
@@ -102,18 +147,20 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
   }
 
   async heartbeat(itemId: string, workerId: string, leaseExpiresAt: Date): Promise<boolean> {
-    const updated = await this.database
-      .update(scrapeQueueItems)
-      .set({ leaseExpiresAt, updatedAt: new Date() })
-      .where(
-        and(
-          eq(scrapeQueueItems.id, itemId),
-          eq(scrapeQueueItems.workerId, workerId),
-          eq(scrapeQueueItems.status, "running"),
-          eq(scrapeQueueItems.cancelRequested, false)
+    const updated = await this.withBusyRetry(() =>
+      this.database
+        .update(scrapeQueueItems)
+        .set({ leaseExpiresAt, updatedAt: new Date() })
+        .where(
+          and(
+            eq(scrapeQueueItems.id, itemId),
+            eq(scrapeQueueItems.workerId, workerId),
+            eq(scrapeQueueItems.status, "running"),
+            eq(scrapeQueueItems.cancelRequested, false)
+          )
         )
-      )
-      .returning({ id: scrapeQueueItems.id });
+        .returning({ id: scrapeQueueItems.id })
+    );
     return updated.length === 1;
   }
 
@@ -205,109 +252,125 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
     sessionId: string,
     now: Date
   ): Promise<QueueCancellationResult> {
-    return this.database.transaction((tx) => {
-      const queued = tx
-        .update(scrapeQueueItems)
-        .set({
-          status: "cancelled",
-          cancelRequested: true,
-          completedAt: now,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(scrapeQueueItems.sessionId, sessionId),
-            eq(scrapeQueueItems.status, "queued")
+    return this.withBusyRetry(() =>
+      this.database.transaction((tx) => {
+        const queued = tx
+          .update(scrapeQueueItems)
+          .set({
+            status: "cancelled",
+            cancelRequested: true,
+            completedAt: now,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(scrapeQueueItems.sessionId, sessionId),
+              eq(scrapeQueueItems.status, "queued")
+            )
           )
-        )
-        .returning({ id: scrapeQueueItems.id })
-        .all();
-      const running = tx
-        .update(scrapeQueueItems)
-        .set({ cancelRequested: true, updatedAt: now })
-        .where(
-          and(
-            eq(scrapeQueueItems.sessionId, sessionId),
-            eq(scrapeQueueItems.status, "running")
+          .returning({ id: scrapeQueueItems.id })
+          .all();
+        const running = tx
+          .update(scrapeQueueItems)
+          .set({ cancelRequested: true, updatedAt: now })
+          .where(
+            and(
+              eq(scrapeQueueItems.sessionId, sessionId),
+              eq(scrapeQueueItems.status, "running")
+            )
           )
-        )
-        .returning({ id: scrapeQueueItems.id })
-        .all();
-      return {
-        cancelledQueued: queued.length,
-        signalledRunning: running.length,
-      };
-    });
+          .returning({ id: scrapeQueueItems.id })
+          .all();
+        const stoppedSession = tx
+          .update(scrapeSessions)
+          .set({ status: "failed", completedAt: now })
+          .where(
+            and(
+              eq(scrapeSessions.id, sessionId),
+              eq(scrapeSessions.status, "in_progress")
+            )
+          )
+          .returning({ id: scrapeSessions.id })
+          .get();
+        return {
+          cancelledQueued: queued.length,
+          signalledRunning: running.length,
+          sessionStopped: Boolean(stoppedSession),
+        };
+      }, { behavior: "immediate" })
+    );
   }
 
   async recoverExpired(now: Date): Promise<QueueRecoveryResult> {
-    return this.database.transaction((tx) => {
-      const cancelled = tx
-        .update(scrapeQueueItems)
-        .set({
-          status: "cancelled",
-          workerId: null,
-          lockedAt: null,
-          leaseExpiresAt: null,
-          completedAt: now,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(scrapeQueueItems.status, "running"),
-            lte(scrapeQueueItems.leaseExpiresAt, now),
-            eq(scrapeQueueItems.cancelRequested, true)
+    return this.withBusyRetry(() =>
+      this.database.transaction((tx) => {
+        const cancelled = tx
+          .update(scrapeQueueItems)
+          .set({
+            status: "cancelled",
+            workerId: null,
+            lockedAt: null,
+            leaseExpiresAt: null,
+            completedAt: now,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(scrapeQueueItems.status, "running"),
+              lte(scrapeQueueItems.leaseExpiresAt, now),
+              eq(scrapeQueueItems.cancelRequested, true)
+            )
           )
-        )
-        .returning({ id: scrapeQueueItems.id })
-        .all();
-      const failed = tx
-        .update(scrapeQueueItems)
-        .set({
-          status: "failed",
-          workerId: null,
-          lockedAt: null,
-          leaseExpiresAt: null,
-          lastError: "Worker lease expired after the maximum number of attempts.",
-          completedAt: now,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(scrapeQueueItems.status, "running"),
-            lte(scrapeQueueItems.leaseExpiresAt, now),
-            gte(scrapeQueueItems.attemptCount, scrapeQueueItems.maxAttempts)
+          .returning({ id: scrapeQueueItems.id })
+          .all();
+        const failed = tx
+          .update(scrapeQueueItems)
+          .set({
+            status: "failed",
+            workerId: null,
+            lockedAt: null,
+            leaseExpiresAt: null,
+            lastError: "Worker lease expired after the maximum number of attempts.",
+            completedAt: now,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(scrapeQueueItems.status, "running"),
+              lte(scrapeQueueItems.leaseExpiresAt, now),
+              gte(scrapeQueueItems.attemptCount, scrapeQueueItems.maxAttempts)
+            )
           )
-        )
-        .returning({ id: scrapeQueueItems.id })
-        .all();
-      const requeued = tx
-        .update(scrapeQueueItems)
-        .set({
-          status: "queued",
-          workerId: null,
-          lockedAt: null,
-          leaseExpiresAt: null,
-          availableAt: now,
-          lastError: "Recovered after a worker lease expired.",
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(scrapeQueueItems.status, "running"),
-            lte(scrapeQueueItems.leaseExpiresAt, now),
-            lt(scrapeQueueItems.attemptCount, scrapeQueueItems.maxAttempts),
-            eq(scrapeQueueItems.cancelRequested, false)
+          .returning({ id: scrapeQueueItems.id })
+          .all();
+        const requeued = tx
+          .update(scrapeQueueItems)
+          .set({
+            status: "queued",
+            workerId: null,
+            lockedAt: null,
+            leaseExpiresAt: null,
+            availableAt: now,
+            lastError: "Recovered after a worker lease expired.",
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(scrapeQueueItems.status, "running"),
+              lte(scrapeQueueItems.leaseExpiresAt, now),
+              lt(scrapeQueueItems.attemptCount, scrapeQueueItems.maxAttempts),
+              eq(scrapeQueueItems.cancelRequested, false)
+            )
           )
-        )
-        .returning({ id: scrapeQueueItems.id })
-        .all();
-      return {
-        requeued: requeued.length,
-        failed: failed.length,
-        cancelled: cancelled.length,
-      };
-    });
+          .returning({ id: scrapeQueueItems.id })
+          .all();
+        return {
+          requeued: requeued.length,
+          failed: failed.length,
+          cancelled: cancelled.length,
+        };
+      }, { behavior: "immediate" })
+    );
   }
 
   async listSessionItems(sessionId: string) {
@@ -316,6 +379,33 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
       .from(scrapeQueueItems)
       .where(eq(scrapeQueueItems.sessionId, sessionId))
       .orderBy(asc(scrapeQueueItems.createdAt));
+  }
+
+  async getNextAvailableAt(): Promise<Date | null> {
+    const [queued, running] = await Promise.all([
+      this.database
+        .select({ availableAt: scrapeQueueItems.availableAt })
+        .from(scrapeQueueItems)
+        .where(eq(scrapeQueueItems.status, "queued"))
+        .orderBy(asc(scrapeQueueItems.availableAt))
+        .limit(1),
+      this.database
+        .select({ leaseExpiresAt: scrapeQueueItems.leaseExpiresAt })
+        .from(scrapeQueueItems)
+        .where(
+          and(
+            eq(scrapeQueueItems.status, "running"),
+            isNotNull(scrapeQueueItems.leaseExpiresAt)
+          )
+        )
+        .orderBy(asc(scrapeQueueItems.leaseExpiresAt))
+        .limit(1),
+    ]);
+    const candidates = [queued[0]?.availableAt, running[0]?.leaseExpiresAt].filter(
+      (value): value is Date => value instanceof Date
+    );
+    if (candidates.length === 0) return null;
+    return new Date(Math.min(...candidates.map((value) => value.getTime())));
   }
 
   private async finishOwnedItem(
@@ -332,20 +422,20 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
     if (requireNotCancelled) {
       conditions.push(eq(scrapeQueueItems.cancelRequested, false));
     }
-    const updated = await this.database
-      .update(scrapeQueueItems)
-      .set(values)
-      .where(
-        and(...conditions)
-      )
-      .returning({ id: scrapeQueueItems.id });
+    const updated = await this.withBusyRetry(() =>
+      this.database
+        .update(scrapeQueueItems)
+        .set(values)
+        .where(and(...conditions))
+        .returning({ id: scrapeQueueItems.id })
+    );
     return updated.length === 1;
   }
 
-  private async withBusyRetry<T>(operation: () => T): Promise<T> {
+  private async withBusyRetry<T>(operation: () => T | Promise<T>): Promise<T> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return operation();
+        return await operation();
       } catch (error) {
         if (!this.isSqliteBusy(error) || attempt >= this.config.claimBusyRetries) {
           throw error;

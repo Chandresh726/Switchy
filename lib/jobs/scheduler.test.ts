@@ -99,7 +99,10 @@ vi.mock("node-cron", () => {
 });
 
 vi.mock("@/lib/scraper", () => ({
-  createScrapingModule: () => ({
+  getLocalScrapeQueueService: () => ({
+    scrapeAllCompanies: store.scrapeAllCompanies,
+  }),
+  getScrapingModule: () => ({
     orchestrator: {
       scrapeAllCompanies: store.scrapeAllCompanies,
     },

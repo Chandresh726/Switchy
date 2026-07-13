@@ -6,6 +6,8 @@ import {
   matchLogs,
   matchSessions,
   scrapeMatchOutbox,
+  scrapeQueueItems,
+  scrapeSessions,
   scrapingLogs,
 } from "@/lib/db/schema";
 
@@ -115,15 +117,68 @@ export function stopMatchSession(
   }, { behavior: "immediate" });
 }
 
-export function deleteAllJobsAndTerminateMatches(database: typeof db = db): void {
-  database.transaction((tx) => {
+function deleteJobsAndTerminateWork(
+  companyIds: number[] | null,
+  database: typeof db
+): number {
+  return database.transaction((tx) => {
+    const activeQueueCondition = companyIds
+      ? and(
+          eq(scrapeSessions.status, "in_progress"),
+          inArray(scrapeQueueItems.companyId, companyIds)
+        )
+      : eq(scrapeSessions.status, "in_progress");
+    const activeScrapeSessionIds = tx
+      .selectDistinct({ sessionId: scrapeQueueItems.sessionId })
+      .from(scrapeQueueItems)
+      .innerJoin(scrapeSessions, eq(scrapeSessions.id, scrapeQueueItems.sessionId))
+      .where(activeQueueCondition)
+      .all()
+      .map((item) => item.sessionId);
+    if (activeScrapeSessionIds.length > 0) {
+      const stoppedAt = new Date();
+      tx.update(scrapeQueueItems)
+        .set({
+          status: "cancelled",
+          cancelRequested: true,
+          completedAt: stoppedAt,
+          updatedAt: stoppedAt,
+        })
+        .where(
+          and(
+            inArray(scrapeQueueItems.sessionId, activeScrapeSessionIds),
+            eq(scrapeQueueItems.status, "queued")
+          )
+        )
+        .run();
+      tx.update(scrapeQueueItems)
+        .set({ cancelRequested: true, updatedAt: stoppedAt })
+        .where(
+          and(
+            inArray(scrapeQueueItems.sessionId, activeScrapeSessionIds),
+            eq(scrapeQueueItems.status, "running")
+          )
+        )
+        .run();
+      tx.update(scrapeSessions)
+        .set({ status: "failed", completedAt: stoppedAt })
+        .where(inArray(scrapeSessions.id, activeScrapeSessionIds))
+        .run();
+    }
+
+    const activeOutboxCondition = companyIds
+      ? and(
+          inArray(scrapeMatchOutbox.status, ["pending", "running"]),
+          inArray(scrapeMatchOutbox.companyId, companyIds)
+        )
+      : inArray(scrapeMatchOutbox.status, ["pending", "running"]);
     const outboxes = tx
       .select({
         sessionId: scrapeMatchOutbox.id,
         scrapingLogId: scrapeMatchOutbox.scrapingLogId,
       })
       .from(scrapeMatchOutbox)
-      .where(inArray(scrapeMatchOutbox.status, ["pending", "running"]))
+      .where(activeOutboxCondition)
       .all();
     const outboxSessionIds = outboxes.map((outbox) => outbox.sessionId);
     const scrapingLogIds = outboxes.map((outbox) => outbox.scrapingLogId);
@@ -146,10 +201,35 @@ export function deleteAllJobsAndTerminateMatches(database: typeof db = db): void
         .run();
     }
 
+    const activeMatchCondition = companyIds
+      ? and(
+          inArray(matchSessions.status, ["queued", "in_progress"]),
+          inArray(matchSessions.companyId, companyIds)
+        )
+      : inArray(matchSessions.status, ["queued", "in_progress"]);
     tx.update(matchSessions)
       .set({ status: "failed", completedAt: new Date() })
-      .where(inArray(matchSessions.status, ["queued", "in_progress"]))
+      .where(activeMatchCondition)
       .run();
-    tx.delete(jobs).run();
+
+    const deletion = tx.delete(jobs);
+    return companyIds
+      ? deletion
+          .where(inArray(jobs.companyId, companyIds))
+          .returning({ id: jobs.id })
+          .all().length
+      : deletion.returning({ id: jobs.id }).all().length;
   }, { behavior: "immediate" });
+}
+
+export function deleteAllJobsAndTerminateMatches(database: typeof db = db): void {
+  deleteJobsAndTerminateWork(null, database);
+}
+
+export function deleteCompanyJobsAndTerminateWork(
+  companyIds: number[],
+  database: typeof db = db
+): number {
+  if (companyIds.length === 0) return 0;
+  return deleteJobsAndTerminateWork(Array.from(new Set(companyIds)), database);
 }

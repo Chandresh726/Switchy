@@ -5,6 +5,11 @@ import type { IScrapeOrchestrator, OrchestratorConfig } from "./services";
 
 import { createHttpClient, createScraperRepository } from "./infrastructure";
 import { createBrowserClient } from "./infrastructure";
+import {
+  DrizzleLocalScrapeQueueRepository,
+  LocalScrapeQueueService,
+  type LocalScrapeQueueRunnerConfig,
+} from "./queue";
 import { createScraperRegistry, createDeduplicationService, createFilterService, createScrapeOrchestrator, DEFAULT_ORCHESTRATOR_CONFIG } from "./services";
 
 export interface ScrapingModuleConfig {
@@ -19,6 +24,7 @@ export interface ScrapingModule {
   repository: IScraperRepository;
   httpClient: IHttpClient;
   browserClient: IBrowserClient;
+  registry: ReturnType<typeof createScraperRegistry>;
 }
 
 export function createScrapingModule(config: ScrapingModuleConfig = {}): ScrapingModule {
@@ -43,10 +49,12 @@ export function createScrapingModule(config: ScrapingModuleConfig = {}): Scrapin
     repository,
     httpClient,
     browserClient,
+    registry,
   };
 }
 
 let defaultModule: ScrapingModule | null = null;
+let defaultQueueService: LocalScrapeQueueService | null = null;
 
 export function getScrapingModule(): ScrapingModule {
   if (!defaultModule) {
@@ -57,4 +65,38 @@ export function getScrapingModule(): ScrapingModule {
 
 export function resetScrapingModule(): void {
   defaultModule = null;
+  defaultQueueService = null;
 }
+
+export function createLocalScrapeQueueService(
+  scrapingModule: ScrapingModule = createScrapingModule(),
+  runnerConfig: Partial<LocalScrapeQueueRunnerConfig> = {}
+): LocalScrapeQueueService {
+  return new LocalScrapeQueueService({
+    orchestrator: scrapingModule.orchestrator,
+    scraperRepository: scrapingModule.repository,
+    registry: scrapingModule.registry,
+    queueRepository: new DrizzleLocalScrapeQueueRepository(),
+    runnerConfig: { concurrency: 10, ...runnerConfig },
+  });
+}
+
+export function getLocalScrapeQueueService(): LocalScrapeQueueService {
+  if (!defaultQueueService) {
+    defaultQueueService = createLocalScrapeQueueService(getScrapingModule());
+  }
+  return defaultQueueService;
+}
+
+export {
+  DrizzleLocalScrapeQueueRepository,
+  LocalScrapeQueueRunner,
+  LocalScrapeQueueService,
+} from "./queue";
+export { deleteScrapeHistory, type DeleteScrapeHistoryResult } from "./history";
+export type {
+  ILocalScrapeQueueRepository,
+  LocalScrapeQueueRunnerConfig,
+  QueueCancellationResult,
+  QueueRunSummary,
+} from "./queue";

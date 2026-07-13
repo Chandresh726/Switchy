@@ -76,6 +76,8 @@ interface ScrapeExecutionResult {
   jobsArchived: number;
   logId?: number;
   error?: string;
+  retryable?: boolean;
+  retryAfterMs?: number;
 }
 
 interface ScrapeBatchProgress {
@@ -516,6 +518,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
         jobsFiltered: 0,
         jobsArchived: 0,
         error: errorMessage,
+        retryable: true,
         duration: Date.now() - startTime,
       });
     }
@@ -601,6 +604,8 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
         jobsFiltered: 0,
         jobsArchived: 0,
         error: errorMessage,
+        retryable: scraperResult.error.retryable,
+        retryAfterMs: scraperResult.error.retryAfterMs,
       };
     }
 
@@ -802,6 +807,8 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     jobsArchived: number;
     duration: number;
     error?: string;
+    retryable?: boolean;
+    retryAfterMs?: number;
     logId?: number;
   }): FetchResult {
     return {
@@ -818,6 +825,8 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       jobsArchived: params.jobsArchived,
       platform: params.platform,
       error: params.error,
+      retryable: params.retryable,
+      retryAfterMs: params.retryAfterMs,
       duration: params.duration,
       logId: params.logId,
     };

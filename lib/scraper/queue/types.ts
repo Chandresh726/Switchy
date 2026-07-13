@@ -1,4 +1,5 @@
 import type { ScrapeQueueItem } from "@/lib/db/schema";
+import type { TriggerSource } from "@/lib/scraper/types";
 
 export type ScrapeQueueStatus =
   | "queued"
@@ -15,6 +16,15 @@ export interface EnqueueScrapeWork {
   availableAt?: Date;
 }
 
+export interface EnqueueScrapeSession {
+  sessionId: string;
+  triggerSource: TriggerSource;
+  companyIds: number[];
+  priority?: number;
+  maxAttempts?: number;
+  availableAt?: Date;
+}
+
 export interface QueueRecoveryResult {
   requeued: number;
   failed: number;
@@ -24,10 +34,12 @@ export interface QueueRecoveryResult {
 export interface QueueCancellationResult {
   cancelledQueued: number;
   signalledRunning: number;
+  sessionStopped: boolean;
 }
 
 export interface ILocalScrapeQueueRepository {
   enqueue(input: EnqueueScrapeWork): Promise<ScrapeQueueItem[]>;
+  createSessionAndEnqueue(input: EnqueueScrapeSession): Promise<ScrapeQueueItem[]>;
   claimNext(workerId: string, now: Date, leaseDurationMs: number): Promise<ScrapeQueueItem | null>;
   heartbeat(itemId: string, workerId: string, leaseExpiresAt: Date): Promise<boolean>;
   isCancellationRequested(itemId: string, workerId: string): Promise<boolean>;
@@ -39,6 +51,7 @@ export interface ILocalScrapeQueueRepository {
   requestSessionCancellation(sessionId: string, now: Date): Promise<QueueCancellationResult>;
   recoverExpired(now: Date): Promise<QueueRecoveryResult>;
   listSessionItems(sessionId: string): Promise<ScrapeQueueItem[]>;
+  getNextAvailableAt(): Promise<Date | null>;
 }
 
 export interface QueueWorkContext {
@@ -58,4 +71,9 @@ export interface QueueRunSummary {
   failed: number;
   cancelled: number;
   recovered: QueueRecoveryResult;
+  nextAvailableAt: Date | null;
 }
+
+export type ScrapeQueueStateChangeCallback = (
+  item: ScrapeQueueItem
+) => Promise<void>;

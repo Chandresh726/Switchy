@@ -7,13 +7,19 @@ export {
   LocalScrapeQueueRunner,
   type LocalScrapeQueueRunnerConfig,
 } from "./runner";
+export {
+  LocalScrapeQueueService,
+  type LocalScrapeQueueServiceDependencies,
+} from "./service";
 export type {
   EnqueueScrapeWork,
+  EnqueueScrapeSession,
   ILocalScrapeQueueRepository,
   QueueCancellationResult,
   QueueRecoveryResult,
   QueueRunSummary,
   QueueWorkContext,
   ScrapeQueueHandler,
+  ScrapeQueueStateChangeCallback,
   ScrapeQueueStatus,
 } from "./types";

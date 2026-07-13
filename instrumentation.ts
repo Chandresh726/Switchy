@@ -9,6 +9,20 @@ export async function register() {
     }
 
     try {
+      const { getLocalScrapeQueueService } = await import("@/lib/scraper");
+      void getLocalScrapeQueueService()
+        .recoverPending()
+        .then(() => {
+          console.log("[Instrumentation] Local scrape queue recovered on server boot");
+        })
+        .catch((error) => {
+          console.error("[Instrumentation] Failed to recover local scrape queue:", error);
+        });
+    } catch (error) {
+      console.error("[Instrumentation] Failed to start local scrape queue recovery:", error);
+    }
+
+    try {
       const { dispatchPendingScrapeMatches } = await import("@/lib/scraper/matching");
       dispatchPendingScrapeMatches();
     } catch (error) {

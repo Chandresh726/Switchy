@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { desc, eq, inArray, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 
 import { assertAppRequest } from "@/lib/api";
 import { db } from "@/lib/db";
 import {
   companies,
-  matchSessions,
-  scrapeMatchOutbox,
+  scrapeQueueItems,
   scrapeSessions,
   scrapingLogs,
 } from "@/lib/db/schema";
-import { getScrapingModule } from "@/lib/scraper";
+import { deleteScrapeHistory, getLocalScrapeQueueService } from "@/lib/scraper";
 import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
 export async function GET(request: NextRequest) {
@@ -59,8 +58,16 @@ export async function GET(request: NextRequest) {
         .leftJoin(companies, eq(scrapingLogs.companyId, companies.id))
         .where(eq(scrapingLogs.sessionId, sessionId))
         .orderBy(scrapingLogs.startedAt);
+      const queueItems = await db
+        .select()
+        .from(scrapeQueueItems)
+        .where(eq(scrapeQueueItems.sessionId, sessionId))
+        .orderBy(scrapeQueueItems.createdAt);
 
-      return NextResponse.json({ session, logs }, { headers: NO_STORE_HEADERS });
+      return NextResponse.json(
+        { session, logs, queueItems },
+        { headers: NO_STORE_HEADERS }
+      );
     }
 
     // Get all sessions with summary stats
@@ -115,28 +122,17 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get("sessionId");
 
-    db.transaction((tx) => {
-      const matchSessionIds = tx
-        .select({ id: scrapeMatchOutbox.id })
-        .from(scrapeMatchOutbox)
-        .innerJoin(scrapingLogs, eq(scrapeMatchOutbox.scrapingLogId, scrapingLogs.id))
-        .where(sessionId ? eq(scrapingLogs.sessionId, sessionId) : undefined)
-        .all()
-        .map((row) => row.id);
-      if (matchSessionIds.length > 0) {
-        tx.delete(matchSessions)
-          .where(inArray(matchSessions.id, matchSessionIds))
-          .run();
-      }
-
-      const deletion = tx.delete(scrapeSessions);
-      if (sessionId) {
-        deletion.where(eq(scrapeSessions.id, sessionId)).run();
-      } else {
-        deletion.run();
-      }
-    }, { behavior: "immediate" });
-    return NextResponse.json({ success: true }, { headers: NO_STORE_HEADERS });
+    const deletion = deleteScrapeHistory(sessionId ?? undefined);
+    if (deletion.active) {
+      return NextResponse.json(
+        { error: "Stop the active scrape before deleting its history" },
+        { status: 409, headers: NO_STORE_HEADERS }
+      );
+    }
+    return NextResponse.json(
+      { success: true, deleted: deletion.deleted },
+      { headers: NO_STORE_HEADERS }
+    );
   } catch (error) {
     console.error("Failed to delete scrape history:", error);
     return NextResponse.json(
@@ -160,8 +156,8 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const { repository } = getScrapingModule();
-    const stopped = await repository.stopSession(sessionId);
+    const cancellation = await getLocalScrapeQueueService().cancelSession(sessionId);
+    const stopped = cancellation.sessionStopped;
 
     if (stopped) {
       return NextResponse.json({ success: true, stopped: true }, { headers: NO_STORE_HEADERS });

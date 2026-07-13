@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
-import { getScrapingModule } from "@/lib/scraper";
+import { getLocalScrapeQueueService } from "@/lib/scraper";
 
 const RefreshJobsSchema = z.object({
   companyIds: z.array(z.coerce.number().int().positive()).min(1),
@@ -19,9 +19,10 @@ export async function POST(request: NextRequest) {
       throw new ValidationError("companyIds must be a non-empty array of positive numbers");
     }
 
-    const { orchestrator } = getScrapingModule();
-
-    const result = await orchestrator.scrapeCompanies(parsed.data.companyIds, "manual");
+    const result = await getLocalScrapeQueueService().scrapeCompanies(
+      parsed.data.companyIds,
+      "manual"
+    );
     const { summary } = result;
     const messageParts = [
       `Refreshed ${summary.successfulCompanies} compan${summary.successfulCompanies === 1 ? "y" : "ies"}`,

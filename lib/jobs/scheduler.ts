@@ -4,7 +4,10 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { scrapeSessions, settings } from "@/lib/db/schema";
-import { createScrapingModule } from "@/lib/scraper";
+import {
+  getLocalScrapeQueueService,
+  getScrapingModule,
+} from "@/lib/scraper";
 
 const DEFAULT_CRON = "0 */6 * * *";
 const SCHEDULER_ENABLED_KEY = "scheduler_enabled";
@@ -302,9 +305,10 @@ async function runSchedulerBatch(triggerSource: "scheduler" | "scheduler_recover
     return "already_running";
   }
 
-  // Build a fresh scraping module per run to avoid stale in-memory registry state
-  // in long-lived scheduler processes.
-  const { orchestrator, repository } = createScrapingModule();
+  // Manual requests, startup recovery, and scheduled runs share one in-process
+  // supervisor so the configured local concurrency limit applies to all work.
+  const { repository } = getScrapingModule();
+  const queueService = getLocalScrapeQueueService();
   const ownerId = `scheduler-${process.pid}-${crypto.randomUUID()}`;
   const lockToken = await repository.acquireSchedulerLock(ownerId);
 
@@ -347,7 +351,7 @@ async function runSchedulerBatch(triggerSource: "scheduler" | "scheduler_recover
   console.log(`[Scheduler] Starting ${triggerSource === "scheduler" ? "scheduled" : "recovery"} refresh`);
 
   try {
-    const result = await orchestrator.scrapeAllCompanies(triggerSource);
+    const result = await queueService.scrapeAllCompanies(triggerSource);
 
     if (!lockLost) {
       await saveLastRun(startTime);

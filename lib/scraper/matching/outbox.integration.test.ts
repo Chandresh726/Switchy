@@ -23,6 +23,7 @@ import { DrizzleScraperRepository } from "@/lib/scraper/infrastructure/repositor
 
 import {
   deleteAllJobsAndTerminateMatches,
+  deleteCompanyJobsAndTerminateWork,
   stopMatchSession,
 } from "./lifecycle";
 import { ScrapeMatchOutboxDispatcher } from "./outbox";
@@ -443,6 +444,75 @@ describe("ScrapeMatchOutboxDispatcher", () => {
       matcherJobsCompleted: 0,
       matcherDuration: null,
       matcherErrorCount: 0,
+    });
+  });
+
+  it("terminates company-scoped scrape and match work before deleting its jobs", async () => {
+    const database = createTestDatabase();
+    const company = seedCompanyAndSession(database);
+    const persisted = await persistMatchableJob(database, company.id);
+    if (!persisted.matchOutboxId) throw new Error("Expected a durable match handoff.");
+    const otherCompany = database
+      .insert(companies)
+      .values({ name: "Globex", careersUrl: "https://globex.example/jobs" })
+      .returning({ id: companies.id })
+      .get();
+    database.update(scrapeSessions).set({ companiesTotal: 2 }).run();
+    database.insert(schema.scrapeQueueItems).values([
+      {
+        id: "queue-item-completed",
+        sessionId: "session-1",
+        companyId: company.id,
+        status: "completed",
+        resultJson: "{}",
+        completedAt: new Date(),
+      },
+      {
+        id: "queue-item-queued",
+        sessionId: "session-1",
+        companyId: otherCompany.id,
+        status: "queued",
+      },
+    ]).run();
+
+    const deletedCount = deleteCompanyJobsAndTerminateWork([company.id], database);
+
+    expect(deletedCount).toBe(1);
+    expect(database.select().from(jobs).all()).toHaveLength(0);
+    expect(database.select().from(scrapeSessions).get()).toMatchObject({
+      status: "failed",
+    });
+    expect(database.select().from(schema.scrapeQueueItems).all()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "queue-item-completed",
+          status: "completed",
+        }),
+        expect.objectContaining({
+          id: "queue-item-queued",
+          status: "cancelled",
+          cancelRequested: true,
+        }),
+      ])
+    );
+    expect(
+      database
+        .select()
+        .from(matchSessions)
+        .where(eq(matchSessions.id, persisted.matchOutboxId))
+        .get()
+    ).toBeUndefined();
+    expect(
+      database
+        .select()
+        .from(scrapeMatchOutbox)
+        .where(eq(scrapeMatchOutbox.id, persisted.matchOutboxId))
+        .get()
+    ).toBeUndefined();
+    expect(database.select().from(scrapingLogs).get()).toMatchObject({
+      matcherStatus: null,
+      matcherJobsTotal: null,
+      matcherJobsCompleted: 0,
     });
   });
 
