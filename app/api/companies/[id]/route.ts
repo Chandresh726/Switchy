@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { and, eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { assertAppRequest } from "@/lib/api";
 import { db } from "@/lib/db";
-import {
-  companies,
-  matchSessions,
-  scrapeMatchOutbox,
-  scrapeQueueItems,
-  scrapeSessions,
-} from "@/lib/db/schema";
+import { companies } from "@/lib/db/schema";
 import { refreshUnmatchedCompanyMappings } from "@/lib/people/sync";
+import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 
 const ParamsSchema = z.object({
@@ -333,71 +328,7 @@ export async function DELETE(
     assertAppRequest(request);
 
     const id = await getIdFromParams(params);
-    db.transaction((tx) => {
-      const scrapeSessionIds = tx
-        .selectDistinct({ sessionId: scrapeQueueItems.sessionId })
-        .from(scrapeQueueItems)
-        .innerJoin(scrapeSessions, eq(scrapeSessions.id, scrapeQueueItems.sessionId))
-        .where(
-          and(
-            eq(scrapeQueueItems.companyId, id),
-            eq(scrapeSessions.status, "in_progress")
-          )
-        )
-        .all()
-        .map((item) => item.sessionId);
-      if (scrapeSessionIds.length > 0) {
-        const stoppedAt = new Date();
-        tx.update(scrapeQueueItems)
-          .set({
-            status: "cancelled",
-            cancelRequested: true,
-            completedAt: stoppedAt,
-            updatedAt: stoppedAt,
-          })
-          .where(
-            and(
-              inArray(scrapeQueueItems.sessionId, scrapeSessionIds),
-              eq(scrapeQueueItems.status, "queued")
-            )
-          )
-          .run();
-        tx.update(scrapeQueueItems)
-          .set({ cancelRequested: true, updatedAt: stoppedAt })
-          .where(
-            and(
-              inArray(scrapeQueueItems.sessionId, scrapeSessionIds),
-              eq(scrapeQueueItems.status, "running")
-            )
-          )
-          .run();
-        tx.update(scrapeSessions)
-          .set({ status: "failed", completedAt: stoppedAt })
-          .where(inArray(scrapeSessions.id, scrapeSessionIds))
-          .run();
-      }
-      const matchSessionIds = tx
-        .select({ id: scrapeMatchOutbox.id })
-        .from(scrapeMatchOutbox)
-        .where(eq(scrapeMatchOutbox.companyId, id))
-        .all()
-        .map((row) => row.id);
-      if (matchSessionIds.length > 0) {
-        tx.delete(matchSessions)
-          .where(inArray(matchSessions.id, matchSessionIds))
-          .run();
-      }
-      tx.update(matchSessions)
-        .set({ status: "failed", completedAt: new Date() })
-        .where(
-          and(
-            eq(matchSessions.companyId, id),
-            inArray(matchSessions.status, ["queued", "in_progress"])
-          )
-        )
-        .run();
-      tx.delete(companies).where(eq(companies.id, id)).run();
-    }, { behavior: "immediate" });
+    await getLocalDataMaintenanceService().deleteCompanies([id]);
 
     return NextResponse.json({ success: true });
   } catch (error) {

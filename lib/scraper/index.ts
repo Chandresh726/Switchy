@@ -16,7 +16,7 @@ import {
 import { HistoryRetentionService } from "./application/history-retention-service";
 import { ScrapeSessionProjector } from "./application/scrape-session-projector";
 import { ScrapeWorkHandler } from "./application/scrape-work-handler";
-import { DrizzleScrapeHistoryRetentionStore } from "./history";
+import { DrizzleScrapeHistoryStore } from "./history";
 import { createHttpClient, createScraperRepository } from "./infrastructure";
 import { createBrowserClient } from "./infrastructure";
 import {
@@ -111,7 +111,7 @@ export function createLocalScrapeQueueService(
     workHandler,
     projector,
     historyRetention: new HistoryRetentionService(
-      new DrizzleScrapeHistoryRetentionStore(),
+      new DrizzleScrapeHistoryStore(),
       scrapingModule.settingsProvider
     ),
     runnerConfig: { concurrency: 10, ...runnerConfig },

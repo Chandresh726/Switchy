@@ -1,15 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { desc, eq, sql } from "drizzle-orm";
 
 import { assertAppRequest } from "@/lib/api";
-import { db } from "@/lib/db";
-import {
-  companies,
-  scrapeQueueItems,
-  scrapeSessions,
-  scrapingLogs,
-} from "@/lib/db/schema";
-import { deleteScrapeHistory, getLocalScrapeQueueService } from "@/lib/scraper";
+import { getLocalScrapeQueueService } from "@/lib/scraper";
+import { getScrapeHistoryStore } from "@/lib/scraper/history";
 import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
 export async function GET(request: NextRequest) {
@@ -18,112 +11,19 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "20");
     const offset = parseInt(searchParams.get("offset") || "0");
     const sessionId = searchParams.get("sessionId");
+    const historyStore = getScrapeHistoryStore();
 
     if (sessionId) {
-      // Get specific session with all its logs
-      const [session] = await db
-        .select()
-        .from(scrapeSessions)
-        .where(eq(scrapeSessions.id, sessionId));
-
-      if (!session) {
+      const detail = historyStore.getDetail(sessionId);
+      if (!detail) {
         return NextResponse.json({ error: "Session not found" }, { status: 404, headers: NO_STORE_HEADERS });
       }
-
-      // Get all logs for this session with company info
-      const logs = await db
-        .select({
-          id: scrapingLogs.id,
-          companyId: scrapingLogs.companyId,
-          companyName: companies.name,
-          companyLogoUrl: companies.logoUrl,
-          platform: scrapingLogs.platform,
-          status: scrapingLogs.status,
-          jobsFound: scrapingLogs.jobsFound,
-          jobsAdded: scrapingLogs.jobsAdded,
-          jobsUpdated: scrapingLogs.jobsUpdated,
-          jobsFiltered: scrapingLogs.jobsFiltered,
-          jobsArchived: scrapingLogs.jobsArchived,
-          errorMessage: scrapingLogs.errorMessage,
-          duration: scrapingLogs.duration,
-          startedAt: scrapingLogs.startedAt,
-          completedAt: scrapingLogs.completedAt,
-          matcherStatus: scrapingLogs.matcherStatus,
-          matcherJobsTotal: scrapingLogs.matcherJobsTotal,
-          matcherJobsCompleted: scrapingLogs.matcherJobsCompleted,
-          matcherDuration: scrapingLogs.matcherDuration,
-          matcherErrorCount: scrapingLogs.matcherErrorCount,
-        })
-        .from(scrapingLogs)
-        .leftJoin(companies, eq(scrapingLogs.companyId, companies.id))
-        .where(eq(scrapingLogs.sessionId, sessionId))
-        .orderBy(scrapingLogs.startedAt);
-      const queueItems = await db
-        .select({
-          id: scrapeQueueItems.id,
-          companyId: scrapeQueueItems.companyId,
-          companyName: companies.name,
-          status: scrapeQueueItems.status,
-          attemptCount: scrapeQueueItems.attemptCount,
-          maxAttempts: scrapeQueueItems.maxAttempts,
-          availableAt: scrapeQueueItems.availableAt,
-          workerId: scrapeQueueItems.workerId,
-          lockedAt: scrapeQueueItems.lockedAt,
-          leaseExpiresAt: scrapeQueueItems.leaseExpiresAt,
-          cancelRequested: scrapeQueueItems.cancelRequested,
-          lastError: scrapeQueueItems.lastError,
-          startedAt: scrapeQueueItems.startedAt,
-          completedAt: scrapeQueueItems.completedAt,
-          createdAt: scrapeQueueItems.createdAt,
-          updatedAt: scrapeQueueItems.updatedAt,
-        })
-        .from(scrapeQueueItems)
-        .leftJoin(companies, eq(companies.id, scrapeQueueItems.companyId))
-        .where(eq(scrapeQueueItems.sessionId, sessionId))
-        .orderBy(scrapeQueueItems.createdAt);
-
-      return NextResponse.json(
-        { session, logs, queueItems },
-        { headers: NO_STORE_HEADERS }
-      );
+      return NextResponse.json(detail, { headers: NO_STORE_HEADERS });
     }
 
-    // Get all sessions with summary stats
-    const sessions = await db
-      .select()
-      .from(scrapeSessions)
-      .orderBy(desc(sql`coalesce(${scrapeSessions.scheduledForAt}, ${scrapeSessions.startedAt})`))
-      .limit(limit)
-      .offset(offset);
-
-    // Get total count
-    const [{ count }] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(scrapeSessions);
-
-    // Get aggregated stats
-    const [stats] = await db
-      .select({
-        totalSessions: sql<number>`count(*)`,
-        successRate: sql<number>`ROUND(CAST(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(COUNT(*), 0) * 100, 1)`,
-        avgDuration: sql<number>`ROUND(AVG((completed_at - started_at) * 1000), 0)`,
-      })
-      .from(scrapeSessions);
-
-    return NextResponse.json({
-      sessions,
-      pagination: {
-        total: count,
-        limit,
-        offset,
-        hasMore: offset + limit < count,
-      },
-      stats: {
-        totalSessions: stats?.totalSessions || 0,
-        successRate: stats?.successRate || 0,
-        avgDuration: stats?.avgDuration || 0,
-      },
-    }, { headers: NO_STORE_HEADERS });
+    return NextResponse.json(historyStore.list({ limit, offset }), {
+      headers: NO_STORE_HEADERS,
+    });
   } catch (error) {
     console.error("Failed to fetch scrape history:", error);
     return NextResponse.json(
@@ -140,7 +40,7 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get("sessionId");
 
-    const deletion = deleteScrapeHistory(sessionId ?? undefined);
+    const deletion = getScrapeHistoryStore().delete(sessionId ?? undefined);
     if (deletion.active) {
       return NextResponse.json(
         { error: "Stop the active scrape before deleting its history" },
@@ -181,10 +81,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: true, stopped: true }, { headers: NO_STORE_HEADERS });
     }
 
-    const [session] = await db
-      .select({ id: scrapeSessions.id, status: scrapeSessions.status })
-      .from(scrapeSessions)
-      .where(eq(scrapeSessions.id, sessionId));
+    const session = getScrapeHistoryStore().getSessionStatus(sessionId);
 
     if (!session) {
       return NextResponse.json(

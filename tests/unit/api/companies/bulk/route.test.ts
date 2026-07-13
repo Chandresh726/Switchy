@@ -4,10 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertAppRequest: vi.fn(),
-  delete: vi.fn(),
-  select: vi.fn(),
-  selectDistinct: vi.fn(),
-  transaction: vi.fn(),
+  deleteCompanies: vi.fn(),
   update: vi.fn(),
 }));
 
@@ -17,11 +14,14 @@ vi.mock("@/lib/api", () => ({
 
 vi.mock("@/lib/db", () => ({
   db: {
-    delete: mocks.delete,
-    select: mocks.select,
-    transaction: mocks.transaction,
     update: mocks.update,
   },
+}));
+
+vi.mock("@/lib/scraper/maintenance", () => ({
+  getLocalDataMaintenanceService: () => ({
+    deleteCompanies: mocks.deleteCompanies,
+  }),
 }));
 
 import { DELETE, PATCH } from "@/app/api/companies/bulk/route";
@@ -37,14 +37,10 @@ function createJsonRequest(body: Record<string, unknown>): NextRequest {
 describe("companies bulk route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.transaction.mockImplementation((operation) =>
-      operation({
-        delete: mocks.delete,
-        select: mocks.select,
-        selectDistinct: mocks.selectDistinct,
-        update: mocks.update,
-      })
-    );
+    mocks.deleteCompanies.mockReturnValue({
+      deletedCompanies: 0,
+      deletedJobs: 0,
+    });
   });
 
   it("rejects bulk delete without company IDs", async () => {
@@ -53,35 +49,14 @@ describe("companies bulk route", () => {
 
     expect(response.status).toBe(400);
     expect(body).toEqual({ error: "companyIds must be a non-empty array" });
-    expect(mocks.delete).not.toHaveBeenCalled();
+    expect(mocks.deleteCompanies).not.toHaveBeenCalled();
   });
 
   it("deletes jobs before companies and reports counts", async () => {
-    mocks.select.mockReturnValue({
-      from: () => ({
-        where: () => ({ all: () => [] }),
-      }),
+    mocks.deleteCompanies.mockReturnValue({
+      deletedCompanies: 1,
+      deletedJobs: 2,
     });
-    mocks.selectDistinct.mockReturnValue({
-      from: () => ({
-        innerJoin: () => ({
-          where: () => ({ all: () => [] }),
-        }),
-      }),
-    });
-    mocks.update.mockReturnValue({
-      set: () => ({
-        where: () => ({ run: () => undefined }),
-      }),
-    });
-    const jobsReturning = vi.fn(() => ({ all: () => [{ id: 10 }, { id: 11 }] }));
-    const companiesReturning = vi.fn(() => ({ all: () => [{ id: 1 }] }));
-    const jobsWhere = vi.fn(() => ({ returning: jobsReturning }));
-    const companiesWhere = vi.fn(() => ({ returning: companiesReturning }));
-
-    mocks.delete
-      .mockReturnValueOnce({ where: jobsWhere })
-      .mockReturnValueOnce({ where: companiesWhere });
 
     const response = await DELETE(createJsonRequest({ companyIds: [1] }));
     const body = await response.json();
@@ -92,7 +67,7 @@ describe("companies bulk route", () => {
       deletedCompanies: 1,
       deletedJobs: 2,
     });
-    expect(mocks.delete).toHaveBeenCalledTimes(2);
+    expect(mocks.deleteCompanies).toHaveBeenCalledWith([1]);
   });
 
   it("rejects bulk active toggle without a boolean isActive", async () => {

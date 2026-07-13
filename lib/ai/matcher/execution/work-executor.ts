@@ -1,3 +1,8 @@
+import {
+  getLocalDataOperationGate,
+  type LocalDataOperationGate,
+} from "@/lib/scraper/runtime/data-operation-gate";
+
 import { getMatcherConfig } from "../config";
 import { withQueue } from "../queue";
 import type { StrategyProgressCallback } from "../strategies";
@@ -17,24 +22,30 @@ export interface MatchWorkExecutionOptions {
 export async function executeConfiguredMatchWork(
   config: MatcherConfig,
   jobIds: number[],
-  options: MatchWorkExecutionOptions = {}
+  options: MatchWorkExecutionOptions = {},
+  dataOperationGate: LocalDataOperationGate = getLocalDataOperationGate()
 ): Promise<MatchResultMap> {
-  return withQueue(
-    config,
-    async () => {
-      options.signal?.throwIfAborted();
-      if ((await options.onStart?.()) === false) return new Map();
-      return executeMatch({
-        config,
-        jobIds,
-        sessionId: options.sessionId,
-        signal: options.signal,
-        onProgress: options.onProgress,
-        shouldStop: options.shouldStop,
-      });
-    },
-    options.onQueued,
-    options.signal
+  return dataOperationGate.runMatch(
+    { jobIds, sessionId: options.sessionId },
+    options.signal,
+    (workSignal) =>
+    withQueue(
+      config,
+      async () => {
+        workSignal.throwIfAborted();
+        if ((await options.onStart?.()) === false) return new Map();
+        return executeMatch({
+          config,
+          jobIds,
+          sessionId: options.sessionId,
+          signal: workSignal,
+          onProgress: options.onProgress,
+          shouldStop: options.shouldStop,
+        });
+      },
+      options.onQueued,
+      workSignal
+    )
   );
 }
 

@@ -405,7 +405,7 @@ describe("ScrapeMatchOutboxDispatcher", () => {
     const persisted = await persistMatchableJob(database, company.id);
     if (!persisted.matchOutboxId) throw new Error("Expected a durable match handoff.");
 
-    deleteAllJobsAndTerminateMatches(database);
+    await deleteAllJobsAndTerminateMatches(database);
 
     expect(database.select().from(jobs).all()).toHaveLength(0);
     expect(
@@ -459,7 +459,10 @@ describe("ScrapeMatchOutboxDispatcher", () => {
       },
     ]).run();
 
-    const deletedCount = deleteCompanyJobsAndTerminateWork([company.id], database);
+    const deletedCount = await deleteCompanyJobsAndTerminateWork(
+      [company.id],
+      database
+    );
 
     expect(deletedCount).toBe(1);
     expect(database.select().from(jobs).all()).toHaveLength(0);

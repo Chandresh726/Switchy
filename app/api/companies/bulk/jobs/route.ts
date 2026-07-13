@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { assertAppRequest } from "@/lib/api";
-import { deleteCompanyJobsAndTerminateWork } from "@/lib/scraper/matching";
+import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 
 export async function DELETE(request: NextRequest) {
   try {
@@ -17,7 +17,8 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const deletedCount = deleteCompanyJobsAndTerminateWork(companyIds);
+    const deletedCount =
+      await getLocalDataMaintenanceService().deleteCompanyJobs(companyIds);
 
     return NextResponse.json({
       success: true,

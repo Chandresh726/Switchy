@@ -12,7 +12,7 @@ import { HistoryRetentionService } from "@/lib/scraper/application/history-reten
 import type { ScrapeCompanyPipeline } from "@/lib/scraper/application/scrape-company-pipeline";
 import { ScrapeSessionProjector } from "@/lib/scraper/application/scrape-session-projector";
 import { ScrapeWorkHandler } from "@/lib/scraper/application/scrape-work-handler";
-import { DrizzleScrapeHistoryRetentionStore } from "@/lib/scraper/history";
+import { DrizzleScrapeHistoryStore } from "@/lib/scraper/history";
 import { DrizzleScraperRepository } from "@/lib/scraper/infrastructure/repository";
 import { DrizzleScrapeSessionProjectionStore } from "@/lib/scraper/queue/projection-store";
 import type { LocalLeasedWorkRunnerConfig } from "@/lib/scraper/runtime/leased-work-runner";
@@ -89,7 +89,7 @@ function createService(
     workHandler,
     projector,
     historyRetention: new HistoryRetentionService(
-      new DrizzleScrapeHistoryRetentionStore(database),
+      new DrizzleScrapeHistoryStore(database),
       settingsProvider
     ),
     runnerConfig: {

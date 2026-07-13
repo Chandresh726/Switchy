@@ -10,7 +10,11 @@ import {
   scrapingLogs,
 } from "@/lib/db/schema";
 
-import { deleteScrapeHistory, pruneScrapeHistory } from "@/lib/scraper/history";
+import {
+  deleteScrapeHistory,
+  DrizzleScrapeHistoryStore,
+  pruneScrapeHistory,
+} from "@/lib/scraper/history";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 vi.mock("@/lib/db", () => ({ db: {} }));
@@ -117,6 +121,58 @@ describe("deleteScrapeHistory", () => {
     expect(database.select().from(scrapeQueueItems).get()).toMatchObject({
       status: "running",
       cancelRequested: true,
+    });
+  });
+});
+
+describe("DrizzleScrapeHistoryStore", () => {
+  it("owns detail, list, and status projections for the history API", () => {
+    const database = createTestDatabase();
+    const company = database
+      .insert(companies)
+      .values({ name: "History Co", careersUrl: "https://example.com/history" })
+      .returning({ id: companies.id })
+      .get();
+    database.insert(scrapeSessions).values({
+      id: "history-session",
+      triggerSource: "company_refresh",
+      status: "completed",
+      companiesTotal: 1,
+      companiesCompleted: 1,
+      completedAt: new Date("2026-07-13T12:00:00.000Z"),
+    }).run();
+    database.insert(scrapeQueueItems).values({
+      id: "history-item",
+      sessionId: "history-session",
+      companyId: company.id,
+      status: "completed",
+      attemptCount: 1,
+      completedAt: new Date("2026-07-13T12:00:00.000Z"),
+    }).run();
+    database.insert(scrapingLogs).values({
+      companyId: company.id,
+      sessionId: "history-session",
+      triggerSource: "company_refresh",
+      status: "success",
+      jobsFound: 3,
+      jobsAdded: 2,
+    }).run();
+    const store = new DrizzleScrapeHistoryStore(database);
+
+    expect(store.getDetail("history-session")).toMatchObject({
+      session: { id: "history-session", triggerSource: "company_refresh" },
+      logs: [{ companyName: "History Co", status: "success", jobsFound: 3 }],
+      queueItems: [{ id: "history-item", companyName: "History Co" }],
+    });
+    expect(store.getSessionStatus("history-session")).toEqual({
+      id: "history-session",
+      status: "completed",
+    });
+    expect(store.getSessionStatus("missing")).toBeNull();
+    expect(store.list({ limit: 20, offset: 0 })).toMatchObject({
+      sessions: [{ id: "history-session" }],
+      pagination: { total: 1, limit: 20, offset: 0, hasMore: false },
+      stats: { totalSessions: 1, successRate: 100 },
     });
   });
 });

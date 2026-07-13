@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertAppRequest: vi.fn(),
-  deleteAllJobsAndTerminateMatches: vi.fn(),
+  deleteAllJobs: vi.fn(),
   delete: vi.fn(),
   update: vi.fn(),
 }));
@@ -20,8 +20,10 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-vi.mock("@/lib/scraper/matching", () => ({
-  deleteAllJobsAndTerminateMatches: mocks.deleteAllJobsAndTerminateMatches,
+vi.mock("@/lib/scraper/maintenance", () => ({
+  getLocalDataMaintenanceService: () => ({
+    deleteAllJobs: mocks.deleteAllJobs,
+  }),
 }));
 
 import { DELETE, PATCH } from "@/app/api/jobs/route";
@@ -94,6 +96,6 @@ describe("jobs route mutations", () => {
 
     expect(response.status).toBe(200);
     expect(body).toEqual({ success: true });
-    expect(mocks.deleteAllJobsAndTerminateMatches).toHaveBeenCalledTimes(1);
+    expect(mocks.deleteAllJobs).toHaveBeenCalledTimes(1);
   });
 });

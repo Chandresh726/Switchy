@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { count, desc, eq, inArray, sql } from "drizzle-orm";
+import { count, desc, eq, sql } from "drizzle-orm";
 
 import { assertAppRequest } from "@/lib/api";
 import { db } from "@/lib/db";
@@ -8,9 +8,8 @@ import {
   jobs,
   matchLogs,
   matchSessions,
-  scrapeMatchOutbox,
-  scrapingLogs,
 } from "@/lib/db/schema";
+import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 import { stopMatchSession } from "@/lib/scraper/matching";
 import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
@@ -161,33 +160,9 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get("sessionId");
 
-    db.transaction((tx) => {
-      const outboxes = tx
-        .select({ scrapingLogId: scrapeMatchOutbox.scrapingLogId })
-        .from(scrapeMatchOutbox)
-        .where(sessionId ? eq(scrapeMatchOutbox.id, sessionId) : undefined)
-        .all();
-      const scrapingLogIds = outboxes.map((outbox) => outbox.scrapingLogId);
-      if (scrapingLogIds.length > 0) {
-        tx.update(scrapingLogs)
-          .set({
-            matcherStatus: null,
-            matcherJobsTotal: null,
-            matcherJobsCompleted: 0,
-            matcherDuration: null,
-            matcherErrorCount: 0,
-          })
-          .where(inArray(scrapingLogs.id, scrapingLogIds))
-          .run();
-      }
-
-      const deletion = tx.delete(matchSessions);
-      if (sessionId) {
-        deletion.where(eq(matchSessions.id, sessionId)).run();
-      } else {
-        deletion.run();
-      }
-    }, { behavior: "immediate" });
+    await getLocalDataMaintenanceService().deleteMatchHistory(
+      sessionId ?? undefined
+    );
     return NextResponse.json({ success: true }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     console.error("Failed to delete match history:", error);

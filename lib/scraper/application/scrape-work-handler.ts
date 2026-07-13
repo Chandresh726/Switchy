@@ -3,6 +3,10 @@ import type { CompanyCatalog } from "@/lib/scraper/infrastructure/types";
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 import type { ScrapeSessionProjectionStore } from "@/lib/scraper/queue/projection-store";
 import type { ILocalScrapeQueueRepository } from "@/lib/scraper/queue/types";
+import {
+  getLocalDataOperationGate,
+  type LocalDataOperationGate,
+} from "@/lib/scraper/runtime/data-operation-gate";
 import { KeyedExecutionLock } from "@/lib/scraper/runtime/keyed-lock";
 import {
   SharedExclusiveExecutionGate,
@@ -43,7 +47,9 @@ export class ScrapeWorkHandler {
     private readonly projectionStore: ScrapeSessionProjectionStore,
     private readonly projector: ScrapeSessionProjector,
     private readonly settingsProvider: ScrapeSettingsProvider,
-    private readonly registry?: IScraperRegistry
+    private readonly registry?: IScraperRegistry,
+    private readonly dataOperationGate: LocalDataOperationGate =
+      getLocalDataOperationGate()
   ) {}
 
   async refreshParallelLimit(): Promise<void> {
@@ -53,6 +59,15 @@ export class ScrapeWorkHandler {
   }
 
   async handle(
+    item: ScrapeQueueItem,
+    signal: AbortSignal
+  ): Promise<FetchResult> {
+    return this.dataOperationGate.runScrape(item.companyId, signal, (workSignal) =>
+      this.handleWithDataFence(item, workSignal)
+    );
+  }
+
+  private async handleWithDataFence(
     item: ScrapeQueueItem,
     signal: AbortSignal
   ): Promise<FetchResult> {

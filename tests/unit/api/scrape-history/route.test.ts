@@ -5,43 +5,31 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { QueueCancellationResult } from "@/lib/scraper/queue/types";
 
 const store = vi.hoisted(() => ({
-  selectResults: [] as unknown[][],
   assertAppRequest: vi.fn(),
   cancelSession:
     vi.fn<(sessionId: string) => Promise<QueueCancellationResult>>(),
-  deleteScrapeHistory: vi.fn(),
-  select: vi.fn(),
+  deleteHistory: vi.fn(),
+  getDetail: vi.fn(),
+  getSessionStatus: vi.fn(),
+  list: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
   assertAppRequest: store.assertAppRequest,
 }));
 
-vi.mock("@/lib/db", () => ({
-  db: {
-    select: store.select.mockImplementation(() => {
-      const result = store.selectResults.shift() ?? [];
-      const query = {
-        from: () => query,
-        leftJoin: () => query,
-        where: () => query,
-        limit: () => query,
-        offset: () => query,
-        orderBy: () => Promise.resolve(result),
-        then: (
-          resolve: (value: unknown[]) => unknown,
-          reject?: (error: unknown) => unknown
-        ) => Promise.resolve(result).then(resolve, reject),
-      };
-      return query;
-    }),
-  },
-}));
-
 vi.mock("@/lib/scraper", () => ({
-  deleteScrapeHistory: store.deleteScrapeHistory,
   getLocalScrapeQueueService: () => ({
     cancelSession: store.cancelSession,
+  }),
+}));
+
+vi.mock("@/lib/scraper/history", () => ({
+  getScrapeHistoryStore: () => ({
+    delete: store.deleteHistory,
+    getDetail: store.getDetail,
+    getSessionStatus: store.getSessionStatus,
+    list: store.list,
   }),
 }));
 
@@ -55,13 +43,35 @@ function createRequest(method: "GET" | "PATCH" | "DELETE", query = ""): NextRequ
 
 describe("scrape history route", () => {
   beforeEach(() => {
-    store.selectResults.length = 0;
+    vi.clearAllMocks();
     store.cancelSession.mockResolvedValue({
       cancelledQueued: 0,
       signalledRunning: 0,
       sessionStopped: false,
     });
-    store.deleteScrapeHistory.mockReturnValue({ active: false, deleted: 1 });
+    store.deleteHistory.mockReturnValue({ active: false, deleted: 1 });
+    store.getDetail.mockReturnValue(null);
+    store.getSessionStatus.mockReturnValue(null);
+    store.list.mockReturnValue({
+      sessions: [],
+      pagination: { total: 0, limit: 20, offset: 0, hasMore: false },
+      stats: { totalSessions: 0, successRate: 0, avgDuration: 0 },
+    });
+  });
+
+  it("maps list pagination through the history store", async () => {
+    const page = {
+      sessions: [{ id: "session-1", status: "completed" }],
+      pagination: { total: 5, limit: 2, offset: 1, hasMore: true },
+      stats: { totalSessions: 5, successRate: 80, avgDuration: 1200 },
+    };
+    store.list.mockReturnValue(page);
+
+    const response = await GET(createRequest("GET", "?limit=2&offset=1"));
+
+    expect(response.status).toBe(200);
+    expect(store.list).toHaveBeenCalledWith({ limit: 2, offset: 1 });
+    await expect(response.json()).resolves.toEqual(page);
   });
 
   it("returns session logs and durable queue metadata for a detail request", async () => {
@@ -77,7 +87,7 @@ describe("scrape history route", () => {
       leaseExpiresAt: new Date("2026-07-13T12:00:00.000Z"),
       lastError: "previous attempt failed",
     };
-    store.selectResults.push([session], [log], [queueItem]);
+    store.getDetail.mockReturnValue({ session, logs: [log], queueItems: [queueItem] });
 
     const response = await GET(createRequest("GET", "?sessionId=session-1"));
 
@@ -96,8 +106,6 @@ describe("scrape history route", () => {
   });
 
   it("returns 404 when a requested session does not exist", async () => {
-    store.selectResults.push([]);
-
     const response = await GET(createRequest("GET", "?sessionId=missing"));
 
     expect(response.status).toBe(404);
@@ -105,14 +113,14 @@ describe("scrape history route", () => {
   });
 
   it("rejects deletion while durable work remains active", async () => {
-    store.deleteScrapeHistory.mockReturnValue({ active: true, deleted: 0 });
+    store.deleteHistory.mockReturnValue({ active: true, deleted: 0 });
 
     const response = await DELETE(
       createRequest("DELETE", "?sessionId=session-1")
     );
 
     expect(store.assertAppRequest).toHaveBeenCalledTimes(1);
-    expect(store.deleteScrapeHistory).toHaveBeenCalledWith("session-1");
+    expect(store.deleteHistory).toHaveBeenCalledWith("session-1");
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
       error: "Stop the active scrape before deleting its history",
@@ -120,11 +128,11 @@ describe("scrape history route", () => {
   });
 
   it("deletes terminal history and reports the retained contract", async () => {
-    store.deleteScrapeHistory.mockReturnValue({ active: false, deleted: 4 });
+    store.deleteHistory.mockReturnValue({ active: false, deleted: 4 });
 
     const response = await DELETE(createRequest("DELETE"));
 
-    expect(store.deleteScrapeHistory).toHaveBeenCalledWith(undefined);
+    expect(store.deleteHistory).toHaveBeenCalledWith(undefined);
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ success: true, deleted: 4 });
   });
@@ -150,11 +158,11 @@ describe("scrape history route", () => {
     expect(store.cancelSession).toHaveBeenCalledWith("session-1");
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ success: true, stopped: true });
-    expect(store.select).not.toHaveBeenCalled();
+    expect(store.getSessionStatus).not.toHaveBeenCalled();
   });
 
   it("reports the current terminal status when no active work was stopped", async () => {
-    store.selectResults.push([{ id: "session-1", status: "completed" }]);
+    store.getSessionStatus.mockReturnValue({ id: "session-1", status: "completed" });
 
     const response = await PATCH(
       createRequest("PATCH", "?sessionId=session-1")
@@ -169,8 +177,6 @@ describe("scrape history route", () => {
   });
 
   it("returns 404 when cancellation targets an unknown session", async () => {
-    store.selectResults.push([]);
-
     const response = await PATCH(
       createRequest("PATCH", "?sessionId=missing")
     );
