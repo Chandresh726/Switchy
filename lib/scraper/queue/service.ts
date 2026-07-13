@@ -99,7 +99,7 @@ export class LocalScrapeQueueService {
     triggerSource: TriggerSource
   ): Promise<BatchFetchResult> {
     const uniqueCompanyIds = Array.from(new Set(companyIds)).sort((a, b) => a - b);
-    const key = `${triggerSource}:${uniqueCompanyIds.join(",")}`;
+    const key = uniqueCompanyIds.join(",");
     const existing = this.inFlightBatches.get(key);
     if (existing) return existing;
 

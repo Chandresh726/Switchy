@@ -254,31 +254,20 @@ export async function createMatchEngine(): Promise<MatchEngine> {
         return finalizeMatchSession(sessionId, succeeded, failed, jobIds.length);
       } catch (error) {
         console.error(`[MatchEngine] Session ${sessionId} failed:`, error);
-        if (signal?.aborted) {
-          await progressWriteChain;
-          const latestCheckpoint = await getMatchSessionCheckpoint(sessionId, jobIds);
-          await updateMatchSessionIfActive(sessionId, {
-            status: "failed",
-            jobsCompleted:
-              latestCheckpoint.succeeded + latestCheckpoint.failed,
-            jobsSucceeded: latestCheckpoint.succeeded,
-            jobsFailed: latestCheckpoint.failed,
-            errorCount: latestCheckpoint.failed,
-          });
-        } else if (triggerSource === "auto_match" && providedSessionId) {
-          await progressWriteChain;
-          const latestCheckpoint = await getMatchSessionCheckpoint(sessionId, jobIds);
-          await updateMatchSessionIfActive(sessionId, {
-            status: "queued",
-            jobsCompleted:
-              latestCheckpoint.succeeded + latestCheckpoint.failed,
-            jobsSucceeded: latestCheckpoint.succeeded,
-            jobsFailed: latestCheckpoint.failed,
-            errorCount: latestCheckpoint.failed,
-          });
-        } else {
-          await finalizeMatchSession(sessionId, 0, jobIds.length, jobIds.length);
-        }
+        await progressWriteChain;
+        const latestCheckpoint = await getMatchSessionCheckpoint(sessionId, jobIds);
+        const shouldRetryAutomatically =
+          !signal?.aborted &&
+          triggerSource === "auto_match" &&
+          Boolean(providedSessionId);
+        await updateMatchSessionIfActive(sessionId, {
+          status: shouldRetryAutomatically ? "queued" : "failed",
+          jobsCompleted:
+            latestCheckpoint.succeeded + latestCheckpoint.failed,
+          jobsSucceeded: latestCheckpoint.succeeded,
+          jobsFailed: latestCheckpoint.failed,
+          errorCount: latestCheckpoint.failed,
+        });
         throw error;
       }
     },

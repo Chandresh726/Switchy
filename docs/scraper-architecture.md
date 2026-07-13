@@ -23,7 +23,7 @@ flowchart LR
 
 Manual and scheduled requests use the same in-process supervisor. Each company is represented by a durable queue item with an attempt count, retry time, cancellation flag, worker lease, and serialized result. A process restart recovers expired leases and continues unfinished work.
 
-Identical batch requests with the same trigger source are coalesced while they are in flight, preventing duplicate sessions from repeat submissions without merging independently scoped refreshes.
+Identical company batches are coalesced while they are in flight even when manual and scheduler triggers overlap. The first request owns the durable session metadata; concurrent callers receive that same session result instead of scraping the same companies twice.
 
 ## Module boundaries
 
@@ -77,16 +77,20 @@ Retention never deletes jobs, companies, uploads, active/leased queue work, or a
 
 ## Observability and recovery
 
-The scrape-session detail page shows each queue item's status, attempt count, next retry time, lease, and last error. Company logs label superseded and final retry attempts, and partial results retain warning details. The underlying API is `GET /api/scrape-history?sessionId=<id>`.
+The scrape-session detail page merges queue state and company logs into one live company-progress view. Each row shows status, attempts, retry and lease timing, scrape counts, matching progress, and all attempt warnings or errors. The underlying API is `GET /api/scrape-history?sessionId=<id>`.
 
 For local troubleshooting:
 
-1. Open **History → Scrape** and inspect the durable queue section.
+1. Open **History → Scrape** and inspect the company-progress view.
 2. A `queued` item with attempts remaining will run at its `availableAt` time.
 3. A `running` item with an expired lease is recovered on startup or the next supervisor pass.
 4. Destructive maintenance signals related in-process work first, then takes an exclusive data-operation fence before deleting records.
 5. Run `pnpm db:studio` when direct local database inspection is needed.
 6. Run `pnpm verify` before releasing scraper changes.
+
+## Migration compatibility
+
+Generated migrations are append-only once they may have been applied to a local database. Migrations 0012 through 0014 intentionally remain as a correction chain: the final schema is correct for fresh installs, while retaining the intermediate hashes keeps existing local databases compatible. Do not squash or rewrite those files; generate any future schema change with Drizzle.
 
 ## Adding a platform
 

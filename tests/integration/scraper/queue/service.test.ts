@@ -163,7 +163,7 @@ describe("LocalScrapeQueueService", () => {
     });
   });
 
-  it("coalesces identical in-flight batches into one durable session", async () => {
+  it("coalesces identical in-flight batches across trigger sources", async () => {
     const database = createTestDatabase();
     const company = database
       .insert(companies)
@@ -197,13 +197,16 @@ describe("LocalScrapeQueueService", () => {
     });
 
     const first = service.scrapeCompanies([company.id], "manual");
-    const second = service.scrapeCompanies([company.id], "manual");
+    const second = service.scrapeCompanies([company.id], "scheduler");
     releaseScrape();
     const [firstResult, secondResult] = await Promise.all([first, second]);
 
     expect(firstResult.sessionId).toBe(secondResult.sessionId);
     expect(scrapeCompany).toHaveBeenCalledTimes(1);
     expect(database.select().from(scrapeSessions).all()).toHaveLength(1);
+    expect(database.select().from(scrapeSessions).get()).toMatchObject({
+      triggerSource: "manual",
+    });
   });
 
   it("completes an empty durable session without leaving active history", async () => {

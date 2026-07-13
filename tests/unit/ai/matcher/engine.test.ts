@@ -396,6 +396,52 @@ describe("match engine integration", () => {
     expect(mocks.finalizeMatchSession).toHaveBeenCalledWith("session-1", 1, 0, 1);
   });
 
+  it("preserves a resumed manual session checkpoint when matching fails", async () => {
+    mocks.getMatchSessionStatus.mockResolvedValue({
+      id: "session-1",
+      status: "in_progress",
+      jobsTotal: 2,
+      jobsCompleted: 1,
+      jobsSucceeded: 1,
+      jobsFailed: 0,
+      startedAt: new Date(),
+      completedAt: null,
+    });
+    mocks.getMatchSessionCheckpoint
+      .mockResolvedValueOnce({
+        completedJobIds: [11],
+        succeeded: 1,
+        failed: 0,
+      })
+      .mockResolvedValueOnce({
+        completedJobIds: [11],
+        succeeded: 1,
+        failed: 0,
+      });
+    const failure = new Error("provider unavailable");
+    mocks.executeMatch.mockRejectedValue(failure);
+
+    const engine = await createMatchEngine();
+
+    await expect(
+      engine.matchWithTracking([11, 22], {
+        sessionId: "session-1",
+        triggerSource: "manual",
+      })
+    ).rejects.toBe(failure);
+    expect(mocks.updateMatchSessionIfActive).toHaveBeenLastCalledWith(
+      "session-1",
+      {
+        status: "failed",
+        jobsCompleted: 1,
+        jobsSucceeded: 1,
+        jobsFailed: 0,
+        errorCount: 0,
+      }
+    );
+    expect(mocks.finalizeMatchSession).not.toHaveBeenCalled();
+  });
+
   it("preserves checkpoints and closes a manually cancelled session", async () => {
     const controller = new AbortController();
     const started = Promise.withResolvers<void>();

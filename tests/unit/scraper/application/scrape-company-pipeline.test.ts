@@ -201,6 +201,39 @@ describe("ScrapeCompanyPipeline", () => {
     );
   });
 
+  it("does not retry an error-log insert inside the same scrape attempt", async () => {
+    const repository = createRepositoryMock();
+    repository.createScrapingLog.mockRejectedValueOnce(
+      new Error("database write failed after dispatch")
+    );
+    const registry = createRegistryMock({
+      outcome: "error",
+      jobs: [],
+      listingCompleteness: "unknown",
+      error: createScraperError("network_error", "upstream unavailable"),
+    });
+    const pipeline = new ScrapeCompanyPipeline(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} },
+      new StoredScrapeSettingsProvider(repository)
+    );
+
+    const result = await pipeline.scrape(company.id, {
+      sessionId: "session-log-write-failure",
+      triggerSource: "manual",
+    });
+
+    expect(result).toMatchObject({
+      outcome: "error",
+      retryable: true,
+      error: "Failed to persist scrape error log: database write failed after dispatch",
+    });
+    expect(repository.createScrapingLog).toHaveBeenCalledTimes(1);
+  });
+
 
   it("includes early-filtered listings in persisted and returned jobsFound totals", async () => {
     const repository = createRepositoryMock();

@@ -35,6 +35,18 @@ const UBER_ARCHIVE_MISSING_ABSOLUTE_THRESHOLD = 5;
 const UBER_ARCHIVE_MISSING_RATIO_THRESHOLD = 0.05;
 const SAFE_HYDRATION_MATCH_REASONS: DeduplicationMatchReason[] = ["externalId", "url"];
 
+class ScrapingLogWriteError extends Error {
+  constructor(cause: unknown) {
+    super(
+      cause instanceof Error
+        ? `Failed to persist scrape error log: ${cause.message}`
+        : "Failed to persist scrape error log",
+      { cause }
+    );
+    this.name = "ScrapingLogWriteError";
+  }
+}
+
 export interface ScrapeCompanyRequest {
   sessionId: string;
   triggerSource: TriggerSource;
@@ -156,21 +168,23 @@ export class ScrapeCompanyPipeline {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       logger.error(errorMessage);
 
-      await this.repository.createScrapingLog({
-        companyId,
-        sessionId: options.sessionId,
-        triggerSource: options.triggerSource,
-        platform,
-        status: "error",
-        jobsFound: 0,
-        jobsAdded: 0,
-        jobsUpdated: 0,
-        jobsFiltered: 0,
-        jobsArchived: 0,
-        errorMessage,
-        duration: Date.now() - startTime,
-        completedAt: new Date(),
-      });
+      if (!(error instanceof ScrapingLogWriteError)) {
+        await this.repository.createScrapingLog({
+          companyId,
+          sessionId: options.sessionId,
+          triggerSource: options.triggerSource,
+          platform,
+          status: "error",
+          jobsFound: 0,
+          jobsAdded: 0,
+          jobsUpdated: 0,
+          jobsFiltered: 0,
+          jobsArchived: 0,
+          errorMessage,
+          duration: Date.now() - startTime,
+          completedAt: new Date(),
+        });
+      }
 
       return this.createFetchResult({
         companyId,
@@ -245,21 +259,25 @@ export class ScrapeCompanyPipeline {
       const errorMessage = scraperResult.error.message;
       logger.error(errorMessage);
 
-      await this.repository.createScrapingLog({
-        companyId,
-        sessionId,
-        triggerSource,
-        platform,
-        status: "error",
-        jobsFound: 0,
-        jobsAdded: 0,
-        jobsUpdated: 0,
-        jobsFiltered: 0,
-        jobsArchived: 0,
-        errorMessage,
-        duration: Date.now() - startTime,
-        completedAt: new Date(),
-      });
+      try {
+        await this.repository.createScrapingLog({
+          companyId,
+          sessionId,
+          triggerSource,
+          platform,
+          status: "error",
+          jobsFound: 0,
+          jobsAdded: 0,
+          jobsUpdated: 0,
+          jobsFiltered: 0,
+          jobsArchived: 0,
+          errorMessage,
+          duration: Date.now() - startTime,
+          completedAt: new Date(),
+        });
+      } catch (error) {
+        throw new ScrapingLogWriteError(error);
+      }
 
       return {
         outcome,
