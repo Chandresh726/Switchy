@@ -71,7 +71,7 @@ describe("AtlassianScraper", () => {
       "https://www.atlassian.com/company/careers/all-jobs?team=Engineering&location=India&search=Software"
     );
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(result.outcome).toBe("success");
     expect(result.jobs).toHaveLength(1);
     expect(result.jobs[0]?.externalId).toBe("atlassian-101");
@@ -113,13 +113,37 @@ describe("AtlassianScraper", () => {
     });
     const result = await scraper.scrape("https://www.atlassian.com/company/careers/all-jobs");
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(result.outcome).toBe("partial");
     expect(result.jobs).toHaveLength(1);
     expect(result.jobs[0]?.externalId).toBe("atlassian-201");
     expect(result.jobs[0]?.description).toBeUndefined();
     expect(result.openExternalIds).toEqual(["atlassian-201"]);
-    expect(result.openExternalIdsComplete).toBe(true);
+    expect(result.listingCompleteness).toBe("complete");
+  });
+
+  it("accepts detail payloads that rely on the listing for identity fields", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/endpoint/careers/listings")) {
+        return new Response(JSON.stringify([{ id: 250, title: "Platform Engineer" }]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/endpoint/careers/details/250")) {
+        return new Response(JSON.stringify({ overview: "<p>Build the platform.</p>" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const scraper = new AtlassianScraper(createHttpClient(fetchMock), { detailDelayMs: 0 });
+
+    const result = await scraper.scrape("https://www.atlassian.com/company/careers/all-jobs");
+
+    expect(result).toMatchObject({ outcome: "success", totalListings: 1 });
+    expect(result.jobs[0]?.description).toContain("Build the platform.");
   });
 
   it("supports generic Atlassian careers URLs", async () => {
@@ -147,7 +171,37 @@ describe("AtlassianScraper", () => {
     });
     const result = await scraper.scrape("https://www.atlassian.com/company/careers");
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(result.jobs[0]?.externalId).toBe("atlassian-301");
+  });
+
+  it("rejects records without a supported identifier and title", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ jobs: [{ unexpected: "shape" }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    const scraper = new AtlassianScraper(createHttpClient(fetchMock));
+
+    const result = await scraper.scrape(
+      "https://www.atlassian.com/company/careers/all-jobs"
+    );
+
+    expect(result).toMatchObject({
+      outcome: "error",
+      listingCompleteness: "unknown",
+      error: { code: "parse_error" },
+    });
+  });
+
+  it("returns invalid_url without fetching for malformed source input", async () => {
+    const fetchMock = vi.fn();
+    const scraper = new AtlassianScraper(createHttpClient(fetchMock));
+
+    const result = await scraper.scrape("not a URL");
+
+    expect(result).toMatchObject({ outcome: "error", error: { code: "invalid_url" } });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

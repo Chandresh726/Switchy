@@ -143,10 +143,9 @@ describe("WorkdayScraper", () => {
       "https://acme.wd5.myworkdayjobs.com/Acme"
     );
     expect(result).toMatchObject({
-      success: true,
       outcome: "success",
       detectedBoardToken: "acme/Acme",
-      openExternalIdsComplete: true,
+      listingCompleteness: "complete",
     });
     expect(result.jobs).toHaveLength(2);
     expect(result.jobs[0]).toMatchObject({
@@ -175,9 +174,8 @@ describe("WorkdayScraper", () => {
     const result = await scraper.scrape("https://acme.wd5.myworkdayjobs.com/Acme");
 
     expect(result).toMatchObject({
-      success: true,
       outcome: "partial",
-      openExternalIdsComplete: true,
+      listingCompleteness: "complete",
     });
     expect(result.jobs).toHaveLength(1);
     expect(result.openExternalIds).toHaveLength(2);
@@ -194,9 +192,8 @@ describe("WorkdayScraper", () => {
     const result = await scraper.scrape("https://acme.wd5.myworkdayjobs.com/Acme");
 
     expect(result).toMatchObject({
-      success: true,
       outcome: "success",
-      openExternalIdsComplete: true,
+      listingCompleteness: "complete",
     });
     expect(result.jobs).toHaveLength(3);
     expect(result.openExternalIds).toHaveLength(3);
@@ -217,11 +214,46 @@ describe("WorkdayScraper", () => {
     const result = await scraper.scrape("https://acme.wd5.myworkdayjobs.com/Acme");
 
     expect(result).toMatchObject({
-      success: true,
       outcome: "partial",
-      openExternalIdsComplete: false,
+      listingCompleteness: "partial",
     });
     expect(result.jobs).toHaveLength(2);
     expect(result.openExternalIds).toHaveLength(2);
+  });
+
+  it("returns a typed parse error when the Workday list shape drifts", async () => {
+    const httpClient = createHttpClient();
+    vi.mocked(httpClient.post).mockResolvedValue({
+      total: "two",
+      jobPostings: [],
+    });
+    const scraper = new FastWorkdayScraper(httpClient, createBrowserClient());
+
+    const result = await scraper.scrape("https://acme.wd5.myworkdayjobs.com/Acme");
+
+    expect(result).toMatchObject({
+      outcome: "error",
+      listingCompleteness: "unknown",
+      error: { code: "parse_error", retryable: false },
+    });
+  });
+
+  it("accepts minimal list and detail payloads by defaulting optional fields", async () => {
+    const httpClient = createHttpClient();
+    vi.mocked(httpClient.post).mockResolvedValue({
+      total: 1,
+      jobPostings: [{ title: "Engineer", externalPath: "/job/REQ-1" }],
+    });
+    vi.mocked(httpClient.get).mockResolvedValue({ jobPostingInfo: {} });
+    const scraper = new FastWorkdayScraper(httpClient, createBrowserClient());
+
+    const result = await scraper.scrape("https://acme.wd5.myworkdayjobs.com/Acme");
+
+    expect(result).toMatchObject({
+      outcome: "success",
+      totalListings: 1,
+      listingCompleteness: "complete",
+    });
+    expect(result.jobs).toHaveLength(1);
   });
 });

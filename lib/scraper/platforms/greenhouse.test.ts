@@ -50,11 +50,26 @@ describe("GreenhouseScraper", () => {
     const scraper = new GreenhouseScraper(createHttpClient(fetchMock));
     const result = await scraper.scrape("https://job-boards.eu.greenhouse.io/groww");
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(result.jobs).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/v1/boards/groww/jobs?content=true"),
       expect.any(Object)
     );
+  });
+
+  it("reports the failing fallback response status", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("server error", { status: 500 }))
+      .mockResolvedValueOnce(new Response("forbidden", { status: 403 }));
+    const scraper = new GreenhouseScraper(createHttpClient(fetchMock));
+
+    const result = await scraper.scrape("https://boards.greenhouse.io/acme");
+
+    expect(result).toMatchObject({
+      outcome: "error",
+      error: { code: "auth_required", statusCode: 403, retryable: false },
+    });
   });
 });

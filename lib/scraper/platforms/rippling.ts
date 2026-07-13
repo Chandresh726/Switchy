@@ -1,16 +1,21 @@
 import { load } from "cheerio";
+import { z } from "zod";
 
-import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
-import type {
-  ApiScraperConfig,
-  EarlyFilterStats,
-  EmploymentType,
-  ScrapeOptions,
-  ScrapedJob,
-  ScraperResult,
+import {
+  HttpError,
+  type IHttpClient,
+} from "@/lib/scraper/infrastructure/http-client";
+import {
+  parseEmploymentType,
+  parseExternalPayload,
+  type ApiScraperConfig,
+  type EarlyFilterStats,
+  type EmploymentType,
+  type ScrapeOptions,
+  type ScrapedJob,
+  type ScraperResult,
 } from "@/lib/scraper/types";
 import { applyEarlyFilters, hasEarlyFilters, toEarlyFilterStats } from "@/lib/scraper/services";
-import { parseEmploymentType } from "@/lib/scraper/types";
 
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
@@ -18,11 +23,6 @@ import { normalizeDescription } from "./shared/job-normalizers";
 
 interface RipplingLocation {
   name: string;
-  country: string;
-  countryCode: string;
-  state: string;
-  stateCode: string | null;
-  city: string;
   workplaceType: "ON_SITE" | "REMOTE" | "HYBRID";
 }
 
@@ -30,22 +30,48 @@ interface RipplingJobEntry {
   id: string;
   name: string;
   url: string;
-  department: { name: string };
-  locations: RipplingLocation[];
-  language: string;
+  department?: { name: string };
+  locations?: RipplingLocation[];
 }
 
 interface RipplingJobsResponse {
   pageProps: {
     jobs: {
       items: RipplingJobEntry[];
-      page: number;
-      pageSize: number;
-      totalItems: number;
-      totalPages: number;
     };
   };
 }
+
+const RipplingJobsResponseSchema = z
+  .object({
+    pageProps: z
+      .object({
+        jobs: z
+          .object({
+            items: z.array(
+              z
+                .object({
+                  id: z.string(),
+                  name: z.string(),
+                  url: z.string(),
+                  department: z.object({ name: z.string() }).passthrough().optional(),
+                  locations: z.array(
+                    z
+                      .object({
+                        name: z.string(),
+                        workplaceType: z.enum(["ON_SITE", "REMOTE", "HYBRID"]),
+                      })
+                      .passthrough()
+                  ).optional(),
+                })
+                .passthrough()
+            ),
+          })
+          .passthrough(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
 
 interface RipplingListingJob {
   id: string;
@@ -105,19 +131,15 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
 
   async scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult> {
     try {
-      const sourceUrl = new URL(url);
+      const sourceUrl = this.parseSourceUrl(url);
+      if (!sourceUrl) {
+        return this.failure("invalid_url", "Invalid Rippling Careers URL.");
+      }
       const locale = this.extractLocaleFromPath(sourceUrl.pathname) || "en-IN";
 
       const buildId = await this.fetchBuildId();
       if (!buildId) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          openExternalIds: [],
-          openExternalIdsComplete: false,
-          error: "Failed to extract Rippling build ID.",
-        };
+        return this.failure("parse_error", "Failed to extract Rippling build ID.");
       }
 
       const listings = await this.fetchAndGroupListings(buildId, locale);
@@ -127,11 +149,11 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
 
       if (listings.length === 0) {
         return {
-          success: true,
           outcome: "success",
           jobs: [],
+          totalListings: 0,
           openExternalIds,
-          openExternalIdsComplete: true,
+          listingCompleteness: "complete",
         };
       }
 
@@ -159,12 +181,12 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
 
       if (jobsToProcess.length === 0) {
         return {
-          success: true,
           outcome: "success",
           jobs: [],
+          totalListings: listings.length,
           earlyFiltered: earlyFilterStats,
           openExternalIds,
-          openExternalIdsComplete: true,
+          listingCompleteness: "complete",
         };
       }
 
@@ -177,12 +199,12 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
 
       if (jobsToFetch.length === 0) {
         return {
-          success: true,
           outcome: "success",
           jobs: [],
+          totalListings: listings.length,
           earlyFiltered: earlyFilterStats,
           openExternalIds,
-          openExternalIdsComplete: true,
+          listingCompleteness: "complete",
         };
       }
 
@@ -203,42 +225,37 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
       });
 
       return {
-        success: true,
         outcome: detailFailures > 0 ? "partial" : "success",
         jobs: scrapedJobs,
+        totalListings: listings.length,
         earlyFiltered: earlyFilterStats,
         openExternalIds,
-        openExternalIdsComplete: true,
+        listingCompleteness: "complete",
       };
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        openExternalIds: [],
-        openExternalIdsComplete: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 
   private async fetchBuildId(): Promise<string | null> {
-    try {
-      const response = await this.httpClient.fetch(this.config.baseUrl, {
-        timeout: this.config.timeout,
-        retries: this.config.retries,
-        baseDelay: this.config.baseDelay,
-        headers: this.createHtmlHeaders(),
-      });
+    const response = await this.httpClient.fetch(this.config.baseUrl, {
+      timeout: this.config.timeout,
+      retries: this.config.retries,
+      baseDelay: this.config.baseDelay,
+      headers: this.createHtmlHeaders(),
+    });
 
-      if (!response.ok) return null;
-
-      const html = await response.text();
-      const match = html.match(BUILD_ID_REGEX);
-      return match ? match[1] : null;
-    } catch {
-      return null;
+    if (!response.ok) {
+      throw new HttpError(
+        response.status,
+        `Failed to fetch Rippling build metadata: HTTP ${response.status}`,
+        this.config.baseUrl
+      );
     }
+
+    const html = await response.text();
+    const match = html.match(BUILD_ID_REGEX);
+    return match ? match[1] : null;
   }
 
   private async fetchAndGroupListings(
@@ -254,12 +271,18 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
     });
 
     if (!response.ok) {
-      throw new Error(
-        `Failed to fetch Rippling jobs: HTTP ${response.status}`
+      throw new HttpError(
+        response.status,
+        `Failed to fetch Rippling jobs: HTTP ${response.status}`,
+        dataUrl
       );
     }
 
-    const data = (await response.json()) as RipplingJobsResponse;
+    const data: RipplingJobsResponse = parseExternalPayload(
+      RipplingJobsResponseSchema,
+      await response.json(),
+      "Rippling"
+    );
     const entries = data.pageProps?.jobs?.items ?? [];
 
     return this.groupAndMergeLocations(entries);

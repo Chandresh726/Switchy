@@ -78,14 +78,14 @@ describe("ZwayamScraper", () => {
     const scraper = new ZwayamScraper(createHttpClient(fetchMock));
     const result = await scraper.scrape("https://www.flipkartcareers.com/flipkart/jobslist");
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(result.outcome).toBe("success");
     expect(result.jobs).toHaveLength(2);
     expect(result.jobs[0]?.externalId).toBe("zwayam-flipkart-REQ-1");
     expect(result.jobs[0]?.descriptionFormat).toBe("markdown");
     expect(result.jobs[1]?.externalId).toBe("zwayam-flipkart-22");
     expect(result.openExternalIds).toEqual(["zwayam-flipkart-REQ-1", "zwayam-flipkart-22"]);
-    expect(result.openExternalIdsComplete).toBe(true);
+    expect(result.listingCompleteness).toBe("complete");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -142,7 +142,7 @@ describe("ZwayamScraper", () => {
     const scraper = new ZwayamScraper(createHttpClient(fetchMock));
     const result = await scraper.scrape("https://www.flipkartcareers.com/flipkart/jobslist");
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(result.jobs).toHaveLength(1);
     expect(result.jobs[0]?.description).toContain("Build secure systems.");
     expect(result.jobs[0]?.descriptionFormat).toBe("markdown");
@@ -183,7 +183,7 @@ describe("ZwayamScraper", () => {
     const scraper = new ZwayamScraper(createHttpClient(fetchMock));
     const result = await scraper.scrape("https://www.flipkartcareers.com/flipkart/jobslist");
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(result.jobs).toHaveLength(1);
     expect(result.jobs[0]?.url).toBe(
       "https://www.flipkartcareers.com/flipkart/jobview/manager-business-development-bangalore-karnataka-2025112714501561?id=720776"
@@ -224,10 +224,93 @@ describe("ZwayamScraper", () => {
     const scraper = new ZwayamScraper(createHttpClient(fetchMock));
     const result = await scraper.scrape("https://www.flipkartcareers.com/flipkart/jobslist");
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(result.jobs).toHaveLength(1);
     expect(result.jobs[0]?.url).toBe(
       "https://www.flipkartcareers.com/flipkart/jobview?id=42"
     );
+  });
+
+  it("rejects an application-level failed response without data", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ code: 500 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    const scraper = new ZwayamScraper(createHttpClient(fetchMock));
+
+    const result = await scraper.scrape(
+      "https://www.flipkartcareers.com/flipkart/jobslist"
+    );
+
+    expect(result).toMatchObject({
+      outcome: "error",
+      listingCompleteness: "unknown",
+      error: { code: "parse_error" },
+    });
+  });
+
+  it("marks the result partial when hasMoreData stops below totalCount", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          code: 200,
+          data: {
+            data: [{ _source: { id: 1, designation: "Role", jobDescription: "Long enough description." } }],
+            totalCount: 2,
+            hasMoreData: false,
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const result = await new ZwayamScraper(createHttpClient(fetchMock)).scrape(
+      "https://www.flipkartcareers.com/flipkart/jobslist"
+    );
+
+    expect(result).toMatchObject({
+      outcome: "partial",
+      totalListings: 2,
+      listingCompleteness: "partial",
+    });
+  });
+
+  it("marks the result partial when a later page is empty but more data is advertised", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 200,
+            data: {
+              data: [{ _source: { id: 1, designation: "Role", jobDescription: "Long enough description." } }],
+              totalCount: 2,
+              hasMoreData: true,
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 200,
+            data: { data: [], totalCount: 2, hasMoreData: true },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      );
+
+    const result = await new ZwayamScraper(createHttpClient(fetchMock)).scrape(
+      "https://www.flipkartcareers.com/flipkart/jobslist"
+    );
+
+    expect(result).toMatchObject({
+      outcome: "partial",
+      totalListings: 2,
+      listingCompleteness: "partial",
+    });
   });
 });

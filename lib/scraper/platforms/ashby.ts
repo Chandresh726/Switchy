@@ -1,5 +1,7 @@
+import { z } from "zod";
+
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
-import { parseEmploymentType } from "@/lib/scraper/types";
+import { parseEmploymentType, parseExternalPayload } from "@/lib/scraper/types";
 import { processDescription } from "@/lib/jobs/description-processor";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig } from "../core/types";
@@ -20,9 +22,35 @@ interface AshbyJob {
 }
 
 interface AshbyResponse {
-  apiVersion: string;
+  apiVersion?: string;
   jobs: AshbyJob[];
 }
+
+const AshbyResponseSchema = z
+  .object({
+    apiVersion: z.string().optional(),
+    jobs: z.array(
+      z
+        .object({
+          title: z.string(),
+          location: z.string().optional(),
+          secondaryLocations: z
+            .array(z.object({ location: z.string().optional() }).passthrough())
+            .optional(),
+          department: z.string().optional(),
+          team: z.string().optional(),
+          isRemote: z.boolean().optional(),
+          descriptionHtml: z.string().optional(),
+          descriptionPlain: z.string().optional(),
+          publishedAt: z.string().optional(),
+          employmentType: z.string().optional(),
+          jobUrl: z.string().optional(),
+          applyUrl: z.string().optional(),
+        })
+        .passthrough()
+    ),
+  })
+  .passthrough();
 
 export type AshbyConfig = ApiScraperConfig;
 
@@ -67,13 +95,10 @@ export class AshbyScraper extends AbstractApiScraper<AshbyConfig> {
       const detectedBoardToken = !options?.boardToken && boardName ? boardName : undefined;
 
       if (!boardName) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          error:
-            "Could not determine Ashby job board name from URL. Please provide the board token (jobs page name) manually.",
-        };
+        return this.failure(
+          "invalid_url",
+          "Could not determine Ashby job board name from URL. Please provide the board token (jobs page name) manually."
+        );
       }
 
       const apiUrl = `${this.config.baseUrl}/posting-api/job-board/${encodeURIComponent(
@@ -91,23 +116,20 @@ export class AshbyScraper extends AbstractApiScraper<AshbyConfig> {
       });
 
       if (!response.ok) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          error: `Failed to fetch Ashby jobs: ${response.status}`,
-        };
+        return this.failureForHttpStatus(
+          response.status,
+          `Failed to fetch Ashby jobs: ${response.status}`
+        );
       }
 
-      const data = (await response.json()) as AshbyResponse;
+      const data: AshbyResponse = parseExternalPayload(
+        AshbyResponseSchema,
+        await response.json(),
+        "Ashby"
+      );
       return this.parseJobs(data, boardName, detectedBoardToken);
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 
@@ -173,12 +195,12 @@ export class AshbyScraper extends AbstractApiScraper<AshbyConfig> {
     const openExternalIds = jobs.map((job) => job.externalId);
 
     return {
-      success: true,
       outcome: "success",
       jobs,
+      totalListings: jobs.length,
       detectedBoardToken,
       openExternalIds,
-      openExternalIdsComplete: true,
+      listingCompleteness: "complete",
     };
   }
 }

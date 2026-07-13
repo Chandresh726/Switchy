@@ -161,7 +161,6 @@ describe("ScrapeOrchestrator", () => {
   it("maps partial scraper results to failed FetchResult and partial log status", async () => {
     const repository = createRepositoryMock();
     const registry = createRegistryMock({
-      success: true,
       outcome: "partial",
       jobs: [
         {
@@ -170,8 +169,9 @@ describe("ScrapeOrchestrator", () => {
           url: "https://jobs.example.com/1",
         },
       ],
+      totalListings: 1,
       openExternalIds: ["greenhouse-acme-1"],
-      openExternalIdsComplete: false,
+      listingCompleteness: "partial",
     });
 
     const orchestrator = new ScrapeOrchestrator(
@@ -195,14 +195,52 @@ describe("ScrapeOrchestrator", () => {
     expect(repository.archiveMissingJobs).not.toHaveBeenCalled();
   });
 
+  it("includes early-filtered listings in persisted and returned jobsFound totals", async () => {
+    const repository = createRepositoryMock();
+    const registry = createRegistryMock({
+      outcome: "success",
+      jobs: [
+        {
+          externalId: "greenhouse-acme-1",
+          title: "Software Engineer",
+          url: "https://jobs.example.com/1",
+        },
+      ],
+      earlyFiltered: { total: 4, country: 4 },
+      totalListings: 9,
+      openExternalIds: Array.from(
+        { length: 9 },
+        (_, index) => `greenhouse-acme-${index + 1}`
+      ),
+      listingCompleteness: "complete",
+    });
+    const orchestrator = new ScrapeOrchestrator(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} }
+    );
+
+    const result = await orchestrator.scrapeCompany(company.id, {
+      sessionId: "session-early-filter",
+      triggerSource: "manual",
+    });
+
+    expect(result.jobsFound).toBe(9);
+    expect(repository.createScrapingLog).toHaveBeenCalledWith(
+      expect.objectContaining({ jobsFound: 9, jobsFiltered: 4 })
+    );
+  });
+
   it("treats partial company outcomes as batch failures", async () => {
     const repository = createRepositoryMock();
     const registry = createRegistryMock({
-      success: true,
       outcome: "partial",
       jobs: [],
+      totalListings: 0,
       openExternalIds: [],
-      openExternalIdsComplete: false,
+      listingCompleteness: "partial",
     });
 
     const orchestrator = new ScrapeOrchestrator(
@@ -225,11 +263,11 @@ describe("ScrapeOrchestrator", () => {
       activeCompanies: [customCompany],
     });
     const registry = createRegistryMock({
-      success: true,
       outcome: "success",
       jobs: [],
+      totalListings: 0,
       openExternalIds: [],
-      openExternalIdsComplete: true,
+      listingCompleteness: "complete",
     });
 
     const orchestrator = new ScrapeOrchestrator(
@@ -267,7 +305,6 @@ describe("ScrapeOrchestrator", () => {
       activeCompanies: [serviceNowCompany],
     });
     const registry = createRegistryMock({
-      success: true,
       outcome: "success",
       jobs: [
         {
@@ -276,8 +313,9 @@ describe("ScrapeOrchestrator", () => {
           url: "https://careers.servicenow.com/jobs/1/software-engineer/",
         },
       ],
+      totalListings: 1,
       openExternalIds: ["servicenow-1"],
-      openExternalIdsComplete: true,
+      listingCompleteness: "complete",
     });
 
     const orchestrator = new ScrapeOrchestrator(
@@ -293,7 +331,7 @@ describe("ScrapeOrchestrator", () => {
       triggerSource: "manual",
     });
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(registry.scrape).toHaveBeenCalledWith(
       serviceNowCompany.careersUrl,
       "servicenow",
@@ -326,11 +364,11 @@ describe("ScrapeOrchestrator", () => {
       insertedJobIds: [],
     });
     const registry = createRegistryMock({
-      success: true,
       outcome: "success",
       jobs: [],
+      totalListings: openExternalIds.length,
       openExternalIds,
-      openExternalIdsComplete: true,
+      listingCompleteness: "complete",
     });
 
     const orchestrator = new ScrapeOrchestrator(
@@ -366,11 +404,11 @@ describe("ScrapeOrchestrator", () => {
       insertedJobIds: [],
     });
     const registry = createRegistryMock({
-      success: true,
       outcome: "success",
       jobs: [],
+      totalListings: openExternalIds.length,
       openExternalIds,
-      openExternalIdsComplete: true,
+      listingCompleteness: "complete",
     });
 
     const orchestrator = new ScrapeOrchestrator(
@@ -392,11 +430,11 @@ describe("ScrapeOrchestrator", () => {
   it("marks standalone partial sessions as partial", async () => {
     const repository = createRepositoryMock();
     const registry = createRegistryMock({
-      success: true,
       outcome: "partial",
       jobs: [],
+      totalListings: 0,
       openExternalIds: [],
-      openExternalIdsComplete: false,
+      listingCompleteness: "partial",
     });
 
     const orchestrator = new ScrapeOrchestrator(
@@ -415,11 +453,11 @@ describe("ScrapeOrchestrator", () => {
   it("marks fully successful batch sessions as completed", async () => {
     const repository = createRepositoryMock();
     const registry = createRegistryMock({
-      success: true,
       outcome: "success",
       jobs: [],
+      totalListings: 0,
       openExternalIds: [],
-      openExternalIdsComplete: true,
+      listingCompleteness: "complete",
     });
 
     const orchestrator = new ScrapeOrchestrator(
@@ -438,10 +476,14 @@ describe("ScrapeOrchestrator", () => {
   it("marks fully failed batch sessions as failed", async () => {
     const repository = createRepositoryMock();
     const registry = createRegistryMock({
-      success: false,
       outcome: "error",
       jobs: [],
-      error: "Network failure",
+      listingCompleteness: "unknown",
+      error: {
+        code: "network_error",
+        message: "Network failure",
+        retryable: true,
+      },
     });
 
     const orchestrator = new ScrapeOrchestrator(
@@ -465,18 +507,22 @@ describe("ScrapeOrchestrator", () => {
       vi
         .fn()
         .mockResolvedValueOnce({
-          success: true,
           outcome: "success",
           jobs: [],
+          totalListings: 0,
           openExternalIds: [],
-          openExternalIdsComplete: true,
-        })
+          listingCompleteness: "complete",
+        } satisfies ScraperResult)
         .mockResolvedValueOnce({
-          success: false,
           outcome: "error",
           jobs: [],
-          error: "Network failure",
-        })
+          listingCompleteness: "unknown",
+          error: {
+            code: "network_error",
+            message: "Network failure",
+            retryable: true,
+          },
+        } satisfies ScraperResult)
     );
 
     const orchestrator = new ScrapeOrchestrator(
@@ -512,11 +558,11 @@ describe("ScrapeOrchestrator", () => {
       await new Promise((resolve) => setTimeout(resolve, 15));
       inFlight -= 1;
       return {
-        success: true,
         outcome: "success",
         jobs: [],
+        totalListings: 0,
         openExternalIds: [],
-        openExternalIdsComplete: true,
+        listingCompleteness: "complete",
       };
     });
 
@@ -553,11 +599,11 @@ describe("ScrapeOrchestrator", () => {
       await new Promise((resolve) => setTimeout(resolve, 15));
       inFlight -= 1;
       return {
-        success: true,
         outcome: "success",
         jobs: [],
+        totalListings: 0,
         openExternalIds: [],
-        openExternalIdsComplete: true,
+        listingCompleteness: "complete",
       };
     });
 
@@ -632,11 +678,11 @@ describe("ScrapeOrchestrator", () => {
         await new Promise((resolve) => setTimeout(resolve, delay));
         recordTime(ends, key);
         return {
-          success: true,
           outcome: "success",
           jobs: [],
+          totalListings: 0,
           openExternalIds: [],
-          openExternalIdsComplete: true,
+          listingCompleteness: "complete",
         };
       },
       {
@@ -710,11 +756,11 @@ describe("ScrapeOrchestrator", () => {
           serialInFlight -= 1;
         }
         return {
-          success: true,
           outcome: "success",
           jobs: [],
+          totalListings: 0,
           openExternalIds: [],
-          openExternalIdsComplete: true,
+          listingCompleteness: "complete",
         };
       },
       {
@@ -783,11 +829,11 @@ describe("ScrapeOrchestrator", () => {
         await new Promise((resolve) => setTimeout(resolve, 15));
         ends[url] = Date.now();
         return {
-          success: true,
           outcome: "success",
           jobs: [],
+          totalListings: 0,
           openExternalIds: [],
-          openExternalIdsComplete: true,
+          listingCompleteness: "complete",
         };
       },
       {
@@ -821,7 +867,6 @@ describe("ScrapeOrchestrator", () => {
       matchableJobIds: [],
     });
     const registry = createRegistryMock({
-      success: true,
       outcome: "success",
       jobs: [
         {
@@ -831,8 +876,9 @@ describe("ScrapeOrchestrator", () => {
           description: "",
         },
       ],
+      totalListings: 1,
       openExternalIds: ["greenhouse-acme-1"],
-      openExternalIdsComplete: true,
+      listingCompleteness: "complete",
     });
 
     const orchestrator = new ScrapeOrchestrator(
@@ -864,7 +910,6 @@ describe("ScrapeOrchestrator", () => {
       matchableJobIds: [102, 103],
     });
     const registry = createRegistryMock({
-      success: true,
       outcome: "success",
       jobs: [
         {
@@ -874,8 +919,9 @@ describe("ScrapeOrchestrator", () => {
           description: "Role details",
         },
       ],
+      totalListings: 1,
       openExternalIds: ["greenhouse-acme-1"],
-      openExternalIdsComplete: true,
+      listingCompleteness: "complete",
     });
 
     const orchestrator = new ScrapeOrchestrator(
@@ -927,7 +973,6 @@ describe("ScrapeOrchestrator", () => {
       updatedExistingJobsCount: 1,
     });
     const registry = createRegistryMock({
-      success: true,
       outcome: "success",
       jobs: [
         {
@@ -938,8 +983,9 @@ describe("ScrapeOrchestrator", () => {
           descriptionFormat: "plain",
         },
       ],
+      totalListings: 1,
       openExternalIds: ["greenhouse-acme-1"],
-      openExternalIdsComplete: true,
+      listingCompleteness: "complete",
     });
 
     const orchestrator = new ScrapeOrchestrator(
@@ -998,7 +1044,6 @@ describe("ScrapeOrchestrator", () => {
       updatedExistingJobsCount: 0,
     });
     const registry = createRegistryMock({
-      success: true,
       outcome: "success",
       jobs: [
         {
@@ -1009,8 +1054,9 @@ describe("ScrapeOrchestrator", () => {
           descriptionFormat: "plain",
         },
       ],
+      totalListings: 1,
       openExternalIds: ["greenhouse-acme-new"],
-      openExternalIdsComplete: true,
+      listingCompleteness: "complete",
     });
 
     const orchestrator = new ScrapeOrchestrator(

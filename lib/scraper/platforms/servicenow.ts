@@ -1,8 +1,13 @@
 import { load } from "cheerio";
+import { z } from "zod";
 
 import type { IBrowserClient } from "@/lib/scraper/infrastructure/browser-client";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import { processDescription } from "@/lib/jobs/description-processor";
+import {
+  parseExternalPayload,
+  ScraperPayloadError,
+} from "@/lib/scraper/types";
 import { AbstractBrowserScraper, DEFAULT_BROWSER_CONFIG } from "../core";
 import type { BrowserScraperConfig, ScrapeOptions, ScrapedJob, ScraperResult } from "../core/types";
 
@@ -19,6 +24,15 @@ type ServiceNowDetail = {
   description?: string;
   descriptionFormat?: "markdown" | "plain";
 };
+
+const ServiceNowListItemSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    url: z.string().min(1),
+    location: z.string().optional(),
+  })
+  .passthrough();
 
 export type ServiceNowConfig = BrowserScraperConfig & {
   requestDelayMs: number;
@@ -71,14 +85,24 @@ export class ServiceNowScraper extends AbstractBrowserScraper<ServiceNowConfig> 
 
         const allItems: ServiceNowListItem[] = [];
         const firstPageItems = this.extractListingItems(baseUrl, firstPageHtml);
+        if (firstPageItems.length === 0 && !this.hasExplicitEmptyState(firstPageHtml)) {
+          throw new ScraperPayloadError(
+            "ServiceNow listings",
+            "page did not contain recognized jobs or an explicit empty state"
+          );
+        }
         allItems.push(...firstPageItems);
+        let fetchedAllPlannedPages = true;
 
         for (let pageNum = 2; pageNum <= pagesToScrape; pageNum++) {
           const pageUrl = `${baseUrl}?page=${pageNum}`;
           await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: this.config.timeout });
           await page.waitForTimeout(1500);
           const pageItems = this.extractListingItems(baseUrl, await page.content());
-          if (pageItems.length === 0) break;
+          if (pageItems.length === 0) {
+            fetchedAllPlannedPages = false;
+            break;
+          }
           allItems.push(...pageItems);
         }
 
@@ -86,7 +110,11 @@ export class ServiceNowScraper extends AbstractBrowserScraper<ServiceNowConfig> 
         for (const item of allItems) {
           deduped.set(item.id, item);
         }
-        const items = Array.from(deduped.values());
+        const items = parseExternalPayload(
+          z.array(ServiceNowListItemSchema),
+          Array.from(deduped.values()),
+          "ServiceNow listings"
+        );
 
         const jobs: ScrapedJob[] = [];
         let hadPartialFailures = false;
@@ -109,21 +137,19 @@ export class ServiceNowScraper extends AbstractBrowserScraper<ServiceNowConfig> 
           }
         }
 
+        const listingComplete =
+          fetchedAllPlannedPages && pagesToScrape >= totalPages;
+
         return {
-          success: !hadPartialFailures,
-          outcome: hadPartialFailures ? "partial" : "success",
+          outcome: hadPartialFailures || !listingComplete ? "partial" : "success",
           jobs,
+          totalListings: items.length,
           openExternalIds: jobs.map((job) => job.externalId),
-          openExternalIdsComplete: pagesToScrape >= totalPages,
+          listingCompleteness: listingComplete ? "complete" : "partial",
         };
       });
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 
@@ -153,6 +179,11 @@ export class ServiceNowScraper extends AbstractBrowserScraper<ServiceNowConfig> 
     });
 
     return maxPage;
+  }
+
+  private hasExplicitEmptyState(html: string): boolean {
+    const text = load(html).text().replace(/\s+/g, " ").trim();
+    return /(?:no jobs|no matching jobs|no results|0 jobs|currently no open roles)/i.test(text);
   }
 
   private extractListingItems(baseUrl: string, html: string): ServiceNowListItem[] {

@@ -115,7 +115,7 @@ describe("EightfoldScraper", () => {
 
     const result = await scraper.scrape("https://apply.careers.microsoft.com/careers");
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(result.outcome).toBe("partial");
     expect(result.jobs).toHaveLength(4);
 
@@ -170,7 +170,7 @@ describe("EightfoldScraper", () => {
 
     const result = await scraper.scrape("https://apply.careers.microsoft.com/careers");
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(result.outcome).toBe("partial");
     expect(result.jobs).toHaveLength(8);
     expect(result.jobs.find((job) => job.externalId === "eightfold-microsoft-8")?.description).toContain(
@@ -202,7 +202,7 @@ describe("EightfoldScraper", () => {
 
     const result = await scraper.scrape("https://apply.careers.microsoft.com/careers");
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(result.outcome).toBe("success");
     expect(result.jobs).toHaveLength(1);
 

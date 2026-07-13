@@ -1,5 +1,8 @@
+import { z } from "zod";
+
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import { processDescription, containsHtml, decodeHtmlEntities } from "@/lib/jobs/description-processor";
+import { parseExternalPayload } from "@/lib/scraper/types";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig } from "../core/types";
 
@@ -7,9 +10,9 @@ interface GreenhouseJob {
   id: number;
   title: string;
   absolute_url: string;
-  location: { name: string };
-  departments: { name: string }[];
-  updated_at: string;
+  location?: { name: string };
+  departments?: { name: string }[];
+  updated_at?: string;
   content?: string;
   metadata?: { name: string; value: string | string[] }[];
 }
@@ -17,6 +20,34 @@ interface GreenhouseJob {
 interface GreenhouseResponse {
   jobs: GreenhouseJob[];
 }
+
+const GreenhouseResponseSchema = z
+  .object({
+    jobs: z.array(
+      z
+        .object({
+          id: z.number(),
+          title: z.string(),
+          absolute_url: z.string(),
+          location: z.object({ name: z.string() }).passthrough().optional(),
+          departments: z.array(z.object({ name: z.string() }).passthrough()).optional(),
+          updated_at: z.string().optional(),
+          content: z.string().optional(),
+          metadata: z
+            .array(
+              z
+                .object({
+                  name: z.string(),
+                  value: z.union([z.string(), z.array(z.string())]),
+                })
+                .passthrough()
+            )
+            .optional(),
+        })
+        .passthrough()
+    ),
+  })
+  .passthrough();
 
 export type GreenhouseConfig = ApiScraperConfig;
 
@@ -89,12 +120,10 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
       const detectedBoardToken = !options?.boardToken && boardToken ? boardToken : undefined;
 
       if (!boardToken) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          error: "Could not extract board token from URL. Please provide the board token manually.",
-        };
+        return this.failure(
+          "invalid_url",
+          "Could not extract board token from URL. Please provide the board token manually."
+        );
       }
 
       const apiUrl = `${this.config.baseUrl}/v1/boards/${boardToken}/jobs?content=true`;
@@ -124,27 +153,28 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
         });
 
         if (!altResponse.ok) {
-          return {
-            success: false,
-            outcome: "error",
-            jobs: [],
-            error: `Failed to fetch jobs: ${response.status}`,
-          };
+          return this.failureForHttpStatus(
+            altResponse.status,
+            `Failed to fetch jobs: ${altResponse.status}`
+          );
         }
 
-        data = await altResponse.json();
+        data = parseExternalPayload(
+          GreenhouseResponseSchema,
+          await altResponse.json(),
+          "Greenhouse"
+        );
       } else {
-        data = await response.json();
+        data = parseExternalPayload(
+          GreenhouseResponseSchema,
+          await response.json(),
+          "Greenhouse"
+        );
       }
 
       return this.parseJobs(data, boardToken, detectedBoardToken);
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 
@@ -203,12 +233,12 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
     const openExternalIds = jobs.map((job) => job.externalId);
 
     return {
-      success: true,
       outcome: "success",
       jobs,
+      totalListings: jobs.length,
       detectedBoardToken,
       openExternalIds,
-      openExternalIdsComplete: true,
+      listingCompleteness: "complete",
     };
   }
 }

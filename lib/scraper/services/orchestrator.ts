@@ -462,10 +462,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
   }
 
   private resolveScrapeOutcome(scraperResult: ScraperResult<ScrapedJob>): ScrapeOutcome {
-    if (scraperResult.outcome) {
-      return scraperResult.outcome;
-    }
-    return scraperResult.success ? "success" : "error";
+    return scraperResult.outcome;
   }
 
   private async processScraperResult(params: {
@@ -502,8 +499,8 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
 
     const outcome = this.resolveScrapeOutcome(scraperResult);
 
-    if (outcome === "error") {
-      const errorMessage = scraperResult.error || "Unknown error";
+    if (scraperResult.outcome === "error") {
+      const errorMessage = scraperResult.error.message;
       logger.error(errorMessage);
 
       await this.repository.createScrapingLog({
@@ -536,9 +533,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     const hasEarlyFilter = Boolean(
       scraperResult.earlyFiltered && scraperResult.earlyFiltered.total > 0
     );
-    const totalFetched = hasEarlyFilter
-      ? scraperResult.jobs.length + (scraperResult.earlyFiltered?.total || 0)
-      : scraperResult.jobs.length;
+    const totalFetched = scraperResult.totalListings;
 
     if (hasEarlyFilter) {
       logger.fetchedWithEarlyFilter(totalFetched, {
@@ -547,7 +542,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
         title: scraperResult.earlyFiltered?.title,
       });
     } else {
-      logger.fetched(scraperResult.jobs.length);
+      logger.fetched(totalFetched);
     }
 
     const openExternalIds = Array.from(
@@ -561,7 +556,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
     const jobsArchived = await this.syncArchivedJobs(
       companyId,
       openExternalIds,
-      scraperResult.openExternalIdsComplete,
+      scraperResult.listingCompleteness,
       platform,
       existingJobs
     );
@@ -611,7 +606,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       triggerSource,
       platform,
       status: logStatus,
-      jobsFound: scraperResult.jobs.length,
+      jobsFound: totalFetched,
       jobsAdded,
       jobsUpdated,
       jobsFiltered,
@@ -629,7 +624,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
 
     return {
       outcome,
-      jobsFound: scraperResult.jobs.length,
+      jobsFound: totalFetched,
       jobsAdded,
       jobsUpdated,
       jobsFiltered,
@@ -641,7 +636,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
   private async syncArchivedJobs(
     companyId: number,
     openExternalIds: string[],
-    openExternalIdsComplete: boolean | undefined,
+    listingCompleteness: ScraperResult["listingCompleteness"],
     platform: Platform | null,
     existingJobs: Array<{
       id: number;
@@ -658,7 +653,7 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       await this.repository.reopenScraperArchivedJobs(companyId, openExternalIds);
     }
 
-    if (openExternalIdsComplete !== false) {
+    if (listingCompleteness === "complete") {
       if (platform === "uber" && this.shouldSkipUberArchival(openExternalIds, existingJobs)) {
         return 0;
       }

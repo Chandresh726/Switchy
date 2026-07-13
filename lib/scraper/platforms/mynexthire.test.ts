@@ -39,7 +39,7 @@ describe("MynextHireScraper", () => {
     const scraper = new MynextHireScraper(createHttpClient(postMock));
     const result = await scraper.scrape("https://careers.swiggy.com/#/careers");
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(result.jobs).toHaveLength(2);
     const payloadOne = {
       pageType: "jd",
@@ -80,7 +80,7 @@ describe("MynextHireScraper", () => {
       employmentType: "contract",
       url: expectedUrlTwo,
     });
-    expect(result.openExternalIdsComplete).toBe(true);
+    expect(result.listingCompleteness).toBe("complete");
     expect(postMock).toHaveBeenCalledWith(
       "https://swiggy.mynexthire.com/employer/careers/reqlist/get",
       {
@@ -90,5 +90,20 @@ describe("MynextHireScraper", () => {
       },
       expect.any(Object)
     );
+  });
+
+  it("accepts a minimal usable response without requester metadata", async () => {
+    const postMock = vi.fn(async () => ({
+      reqDetailsBOList: [{ reqId: 1, reqTitle: "Engineer" }],
+    }));
+    const scraper = new MynextHireScraper(createHttpClient(postMock));
+
+    const result = await scraper.scrape("https://acme.mynexthire.com/careers");
+
+    expect(result).toMatchObject({
+      outcome: "success",
+      totalListings: 1,
+      listingCompleteness: "complete",
+    });
   });
 });

@@ -43,6 +43,10 @@ export type {
   ScraperError,
   ScraperMetadata,
   ScraperResult,
+  ScraperSuccessResult,
+  ScraperPartialResult,
+  ScraperErrorResult,
+  ListingCompleteness,
   FetchResult,
   BatchFetchResult,
   SessionProgress,
@@ -54,7 +58,16 @@ export type {
 
 export {
   createScraperError,
+  createScraperFailure,
 } from "./result";
+
+export {
+  ScraperPayloadError,
+  parseExternalPayload,
+  createFailureFromUnknown,
+  classifyHttpStatus,
+  createFailureForHttpStatus,
+} from "./validation";
 
 export type {
   JobFilters,

@@ -47,12 +47,12 @@ function createUberJob({ id }: UberJobFixture) {
   };
 }
 
-function createUberResponse(jobIds: number[]): Response {
+function createUberResponse(jobIds: number[], total = jobIds.length): Response {
   return new Response(
     JSON.stringify({
       status: "success",
       data: {
-        total: jobIds.length,
+        total,
         results: jobIds.map((id) => createUberJob({ id })),
       },
     }),
@@ -69,8 +69,8 @@ describe("UberScraper", () => {
     const pageTwoIds = [101];
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(createUberResponse(pageOneIds))
-      .mockResolvedValueOnce(createUberResponse(pageTwoIds));
+      .mockResolvedValueOnce(createUberResponse(pageOneIds, 101))
+      .mockResolvedValueOnce(createUberResponse(pageTwoIds, 101));
 
     const httpClient: IHttpClient = {
       fetch: fetchMock,
@@ -81,9 +81,9 @@ describe("UberScraper", () => {
     const scraper = new UberScraper(httpClient);
     const result = await scraper.scrape("https://www.uber.com/in/en/careers/list/");
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(result.outcome).toBe("success");
-    expect(result.openExternalIdsComplete).toBe(true);
+    expect(result.listingCompleteness).toBe("complete");
     expect(result.openExternalIds).toHaveLength(101);
     expect(result.openExternalIds).toContain("uber-1");
     expect(result.openExternalIds).toContain("uber-101");
@@ -104,5 +104,25 @@ describe("UberScraper", () => {
     });
     expect(firstRequestBody).not.toHaveProperty("filter");
     expect(secondRequestBody.page).toBe(1);
+  });
+
+  it("reports a partial listing when the API stops before its advertised total", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(createUberResponse([1], 2));
+    const httpClient: IHttpClient = {
+      fetch: fetchMock,
+      get: vi.fn(),
+      post: vi.fn(),
+    };
+
+    const result = await new UberScraper(httpClient).scrape(
+      "https://www.uber.com/in/en/careers/list/"
+    );
+
+    expect(result).toMatchObject({
+      outcome: "partial",
+      totalListings: 2,
+      listingCompleteness: "partial",
+      openExternalIds: ["uber-1"],
+    });
   });
 });

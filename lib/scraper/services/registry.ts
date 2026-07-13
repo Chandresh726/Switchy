@@ -1,4 +1,4 @@
-import type { Platform } from "@/lib/scraper/types";
+import { createScraperFailure, type Platform } from "@/lib/scraper/types";
 import type { IScraper, ScraperResult, ScrapeOptions } from "@/lib/scraper/core/types";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import type { IBrowserClient } from "@/lib/scraper/infrastructure/browser-client";
@@ -54,23 +54,19 @@ export class ScraperRegistry implements IScraperRegistry {
       if (scraper) {
         return scraper.scrape(url, options);
       }
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: `No scraper found for platform: ${platform}`,
-      };
+      return createScraperFailure(
+        "board_not_found",
+        `No scraper found for platform: ${platform}`
+      );
     }
 
     const scraper = this.getScraperForUrl(url);
     if (!scraper) {
       const supportedPlatforms = this.getSupportedPlatforms().join(", ");
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: `No scraper found for this URL. Supported platforms: ${supportedPlatforms}`,
-      };
+      return createScraperFailure(
+        "invalid_url",
+        `No scraper found for this URL. Supported platforms: ${supportedPlatforms}`
+      );
     }
 
     return scraper.scrape(url, options);

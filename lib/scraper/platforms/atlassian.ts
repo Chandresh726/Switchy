@@ -1,10 +1,13 @@
+import { z } from "zod";
+
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
-import type {
-  ApiScraperConfig,
-  EarlyFilterStats,
-  ScrapeOptions,
-  ScrapedJob,
-  ScraperResult,
+import {
+  parseExternalPayload,
+  type ApiScraperConfig,
+  type EarlyFilterStats,
+  type ScrapeOptions,
+  type ScrapedJob,
+  type ScraperResult,
 } from "@/lib/scraper/types";
 import { applyEarlyFilters, hasEarlyFilters, toEarlyFilterStats } from "@/lib/scraper/services";
 
@@ -13,6 +16,55 @@ import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
 import { normalizeDescription } from "./shared/job-normalizers";
 
 type AtlassianListingRecord = Record<string, unknown>;
+
+// Require one of the listing containers the mapper understands while
+// tolerating additive upstream fields.
+const AtlassianRecordSchema = z
+  .record(z.string(), z.unknown())
+  .refine(
+    (record) => {
+      const identifiers = [record.id, record.jobId, record.requisitionId];
+      const titles = [record.title, record.name, record.role];
+      const hasIdentifier = identifiers.some(
+        (value) =>
+          (typeof value === "string" && value.trim().length > 0) ||
+          (typeof value === "number" && Number.isFinite(value))
+      );
+      const hasTitle = titles.some(
+        (value) => typeof value === "string" && value.trim().length > 0
+      );
+      return hasIdentifier && hasTitle;
+    },
+    { message: "listing must include a supported identifier and title" }
+  );
+const AtlassianListingsPayloadSchema = z.union([
+  z.array(AtlassianRecordSchema),
+  z.object({ listings: z.array(AtlassianRecordSchema) }).passthrough(),
+  z.object({ jobs: z.array(AtlassianRecordSchema) }).passthrough(),
+  z
+    .object({
+      data: z.union([
+        z.array(AtlassianRecordSchema),
+        z
+          .object({
+            listings: z.array(AtlassianRecordSchema).optional(),
+            jobs: z.array(AtlassianRecordSchema).optional(),
+          })
+          .passthrough()
+          .refine((value) => Boolean(value.listings || value.jobs), {
+            message: "data must contain listings or jobs",
+          }),
+      ]),
+    })
+    .passthrough(),
+]);
+
+const AtlassianDetailRecordSchema = z.record(z.string(), z.unknown());
+const AtlassianDetailPayloadSchema = z.union([
+  AtlassianDetailRecordSchema,
+  z.object({ data: AtlassianDetailRecordSchema }).passthrough(),
+  z.object({ job: AtlassianDetailRecordSchema }).passthrough(),
+]);
 
 interface AtlassianListing {
   id: string;
@@ -67,7 +119,10 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
 
   async scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult> {
     try {
-      const sourceUrl = new URL(url);
+      const sourceUrl = this.parseSourceUrl(url);
+      if (!sourceUrl) {
+        return this.failure("invalid_url", "Invalid Atlassian Careers URL.");
+      }
       const origin = sourceUrl.origin;
       const listingsEndpoint = `${origin}/endpoint/careers/listings`;
       const response = await this.httpClient.fetch(listingsEndpoint, {
@@ -78,17 +133,17 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
       });
 
       if (!response.ok) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          openExternalIds: [],
-          openExternalIdsComplete: false,
-          error: "Failed to fetch Atlassian jobs list.",
-        };
+        return this.failureForHttpStatus(
+          response.status,
+          "Failed to fetch Atlassian jobs list.",
+        );
       }
 
-      const payload = (await response.json()) as unknown;
+      const payload = parseExternalPayload(
+        AtlassianListingsPayloadSchema,
+        await response.json(),
+        "Atlassian listings"
+      );
       const allListings = this.extractListings(payload);
       const scopedListings = this.applySourceUrlFilters(allListings, sourceUrl.searchParams);
 
@@ -98,11 +153,11 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
 
       if (scopedListings.length === 0) {
         return {
-          success: true,
           outcome: "success",
           jobs: [],
+          totalListings: 0,
           openExternalIds,
-          openExternalIdsComplete: true,
+          listingCompleteness: "complete",
         };
       }
 
@@ -125,12 +180,12 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
 
       if (jobsToProcess.length === 0) {
         return {
-          success: true,
           outcome: "success",
           jobs: [],
+          totalListings: scopedListings.length,
           earlyFiltered: earlyFilterStats,
           openExternalIds,
-          openExternalIdsComplete: true,
+          listingCompleteness: "complete",
         };
       }
 
@@ -143,12 +198,12 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
 
       if (jobsToFetch.length === 0) {
         return {
-          success: true,
           outcome: "success",
           jobs: [],
+          totalListings: scopedListings.length,
           earlyFiltered: earlyFilterStats,
           openExternalIds,
-          openExternalIdsComplete: true,
+          listingCompleteness: "complete",
         };
       }
 
@@ -166,22 +221,15 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
       });
 
       return {
-        success: true,
         outcome: detailFailures > 0 ? "partial" : "success",
         jobs,
+        totalListings: scopedListings.length,
         earlyFiltered: earlyFilterStats,
         openExternalIds,
-        openExternalIdsComplete: true,
+        listingCompleteness: "complete",
       };
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        openExternalIds: [],
-        openExternalIdsComplete: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 
@@ -341,7 +389,11 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
       return { job: fallback, failed: true };
     }
 
-    const payload = (await response.json()) as unknown;
+    const payload = parseExternalPayload(
+      AtlassianDetailPayloadSchema,
+      await response.json(),
+      "Atlassian detail"
+    );
     const detailRecord = this.resolveDetailRecord(payload);
     if (!detailRecord) {
       return { job: fallback, failed: true };

@@ -1,5 +1,10 @@
 import type { IScraper, ScraperConfig, ScrapeOptions, ScraperResult } from "./types";
 import type { Platform } from "../types";
+import { createScraperFailure } from "../types";
+import {
+  createFailureForHttpStatus,
+  createFailureFromUnknown,
+} from "../types/validation";
 import type { IHttpClient, HttpRequestOptions } from "@/lib/scraper/infrastructure/http-client";
 import { normalizeLocation, generateExternalId } from "../utils";
 
@@ -60,4 +65,31 @@ export abstract class AbstractApiScraper<
   protected normalizeLocation = normalizeLocation;
 
   protected generateExternalId = generateExternalId;
+
+  protected parseSourceUrl(url: string): URL | null {
+    try {
+      return new URL(url);
+    } catch {
+      return null;
+    }
+  }
+
+  protected failure(
+    code: Parameters<typeof createScraperFailure>[0],
+    message: string,
+    metadata: Parameters<typeof createScraperFailure>[2] = {}
+  ): ReturnType<typeof createScraperFailure> {
+    return createScraperFailure(code, message, metadata);
+  }
+
+  protected failureFromUnknown(error: unknown): ReturnType<typeof createScraperFailure> {
+    return createFailureFromUnknown(error);
+  }
+
+  protected failureForHttpStatus(
+    status: number,
+    message: string
+  ): ReturnType<typeof createScraperFailure> {
+    return createFailureForHttpStatus(status, message);
+  }
 }

@@ -1,7 +1,9 @@
+import { z } from "zod";
+
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 
 import { containsHtml, decodeHtmlEntities, processDescription } from "@/lib/jobs/description-processor";
-import { parseEmploymentType } from "@/lib/scraper/types";
+import { parseEmploymentType, parseExternalPayload } from "@/lib/scraper/types";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import type { ApiScraperConfig, ScrapeOptions, ScrapedJob, ScraperResult } from "../core/types";
 
@@ -20,9 +22,32 @@ type MynextHireJob = {
 };
 
 type MynextHireResponse = {
-  requesterTitle: string;
+  requesterTitle?: string;
   reqDetailsBOList: MynextHireJob[];
 };
+
+const MynextHireResponseSchema = z
+  .object({
+    requesterTitle: z.string().optional(),
+    reqDetailsBOList: z.array(
+      z
+        .object({
+          reqId: z.number(),
+          reqTitle: z.string(),
+          buName: z.string().optional(),
+          location: z.string().optional(),
+          locationAddress: z.string().optional(),
+          jdDisplay: z.string().optional(),
+          approvedOn: z.number().optional(),
+          employmentType: z.string().optional(),
+          reqCurrency: z.string().optional(),
+          ctcBandLowEnd: z.union([z.string(), z.number(), z.null()]).optional(),
+          ctcBandHighEnd: z.union([z.string(), z.number(), z.null()]).optional(),
+        })
+        .passthrough()
+    ),
+  })
+  .passthrough();
 
 export type MynextHireConfig = ApiScraperConfig;
 
@@ -64,16 +89,14 @@ export class MynextHireScraper extends AbstractApiScraper<MynextHireConfig> {
     try {
       const tenant = options?.boardToken || this.extractIdentifier(url);
       if (!tenant) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          error: "Could not determine MynextHire tenant from URL. Please provide a board token manually.",
-        };
+        return this.failure(
+          "invalid_url",
+          "Could not determine MynextHire tenant from URL. Please provide a board token manually."
+        );
       }
 
       const tenantHost = this.resolveTenantHost(url, tenant);
-      const data = await this.post<MynextHireResponse>(
+      const payload = await this.post<unknown>(
         `https://${tenantHost}/employer/careers/reqlist/get`,
         {
           source: "careers",
@@ -87,24 +110,24 @@ export class MynextHireScraper extends AbstractApiScraper<MynextHireConfig> {
           },
         }
       );
+      const data: MynextHireResponse = parseExternalPayload(
+        MynextHireResponseSchema,
+        payload,
+        "MynextHire"
+      );
 
       const jobs = data.reqDetailsBOList.map((job) => this.mapJob(tenant, tenantHost, url, job));
 
       return {
-        success: true,
         outcome: "success",
         jobs,
+        totalListings: jobs.length,
         detectedBoardToken: !options?.boardToken ? tenant : undefined,
         openExternalIds: jobs.map((job) => job.externalId),
-        openExternalIdsComplete: true,
+        listingCompleteness: "complete",
       };
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 

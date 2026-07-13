@@ -1,7 +1,16 @@
 import { load, type CheerioAPI } from "cheerio";
+import { z } from "zod";
 
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
-import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig, EarlyFilterStats, SeniorityLevel } from "@/lib/scraper/types";
+import {
+  parseExternalPayload,
+  type ScraperResult,
+  type ScrapeOptions,
+  type ScrapedJob,
+  type ApiScraperConfig,
+  type EarlyFilterStats,
+  type SeniorityLevel,
+} from "@/lib/scraper/types";
 import { applyEarlyFilters, hasEarlyFilters, toEarlyFilterStats } from "@/lib/scraper/services";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
@@ -26,6 +35,17 @@ interface GoogleHydratedJob {
   job: ScrapedJob;
   failed: boolean;
 }
+
+const GoogleListingSchema = z
+  .object({
+    id: z.string().min(1),
+    slug: z.string().min(1),
+    url: z.string().min(1),
+    title: z.string().min(1),
+    location: z.string().optional(),
+    seniority: z.enum(["entry", "mid", "senior", "lead", "manager"]).optional(),
+  })
+  .passthrough();
 
 export type GoogleConfig = ApiScraperConfig & {
   detailBatchSize: number;
@@ -71,6 +91,10 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
 
   async scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult> {
     try {
+      if (!this.parseSourceUrl(url)) {
+        return this.failure("invalid_url", "Invalid Google Careers URL.");
+      }
+
       const listingUrl = this.resolveListingUrl(url);
       const pagedResult = await fetchPaginatedHtmlByPageParam({
         httpClient: this.httpClient,
@@ -83,19 +107,26 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
       });
 
       if (pagedResult.pages.length === 0) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          openExternalIds: [],
-          openExternalIdsComplete: false,
-          error: "Failed to fetch Google Careers listing pages.",
-        };
+        const message = "Failed to fetch Google Careers listing pages.";
+        return pagedResult.firstFailureStatus
+          ? this.failureForHttpStatus(pagedResult.firstFailureStatus, message)
+          : this.failure("network_error", message);
       }
 
-      const discoveredListings = this.extractListingsFromPages(
-        pagedResult.pages.map((page) => page.html),
-        listingUrl
+      const listingPages = pagedResult.pages.map((page) => page.html);
+      const extractedByPage = listingPages.map((html) =>
+        this.extractListingsFromPages([html], listingUrl)
+      );
+      const hasUnrecognizedPage = extractedByPage.some(
+        (listings, index) =>
+          listings.length === 0 &&
+          !(listingPages.length === 1 && index === 0 && this.hasExplicitEmptyState([listingPages[0]]))
+      );
+      const listingIsComplete = pagedResult.isComplete && !hasUnrecognizedPage;
+      const discoveredListings = parseExternalPayload(
+        z.array(GoogleListingSchema),
+        extractedByPage.flat(),
+        "Google listings"
       );
       const listings = this.dedupeListings(discoveredListings);
       const openExternalIds = listings.map((listing) =>
@@ -103,14 +134,24 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
       );
 
       if (listings.length === 0) {
-        const outcome = pagedResult.isComplete ? "success" : "error";
+        if (!listingIsComplete) {
+          return this.failure(
+            "parse_error",
+            "Incomplete Google list fetch with no usable jobs."
+          );
+        }
+        if (!this.hasExplicitEmptyState(listingPages)) {
+          return this.failure(
+            "parse_error",
+            "Google listing page did not contain recognized jobs or an explicit empty state."
+          );
+        }
         return {
-          success: outcome !== "error",
-          outcome,
+          outcome: "success",
           jobs: [],
+          totalListings: 0,
           openExternalIds,
-          openExternalIdsComplete: pagedResult.isComplete,
-          error: outcome === "error" ? "Incomplete Google list fetch with no usable jobs." : undefined,
+          listingCompleteness: "complete",
         };
       }
 
@@ -134,12 +175,12 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
 
       if (jobsToProcess.length === 0) {
         return {
-          success: true,
-          outcome: pagedResult.isComplete ? "success" : "partial",
+          outcome: listingIsComplete ? "success" : "partial",
           jobs: [],
+          totalListings: listings.length,
           earlyFiltered: earlyFilterStats,
           openExternalIds,
-          openExternalIdsComplete: pagedResult.isComplete,
+          listingCompleteness: listingIsComplete ? "complete" : "partial",
         };
       }
 
@@ -152,12 +193,12 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
 
       if (jobsToFetch.length === 0) {
         return {
-          success: true,
-          outcome: pagedResult.isComplete ? "success" : "partial",
+          outcome: listingIsComplete ? "success" : "partial",
           jobs: [],
+          totalListings: listings.length,
           earlyFiltered: earlyFilterStats,
           openExternalIds,
-          openExternalIdsComplete: pagedResult.isComplete,
+          listingCompleteness: listingIsComplete ? "complete" : "partial",
         };
       }
 
@@ -174,23 +215,18 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
         return result.job;
       });
 
-      const outcome = detailFailures > 0 || !pagedResult.isComplete ? "partial" : "success";
+      const outcome = detailFailures > 0 || !listingIsComplete ? "partial" : "success";
 
       return {
-        success: true,
         outcome,
         jobs: scrapedJobs,
+        totalListings: listings.length,
         earlyFiltered: earlyFilterStats,
         openExternalIds,
-        openExternalIdsComplete: pagedResult.isComplete,
+        listingCompleteness: listingIsComplete ? "complete" : "partial",
       };
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 
@@ -209,6 +245,15 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
     }
 
     return parsed.toString();
+  }
+
+  private hasExplicitEmptyState(pages: string[]): boolean {
+    const text = pages
+      .map((html) => load(html).text().replace(/\s+/g, " ").trim())
+      .join(" ");
+    return /(?:no jobs|no matching jobs|no results|0 jobs|zero jobs|currently no open roles)/i.test(
+      text
+    );
   }
 
   private extractListingsFromPages(pages: string[], listingUrl: string): GoogleListingJob[] {

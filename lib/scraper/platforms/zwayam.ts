@@ -1,5 +1,11 @@
-import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
+import { z } from "zod";
+
+import {
+  HttpError,
+  type IHttpClient,
+} from "@/lib/scraper/infrastructure/http-client";
 import { containsHtml, decodeHtmlEntities, processDescription } from "@/lib/jobs/description-processor";
+import { parseExternalPayload } from "@/lib/scraper/types";
 
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import type { ApiScraperConfig, ScrapeOptions, ScrapedJob, ScraperResult } from "../core/types";
@@ -38,10 +44,10 @@ type ZwayamSearchHit = {
 
 type ZwayamResponse = {
   code: number;
-  data?: {
+  data: {
     data: ZwayamSearchHit[];
-    totalCount: number;
-    hasMoreData: boolean;
+    totalCount?: number;
+    hasMoreData?: boolean;
   };
 };
 
@@ -62,6 +68,38 @@ type ZwayamDetailResponse = {
     customDetails?: Record<string, string>;
   };
 };
+
+const ZwayamJobRecordSchema = z
+  .object({
+    id: z.number(),
+  })
+  .passthrough();
+
+const ZwayamResponseSchema = z
+  .object({
+    code: z.literal(200),
+    data: z
+      .object({
+        data: z.array(z.object({ _source: ZwayamJobRecordSchema }).passthrough()),
+        totalCount: z.number().optional(),
+        hasMoreData: z.boolean().optional(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
+const ZwayamDetailResponseSchema = z
+  .object({
+    responseStatus: z.string(),
+    responseCode: z.number(),
+    reponseObject: z
+      .object({
+        customDetails: z.record(z.string(), z.string()).optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
 
 export type ZwayamConfig = ApiScraperConfig & {
   pageSize: number;
@@ -117,12 +155,10 @@ export class ZwayamScraper extends AbstractApiScraper<ZwayamConfig> {
     try {
       const tenant = options?.boardToken || this.extractIdentifier(url);
       if (!tenant) {
-        return {
-          success: false,
-          outcome: "error",
-          jobs: [],
-          error: "Could not determine Zwayam tenant from URL. Please provide a board token manually.",
-        };
+        return this.failure(
+          "invalid_url",
+          "Could not determine Zwayam tenant from URL. Please provide a board token manually."
+        );
       }
 
       const companyId = this.resolveCompanyId(tenant);
@@ -132,6 +168,7 @@ export class ZwayamScraper extends AbstractApiScraper<ZwayamConfig> {
       let paginationStartNo = 0;
       let isComplete = true;
       let hadDetailFailures = false;
+      let expectedTotal: number | undefined;
 
       while (true) {
         const response = await this.fetchPage({
@@ -143,8 +180,19 @@ export class ZwayamScraper extends AbstractApiScraper<ZwayamConfig> {
 
         const pageJobs = response.data?.data ?? [];
         const totalCount = response.data?.totalCount;
+        const hasMoreData = response.data?.hasMoreData;
+        if (typeof totalCount === "number") {
+          expectedTotal = Math.max(expectedTotal ?? 0, totalCount);
+        }
 
         if (pageJobs.length === 0) {
+          if (
+            hasMoreData === true ||
+            (expectedTotal !== undefined && paginationStartNo < expectedTotal) ||
+            (hasMoreData === undefined && expectedTotal === undefined)
+          ) {
+            isComplete = false;
+          }
           break;
         }
 
@@ -154,18 +202,24 @@ export class ZwayamScraper extends AbstractApiScraper<ZwayamConfig> {
 
         paginationStartNo += pageJobs.length;
 
-        const hasMoreData = response.data?.hasMoreData;
-
         if (hasMoreData === false) {
+          if (expectedTotal !== undefined && paginationStartNo < expectedTotal) {
+            isComplete = false;
+          }
           break;
         }
 
-        if (typeof totalCount === "number" && paginationStartNo >= totalCount && hasMoreData !== true) {
+        if (hasMoreData === true && expectedTotal !== undefined && paginationStartNo >= expectedTotal) {
+          isComplete = false;
+          break;
+        }
+
+        if (expectedTotal !== undefined && paginationStartNo >= expectedTotal) {
           break;
         }
 
         if (hasMoreData === undefined && pageJobs.length < this.config.pageSize) {
-          isComplete = typeof totalCount === "number" ? paginationStartNo >= totalCount : true;
+          isComplete = expectedTotal !== undefined && paginationStartNo >= expectedTotal;
           break;
         }
       }
@@ -187,20 +241,15 @@ export class ZwayamScraper extends AbstractApiScraper<ZwayamConfig> {
       const hasPartialDetails = hadDetailFailures && dedupedJobs.length > 0;
 
       return {
-        success: isComplete && !hasPartialDetails,
         outcome: isComplete && !hasPartialDetails ? "success" : "partial",
         jobs: dedupedJobs,
+        totalListings: expectedTotal ?? dedupedJobs.length,
         detectedBoardToken: !options?.boardToken ? tenant : undefined,
         openExternalIds: dedupedJobs.map((job) => job.externalId),
-        openExternalIdsComplete: isComplete,
+        listingCompleteness: isComplete ? "complete" : "partial",
       };
     } catch (error) {
-      return {
-        success: false,
-        outcome: "error",
-        jobs: [],
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      return this.failureFromUnknown(error);
     }
   }
 
@@ -238,10 +287,18 @@ export class ZwayamScraper extends AbstractApiScraper<ZwayamConfig> {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch Zwayam jobs: ${response.status}`);
+      throw new HttpError(
+        response.status,
+        `Failed to fetch Zwayam jobs: ${response.status}`,
+        response.url
+      );
     }
 
-    return response.json() as Promise<ZwayamResponse>;
+    return parseExternalPayload(
+      ZwayamResponseSchema,
+      await response.json(),
+      "Zwayam search"
+    ) as ZwayamResponse;
   }
 
   private mapJob(
@@ -366,7 +423,11 @@ export class ZwayamScraper extends AbstractApiScraper<ZwayamConfig> {
       return null;
     }
 
-    const data = (await response.json()) as ZwayamDetailResponse;
+    const data = parseExternalPayload(
+      ZwayamDetailResponseSchema,
+      await response.json(),
+      "Zwayam detail"
+    ) as ZwayamDetailResponse;
     const customDetails = data.reponseObject?.customDetails;
     if (!customDetails) {
       return null;

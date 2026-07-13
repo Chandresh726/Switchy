@@ -183,13 +183,13 @@ describe("RipplingScraper", () => {
         "https://www.rippling.com/en-IN/careers/open-roles"
       );
 
-      expect(result.success).toBe(true);
+      expect(result.outcome).not.toBe("error");
       expect(result.outcome).toBe("success");
       expect(result.jobs).toHaveLength(2);
       expect(result.openExternalIds).toHaveLength(2);
       expect(result.openExternalIds).toContain(`rippling-${jobId1}`);
       expect(result.openExternalIds).toContain(`rippling-${jobId2}`);
-      expect(result.openExternalIdsComplete).toBe(true);
+      expect(result.listingCompleteness).toBe("complete");
 
       const engineerJob = result.jobs.find((j) => j.title === "Software Engineer");
       expect(engineerJob).toBeDefined();
@@ -236,7 +236,7 @@ describe("RipplingScraper", () => {
         }
       );
 
-      expect(result.success).toBe(true);
+      expect(result.outcome).not.toBe("error");
       expect(result.jobs).toHaveLength(0);
       expect(result.openExternalIds).toHaveLength(1);
       expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -252,9 +252,11 @@ describe("RipplingScraper", () => {
         "https://www.rippling.com/en-IN/careers/open-roles"
       );
 
-      expect(result.success).toBe(false);
       expect(result.outcome).toBe("error");
-      expect(result.error).toContain("build ID");
+      expect(result.error).toMatchObject({
+        code: "parse_error",
+        message: expect.stringContaining("build ID"),
+      });
     });
 
     it("returns partial outcome when detail fetch fails", async () => {
@@ -285,7 +287,7 @@ describe("RipplingScraper", () => {
         "https://www.rippling.com/en-IN/careers/open-roles"
       );
 
-      expect(result.success).toBe(true);
+      expect(result.outcome).not.toBe("error");
       expect(result.outcome).toBe("partial");
       expect(result.jobs).toHaveLength(1);
       expect(result.jobs[0].description).toBeUndefined();
@@ -302,7 +304,7 @@ describe("RipplingScraper", () => {
         "https://www.rippling.com/en-IN/careers/open-roles"
       );
 
-      expect(result.success).toBe(true);
+      expect(result.outcome).not.toBe("error");
       expect(result.outcome).toBe("success");
       expect(result.jobs).toHaveLength(0);
       expect(result.openExternalIds).toHaveLength(0);
@@ -416,6 +418,68 @@ describe("RipplingScraper", () => {
 
       const onsite = result.jobs.find((j) => j.title === "Onsite Role");
       expect(onsite!.locationType).toBe("onsite");
+    });
+
+    it("accepts minimal listings without unused pagination or location metadata", async () => {
+      const listings = new Response(
+        JSON.stringify({
+          pageProps: {
+            jobs: {
+              items: [
+                {
+                  id: "minimal-1",
+                  name: "Minimal Engineer",
+                  url: "https://ats.rippling.com/rippling/jobs/minimal-1",
+                },
+              ],
+            },
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+      const { httpClient } = createHttpMock([
+        createBuildIdPage("minimalBuild"),
+        listings,
+        createDetailPage("Minimal Engineer", "Build systems."),
+      ]);
+      const scraper = new RipplingScraper(httpClient);
+
+      const result = await scraper.scrape(
+        "https://www.rippling.com/en-IN/careers/open-roles"
+      );
+
+      expect(result).toMatchObject({
+        outcome: "success",
+        totalListings: 1,
+        listingCompleteness: "complete",
+      });
+    });
+
+    it("preserves transport errors while fetching the build id", async () => {
+      const fetchMock = vi.fn().mockRejectedValueOnce(new TypeError("network down"));
+      const httpClient: IHttpClient = {
+        fetch: fetchMock,
+        get: vi.fn(),
+        post: vi.fn(),
+      };
+
+      const result = await new RipplingScraper(httpClient).scrape(
+        "https://www.rippling.com/en-IN/careers/open-roles"
+      );
+
+      expect(result).toMatchObject({
+        outcome: "error",
+        error: { code: "network_error", retryable: true },
+      });
+    });
+
+    it("returns invalid_url without fetching for malformed source input", async () => {
+      const { httpClient, fetchMock } = createHttpMock([]);
+
+      const result = await new RipplingScraper(httpClient).scrape("not a URL");
+
+      expect(result).toMatchObject({ outcome: "error", error: { code: "invalid_url" } });
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 });

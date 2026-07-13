@@ -199,8 +199,8 @@ describe("ServiceNowScraper", () => {
 
     const result = await scraper.scrape("https://careers.servicenow.com/jobs");
 
-    expect(result.success).toBe(true);
-    expect(result.outcome).toBe("success");
+    expect(result.outcome).not.toBe("error");
+    expect(result.outcome).toBe("partial");
     expect(result.jobs).toHaveLength(3);
     expect(result.jobs[0]?.externalId).toBe("servicenow-1");
     expect(result.jobs[0]?.location).toBe("Chicago, IL");
@@ -208,7 +208,44 @@ describe("ServiceNowScraper", () => {
     expect(result.jobs[1]?.location).toBe("Hyderabad, India");
     expect(result.jobs[2]?.externalId).toBe("servicenow-3");
     expect(result.jobs[2]?.location).toBe("Dublin, Ireland");
-    expect(result.openExternalIdsComplete).toBe(true);
+    expect(result.listingCompleteness).toBe("partial");
+  });
+
+  it("rejects a 200 challenge page without recognized listings or empty state", async () => {
+    const page = {
+      goto: vi.fn(async () => undefined),
+      waitForTimeout: vi.fn(async () => undefined),
+      content: vi.fn(async () => "<html><main>Verify you are human</main></html>"),
+      url: vi.fn(() => "https://careers.servicenow.com/jobs"),
+    } as unknown as Page;
+    const scraper = new ServiceNowScraper(createHttpClient(), createBrowserClient(page));
+
+    const result = await scraper.scrape("https://careers.servicenow.com/jobs");
+
+    expect(result).toMatchObject({
+      outcome: "error",
+      listingCompleteness: "unknown",
+      error: { code: "parse_error" },
+    });
+  });
+
+  it("accepts an explicit empty state as authoritative", async () => {
+    const page = {
+      goto: vi.fn(async () => undefined),
+      waitForTimeout: vi.fn(async () => undefined),
+      content: vi.fn(async () => "<html><main>No jobs found</main></html>"),
+      url: vi.fn(() => "https://careers.servicenow.com/jobs"),
+    } as unknown as Page;
+    const scraper = new ServiceNowScraper(createHttpClient(), createBrowserClient(page));
+
+    const result = await scraper.scrape("https://careers.servicenow.com/jobs");
+
+    expect(result).toMatchObject({
+      outcome: "success",
+      totalListings: 0,
+      openExternalIds: [],
+      listingCompleteness: "complete",
+    });
   });
 
   it("returns partial when detail pages fail after listings are collected", async () => {
@@ -245,7 +282,6 @@ describe("ServiceNowScraper", () => {
 
     const result = await scraper.scrape("https://careers.servicenow.com/jobs");
 
-    expect(result.success).toBe(false);
     expect(result.outcome).toBe("partial");
     expect(result.jobs).toHaveLength(2);
     expect(result.jobs[0]?.externalId).toBe("servicenow-1");
@@ -256,7 +292,7 @@ describe("ServiceNowScraper", () => {
       title: "Site Reliability Engineer",
       location: "Remote",
     });
-    expect(result.openExternalIdsComplete).toBe(true);
+    expect(result.listingCompleteness).toBe("complete");
   });
 
   it("respects maxPages config", async () => {
@@ -291,9 +327,9 @@ describe("ServiceNowScraper", () => {
 
     const result = await scraper.scrape("https://careers.servicenow.com/jobs");
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(result.jobs).toHaveLength(2);
-    expect(result.openExternalIdsComplete).toBe(false);
+    expect(result.listingCompleteness).toBe("partial");
     expect(page.goto).toHaveBeenCalledWith("https://careers.servicenow.com/jobs?page=2", expect.any(Object));
   });
 

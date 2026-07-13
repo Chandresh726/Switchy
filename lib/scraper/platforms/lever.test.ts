@@ -50,7 +50,7 @@ describe("LeverScraper", () => {
     const scraper = new LeverScraper(createHttpClient(fetchMock));
     const result = await scraper.scrape("https://jobs.lever.co/jiostar");
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(result.jobs).toHaveLength(1);
 
     const job = result.jobs[0];
@@ -88,7 +88,7 @@ describe("LeverScraper", () => {
     const scraper = new LeverScraper(createHttpClient(fetchMock));
     const result = await scraper.scrape("https://jobs.lever.co/umbrella");
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(result.jobs).toHaveLength(1);
 
     const job = result.jobs[0];

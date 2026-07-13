@@ -43,10 +43,9 @@ describe("NutanixScraper", () => {
       expect.any(Object)
     );
     expect(result).toMatchObject({
-      success: true,
       outcome: "success",
       detectedBoardToken: "nutanix",
-      openExternalIdsComplete: true,
+      listingCompleteness: "complete",
     });
     expect(result.jobs).toEqual([
       expect.objectContaining({
@@ -66,11 +65,40 @@ describe("NutanixScraper", () => {
     const result = await scraper.scrape("https://careers.nutanix.com/jobs");
 
     expect(result).toMatchObject({
-      success: true,
       outcome: "partial",
       jobs: [],
       openExternalIds: [],
-      openExternalIdsComplete: true,
+      listingCompleteness: "unknown",
+    });
+  });
+
+  it("marks the listing incomplete when malformed feed entries are discarded", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        "<jobs><job><title>Valid</title><apijobid>1</apijobid></job><job><title>Missing ID</title></job></jobs>",
+        { status: 200 }
+      )
+    );
+    const scraper = new NutanixScraper(createHttpClient(fetchMock));
+
+    const result = await scraper.scrape("https://careers.nutanix.com/jobs");
+
+    expect(result).toMatchObject({
+      outcome: "partial",
+      listingCompleteness: "partial",
+    });
+    expect(result.jobs).toHaveLength(1);
+  });
+
+  it("rejects content that is not a recognized XML feed", async () => {
+    const fetchMock = vi.fn(async () => new Response("<html>blocked</html>", { status: 200 }));
+    const scraper = new NutanixScraper(createHttpClient(fetchMock));
+
+    const result = await scraper.scrape("https://careers.nutanix.com/jobs");
+
+    expect(result).toMatchObject({
+      outcome: "error",
+      error: { code: "parse_error", retryable: false },
     });
   });
 });

@@ -66,7 +66,7 @@ describe("VisaScraper", () => {
       "https://www.visa.co.uk/en_gb/jobs/?functions=Technology&cities=Bangalore&cities=Mumbai"
     );
 
-    expect(result.success).toBe(true);
+    expect(result.outcome).not.toBe("error");
     expect(result.jobs).toHaveLength(2);
     expect(result.jobs[0]).toMatchObject({
       externalId: "visa-REF-1",
@@ -92,5 +92,35 @@ describe("VisaScraper", () => {
     );
     expect(postMock).toHaveBeenCalledTimes(2);
     expect(result.openExternalIds).toEqual(["visa-REF-1", "visa-REF-2"]);
+  });
+
+  it("rejects an application-level unsuccessful response", async () => {
+    const postMock = vi.fn(async () => ({
+      successful: false,
+      totalRecords: 0,
+      recordsMatched: 0,
+      pageSize: 100,
+      from: 0,
+      jobDetails: [],
+    }));
+    const scraper = new VisaScraper(createHttpClient(postMock));
+
+    const result = await scraper.scrape("https://www.visa.co.uk/en_gb/jobs/");
+
+    expect(result).toMatchObject({
+      outcome: "error",
+      listingCompleteness: "unknown",
+      error: { code: "parse_error" },
+    });
+  });
+
+  it("returns invalid_url without posting for malformed source input", async () => {
+    const postMock = vi.fn();
+    const scraper = new VisaScraper(createHttpClient(postMock));
+
+    const result = await scraper.scrape("not a URL");
+
+    expect(result).toMatchObject({ outcome: "error", error: { code: "invalid_url" } });
+    expect(postMock).not.toHaveBeenCalled();
   });
 });
