@@ -78,6 +78,13 @@
       "when": 1782909139117,
       "tag": "0010_secret_shatterstar",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1783935460701,
+      "tag": "0011_old_angel",
+      "breakpoints": true
     }
   ]
 }

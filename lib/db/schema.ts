@@ -135,6 +135,48 @@ export const scrapeSessions = sqliteTable("scrape_sessions", {
   completedAt: integer("completed_at", { mode: "timestamp" }),
 });
 
+// Scrape Queue Items - Durable local work with leases for crash recovery
+export const scrapeQueueItems = sqliteTable("scrape_queue_items", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id")
+    .references(() => scrapeSessions.id, { onDelete: "cascade" })
+    .notNull(),
+  companyId: integer("company_id")
+    .references(() => companies.id, { onDelete: "cascade" })
+    .notNull(),
+  status: text("status").notNull().default("queued"), // "queued" | "running" | "completed" | "failed" | "cancelled"
+  priority: integer("priority").notNull().default(100),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  availableAt: integer("available_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  workerId: text("worker_id"),
+  lockedAt: integer("locked_at", { mode: "timestamp" }),
+  leaseExpiresAt: integer("lease_expires_at", { mode: "timestamp" }),
+  cancelRequested: integer("cancel_requested", { mode: "boolean" }).notNull().default(false),
+  lastError: text("last_error"),
+  resultJson: text("result_json"),
+  startedAt: integer("started_at", { mode: "timestamp" }),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  sessionCompanyUnique: unique("scrape_queue_session_company_unique").on(
+    table.sessionId,
+    table.companyId
+  ),
+  claimIdx: index("scrape_queue_claim_idx").on(
+    table.status,
+    table.availableAt,
+    table.priority,
+    table.createdAt
+  ),
+  sessionStatusIdx: index("scrape_queue_session_status_idx").on(
+    table.sessionId,
+    table.status
+  ),
+  leaseIdx: index("scrape_queue_lease_idx").on(table.status, table.leaseExpiresAt),
+}));
+
 // Scraping Logs - Audit trail for scraping operations
 export const scrapingLogs = sqliteTable("scraping_logs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -348,6 +390,7 @@ export const companiesRelations = relations(companies, ({ many }) => ({
   scrapingLogs: many(scrapingLogs),
   people: many(people),
   companyAliases: many(companyAliases),
+  scrapeQueueItems: many(scrapeQueueItems),
 }));
 
 export const companyAliasesRelations = relations(companyAliases, ({ one }) => ({
@@ -377,6 +420,18 @@ export const scrapingLogsRelations = relations(scrapingLogs, ({ one }) => ({
 
 export const scrapeSessionsRelations = relations(scrapeSessions, ({ many }) => ({
   logs: many(scrapingLogs),
+  queueItems: many(scrapeQueueItems),
+}));
+
+export const scrapeQueueItemsRelations = relations(scrapeQueueItems, ({ one }) => ({
+  session: one(scrapeSessions, {
+    fields: [scrapeQueueItems.sessionId],
+    references: [scrapeSessions.id],
+  }),
+  company: one(companies, {
+    fields: [scrapeQueueItems.companyId],
+    references: [companies.id],
+  }),
 }));
 
 export const matchSessionsRelations = relations(matchSessions, ({ one, many }) => ({
@@ -441,6 +496,8 @@ export type ScrapingLog = typeof scrapingLogs.$inferSelect;
 export type NewScrapingLog = typeof scrapingLogs.$inferInsert;
 export type ScrapeSession = typeof scrapeSessions.$inferSelect;
 export type NewScrapeSession = typeof scrapeSessions.$inferInsert;
+export type ScrapeQueueItem = typeof scrapeQueueItems.$inferSelect;
+export type NewScrapeQueueItem = typeof scrapeQueueItems.$inferInsert;
 export type Setting = typeof settings.$inferSelect;
 export type NewSetting = typeof settings.$inferInsert;
 export type MatchSession = typeof matchSessions.$inferSelect;
