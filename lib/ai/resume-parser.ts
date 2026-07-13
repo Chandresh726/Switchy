@@ -70,7 +70,7 @@ Extract all relevant information including contact details, skills, work experie
   const result = await generateText({
     model: aiContext.model,
     output: Output.object({ schema: ResumeDataSchema }),
-    system: RESUME_PARSING_SYSTEM_PROMPT,
+    instructions: RESUME_PARSING_SYSTEM_PROMPT,
     prompt,
     ...aiContext.providerOptions,
   });

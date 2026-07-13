@@ -166,7 +166,7 @@ async function generateValidatedText(input: {
 }): Promise<string> {
   const firstAttempt = await generateText({
     model: input.aiContext.model,
-    system: input.systemPrompt,
+    instructions: input.systemPrompt,
     prompt: input.prompt,
     ...input.aiContext.providerOptions,
   });
@@ -196,7 +196,7 @@ IMPORTANT OUTPUT QUALITY REQUIREMENTS:
 
   const retryAttempt = await generateText({
     model: input.aiContext.model,
-    system: input.systemPrompt,
+    instructions: input.systemPrompt,
     prompt: perspectiveRetryPrompt,
     ...input.aiContext.providerOptions,
   });
