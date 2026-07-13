@@ -7,9 +7,29 @@ import {
   scrapeSessions,
   scrapingLogs,
 } from "@/lib/db/schema";
-import type { IScraperRepository } from "@/lib/scraper/infrastructure/types";
+import type { ScrapeQueueItem } from "@/lib/db/schema";
+import type {
+  CompanyCatalog,
+  ScrapeSessionStore,
+  ScrapeSettingsSource,
+} from "@/lib/scraper/infrastructure/types";
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 import type { IScrapeOrchestrator, IScraperRegistry } from "@/lib/scraper/services";
+import {
+  StoredScrapeSettingsProvider,
+  type ScrapeSettingsProvider,
+} from "@/lib/scraper/settings/provider";
+import { SCRAPER_SETTINGS } from "@/lib/scraper/settings/definitions";
+import {
+  LocalLeasedWorkRunner,
+  type LocalLeasedWorkRunnerConfig,
+} from "@/lib/scraper/runtime/leased-work-runner";
+import { KeyedExecutionLock } from "@/lib/scraper/runtime/keyed-lock";
+import {
+  SharedExclusiveExecutionGate,
+  type ExecutionMode,
+} from "@/lib/scraper/runtime/shared-exclusive-gate";
+import { ScheduledSingleFlightDispatcher } from "@/lib/scraper/runtime/single-flight-dispatcher";
 import {
   isPlatform,
   isTriggerSource,
@@ -20,26 +40,16 @@ import {
 
 import { pruneScrapeHistory } from "../history";
 import { DrizzleLocalScrapeQueueRepository } from "./repository";
-import {
-  LocalScrapeQueueRunner,
-  type LocalScrapeQueueRunnerConfig,
-} from "./runner";
 import type {
   ILocalScrapeQueueRepository,
   QueueCancellationResult,
+  QueueRecoveryResult,
   QueueRunSummary,
 } from "./types";
 
 const TERMINAL_QUEUE_STATUSES = ["completed", "failed", "cancelled"] as const;
-const MAX_PARALLEL_SCRAPES_SETTING = "scraper_max_parallel_scrapes";
-const DEFAULT_MAX_PARALLEL_SCRAPES = 3;
-const MAX_PARALLEL_SCRAPES = 10;
 const DISPATCH_FAILURE_RETRY_MS = 5_000;
-const HISTORY_RETENTION_SETTING = "scraper_history_retention_days";
-const DEFAULT_HISTORY_RETENTION_DAYS = 90;
 const HISTORY_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
-
-type ExecutionMode = "shared" | "exclusive";
 
 class RetryableScrapeError extends Error {
   constructor(message: string, readonly retryAfterMs?: number) {
@@ -48,156 +58,40 @@ class RetryableScrapeError extends Error {
   }
 }
 
-interface ExecutionWaiter {
-  mode: ExecutionMode;
-  resolve: (release: () => void) => void;
-  reject: (error: unknown) => void;
-  signal: AbortSignal;
-  onAbort: () => void;
-}
-
-class ScrapeExecutionGate {
-  private readonly waiters: ExecutionWaiter[] = [];
-  private activeShared = 0;
-  private activeExclusive = false;
-  private sharedLimit = DEFAULT_MAX_PARALLEL_SCRAPES;
-
-  setSharedLimit(limit: number): void {
-    this.sharedLimit = Math.min(MAX_PARALLEL_SCRAPES, Math.max(1, Math.floor(limit)));
-    this.drain();
-  }
-
-  acquire(mode: ExecutionMode, signal: AbortSignal): Promise<() => void> {
-    if (signal.aborted) return Promise.reject(signal.reason);
-    return new Promise((resolve, reject) => {
-      const waiter: ExecutionWaiter = {
-        mode,
-        resolve,
-        reject,
-        signal,
-        onAbort: () => {
-          const index = this.waiters.indexOf(waiter);
-          if (index >= 0) this.waiters.splice(index, 1);
-          reject(signal.reason);
-          this.drain();
-        },
-      };
-      signal.addEventListener("abort", waiter.onAbort, { once: true });
-      this.waiters.push(waiter);
-      this.drain();
-    });
-  }
-
-  private drain(): void {
-    if (this.activeExclusive || this.waiters.length === 0) return;
-    const first = this.waiters[0];
-    if (first?.mode === "exclusive") {
-      if (this.activeShared > 0) return;
-      this.grant(this.waiters.shift()!);
-      return;
-    }
-    while (
-      this.waiters[0]?.mode === "shared" &&
-      this.activeShared < this.sharedLimit &&
-      !this.activeExclusive
-    ) {
-      this.grant(this.waiters.shift()!);
-    }
-  }
-
-  private grant(waiter: ExecutionWaiter): void {
-    waiter.signal.removeEventListener("abort", waiter.onAbort);
-    if (waiter.mode === "exclusive") this.activeExclusive = true;
-    else this.activeShared += 1;
-    let released = false;
-    waiter.resolve(() => {
-      if (released) return;
-      released = true;
-      if (waiter.mode === "exclusive") this.activeExclusive = false;
-      else this.activeShared = Math.max(0, this.activeShared - 1);
-      this.drain();
-    });
-  }
-}
-
-interface CompanyLockWaiter {
-  resolve: (release: () => void) => void;
-  reject: (error: unknown) => void;
-  signal: AbortSignal;
-  onAbort: () => void;
-}
-
-class CompanyExecutionLocks {
-  private readonly activeCompanies = new Set<number>();
-  private readonly waiters = new Map<number, CompanyLockWaiter[]>();
-
-  acquire(companyId: number, signal: AbortSignal): Promise<() => void> {
-    if (signal.aborted) return Promise.reject(signal.reason);
-    return new Promise((resolve, reject) => {
-      const waiter: CompanyLockWaiter = {
-        resolve,
-        reject,
-        signal,
-        onAbort: () => {
-          const companyWaiters = this.waiters.get(companyId);
-          const index = companyWaiters?.indexOf(waiter) ?? -1;
-          if (companyWaiters && index >= 0) companyWaiters.splice(index, 1);
-          if (companyWaiters?.length === 0) this.waiters.delete(companyId);
-          reject(signal.reason);
-        },
-      };
-      signal.addEventListener("abort", waiter.onAbort, { once: true });
-      if (this.activeCompanies.has(companyId)) {
-        const companyWaiters = this.waiters.get(companyId) ?? [];
-        companyWaiters.push(waiter);
-        this.waiters.set(companyId, companyWaiters);
-        return;
-      }
-      this.activeCompanies.add(companyId);
-      this.grant(companyId, waiter);
-    });
-  }
-
-  private grant(companyId: number, waiter: CompanyLockWaiter): void {
-    waiter.signal.removeEventListener("abort", waiter.onAbort);
-    let released = false;
-    waiter.resolve(() => {
-      if (released) return;
-      released = true;
-      const companyWaiters = this.waiters.get(companyId);
-      const next = companyWaiters?.shift();
-      if (companyWaiters?.length === 0) this.waiters.delete(companyId);
-      if (next) this.grant(companyId, next);
-      else this.activeCompanies.delete(companyId);
-    });
-  }
-}
-
 export interface LocalScrapeQueueServiceDependencies {
   orchestrator: IScrapeOrchestrator;
-  scraperRepository: IScraperRepository;
+  scraperRepository: CompanyCatalog & ScrapeSessionStore & ScrapeSettingsSource;
   registry?: IScraperRegistry;
   queueRepository?: ILocalScrapeQueueRepository;
+  settingsProvider?: ScrapeSettingsProvider;
   database?: typeof db;
-  runnerConfig?: Partial<LocalScrapeQueueRunnerConfig>;
+  runnerConfig?: Partial<LocalLeasedWorkRunnerConfig>;
 }
 
 export class LocalScrapeQueueService {
   private readonly database: typeof db;
   private readonly queueRepository: ILocalScrapeQueueRepository;
-  private readonly runner: LocalScrapeQueueRunner<FetchResult>;
-  private readonly executionGate = new ScrapeExecutionGate();
-  private readonly companyLocks = new CompanyExecutionLocks();
-  private activeDispatch: Promise<QueueRunSummary> | null = null;
-  private dispatchRequested = false;
-  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly settingsProvider: ScrapeSettingsProvider;
+  private readonly runner: LocalLeasedWorkRunner<
+    ScrapeQueueItem,
+    FetchResult,
+    QueueRecoveryResult
+  >;
+  private readonly dispatcher: ScheduledSingleFlightDispatcher<QueueRunSummary>;
+  private readonly executionGate = new SharedExclusiveExecutionGate(
+    SCRAPER_SETTINGS.maxParallelScrapes.defaultValue
+  );
+  private readonly companyLocks = new KeyedExecutionLock<number>();
   private lastHistoryPruneAt = 0;
 
   constructor(private readonly dependencies: LocalScrapeQueueServiceDependencies) {
     this.database = dependencies.database ?? db;
     this.queueRepository =
       dependencies.queueRepository ?? new DrizzleLocalScrapeQueueRepository(this.database);
-    this.runner = new LocalScrapeQueueRunner(
+    this.settingsProvider =
+      dependencies.settingsProvider ??
+      new StoredScrapeSettingsProvider(dependencies.scraperRepository);
+    this.runner = new LocalLeasedWorkRunner(
       this.queueRepository,
       async (item, { signal }) => {
         const session = this.database
@@ -241,11 +135,19 @@ export class LocalScrapeQueueService {
           releaseCompany();
         }
       },
-      dependencies.runnerConfig,
+      { workerIdPrefix: "local-scrape", ...dependencies.runnerConfig },
       async (item) => {
         await this.reconcileSession(item.sessionId);
       }
     );
+    this.dispatcher = new ScheduledSingleFlightDispatcher({
+      run: () => this.runDispatch(),
+      getNextRunAt: (summary) => summary.nextAvailableAt,
+      failureRetryMs: DISPATCH_FAILURE_RETRY_MS,
+      onError: (error) => {
+        console.error("[LocalScrapeQueueService] Queue dispatch failed:", error);
+      },
+    });
   }
 
   async scrapeAllCompanies(triggerSource: TriggerSource): Promise<BatchFetchResult> {
@@ -327,35 +229,7 @@ export class LocalScrapeQueueService {
   }
 
   private requestDispatch(): Promise<QueueRunSummary> {
-    if (this.activeDispatch) {
-      this.dispatchRequested = true;
-      return this.activeDispatch;
-    }
-    if (this.retryTimer) {
-      clearTimeout(this.retryTimer);
-      this.retryTimer = null;
-    }
-
-    const dispatch = this.runDispatch();
-    this.activeDispatch = dispatch;
-    let dispatchFailed = false;
-    void dispatch
-      .catch((error) => {
-        dispatchFailed = true;
-        console.error("[LocalScrapeQueueService] Queue dispatch failed:", error);
-      })
-      .finally(() => {
-        if (this.activeDispatch === dispatch) this.activeDispatch = null;
-        if (this.dispatchRequested) {
-          this.dispatchRequested = false;
-          void this.requestDispatch();
-        } else if (dispatchFailed) {
-          this.scheduleNextDispatch(
-            new Date(Date.now() + DISPATCH_FAILURE_RETRY_MS)
-          );
-        }
-      });
-    return dispatch;
+    return this.dispatcher.request();
   }
 
   private async runDispatch(): Promise<QueueRunSummary> {
@@ -363,20 +237,7 @@ export class LocalScrapeQueueService {
     const summary = await this.runner.runAvailable();
     await this.reconcileInProgressSessions();
     await this.pruneHistoryIfDue();
-    this.scheduleNextDispatch(summary.nextAvailableAt);
     return summary;
-  }
-
-  private scheduleNextDispatch(nextAvailableAt: Date | null): void {
-    if (!nextAvailableAt) return;
-    const delayMs = Math.max(0, nextAvailableAt.getTime() - Date.now());
-    this.retryTimer = setTimeout(() => {
-      this.retryTimer = null;
-      void this.requestDispatch();
-    }, delayMs);
-    if (typeof this.retryTimer === "object" && "unref" in this.retryTimer) {
-      this.retryTimer.unref();
-    }
   }
 
   private async reconcileInProgressSessions(): Promise<void> {
@@ -679,25 +540,14 @@ export class LocalScrapeQueueService {
   }
 
   private async loadParallelLimit(): Promise<number> {
-    const value = await this.dependencies.scraperRepository.getSetting(
-      MAX_PARALLEL_SCRAPES_SETTING
-    );
-    const parsed = Number.parseInt(value ?? "", 10);
-    if (!Number.isFinite(parsed)) return DEFAULT_MAX_PARALLEL_SCRAPES;
-    return Math.min(MAX_PARALLEL_SCRAPES, Math.max(1, parsed));
+    return this.settingsProvider.getMaxParallelScrapes();
   }
 
   private async pruneHistoryIfDue(): Promise<void> {
     const now = Date.now();
     if (now - this.lastHistoryPruneAt < HISTORY_PRUNE_INTERVAL_MS) return;
     try {
-      const stored = await this.dependencies.scraperRepository.getSetting(
-        HISTORY_RETENTION_SETTING
-      );
-      const parsed = Number.parseInt(stored ?? "", 10);
-      const retentionDays = Number.isFinite(parsed)
-        ? parsed
-        : DEFAULT_HISTORY_RETENTION_DAYS;
+      const retentionDays = await this.settingsProvider.getHistoryRetentionDays();
       const result = pruneScrapeHistory(retentionDays, this.database, new Date(now));
       this.lastHistoryPruneAt = now;
       if (result.deleted > 0) {

@@ -100,13 +100,22 @@ export interface PersistScrapeResultOutput {
   matchOutboxId: string | null;
 }
 
-export interface IScraperRepository {
+export interface CompanyCatalog {
   getCompany(id: number): Promise<Company | null>;
   getActiveCompanies(): Promise<Company[]>;
   getExistingJobs(companyId: number): Promise<ExistingJob[]>;
+}
+
+export interface ScrapeSettingsSource {
   getSetting(key: string): Promise<string | null>;
+}
+
+export interface ScrapeResultUnitOfWork {
   persistScrapeResult(input: PersistScrapeResultInput): Promise<PersistScrapeResultOutput>;
-  
+  createScrapingLog(log: ScrapingLogCreate): Promise<number>;
+}
+
+export interface ScrapeSessionStore {
   createSession(session: ScrapeSessionCreate): Promise<void>;
   isSessionInProgress(id: string): Promise<boolean>;
   stopSession(id: string): Promise<boolean>;
@@ -115,9 +124,11 @@ export interface IScraperRepository {
     id: string,
     status: Exclude<SessionStatus, "in_progress">
   ): Promise<void>;
-  
-  createScrapingLog(log: ScrapingLogCreate): Promise<number>;
-  acquireSchedulerLock(ownerId: string): Promise<string | null>;
-  refreshSchedulerLock(lockToken: string): Promise<string | null>;
-  releaseSchedulerLock(lockToken: string): Promise<void>;
 }
+
+export type ScrapePipelineStore = CompanyCatalog &
+  ScrapeResultUnitOfWork &
+  ScrapeSessionStore &
+  ScrapeSettingsSource;
+
+export type IScraperRepository = ScrapePipelineStore;

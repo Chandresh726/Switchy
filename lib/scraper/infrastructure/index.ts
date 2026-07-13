@@ -1,5 +1,10 @@
 export type {
   IScraperRepository,
+  CompanyCatalog,
+  ScrapePipelineStore,
+  ScrapeResultUnitOfWork,
+  ScrapeSessionStore,
+  ScrapeSettingsSource,
   ExistingJob,
   SessionProgressUpdate,
   ScrapeSessionCreate,

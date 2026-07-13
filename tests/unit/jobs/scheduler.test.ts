@@ -104,15 +104,13 @@ vi.mock("@/lib/scraper", () => ({
   getLocalScrapeQueueService: () => ({
     scrapeAllCompanies: store.scrapeAllCompanies,
   }),
-  getScrapingModule: () => ({
-    orchestrator: {
-      scrapeAllCompanies: store.scrapeAllCompanies,
-    },
-    repository: {
-      acquireSchedulerLock: store.acquireSchedulerLock,
-      refreshSchedulerLock: store.refreshSchedulerLock,
-      releaseSchedulerLock: store.releaseSchedulerLock,
-    },
+}));
+
+vi.mock("@/lib/jobs/scheduler-lease-store", () => ({
+  getSchedulerLeaseStore: () => ({
+    acquire: store.acquireSchedulerLock,
+    refresh: store.refreshSchedulerLock,
+    release: store.releaseSchedulerLock,
   }),
 }));
 
@@ -200,6 +198,54 @@ describe("scheduler recovery", () => {
       "[Scheduler] Error during refresh:",
       expect.objectContaining({ message: "refresh failed" })
     );
+  });
+
+  it("waits for an in-flight lease refresh before releasing the lock", async () => {
+    vi.useFakeTimers();
+    let resolveRefresh!: (token: string) => void;
+    let resolveScrape!: (result: {
+      summary: {
+        successfulCompanies: number;
+        totalCompanies: number;
+        totalJobsAdded: number;
+      };
+    }) => void;
+    store.refreshSchedulerLock.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveRefresh = resolve;
+        })
+    );
+    store.scrapeAllCompanies.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveScrape = resolve;
+        })
+    );
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    await scheduler.startScheduler();
+    const run = store.task?.execute();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.scrapeAllCompanies).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(store.refreshSchedulerLock).toHaveBeenCalledWith("lock-token");
+    resolveScrape({
+      summary: {
+        successfulCompanies: 1,
+        totalCompanies: 1,
+        totalJobsAdded: 0,
+      },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.releaseSchedulerLock).not.toHaveBeenCalled();
+
+    resolveRefresh("lock-token");
+    await run;
+    expect(store.releaseSchedulerLock).toHaveBeenCalledWith("lock-token");
   });
 
   it("does not recover when scheduler is disabled", async () => {

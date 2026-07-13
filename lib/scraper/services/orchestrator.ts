@@ -1,5 +1,5 @@
 import type { Company } from "@/lib/db/schema";
-import type { IScraperRepository } from "@/lib/scraper/infrastructure/types";
+import type { ScrapePipelineStore } from "@/lib/scraper/infrastructure/types";
 import type { ScrapeOptions } from "@/lib/scraper/core/types";
 import {
   isPlatform,
@@ -15,10 +15,13 @@ import {
 } from "@/lib/scraper/types";
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 import { dispatchPendingScrapeMatches } from "@/lib/scraper/matching";
+import {
+  StoredScrapeSettingsProvider,
+  type ScrapeSettingsProvider,
+} from "@/lib/scraper/settings/provider";
 import { ScraperLogger } from "@/lib/scraper/utils/logger";
 import { getMatcherConfig } from "@/lib/ai/matcher";
 
-import { parseTitleKeywords } from "./filter-service";
 import type { IScraperRegistry } from "./registry";
 import type { IDeduplicationService } from "./deduplication-service";
 import type { IFilterService, JobFilters } from "./filter-service";
@@ -37,10 +40,6 @@ const ARCHIVABLE_JOB_STATUSES = ["new", "viewed", "interested", "rejected"];
 const UBER_ARCHIVE_MISSING_ABSOLUTE_THRESHOLD = 5;
 const UBER_ARCHIVE_MISSING_RATIO_THRESHOLD = 0.05;
 const SAFE_HYDRATION_MATCH_REASONS: DeduplicationMatchReason[] = ["externalId", "url"];
-const SCRAPER_MAX_PARALLEL_SCRAPES_KEY = "scraper_max_parallel_scrapes";
-const DEFAULT_MAX_PARALLEL_SCRAPES = 3;
-const MIN_PARALLEL_SCRAPES = 1;
-const MAX_PARALLEL_SCRAPES = 10;
 type ScrapeTier = "api" | "browser" | "serial";
 
 export interface IScrapeOrchestrator {
@@ -95,11 +94,13 @@ interface DuplicateHydrationCandidate {
 
 export class ScrapeOrchestrator implements IScrapeOrchestrator {
   constructor(
-    private readonly repository: IScraperRepository,
+    private readonly repository: ScrapePipelineStore,
     private readonly registry: IScraperRegistry,
     private readonly deduplicationService: IDeduplicationService,
     private readonly filterService: IFilterService,
-    private readonly config: OrchestratorConfig
+    private readonly config: OrchestratorConfig,
+    private readonly settingsProvider: ScrapeSettingsProvider =
+      new StoredScrapeSettingsProvider(repository)
   ) {}
 
   async scrapeAllCompanies(
@@ -837,38 +838,11 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
       return { ...this.config.defaultFilters, ...overrideFilters };
     }
 
-    const [country, city, titleKeywordsRaw] = await Promise.all([
-      this.repository.getSetting("scraper_filter_country"),
-      this.repository.getSetting("scraper_filter_city"),
-      this.repository.getSetting("scraper_filter_title_keywords"),
-    ]);
-
-    const titleKeywords = parseTitleKeywords(titleKeywordsRaw);
-
-    return {
-      ...this.config.defaultFilters,
-      country: country || this.config.defaultFilters.country,
-      city: city || this.config.defaultFilters.city,
-      titleKeywords:
-        titleKeywords.length > 0
-          ? titleKeywords
-          : this.config.defaultFilters.titleKeywords,
-    };
+    return this.settingsProvider.getFilters(this.config.defaultFilters);
   }
 
   private async loadMaxParallelScrapes(): Promise<number> {
-    const configuredValue = await this.repository.getSetting(SCRAPER_MAX_PARALLEL_SCRAPES_KEY);
-    const parsed = parseInt(configuredValue ?? "", 10);
-
-    if (
-      Number.isNaN(parsed) ||
-      parsed < MIN_PARALLEL_SCRAPES ||
-      parsed > MAX_PARALLEL_SCRAPES
-    ) {
-      return DEFAULT_MAX_PARALLEL_SCRAPES;
-    }
-
-    return parsed;
+    return this.settingsProvider.getMaxParallelScrapes();
   }
 
   private createErrorResult(
@@ -939,10 +913,11 @@ export class ScrapeOrchestrator implements IScrapeOrchestrator {
 }
 
 export interface CreateOrchestratorConfig {
-  repository: IScraperRepository;
+  repository: ScrapePipelineStore;
   registry: IScraperRegistry;
   deduplicationService: IDeduplicationService;
   filterService: IFilterService;
+  settingsProvider?: ScrapeSettingsProvider;
   config?: Partial<OrchestratorConfig>;
 }
 
@@ -952,6 +927,7 @@ export function createScrapeOrchestrator(config: CreateOrchestratorConfig): IScr
     config.registry,
     config.deduplicationService,
     config.filterService,
-    { ...DEFAULT_ORCHESTRATOR_CONFIG, ...config.config }
+    { ...DEFAULT_ORCHESTRATOR_CONFIG, ...config.config },
+    config.settingsProvider
   );
 }

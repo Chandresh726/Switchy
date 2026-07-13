@@ -2,6 +2,7 @@ import { and, asc, eq, gte, isNotNull, lt, lte } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { scrapeQueueItems, scrapeSessions } from "@/lib/db/schema";
+import { createSqliteBusyRetry } from "@/lib/db/sqlite-utils";
 
 import type {
   EnqueueScrapeWork,
@@ -23,6 +24,7 @@ const DEFAULT_REPOSITORY_CONFIG: DrizzleLocalScrapeQueueRepositoryConfig = {
 
 export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepository {
   private readonly config: DrizzleLocalScrapeQueueRepositoryConfig;
+  private readonly retryBusy: ReturnType<typeof createSqliteBusyRetry>;
 
   constructor(
     private readonly database: typeof db = db,
@@ -33,12 +35,16 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
       claimBusyRetries: Math.max(0, Math.floor(merged.claimBusyRetries)),
       claimBusyRetryDelayMs: Math.max(0, merged.claimBusyRetryDelayMs),
     };
+    this.retryBusy = createSqliteBusyRetry({
+      maxRetries: this.config.claimBusyRetries,
+      baseDelayMs: this.config.claimBusyRetryDelayMs,
+    });
   }
 
   async enqueue(input: EnqueueScrapeWork) {
     if (input.companyIds.length === 0) return [];
     const now = new Date();
-    return this.withBusyRetry(() =>
+    return this.retryBusy(() =>
       this.database
         .insert(scrapeQueueItems)
         .values(
@@ -63,7 +69,7 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
 
   async createSessionAndEnqueue(input: EnqueueScrapeSession) {
     const now = new Date();
-    return this.withBusyRetry(() =>
+    return this.retryBusy(() =>
       this.database.transaction((tx) => {
         tx.insert(scrapeSessions)
           .values({
@@ -104,7 +110,7 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
   }
 
   async claimNext(workerId: string, now: Date, leaseDurationMs: number) {
-    return this.withBusyRetry(() =>
+    return this.retryBusy(() =>
       this.database.transaction((tx) => {
         const candidate = tx
           .select()
@@ -147,7 +153,7 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
   }
 
   async heartbeat(itemId: string, workerId: string, leaseExpiresAt: Date): Promise<boolean> {
-    const updated = await this.withBusyRetry(() =>
+    const updated = await this.retryBusy(() =>
       this.database
         .update(scrapeQueueItems)
         .set({ leaseExpiresAt, updatedAt: new Date() })
@@ -252,7 +258,7 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
     sessionId: string,
     now: Date
   ): Promise<QueueCancellationResult> {
-    return this.withBusyRetry(() =>
+    return this.retryBusy(() =>
       this.database.transaction((tx) => {
         const queued = tx
           .update(scrapeQueueItems)
@@ -302,7 +308,7 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
   }
 
   async recoverExpired(now: Date): Promise<QueueRecoveryResult> {
-    return this.withBusyRetry(() =>
+    return this.retryBusy(() =>
       this.database.transaction((tx) => {
         const cancelled = tx
           .update(scrapeQueueItems)
@@ -422,7 +428,7 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
     if (requireNotCancelled) {
       conditions.push(eq(scrapeQueueItems.cancelRequested, false));
     }
-    const updated = await this.withBusyRetry(() =>
+    const updated = await this.retryBusy(() =>
       this.database
         .update(scrapeQueueItems)
         .set(values)
@@ -432,29 +438,4 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
     return updated.length === 1;
   }
 
-  private async withBusyRetry<T>(operation: () => T | Promise<T>): Promise<T> {
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        return await operation();
-      } catch (error) {
-        if (!this.isSqliteBusy(error) || attempt >= this.config.claimBusyRetries) {
-          throw error;
-        }
-        const delayMs = this.config.claimBusyRetryDelayMs * (attempt + 1);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-    }
-  }
-
-  private isSqliteBusy(error: unknown): boolean {
-    let current: unknown = error;
-    for (let depth = 0; depth < 5 && current && typeof current === "object"; depth += 1) {
-      const candidate = current as { code?: unknown; cause?: unknown };
-      if (candidate.code === "SQLITE_BUSY" || candidate.code === "SQLITE_BUSY_SNAPSHOT") {
-        return true;
-      }
-      current = candidate.cause;
-    }
-    return false;
-  }
 }

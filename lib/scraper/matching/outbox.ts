@@ -10,6 +10,9 @@ import {
   scrapingLogs,
 } from "@/lib/db/schema";
 import type { ScrapeMatchOutboxItem } from "@/lib/db/schema";
+import { createSqliteBusyRetry } from "@/lib/db/sqlite-utils";
+import { resolveRetryDelay } from "@/lib/scraper/runtime/retry-policy";
+import { ScheduledSingleFlightDispatcher } from "@/lib/scraper/runtime/single-flight-dispatcher";
 
 export interface ScrapeMatchOutboxDispatcherConfig {
   leaseDurationMs: number;
@@ -45,6 +48,7 @@ const DEFAULT_CONFIG: ScrapeMatchOutboxDispatcherConfig = {
 
 export class ScrapeMatchOutboxDispatcher {
   private readonly config: ScrapeMatchOutboxDispatcherConfig;
+  private readonly retryBusy: ReturnType<typeof createSqliteBusyRetry>;
   private running = false;
 
   constructor(
@@ -65,6 +69,10 @@ export class ScrapeMatchOutboxDispatcher {
       busyRetries: Math.max(0, Math.floor(merged.busyRetries)),
       busyRetryDelayMs: Math.max(0, merged.busyRetryDelayMs),
     };
+    this.retryBusy = createSqliteBusyRetry({
+      maxRetries: this.config.busyRetries,
+      baseDelayMs: this.config.busyRetryDelayMs,
+    });
   }
 
   async runAvailable(): Promise<ScrapeMatchOutboxRunSummary> {
@@ -98,7 +106,7 @@ export class ScrapeMatchOutboxDispatcher {
   }
 
   private async claimNext(workerId: string, now: Date): Promise<ScrapeMatchOutboxItem | null> {
-    return this.withBusyRetry(() =>
+    return this.retryBusy(() =>
       this.database.transaction((tx) => {
         const candidate = tx
           .select()
@@ -228,7 +236,8 @@ export class ScrapeMatchOutboxDispatcher {
       const now = new Date();
       if (item.attemptCount < item.maxAttempts) {
         const availableAt = new Date(
-          now.getTime() + this.retryDelay(item.attemptCount)
+          now.getTime() +
+            resolveRetryDelay(item.attemptCount, error, this.config)
         );
         const retried = await this.retry(item, workerId, message, availableAt, now);
         if (retried) summary.retried += 1;
@@ -260,7 +269,7 @@ export class ScrapeMatchOutboxDispatcher {
     workerId: string,
     leaseExpiresAt: Date
   ): Promise<boolean> {
-    const updated = await this.withBusyRetry(() =>
+    const updated = await this.retryBusy(() =>
       this.database
         .update(scrapeMatchOutbox)
         .set({ leaseExpiresAt, updatedAt: new Date() })
@@ -280,7 +289,7 @@ export class ScrapeMatchOutboxDispatcher {
     sessionId: string,
     expectedTotal: number
   ): Promise<MatchSessionResult | null> {
-    const rows = await this.withBusyRetry(() =>
+    const rows = await this.retryBusy(() =>
       this.database
         .select({
           status: matchSessions.status,
@@ -315,7 +324,7 @@ export class ScrapeMatchOutboxDispatcher {
     scrapingLogId: number,
     completed: number
   ): Promise<void> {
-    await this.withBusyRetry(() => this.database.transaction((tx) => {
+    await this.retryBusy(() => this.database.transaction((tx) => {
       const owned = tx
         .select({ id: scrapeMatchOutbox.id })
         .from(scrapeMatchOutbox)
@@ -343,7 +352,7 @@ export class ScrapeMatchOutboxDispatcher {
     duration: number,
     now: Date
   ): Promise<boolean> {
-    return this.withBusyRetry(() => this.database.transaction((tx) => {
+    return this.retryBusy(() => this.database.transaction((tx) => {
       const updated = tx
         .update(scrapeMatchOutbox)
         .set({
@@ -385,7 +394,7 @@ export class ScrapeMatchOutboxDispatcher {
     availableAt: Date,
     now: Date
   ): Promise<boolean> {
-    return this.withBusyRetry(() => this.database.transaction((tx) => {
+    return this.retryBusy(() => this.database.transaction((tx) => {
       const updated = tx
         .update(scrapeMatchOutbox)
         .set({
@@ -421,7 +430,7 @@ export class ScrapeMatchOutboxDispatcher {
     error: string,
     now: Date
   ): Promise<boolean> {
-    return this.withBusyRetry(() => this.database.transaction((tx) => {
+    return this.retryBusy(() => this.database.transaction((tx) => {
       const updated = tx
         .update(scrapeMatchOutbox)
         .set({
@@ -485,7 +494,7 @@ export class ScrapeMatchOutboxDispatcher {
   }
 
   private async recoverExpired(now: Date): Promise<number> {
-    return this.withBusyRetry(() => this.database.transaction((tx) => {
+    return this.retryBusy(() => this.database.transaction((tx) => {
       const expired = tx
         .select()
         .from(scrapeMatchOutbox)
@@ -661,98 +670,22 @@ export class ScrapeMatchOutboxDispatcher {
     return new Date(Math.min(...candidates.map((value) => value.getTime())));
   }
 
-  private retryDelay(attemptCount: number): number {
-    return Math.min(
-      this.config.maxRetryDelayMs,
-      this.config.baseRetryDelayMs * 2 ** Math.max(0, attemptCount - 1)
-    );
-  }
-
-  private async withBusyRetry<T>(operation: () => T | Promise<T>): Promise<T> {
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        return await operation();
-      } catch (error) {
-        if (!this.isSqliteBusy(error) || attempt >= this.config.busyRetries) throw error;
-        await new Promise((resolve) =>
-          setTimeout(resolve, this.config.busyRetryDelayMs * (attempt + 1))
-        );
-      }
-    }
-  }
-
-  private isSqliteBusy(error: unknown): boolean {
-    let current: unknown = error;
-    for (let depth = 0; depth < 5 && current && typeof current === "object"; depth += 1) {
-      const candidate = current as { code?: unknown; cause?: unknown };
-      if (candidate.code === "SQLITE_BUSY" || candidate.code === "SQLITE_BUSY_SNAPSHOT") {
-        return true;
-      }
-      current = candidate.cause;
-    }
-    return false;
-  }
 }
 
 const defaultDispatcher = new ScrapeMatchOutboxDispatcher();
-let activeDispatch: Promise<ScrapeMatchOutboxRunSummary> | null = null;
-let retryTimer: ReturnType<typeof setTimeout> | null = null;
-let dispatchRequested = false;
+const scheduledDispatcher = new ScheduledSingleFlightDispatcher({
+  run: () => defaultDispatcher.runAvailable(),
+  getNextRunAt: (summary) => summary.nextAvailableAt,
+  failureRetryMs: DEFAULT_CONFIG.baseRetryDelayMs,
+  onError: (error) => {
+    console.error("[Matcher Outbox] Dispatch failed:", error);
+  },
+});
 
 export function dispatchPendingScrapeMatches(): void {
-  if (activeDispatch) {
-    dispatchRequested = true;
-    return;
-  }
-  if (retryTimer) {
-    clearTimeout(retryTimer);
-    retryTimer = null;
-  }
-
-  const dispatch = defaultDispatcher.runAvailable();
-  activeDispatch = dispatch;
-  let completedSummary: ScrapeMatchOutboxRunSummary | null = null;
-  let dispatchFailed = false;
-  void dispatch
-    .then((summary) => {
-      completedSummary = summary;
-    })
-    .catch((error) => {
-      dispatchFailed = true;
-      console.error("[Matcher Outbox] Dispatch failed:", error);
-    })
-    .finally(() => {
-      if (activeDispatch === dispatch) activeDispatch = null;
-      if (dispatchRequested) {
-        dispatchRequested = false;
-        dispatchPendingScrapeMatches();
-        return;
-      }
-      if (dispatchFailed) {
-        retryTimer = setTimeout(dispatchPendingScrapeMatches, DEFAULT_CONFIG.baseRetryDelayMs);
-        if (typeof retryTimer === "object" && "unref" in retryTimer) retryTimer.unref();
-        return;
-      }
-      if (!completedSummary?.nextAvailableAt) return;
-      const delayMs = Math.max(
-        0,
-        completedSummary.nextAvailableAt.getTime() - Date.now()
-      );
-      retryTimer = setTimeout(() => {
-        retryTimer = null;
-        dispatchPendingScrapeMatches();
-      }, delayMs);
-      if (typeof retryTimer === "object" && "unref" in retryTimer) retryTimer.unref();
-    });
+  void scheduledDispatcher.request();
 }
 
 export async function recoverPendingScrapeMatches(): Promise<ScrapeMatchOutboxRunSummary> {
-  if (activeDispatch) return activeDispatch;
-  const dispatch = defaultDispatcher.runAvailable();
-  activeDispatch = dispatch;
-  try {
-    return await dispatch;
-  } finally {
-    if (activeDispatch === dispatch) activeDispatch = null;
-  }
+  return scheduledDispatcher.request({ rerunIfActive: false });
 }

@@ -101,9 +101,6 @@ function createRepositoryMock(options: RepositoryMockOptions = {}) {
     updateSessionProgress: vi.fn(async () => undefined),
     completeSession: vi.fn(async () => undefined),
     createScrapingLog: vi.fn(async () => 7),
-    acquireSchedulerLock: vi.fn(async () => null),
-    refreshSchedulerLock: vi.fn(async () => null),
-    releaseSchedulerLock: vi.fn(async () => undefined),
   };
 }
 

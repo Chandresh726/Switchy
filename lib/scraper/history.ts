@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull, lt, ne, or } from "drizzle-orm";
 
 import { db } from "@/lib/db";
+import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
 import {
   matchSessions,
   scrapeMatchOutbox,
@@ -20,14 +21,6 @@ export interface PruneScrapeHistoryResult {
 }
 
 const HISTORY_DELETE_BATCH_SIZE = 200;
-
-function chunkValues<T>(values: T[], chunkSize = HISTORY_DELETE_BATCH_SIZE): T[][] {
-  const chunks: T[][] = [];
-  for (let index = 0; index < values.length; index += chunkSize) {
-    chunks.push(values.slice(index, index + chunkSize));
-  }
-  return chunks;
-}
 
 export function deleteScrapeHistory(
   sessionId?: string,
@@ -53,7 +46,10 @@ export function deleteScrapeHistory(
       return { active: false, deleted: 0 };
     }
     let deletedCount = 0;
-    for (const candidateBatch of chunkValues(candidateSessionIds)) {
+    for (const candidateBatch of chunkSqliteParameters(
+      candidateSessionIds,
+      HISTORY_DELETE_BATCH_SIZE
+    )) {
       const leasedSessionIds = new Set(
         tx
           .selectDistinct({ sessionId: scrapeQueueItems.sessionId })
@@ -82,7 +78,10 @@ export function deleteScrapeHistory(
         .where(inArray(scrapingLogs.sessionId, sessionIds))
         .all()
         .map((row) => row.id);
-      for (const matchBatch of chunkValues(matchSessionIds)) {
+      for (const matchBatch of chunkSqliteParameters(
+        matchSessionIds,
+        HISTORY_DELETE_BATCH_SIZE
+      )) {
         tx.delete(matchSessions)
           .where(inArray(matchSessions.id, matchBatch))
           .run();
@@ -126,7 +125,10 @@ export function pruneScrapeHistory(
     if (candidateSessionIds.length === 0) return 0;
 
     let deletedCount = 0;
-    for (const candidateBatch of chunkValues(candidateSessionIds)) {
+    for (const candidateBatch of chunkSqliteParameters(
+      candidateSessionIds,
+      HISTORY_DELETE_BATCH_SIZE
+    )) {
       const leasedSessionIds = new Set(
         tx
           .selectDistinct({ sessionId: scrapeQueueItems.sessionId })
@@ -167,7 +169,10 @@ export function pruneScrapeHistory(
         .where(inArray(scrapingLogs.sessionId, sessionIds))
         .all()
         .map((row) => row.id);
-      for (const matchBatch of chunkValues(matchSessionIds)) {
+      for (const matchBatch of chunkSqliteParameters(
+        matchSessionIds,
+        HISTORY_DELETE_BATCH_SIZE
+      )) {
         tx.delete(matchSessions)
           .where(inArray(matchSessions.id, matchBatch))
           .run();

@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/lib/db";
+import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
 import {
   companies,
   jobs,
@@ -21,45 +22,7 @@ import type {
   PersistScrapeResultOutput,
 } from "./types";
 
-const SCHEDULER_LOCK_KEY = "scheduler.lock";
-const SCHEDULER_LOCK_TIMEOUT_MS = 5 * 60 * 1000;
-const SQLITE_WRITE_CHUNK_SIZE = 400;
 const SQLITE_INSERT_CHUNK_SIZE = 50;
-
-function chunkValues<T>(values: T[], chunkSize = SQLITE_WRITE_CHUNK_SIZE): T[][] {
-  const chunks: T[][] = [];
-  for (let index = 0; index < values.length; index += chunkSize) {
-    chunks.push(values.slice(index, index + chunkSize));
-  }
-  return chunks;
-}
-
-interface SchedulerLockPayload {
-  ownerId: string;
-  token: string;
-  expiresAt: number;
-}
-
-function parseSchedulerLock(value: string | null): SchedulerLockPayload | null {
-  if (!value) return null;
-  try {
-    const parsed = JSON.parse(value) as SchedulerLockPayload;
-    if (
-      typeof parsed.ownerId !== "string" ||
-      typeof parsed.token !== "string" ||
-      typeof parsed.expiresAt !== "number"
-    ) {
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function createSchedulerLockValue(payload: SchedulerLockPayload): string {
-  return JSON.stringify(payload);
-}
 
 export class DrizzleScraperRepository implements IScraperRepository {
   constructor(private readonly database: typeof db = db) {}
@@ -148,7 +111,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
             .map((job) => job.id)
         : [];
 
-      for (const jobIdChunk of chunkValues(jobIdsToReopen)) {
+      for (const jobIdChunk of chunkSqliteParameters(jobIdsToReopen)) {
         tx.update(jobs)
           .set({
             status: "new",
@@ -168,7 +131,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
       }
 
       let jobsArchived = 0;
-      for (const jobIdChunk of chunkValues(jobIdsToArchive)) {
+      for (const jobIdChunk of chunkSqliteParameters(jobIdsToArchive)) {
         jobsArchived += tx
           .update(jobs)
           .set({
@@ -211,7 +174,10 @@ export class DrizzleScraperRepository implements IScraperRepository {
       }
 
       const insertedJobs: Array<{ id: number; description: string | null }> = [];
-      for (const jobsToInsert of chunkValues(input.jobsToInsert, SQLITE_INSERT_CHUNK_SIZE)) {
+      for (const jobsToInsert of chunkSqliteParameters(
+        input.jobsToInsert,
+        SQLITE_INSERT_CHUNK_SIZE
+      )) {
         insertedJobs.push(
           ...tx
             .insert(jobs)
@@ -395,82 +361,6 @@ export class DrizzleScraperRepository implements IScraperRepository {
     return inserted?.id ?? 0;
   }
 
-  async acquireSchedulerLock(ownerId: string): Promise<string | null> {
-    const now = Date.now();
-    const currentRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
-    const currentLock = parseSchedulerLock(currentRaw);
-    const hasUnexpiredLock = currentLock && currentLock.expiresAt > now;
-
-    if (hasUnexpiredLock) {
-      return null;
-    }
-
-    const token = crypto.randomUUID();
-    const nextLock: SchedulerLockPayload = {
-      ownerId,
-      token,
-      expiresAt: now + SCHEDULER_LOCK_TIMEOUT_MS,
-    };
-    const nextRaw = createSchedulerLockValue(nextLock);
-
-    if (!currentRaw) {
-      await this.database
-        .insert(settings)
-        .values({
-          key: SCHEDULER_LOCK_KEY,
-          value: nextRaw,
-          updatedAt: new Date(),
-        })
-        .onConflictDoNothing();
-
-      const persistedRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
-      return persistedRaw === nextRaw ? token : null;
-    }
-
-    await this.database
-      .update(settings)
-      .set({ value: nextRaw, updatedAt: new Date() })
-      .where(and(eq(settings.key, SCHEDULER_LOCK_KEY), eq(settings.value, currentRaw)));
-
-    const persistedRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
-    return persistedRaw === nextRaw ? token : null;
-  }
-
-  async refreshSchedulerLock(lockToken: string): Promise<string | null> {
-    const currentRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
-    const currentLock = parseSchedulerLock(currentRaw);
-
-    if (!currentRaw || !currentLock || currentLock.token !== lockToken) {
-      return null;
-    }
-
-    const nextLock: SchedulerLockPayload = {
-      ...currentLock,
-      expiresAt: Date.now() + SCHEDULER_LOCK_TIMEOUT_MS,
-    };
-    const nextRaw = createSchedulerLockValue(nextLock);
-
-    await this.database
-      .update(settings)
-      .set({ value: nextRaw, updatedAt: new Date() })
-      .where(and(eq(settings.key, SCHEDULER_LOCK_KEY), eq(settings.value, currentRaw)));
-
-    const persistedRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
-    return persistedRaw === nextRaw ? lockToken : null;
-  }
-
-  async releaseSchedulerLock(lockToken: string): Promise<void> {
-    const currentRaw = await this.getSetting(SCHEDULER_LOCK_KEY);
-    const currentLock = parseSchedulerLock(currentRaw);
-
-    if (!currentRaw || !currentLock || currentLock.token !== lockToken) {
-      return;
-    }
-
-    await this.database
-      .delete(settings)
-      .where(and(eq(settings.key, SCHEDULER_LOCK_KEY), eq(settings.value, currentRaw)));
-  }
 }
 
 export function createScraperRepository(): IScraperRepository {
