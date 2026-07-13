@@ -175,6 +175,102 @@ describe("DrizzleScrapeHistoryStore", () => {
       stats: { totalSessions: 1, successRate: 100 },
     });
   });
+
+  it("labels superseded retry logs and the final company attempt", () => {
+    const database = createTestDatabase();
+    const company = database
+      .insert(companies)
+      .values({ name: "Retry Co", careersUrl: "https://example.com/retry" })
+      .returning({ id: companies.id })
+      .get();
+    database.insert(scrapeSessions).values({
+      id: "retry-session",
+      triggerSource: "manual",
+      status: "partial",
+      companiesTotal: 1,
+      companiesCompleted: 1,
+      completedAt: new Date(),
+    }).run();
+    database.insert(scrapeQueueItems).values({
+      id: "retry-item",
+      sessionId: "retry-session",
+      companyId: company.id,
+      status: "completed",
+      attemptCount: 2,
+      completedAt: new Date(),
+    }).run();
+    database.insert(scrapingLogs).values([
+      {
+        companyId: company.id,
+        sessionId: "retry-session",
+        status: "error",
+        errorMessage: "browser session failed",
+      },
+      {
+        companyId: company.id,
+        sessionId: "retry-session",
+        status: "partial",
+        errorMessage: "one detail request failed",
+      },
+    ]).run();
+
+    expect(new DrizzleScrapeHistoryStore(database).getDetail("retry-session")?.logs)
+      .toMatchObject([
+        {
+          attemptNumber: 1,
+          attemptsTotal: 2,
+          isFinalAttempt: false,
+        },
+        {
+          attemptNumber: 2,
+          attemptsTotal: 2,
+          isFinalAttempt: true,
+        },
+      ]);
+  });
+
+  it("does not invent a second log attempt after committed-result recovery", () => {
+    const database = createTestDatabase();
+    const company = database
+      .insert(companies)
+      .values({ name: "Recovered Co", careersUrl: "https://example.com/recovered" })
+      .returning({ id: companies.id })
+      .get();
+    database.insert(scrapeSessions).values({
+      id: "recovered-result-session",
+      triggerSource: "scheduler_recovery",
+      status: "completed",
+      companiesTotal: 1,
+      companiesCompleted: 1,
+      completedAt: new Date(),
+    }).run();
+    database.insert(scrapeQueueItems).values({
+      id: "recovered-result-item",
+      sessionId: "recovered-result-session",
+      companyId: company.id,
+      status: "completed",
+      attemptCount: 2,
+      completedAt: new Date(),
+    }).run();
+    database.insert(scrapingLogs).values({
+      companyId: company.id,
+      sessionId: "recovered-result-session",
+      status: "success",
+      jobsFound: 1,
+    }).run();
+
+    expect(
+      new DrizzleScrapeHistoryStore(database).getDetail(
+        "recovered-result-session"
+      )?.logs
+    ).toMatchObject([
+      {
+        attemptNumber: 1,
+        attemptsTotal: 1,
+        isFinalAttempt: true,
+      },
+    ]);
+  });
 });
 
 describe("pruneScrapeHistory", () => {

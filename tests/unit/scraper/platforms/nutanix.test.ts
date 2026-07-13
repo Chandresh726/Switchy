@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { NutanixScraper } from "@/lib/scraper/platforms/nutanix";
+import { nutanixSourceFeed } from "@test/fixtures/platforms/production-payloads";
 import { createHttpClientStub } from "@test/helpers/scraper-clients";
 
 describe("NutanixScraper", () => {
@@ -57,6 +58,24 @@ describe("NutanixScraper", () => {
       jobs: [],
       openExternalIds: [],
       listingCompleteness: "unknown",
+    });
+  });
+
+  it("accepts the production source feed envelope", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(nutanixSourceFeed, {
+        status: 200,
+        headers: { "Content-Type": "application/xml" },
+      })
+    );
+    const scraper = new NutanixScraper(createHttpClientStub({ fetch: fetchMock }));
+
+    const result = await scraper.scrape("https://careers.nutanix.com/jobs");
+
+    expect(result).toMatchObject({
+      outcome: "success",
+      totalListings: 1,
+      listingCompleteness: "complete",
     });
   });
 

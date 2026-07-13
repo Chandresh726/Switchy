@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import { MynextHireScraper } from "@/lib/scraper/platforms/mynexthire";
+import { mynexthireIsoDatePayload } from "@test/fixtures/platforms/production-payloads";
 import { createHttpClientStub } from "@test/helpers/scraper-clients";
 
 describe("MynextHireScraper", () => {
@@ -100,5 +101,19 @@ describe("MynextHireScraper", () => {
       totalListings: 1,
       listingCompleteness: "complete",
     });
+  });
+
+  it("accepts ISO date strings from the production API", async () => {
+    const postMock = vi.fn(async () => mynexthireIsoDatePayload);
+    const scraper = new MynextHireScraper(
+      createHttpClientStub({ post: postMock as IHttpClient["post"] })
+    );
+
+    const result = await scraper.scrape("https://careers.swiggy.com/#/careers");
+
+    expect(result).toMatchObject({ outcome: "success", totalListings: 1 });
+    expect(result.jobs[0]?.postedDate).toEqual(
+      new Date("2026-07-13T13:53:02.091+0000")
+    );
   });
 });

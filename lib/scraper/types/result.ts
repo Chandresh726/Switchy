@@ -126,6 +126,7 @@ export const FetchResultSchema = z.object({
   error: z.string().optional(),
   retryable: z.boolean().optional(),
   retryAfterMs: z.number().optional(),
+  warnings: z.array(z.string()).optional(),
   duration: z.number(),
   logId: z.number().optional(),
 });

@@ -65,6 +65,7 @@ export {
 export {
   ScraperPayloadError,
   parseExternalPayload,
+  parseExternalItems,
   createFailureFromUnknown,
   classifyHttpStatus,
   createFailureForHttpStatus,

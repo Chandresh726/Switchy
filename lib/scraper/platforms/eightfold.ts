@@ -11,11 +11,13 @@ import {
   type IHttpClient,
 } from "@/lib/scraper/infrastructure/http-client";
 import {
+  createScraperError,
   parseEmploymentType,
   parseExternalPayload,
   ScraperPayloadError,
   type BrowserScraperConfig,
   type ScrapeOptions,
+  type ScraperError,
   type ScrapedJob,
   type ScraperResult,
 } from "@/lib/scraper/types";
@@ -256,6 +258,14 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       const positionsToFetch = selection.listings;
 
       if (positionsToFetch.length === 0) {
+        const issues = listResult.isComplete
+          ? undefined
+          : [
+              createScraperError(
+                "network_error",
+                "Eightfold listings were only partially fetched."
+              ),
+            ];
         return {
           outcome: listResult.isComplete ? "success" : "partial",
           jobs: [],
@@ -264,6 +274,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
           earlyFiltered: selection.earlyFiltered,
           openExternalIds,
           listingCompleteness: listResult.isComplete ? "complete" : "partial",
+          issues,
         };
       }
 
@@ -329,6 +340,23 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       }
 
       const isPartial = detailFailures > 0 || !listResult.isComplete;
+      const issues: ScraperError[] = [];
+      if (!listResult.isComplete) {
+        issues.push(
+          createScraperError(
+            "network_error",
+            "Eightfold listings were only partially fetched."
+          )
+        );
+      }
+      if (detailFailures > 0) {
+        issues.push(
+          createScraperError(
+            "network_error",
+            `${detailFailures} Eightfold job detail request${detailFailures === 1 ? "" : "s"} failed.`
+          )
+        );
+      }
 
       return {
         outcome: isPartial ? "partial" : "success",
@@ -338,6 +366,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,
         listingCompleteness: listResult.isComplete ? "complete" : "partial",
+        issues: issues.length > 0 ? issues : undefined,
       };
     } catch (error) {
       return this.failureFromUnknown(error);

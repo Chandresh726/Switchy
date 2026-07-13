@@ -50,6 +50,7 @@ describe("FetchResult persistence", () => {
         jobsArchived: 4,
         platform: "unknown-platform",
         duration: null,
+        errorMessage: "one detail request failed",
       })
     ).toEqual({
       companyId: 7,
@@ -64,6 +65,7 @@ describe("FetchResult persistence", () => {
       platform: null,
       duration: 0,
       logId: 12,
+      warnings: ["one detail request failed"],
     });
   });
 });

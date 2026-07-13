@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Company } from "@/lib/db/schema";
 import type { ExistingJob } from "@/lib/scraper/infrastructure/types";
-import type { Platform, ScrapeOptions, ScraperResult } from "@/lib/scraper/types";
+import {
+  createScraperError,
+  type Platform,
+  type ScrapeOptions,
+  type ScraperResult,
+} from "@/lib/scraper/types";
 import { TitleBasedDeduplicationService } from "@/lib/scraper/services/deduplication-service";
 import { DefaultFilterService } from "@/lib/scraper/services/filter-service";
 import { ScrapeCompanyPipeline } from "@/lib/scraper/application/scrape-company-pipeline";
@@ -133,6 +138,7 @@ describe("ScrapeCompanyPipeline", () => {
       totalListings: 1,
       openExternalIds: ["greenhouse-acme-1"],
       listingCompleteness: "partial",
+      issues: [createScraperError("parse_error", "one job was skipped")],
     });
 
     const pipeline = new ScrapeCompanyPipeline(
@@ -151,10 +157,14 @@ describe("ScrapeCompanyPipeline", () => {
 
     expect(result.outcome).toBe("partial");
     expect(result.success).toBe(false);
+    expect(result.warnings).toEqual(["one job was skipped"]);
     expect(repository.persistScrapeResult).toHaveBeenCalledWith(
       expect.objectContaining({
         archiveMissing: false,
-        log: expect.objectContaining({ status: "partial" }),
+        log: expect.objectContaining({
+          status: "partial",
+          errorMessage: "one job was skipped",
+        }),
       })
     );
   });

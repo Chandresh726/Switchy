@@ -99,8 +99,11 @@ export class NutanixScraper extends AbstractApiScraper<NutanixConfig> {
     xmlText: string
   ): { jobs: ScrapedJob[]; invalidEntries: number; totalEntries: number } {
     const $ = load(xmlText, { xmlMode: true });
-    if ($("jobs, rss").length === 0) {
-      throw new ScraperPayloadError("Nutanix XML", "root must be jobs or rss");
+    if ($("jobs, rss, source").length === 0) {
+      throw new ScraperPayloadError(
+        "Nutanix XML",
+        "root must be jobs, rss, or source"
+      );
     }
 
     const jobs: ScrapedJob[] = [];

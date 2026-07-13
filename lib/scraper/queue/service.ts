@@ -48,6 +48,7 @@ export class LocalScrapeQueueService {
     QueueRecoveryResult
   >;
   private readonly dispatcher: ScheduledSingleFlightDispatcher<QueueRunSummary>;
+  private readonly inFlightBatches = new Map<string, Promise<BatchFetchResult>>();
 
   constructor(private readonly dependencies: LocalScrapeQueueServiceDependencies) {
     this.queueStore = dependencies.queueStore;
@@ -73,7 +74,7 @@ export class LocalScrapeQueueService {
 
   async scrapeAllCompanies(triggerSource: TriggerSource): Promise<BatchFetchResult> {
     const companies = await this.dependencies.companyCatalog.getActiveCompanies();
-    return this.enqueueAndWait(
+    return this.runCoalescedBatch(
       companies.map((company) => company.id),
       triggerSource
     );
@@ -85,12 +86,30 @@ export class LocalScrapeQueueService {
   ): Promise<BatchFetchResult> {
     const requestedIds = new Set(companyIds);
     const companies = await this.dependencies.companyCatalog.getActiveCompanies();
-    return this.enqueueAndWait(
+    return this.runCoalescedBatch(
       companies
         .filter((company) => requestedIds.has(company.id))
         .map((company) => company.id),
       triggerSource
     );
+  }
+
+  private runCoalescedBatch(
+    companyIds: number[],
+    triggerSource: TriggerSource
+  ): Promise<BatchFetchResult> {
+    const uniqueCompanyIds = Array.from(new Set(companyIds)).sort((a, b) => a - b);
+    const key = `${triggerSource}:${uniqueCompanyIds.join(",")}`;
+    const existing = this.inFlightBatches.get(key);
+    if (existing) return existing;
+
+    const pending = this.enqueueAndWait(uniqueCompanyIds, triggerSource);
+    this.inFlightBatches.set(key, pending);
+    void pending.then(
+      () => this.inFlightBatches.delete(key),
+      () => this.inFlightBatches.delete(key)
+    );
+    return pending;
   }
 
   async recoverPending(): Promise<QueueRunSummary> {

@@ -27,7 +27,8 @@ const SESSION_ID = "session/with spaces";
 
 function sessionResponse(
   status: string,
-  queueItems: Array<Record<string, unknown>> = []
+  queueItems: Array<Record<string, unknown>> = [],
+  logs: Array<Record<string, unknown>> = []
 ) {
   return {
     session: {
@@ -44,8 +45,37 @@ function sessionResponse(
       completedAt:
         status === "in_progress" ? null : "2026-07-13T10:01:00.000Z",
     },
-    logs: [],
+    logs,
     queueItems,
+  };
+}
+
+function sessionLog(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 1,
+    companyId: 7,
+    companyName: "Acme",
+    companyLogoUrl: null,
+    platform: "eightfold",
+    status: "error",
+    jobsFound: 0,
+    jobsAdded: 0,
+    jobsUpdated: 0,
+    jobsFiltered: 0,
+    jobsArchived: 0,
+    errorMessage: "browser session failed",
+    duration: 100,
+    startedAt: "2026-07-13T10:00:00.000Z",
+    completedAt: "2026-07-13T10:00:01.000Z",
+    matcherStatus: null,
+    matcherJobsTotal: null,
+    matcherJobsCompleted: null,
+    matcherDuration: null,
+    matcherErrorCount: null,
+    attemptNumber: 1,
+    attemptsTotal: 2,
+    isFinalAttempt: false,
+    ...overrides,
   };
 }
 
@@ -115,6 +145,32 @@ describe("SessionDetail", () => {
     expect(deleteButton.getAttribute("title")).toBe(
       "Wait for running queue work to stop"
     );
+  });
+
+  it("distinguishes superseded retries from final partial warnings", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(
+          sessionResponse("partial", [], [
+            sessionLog(),
+            sessionLog({
+              id: 2,
+              status: "partial",
+              errorMessage: "one detail request failed",
+              attemptNumber: 2,
+              isFinalAttempt: true,
+            }),
+          ])
+        )
+      )
+    );
+
+    renderWithQueryClient(<SessionDetail sessionId={SESSION_ID} />);
+
+    expect(await screen.findByText("Attempt 1 of 2 · superseded")).toBeTruthy();
+    expect(screen.getByText("Attempt 2 of 2 · final")).toBeTruthy();
+    expect(screen.getByText("one detail request failed")).toBeTruthy();
   });
 
   it("stops an active session through the authenticated PATCH contract", async () => {

@@ -79,6 +79,7 @@ export class DrizzleScrapeSessionProjectionStore
         jobsArchived: scrapingLogs.jobsArchived,
         platform: scrapingLogs.platform,
         duration: scrapingLogs.duration,
+        errorMessage: scrapingLogs.errorMessage,
       })
       .from(scrapingLogs)
       .leftJoin(companies, eq(companies.id, scrapingLogs.companyId))
@@ -117,6 +118,7 @@ export class DrizzleScrapeSessionProjectionStore
             jobsArchived: scrapingLogs.jobsArchived,
             platform: scrapingLogs.platform,
             duration: scrapingLogs.duration,
+            errorMessage: scrapingLogs.errorMessage,
           })
           .from(scrapeQueueItems)
           .innerJoin(
@@ -195,6 +197,7 @@ export class DrizzleScrapeSessionProjectionStore
     jobsArchived: number | null;
     platform: string | null;
     duration: number | null;
+    errorMessage: string | null;
   }): CommittedScrapeResult {
     return {
       ...row,

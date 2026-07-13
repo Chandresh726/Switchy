@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { AshbyScraper } from "@/lib/scraper/platforms/ashby";
+import { ashbyNullableOptionalFieldsPayload } from "@test/fixtures/platforms/production-payloads";
 import { createHttpClientStub } from "@test/helpers/scraper-clients";
 
 describe("AshbyScraper", () => {
@@ -113,4 +114,126 @@ describe("AshbyScraper", () => {
       listingCompleteness: "complete",
     });
   });
+
+  it("accepts null for optional production fields", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify(ashbyNullableOptionalFieldsPayload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    const scraper = new AshbyScraper(createHttpClientStub({ fetch: fetchMock }));
+
+    const result = await scraper.scrape("https://jobs.ashbyhq.com/acme");
+
+    expect(result).toMatchObject({
+      outcome: "success",
+      totalListings: 1,
+      listingCompleteness: "complete",
+    });
+  });
+
+  it("keeps valid jobs and marks the listing partial when one job is malformed", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          jobs: [
+            ashbyNullableOptionalFieldsPayload.jobs[0],
+            { location: "Missing title" },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+    const result = await new AshbyScraper(
+      createHttpClientStub({ fetch: fetchMock })
+    ).scrape("https://jobs.ashbyhq.com/acme");
+
+    expect(result).toMatchObject({
+      outcome: "partial",
+      totalListings: 2,
+      listingCompleteness: "partial",
+    });
+    expect(result.jobs).toHaveLength(1);
+  });
+
+  it("decodes URL path identifiers for requests without changing the stable token", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("not found", { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ jobs: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    const scraper = new AshbyScraper(createHttpClientStub({ fetch: fetchMock }));
+
+    const result = await scraper.scrape("https://jobs.ashbyhq.com/Wisdom%20AI");
+
+    expect(scraper.extractIdentifier("https://jobs.ashbyhq.com/Wisdom%20AI")).toBe(
+      "Wisdom%20AI"
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/Wisdom%20AI?"),
+      expect.any(Object)
+    );
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining("Wisdom%2520AI"),
+      expect.anything()
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/Wisdom-AI?"),
+      expect.any(Object)
+    );
+    expect(result).toMatchObject({ detectedBoardToken: "Wisdom%20AI" });
+  });
+
+  it.each(["Wisdom%20AI", "Wisdom AI"])(
+    "normalizes the legacy board token %s without changing external IDs",
+    async (boardToken) => {
+      const payload = {
+        jobs: [
+          {
+            title: "Engineer",
+            jobUrl: "https://jobs.ashbyhq.com/Wisdom-AI/role-1",
+          },
+        ],
+      };
+      const fallbackFetch = vi
+        .fn()
+        .mockResolvedValueOnce(new Response("not found", { status: 404 }))
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      const directFetch = vi.fn(async () =>
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+
+      const fallbackResult = await new AshbyScraper(
+        createHttpClientStub({ fetch: fallbackFetch })
+      ).scrape("https://jobs.ashbyhq.com/Wisdom%20AI", { boardToken });
+      const directResult = await new AshbyScraper(
+        createHttpClientStub({ fetch: directFetch })
+      ).scrape("https://jobs.ashbyhq.com/Wisdom%20AI", { boardToken });
+
+      expect(fallbackFetch).not.toHaveBeenCalledWith(
+        expect.stringContaining("Wisdom%2520AI"),
+        expect.anything()
+      );
+      expect(fallbackFetch).toHaveBeenLastCalledWith(
+        expect.stringContaining("/Wisdom-AI?"),
+        expect.any(Object)
+      );
+      expect(fallbackResult.jobs[0]?.externalId).toBe(
+        directResult.jobs[0]?.externalId
+      );
+    }
+  );
 });

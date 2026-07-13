@@ -23,34 +23,29 @@ export function createRipplingEntry(
   };
 }
 
-export function createRipplingListingsResponse(
-  entries: ReturnType<typeof createRipplingEntry>[]
-): Response {
-  return new Response(
-    JSON.stringify({
-      pageProps: {
-        jobs: {
-          items: entries,
-          page: 0,
-          pageSize: 1000,
-          totalItems: entries.length,
-          totalPages: 1,
-        },
+export function createRipplingAlgoliaPayload(
+  entries: ReturnType<typeof createRipplingEntry>[],
+  options: { page?: number; nbPages?: number } = {}
+) {
+  return {
+    results: [
+      {
+        page: options.page ?? 0,
+        nbPages: options.nbPages ?? 1,
+        nbHits: entries.length,
+        hits: entries.map((entry, index) => ({
+          objectID: `${entry.id}__${index}`,
+          jobId: entry.id,
+          name: entry.name,
+          url: entry.url,
+          department: entry.department,
+          departmentName: entry.department.name,
+          locationNames: entry.locations.map((location) => location.name),
+          locations: entry.locations,
+        })),
       },
-      __N_SSG: true,
-    }),
-    {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }
-  );
-}
-
-export function createRipplingBuildIdPage(buildId: string): Response {
-  return new Response(
-    `<html><body><script src="/_next/static/${buildId}/_buildManifest.js" defer=""></script></body></html>`,
-    { status: 200, headers: { "Content-Type": "text/html" } }
-  );
+    ],
+  };
 }
 
 export function createRipplingDetailPage(

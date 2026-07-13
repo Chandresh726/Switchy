@@ -3,30 +3,38 @@ import { describe, expect, it, vi } from "vitest";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import { RipplingScraper } from "@/lib/scraper/platforms/rippling";
 import {
-  createRipplingBuildIdPage,
+  createRipplingAlgoliaPayload,
   createRipplingDetailPage,
   createRipplingEntry,
-  createRipplingListingsResponse,
 } from "@test/fixtures/platforms/rippling";
 import { createHttpClientStub } from "@test/helpers/scraper-clients";
 
 function createHttpMock(
-  responses: Response[]
-): { httpClient: IHttpClient; fetchMock: ReturnType<typeof vi.fn> } {
+  listingPayload: unknown = createRipplingAlgoliaPayload([]),
+  detailResponses: Response[] = []
+): {
+  httpClient: IHttpClient;
+  fetchMock: ReturnType<typeof vi.fn>;
+  postMock: ReturnType<typeof vi.fn>;
+} {
   const fetchMock = vi.fn();
-  for (const response of responses) {
+  for (const response of detailResponses) {
     fetchMock.mockResolvedValueOnce(response);
   }
+  const postMock = vi.fn().mockResolvedValue(listingPayload);
 
-  const httpClient = createHttpClientStub({ fetch: fetchMock });
+  const httpClient = createHttpClientStub({
+    fetch: fetchMock,
+    post: postMock as IHttpClient["post"],
+  });
 
-  return { httpClient, fetchMock };
+  return { httpClient, fetchMock, postMock };
 }
 
 describe("RipplingScraper", () => {
   describe("validate", () => {
     it("accepts Rippling career URLs", () => {
-      const { httpClient } = createHttpMock([]);
+      const { httpClient } = createHttpMock();
       const scraper = new RipplingScraper(httpClient);
 
       expect(scraper.validate("https://www.rippling.com/en-IN/careers/open-roles")).toBe(true);
@@ -36,7 +44,7 @@ describe("RipplingScraper", () => {
     });
 
     it("rejects non-Rippling URLs", () => {
-      const { httpClient } = createHttpMock([]);
+      const { httpClient } = createHttpMock();
       const scraper = new RipplingScraper(httpClient);
 
       expect(scraper.validate("https://boards.greenhouse.io/example")).toBe(false);
@@ -47,7 +55,7 @@ describe("RipplingScraper", () => {
 
   describe("extractIdentifier", () => {
     it("extracts locale from URL path", () => {
-      const { httpClient } = createHttpMock([]);
+      const { httpClient } = createHttpMock();
       const scraper = new RipplingScraper(httpClient);
 
       expect(scraper.extractIdentifier("https://www.rippling.com/en-IN/careers/open-roles")).toBe("en-IN");
@@ -56,7 +64,7 @@ describe("RipplingScraper", () => {
     });
 
     it("returns 'main' for root path URLs", () => {
-      const { httpClient } = createHttpMock([]);
+      const { httpClient } = createHttpMock();
       const scraper = new RipplingScraper(httpClient);
 
       expect(scraper.extractIdentifier("https://www.rippling.com/careers/open-roles")).toBe("main");
@@ -104,12 +112,13 @@ describe("RipplingScraper", () => {
         ]),
       ];
 
-      const { httpClient, fetchMock } = createHttpMock([
-        createRipplingBuildIdPage("testBuildId123"),
-        createRipplingListingsResponse(entries),
+      const { httpClient, fetchMock, postMock } = createHttpMock(
+        createRipplingAlgoliaPayload(entries),
+        [
         createRipplingDetailPage("Software Engineer", "We are hiring engineers."),
         createRipplingDetailPage("Product Manager", "We are hiring PMs."),
-      ]);
+        ]
+      );
 
       const scraper = new RipplingScraper(httpClient);
       const result = await scraper.scrape(
@@ -136,7 +145,8 @@ describe("RipplingScraper", () => {
       expect(pmJob!.location).toBe("Remote (Arizona, US)");
       expect(pmJob!.locationType).toBe("remote");
 
-      expect(fetchMock).toHaveBeenCalledTimes(4);
+      expect(postMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
     it("skips detail fetch for jobs with existing descriptions", async () => {
@@ -156,10 +166,9 @@ describe("RipplingScraper", () => {
         ]),
       ];
 
-      const { httpClient, fetchMock } = createHttpMock([
-        createRipplingBuildIdPage("testBuildId123"),
-        createRipplingListingsResponse(entries),
-      ]);
+      const { httpClient, fetchMock } = createHttpMock(
+        createRipplingAlgoliaPayload(entries)
+      );
 
       const scraper = new RipplingScraper(httpClient);
       const result = await scraper.scrape(
@@ -172,7 +181,7 @@ describe("RipplingScraper", () => {
       expect(result.outcome).not.toBe("error");
       expect(result.jobs).toHaveLength(0);
       expect(result.openExternalIds).toHaveLength(1);
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it("preserves plain-text detail descriptions as plain text", async () => {
@@ -190,14 +199,15 @@ describe("RipplingScraper", () => {
           },
         ]),
       ];
-      const { httpClient } = createHttpMock([
-        createRipplingBuildIdPage("testBuildId123"),
-        createRipplingListingsResponse(entries),
+      const { httpClient } = createHttpMock(
+        createRipplingAlgoliaPayload(entries),
+        [
         new Response(
           "<html><body><main>Build reliable products with the platform team.</main></body></html>",
           { status: 200, headers: { "Content-Type": "text/html" } }
         ),
-      ]);
+        ]
+      );
 
       const result = await new RipplingScraper(httpClient).scrape(
         "https://www.rippling.com/en-IN/careers/open-roles"
@@ -210,10 +220,8 @@ describe("RipplingScraper", () => {
       });
     });
 
-    it("returns error when build ID extraction fails", async () => {
-      const { httpClient } = createHttpMock([
-        new Response("<html><body>No build manifest</body></html>", { status: 200 }),
-      ]);
+    it("returns an error when the listings envelope is invalid", async () => {
+      const { httpClient } = createHttpMock({ pageProps: {} });
 
       const scraper = new RipplingScraper(httpClient);
       const result = await scraper.scrape(
@@ -223,7 +231,7 @@ describe("RipplingScraper", () => {
       expect(result.outcome).toBe("error");
       expect(result.error).toMatchObject({
         code: "parse_error",
-        message: expect.stringContaining("build ID"),
+        message: expect.stringContaining("Rippling Algolia"),
       });
     });
 
@@ -244,11 +252,12 @@ describe("RipplingScraper", () => {
         ]),
       ];
 
-      const { httpClient } = createHttpMock([
-        createRipplingBuildIdPage("testBuildId123"),
-        createRipplingListingsResponse(entries),
+      const { httpClient } = createHttpMock(
+        createRipplingAlgoliaPayload(entries),
+        [
         new Response("Not Found", { status: 404 }),
-      ]);
+        ]
+      );
 
       const scraper = new RipplingScraper(httpClient);
       const result = await scraper.scrape(
@@ -259,13 +268,12 @@ describe("RipplingScraper", () => {
       expect(result.outcome).toBe("partial");
       expect(result.jobs).toHaveLength(1);
       expect(result.jobs[0].description).toBeUndefined();
+      if (result.outcome !== "partial") throw new Error("Expected a partial result");
+      expect(result.issues?.[0]?.message).toContain("detail request");
     });
 
     it("handles empty listings", async () => {
-      const { httpClient } = createHttpMock([
-        createRipplingBuildIdPage("testBuildId123"),
-        createRipplingListingsResponse([]),
-      ]);
+      const { httpClient } = createHttpMock(createRipplingAlgoliaPayload([]));
 
       const scraper = new RipplingScraper(httpClient);
       const result = await scraper.scrape(
@@ -308,11 +316,12 @@ describe("RipplingScraper", () => {
         ]),
       ];
 
-      const { httpClient, fetchMock } = createHttpMock([
-        createRipplingBuildIdPage("testBuildId123"),
-        createRipplingListingsResponse(entries),
+      const { httpClient, fetchMock } = createHttpMock(
+        createRipplingAlgoliaPayload(entries),
+        [
         createRipplingDetailPage("Data Scientist", "Great role"),
-      ]);
+        ]
+      );
 
       const scraper = new RipplingScraper(httpClient);
       const result = await scraper.scrape(
@@ -323,7 +332,7 @@ describe("RipplingScraper", () => {
       expect(result.jobs[0].title).toBe("Data Scientist");
       expect(result.jobs[0].location).toContain("Bangalore");
       expect(result.jobs[0].location).toContain("London");
-      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it("maps workplace types correctly", async () => {
@@ -363,13 +372,14 @@ describe("RipplingScraper", () => {
         ]),
       ];
 
-      const { httpClient } = createHttpMock([
-        createRipplingBuildIdPage("testBuildId123"),
-        createRipplingListingsResponse(entries),
+      const { httpClient } = createHttpMock(
+        createRipplingAlgoliaPayload(entries),
+        [
         createRipplingDetailPage("Remote Role", "desc"),
         createRipplingDetailPage("Hybrid Role", "desc"),
         createRipplingDetailPage("Onsite Role", "desc"),
-      ]);
+        ]
+      );
 
       const scraper = new RipplingScraper(httpClient);
       const result = await scraper.scrape(
@@ -388,26 +398,83 @@ describe("RipplingScraper", () => {
       expect(onsite!.locationType).toBe("onsite");
     });
 
-    it("accepts minimal listings without unused pagination or location metadata", async () => {
-      const listings = new Response(
-        JSON.stringify({
-          pageProps: {
-            jobs: {
-              items: [
-                {
-                  id: "minimal-1",
-                  name: "Minimal Engineer",
-                  url: "https://ats.rippling.com/rippling/jobs/minimal-1",
-                },
-              ],
-            },
-          },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
+    it("paginates the public careers index and preserves all listing IDs", async () => {
+      const first = createRipplingEntry("page-1", "First Role", []);
+      const second = createRipplingEntry("page-2", "Second Role", []);
+      const postMock = vi
+        .fn()
+        .mockResolvedValueOnce(
+          createRipplingAlgoliaPayload([first], { page: 0, nbPages: 2 })
+        )
+        .mockResolvedValueOnce(
+          createRipplingAlgoliaPayload([second], { page: 1, nbPages: 2 })
+        );
+      const scraper = new RipplingScraper(
+        createHttpClientStub({ post: postMock as IHttpClient["post"] })
       );
-      const { httpClient } = createHttpMock([
-        createRipplingBuildIdPage("minimalBuild"),
-        listings,
+
+      const result = await scraper.scrape(
+        "https://www.rippling.com/en-IN/careers/open-roles",
+        {
+          existingExternalIds: new Set(["rippling-page-1", "rippling-page-2"]),
+        }
+      );
+
+      expect(result).toMatchObject({
+        outcome: "success",
+        totalListings: 2,
+        listingCompleteness: "complete",
+      });
+      expect(result.openExternalIds).toEqual([
+        "rippling-page-1",
+        "rippling-page-2",
+      ]);
+      expect(postMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("retains fetched pages and marks listings partial when a later page fails", async () => {
+      const first = createRipplingEntry("page-1", "First Role", []);
+      const postMock = vi
+        .fn()
+        .mockResolvedValueOnce(
+          createRipplingAlgoliaPayload([first], { page: 0, nbPages: 2 })
+        )
+        .mockRejectedValueOnce(new TypeError("network down"));
+      const scraper = new RipplingScraper(
+        createHttpClientStub({ post: postMock as IHttpClient["post"] })
+      );
+
+      const result = await scraper.scrape(
+        "https://www.rippling.com/en-IN/careers/open-roles",
+        { existingExternalIds: new Set(["rippling-page-1"]) }
+      );
+
+      expect(result).toMatchObject({
+        outcome: "partial",
+        totalListings: 1,
+        listingCompleteness: "partial",
+      });
+      if (result.outcome !== "partial") throw new Error("Expected a partial result");
+      expect(result.issues?.[0]?.message).toContain("partially fetched");
+    });
+
+    it("accepts minimal listings without unused pagination or location metadata", async () => {
+      const listings = {
+        results: [
+          {
+            page: 0,
+            nbPages: 1,
+            hits: [
+              {
+                jobId: "minimal-1",
+                name: "Minimal Engineer",
+                url: "https://ats.rippling.com/rippling/jobs/minimal-1",
+              },
+            ],
+          },
+        ],
+      };
+      const { httpClient } = createHttpMock(listings, [
         createRipplingDetailPage("Minimal Engineer", "Build systems."),
       ]);
       const scraper = new RipplingScraper(httpClient);
@@ -423,9 +490,11 @@ describe("RipplingScraper", () => {
       });
     });
 
-    it("preserves transport errors while fetching the build id", async () => {
-      const fetchMock = vi.fn().mockRejectedValueOnce(new TypeError("network down"));
-      const httpClient = createHttpClientStub({ fetch: fetchMock });
+    it("preserves transport errors while fetching listings", async () => {
+      const postMock = vi.fn().mockRejectedValueOnce(new TypeError("network down"));
+      const httpClient = createHttpClientStub({
+        post: postMock as IHttpClient["post"],
+      });
 
       const result = await new RipplingScraper(httpClient).scrape(
         "https://www.rippling.com/en-IN/careers/open-roles"
@@ -438,12 +507,12 @@ describe("RipplingScraper", () => {
     });
 
     it("returns invalid_url without fetching for malformed source input", async () => {
-      const { httpClient, fetchMock } = createHttpMock([]);
+      const { httpClient, postMock } = createHttpMock();
 
       const result = await new RipplingScraper(httpClient).scrape("not a URL");
 
       expect(result).toMatchObject({ outcome: "error", error: { code: "invalid_url" } });
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(postMock).not.toHaveBeenCalled();
     });
   });
 });

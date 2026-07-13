@@ -14,10 +14,10 @@ import { processDescription } from "@/lib/jobs/description-processor";
 import { applyEarlyFilters, hasEarlyFilters, toEarlyFilterStats } from "@/lib/scraper/services";
 
 interface UberLocation {
-  country: string;
+  country: string | null;
   region: string | null;
-  city: string;
-  countryName: string;
+  city: string | null;
+  countryName: string | null;
 }
 
 interface UberJob {
@@ -43,10 +43,10 @@ interface UberSearchResponse {
 
 const UberLocationSchema = z
   .object({
-    country: z.string(),
+    country: z.string().nullable(),
     region: z.string().nullable(),
-    city: z.string(),
-    countryName: z.string(),
+    city: z.string().nullable(),
+    countryName: z.string().nullable(),
   })
   .passthrough();
 
@@ -272,11 +272,12 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
     allLocations: UberLocation[] | null
   ): string {
     const formatSingleLocation = (loc: UberLocation): string => {
-      const parts = [loc.city];
+      const parts: string[] = [];
+      if (loc.city) parts.push(loc.city);
       if (loc.region && loc.region !== loc.city) {
         parts.push(loc.region);
       }
-      parts.push(loc.countryName);
+      if (loc.countryName) parts.push(loc.countryName);
       return parts.join(", ");
     };
 

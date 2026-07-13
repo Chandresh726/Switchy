@@ -163,6 +163,49 @@ describe("LocalScrapeQueueService", () => {
     });
   });
 
+  it("coalesces identical in-flight batches into one durable session", async () => {
+    const database = createTestDatabase();
+    const company = database
+      .insert(companies)
+      .values({ name: "One", careersUrl: "https://example.com/one" })
+      .returning({ id: companies.id })
+      .get();
+    let releaseScrape!: () => void;
+    const waitForRelease = new Promise<void>((resolve) => {
+      releaseScrape = resolve;
+    });
+    const scrapeCompany = vi.fn<ScrapeCompanyPipeline["scrape"]>(
+      async (companyId) => {
+        await waitForRelease;
+        return {
+          companyId,
+          companyName: "One",
+          success: true,
+          outcome: "success",
+          jobsFound: 1,
+          jobsAdded: 0,
+          jobsUpdated: 0,
+          jobsFiltered: 0,
+          jobsArchived: 0,
+          platform: "greenhouse",
+          duration: 1,
+        };
+      }
+    );
+    const { service } = createService(database, {
+      pipeline: { scrape: scrapeCompany },
+    });
+
+    const first = service.scrapeCompanies([company.id], "manual");
+    const second = service.scrapeCompanies([company.id], "manual");
+    releaseScrape();
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+
+    expect(firstResult.sessionId).toBe(secondResult.sessionId);
+    expect(scrapeCompany).toHaveBeenCalledTimes(1);
+    expect(database.select().from(scrapeSessions).all()).toHaveLength(1);
+  });
+
   it("completes an empty durable session without leaving active history", async () => {
     const database = createTestDatabase();
     const { service } = createService(database);

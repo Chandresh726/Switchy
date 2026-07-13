@@ -16,6 +16,7 @@ export interface CommittedScrapeResult {
   jobsArchived: number | null;
   platform: string | null;
   duration: number | null;
+  errorMessage: string | null;
 }
 
 export function createFetchResultFromCommittedScrape(
@@ -37,6 +38,7 @@ export function createFetchResultFromCommittedScrape(
         ? committed.platform
         : null,
     duration: committed.duration ?? 0,
+    warnings: committed.errorMessage ? [committed.errorMessage] : undefined,
     logId: committed.logId,
   };
 }

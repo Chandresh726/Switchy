@@ -14,7 +14,7 @@ type MynextHireJob = {
   location?: string;
   locationAddress?: string;
   jdDisplay?: string;
-  approvedOn?: number;
+  approvedOn?: string | number | null;
   employmentType?: string;
   reqCurrency?: string;
   ctcBandLowEnd?: string | number | null;
@@ -22,13 +22,12 @@ type MynextHireJob = {
 };
 
 type MynextHireResponse = {
-  requesterTitle?: string;
   reqDetailsBOList: MynextHireJob[];
 };
 
 const MynextHireResponseSchema = z
   .object({
-    requesterTitle: z.string().optional(),
+    requesterTitle: z.unknown().optional(),
     reqDetailsBOList: z.array(
       z
         .object({
@@ -38,7 +37,7 @@ const MynextHireResponseSchema = z
           location: z.string().optional(),
           locationAddress: z.string().optional(),
           jdDisplay: z.string().optional(),
-          approvedOn: z.number().optional(),
+          approvedOn: z.union([z.string(), z.number()]).nullish(),
           employmentType: z.string().optional(),
           reqCurrency: z.string().optional(),
           ctcBandLowEnd: z.union([z.string(), z.number(), z.null()]).optional(),

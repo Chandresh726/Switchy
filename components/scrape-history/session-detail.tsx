@@ -22,6 +22,7 @@ import Link from "next/link";
 import { TRIGGER_LABELS } from "./constants";
 import { toast } from "sonner";
 import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { cn } from "@/lib/utils";
 import { formatDurationMs, formatDateTime } from "@/lib/utils/format";
 import {
   getLogStatusConfig,
@@ -50,6 +51,9 @@ interface SessionLog {
   matcherJobsCompleted: number | null;
   matcherDuration: number | null;
   matcherErrorCount: number | null;
+  attemptNumber: number;
+  attemptsTotal: number;
+  isFinalAttempt: boolean;
 }
 
 interface ScrapeSession {
@@ -411,6 +415,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
             const matcherConfig = log.matcherStatus
               ? MATCHER_STATUS_CONFIG[log.matcherStatus] || MATCHER_STATUS_CONFIG.pending
               : null;
+            const isPartialWarning = log.status === "partial";
 
             return (
               <div
@@ -440,6 +445,12 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
                         {log.platform && (
                           <Badge variant="outline" className="border-border bg-card text-muted-foreground text-[10px] h-5 px-1.5">
                             {log.platform}
+                          </Badge>
+                        )}
+                        {log.attemptsTotal > 1 && (
+                          <Badge variant="outline" className="h-5 px-1.5 text-[10px] text-muted-foreground">
+                            Attempt {log.attemptNumber} of {log.attemptsTotal}
+                            {!log.isFinalAttempt ? " · superseded" : " · final"}
                           </Badge>
                         )}
                       </div>
@@ -479,10 +490,33 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
 
                 {/* Error Message */}
                 {log.errorMessage && (
-                  <div className="mt-4 rounded-md border border-red-500/10 bg-red-500/5 p-3">
+                  <div
+                    className={cn(
+                      "mt-4 rounded-md border p-3",
+                      isPartialWarning
+                        ? "border-amber-500/10 bg-amber-500/5"
+                        : "border-red-500/10 bg-red-500/5"
+                    )}
+                  >
                     <div className="flex gap-2">
-                      <AlertCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
-                      <p className="text-xs font-mono break-all text-red-700/90 dark:text-red-300">{log.errorMessage}</p>
+                      <AlertCircle
+                        className={cn(
+                          "h-4 w-4 shrink-0",
+                          isPartialWarning
+                            ? "text-amber-600 dark:text-amber-400"
+                            : "text-red-600 dark:text-red-400"
+                        )}
+                      />
+                      <p
+                        className={cn(
+                          "break-all font-mono text-xs",
+                          isPartialWarning
+                            ? "text-amber-700/90 dark:text-amber-300"
+                            : "text-red-700/90 dark:text-red-300"
+                        )}
+                      >
+                        {log.errorMessage}
+                      </p>
                     </div>
                   </div>
                 )}

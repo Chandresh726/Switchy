@@ -2,7 +2,11 @@ import { z } from "zod";
 
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import { processDescription, containsHtml, decodeHtmlEntities } from "@/lib/jobs/description-processor";
-import { parseExternalPayload } from "@/lib/scraper/types";
+import {
+  createScraperError,
+  parseExternalItems,
+  parseExternalPayload,
+} from "@/lib/scraper/types";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig } from "../core/types";
 
@@ -10,42 +14,47 @@ interface GreenhouseJob {
   id: number;
   title: string;
   absolute_url: string;
-  location?: { name: string };
-  departments?: { name: string }[];
-  updated_at?: string;
-  content?: string;
-  metadata?: { name: string; value: string | string[] }[];
+  location?: { name?: string | null } | null;
+  departments?: { name?: string | null }[] | null;
+  updated_at?: string | null;
+  content?: string | null;
+  metadata?: { name?: string | null; value?: unknown }[] | null;
 }
 
 interface GreenhouseResponse {
   jobs: GreenhouseJob[];
 }
 
+const GreenhouseJobSchema = z
+  .object({
+    id: z.number(),
+    title: z.string(),
+    absolute_url: z.string(),
+    location: z
+      .object({ name: z.string().nullish() })
+      .passthrough()
+      .nullish(),
+    departments: z
+      .array(z.object({ name: z.string().nullish() }).passthrough())
+      .nullish(),
+    updated_at: z.string().nullish(),
+    content: z.string().nullish(),
+    metadata: z
+      .array(
+        z
+          .object({
+            name: z.string().nullish(),
+            value: z.unknown().optional(),
+          })
+          .passthrough()
+      )
+      .nullish(),
+  })
+  .passthrough();
+
 const GreenhouseResponseSchema = z
   .object({
-    jobs: z.array(
-      z
-        .object({
-          id: z.number(),
-          title: z.string(),
-          absolute_url: z.string(),
-          location: z.object({ name: z.string() }).passthrough().optional(),
-          departments: z.array(z.object({ name: z.string() }).passthrough()).optional(),
-          updated_at: z.string().optional(),
-          content: z.string().optional(),
-          metadata: z
-            .array(
-              z
-                .object({
-                  name: z.string(),
-                  value: z.union([z.string(), z.array(z.string())]),
-                })
-                .passthrough()
-            )
-            .optional(),
-        })
-        .passthrough()
-    ),
+    jobs: z.array(z.unknown()),
   })
   .passthrough();
 
@@ -132,7 +141,7 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
         headers: this.jsonRequestHeaders(),
       });
 
-      let data: GreenhouseResponse;
+      let payload: { jobs: unknown[] };
 
       if (!response.ok) {
         const altApiUrl = `https://boards.greenhouse.io/${boardToken}/embed/job_board/jobs.json`;
@@ -147,20 +156,31 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
           );
         }
 
-        data = parseExternalPayload(
+        payload = parseExternalPayload(
           GreenhouseResponseSchema,
           await altResponse.json(),
           "Greenhouse"
         );
       } else {
-        data = parseExternalPayload(
+        payload = parseExternalPayload(
           GreenhouseResponseSchema,
           await response.json(),
           "Greenhouse"
         );
       }
 
-      return this.parseJobs(data, boardToken, detectedBoardToken);
+      const parsedJobs = parseExternalItems(
+        GreenhouseJobSchema,
+        payload.jobs,
+        "Greenhouse jobs"
+      );
+      return this.parseJobs(
+        { jobs: parsedJobs.items },
+        boardToken,
+        detectedBoardToken,
+        payload.jobs.length,
+        parsedJobs.invalidCount
+      );
     } catch (error) {
       return this.failureFromUnknown(error);
     }
@@ -169,11 +189,13 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
   private parseJobs(
     data: GreenhouseResponse,
     boardToken: string,
-    detectedBoardToken?: string
+    detectedBoardToken: string | undefined,
+    totalListings: number,
+    invalidJobs: number
   ): ScraperResult {
     const jobs: ScrapedJob[] = data.jobs.map((job) => {
       const locationMetadata = job.metadata?.find((m) => {
-        const nameLower = m.name.toLowerCase();
+        const nameLower = m.name?.toLowerCase() ?? "";
         return nameLower.includes("location");
       });
       const actualLocations = locationMetadata?.value || [];
@@ -211,7 +233,7 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
         url: job.absolute_url,
         location,
         locationType,
-        department: job.departments?.[0]?.name,
+        department: job.departments?.[0]?.name ?? undefined,
         description,
         descriptionFormat,
         postedDate: job.updated_at ? new Date(job.updated_at) : undefined,
@@ -221,12 +243,21 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
     const openExternalIds = jobs.map((job) => job.externalId);
 
     return {
-      outcome: "success",
+      outcome: invalidJobs > 0 ? "partial" : "success",
       jobs,
-      totalListings: jobs.length,
+      totalListings,
       detectedBoardToken,
       openExternalIds,
-      listingCompleteness: "complete",
+      listingCompleteness: invalidJobs > 0 ? "partial" : "complete",
+      issues:
+        invalidJobs > 0
+          ? [
+              createScraperError(
+                "parse_error",
+                `${invalidJobs} Greenhouse job${invalidJobs === 1 ? " was" : "s were"} skipped because required fields were invalid.`
+              ),
+            ]
+          : undefined,
     };
   }
 }

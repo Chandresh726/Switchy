@@ -50,6 +50,9 @@ export interface ScrapeHistoryDetail {
     matcherJobsCompleted: number | null;
     matcherDuration: number | null;
     matcherErrorCount: number | null;
+    attemptNumber: number;
+    attemptsTotal: number;
+    isFinalAttempt: boolean;
   }>;
   queueItems: Array<{
     id: string;
@@ -104,7 +107,7 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
       .get();
     if (!session) return null;
 
-    const logs = this.database
+    const rawLogs = this.database
       .select({
         id: scrapingLogs.id,
         companyId: scrapingLogs.companyId,
@@ -130,7 +133,7 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
       .from(scrapingLogs)
       .leftJoin(companies, eq(scrapingLogs.companyId, companies.id))
       .where(eq(scrapingLogs.sessionId, sessionId))
-      .orderBy(scrapingLogs.startedAt)
+      .orderBy(scrapingLogs.startedAt, scrapingLogs.id)
       .all();
     const queueItems = this.database
       .select({
@@ -156,6 +159,44 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
       .where(eq(scrapeQueueItems.sessionId, sessionId))
       .orderBy(scrapeQueueItems.createdAt)
       .all();
+
+    const queueByCompany = new Map(
+      queueItems.map((item) => [item.companyId, item])
+    );
+    const logTotalsByCompany = new Map<number, number>();
+    for (const log of rawLogs) {
+      if (log.companyId === null) continue;
+      logTotalsByCompany.set(
+        log.companyId,
+        (logTotalsByCompany.get(log.companyId) ?? 0) + 1
+      );
+    }
+    const seenByCompany = new Map<number, number>();
+    const logs = rawLogs.map((log) => {
+      if (log.companyId === null) {
+        return {
+          ...log,
+          attemptNumber: 1,
+          attemptsTotal: 1,
+          isFinalAttempt: true,
+        };
+      }
+      const attemptNumber = (seenByCompany.get(log.companyId) ?? 0) + 1;
+      seenByCompany.set(log.companyId, attemptNumber);
+      const queueItem = queueByCompany.get(log.companyId);
+      const attemptsTotal = logTotalsByCompany.get(log.companyId) ?? 1;
+      const queueIsTerminal =
+        queueItem === undefined ||
+        ["completed", "failed", "cancelled"].includes(queueItem.status);
+      return {
+        ...log,
+        attemptNumber,
+        attemptsTotal,
+        isFinalAttempt:
+          queueIsTerminal &&
+          attemptNumber === (logTotalsByCompany.get(log.companyId) ?? 1),
+      };
+    });
 
     return { session, logs, queueItems };
   }

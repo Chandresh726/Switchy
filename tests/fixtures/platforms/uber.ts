@@ -1,4 +1,4 @@
-function createUberJob(id: number) {
+function createUberJob(id: number, nullableLocation = false) {
   return {
     id,
     title: `Role ${id}`,
@@ -7,10 +7,10 @@ function createUberJob(id: number) {
     type: "job",
     programAndPlatform: null,
     location: {
-      country: "IN",
-      region: "KA",
-      city: "Bangalore",
-      countryName: "India",
+      country: nullableLocation ? null : "IN",
+      region: nullableLocation ? null : "KA",
+      city: nullableLocation ? null : "Bangalore",
+      countryName: nullableLocation ? null : "India",
     },
     featured: false,
     level: "Senior",
@@ -30,14 +30,17 @@ function createUberJob(id: number) {
 
 export function createUberResponse(
   jobIds: number[],
-  total = jobIds.length
+  total = jobIds.length,
+  options: { nullableLocation?: boolean } = {}
 ): Response {
   return new Response(
     JSON.stringify({
       status: "success",
       data: {
         total,
-        results: jobIds.map(createUberJob),
+        results: jobIds.map((id) =>
+          createUberJob(id, options.nullableLocation)
+        ),
       },
     }),
     {

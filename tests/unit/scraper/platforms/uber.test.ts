@@ -68,4 +68,18 @@ describe("UberScraper", () => {
       openExternalIds: ["uber-1"],
     });
   });
+
+  it("accepts jobs with nullable production location fields", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createUberResponse([1], 1, { nullableLocation: true })
+      );
+    const result = await new UberScraper(
+      createHttpClientStub({ fetch: fetchMock })
+    ).scrape("https://www.uber.com/in/en/careers/list/");
+
+    expect(result).toMatchObject({ outcome: "success", totalListings: 1 });
+    expect(result.jobs[0]?.location).toBeUndefined();
+  });
 });

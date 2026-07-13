@@ -52,6 +52,7 @@ interface ScrapeExecutionResult {
   error?: string;
   retryable?: boolean;
   retryAfterMs?: number;
+  warnings?: string[];
 }
 
 interface DuplicateHydrationCandidate {
@@ -323,6 +324,10 @@ export class ScrapeCompanyPipeline {
 
     const matcherConfig = await getMatcherConfig();
     const logStatus = outcome === "success" ? "success" : "partial";
+    const warnings =
+      scraperResult.outcome === "partial"
+        ? scraperResult.issues?.map((issue) => issue.message)
+        : undefined;
     const jobsFiltered = filterResult.filteredOut + (scraperResult.earlyFiltered?.total || 0);
     const persistenceResult = await this.repository.persistScrapeResult({
       companyId,
@@ -358,6 +363,7 @@ export class ScrapeCompanyPipeline {
         status: logStatus,
         jobsFound: totalFetched,
         jobsFiltered,
+        errorMessage: warnings?.join("; "),
       },
     });
 
@@ -374,6 +380,7 @@ export class ScrapeCompanyPipeline {
       jobsFiltered,
       jobsArchived: persistenceResult.jobsArchived,
       logId: persistenceResult.logId,
+      warnings,
     };
   }
 
@@ -472,6 +479,7 @@ export class ScrapeCompanyPipeline {
     error?: string;
     retryable?: boolean;
     retryAfterMs?: number;
+    warnings?: string[];
     logId?: number;
   }): FetchResult {
     return {
@@ -490,6 +498,7 @@ export class ScrapeCompanyPipeline {
       error: params.error,
       retryable: params.retryable,
       retryAfterMs: params.retryAfterMs,
+      warnings: params.warnings,
       duration: params.duration,
       logId: params.logId,
     };

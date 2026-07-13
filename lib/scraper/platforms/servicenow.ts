@@ -6,8 +6,10 @@ import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 import { processDescription } from "@/lib/jobs/description-processor";
 import {
+  createScraperError,
   parseExternalPayload,
   ScraperPayloadError,
+  type ScraperError,
 } from "@/lib/scraper/types";
 import { AbstractBrowserScraper, DEFAULT_BROWSER_CONFIG } from "../core";
 import type { BrowserScraperConfig, ScrapeOptions, ScrapedJob, ScraperResult } from "../core/types";
@@ -118,7 +120,7 @@ export class ServiceNowScraper extends AbstractBrowserScraper<ServiceNowConfig> 
         );
 
         const jobs: ScrapedJob[] = [];
-        let hadPartialFailures = false;
+        let detailFailures = 0;
 
         for (const item of items) {
           try {
@@ -128,7 +130,7 @@ export class ServiceNowScraper extends AbstractBrowserScraper<ServiceNowConfig> 
             jobs.push(detail);
           } catch (error) {
             throwIfScrapeAborted(error);
-            hadPartialFailures = true;
+            detailFailures++;
             jobs.push({
               externalId: this.generateExternalId(this.platform, item.id),
               title: item.title,
@@ -141,13 +143,31 @@ export class ServiceNowScraper extends AbstractBrowserScraper<ServiceNowConfig> 
 
         const listingComplete =
           fetchedAllPlannedPages && pagesToScrape >= totalPages;
+        const issues: ScraperError[] = [];
+        if (!listingComplete) {
+          issues.push(
+            createScraperError(
+              "network_error",
+              "ServiceNow listings were only partially fetched."
+            )
+          );
+        }
+        if (detailFailures > 0) {
+          issues.push(
+            createScraperError(
+              "browser_error",
+              `${detailFailures} ServiceNow job detail page${detailFailures === 1 ? "" : "s"} failed; listing data was retained.`
+            )
+          );
+        }
 
         return {
-          outcome: hadPartialFailures || !listingComplete ? "partial" : "success",
+          outcome: issues.length > 0 ? "partial" : "success",
           jobs,
           totalListings: items.length,
           openExternalIds: jobs.map((job) => job.externalId),
           listingCompleteness: listingComplete ? "complete" : "partial",
+          issues: issues.length > 0 ? issues : undefined,
         };
       });
     } catch (error) {

@@ -23,6 +23,8 @@ flowchart LR
 
 Manual and scheduled requests use the same in-process supervisor. Each company is represented by a durable queue item with an attempt count, retry time, cancellation flag, worker lease, and serialized result. A process restart recovers expired leases and continues unfinished work.
 
+Identical batch requests with the same trigger source are coalesced while they are in flight, preventing duplicate sessions from repeat submissions without merging independently scoped refreshes.
+
 ## Module boundaries
 
 `createLocalScrapeQueueService()` and `getLocalScrapeQueueService()` are the public composition boundary. The queue service is a thin façade for enqueueing, waiting, recovery, and cancellation; batch work never bypasses the durable queue.
@@ -45,6 +47,8 @@ The preferred order is:
 4. Keep platform-specific selectors and request logic behind the scraper registry.
 
 This hybrid approach remains the right fit for a local application. Replacing every scraper with a headless browser would increase memory usage and failure surface. Replacing platform adapters with a generic AI extraction step would make results slower, less deterministic, and harder to test. AI-assisted extraction can be added later as an explicit fallback, but should not become the primary path for ATS platforms with structured endpoints.
+
+External payload validation is strict for the response envelope and job identity fields, but tolerant of optional, nullable, and polymorphic metadata. When some jobs are malformed, adapters retain usable jobs, mark listing completeness as partial, and prevent missing-job archival.
 
 Each scraper declares whether it can run in parallel or must run exclusively. Workday-like browser-heavy adapters remain serial; API adapters share the user-configured concurrency budget. Separate sessions cannot scrape the same company simultaneously.
 
@@ -73,7 +77,7 @@ Retention never deletes jobs, companies, uploads, active/leased queue work, or a
 
 ## Observability and recovery
 
-The scrape-session detail page shows each queue item's status, attempt count, next retry time, lease, and last error. The underlying API is `GET /api/scrape-history?sessionId=<id>`.
+The scrape-session detail page shows each queue item's status, attempt count, next retry time, lease, and last error. Company logs label superseded and final retry attempts, and partial results retain warning details. The underlying API is `GET /api/scrape-history?sessionId=<id>`.
 
 For local troubleshooting:
 
@@ -87,7 +91,7 @@ For local troubleshooting:
 ## Adding a platform
 
 1. Prefer the platform's structured endpoint and implement its adapter under `lib/scraper/platforms/`.
-2. Return the typed scraper result contract, including listing completeness and structured errors.
+2. Return the typed scraper result contract, including listing completeness, structured errors, and partial-result issues.
 3. Declare transport and concurrency capabilities accurately.
 4. Register the adapter in the scraper registry.
 5. Add fixture-based parser tests, error classification tests, and pipeline characterization coverage under `tests/`.

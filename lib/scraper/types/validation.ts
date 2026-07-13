@@ -39,6 +39,35 @@ export function parseExternalPayload<T>(
   throw new ScraperPayloadError(source, details);
 }
 
+export interface ParsedExternalItems<T> {
+  items: T[];
+  invalidCount: number;
+}
+
+export function parseExternalItems<T>(
+  schema: z.ZodType<T>,
+  payload: unknown[],
+  source: string
+): ParsedExternalItems<T> {
+  const items: T[] = [];
+  let invalidCount = 0;
+
+  for (const item of payload) {
+    const parsed = schema.safeParse(item);
+    if (parsed.success) {
+      items.push(parsed.data);
+    } else {
+      invalidCount++;
+    }
+  }
+
+  if (payload.length > 0 && items.length === 0) {
+    throw new ScraperPayloadError(source, "no usable items were found");
+  }
+
+  return { items, invalidCount };
+}
+
 export function createFailureFromUnknown(error: unknown): ScraperErrorResult {
   if (error instanceof ScraperPayloadError) {
     return createScraperFailure("parse_error", error.message);
