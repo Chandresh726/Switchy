@@ -67,6 +67,10 @@ export type LeasedWorkStateChangeCallback<TItem extends LeasedWorkItem> = (
   item: TItem
 ) => Promise<void>;
 
+export type LeasedWorkResultSerializer<TResult> = (
+  result: TResult
+) => string | null;
+
 export interface LocalLeasedWorkRunSummary<TRecovery> {
   claimed: number;
   completed: number;
@@ -109,7 +113,9 @@ export class LocalLeasedWorkRunner<
     private readonly repository: LocalLeasedWorkStore<TItem, TRecovery>,
     private readonly handler: LeasedWorkHandler<TItem, TResult>,
     config: Partial<LocalLeasedWorkRunnerConfig> = {},
-    private readonly onItemStateChange?: LeasedWorkStateChangeCallback<TItem>
+    private readonly onItemStateChange?: LeasedWorkStateChangeCallback<TItem>,
+    private readonly serializeResult: LeasedWorkResultSerializer<TResult> = (result) =>
+      result === undefined ? null : JSON.stringify(result)
   ) {
     const merged = { ...DEFAULT_LOCAL_LEASED_WORK_RUNNER_CONFIG, ...config };
     const leaseDurationMs = Math.max(1_000, merged.leaseDurationMs);
@@ -261,7 +267,7 @@ export class LocalLeasedWorkRunner<
         controller.abort(new DOMException("Queue item cancelled", "AbortError"));
         throw createScrapeAbortError(controller.signal);
       }
-      const resultJson = result === undefined ? null : JSON.stringify(result);
+      const resultJson = this.serializeResult(result);
       const completed = await this.repository.complete(item.id, workerId, resultJson, new Date());
       if (!completed) {
         cancellationRequested = await this.repository.isCancellationRequested(item.id, workerId);

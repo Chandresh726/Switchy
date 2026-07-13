@@ -16,7 +16,6 @@ import type {
   IScraperRepository,
   ExistingJob,
   SessionProgressUpdate,
-  ScrapeSessionCreate,
   ScrapingLogCreate,
   PersistScrapeResultInput,
   PersistScrapeResultOutput,
@@ -270,33 +269,6 @@ export class DrizzleScraperRepository implements IScraperRepository {
         matchOutboxId,
       };
     }, { behavior: "immediate" });
-  }
-
-  async createSession(session: ScrapeSessionCreate): Promise<void> {
-    await this.database.insert(scrapeSessions).values({
-      id: session.id,
-      triggerSource: session.triggerSource,
-      status: session.status,
-      companiesTotal: session.companiesTotal,
-      companiesCompleted: session.companiesCompleted ?? 0,
-      totalJobsFound: session.totalJobsFound ?? 0,
-      totalJobsAdded: session.totalJobsAdded ?? 0,
-      totalJobsFiltered: session.totalJobsFiltered ?? 0,
-      totalJobsArchived: session.totalJobsArchived ?? 0,
-      skipReason: session.skipReason,
-      scheduledForAt: session.scheduledForAt,
-      startedAt: session.startedAt,
-      completedAt: session.completedAt,
-    });
-  }
-
-  async isSessionInProgress(id: string): Promise<boolean> {
-    const [session] = await this.database
-      .select({ status: scrapeSessions.status })
-      .from(scrapeSessions)
-      .where(eq(scrapeSessions.id, id));
-
-    return session?.status === "in_progress";
   }
 
   async stopSession(id: string): Promise<boolean> {

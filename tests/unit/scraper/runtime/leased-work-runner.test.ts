@@ -2,39 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ScrapeQueueItem } from "@/lib/db/schema";
 
-import { LocalLeasedWorkRunner } from "@/lib/scraper/runtime/leased-work-runner";
-import type { ILocalScrapeQueueRepository } from "@/lib/scraper/queue/types";
+import {
+  LocalLeasedWorkRunner,
+  type LocalLeasedWorkStore,
+} from "@/lib/scraper/runtime/leased-work-runner";
+import type { QueueRecoveryResult } from "@/lib/scraper/queue/types";
+import { createScrapeQueueItem } from "@test/fixtures/scraper/queue-items";
 
-function createItem(overrides: Partial<ScrapeQueueItem> = {}): ScrapeQueueItem {
-  const now = new Date();
-  return {
-    id: "item-1",
-    sessionId: "session-1",
-    companyId: 1,
-    status: "running",
-    priority: 100,
-    attemptCount: 1,
-    maxAttempts: 3,
-    availableAt: now,
-    workerId: "worker",
-    lockedAt: now,
-    leaseExpiresAt: new Date(now.getTime() + 60_000),
-    cancelRequested: false,
-    lastError: null,
-    resultJson: null,
-    startedAt: now,
-    completedAt: null,
-    createdAt: now,
-    updatedAt: now,
-    ...overrides,
-  };
-}
-
-function createRepository(items: ScrapeQueueItem[]): ILocalScrapeQueueRepository {
+function createRepository(
+  items: ScrapeQueueItem[]
+): LocalLeasedWorkStore<ScrapeQueueItem, QueueRecoveryResult> {
   const pending = [...items];
   return {
-    enqueue: vi.fn(async () => []),
-    createSessionAndEnqueue: vi.fn(async () => []),
     claimNext: vi.fn(async () => pending.shift() ?? null),
     heartbeat: vi.fn(async () => true),
     isCancellationRequested: vi.fn(async () => false),
@@ -43,20 +22,14 @@ function createRepository(items: ScrapeQueueItem[]): ILocalScrapeQueueRepository
     retry: vi.fn(async () => true),
     fail: vi.fn(async () => true),
     cancel: vi.fn(async () => true),
-    requestSessionCancellation: vi.fn(async () => ({
-      cancelledQueued: 0,
-      signalledRunning: 0,
-      sessionStopped: false,
-    })),
     recoverExpired: vi.fn(async () => ({ requeued: 0, failed: 0, cancelled: 0 })),
-    listSessionItems: vi.fn(async () => []),
     getNextAvailableAt: vi.fn(async () => null),
   };
 }
 
 describe("LocalLeasedWorkRunner", () => {
   it("recovers expired leases before claiming and persists successful results", async () => {
-    const repository = createRepository([createItem()]);
+    const repository = createRepository([createScrapeQueueItem()]);
     vi.mocked(repository.recoverExpired).mockResolvedValue({
       requeued: 1,
       failed: 0,
@@ -87,7 +60,9 @@ describe("LocalLeasedWorkRunner", () => {
   });
 
   it("requeues retryable attempts with an exponential availability delay", async () => {
-    const repository = createRepository([createItem({ attemptCount: 2, maxAttempts: 3 })]);
+    const repository = createRepository([
+      createScrapeQueueItem({ attemptCount: 2, maxAttempts: 3 }),
+    ]);
     const runner = new LocalLeasedWorkRunner(
       repository,
       async () => {
@@ -112,7 +87,9 @@ describe("LocalLeasedWorkRunner", () => {
   });
 
   it("permanently fails work after the final attempt", async () => {
-    const repository = createRepository([createItem({ attemptCount: 3, maxAttempts: 3 })]);
+    const repository = createRepository([
+      createScrapeQueueItem({ attemptCount: 3, maxAttempts: 3 }),
+    ]);
     const runner = new LocalLeasedWorkRunner(
       repository,
       async () => {
@@ -133,7 +110,7 @@ describe("LocalLeasedWorkRunner", () => {
   });
 
   it("aborts and marks running work cancelled when its durable flag is set", async () => {
-    const repository = createRepository([createItem()]);
+    const repository = createRepository([createScrapeQueueItem()]);
     vi.mocked(repository.isCancellationRequested).mockResolvedValue(true);
     const runner = new LocalLeasedWorkRunner(
       repository,
@@ -156,7 +133,7 @@ describe("LocalLeasedWorkRunner", () => {
   });
 
   it("persists cancellation requested after a handler finishes instead of completing", async () => {
-    const repository = createRepository([createItem()]);
+    const repository = createRepository([createScrapeQueueItem()]);
     vi.mocked(repository.isCancellationRequested).mockResolvedValue(true);
     const runner = new LocalLeasedWorkRunner(repository, async () => ({ done: true }), {
       concurrency: 1,
@@ -170,7 +147,7 @@ describe("LocalLeasedWorkRunner", () => {
   });
 
   it("does not retry a handler failure after its session is cancelled", async () => {
-    const repository = createRepository([createItem()]);
+    const repository = createRepository([createScrapeQueueItem()]);
     vi.mocked(repository.isCancellationRequested).mockResolvedValue(true);
     const runner = new LocalLeasedWorkRunner(
       repository,
@@ -188,7 +165,7 @@ describe("LocalLeasedWorkRunner", () => {
   });
 
   it("releases final-attempt work without consuming the attempt when stopped", async () => {
-    const repository = createRepository([createItem({ attemptCount: 3, maxAttempts: 3 })]);
+    const repository = createRepository([createScrapeQueueItem({ attemptCount: 3, maxAttempts: 3 })]);
     const handlerStarted = Promise.withResolvers<void>();
     const runner = new LocalLeasedWorkRunner(
       repository,
@@ -234,7 +211,7 @@ describe("LocalLeasedWorkRunner", () => {
   it("renews leases before one third of a configured lease elapses", async () => {
     vi.useFakeTimers();
     try {
-      const repository = createRepository([createItem()]);
+      const repository = createRepository([createScrapeQueueItem()]);
       const handlerStarted = Promise.withResolvers<void>();
       const runner = new LocalLeasedWorkRunner(
         repository,
@@ -261,8 +238,8 @@ describe("LocalLeasedWorkRunner", () => {
 
   it("stops and awaits sibling workers before surfacing a worker failure", async () => {
     const repository = createRepository([
-      createItem({ id: "item-1" }),
-      createItem({ id: "item-2" }),
+      createScrapeQueueItem({ id: "item-1" }),
+      createScrapeQueueItem({ id: "item-2" }),
     ]);
     vi.mocked(repository.retry).mockImplementation(async (itemId) => {
       if (itemId === "item-1") throw new Error("queue transition failed");
@@ -298,7 +275,7 @@ describe("LocalLeasedWorkRunner", () => {
   it("persists cancellation that races between the monitor read and heartbeat", async () => {
     vi.useFakeTimers();
     try {
-      const repository = createRepository([createItem()]);
+      const repository = createRepository([createScrapeQueueItem()]);
       vi.mocked(repository.isCancellationRequested)
         .mockResolvedValueOnce(false)
         .mockResolvedValue(true);
@@ -342,7 +319,7 @@ describe("LocalLeasedWorkRunner", () => {
     const runPromise = runner.runAvailable();
     await claimStarted.promise;
     runner.stop();
-    claim.resolve(createItem({ attemptCount: 1 }));
+    claim.resolve(createScrapeQueueItem({ attemptCount: 1 }));
     const summary = await runPromise;
 
     expect(handler).not.toHaveBeenCalled();

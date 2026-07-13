@@ -1,4 +1,6 @@
-import type { Platform } from "./platform";
+import { z } from "zod";
+
+import { PLATFORMS, type Platform } from "./platform";
 import type { ScrapedJob } from "./job";
 
 export type ScrapeOutcome = "success" | "partial" | "error";
@@ -108,25 +110,27 @@ export function createScraperFailure(
   };
 }
 
-export interface FetchResult {
-  companyId: number;
-  companyName: string;
-  success: boolean;
-  outcome: ScrapeOutcome;
-  skipped?: boolean;
-  skippedReason?: string;
-  jobsFound: number;
-  jobsAdded: number;
-  jobsUpdated: number;
-  jobsFiltered: number;
-  jobsArchived: number;
-  platform: Platform | null;
-  error?: string;
-  retryable?: boolean;
-  retryAfterMs?: number;
-  duration: number;
-  logId?: number;
-}
+export const FetchResultSchema = z.object({
+  companyId: z.number(),
+  companyName: z.string(),
+  success: z.boolean(),
+  outcome: z.enum(["success", "partial", "error"]),
+  skipped: z.boolean().optional(),
+  skippedReason: z.string().optional(),
+  jobsFound: z.number(),
+  jobsAdded: z.number(),
+  jobsUpdated: z.number(),
+  jobsFiltered: z.number(),
+  jobsArchived: z.number(),
+  platform: z.enum(PLATFORMS).nullable(),
+  error: z.string().optional(),
+  retryable: z.boolean().optional(),
+  retryAfterMs: z.number().optional(),
+  duration: z.number(),
+  logId: z.number().optional(),
+});
+
+export type FetchResult = z.infer<typeof FetchResultSchema>;
 
 export interface BatchFetchResult {
   sessionId: string;

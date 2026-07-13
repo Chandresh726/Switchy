@@ -43,16 +43,3 @@ export {
   ScraperRegistry,
   createScraperRegistry,
 } from "./registry";
-
-export type {
-  IScrapeOrchestrator,
-  OrchestratorConfig,
-  ScrapeCompanyOptions,
-  CreateOrchestratorConfig,
-} from "./orchestrator";
-
-export {
-  ScrapeOrchestrator,
-  createScrapeOrchestrator,
-  DEFAULT_ORCHESTRATOR_CONFIG,
-} from "./orchestrator";

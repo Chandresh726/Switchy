@@ -20,6 +20,20 @@ export interface PruneScrapeHistoryResult {
   cutoff: Date;
 }
 
+export interface ScrapeHistoryRetentionStore {
+  prune(retentionDays: number, now: Date): PruneScrapeHistoryResult;
+}
+
+export class DrizzleScrapeHistoryRetentionStore
+  implements ScrapeHistoryRetentionStore
+{
+  constructor(private readonly database: typeof db = db) {}
+
+  prune(retentionDays: number, now: Date): PruneScrapeHistoryResult {
+    return pruneScrapeHistory(retentionDays, this.database, now);
+  }
+}
+
 const HISTORY_DELETE_BATCH_SIZE = 200;
 
 export function deleteScrapeHistory(

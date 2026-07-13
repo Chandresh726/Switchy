@@ -34,7 +34,7 @@ export type MatcherStatus = "pending" | "in_progress" | "completed" | "failed";
 
 export type MatcherErrorType = "network" | "validation" | "rate_limit" | "json_parse" | "unknown";
 
-export const PLATFORMS: readonly Platform[] = [
+export const PLATFORMS = [
   "greenhouse",
   "lever",
   "ashby",
@@ -49,7 +49,7 @@ export const PLATFORMS: readonly Platform[] = [
   "rippling",
   "visa",
   "nutanix",
-] as const;
+] as const satisfies readonly Platform[];
 
 export const TRIGGER_SOURCES: readonly TriggerSource[] = [
   "manual",

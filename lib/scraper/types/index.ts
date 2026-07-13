@@ -59,6 +59,7 @@ export type {
 export {
   createScraperError,
   createScraperFailure,
+  FetchResultSchema,
 } from "./result";
 
 export {

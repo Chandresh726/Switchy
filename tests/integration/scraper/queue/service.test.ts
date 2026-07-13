@@ -8,8 +8,16 @@ import {
   scrapingLogs,
   settings,
 } from "@/lib/db/schema";
+import { HistoryRetentionService } from "@/lib/scraper/application/history-retention-service";
+import type { ScrapeCompanyPipeline } from "@/lib/scraper/application/scrape-company-pipeline";
+import { ScrapeSessionProjector } from "@/lib/scraper/application/scrape-session-projector";
+import { ScrapeWorkHandler } from "@/lib/scraper/application/scrape-work-handler";
+import { DrizzleScrapeHistoryRetentionStore } from "@/lib/scraper/history";
 import { DrizzleScraperRepository } from "@/lib/scraper/infrastructure/repository";
-import type { IScrapeOrchestrator, IScraperRegistry } from "@/lib/scraper/services";
+import { DrizzleScrapeSessionProjectionStore } from "@/lib/scraper/queue/projection-store";
+import type { LocalLeasedWorkRunnerConfig } from "@/lib/scraper/runtime/leased-work-runner";
+import type { IScraperRegistry } from "@/lib/scraper/services";
+import { StoredScrapeSettingsProvider } from "@/lib/scraper/settings/provider";
 
 import { DrizzleLocalScrapeQueueRepository } from "@/lib/scraper/queue/repository";
 import { LocalScrapeQueueService } from "@/lib/scraper/queue/service";
@@ -21,8 +29,8 @@ vi.mock("@/lib/ai/matcher", () => ({ matchWithTracking: vi.fn() }));
 const sqlite = createSqliteTestHarness("switchy-queue-service-");
 const createTestDatabase = () => sqlite.createDatabase().database;
 
-function createOrchestrator() {
-  const scrapeCompany = vi.fn<IScrapeOrchestrator["scrapeCompany"]>(
+function createPipeline() {
+  const scrapeCompany = vi.fn<ScrapeCompanyPipeline["scrape"]>(
     async (companyId) => ({
       companyId,
       companyName: `Company ${companyId}`,
@@ -37,26 +45,61 @@ function createOrchestrator() {
       duration: 10,
     })
   );
-  const orchestrator: IScrapeOrchestrator = {
-    scrapeCompany,
-    scrapeCompanies: vi.fn(),
-    scrapeAllCompanies: vi.fn(),
-  };
-  return { orchestrator, scrapeCompany };
+  const pipeline: Pick<ScrapeCompanyPipeline, "scrape"> = { scrape: scrapeCompany };
+  return { pipeline, scrapeCompany };
 }
 
-function createService(database: ReturnType<typeof createTestDatabase>) {
+interface TestServiceOptions {
+  pipeline?: Pick<ScrapeCompanyPipeline, "scrape">;
+  queueRepository?: DrizzleLocalScrapeQueueRepository;
+  registry?: IScraperRegistry;
+  runnerConfig?: Partial<LocalLeasedWorkRunnerConfig>;
+}
+
+function createService(
+  database: ReturnType<typeof createTestDatabase>,
+  options: TestServiceOptions = {}
+) {
   const scraperRepository = new DrizzleScraperRepository(database);
-  const queueRepository = new DrizzleLocalScrapeQueueRepository(database);
-  const { orchestrator, scrapeCompany } = createOrchestrator();
-  const service = new LocalScrapeQueueService({
-    database,
-    orchestrator,
+  const queueRepository =
+    options.queueRepository ?? new DrizzleLocalScrapeQueueRepository(database);
+  const defaults = createPipeline();
+  const pipeline = options.pipeline ?? defaults.pipeline;
+  const projectionStore = new DrizzleScrapeSessionProjectionStore(database);
+  const projector = new ScrapeSessionProjector(
+    queueRepository,
+    projectionStore,
+    scraperRepository,
+    scraperRepository
+  );
+  const settingsProvider = new StoredScrapeSettingsProvider(scraperRepository);
+  const workHandler = new ScrapeWorkHandler(
+    pipeline,
     scraperRepository,
     queueRepository,
-    runnerConfig: { concurrency: 2, baseRetryDelayMs: 0, maxRetryDelayMs: 0 },
+    projectionStore,
+    projector,
+    settingsProvider,
+    options.registry
+  );
+  const service = new LocalScrapeQueueService({
+    companyCatalog: scraperRepository,
+    sessionStore: scraperRepository,
+    queueStore: queueRepository,
+    workHandler,
+    projector,
+    historyRetention: new HistoryRetentionService(
+      new DrizzleScrapeHistoryRetentionStore(database),
+      settingsProvider
+    ),
+    runnerConfig: {
+      concurrency: 2,
+      baseRetryDelayMs: 0,
+      maxRetryDelayMs: 0,
+      ...options.runnerConfig,
+    },
   });
-  return { queueRepository, scrapeCompany, service };
+  return { queueRepository, scrapeCompany: defaults.scrapeCompany, service };
 }
 
 describe("LocalScrapeQueueService", () => {
@@ -118,6 +161,26 @@ describe("LocalScrapeQueueService", () => {
       totalJobsFound: 6,
       totalJobsAdded: 3,
     });
+  });
+
+  it("completes an empty durable session without leaving active history", async () => {
+    const database = createTestDatabase();
+    const { service } = createService(database);
+
+    const result = await service.scrapeCompanies([999], "manual");
+
+    expect(result.summary).toMatchObject({
+      totalCompanies: 0,
+      successfulCompanies: 0,
+      failedCompanies: 0,
+    });
+    expect(
+      database
+        .select()
+        .from(scrapeSessions)
+        .where(eq(scrapeSessions.id, result.sessionId))
+        .get()
+    ).toMatchObject({ status: "completed", companiesTotal: 0 });
   });
 
   it("treats malformed durable result JSON as a failed company without crashing recovery", async () => {
@@ -344,9 +407,7 @@ describe("LocalScrapeQueueService", () => {
       .values({ name: "One", careersUrl: "https://example.com/one" })
       .returning({ id: companies.id })
       .get();
-    const scraperRepository = new DrizzleScraperRepository(database);
-    const queueRepository = new DrizzleLocalScrapeQueueRepository(database);
-    const scrapeCompany = vi.fn<IScrapeOrchestrator["scrapeCompany"]>()
+    const scrapeCompany = vi.fn<ScrapeCompanyPipeline["scrape"]>()
       .mockResolvedValueOnce({
         companyId: company.id,
         companyName: "One",
@@ -360,7 +421,7 @@ describe("LocalScrapeQueueService", () => {
         platform: "greenhouse",
         error: "Rate limited",
         retryable: true,
-        retryAfterMs: 0,
+        retryAfterMs: 10,
         duration: 10,
       })
       .mockResolvedValueOnce({
@@ -376,16 +437,13 @@ describe("LocalScrapeQueueService", () => {
         platform: "greenhouse",
         duration: 10,
       });
-    const service = new LocalScrapeQueueService({
-      database,
-      orchestrator: {
-        scrapeCompany,
-        scrapeCompanies: vi.fn(),
-        scrapeAllCompanies: vi.fn(),
+    const { service } = createService(database, {
+      pipeline: { scrape: scrapeCompany },
+      runnerConfig: {
+        concurrency: 1,
+        baseRetryDelayMs: 10,
+        maxRetryDelayMs: 10,
       },
-      scraperRepository,
-      queueRepository,
-      runnerConfig: { concurrency: 1, baseRetryDelayMs: 0, maxRetryDelayMs: 0 },
     });
 
     const result = await service.scrapeCompanies([company.id], "manual");
@@ -479,7 +537,7 @@ describe("LocalScrapeQueueService", () => {
     }).run();
     let active = 0;
     let maxActive = 0;
-    const scrapeCompany = vi.fn<IScrapeOrchestrator["scrapeCompany"]>(
+    const scrapeCompany = vi.fn<ScrapeCompanyPipeline["scrape"]>(
       async (companyId) => {
         active += 1;
         maxActive = Math.max(maxActive, active);
@@ -500,15 +558,8 @@ describe("LocalScrapeQueueService", () => {
         };
       }
     );
-    const service = new LocalScrapeQueueService({
-      database,
-      orchestrator: {
-        scrapeCompany,
-        scrapeCompanies: vi.fn(),
-        scrapeAllCompanies: vi.fn(),
-      },
-      scraperRepository: new DrizzleScraperRepository(database),
-      queueRepository: new DrizzleLocalScrapeQueueRepository(database),
+    const { service } = createService(database, {
+      pipeline: { scrape: scrapeCompany },
       runnerConfig: { concurrency: 3 },
     });
 
@@ -547,7 +598,7 @@ describe("LocalScrapeQueueService", () => {
     let serialActive = false;
     let overlapDetected = false;
     const serialCompanyId = storedCompanies[1]?.id;
-    const scrapeCompany = vi.fn<IScrapeOrchestrator["scrapeCompany"]>(
+    const scrapeCompany = vi.fn<ScrapeCompanyPipeline["scrape"]>(
       async (companyId) => {
         if (companyId === serialCompanyId) {
           if (activeShared > 0) overlapDetected = true;
@@ -581,15 +632,8 @@ describe("LocalScrapeQueueService", () => {
         },
       })),
     } as unknown as IScraperRegistry;
-    const service = new LocalScrapeQueueService({
-      database,
-      orchestrator: {
-        scrapeCompany,
-        scrapeCompanies: vi.fn(),
-        scrapeAllCompanies: vi.fn(),
-      },
-      scraperRepository: new DrizzleScraperRepository(database),
-      queueRepository: new DrizzleLocalScrapeQueueRepository(database),
+    const { service } = createService(database, {
+      pipeline: { scrape: scrapeCompany },
       registry,
       runnerConfig: { concurrency: 3 },
     });
@@ -622,7 +666,7 @@ describe("LocalScrapeQueueService", () => {
     });
     let active = 0;
     let maxActive = 0;
-    const scrapeCompany = vi.fn<IScrapeOrchestrator["scrapeCompany"]>(
+    const scrapeCompany = vi.fn<ScrapeCompanyPipeline["scrape"]>(
       async (companyId) => {
         active += 1;
         maxActive = Math.max(maxActive, active);
@@ -643,14 +687,8 @@ describe("LocalScrapeQueueService", () => {
         };
       }
     );
-    const service = new LocalScrapeQueueService({
-      database,
-      orchestrator: {
-        scrapeCompany,
-        scrapeCompanies: vi.fn(),
-        scrapeAllCompanies: vi.fn(),
-      },
-      scraperRepository: new DrizzleScraperRepository(database),
+    const { service } = createService(database, {
+      pipeline: { scrape: scrapeCompany },
       queueRepository,
       runnerConfig: { concurrency: 2 },
     });

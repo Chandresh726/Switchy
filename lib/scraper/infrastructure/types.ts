@@ -26,22 +26,6 @@ export interface SessionProgressUpdate {
   totalJobsArchived: number;
 }
 
-export interface ScrapeSessionCreate {
-  id: string;
-  triggerSource: TriggerSource;
-  status: "in_progress" | "skipped";
-  companiesTotal: number;
-  companiesCompleted?: number;
-  totalJobsFound?: number;
-  totalJobsAdded?: number;
-  totalJobsFiltered?: number;
-  totalJobsArchived?: number;
-  skipReason?: string;
-  scheduledForAt?: Date;
-  startedAt?: Date;
-  completedAt?: Date;
-}
-
 export interface ScrapingLogCreate {
   companyId: number;
   sessionId: string;
@@ -116,8 +100,6 @@ export interface ScrapeResultUnitOfWork {
 }
 
 export interface ScrapeSessionStore {
-  createSession(session: ScrapeSessionCreate): Promise<void>;
-  isSessionInProgress(id: string): Promise<boolean>;
   stopSession(id: string): Promise<boolean>;
   updateSessionProgress(id: string, progress: SessionProgressUpdate): Promise<void>;
   completeSession(
@@ -126,9 +108,13 @@ export interface ScrapeSessionStore {
   ): Promise<void>;
 }
 
-export type ScrapePipelineStore = CompanyCatalog &
+export type ScrapeCompanyStore = Pick<
+  CompanyCatalog,
+  "getCompany" | "getExistingJobs"
+> &
+  ScrapeResultUnitOfWork;
+
+export type IScraperRepository = CompanyCatalog &
   ScrapeResultUnitOfWork &
   ScrapeSessionStore &
   ScrapeSettingsSource;
-
-export type IScraperRepository = ScrapePipelineStore;
