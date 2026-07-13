@@ -105,6 +105,33 @@ describe("match engine integration", () => {
     });
   });
 
+  it("forwards cancellation signals into direct single and bulk work", async () => {
+    const controller = new AbortController();
+    const matchResult = {
+      score: 90,
+      reasons: [],
+      matchedSkills: [],
+      missingSkills: [],
+      recommendations: [],
+    };
+    mocks.executeMatch
+      .mockResolvedValueOnce(new Map([[11, matchResult]]))
+      .mockResolvedValueOnce(new Map([[11, matchResult]]));
+    const engine = await createMatchEngine();
+
+    await engine.matchSingle(11, controller.signal);
+    await engine.matchBulk([11], undefined, controller.signal);
+
+    expect(mocks.executeMatch).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ signal: controller.signal })
+    );
+    expect(mocks.executeMatch).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ signal: controller.signal })
+    );
+  });
+
   it("respects stopped session state and does not overwrite final totals", async () => {
     mocks.updateMatchSessionIfActive.mockResolvedValue(false);
     mocks.getMatchSessionStatus.mockResolvedValue({

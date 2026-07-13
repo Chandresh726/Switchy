@@ -175,6 +175,41 @@ describe("RipplingScraper", () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
+    it("preserves plain-text detail descriptions as plain text", async () => {
+      const jobId = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+      const entries = [
+        createRipplingEntry(jobId, "Software Engineer", [
+          {
+            name: "Remote",
+            country: "United States",
+            countryCode: "US",
+            state: "",
+            stateCode: null,
+            city: "",
+            workplaceType: "REMOTE",
+          },
+        ]),
+      ];
+      const { httpClient } = createHttpMock([
+        createRipplingBuildIdPage("testBuildId123"),
+        createRipplingListingsResponse(entries),
+        new Response(
+          "<html><body><main>Build reliable products with the platform team.</main></body></html>",
+          { status: 200, headers: { "Content-Type": "text/html" } }
+        ),
+      ]);
+
+      const result = await new RipplingScraper(httpClient).scrape(
+        "https://www.rippling.com/en-IN/careers/open-roles"
+      );
+
+      expect(result.outcome).toBe("success");
+      expect(result.jobs[0]).toMatchObject({
+        description: "Build reliable products with the platform team.",
+        descriptionFormat: "plain",
+      });
+    });
+
     it("returns error when build ID extraction fails", async () => {
       const { httpClient } = createHttpMock([
         new Response("<html><body>No build manifest</body></html>", { status: 200 }),

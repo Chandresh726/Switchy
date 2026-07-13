@@ -20,8 +20,12 @@ import {
 import type { StrategyProgressCallback } from "./strategies";
 
 export interface MatchEngine {
-  matchSingle(jobId: number): Promise<MatchResult>;
-  matchBulk(jobIds: number[], onProgress?: StrategyProgressCallback): Promise<MatchResultMap>;
+  matchSingle(jobId: number, signal?: AbortSignal): Promise<MatchResult>;
+  matchBulk(
+    jobIds: number[],
+    onProgress?: StrategyProgressCallback,
+    signal?: AbortSignal
+  ): Promise<MatchResultMap>;
   matchWithTracking(jobIds: number[], options: MatchOptions): Promise<MatchSessionResult>;
   getQueueStatus(): { isEnabled: boolean; pending: number; size: number; position: number };
 }
@@ -30,9 +34,14 @@ export async function createMatchEngine(): Promise<MatchEngine> {
   const config = await getMatcherConfig();
 
   return {
-    async matchSingle(jobId: number): Promise<MatchResult> {
+    async matchSingle(
+      jobId: number,
+      signal?: AbortSignal
+    ): Promise<MatchResult> {
       const executeSingle = async () => {
-        const results = await executeConfiguredMatchWork(config, [jobId]);
+        const results = await executeConfiguredMatchWork(config, [jobId], {
+          signal,
+        });
 
         const result = results.get(jobId);
         if (!result) {
@@ -49,9 +58,11 @@ export async function createMatchEngine(): Promise<MatchEngine> {
 
     async matchBulk(
       jobIds: number[],
-      onProgress?: StrategyProgressCallback
+      onProgress?: StrategyProgressCallback,
+      signal?: AbortSignal
     ): Promise<MatchResultMap> {
       return executeConfiguredMatchWork(config, jobIds, {
+        signal,
         onProgress,
         onQueued: (position) => {
           console.log(`[MatchEngine] Job in queue position ${position}`);
@@ -278,17 +289,21 @@ export async function createMatchEngine(): Promise<MatchEngine> {
   };
 }
 
-export async function matchSingle(jobId: number): Promise<MatchResult> {
+export async function matchSingle(
+  jobId: number,
+  signal?: AbortSignal
+): Promise<MatchResult> {
   const engine = await createMatchEngine();
-  return engine.matchSingle(jobId);
+  return engine.matchSingle(jobId, signal);
 }
 
 export async function matchBulk(
   jobIds: number[],
-  onProgress?: StrategyProgressCallback
+  onProgress?: StrategyProgressCallback,
+  signal?: AbortSignal
 ): Promise<MatchResultMap> {
   const engine = await createMatchEngine();
-  return engine.matchBulk(jobIds, onProgress);
+  return engine.matchBulk(jobIds, onProgress, signal);
 }
 
 export async function matchWithTracking(

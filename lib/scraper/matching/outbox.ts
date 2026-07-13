@@ -75,14 +75,6 @@ export class ScrapeMatchOutboxDispatcher {
   stop(): void {
     this.runner.stop();
   }
-
-  renewLease(
-    itemId: string,
-    workerId: string,
-    leaseExpiresAt: Date
-  ): Promise<boolean> {
-    return this.store.heartbeat(itemId, workerId, leaseExpiresAt);
-  }
 }
 
 const defaultDispatcher = new ScrapeMatchOutboxDispatcher();

@@ -1,7 +1,10 @@
 import { load } from "cheerio";
 import { z } from "zod";
 
-import { processDescription } from "@/lib/jobs/description-processor";
+import {
+  containsHtml,
+  processDescription,
+} from "@/lib/jobs/description-processor";
 import {
   HttpError,
   type IHttpClient,
@@ -372,7 +375,10 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
       .replace(/Powered by Rippling/gi, "")
       .replace(/Terms of service|Privacy|Cookies/gi, "");
 
-    const processed = processDescription(cleaned, "html");
+    const processed = processDescription(
+      cleaned,
+      containsHtml(cleaned) ? "html" : "plain"
+    );
     return {
       description: processed.text ?? undefined,
       descriptionFormat: processed.format,

@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
 
     const result = await matchWithTracking(jobIds, {
       triggerSource: "manual",
+      signal: request.signal,
     });
 
     return NextResponse.json({

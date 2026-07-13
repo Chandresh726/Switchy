@@ -12,11 +12,11 @@ export async function POST(request: NextRequest) {
     const body = MatchRouteBodySchema.parse(await request.json());
 
     if ("jobId" in body) {
-      const result = await matchSingle(body.jobId);
+      const result = await matchSingle(body.jobId, request.signal);
       return NextResponse.json(result);
     }
 
-    const results = await matchBulk(body.jobIds);
+    const results = await matchBulk(body.jobIds, undefined, request.signal);
     const response: Record<string, unknown> = {};
 
     for (const [id, result] of results) {

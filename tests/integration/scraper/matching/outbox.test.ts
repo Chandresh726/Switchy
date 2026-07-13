@@ -15,7 +15,9 @@ import {
 import { DrizzleScraperRepository } from "@/lib/scraper/infrastructure/repository";
 import { LocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 import { stopMatchSession } from "@/lib/scraper/matching/lifecycle";
+import { DrizzleMatchWorkStore } from "@/lib/scraper/matching/match-work-store";
 import { ScrapeMatchOutboxDispatcher } from "@/lib/scraper/matching/outbox";
+import { InProcessLocalDataOperationGate } from "@/lib/scraper/runtime/data-operation-gate";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 vi.mock("@/lib/db", () => ({ db: {} }));
@@ -225,12 +227,12 @@ describe("ScrapeMatchOutboxDispatcher", () => {
         }),
       })),
     } as unknown as typeof db;
-    const dispatcher = new ScrapeMatchOutboxDispatcher(fakeDatabase, vi.fn(), {
+    const store = new DrizzleMatchWorkStore(fakeDatabase, {
       busyRetries: 1,
       busyRetryDelayMs: 0,
     });
 
-    const renewed = await dispatcher.renewLease(
+    const renewed = await store.heartbeat(
       "outbox-1",
       "worker-1",
       new Date(Date.now() + 60_000)
@@ -700,26 +702,35 @@ describe("ScrapeMatchOutboxDispatcher", () => {
     const company = seedCompanyAndSession(database);
     const persisted = await persistMatchableJob(database, company.id);
     if (!persisted.matchOutboxId) throw new Error("Expected a durable match handoff.");
+    const dataOperationGate = new InProcessLocalDataOperationGate();
     const started = Promise.withResolvers<AbortSignal>();
     const executeMatch = vi.fn(
-      async (_jobIds, options): Promise<never> =>
-        new Promise((_resolve, reject) => {
-          if (!options.signal) throw new Error("Expected a match cancellation signal.");
-          started.resolve(options.signal);
-          options.signal.addEventListener(
-            "abort",
-            () => reject(options.signal?.reason),
-            { once: true }
-          );
-        })
+      async (jobIds, options): Promise<never> =>
+        dataOperationGate.runMatch(
+          { jobIds, sessionId: options.sessionId },
+          options.signal,
+          async (signal) =>
+            new Promise((_resolve, reject) => {
+              started.resolve(signal);
+              signal.addEventListener(
+                "abort",
+                () => reject(signal.reason),
+                { once: true }
+              );
+            })
+        )
     );
     const dispatcher = new ScrapeMatchOutboxDispatcher(database, executeMatch, {
-      heartbeatIntervalMs: 100,
+      heartbeatIntervalMs: 60_000,
     });
 
     const running = dispatcher.runAvailable();
     const signal = await started.promise;
-    await stopMatchSession(persisted.matchOutboxId, database);
+    await stopMatchSession(
+      persisted.matchOutboxId,
+      database,
+      dataOperationGate
+    );
     const summary = await running;
 
     expect(signal.aborted).toBe(true);
@@ -731,6 +742,41 @@ describe("ScrapeMatchOutboxDispatcher", () => {
         .where(eq(scrapeMatchOutbox.id, persisted.matchOutboxId))
         .get()
     ).toMatchObject({ status: "failed", workerId: null });
+  });
+
+  it("aborts in-flight manual matching when its session is stopped", async () => {
+    const database = createTestDatabase();
+    database.insert(matchSessions).values({
+      id: "manual-session",
+      status: "in_progress",
+      triggerSource: "manual",
+      jobsTotal: 1,
+    }).run();
+    const dataOperationGate = new InProcessLocalDataOperationGate();
+    const started = Promise.withResolvers<void>();
+    const matching = dataOperationGate.runMatch(
+      { jobIds: [1], sessionId: "manual-session" },
+      undefined,
+      async (signal): Promise<never> =>
+        new Promise((_resolve, reject) => {
+          started.resolve();
+          signal.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
+        })
+    );
+    await started.promise;
+
+    await stopMatchSession("manual-session", database, dataOperationGate);
+
+    await expect(matching).rejects.toMatchObject({ name: "AbortError" });
+    expect(
+      database
+        .select()
+        .from(matchSessions)
+        .where(eq(matchSessions.id, "manual-session"))
+        .get()
+    ).toMatchObject({ status: "failed" });
   });
 
   it("closes an exhausted recovered lease with its durable checkpoint counters", async () => {
