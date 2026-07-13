@@ -1,120 +1,24 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import {
   jobs,
-  matchLogs,
   matchSessions,
   scrapeMatchOutbox,
   scrapeQueueItems,
   scrapeSessions,
   scrapingLogs,
 } from "@/lib/db/schema";
+import {
+  DrizzleMatchWorkStore,
+  type StopMatchSessionResult,
+} from "@/lib/scraper/matching/match-work-store";
 
-export interface StopMatchSessionResult {
-  exists: boolean;
-  stopped: boolean;
-  status: string | null;
-}
-
-export function stopMatchSession(
+export async function stopMatchSession(
   sessionId: string,
   database: typeof db = db
-): StopMatchSessionResult {
-  return database.transaction((tx) => {
-    const session = tx
-      .select({
-        id: matchSessions.id,
-        status: matchSessions.status,
-      })
-      .from(matchSessions)
-      .where(eq(matchSessions.id, sessionId))
-      .limit(1)
-      .get();
-    if (!session) return { exists: false, stopped: false, status: null };
-    if (session.status !== "queued" && session.status !== "in_progress") {
-      return { exists: true, stopped: false, status: session.status };
-    }
-
-    const stoppedAt = new Date();
-    const checkpointLogs = tx
-      .select({ jobId: matchLogs.jobId, status: matchLogs.status })
-      .from(matchLogs)
-      .where(eq(matchLogs.sessionId, sessionId))
-      .orderBy(asc(matchLogs.id))
-      .all();
-    const checkpointByJob = new Map<number, string>();
-    for (const log of checkpointLogs) {
-      if (log.jobId !== null) checkpointByJob.set(log.jobId, log.status);
-    }
-    const checkpointStatuses = Array.from(checkpointByJob.values());
-    const jobsSucceeded = checkpointStatuses.filter(
-      (status) => status === "success"
-    ).length;
-    const jobsFailed = checkpointStatuses.length - jobsSucceeded;
-    const stopped = tx
-      .update(matchSessions)
-      .set({
-        status: "failed",
-        jobsCompleted: checkpointStatuses.length,
-        jobsSucceeded,
-        jobsFailed,
-        errorCount: jobsFailed,
-        completedAt: stoppedAt,
-      })
-      .where(
-        and(
-          eq(matchSessions.id, sessionId),
-          inArray(matchSessions.status, ["queued", "in_progress"])
-        )
-      )
-      .returning({ id: matchSessions.id })
-      .get();
-    if (!stopped) {
-      const current = tx
-        .select({ status: matchSessions.status })
-        .from(matchSessions)
-        .where(eq(matchSessions.id, sessionId))
-        .limit(1)
-        .get();
-      return {
-        exists: Boolean(current),
-        stopped: false,
-        status: current?.status ?? null,
-      };
-    }
-
-    const outbox = tx
-      .update(scrapeMatchOutbox)
-      .set({
-        status: "failed",
-        workerId: null,
-        leaseExpiresAt: null,
-        lastError: "Matching was stopped by the user.",
-        completedAt: stoppedAt,
-        updatedAt: stoppedAt,
-      })
-      .where(
-        and(
-          eq(scrapeMatchOutbox.id, sessionId),
-          inArray(scrapeMatchOutbox.status, ["pending", "running"])
-        )
-      )
-      .returning({ scrapingLogId: scrapeMatchOutbox.scrapingLogId })
-      .get();
-    if (outbox) {
-      tx.update(scrapingLogs)
-        .set({
-          matcherStatus: "failed",
-          matcherJobsCompleted: checkpointStatuses.length,
-          matcherErrorCount: jobsFailed,
-        })
-        .where(eq(scrapingLogs.id, outbox.scrapingLogId))
-        .run();
-    }
-
-    return { exists: true, stopped: true, status: "failed" };
-  }, { behavior: "immediate" });
+): Promise<StopMatchSessionResult> {
+  return new DrizzleMatchWorkStore(database).stopSession(sessionId);
 }
 
 function deleteJobsAndTerminateWork(

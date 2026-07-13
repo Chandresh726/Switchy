@@ -212,7 +212,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const result = stopMatchSession(sessionId);
+    const result = await stopMatchSession(sessionId);
     if (result.stopped) {
       return NextResponse.json({ success: true, stopped: true }, { headers: NO_STORE_HEADERS });
     }

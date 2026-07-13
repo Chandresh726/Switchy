@@ -1,5 +1,9 @@
 import { resolveAIContextFromExplicitConfig } from "@/lib/ai/runtime-context";
-import { createCircuitBreaker } from "../resilience";
+import {
+  categorizeError,
+  createCircuitBreaker,
+  throwIfAborted,
+} from "../resilience";
 import type {
   MatcherConfig,
   CandidateProfile,
@@ -23,7 +27,6 @@ import {
   extractRequirements,
   htmlToText,
 } from "../utils";
-import { categorizeError } from "../resilience";
 
 export interface ExecuteMatchOptions {
   config: MatcherConfig & { providerId?: string };
@@ -31,10 +34,13 @@ export interface ExecuteMatchOptions {
   sessionId?: string;
   onProgress?: StrategyProgressCallback;
   shouldStop?: () => Promise<boolean>;
+  signal?: AbortSignal;
 }
 
 export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchResultMap> {
-  const { config, jobIds, sessionId, onProgress, shouldStop } = options;
+  const { config, jobIds, sessionId, onProgress, shouldStop, signal } = options;
+
+  throwIfAborted(signal);
 
   if (jobIds.length === 0) {
     return new Map();
@@ -45,6 +51,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
     modelId: config.model,
     reasoningEffort: config.reasoningEffort,
   });
+  throwIfAborted(signal);
   const modelUsed = aiContext.modelId;
 
   const circuitBreaker = createCircuitBreaker({
@@ -54,6 +61,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
 
   const jobsMap = await fetchJobsData(jobIds);
   const profileData = await fetchProfileDataForMatch();
+  throwIfAborted(signal);
 
   if (!profileData) {
     const results: MatchResultMap = new Map();
@@ -116,7 +124,13 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
         },
       ])
     );
-    const results = await persistResults(missingResults, sessionId, modelUsed, new Set<number>());
+    const results = await persistResults(
+      missingResults,
+      sessionId,
+      modelUsed,
+      new Set<number>(),
+      signal
+    );
     return results;
   }
 
@@ -132,17 +146,21 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
     providerOptions: aiContext.providerOptions,
     circuitBreaker,
     candidateProfile,
+    signal,
   };
 
   const persistedJobIds = new Set<number>();
 
   const persistRealtimeResult = async (jobId: number, item: StrategyResultItem) => {
+    throwIfAborted(signal);
     if (persistedJobIds.has(jobId)) return;
 
     try {
       await persistJobResult(jobId, item, sessionId, modelUsed);
+      throwIfAborted(signal);
       persistedJobIds.add(jobId);
     } catch (error) {
+      throwIfAborted(signal);
       console.error(`[ExecuteMatch] Failed to persist realtime result for job ${jobId}:`, error);
     }
   };
@@ -150,30 +168,32 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
   let strategyResults: StrategyResultMap;
 
   if (strategyType === "single") {
+    throwIfAborted(signal);
     if (shouldStop && await shouldStop()) {
       strategyResults = new Map();
     } else {
-    const startTime = Date.now();
-    try {
-      const { result, attemptCount } = await singleStrategy({
-        ...strategyContext,
-        job: matchJobs[0],
-      });
-      const item = { result, duration: Date.now() - startTime, attemptCount };
-      strategyResults = new Map([[matchJobs[0].id, item]]);
-      await persistRealtimeResult(matchJobs[0].id, item);
-      onProgress?.(1, 1, 1, 0);
-    } catch (error) {
-      const errorObj = error instanceof Error ? error : new Error(String(error));
-      const item = {
-        error: errorObj,
-        duration: Date.now() - startTime,
-        attemptCount: (errorObj as Error & { attemptCount?: number }).attemptCount,
-      };
-      strategyResults = new Map([[matchJobs[0].id, item]]);
-      await persistRealtimeResult(matchJobs[0].id, item);
-      onProgress?.(1, 1, 0, 1);
-    }
+      const startTime = Date.now();
+      try {
+        const { result, attemptCount } = await singleStrategy({
+          ...strategyContext,
+          job: matchJobs[0],
+        });
+        const item = { result, duration: Date.now() - startTime, attemptCount };
+        strategyResults = new Map([[matchJobs[0].id, item]]);
+        await persistRealtimeResult(matchJobs[0].id, item);
+        onProgress?.(1, 1, 1, 0);
+      } catch (error) {
+        throwIfAborted(signal);
+        const errorObj = error instanceof Error ? error : new Error(String(error));
+        const item = {
+          error: errorObj,
+          duration: Date.now() - startTime,
+          attemptCount: (errorObj as Error & { attemptCount?: number }).attemptCount,
+        };
+        strategyResults = new Map([[matchJobs[0].id, item]]);
+        await persistRealtimeResult(matchJobs[0].id, item);
+        onProgress?.(1, 1, 0, 1);
+      }
     }
   } else if (strategyType === "bulk") {
     strategyResults = await bulkStrategy({
@@ -194,6 +214,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
   }
 
   for (const id of missingIds) {
+    throwIfAborted(signal);
     strategyResults.set(id, {
       error: new Error(`Job with ID ${id} not found`),
       duration: 0,
@@ -202,7 +223,14 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
 
   applyExperienceGuardrails(strategyResults, matchJobs, candidateProfile.totalExperienceYears ?? null);
 
-  const results = await persistResults(strategyResults, sessionId, modelUsed, persistedJobIds);
+  throwIfAborted(signal);
+  const results = await persistResults(
+    strategyResults,
+    sessionId,
+    modelUsed,
+    persistedJobIds,
+    signal
+  );
 
   return results;
 }
@@ -253,11 +281,13 @@ async function persistResults(
   strategyResults: StrategyResultMap,
   sessionId: string | undefined,
   modelUsed: string,
-  persistedJobIds: Set<number>
+  persistedJobIds: Set<number>,
+  signal?: AbortSignal
 ): Promise<MatchResultMap> {
   const results: MatchResultMap = new Map();
 
   for (const [jobId, item] of strategyResults) {
+    throwIfAborted(signal);
     if (item.error) {
       results.set(jobId, item.error);
     } else if (item.result) {
@@ -269,6 +299,7 @@ async function persistResults(
     }
 
     await persistJobResult(jobId, item, sessionId, modelUsed);
+    throwIfAborted(signal);
     persistedJobIds.add(jobId);
   }
 

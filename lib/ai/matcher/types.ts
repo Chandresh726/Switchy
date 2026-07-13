@@ -106,6 +106,7 @@ export interface MatchOptions {
   companyId?: number;
   sessionId?: string;
   onProgress?: MatchProgressCallback;
+  signal?: AbortSignal;
 }
 
 export interface MatchSessionResult {

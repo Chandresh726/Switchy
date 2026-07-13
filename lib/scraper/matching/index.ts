@@ -11,5 +11,6 @@ export {
   deleteAllJobsAndTerminateMatches,
   deleteCompanyJobsAndTerminateWork,
   stopMatchSession,
-  type StopMatchSessionResult,
 } from "./lifecycle";
+
+export type { StopMatchSessionResult } from "./match-work-store";

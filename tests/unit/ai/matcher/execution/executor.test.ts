@@ -22,6 +22,7 @@ vi.mock("@/lib/ai/runtime-context", () => ({
 vi.mock("@/lib/ai/matcher/resilience", () => ({
   createCircuitBreaker: mocks.createCircuitBreaker,
   categorizeError: mocks.categorizeError,
+  throwIfAborted: (signal?: AbortSignal) => signal?.throwIfAborted(),
 }));
 
 vi.mock("@/lib/ai/matcher/strategies", () => ({

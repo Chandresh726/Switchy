@@ -15,6 +15,7 @@ export interface StrategyContext {
   providerOptions: Record<string, unknown> | undefined;
   circuitBreaker: CircuitBreaker;
   candidateProfile: CandidateProfile;
+  signal?: AbortSignal;
 }
 
 export interface SingleStrategyContext extends StrategyContext {

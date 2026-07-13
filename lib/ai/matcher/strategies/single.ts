@@ -1,11 +1,25 @@
 import { SINGLE_MATCH_SYSTEM_PROMPT, buildSingleMatchPrompt } from "../prompts";
 import { generateStructured } from "../generation";
-import { retryWithBackoff, withTimeout, isServerError, isRateLimitError } from "../resilience";
+import {
+  isRateLimitError,
+  isServerError,
+  retryWithBackoff,
+  throwIfAborted,
+  withTimeout,
+} from "../resilience";
 import { MatchResultSchema } from "../types";
 import type { SingleStrategy } from "./types";
 
 export const singleStrategy: SingleStrategy = async (ctx) => {
-  const { config, model, providerOptions, circuitBreaker, candidateProfile, job } = ctx;
+  const {
+    config,
+    model,
+    providerOptions,
+    circuitBreaker,
+    candidateProfile,
+    job,
+    signal,
+  } = ctx;
   let attemptCount = 0;
 
   const prompt = buildSingleMatchPrompt(
@@ -18,6 +32,7 @@ export const singleStrategy: SingleStrategy = async (ctx) => {
   try {
     const result = await retryWithBackoff(
       async () => {
+        throwIfAborted(signal);
         if (!circuitBreaker.canExecute()) {
           throw new Error("Circuit breaker is open - too many failures");
         }
@@ -30,17 +45,20 @@ export const singleStrategy: SingleStrategy = async (ctx) => {
               instructions: SINGLE_MATCH_SYSTEM_PROMPT,
               prompt,
               providerOptions,
+              signal,
             });
             return generated.data;
           })(),
           config.timeoutMs,
-          `Match job ${job.id}`
+          `Match job ${job.id}`,
+          signal
         );
       },
       {
         maxRetries: config.maxRetries,
         baseDelay: config.backoffBaseDelay,
         maxDelay: config.backoffMaxDelay,
+        signal,
         onAttempt: (attempt) => {
           attemptCount = attempt;
         },
@@ -57,6 +75,7 @@ export const singleStrategy: SingleStrategy = async (ctx) => {
     circuitBreaker.recordSuccess();
     return { result, attemptCount: Math.max(attemptCount, 1) };
   } catch (error) {
+    throwIfAborted(signal);
     const errorObj = error instanceof Error ? error : new Error(String(error));
     (errorObj as Error & { attemptCount?: number }).attemptCount = Math.max(attemptCount, 1);
     circuitBreaker.recordFailure(errorObj);

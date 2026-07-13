@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { MatchWorkExecutionOptions } from "@/lib/ai/matcher/execution";
+import type { MatcherConfig } from "@/lib/ai/matcher/types";
+
 const mocks = vi.hoisted(() => ({
   getMatcherConfig: vi.fn(),
-  withQueue: vi.fn(),
   getQueueStatus: vi.fn(),
   executeMatch: vi.fn(),
   createMatchSession: vi.fn(),
@@ -19,12 +21,26 @@ vi.mock("@/lib/ai/matcher/config", () => ({
 }));
 
 vi.mock("@/lib/ai/matcher/queue", () => ({
-  withQueue: mocks.withQueue,
   getQueueStatus: mocks.getQueueStatus,
 }));
 
 vi.mock("@/lib/ai/matcher/execution", () => ({
-  executeMatch: mocks.executeMatch,
+  executeConfiguredMatchWork: vi.fn(async (
+    config: MatcherConfig,
+    jobIds: number[],
+    options: MatchWorkExecutionOptions = {}
+  ) => {
+    options.onQueued?.(1);
+    if ((await options.onStart?.()) === false) return new Map();
+    return mocks.executeMatch({
+      config,
+      jobIds,
+      sessionId: options.sessionId,
+      signal: options.signal,
+      onProgress: options.onProgress,
+      shouldStop: options.shouldStop,
+    });
+  }),
 }));
 
 vi.mock("@/lib/ai/matcher/tracking", () => ({
@@ -65,11 +81,6 @@ describe("match engine integration", () => {
       pending: 0,
       size: 0,
       position: 0,
-    });
-
-    mocks.withQueue.mockImplementation(async (_config, work, onQueued) => {
-      onQueued?.(1);
-      return work();
     });
 
     mocks.createProgressTracker.mockReturnValue({
@@ -356,5 +367,52 @@ describe("match engine integration", () => {
       failed: 0,
     });
     expect(mocks.finalizeMatchSession).toHaveBeenCalledWith("session-1", 1, 0, 1);
+  });
+
+  it("preserves checkpoints and closes a manually cancelled session", async () => {
+    const controller = new AbortController();
+    const started = Promise.withResolvers<void>();
+    mocks.getMatchSessionStatus.mockResolvedValue({
+      id: "session-1",
+      status: "in_progress",
+      jobsTotal: 1,
+      jobsCompleted: 0,
+      jobsSucceeded: 0,
+      jobsFailed: 0,
+      startedAt: new Date(),
+      completedAt: null,
+    });
+    mocks.executeMatch.mockImplementation(
+      async ({ signal }: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          if (!signal) throw new Error("Expected a cancellation signal.");
+          started.resolve();
+          signal.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
+        })
+    );
+    const engine = await createMatchEngine();
+    const matching = engine.matchWithTracking([11], {
+      sessionId: "session-1",
+      signal: controller.signal,
+    });
+    await started.promise;
+    const reason = new DOMException("request stopped", "AbortError");
+    const rejection = expect(matching).rejects.toBe(reason);
+
+    controller.abort(reason);
+
+    await rejection;
+    expect(mocks.updateMatchSessionIfActive).toHaveBeenLastCalledWith(
+      "session-1",
+      expect.objectContaining({
+        status: "failed",
+        jobsCompleted: 0,
+        jobsSucceeded: 0,
+        jobsFailed: 0,
+      })
+    );
+    expect(mocks.finalizeMatchSession).not.toHaveBeenCalled();
   });
 });

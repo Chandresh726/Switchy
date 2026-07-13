@@ -141,7 +141,9 @@ export async function updateMatchSession(
     .update(matchSessions)
     .set({
       ...updates,
-      ...(updates.status === "completed" ? { completedAt: new Date() } : {}),
+      ...(updates.status === "completed" || updates.status === "failed"
+        ? { completedAt: new Date() }
+        : {}),
     })
     .where(eq(matchSessions.id, sessionId));
 }
@@ -161,7 +163,9 @@ export async function updateMatchSessionIfActive(
     .update(matchSessions)
     .set({
       ...updates,
-      ...(updates.status === "completed" ? { completedAt: new Date() } : {}),
+      ...(updates.status === "completed" || updates.status === "failed"
+        ? { completedAt: new Date() }
+        : {}),
     })
     .where(
       and(

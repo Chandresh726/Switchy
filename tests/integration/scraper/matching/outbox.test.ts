@@ -23,6 +23,7 @@ import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 vi.mock("@/lib/db", () => ({ db: {} }));
 vi.mock("@/lib/ai/matcher", () => ({ matchWithTracking: vi.fn() }));
+vi.mock("@/lib/ai/matcher/execution", () => ({ executeMatchWork: vi.fn() }));
 
 const sqlite = createSqliteTestHarness("switchy-match-outbox-");
 const createTestDatabase = () => sqlite.createDatabase().database;
@@ -43,23 +44,26 @@ function seedCompanyAndSession(database: ReturnType<typeof createTestDatabase>) 
 
 async function persistMatchableJob(
   database: ReturnType<typeof createTestDatabase>,
-  companyId: number
+  companyId: number,
+  jobCount = 1
 ) {
   const repository = new DrizzleScraperRepository(database);
+  const externalIds = Array.from(
+    { length: jobCount },
+    (_, index) => `role-${index + 1}`
+  );
   return repository.persistScrapeResult({
     companyId,
-    openExternalIds: ["role-1"],
+    openExternalIds: externalIds,
     archiveMissing: true,
     statusesToArchive: ["new"],
-    jobsToInsert: [
-      {
-        externalId: "role-1",
-        title: "Role 1",
-        url: "https://example.com/jobs/1",
-        description: "Detailed role description",
-        status: "new",
-      },
-    ],
+    jobsToInsert: externalIds.map((externalId, index) => ({
+      externalId,
+      title: `Role ${index + 1}`,
+      url: `https://example.com/jobs/${index + 1}`,
+      description: "Detailed role description",
+      status: "new",
+    })),
     existingJobUpdates: [],
     startedAtMs: Date.now(),
     enableMatching: true,
@@ -105,12 +109,20 @@ describe("ScrapeMatchOutboxDispatcher", () => {
         jobsFiltered: 0,
       },
     });
-    const executeMatch = vi.fn(async (jobIds: number[]) => ({
-      sessionId: persisted.matchOutboxId ?? "",
-      total: jobIds.length,
-      succeeded: jobIds.length,
-      failed: 0,
-    }));
+    const executeMatch = vi.fn(async (jobIds: number[]) =>
+      new Map(
+        jobIds.map((jobId) => [
+          jobId,
+          {
+            score: 90,
+            reasons: [],
+            matchedSkills: [],
+            missingSkills: [],
+            recommendations: [],
+          },
+        ])
+      )
+    );
     expect(database.select().from(matchSessions).get()).toMatchObject({
       id: persisted.matchOutboxId,
       status: "queued",
@@ -124,9 +136,8 @@ describe("ScrapeMatchOutboxDispatcher", () => {
     expect(executeMatch).toHaveBeenCalledWith(
       persisted.matchableJobIds,
       expect.objectContaining({
-        triggerSource: "auto_match",
-        companyId: company.id,
         sessionId: persisted.matchOutboxId,
+        signal: expect.any(AbortSignal),
       })
     );
     expect(summary).toMatchObject({ claimed: 1, completed: 1, failed: 0 });
@@ -309,7 +320,7 @@ describe("ScrapeMatchOutboxDispatcher", () => {
           .run();
       }
 
-      const result = stopMatchSession(persisted.matchOutboxId, database);
+      const result = await stopMatchSession(persisted.matchOutboxId, database);
       const executeMatch = vi.fn();
       const dispatcher = new ScrapeMatchOutboxDispatcher(database, executeMatch);
       await dispatcher.runAvailable();
@@ -367,7 +378,7 @@ describe("ScrapeMatchOutboxDispatcher", () => {
       .where(eq(scrapeMatchOutbox.id, persisted.matchOutboxId))
       .run();
 
-    stopMatchSession(persisted.matchOutboxId, database);
+    await stopMatchSession(persisted.matchOutboxId, database);
 
     expect(
       database
@@ -533,12 +544,20 @@ describe("ScrapeMatchOutboxDispatcher", () => {
       workerId: "dead-worker",
       leaseExpiresAt: new Date(0),
     }).run();
-    const executeMatch = vi.fn(async () => ({
-      sessionId: "outbox-expired",
-      total: 1,
-      succeeded: 1,
-      failed: 0,
-    }));
+    const executeMatch = vi.fn(async () =>
+      new Map([
+        [
+          42,
+          {
+            score: 90,
+            reasons: [],
+            matchedSkills: [],
+            missingSkills: [],
+            recommendations: [],
+          },
+        ],
+      ])
+    );
     const dispatcher = new ScrapeMatchOutboxDispatcher(database, executeMatch);
 
     const summary = await dispatcher.runAvailable();
@@ -552,7 +571,7 @@ describe("ScrapeMatchOutboxDispatcher", () => {
     });
   });
 
-  it("closes the stable match session when normal retries are exhausted", async () => {
+  it("completes from paid checkpoints without repeating provider work", async () => {
     const database = createTestDatabase();
     const company = seedCompanyAndSession(database);
     const repository = new DrizzleScraperRepository(database);
@@ -602,12 +621,61 @@ describe("ScrapeMatchOutboxDispatcher", () => {
       .set({ maxAttempts: 1 })
       .where(eq(scrapeMatchOutbox.id, persisted.matchOutboxId))
       .run();
-    const dispatcher = new ScrapeMatchOutboxDispatcher(database, vi.fn(async () => {
+    const executeMatch = vi.fn(async () => {
       throw new Error("provider unavailable");
-    }));
+    });
+    const dispatcher = new ScrapeMatchOutboxDispatcher(database, executeMatch);
 
     const summary = await dispatcher.runAvailable();
 
+    expect(summary).toMatchObject({ claimed: 1, completed: 1, failed: 0 });
+    expect(executeMatch).not.toHaveBeenCalled();
+    expect(
+      database
+        .select()
+        .from(matchSessions)
+        .where(eq(matchSessions.id, persisted.matchOutboxId))
+        .get()
+    ).toMatchObject({
+      status: "completed",
+      jobsCompleted: 1,
+      jobsSucceeded: 1,
+      jobsFailed: 0,
+    });
+    expect(database.select().from(scrapingLogs).get()).toMatchObject({
+      matcherStatus: "completed",
+      matcherJobsCompleted: 1,
+      matcherErrorCount: 0,
+    });
+  });
+
+  it("closes exhausted work with the latest paid checkpoint", async () => {
+    const database = createTestDatabase();
+    const company = seedCompanyAndSession(database);
+    const persisted = await persistMatchableJob(database, company.id, 2);
+    if (!persisted.matchOutboxId) throw new Error("Expected a durable match handoff.");
+    database.insert(matchLogs).values({
+      sessionId: persisted.matchOutboxId,
+      jobId: persisted.matchableJobIds[0],
+      status: "success",
+      score: 92,
+    }).run();
+    database
+      .update(scrapeMatchOutbox)
+      .set({ maxAttempts: 1 })
+      .where(eq(scrapeMatchOutbox.id, persisted.matchOutboxId))
+      .run();
+    const executeMatch = vi.fn(async () => {
+      throw new Error("provider unavailable");
+    });
+    const dispatcher = new ScrapeMatchOutboxDispatcher(database, executeMatch);
+
+    const summary = await dispatcher.runAvailable();
+
+    expect(executeMatch).toHaveBeenCalledWith(
+      [persisted.matchableJobIds[1]],
+      expect.any(Object)
+    );
     expect(summary).toMatchObject({ claimed: 1, failed: 1, retried: 0 });
     expect(
       database
@@ -626,6 +694,44 @@ describe("ScrapeMatchOutboxDispatcher", () => {
       matcherJobsCompleted: 1,
       matcherErrorCount: 0,
     });
+  });
+
+  it("aborts in-flight matching when the durable session is stopped", async () => {
+    const database = createTestDatabase();
+    const company = seedCompanyAndSession(database);
+    const persisted = await persistMatchableJob(database, company.id);
+    if (!persisted.matchOutboxId) throw new Error("Expected a durable match handoff.");
+    const started = Promise.withResolvers<AbortSignal>();
+    const executeMatch = vi.fn(
+      async (_jobIds, options): Promise<never> =>
+        new Promise((_resolve, reject) => {
+          if (!options.signal) throw new Error("Expected a match cancellation signal.");
+          started.resolve(options.signal);
+          options.signal.addEventListener(
+            "abort",
+            () => reject(options.signal?.reason),
+            { once: true }
+          );
+        })
+    );
+    const dispatcher = new ScrapeMatchOutboxDispatcher(database, executeMatch, {
+      heartbeatIntervalMs: 100,
+    });
+
+    const running = dispatcher.runAvailable();
+    const signal = await started.promise;
+    await stopMatchSession(persisted.matchOutboxId, database);
+    const summary = await running;
+
+    expect(signal.aborted).toBe(true);
+    expect(summary).toMatchObject({ completed: 0, retried: 0, failed: 0 });
+    expect(
+      database
+        .select()
+        .from(scrapeMatchOutbox)
+        .where(eq(scrapeMatchOutbox.id, persisted.matchOutboxId))
+        .get()
+    ).toMatchObject({ status: "failed", workerId: null });
   });
 
   it("closes an exhausted recovered lease with its durable checkpoint counters", async () => {

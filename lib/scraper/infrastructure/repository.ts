@@ -11,6 +11,7 @@ import {
   scrapingLogs,
   settings,
 } from "@/lib/db/schema";
+import { createMatchWorkRecords } from "@/lib/scraper/matching/work-contracts";
 
 import type {
   IScraperRepository,
@@ -231,32 +232,15 @@ export class DrizzleScraperRepository implements IScraperRepository {
 
       const matchOutboxId = matchableJobIds.length > 0 ? crypto.randomUUID() : null;
       if (matchOutboxId) {
-        tx.insert(matchSessions)
-          .values({
-            id: matchOutboxId,
-            triggerSource: "auto_match",
-            companyId: input.companyId,
-            status: "queued",
-            jobsTotal: matchableJobIds.length,
-            jobsCompleted: 0,
-            jobsSucceeded: 0,
-            jobsFailed: 0,
-            errorCount: 0,
-            startedAt: null,
-          })
-          .run();
-        tx.insert(scrapeMatchOutbox)
-          .values({
-            id: matchOutboxId,
-            scrapingLogId: insertedLog.id,
-            companyId: input.companyId,
-            jobIdsJson: JSON.stringify(matchableJobIds),
-            status: "pending",
-            availableAt: completedAt,
-            createdAt: completedAt,
-            updatedAt: completedAt,
-          })
-          .run();
+        const matchWork = createMatchWorkRecords({
+          id: matchOutboxId,
+          scrapingLogId: insertedLog.id,
+          companyId: input.companyId,
+          jobIds: matchableJobIds,
+          now: completedAt,
+        });
+        tx.insert(matchSessions).values(matchWork.session).run();
+        tx.insert(scrapeMatchOutbox).values(matchWork.outbox).run();
       }
 
       return {

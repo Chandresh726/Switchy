@@ -7,6 +7,7 @@ export interface GenerationOptions<T extends z.ZodTypeAny> {
   instructions: string;
   prompt: string;
   providerOptions?: Record<string, unknown>;
+  signal?: AbortSignal;
 }
 
 export interface GenerationResult<T> {
@@ -24,7 +25,7 @@ function getArrayElementSchema(schema: z.ZodArray<z.ZodTypeAny>): z.ZodTypeAny {
 export async function generateStructured<T extends z.ZodTypeAny>(
   options: GenerationOptions<T>
 ): Promise<GenerationResult<z.infer<T>>> {
-  const { model, schema, instructions, prompt, providerOptions } = options;
+  const { model, schema, instructions, prompt, providerOptions, signal } = options;
 
   const isArray = isArraySchema(schema);
 
@@ -36,6 +37,7 @@ export async function generateStructured<T extends z.ZodTypeAny>(
     instructions,
     prompt,
     ...providerOptions,
+    abortSignal: signal,
   });
 
   if (result.output === undefined || result.output === null) {
