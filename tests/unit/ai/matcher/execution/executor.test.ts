@@ -42,6 +42,31 @@ vi.mock("@/lib/ai/matcher/tracking", () => ({
 
 import { executeMatch } from "@/lib/ai/matcher/execution/executor";
 
+const matcherConfig = {
+  model: "gpt-4.1-mini",
+  reasoningEffort: "medium" as const,
+  bulkEnabled: true,
+  batchSize: 2,
+  maxRetries: 3,
+  concurrencyLimit: 2,
+  serializeOperations: false,
+  interRequestDelayMs: 500,
+  timeoutMs: 30000,
+  backoffBaseDelay: 2000,
+  backoffMaxDelay: 32000,
+  circuitBreakerThreshold: 10,
+  circuitBreakerResetTimeout: 60000,
+  autoMatchAfterScrape: true,
+};
+
+const rawMatchResult = {
+  score: 90,
+  reasons: ["Strong skill overlap"],
+  matchedSkills: ["TypeScript"],
+  missingSkills: ["Kubernetes"],
+  recommendations: ["Add cloud projects"],
+};
+
 describe("executeMatch integration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -207,6 +232,136 @@ describe("executeMatch integration", () => {
       "Provider timeout",
       2,
       "gpt-4.1-mini"
+    );
+  });
+
+  it.each(["single", "parallel", "bulk"] as const)(
+    "persists and returns the finalized experience-adjusted score for %s matching",
+    async (strategy) => {
+      mocks.fetchJobsData.mockResolvedValue(
+        new Map([
+          [
+            1,
+            {
+              id: 1,
+              title: "Senior Backend Engineer",
+              description: "Requires 5+ years of experience with TypeScript",
+            },
+          ],
+        ])
+      );
+      mocks.fetchProfileData.mockResolvedValue({
+        profile: { id: 1, summary: "Early-career engineer" },
+        skills: [],
+        experience: [
+          {
+            title: "Engineer",
+            company: "Example",
+            description: null,
+            startDate: "2020-01-01",
+            endDate: "2021-01-01",
+          },
+        ],
+        education: [],
+      });
+      mocks.selectStrategy.mockReturnValue(strategy);
+
+      const item = {
+        result: rawMatchResult,
+        duration: 12,
+        attemptCount: 1,
+      };
+
+      if (strategy === "single") {
+        mocks.singleStrategy.mockResolvedValue({
+          result: rawMatchResult,
+          attemptCount: 1,
+        });
+      } else {
+        mocks[`${strategy}Strategy`].mockImplementation(
+          async ({ onResult }: { onResult: (jobId: number, resultItem: typeof item) => Promise<void> }) => {
+            await onResult(1, item);
+            return new Map([[1, item]]);
+          }
+        );
+      }
+
+      const results = await executeMatch({
+        config: {
+          ...matcherConfig,
+          bulkEnabled: strategy === "bulk",
+        },
+        jobIds: [1],
+        sessionId: `session-${strategy}`,
+      });
+
+      expect(results.get(1)).toMatchObject({
+        score: 50,
+        reasons: expect.arrayContaining([
+          expect.stringContaining("Adjusted for experience gap"),
+        ]),
+      });
+      expect(mocks.persistMatchSuccess).toHaveBeenCalledTimes(1);
+      expect(mocks.persistMatchSuccess).toHaveBeenCalledWith(
+        `session-${strategy}`,
+        1,
+        expect.objectContaining({
+          score: 50,
+          reasons: expect.arrayContaining([
+            expect.stringContaining("Adjusted for experience gap"),
+          ]),
+        }),
+        1,
+        expect.any(Number),
+        "gpt-4.1-mini"
+      );
+    }
+  );
+
+  it("persists the finalized score for direct matching without a session", async () => {
+    mocks.fetchJobsData.mockResolvedValue(
+      new Map([
+        [
+          1,
+          {
+            id: 1,
+            title: "Senior Backend Engineer",
+            description: "Requires 5+ years of experience with TypeScript",
+          },
+        ],
+      ])
+    );
+    mocks.fetchProfileData.mockResolvedValue({
+      profile: { id: 1, summary: "Early-career engineer" },
+      skills: [],
+      experience: [
+        {
+          title: "Engineer",
+          company: "Example",
+          description: null,
+          startDate: "2020-01-01",
+          endDate: "2021-01-01",
+        },
+      ],
+      education: [],
+    });
+    mocks.selectStrategy.mockReturnValue("single");
+    mocks.singleStrategy.mockResolvedValue({
+      result: rawMatchResult,
+      attemptCount: 1,
+    });
+
+    const results = await executeMatch({
+      config: { ...matcherConfig, bulkEnabled: false },
+      jobIds: [1],
+    });
+
+    expect(results.get(1)).toMatchObject({ score: 50 });
+    expect(mocks.persistMatchSuccess).not.toHaveBeenCalled();
+    expect(mocks.updateJobWithMatchResult).toHaveBeenCalledTimes(1);
+    expect(mocks.updateJobWithMatchResult).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ score: 50 })
     );
   });
 });

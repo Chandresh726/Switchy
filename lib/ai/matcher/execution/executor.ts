@@ -150,13 +150,20 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
   };
 
   const persistedJobIds = new Set<number>();
+  const jobsById = new Map<number, MatchJob>(matchJobs.map((job) => [job.id, job]));
 
   const persistRealtimeResult = async (jobId: number, item: StrategyResultItem) => {
     throwIfAborted(signal);
     if (persistedJobIds.has(jobId)) return;
 
     try {
-      await persistJobResult(jobId, item, sessionId, modelUsed);
+      const finalizedItem = applyExperienceGuardrail(
+        jobId,
+        item,
+        jobsById,
+        candidateProfile.totalExperienceYears ?? null
+      );
+      await persistJobResult(jobId, finalizedItem, sessionId, modelUsed);
       throwIfAborted(signal);
       persistedJobIds.add(jobId);
     } catch (error) {
@@ -250,31 +257,47 @@ function applyExperienceGuardrails(
   const jobsById = new Map<number, MatchJob>(matchJobs.map((job) => [job.id, job]));
 
   for (const [jobId, item] of strategyResults.entries()) {
-    if (!item.result) continue;
-
-    const job = jobsById.get(jobId);
-    if (!job) continue;
-
-    const requiredYears = estimateRequiredExperienceYears(job.description, job.requirements);
-    const adjusted = applyExperienceScoreGuardrails(item.result.score, requiredYears, candidateYears);
-
-    if (adjusted.adjustedScore >= item.result.score) {
-      continue;
-    }
-
-    const reasons = adjusted.reason
-      ? [adjusted.reason, ...item.result.reasons]
-      : item.result.reasons;
-
-    strategyResults.set(jobId, {
-      ...item,
-      result: {
-        ...item.result,
-        score: adjusted.adjustedScore,
-        reasons,
-      },
-    });
+    strategyResults.set(
+      jobId,
+      applyExperienceGuardrail(jobId, item, jobsById, candidateYears)
+    );
   }
+}
+
+function applyExperienceGuardrail(
+  jobId: number,
+  item: StrategyResultItem,
+  jobsById: Map<number, MatchJob>,
+  candidateYears: number | null
+): StrategyResultItem {
+  if (!item.result || candidateYears === null) return item;
+
+  const job = jobsById.get(jobId);
+  if (!job) return item;
+
+  const requiredYears = estimateRequiredExperienceYears(job.description, job.requirements);
+  const adjusted = applyExperienceScoreGuardrails(
+    item.result.score,
+    requiredYears,
+    candidateYears
+  );
+
+  if (adjusted.adjustedScore >= item.result.score) {
+    return item;
+  }
+
+  const reasons = adjusted.reason
+    ? [adjusted.reason, ...item.result.reasons]
+    : item.result.reasons;
+
+  return {
+    ...item,
+    result: {
+      ...item.result,
+      score: adjusted.adjustedScore,
+      reasons,
+    },
+  };
 }
 
 async function persistResults(

@@ -73,6 +73,13 @@ describe("synchronous match routes", () => {
       triggerSource: "manual",
       signal: request.signal,
     });
+    await expect(response.json()).resolves.toEqual({
+      success: true,
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+      message: "Matched 1 of 1 jobs",
+    });
   });
 
   it("forwards single-company request cancellation to tracked matching", async () => {
@@ -90,20 +97,52 @@ describe("synchronous match routes", () => {
       companyId: 1,
       signal: request.signal,
     });
+    await expect(response.json()).resolves.toEqual({
+      success: true,
+      sessionId: "session-1",
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+      message: "Matched 1 of 1 jobs",
+    });
   });
 
   it("forwards direct single-match request cancellation", async () => {
-    mocks.matchSingle.mockResolvedValue({ score: 90 });
+    mocks.matchSingle.mockResolvedValue({
+      score: 90,
+      reasons: ["Strong overlap"],
+      matchedSkills: ["TypeScript"],
+      missingSkills: [],
+      recommendations: [],
+    });
     const request = createRequest("/api/match", { jobId: 11 });
 
     const response = await postDirectMatch(request);
 
     expect(response.status).toBe(200);
     expect(mocks.matchSingle).toHaveBeenCalledWith(11, request.signal);
+    await expect(response.json()).resolves.toEqual({
+      score: 90,
+      reasons: ["Strong overlap"],
+      matchedSkills: ["TypeScript"],
+      missingSkills: [],
+      recommendations: [],
+    });
   });
 
   it("forwards direct bulk-match request cancellation", async () => {
-    mocks.matchBulk.mockResolvedValue(new Map());
+    mocks.matchBulk.mockResolvedValue(
+      new Map<number, Error | {
+        score: number;
+        reasons: string[];
+        matchedSkills: string[];
+        missingSkills: string[];
+        recommendations: string[];
+      }>([
+        [11, { score: 90, reasons: [], matchedSkills: [], missingSkills: [], recommendations: [] }],
+        [22, new Error("Provider timeout")],
+      ])
+    );
     const request = createRequest("/api/match", { jobIds: [11, 22] });
 
     const response = await postDirectMatch(request);
@@ -114,5 +153,12 @@ describe("synchronous match routes", () => {
       undefined,
       request.signal
     );
+    await expect(response.json()).resolves.toEqual({
+      results: {
+        11: { score: 90, reasons: [], matchedSkills: [], missingSkills: [], recommendations: [] },
+        22: { error: "Provider timeout" },
+      },
+      summary: { total: 2, successful: 1 },
+    });
   });
 });

@@ -330,6 +330,80 @@ describe("match engine integration", () => {
     );
   });
 
+  it("characterizes cumulative session progress for a resumed match", async () => {
+    mocks.getMatchSessionStatus.mockResolvedValue({
+      id: "session-1",
+      status: "in_progress",
+      jobsTotal: 3,
+      jobsCompleted: 1,
+      jobsSucceeded: 1,
+      jobsFailed: 0,
+      startedAt: new Date("2026-02-20T00:00:00.000Z"),
+      completedAt: null,
+    });
+    mocks.getMatchSessionCheckpoint.mockResolvedValue({
+      completedJobIds: [11],
+      succeeded: 1,
+      failed: 0,
+    });
+    mocks.executeMatch.mockImplementation(async ({ onProgress }) => {
+      onProgress?.(1, 2, 1, 0);
+      onProgress?.(2, 2, 1, 1);
+      return new Map<number, Error | {
+        score: number;
+        reasons: string[];
+        matchedSkills: string[];
+        missingSkills: string[];
+        recommendations: string[];
+      }>([
+        [22, { score: 80, reasons: [], matchedSkills: [], missingSkills: [], recommendations: [] }],
+        [33, new Error("Provider timeout")],
+      ]);
+    });
+    mocks.finalizeMatchSession.mockResolvedValue({
+      sessionId: "session-1",
+      total: 3,
+      succeeded: 2,
+      failed: 1,
+    });
+
+    const onProgress = vi.fn();
+    const engine = await createMatchEngine();
+    const result = await engine.matchWithTracking([11, 22, 33], {
+      sessionId: "session-1",
+      triggerSource: "manual",
+      onProgress,
+    });
+
+    expect(result).toEqual({
+      sessionId: "session-1",
+      total: 3,
+      succeeded: 2,
+      failed: 1,
+    });
+    expect(mocks.createProgressTracker).toHaveBeenCalledWith(3, onProgress);
+    expect(mocks.updateMatchSessionIfActive).toHaveBeenCalledWith(
+      "session-1",
+      expect.objectContaining({
+        status: "in_progress",
+        jobsCompleted: 2,
+        jobsSucceeded: 2,
+        jobsFailed: 0,
+        errorCount: 0,
+      })
+    );
+    expect(mocks.updateMatchSessionIfActive).toHaveBeenCalledWith(
+      "session-1",
+      expect.objectContaining({
+        status: "in_progress",
+        jobsCompleted: 3,
+        jobsSucceeded: 2,
+        jobsFailed: 1,
+        errorCount: 1,
+      })
+    );
+  });
+
   it("treats queued sessions as active for shouldStop and finalization checks", async () => {
     mocks.getMatcherConfig.mockResolvedValue({
       model: "gpt-4.1-mini",
