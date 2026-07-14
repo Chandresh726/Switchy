@@ -1,4 +1,4 @@
-import type { LanguageModel } from "ai";
+import type { AICapabilityRuntime } from "@/lib/ai/runtime";
 import type {
   MatcherConfig,
   MatchResult,
@@ -11,8 +11,7 @@ import type { CircuitBreaker } from "../resilience";
 
 export interface StrategyContext {
   config: MatcherConfig;
-  model: LanguageModel;
-  providerOptions: Record<string, unknown> | undefined;
+  runtime: AICapabilityRuntime;
   circuitBreaker: CircuitBreaker;
   candidateProfile: CandidateProfile;
   signal?: AbortSignal;

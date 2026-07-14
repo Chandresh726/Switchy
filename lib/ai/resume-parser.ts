@@ -1,7 +1,9 @@
-import { generateText, Output } from "ai";
 import { z } from "zod";
 
-import { resolveAIContextForFeature } from "./runtime-context";
+import {
+  createAICapabilityRuntime,
+  fingerprintAIInput,
+} from "./runtime";
 
 const ResumeDataSchema = z.object({
   name: z.string(),
@@ -56,9 +58,12 @@ Guidelines:
 - Leave fields empty/null if information is not present
 - Be thorough but don't hallucinate information not in the resume`;
 
-export async function parseResume(resumeText: string): Promise<ResumeData> {
-  const aiContext = await resolveAIContextForFeature("resume_parser");
+const RESUME_PROMPT_VERSION = "legacy-resume-parse-v1";
+const RESUME_SCHEMA_VERSION = "resume-data-v1";
+const RESUME_POLICY_VERSION = "resume-parse-policy-v1";
 
+export async function parseResume(resumeText: string): Promise<ResumeData> {
+  const runtime = await createAICapabilityRuntime({ capability: "resume_parse" });
   const prompt = `Parse the following resume and extract structured information:
 
 ---
@@ -67,17 +72,26 @@ ${resumeText}
 
 Extract all relevant information including contact details, skills, work experience, and education.`;
 
-  const result = await generateText({
-    model: aiContext.model,
-    output: Output.object({ schema: ResumeDataSchema }),
+  const result = await runtime.executeStructured({
+    schema: ResumeDataSchema,
     instructions: RESUME_PARSING_SYSTEM_PROMPT,
     prompt,
-    ...aiContext.providerOptions,
+    policy: {
+      maxAttempts: 2,
+      timeoutMs: 60_000,
+      reasoningEffort: runtime.reasoningEffort,
+    },
+    subject: { type: "resume", id: fingerprintAIInput(resumeText).slice(0, 24) },
+    versions: {
+      prompt: RESUME_PROMPT_VERSION,
+      schema: RESUME_SCHEMA_VERSION,
+      policy: RESUME_POLICY_VERSION,
+    },
+    inputFingerprint: fingerprintAIInput({
+      resumeText,
+      promptVersion: RESUME_PROMPT_VERSION,
+    }),
   });
 
-  if (result.output === undefined || result.output === null) {
-    throw new Error("Model did not produce structured output for resume parsing");
-  }
-
-  return result.output as ResumeData;
+  return result.output;
 }

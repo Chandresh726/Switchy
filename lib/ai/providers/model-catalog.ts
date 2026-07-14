@@ -35,12 +35,14 @@ const NON_TEXT_MODEL_PATTERNS = [
   "vision-preview",
 ];
 
-interface ProviderRecord {
+export interface ResolvedProviderCatalogRecord {
   id: string;
   provider: AIProvider;
   apiKey?: string;
   updatedAt: Date | null;
 }
+
+type ProviderRecord = ResolvedProviderCatalogRecord;
 
 interface CachedProviderModels {
   providerUpdatedAtMs: number;
@@ -512,6 +514,13 @@ export async function getProviderModels(
   options: GetProviderModelsOptions = {}
 ): Promise<ProviderModelsResponse> {
   const provider = await getProviderRecord(providerId);
+  return getProviderModelsForResolvedProvider(provider, options);
+}
+
+export async function getProviderModelsForResolvedProvider(
+  provider: ResolvedProviderCatalogRecord,
+  options: GetProviderModelsOptions = {}
+): Promise<ProviderModelsResponse> {
   const now = Date.now();
   const cacheEntry = getCacheEntry(provider);
 
@@ -555,11 +564,7 @@ export async function resolveProviderModelSelection(options: {
   let provider: ProviderRecord | null = null;
 
   if (options.providerId) {
-    try {
-      provider = await getProviderRecord(options.providerId);
-    } catch {
-      provider = null;
-    }
+    provider = await getProviderRecord(options.providerId);
   }
 
   if (!provider) {
@@ -585,11 +590,18 @@ export async function resolveProviderModelSelection(options: {
   }
 
   const availableModels = providerModels?.models ?? [];
-  const resolvedModelId = requestedModelId && availableModels.some((model) => model.modelId === requestedModelId)
-    ? requestedModelId
-    : requestedModelId && availableModels.length === 0
-      ? requestedModelId
-      : availableModels[0]?.modelId ?? requestedModelId;
+  if (
+    requestedModelId &&
+    availableModels.length > 0 &&
+    !availableModels.some((model) => model.modelId === requestedModelId)
+  ) {
+    throw new AIError({
+      type: "invalid_model",
+      message: `Configured model "${requestedModelId}" is unavailable for provider "${provider.provider}"`,
+    });
+  }
+
+  const resolvedModelId = requestedModelId ?? availableModels[0]?.modelId;
 
   if (!resolvedModelId) {
     throw new AIError({

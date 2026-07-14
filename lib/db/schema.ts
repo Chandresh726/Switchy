@@ -255,6 +255,44 @@ export const aiProviders = sqliteTable("aiProviders", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
+// AI Runs - Sanitized provenance and telemetry for every logical AI execution
+export const aiRuns = sqliteTable("ai_runs", {
+  id: text("id").primaryKey(),
+  capability: text("capability").notNull(),
+  subjectType: text("subject_type"),
+  subjectId: text("subject_id"),
+  providerRecordId: text("provider_record_id").notNull(),
+  provider: text("provider").notNull(),
+  modelId: text("model_id").notNull(),
+  promptVersion: text("prompt_version").notNull(),
+  schemaVersion: text("schema_version").notNull(),
+  policyVersion: text("policy_version").notNull(),
+  inputFingerprint: text("input_fingerprint").notNull(),
+  status: text("status").notNull().default("running"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+  totalTokens: integer("total_tokens"),
+  durationMs: integer("duration_ms"),
+  finishReason: text("finish_reason"),
+  cacheStatus: text("cache_status").notNull().default("miss"),
+  qualityResult: text("quality_result").notNull().default("not_checked"),
+  warningsJson: text("warnings_json"),
+  metadataJson: text("metadata_json"),
+  errorCode: text("error_code"),
+  errorMessage: text("error_message"),
+  startedAt: integer("started_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  capabilityCreatedIdx: index("ai_runs_capability_created_idx").on(
+    table.capability,
+    table.createdAt
+  ),
+  subjectIdx: index("ai_runs_subject_idx").on(table.subjectType, table.subjectId),
+  statusCreatedIdx: index("ai_runs_status_created_idx").on(table.status, table.createdAt),
+}));
+
 // Match Sessions - Track batch match operations
 export const matchSessions = sqliteTable("match_sessions", {
   id: text("id").primaryKey(), // UUID
@@ -564,6 +602,8 @@ export type AIGenerationHistory = typeof aiGenerationHistory.$inferSelect;
 export type NewAIGenerationHistory = typeof aiGenerationHistory.$inferInsert;
 export type AIProviderRecord = typeof aiProviders.$inferSelect;
 export type NewAIProviderRecord = typeof aiProviders.$inferInsert;
+export type AIRun = typeof aiRuns.$inferSelect;
+export type NewAIRun = typeof aiRuns.$inferInsert;
 export type Person = typeof people.$inferSelect;
 export type NewPerson = typeof people.$inferInsert;
 export type PeopleImportSession = typeof peopleImportSessions.$inferSelect;

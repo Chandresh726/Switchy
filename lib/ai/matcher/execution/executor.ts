@@ -1,4 +1,4 @@
-import { resolveAIContextFromExplicitConfig } from "@/lib/ai/runtime-context";
+import { createAICapabilityRuntime } from "@/lib/ai/runtime";
 import {
   categorizeError,
   createCircuitBreaker,
@@ -46,13 +46,16 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
     return new Map();
   }
 
-  const aiContext = await resolveAIContextFromExplicitConfig({
-    providerId: config.providerId,
-    modelId: config.model,
-    reasoningEffort: config.reasoningEffort,
+  const aiRuntime = await createAICapabilityRuntime({
+    capability: "match_adjudication",
+    model: {
+      providerId: config.providerId,
+      modelId: config.model,
+      reasoningEffort: config.reasoningEffort,
+    },
   });
   throwIfAborted(signal);
-  const modelUsed = aiContext.modelId;
+  const modelUsed = aiRuntime.snapshot.modelId;
 
   const circuitBreaker = createCircuitBreaker({
     failureThreshold: config.circuitBreakerThreshold,
@@ -142,8 +145,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
 
   const strategyContext = {
     config,
-    model: aiContext.model,
-    providerOptions: aiContext.providerOptions,
+    runtime: aiRuntime,
     circuitBreaker,
     candidateProfile,
     signal,

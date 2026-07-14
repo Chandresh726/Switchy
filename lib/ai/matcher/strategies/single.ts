@@ -1,26 +1,24 @@
+import { parseReasoningEffort } from "@/lib/ai/runtime-context";
+
 import { SINGLE_MATCH_SYSTEM_PROMPT, buildSingleMatchPrompt } from "../prompts";
 import { generateStructured } from "../generation";
-import {
-  isRateLimitError,
-  isServerError,
-  retryWithBackoff,
-  throwIfAborted,
-  withTimeout,
-} from "../resilience";
+import { throwIfAborted } from "../resilience";
 import { MatchResultSchema } from "../types";
 import type { SingleStrategy } from "./types";
+
+const SINGLE_MATCH_PROMPT_VERSION = "legacy-single-match-v1";
+const MATCH_RESULT_SCHEMA_VERSION = "legacy-match-result-v1";
+const MATCH_POLICY_VERSION = "legacy-matcher-policy-v1";
 
 export const singleStrategy: SingleStrategy = async (ctx) => {
   const {
     config,
-    model,
-    providerOptions,
+    runtime,
     circuitBreaker,
     candidateProfile,
     job,
     signal,
   } = ctx;
-  let attemptCount = 0;
 
   const prompt = buildSingleMatchPrompt(
     job.title,
@@ -30,54 +28,37 @@ export const singleStrategy: SingleStrategy = async (ctx) => {
   );
 
   try {
-    const result = await retryWithBackoff(
-      async () => {
-        throwIfAborted(signal);
-        if (!circuitBreaker.canExecute()) {
-          throw new Error("Circuit breaker is open - too many failures");
-        }
+    throwIfAborted(signal);
+    if (!circuitBreaker.canExecute()) {
+      throw new Error("Circuit breaker is open - too many failures");
+    }
 
-        return withTimeout(
-          (async () => {
-            const generated = await generateStructured({
-              model,
-              schema: MatchResultSchema,
-              instructions: SINGLE_MATCH_SYSTEM_PROMPT,
-              prompt,
-              providerOptions,
-              signal,
-            });
-            return generated.data;
-          })(),
-          config.timeoutMs,
-          `Match job ${job.id}`,
-          signal
-        );
+    const generated = await generateStructured({
+      runtime,
+      schema: MatchResultSchema,
+      instructions: SINGLE_MATCH_SYSTEM_PROMPT,
+      prompt,
+      policy: {
+        maxAttempts: config.maxRetries,
+        timeoutMs: config.timeoutMs,
+        reasoningEffort: parseReasoningEffort(config.reasoningEffort),
       },
-      {
-        maxRetries: config.maxRetries,
-        baseDelay: config.backoffBaseDelay,
-        maxDelay: config.backoffMaxDelay,
-        signal,
-        onAttempt: (attempt) => {
-          attemptCount = attempt;
-        },
-        onRetry: (attempt, delay, error) => {
-          if (error && (isServerError(error) || isRateLimitError(error))) {
-            console.log(`[SingleStrategy] Retry ${attempt}: Server/rate limit error, returning 3x computed delay`);
-            return Math.min(delay * 3, config.backoffMaxDelay);
-          }
-          console.log(`[SingleStrategy] Job ${job.id} retry ${attempt} scheduled after ${Math.round(delay)}ms`);
-        },
-      }
-    );
+      subject: { type: "job", id: String(job.id) },
+      promptVersion: SINGLE_MATCH_PROMPT_VERSION,
+      schemaVersion: MATCH_RESULT_SCHEMA_VERSION,
+      policyVersion: MATCH_POLICY_VERSION,
+      retry: {
+        baseDelayMs: config.backoffBaseDelay,
+        maxDelayMs: config.backoffMaxDelay,
+      },
+      signal,
+    });
 
     circuitBreaker.recordSuccess();
-    return { result, attemptCount: Math.max(attemptCount, 1) };
+    return { result: generated.data, attemptCount: generated.attempts };
   } catch (error) {
     throwIfAborted(signal);
     const errorObj = error instanceof Error ? error : new Error(String(error));
-    (errorObj as Error & { attemptCount?: number }).attemptCount = Math.max(attemptCount, 1);
     circuitBreaker.recordFailure(errorObj);
     throw errorObj;
   }

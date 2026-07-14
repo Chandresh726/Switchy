@@ -1,14 +1,13 @@
 import { z } from "zod";
+
+import { parseReasoningEffort } from "@/lib/ai/runtime-context";
+
 import { BULK_MATCH_SYSTEM_PROMPT, buildBulkMatchPrompt } from "../prompts";
 import { generateStructured } from "../generation";
 import {
   abortableDelay,
   categorizeError,
-  isRateLimitError,
-  isServerError,
-  retryWithBackoff,
   throwIfAborted,
-  withTimeout,
 } from "../resilience";
 import type { StrategyResultItem, StrategyResultMap, BulkMatchResult, MatchJob } from "../types";
 import { BulkMatchResultSchema } from "../types";
@@ -17,6 +16,10 @@ import type { BulkStrategy } from "./types";
 
 type BulkMatchResponse = z.infer<typeof BulkMatchResultSchema>;
 type BulkProcessResult = { data: BulkMatchResponse; attemptCount: number };
+
+const BULK_MATCH_PROMPT_VERSION = "legacy-bulk-match-v1";
+const BULK_MATCH_SCHEMA_VERSION = "legacy-bulk-match-result-v1";
+const MATCH_POLICY_VERSION = "legacy-matcher-policy-v1";
 
 function validateBatchResponse(batchResults: BulkMatchResult[], batchJobs: MatchJob[]): BulkMatchResult[] {
   const batchJobIds = new Set(batchJobs.map((j) => j.id));
@@ -52,8 +55,7 @@ function validateBatchResponse(batchResults: BulkMatchResult[], batchJobs: Match
 export const bulkStrategy: BulkStrategy = async (ctx) => {
   const {
     config,
-    model,
-    providerOptions,
+    runtime,
     circuitBreaker,
     candidateProfile,
     jobs,
@@ -109,8 +111,7 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
     try {
       const batchResult = await processBatch(batch, {
         config,
-        model,
-        providerOptions,
+        runtime,
         candidateProfile,
         signal,
       });
@@ -188,8 +189,7 @@ export const bulkStrategy: BulkStrategy = async (ctx) => {
 
 interface ProcessBatchContext {
   config: Parameters<BulkStrategy>[0]["config"];
-  model: Parameters<BulkStrategy>[0]["model"];
-  providerOptions: Parameters<BulkStrategy>[0]["providerOptions"];
+  runtime: Parameters<BulkStrategy>[0]["runtime"];
   candidateProfile: Parameters<BulkStrategy>[0]["candidateProfile"];
   signal?: AbortSignal;
 }
@@ -198,58 +198,37 @@ async function processBatch(
   batch: Parameters<BulkStrategy>[0]["jobs"],
   ctx: ProcessBatchContext
 ): Promise<BulkProcessResult> {
-  const { config, model, providerOptions, candidateProfile, signal } = ctx;
-  let attemptCount = 0;
+  const { config, runtime, candidateProfile, signal } = ctx;
 
   const prompt = buildBulkMatchPrompt(batch, candidateProfile);
 
-  try {
-    const result = await retryWithBackoff(
-      async () => {
-        throwIfAborted(signal);
-        return withTimeout(
-          (async () => {
-            const generated = await generateStructured({
-              model,
-              schema: BulkMatchResultSchema,
-              instructions: BULK_MATCH_SYSTEM_PROMPT,
-              prompt,
-              providerOptions,
-              signal,
-            });
-            return generated.data;
-          })(),
-          config.timeoutMs * 2,
-          `Match batch of ${batch.length} jobs`,
-          signal
-        );
-      },
-      {
-        maxRetries: config.maxRetries,
-        baseDelay: config.backoffBaseDelay,
-        maxDelay: config.backoffMaxDelay,
-        signal,
-        onAttempt: (attempt) => {
-          attemptCount = attempt;
-        },
-        onRetry: (attempt, delay, error) => {
-          if (error && (isServerError(error) || isRateLimitError(error))) {
-            console.log(`[BulkStrategy] Batch retry ${attempt}: Server/rate limit error, returning 3x computed delay`);
-            return Math.min(delay * 3, config.backoffMaxDelay);
-          }
-          console.log(`[BulkStrategy] Batch retry ${attempt} scheduled after ${Math.round(delay)}ms`);
-        },
-      }
-    );
+  throwIfAborted(signal);
+  const generated = await generateStructured({
+    runtime,
+    schema: BulkMatchResultSchema,
+    instructions: BULK_MATCH_SYSTEM_PROMPT,
+    prompt,
+    policy: {
+      maxAttempts: config.maxRetries,
+      timeoutMs: config.timeoutMs * 2,
+      reasoningEffort: parseReasoningEffort(config.reasoningEffort),
+    },
+    subject: {
+      type: "job_batch",
+      id: batch.map((job) => job.id).join(","),
+    },
+    promptVersion: BULK_MATCH_PROMPT_VERSION,
+    schemaVersion: BULK_MATCH_SCHEMA_VERSION,
+    policyVersion: MATCH_POLICY_VERSION,
+    retry: {
+      baseDelayMs: config.backoffBaseDelay,
+      maxDelayMs: config.backoffMaxDelay,
+    },
+    signal,
+  });
 
-    return {
-      data: result,
-      attemptCount: Math.max(attemptCount, 1),
-    };
-  } catch (error) {
-    throwIfAborted(signal);
-    const errorObj = error instanceof Error ? error : new Error(String(error));
-    (errorObj as Error & { attemptCount?: number }).attemptCount = Math.max(attemptCount, 1);
-    throw errorObj;
-  }
+  return {
+    data: generated.data,
+    attemptCount: generated.attempts,
+  };
 }

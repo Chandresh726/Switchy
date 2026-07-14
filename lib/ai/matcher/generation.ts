@@ -1,50 +1,58 @@
-import { generateText, Output, type LanguageModel } from "ai";
 import { z } from "zod";
 
+import type { AICapabilityRuntime } from "@/lib/ai/runtime/capability-runtime";
+import { fingerprintAIInput } from "@/lib/ai/runtime/fingerprint";
+import type { AIExecutionPolicy } from "@/lib/ai/runtime/types";
+
 export interface GenerationOptions<T extends z.ZodTypeAny> {
-  model: LanguageModel;
+  runtime: AICapabilityRuntime;
   schema: T;
   instructions: string;
   prompt: string;
-  providerOptions?: Record<string, unknown>;
+  policy: AIExecutionPolicy;
+  subject: { type: string; id: string };
+  promptVersion: string;
+  schemaVersion: string;
+  policyVersion: string;
+  retry?: {
+    baseDelayMs: number;
+    maxDelayMs: number;
+  };
   signal?: AbortSignal;
 }
 
 export interface GenerationResult<T> {
   data: T;
-}
-
-function isArraySchema(schema: z.ZodTypeAny): schema is z.ZodArray<z.ZodTypeAny> {
-  return schema instanceof z.ZodArray;
-}
-
-function getArrayElementSchema(schema: z.ZodArray<z.ZodTypeAny>): z.ZodTypeAny {
-  return schema.element;
+  runId: string;
+  attempts: number;
 }
 
 export async function generateStructured<T extends z.ZodTypeAny>(
   options: GenerationOptions<T>
 ): Promise<GenerationResult<z.infer<T>>> {
-  const { model, schema, instructions, prompt, providerOptions, signal } = options;
-
-  const isArray = isArraySchema(schema);
-
-  const result = await generateText({
-    model,
-    output: isArray
-      ? Output.array({ element: getArrayElementSchema(schema) })
-      : Output.object({ schema }),
-    instructions,
-    prompt,
-    ...providerOptions,
-    abortSignal: signal,
+  const result = await options.runtime.executeStructured({
+    schema: options.schema,
+    instructions: options.instructions,
+    prompt: options.prompt,
+    policy: options.policy,
+    subject: options.subject,
+    versions: {
+      prompt: options.promptVersion,
+      schema: options.schemaVersion,
+      policy: options.policyVersion,
+    },
+    inputFingerprint: fingerprintAIInput({
+      instructions: options.instructions,
+      prompt: options.prompt,
+      schemaVersion: options.schemaVersion,
+    }),
+    signal: options.signal,
+    retry: options.retry,
   });
 
-  if (result.output === undefined || result.output === null) {
-    throw new Error("Model did not produce structured output");
-  }
-
   return {
-    data: result.output as z.infer<T>,
+    data: result.output,
+    runId: result.runId,
+    attempts: result.attempts,
   };
 }

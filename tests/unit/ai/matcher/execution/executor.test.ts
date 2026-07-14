@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  resolveAIContextFromExplicitConfig: vi.fn(),
+  createAICapabilityRuntime: vi.fn(),
   createCircuitBreaker: vi.fn(),
   categorizeError: vi.fn(),
   selectStrategy: vi.fn(),
@@ -15,8 +15,8 @@ const mocks = vi.hoisted(() => ({
   logMatchFailure: vi.fn(),
 }));
 
-vi.mock("@/lib/ai/runtime-context", () => ({
-  resolveAIContextFromExplicitConfig: mocks.resolveAIContextFromExplicitConfig,
+vi.mock("@/lib/ai/runtime", () => ({
+  createAICapabilityRuntime: mocks.createAICapabilityRuntime,
 }));
 
 vi.mock("@/lib/ai/matcher/resilience", () => ({
@@ -71,10 +71,16 @@ describe("executeMatch integration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    mocks.resolveAIContextFromExplicitConfig.mockResolvedValue({
-      model: {} as never,
-      modelId: "gpt-4.1-mini",
-      providerOptions: undefined,
+    mocks.createAICapabilityRuntime.mockResolvedValue({
+      capability: "match_adjudication",
+      reasoningEffort: "medium",
+      snapshot: {
+        providerRecordId: "provider-1",
+        provider: "openai",
+        model: {} as never,
+        modelId: "gpt-4.1-mini",
+        providerOptions: undefined,
+      },
     });
 
     mocks.createCircuitBreaker.mockReturnValue({

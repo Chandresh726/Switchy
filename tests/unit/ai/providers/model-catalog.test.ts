@@ -125,7 +125,7 @@ describe("model catalog", () => {
     expect(stale.models).toEqual(live.models);
   });
 
-  it("resolves provider/model using default active provider and first valid model", async () => {
+  it("does not silently replace a configured unavailable model", async () => {
     const defaultProvider = {
       id: "provider-default",
       provider: "openai",
@@ -147,14 +147,11 @@ describe("model catalog", () => {
       }),
     });
 
-    const selection = await resolveProviderModelSelection({
-      modelId: "missing-model",
-    });
-
-    expect(selection).toEqual({
-      providerId: "provider-default",
-      provider: "openai",
-      modelId: "gpt-4.1",
+    await expect(
+      resolveProviderModelSelection({ modelId: "missing-model" })
+    ).rejects.toMatchObject({
+      type: "invalid_model",
+      message: expect.stringContaining("missing-model"),
     });
   });
 });

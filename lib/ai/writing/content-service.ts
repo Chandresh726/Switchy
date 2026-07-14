@@ -1,9 +1,13 @@
-import { generateText } from "ai";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 
 import { APIValidationError } from "@/lib/api/ai-error-handler";
 import type { AIContentType } from "@/lib/ai/contracts";
-import { resolveAIContextForFeature } from "@/lib/ai/runtime-context";
+import {
+  createAICapabilityRuntime,
+  fingerprintAIInput,
+  type AICapability,
+  type AICapabilityRuntime,
+} from "@/lib/ai/runtime";
 import { db } from "@/lib/db";
 import { aiGeneratedContent, aiGenerationHistory, settings } from "@/lib/db/schema";
 
@@ -22,8 +26,9 @@ import {
   RECRUITER_FOLLOW_UP_SYSTEM_PROMPT,
   type RecruiterFollowUpSettings,
 } from "../prompts/recruiter-follow-up";
-import { fetchCandidateProfile, fetchJobWithCompany } from "./utils";
+import { preserveWritingGenerationError } from "./errors";
 import type { ContentResponse } from "./types";
+import { fetchCandidateProfile, fetchJobWithCompany } from "./utils";
 
 const MAX_USER_PROMPT_CHARS = 4_000;
 const MAX_HISTORY_VARIANTS = 8;
@@ -162,24 +167,9 @@ async function generateValidatedText(input: {
   prompt: string;
   systemPrompt: string;
   type: AIContentType;
-  aiContext: Awaited<ReturnType<typeof resolveAIContextForFeature>>;
+  runtime: AICapabilityRuntime;
+  jobId: number;
 }): Promise<string> {
-  const firstAttempt = await generateText({
-    model: input.aiContext.model,
-    instructions: input.systemPrompt,
-    prompt: input.prompt,
-    ...input.aiContext.providerOptions,
-  });
-
-  const firstAttemptLowQuality = isLowQualityOutput(input.type, firstAttempt.text);
-  const firstAttemptWrongPerspective =
-    input.type === "recruiter_follow_up" &&
-    isInvalidRecruiterPerspective(firstAttempt.text, input.profileName);
-
-  if (!firstAttemptLowQuality && !firstAttemptWrongPerspective) {
-    return firstAttempt.text;
-  }
-
   const retryPrompt = `${input.prompt}
 
 IMPORTANT OUTPUT QUALITY REQUIREMENTS:
@@ -194,23 +184,46 @@ IMPORTANT OUTPUT QUALITY REQUIREMENTS:
 - CRITICAL: Use first-person voice only ("I", "my", "me"). Do NOT use third-person phrasing like "the candidate" or "{name} has applied".`
       : retryPrompt;
 
-  const retryAttempt = await generateText({
-    model: input.aiContext.model,
-    instructions: input.systemPrompt,
-    prompt: perspectiveRetryPrompt,
-    ...input.aiContext.providerOptions,
-  });
-
-  const retryLowQuality = isLowQualityOutput(input.type, retryAttempt.text);
-  const retryWrongPerspective =
-    input.type === "recruiter_follow_up" &&
-    isInvalidRecruiterPerspective(retryAttempt.text, input.profileName);
-
-  if (retryLowQuality || retryWrongPerspective) {
-    throw new Error("Generated content quality was too low. Please try again.");
+  let result;
+  try {
+    result = await input.runtime.executeText({
+      instructions: input.systemPrompt,
+      prompt: (attempt) => attempt === 1 ? input.prompt : perspectiveRetryPrompt,
+      policy: {
+        maxAttempts: 2,
+        timeoutMs: 60_000,
+        reasoningEffort: input.runtime.reasoningEffort,
+      },
+      subject: { type: "job", id: String(input.jobId) },
+      versions: {
+        prompt: `legacy-writing-${input.type}-v1`,
+        schema: "text-v1",
+        policy: "writing-quality-v1",
+      },
+      inputFingerprint: fingerprintAIInput({
+        prompt: input.prompt,
+        systemPrompt: input.systemPrompt,
+        type: input.type,
+      }),
+      validate: (text) => {
+        if (isLowQualityOutput(input.type, text)) return false;
+        return !(
+          input.type === "recruiter_follow_up" &&
+          isInvalidRecruiterPerspective(text, input.profileName)
+        );
+      },
+    });
+  } catch (error) {
+    throw preserveWritingGenerationError(error);
   }
 
-  return retryAttempt.text;
+  return result.output;
+}
+
+function writingCapability(type: AIContentType): AICapability {
+  if (type === "cover_letter") return "writing_cover_letter";
+  if (type === "referral") return "writing_referral";
+  return "writing_recruiter_follow_up";
 }
 
 async function getLatestContentRecord(jobId: number, type: AIContentType) {
@@ -311,10 +324,13 @@ export async function generateContent(input: {
       throw new Error("Profile not found. Please set up your profile first.");
     }
 
-    const aiContext = await resolveAIContextForFeature("writing", {
+    const aiRuntime = await createAICapabilityRuntime({
+      capability: writingCapability(input.type),
+      model: {
       providerId: settingsMap.get("ai_writing_provider_id") || undefined,
       modelId: settingsMap.get("ai_writing_model") || undefined,
       reasoningEffort: settingsMap.get("ai_writing_reasoning_effort") || undefined,
+      },
     });
 
     let systemPrompt: string;
@@ -383,7 +399,8 @@ export async function generateContent(input: {
       profileName: profileData.name,
       systemPrompt,
       type: input.type,
-      aiContext,
+      runtime: aiRuntime,
+      jobId: input.jobId,
     });
     const text = generatedText.trim();
     const existing = await getLatestContentRecord(input.jobId, input.type);
