@@ -7,6 +7,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MatchBadge } from "@/components/jobs/match-badge";
+import {
+  MatchBreakdown,
+  type MatchBreakdownValue,
+} from "@/components/jobs/match-breakdown";
 import { ApplyButton } from "@/components/jobs/apply-button";
 import { JobAIActions } from "@/components/jobs/job-ai-actions";
 import { MarkdownRenderer } from "@/components/jobs/markdown-renderer";
@@ -41,6 +45,11 @@ interface Job {
   seniorityLevel: string | null;
   status: string;
   matchScore: number | null;
+  matchResultId: string | null;
+  matchConfidence: number | null;
+  matchBreakdown: MatchBreakdownValue | null;
+  matchStale: boolean;
+  scoringPolicyVersion: string | null;
   matchReasons: string[];
   matchedSkills: string[];
   missingSkills: string[];
@@ -112,6 +121,7 @@ export default function JobDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["job", jobId] });
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
     },
   });
 
@@ -235,7 +245,13 @@ export default function JobDetailPage() {
             </div>
           </div>
 
-          <MatchBadge score={job.matchScore} size="lg" showLabel />
+          {job.matchScore !== null ? (
+            <MatchBadge score={job.matchScore} size="lg" showLabel />
+          ) : job.matchStale ? (
+            <Badge variant="outline" className="border-amber-500/40 text-amber-300">
+              Match stale
+            </Badge>
+          ) : null}
         </div>
 
         {/* Action buttons */}
@@ -285,21 +301,21 @@ export default function JobDetailPage() {
           )}
 
           {/* Calculate Match */}
-          {job.matchScore === null && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => calculateMatchMutation.mutate()}
-              disabled={calculateMatchMutation.isPending}
-            >
-              {calculateMatchMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              {calculateMatchMutation.isPending ? "Scoring..." : "Calculate Match"}
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => calculateMatchMutation.mutate()}
+            disabled={calculateMatchMutation.isPending}
+          >
+            {calculateMatchMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            {calculateMatchMutation.isPending
+              ? "Scoring..."
+              : job.matchResultId ? "Refresh Match" : "Calculate Match"}
+          </Button>
 
           {/* Status selector */}
           <div className="flex items-center gap-2">
@@ -343,11 +359,16 @@ export default function JobDetailPage() {
       </div>
 
       {/* Match Analysis */}
-      {job.matchScore !== null && (
+      {job.matchResultId !== null && (
         <div className="mb-6 rounded-lg border border-border bg-card/70 p-6">
           <h2 className="mb-4 text-lg font-medium text-foreground">Match Analysis</h2>
 
           <div className="space-y-4">
+            <MatchBreakdown
+              breakdown={job.matchBreakdown}
+              confidence={job.matchConfidence}
+              stale={job.matchStale}
+            />
             {/* Match Reasons */}
             {job.matchReasons.length > 0 && (
               <div>

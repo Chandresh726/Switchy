@@ -237,3 +237,7 @@ export function canonicalizeJobEvidenceInput(input: JobEvidenceInput): JobEviden
 export function buildJobFingerprint(evidence: JobEvidenceInput): string {
   return fingerprintAIInput(canonicalizeJobEvidenceInput(evidence));
 }
+
+export function buildJobFingerprintFromRecord(input: JobFingerprintInput): string {
+  return buildJobFingerprint(buildJobEvidenceInput(input));
+}

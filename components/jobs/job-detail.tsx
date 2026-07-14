@@ -6,6 +6,7 @@ import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MatchBadge } from "./match-badge";
+import { MatchBreakdown, type MatchBreakdownValue } from "./match-breakdown";
 import { ApplyButton } from "./apply-button";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { sanitizeHtmlContent } from "@/lib/jobs/description-processor";
@@ -35,6 +36,11 @@ interface Job {
   employmentType: string | null;
   status: string;
   matchScore: number | null;
+  matchResultId: string | null;
+  matchConfidence: number | null;
+  matchBreakdown: MatchBreakdownValue | null;
+  matchStale: boolean;
+  scoringPolicyVersion: string | null;
   matchReasons: string[];
   matchedSkills: string[];
   missingSkills: string[];
@@ -95,6 +101,7 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
     },
   });
 
@@ -188,29 +195,38 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
           <div className="mb-6 rounded-lg border border-border bg-card/70 p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <MatchBadge score={job.matchScore} size="lg" showLabel />
+                {job.matchScore !== null ? (
+                  <MatchBadge score={job.matchScore} size="lg" showLabel />
+                ) : job.matchStale ? (
+                  <Badge variant="outline" className="border-amber-500/40 text-amber-300">
+                    Match stale
+                  </Badge>
+                ) : null}
                 <span className="text-sm text-muted-foreground">Match Score</span>
               </div>
 
-              {job.matchScore === null ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => calculateMatchMutation.mutate()}
-                  disabled={calculateMatchMutation.isPending}
-                >
-                  {calculateMatchMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-4 w-4" />
-                  )}
-                  Calculate Match
-                </Button>
-              ) : null}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => calculateMatchMutation.mutate()}
+                disabled={calculateMatchMutation.isPending}
+              >
+                {calculateMatchMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                {job.matchResultId ? "Refresh Match" : "Calculate Match"}
+              </Button>
             </div>
 
-            {job.matchScore !== null && (
+            {job.matchResultId !== null && (
               <div className="mt-4 space-y-4">
+                <MatchBreakdown
+                  breakdown={job.matchBreakdown}
+                  confidence={job.matchConfidence}
+                  stale={job.matchStale}
+                />
                 {/* Match Reasons */}
                 {job.matchReasons.length > 0 && (
                   <div>

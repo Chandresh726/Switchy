@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+
+import { AlertTriangle, Cpu, Loader2, Save, Settings2, Sparkles } from "lucide-react";
+
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -8,9 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ModelCombobox } from "@/components/settings/model-combobox";
 import { Separator } from "@/components/ui/separator";
-import { AlertTriangle, Cpu, Loader2, Save, Settings2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { REASONING_EFFORT_OPTIONS } from "@/lib/ai/providers/metadata";
+import type { MatchQualityPreset } from "@/lib/ai/matcher/types";
 import type { ReasoningEffort } from "@/lib/settings/types";
 import type { Provider, ProviderModelOption } from "@/lib/types";
 
@@ -27,22 +30,22 @@ interface MatcherSectionProps {
   onMatcherModelChange: (value: string) => void;
   matcherReasoningEffort: ReasoningEffort;
   onMatcherReasoningEffortChange: (value: ReasoningEffort) => void;
+  qualityPreset: MatchQualityPreset;
+  onQualityPresetChange: (value: MatchQualityPreset) => void;
+  acceptedLocationTypes: string[];
+  onAcceptedLocationTypesChange: (value: string[]) => void;
+  acceptedEmploymentTypes: string[];
+  onAcceptedEmploymentTypesChange: (value: string[]) => void;
   autoMatchAfterScrape: boolean;
   onAutoMatchAfterScrapeChange: (value: boolean) => void;
-  bulkEnabled: boolean;
-  onBulkEnabledChange: (value: boolean) => void;
   batchSize: number;
   onBatchSizeChange: (value: number) => void;
-  serializeOperations: boolean;
-  onSerializeOperationsChange: (value: boolean) => void;
   maxRetries: number;
   onMaxRetriesChange: (value: number) => void;
   concurrencyLimit: number;
   onConcurrencyLimitChange: (value: number) => void;
   timeoutMs: number;
   onTimeoutMsChange: (value: number) => void;
-  circuitBreakerThreshold: number;
-  onCircuitBreakerThresholdChange: (value: number) => void;
   onSave: () => void;
   isSaving: boolean;
   hasUnsavedChanges: boolean;
@@ -66,22 +69,22 @@ export function MatcherSection({
   onMatcherModelChange,
   matcherReasoningEffort,
   onMatcherReasoningEffortChange,
+  qualityPreset,
+  onQualityPresetChange,
+  acceptedLocationTypes,
+  onAcceptedLocationTypesChange,
+  acceptedEmploymentTypes,
+  onAcceptedEmploymentTypesChange,
   autoMatchAfterScrape,
   onAutoMatchAfterScrapeChange,
-  bulkEnabled,
-  onBulkEnabledChange,
   batchSize,
   onBatchSizeChange,
-  serializeOperations,
-  onSerializeOperationsChange,
   maxRetries,
   onMaxRetriesChange,
   concurrencyLimit,
   onConcurrencyLimitChange,
   timeoutMs,
   onTimeoutMsChange,
-  circuitBreakerThreshold,
-  onCircuitBreakerThresholdChange,
   onSave,
   isSaving,
   hasUnsavedChanges,
@@ -93,6 +96,13 @@ export function MatcherSection({
 }: MatcherSectionProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const supportsReasoning = models.find((model) => model.modelId === matcherModel)?.supportsReasoning ?? false;
+  const toggleValue = (
+    current: string[],
+    value: string,
+    onChange: (next: string[]) => void
+  ) => onChange(current.includes(value)
+    ? current.filter((item) => item !== value)
+    : [...current, value]);
 
   return (
     <Card className="border-border bg-card/70 rounded-xl">
@@ -104,7 +114,7 @@ export function MatcherSection({
               <CardTitle>Matching Engine</CardTitle>
             </div>
             <CardDescription>
-              Configure AI models and processing parameters for job matching
+              Choose how Switchy scores jobs and when AI should review ambiguity
             </CardDescription>
           </div>
           <Button
@@ -142,6 +152,40 @@ export function MatcherSection({
           <>
             {/* Primary Settings */}
             <div className="grid gap-6">
+              <div className="space-y-3">
+                <div>
+                  <Label>Matching quality</Label>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Balanced is recommended. Higher quality asks the model to review more ambiguous matches.
+                  </p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  {([
+                    ["economy", "Economy", "Mostly deterministic; review only very low-confidence matches."],
+                    ["balanced", "Balanced", "Review ambiguous mid-range matches while reusing cached evidence."],
+                    ["quality", "Quality", "Review a wider score range for maximum nuance."],
+                  ] as const).map(([value, label, description]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={qualityPreset === value}
+                      onClick={() => onQualityPresetChange(value)}
+                      className={cn(
+                        "rounded-lg border p-4 text-left transition-colors",
+                        qualityPreset === value
+                          ? "border-emerald-500/60 bg-emerald-500/10"
+                          : "border-border bg-background/30 hover:border-muted-foreground/40"
+                      )}
+                    >
+                      <span className="text-sm font-medium text-foreground">{label}</span>
+                      <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                        {description}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Provider and Model */}
               <div className="space-y-3">
                 <Label>AI Provider & Model</Label>
@@ -167,20 +211,6 @@ export function MatcherSection({
                     error={modelsError}
                     placeholder="Select model"
                   />
-                  {supportsReasoning && (
-                    <Select value={matcherReasoningEffort} onValueChange={onMatcherReasoningEffortChange}>
-                      <SelectTrigger className="w-32 bg-background/60 border-border">
-                        <SelectValue placeholder="Effort" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {REASONING_EFFORT_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
                 </div>
                 {modelsError && (
                   <p className="text-xs text-amber-400 flex items-center gap-2">
@@ -196,7 +226,7 @@ export function MatcherSection({
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className="flex items-start gap-3 rounded-lg border border-border bg-background/30 p-4">
                   <input
                     type="checkbox"
@@ -215,35 +245,65 @@ export function MatcherSection({
                   </div>
                 </div>
 
-                <div className="flex items-start gap-3 rounded-lg border border-border bg-background/30 p-4">
-                  <input
-                    type="checkbox"
-                    id="serialize-operations"
-                    checked={serializeOperations}
-                    onChange={(e) => onSerializeOperationsChange(e.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-border bg-muted text-emerald-500 focus:ring-emerald-500 focus:ring-offset-background"
-                  />
-                  <div>
-                    <Label htmlFor="serialize-operations" className="cursor-pointer font-medium">
-                      Serialize Operations
-                    </Label>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Process jobs one at a time instead of in parallel.
-                    </p>
+                <div className="rounded-lg border border-border bg-background/30 p-4">
+                  <Label>Accepted work arrangements</Label>
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    {["remote", "hybrid", "onsite"].map((value) => (
+                      <label key={value} className="flex items-center gap-2 text-sm capitalize text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={acceptedLocationTypes.includes(value)}
+                          onChange={() => toggleValue(
+                            acceptedLocationTypes,
+                            value,
+                            onAcceptedLocationTypesChange
+                          )}
+                          className="h-4 w-4 rounded border-border bg-muted text-emerald-500"
+                        />
+                        {value}
+                      </label>
+                    ))}
                   </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border bg-background/30 p-4">
+                <Label>Accepted employment types</Label>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  {[
+                    ["full-time", "Full time"],
+                    ["part-time", "Part time"],
+                    ["contract", "Contract"],
+                    ["intern", "Internship"],
+                    ["temporary", "Temporary"],
+                  ].map(([value, label]) => (
+                    <label key={value} className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={acceptedEmploymentTypes.includes(value)}
+                        onChange={() => toggleValue(
+                          acceptedEmploymentTypes,
+                          value,
+                          onAcceptedEmploymentTypesChange
+                        )}
+                        className="h-4 w-4 rounded border-border bg-muted text-emerald-500"
+                      />
+                      {label}
+                    </label>
+                  ))}
                 </div>
               </div>
             </div>
 
             <Separator className="bg-muted" />
 
-            {/* Performance Settings */}
+            {/* Advanced Settings */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="space-y-1">
-                  <Label className="text-base">Performance & Limits</Label>
+                  <Label className="text-base">Advanced</Label>
                   <p className="text-xs text-muted-foreground">
-                    Fine-tune API usage and concurrency
+                    Override request limits only when your provider or hardware needs it.
                   </p>
                 </div>
                 <Button
@@ -253,55 +313,50 @@ export function MatcherSection({
                   className="h-8 text-xs text-muted-foreground hover:text-foreground"
                 >
                   <Settings2 className="mr-2 h-3.5 w-3.5" />
-                  {showAdvanced ? "Simple View" : "Advanced View"}
+                  {showAdvanced ? "Hide advanced" : "Show advanced"}
                 </Button>
               </div>
 
-              <div className="grid gap-6">
-                <div className="flex items-start gap-3 rounded-lg border border-border bg-background/30 p-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        id="bulk-enabled"
-                        checked={bulkEnabled}
-                        onChange={(e) => onBulkEnabledChange(e.target.checked)}
-                        className="mt-1 h-4 w-4 rounded border-border bg-muted text-emerald-500 focus:ring-emerald-500 focus:ring-offset-background"
-                      />
-                      <Label htmlFor="bulk-enabled" className="cursor-pointer font-medium">
-                        Bulk Matching
-                      </Label>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1 ml-7">
-                      Process multiple jobs in a single API call to save time and reduce requests.
-                    </p>
-                  </div>
-                  <div className={cn("flex items-center gap-2", !bulkEnabled && "opacity-50 grayscale")}>
-                    <Label htmlFor="batch-size" className="text-xs text-muted-foreground whitespace-nowrap">Batch Size</Label>
-                    <Input
-                      id="batch-size"
-                      type="number"
-                      min={1}
-                      max={10}
-                      value={batchSize}
-                      onChange={(e) => onBatchSizeChange(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
-                      className="w-20 bg-background/60 border-border"
-                      disabled={!bulkEnabled}
-                    />
-                  </div>
-                </div>
-
-                {showAdvanced && (
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {showAdvanced && (
+                <div className="grid gap-4 rounded-lg border border-border bg-background/30 p-4 sm:grid-cols-2 lg:grid-cols-5">
+                    {supportsReasoning && (
+                      <div className="space-y-2">
+                        <Label className="text-xs text-muted-foreground">Reasoning effort</Label>
+                        <Select value={matcherReasoningEffort} onValueChange={onMatcherReasoningEffortChange}>
+                          <SelectTrigger className="bg-background/60 border-border">
+                            <SelectValue placeholder="Effort" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {REASONING_EFFORT_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                     <div className="space-y-2">
-                      <Label htmlFor="max-retries" className="text-xs text-muted-foreground">Max Retries</Label>
+                      <Label htmlFor="batch-size" className="text-xs text-muted-foreground">Analysis batch</Label>
+                      <Input
+                        id="batch-size"
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={batchSize}
+                        onChange={(e) => onBatchSizeChange(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
+                        className="bg-background/60 border-border"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="max-retries" className="text-xs text-muted-foreground">Max attempts</Label>
                       <Input
                         id="max-retries"
                         type="number"
                         min={1}
-                        max={5}
+                        max={10}
                         value={maxRetries}
-                        onChange={(e) => onMaxRetriesChange(Math.min(5, Math.max(1, parseInt(e.target.value) || 1)))}
+                        onChange={(e) => onMaxRetriesChange(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
                         className="bg-background/60 border-border"
                       />
                     </div>
@@ -329,21 +384,8 @@ export function MatcherSection({
                         className="bg-background/60 border-border"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="circuit-breaker" className="text-xs text-muted-foreground">Circuit Breaker</Label>
-                      <Input
-                        id="circuit-breaker"
-                        type="number"
-                        min={3}
-                        max={50}
-                        value={circuitBreakerThreshold}
-                        onChange={(e) => onCircuitBreakerThresholdChange(Math.min(50, Math.max(3, parseInt(e.target.value) || 10)))}
-                        className="bg-background/60 border-border"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </>
         ) : (

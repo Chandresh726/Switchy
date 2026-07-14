@@ -2,6 +2,9 @@ import { asc, eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildJobFingerprintFromRecord,
+} from "@/lib/ai/artifacts/fingerprints";
+import {
   companies,
   jobs,
   matchSessions,
@@ -67,6 +70,9 @@ describe("DrizzleScraperRepository atomic persistence", () => {
         url: "https://example.com/hydrate-me",
         status: "new",
         description: null,
+        location: "Bengaluru",
+        locationType: "onsite",
+        employmentType: "full-time",
       },
     ]).run();
     const hydrationJob = database
@@ -152,9 +158,24 @@ describe("DrizzleScraperRepository atomic persistence", () => {
     });
     expect(storedJobs.find((job) => job.externalId === "user-applied")?.status).toBe("applied");
     expect(storedJobs.find((job) => job.externalId === "hydrate-me")).toMatchObject({
-      title: "Hydrated role",
-      description: "Hydrated description",
+        title: "Hydrated role",
+        description: "Hydrated description",
+        location: "Bengaluru",
+        locationType: "onsite",
+        employmentType: "full-time",
+        aiFingerprint: buildJobFingerprintFromRecord({
+          title: "Hydrated role",
+          description: "Hydrated description",
+          location: "Bengaluru",
+          locationType: "onsite",
+        seniorityLevel: null,
+        department: null,
+          employmentType: "full-time",
+        salary: null,
+      }),
     });
+    expect(storedJobs.find((job) => job.externalId === "new-role")?.aiFingerprint)
+      .toMatch(/^[a-f0-9]{64}$/);
     expect(storedCompany).toMatchObject({
       boardToken: "detected-board",
     });

@@ -11,7 +11,6 @@ const mocks = vi.hoisted(() => ({
   fetchMatchingPreferences: vi.fn(),
   logMatchFailure: vi.fn(),
   persistMatchSuccess: vi.fn(),
-  updateJobWithMatchResult: vi.fn(),
   analyzeJobsForMatching: vi.fn(),
   enrichCandidateEvidence: vi.fn(),
   buildScoringCandidate: vi.fn(),
@@ -41,7 +40,6 @@ vi.mock("@/lib/ai/matcher/tracking", () => ({
   fetchMatchingPreferences: mocks.fetchMatchingPreferences,
   logMatchFailure: mocks.logMatchFailure,
   persistMatchSuccess: mocks.persistMatchSuccess,
-  updateJobWithMatchResult: mocks.updateJobWithMatchResult,
 }));
 
 vi.mock("@/lib/ai/matcher/evidence/job-analysis", () => ({
@@ -192,7 +190,6 @@ describe("evidence matcher executor", () => {
       ...input,
     }));
     mocks.persistMatchSuccess.mockResolvedValue(undefined);
-    mocks.updateJobWithMatchResult.mockResolvedValue(undefined);
     mocks.logMatchFailure.mockResolvedValue(undefined);
     mocks.categorizeError.mockReturnValue("unknown");
   });
@@ -208,7 +205,7 @@ describe("evidence matcher executor", () => {
     expect(mocks.createAICapabilityRuntime).not.toHaveBeenCalled();
   });
 
-  it("persists the immutable evidence result and compatibility projection once", async () => {
+  it("persists the immutable evidence result and links the session log once", async () => {
     mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
     mocks.fetchProfileData.mockResolvedValue({
       profile: { id: 1, summary: "Backend engineer", preferredCountry: null, preferredCity: null },
@@ -242,8 +239,15 @@ describe("evidence matcher executor", () => {
       providerId: "provider-1",
       model: "resolved-model",
     }));
-    expect(mocks.persistMatchSuccess).toHaveBeenCalledTimes(1);
-    expect(mocks.updateJobWithMatchResult).not.toHaveBeenCalled();
+    expect(mocks.persistMatchSuccess).toHaveBeenCalledWith(
+      "session-1",
+      101,
+      "result-1",
+      expect.objectContaining({ score: 88 }),
+      0,
+      expect.any(Number),
+      "deterministic"
+    );
     expect(progress).toHaveBeenLastCalledWith(1, 1, 1, 0);
   });
 
@@ -256,17 +260,30 @@ describe("evidence matcher executor", () => {
       education: [],
     });
     mocks.findFreshMatch.mockResolvedValue({
+      id: "cached-result-1",
       score: 92,
       evidence: deterministic.evidence,
     });
 
-    const results = await executeMatch({ config, jobIds: [101] });
+    const results = await executeMatch({
+      config,
+      jobIds: [101],
+      sessionId: "session-1",
+    });
 
     expect(results.get(101)).toMatchObject({ score: 92 });
     expect(mocks.scoreDeterministically).not.toHaveBeenCalled();
     expect(mocks.createMatchResult).not.toHaveBeenCalled();
     expect(mocks.createAICapabilityRuntime).toHaveBeenCalledTimes(1);
-    expect(mocks.updateJobWithMatchResult).toHaveBeenCalledTimes(1);
+    expect(mocks.persistMatchSuccess).toHaveBeenCalledWith(
+      "session-1",
+      101,
+      "cached-result-1",
+      expect.objectContaining({ score: 92 }),
+      0,
+      expect.any(Number),
+      "cache"
+    );
   });
 
   it("does not begin job analysis after session cancellation", async () => {

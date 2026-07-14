@@ -1,10 +1,60 @@
-import { db } from "@/lib/db";
-import { jobs, companies } from "@/lib/db/schema";
-import { eq, desc, and, gte, lte, like, or, sql, asc, count, notInArray } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
+
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  like,
+  lte,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
+
+import {
+  getCurrentMatchContext,
+  getMatchPresentations,
+} from "@/lib/ai/matcher/presentation";
+import { ensureJobFingerprintProjection } from "@/lib/ai/artifacts/job-fingerprint-projection";
 import { assertAppRequest } from "@/lib/api";
+import { db } from "@/lib/db";
+import { companies, jobs, matchResults } from "@/lib/db/schema";
 import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
-import { safeJsonStringArray } from "@/lib/utils/safe-json";
+
+const JOB_LIST_SELECTION = {
+  job: {
+    id: jobs.id,
+    companyId: jobs.companyId,
+    externalId: jobs.externalId,
+    title: jobs.title,
+    description: jobs.description,
+    descriptionFormat: jobs.descriptionFormat,
+    url: jobs.url,
+    location: jobs.location,
+    locationType: jobs.locationType,
+    salary: jobs.salary,
+    department: jobs.department,
+    employmentType: jobs.employmentType,
+    seniorityLevel: jobs.seniorityLevel,
+    status: jobs.status,
+    postedDate: jobs.postedDate,
+    discoveredAt: jobs.discoveredAt,
+    updatedAt: jobs.updatedAt,
+    archivedAt: jobs.archivedAt,
+    archiveSource: jobs.archiveSource,
+    viewedAt: jobs.viewedAt,
+    appliedAt: jobs.appliedAt,
+  },
+  company: {
+    id: companies.id,
+    name: companies.name,
+    logoUrl: companies.logoUrl,
+    platform: companies.platform,
+  },
+} as const;
 
 export async function GET(request: NextRequest) {
   try {
@@ -63,14 +113,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (minScore) {
-      conditions.push(gte(jobs.matchScore, parseFloat(minScore)));
-    }
-
-    if (maxScore) {
-      conditions.push(lte(jobs.matchScore, parseFloat(maxScore)));
-    }
-
     if (locationType) {
       // Support multiple location types (comma-separated)
       const locationTypes = locationType.split(",").filter(Boolean);
@@ -126,106 +168,167 @@ export async function GET(request: NextRequest) {
     // Build the where clause
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    // Build sort order
-    let orderByClause;
-    const sortDir = sortOrder === "asc" ? asc : desc;
-
-    switch (sortBy) {
-      case "matchScore":
-        // Sort nulls last for match score
-        orderByClause = [
-          sql`CASE WHEN ${jobs.matchScore} IS NULL THEN 1 ELSE 0 END`,
-          sortDir(jobs.matchScore),
-          desc(jobs.discoveredAt),
-        ];
-        break;
-      case "postedDate":
-        orderByClause = [
-          sql`CASE WHEN ${jobs.postedDate} IS NULL THEN 1 ELSE 0 END`,
-          sortDir(jobs.postedDate),
-          desc(jobs.id),
-        ];
-        break;
-      case "discoveredAt":
-        orderByClause = [sortDir(jobs.discoveredAt), desc(jobs.id)];
-        break;
-      case "companyName":
-        orderByClause = [sortDir(companies.name), desc(jobs.discoveredAt)];
-        break;
-      case "title":
-        orderByClause = [sortDir(jobs.title), desc(jobs.discoveredAt)];
-        break;
-      default:
-        orderByClause = [desc(jobs.matchScore), desc(jobs.discoveredAt)];
-    }
-
-    // Get total count for pagination
-    const [{ value: totalCount }] = await db
-      .select({ value: count() })
+    const buildJobsQuery = () => db
+      .select(JOB_LIST_SELECTION)
       .from(jobs)
       .innerJoin(companies, eq(jobs.companyId, companies.id))
       .where(whereClause);
 
-    // Execute query with joins and offset-based pagination
-    const jobsData = await db
-      .select({
-        job: {
-          id: jobs.id,
-          companyId: jobs.companyId,
-          externalId: jobs.externalId,
-          title: jobs.title,
-          description: id ? jobs.description : sql<string | null>`NULL`,
-          descriptionFormat: jobs.descriptionFormat,
-          url: jobs.url,
-          location: jobs.location,
-          locationType: jobs.locationType,
-          salary: jobs.salary,
-          department: jobs.department,
-          employmentType: jobs.employmentType,
-          seniorityLevel: jobs.seniorityLevel,
-          status: jobs.status,
-          matchScore: jobs.matchScore,
-          matchReasons: id ? jobs.matchReasons : sql<string | null>`NULL`,
-          matchedSkills: id ? jobs.matchedSkills : sql<string | null>`NULL`,
-          missingSkills: id ? jobs.missingSkills : sql<string | null>`NULL`,
-          recommendations: id ? jobs.recommendations : sql<string | null>`NULL`,
-          postedDate: jobs.postedDate,
-          discoveredAt: jobs.discoveredAt,
-          updatedAt: jobs.updatedAt,
-          archivedAt: jobs.archivedAt,
-          archiveSource: jobs.archiveSource,
-          viewedAt: jobs.viewedAt,
-          appliedAt: jobs.appliedAt,
-        },
-        company: {
-          id: companies.id,
-          name: companies.name,
-          logoUrl: companies.logoUrl,
-          platform: companies.platform,
-        },
-      })
-      .from(jobs)
-      .innerJoin(companies, eq(jobs.companyId, companies.id))
-      .where(whereClause)
-      .orderBy(...orderByClause)
-      .limit(limit)
-      .offset(offset);
+    const scoreAwarePagination = sortBy === "matchScore" ||
+      minScore !== null || maxScore !== null;
+    if (!scoreAwarePagination) {
+      const sortDirection = sortOrder === "asc" ? asc : desc;
+      const query = buildJobsQuery();
+      let jobsData;
+      switch (sortBy) {
+        case "postedDate":
+          jobsData = await query.orderBy(
+            sql`CASE WHEN ${jobs.postedDate} IS NULL THEN 1 ELSE 0 END`,
+            sortDirection(jobs.postedDate),
+            desc(jobs.id)
+          ).limit(limit).offset(offset);
+          break;
+        case "discoveredAt":
+          jobsData = await query.orderBy(
+            sortDirection(jobs.discoveredAt),
+            desc(jobs.id)
+          ).limit(limit).offset(offset);
+          break;
+        case "companyName":
+          jobsData = await query.orderBy(
+            sortDirection(companies.name),
+            desc(jobs.discoveredAt)
+          ).limit(limit).offset(offset);
+          break;
+        case "title":
+          jobsData = await query.orderBy(
+            sortDirection(jobs.title),
+            desc(jobs.discoveredAt)
+          ).limit(limit).offset(offset);
+          break;
+        default:
+          jobsData = await query.orderBy(desc(jobs.discoveredAt), desc(jobs.id))
+            .limit(limit).offset(offset);
+      }
 
-    // Check if there are more results
+      const [{ value: totalCount }] = await db.select({ value: count() })
+        .from(jobs)
+        .innerJoin(companies, eq(jobs.companyId, companies.id))
+        .where(whereClause);
+      const presentations = await getMatchPresentations(
+        jobsData.map(({ job }) => job)
+      );
+      const presentedJobs = jobsData.map(({ job, company }) => {
+        const presentation = presentations.get(job.id);
+        if (!presentation) throw new Error(`Missing match presentation for job ${job.id}`);
+        return {
+          ...job,
+          description: id ? job.description : null,
+          company,
+          ...presentation,
+        };
+      });
+
+      return NextResponse.json({
+        jobs: presentedJobs,
+        totalCount,
+        hasMore: offset + limit < totalCount,
+      });
+    }
+
+    ensureJobFingerprintProjection();
+    const currentContext = await getCurrentMatchContext();
+    const parsedMinScore = minScore === null ? null : Number.parseFloat(minScore);
+    const parsedMaxScore = maxScore === null ? null : Number.parseFloat(maxScore);
+    const hasMinScore = Number.isFinite(parsedMinScore);
+    const hasMaxScore = Number.isFinite(parsedMaxScore);
+
+    if (!currentContext && (hasMinScore || hasMaxScore)) {
+      return NextResponse.json({ jobs: [], totalCount: 0, hasMore: false });
+    }
+
+    let jobsData;
+    let totalCount: number;
+    if (!currentContext) {
+      jobsData = await buildJobsQuery()
+        .orderBy(desc(jobs.discoveredAt), desc(jobs.id))
+        .limit(limit)
+        .offset(offset);
+      const [total] = await db.select({ value: count() })
+        .from(jobs)
+        .innerJoin(companies, eq(jobs.companyId, companies.id))
+        .where(whereClause);
+      totalCount = total.value;
+    } else {
+      const currentResultJoin = and(
+        eq(matchResults.jobId, jobs.id),
+        eq(matchResults.candidateFingerprint, currentContext.candidateFingerprint),
+        eq(matchResults.jobFingerprint, jobs.aiFingerprint),
+        eq(matchResults.scoringPolicyVersion, currentContext.scoringPolicyVersion),
+        eq(matchResults.isStale, false)
+      );
+      const scoreConditions = [...conditions];
+      if (hasMinScore) scoreConditions.push(gte(matchResults.score, parsedMinScore!));
+      if (hasMaxScore) scoreConditions.push(lte(matchResults.score, parsedMaxScore!));
+      const scoreWhere = scoreConditions.length > 0 ? and(...scoreConditions) : undefined;
+      const scoreDirection = sortOrder === "asc" ? asc : desc;
+      const scoreOrderBy = (() => {
+        switch (sortBy) {
+          case "postedDate":
+            return [
+              sql`CASE WHEN ${jobs.postedDate} IS NULL THEN 1 ELSE 0 END`,
+              scoreDirection(jobs.postedDate),
+              desc(jobs.id),
+            ];
+          case "discoveredAt":
+            return [scoreDirection(jobs.discoveredAt), desc(jobs.id)];
+          case "companyName":
+            return [scoreDirection(companies.name), desc(jobs.discoveredAt)];
+          case "title":
+            return [scoreDirection(jobs.title), desc(jobs.discoveredAt)];
+          default:
+            return [
+              sql`CASE WHEN ${matchResults.score} IS NULL THEN 1 ELSE 0 END`,
+              scoreDirection(matchResults.score),
+              desc(jobs.discoveredAt),
+            ];
+        }
+      })();
+
+      jobsData = await db.select(JOB_LIST_SELECTION)
+        .from(jobs)
+        .innerJoin(companies, eq(jobs.companyId, companies.id))
+        .leftJoin(matchResults, currentResultJoin)
+        .where(scoreWhere)
+        .orderBy(...scoreOrderBy)
+        .limit(limit)
+        .offset(offset);
+      const [total] = await db.select({ value: count() })
+        .from(jobs)
+        .innerJoin(companies, eq(jobs.companyId, companies.id))
+        .leftJoin(matchResults, currentResultJoin)
+        .where(scoreWhere);
+      totalCount = total.value;
+    }
+
+    const pagePresentations = await getMatchPresentations(
+      jobsData.map(({ job }) => job),
+      currentContext
+    );
+    const presentedPage = jobsData.map(({ job, company }) => {
+      const presentation = pagePresentations.get(job.id);
+      if (!presentation) throw new Error(`Missing match presentation for job ${job.id}`);
+      return {
+        ...job,
+        description: id ? job.description : null,
+        company,
+        ...presentation,
+      };
+    });
     const hasMore = offset + limit < totalCount;
 
-    // Transform results
-    const transformedJobs = jobsData.map(({ job, company }) => ({
-      ...job,
-      company,
-      matchReasons: safeJsonStringArray(job.matchReasons),
-      matchedSkills: safeJsonStringArray(job.matchedSkills),
-      missingSkills: safeJsonStringArray(job.missingSkills),
-      recommendations: safeJsonStringArray(job.recommendations),
-    }));
-
     return NextResponse.json({
-      jobs: transformedJobs,
+      jobs: presentedPage,
       totalCount,
       hasMore,
     });

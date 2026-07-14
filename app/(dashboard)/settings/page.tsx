@@ -17,6 +17,7 @@ import { AIProvidersManager } from "@/components/settings/ai-providers-manager";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getProviderMetadata } from "@/lib/ai/providers/metadata";
 import type { AIProvider } from "@/lib/ai/providers/types";
+import type { MatchQualityPreset } from "@/lib/ai/matcher/types";
 import { APP_VERSION, DB_PATH } from "@/lib/constants";
 import type { ProviderModelsResponse } from "@/lib/types";
 import type {
@@ -43,13 +44,13 @@ interface MatcherLocalEdits {
   matcherModel?: string;
   matcherProviderId?: string;
   matcherReasoningEffort?: ReasoningEffort;
-  bulkEnabled?: boolean;
-  serializeOperations?: boolean;
+  qualityPreset?: MatchQualityPreset;
+  acceptedLocationTypes?: string[];
+  acceptedEmploymentTypes?: string[];
   batchSize?: number;
   maxRetries?: number;
   concurrencyLimit?: number;
   timeoutMs?: number;
-  circuitBreakerThreshold?: number;
   autoMatchAfterScrape?: boolean;
 }
 
@@ -388,18 +389,35 @@ function SettingsContent() {
       ),
       resumeParserProviderId: resolvedResumeParserProviderId,
       matcherReasoningEffort: matcherLocalEdits.matcherReasoningEffort ?? ((settings?.matcher_reasoning_effort as ReasoningEffort) || getDefaultReasoningEffort()),
+      qualityPreset: matcherLocalEdits.qualityPreset ?? (
+        settings?.matcher_quality_preset === "economy" ||
+        settings?.matcher_quality_preset === "quality"
+          ? settings.matcher_quality_preset
+          : "balanced"
+      ),
+      acceptedLocationTypes: matcherLocalEdits.acceptedLocationTypes ?? (() => {
+        try {
+          const parsed = JSON.parse(settings?.matcher_accepted_location_types || "[]");
+          return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+        } catch {
+          return [];
+        }
+      })(),
+      acceptedEmploymentTypes: matcherLocalEdits.acceptedEmploymentTypes ?? (() => {
+        try {
+          const parsed = JSON.parse(settings?.matcher_accepted_employment_types || "[]");
+          return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+        } catch {
+          return [];
+        }
+      })(),
       resumeParserReasoningEffort: resumeParserLocalEdits.resumeParserReasoningEffort ?? ((settings?.resume_parser_reasoning_effort as ReasoningEffort) || getDefaultReasoningEffort()),
-      bulkEnabled: matcherLocalEdits.bulkEnabled ?? (settings?.matcher_bulk_enabled !== "false"),
-      serializeOperations: matcherLocalEdits.serializeOperations ?? (settings?.matcher_serialize_operations === "true"),
       batchSize: matcherLocalEdits.batchSize ?? parseInt(settings?.matcher_batch_size || "2", 10),
       maxRetries: matcherLocalEdits.maxRetries ?? parseInt(settings?.matcher_max_retries || "3", 10),
       concurrencyLimit: matcherLocalEdits.concurrencyLimit ?? parseInt(settings?.matcher_concurrency_limit || "3", 10),
       timeoutMs:
         matcherLocalEdits.timeoutMs ??
         parseInt(settings?.matcher_timeout_ms || "30000", 10),
-      circuitBreakerThreshold:
-        matcherLocalEdits.circuitBreakerThreshold ??
-        parseInt(settings?.matcher_circuit_breaker_threshold || "10", 10),
       autoMatchAfterScrape:
         matcherLocalEdits.autoMatchAfterScrape ??
         (settings?.matcher_auto_match_after_scrape !== "false"),
@@ -472,8 +490,8 @@ function SettingsContent() {
   }, [settings, matcherLocalEdits, resumeParserLocalEdits, scraperLocalEdits, aiWritingLocalEdits, providers, providerModelsById]);
 
   const {
-    matcherModel, matcherProviderId, resumeParserModel, resumeParserProviderId, matcherReasoningEffort, resumeParserReasoningEffort, bulkEnabled, serializeOperations, batchSize, maxRetries, concurrencyLimit, timeoutMs,
-    circuitBreakerThreshold, autoMatchAfterScrape, schedulerEnabled, schedulerCron, maxParallelScrapes, keepDeviceAwake, historyRetentionDays, filterCountry, filterCity, filterTitleKeywords,
+    matcherModel, matcherProviderId, resumeParserModel, resumeParserProviderId, matcherReasoningEffort, qualityPreset, acceptedLocationTypes, acceptedEmploymentTypes, resumeParserReasoningEffort, batchSize, maxRetries, concurrencyLimit, timeoutMs,
+    autoMatchAfterScrape, schedulerEnabled, schedulerCron, maxParallelScrapes, keepDeviceAwake, historyRetentionDays, filterCountry, filterCity, filterTitleKeywords,
     aiWritingModel, aiWritingProviderId, aiWritingReasoningEffort, referralTone, referralLength,
     followUpTone, followUpLength, coverLetterTone, coverLetterLength, coverLetterFocus
   } = derivedValues;
@@ -663,13 +681,13 @@ function SettingsContent() {
     matcherLocalEdits.matcherModel !== undefined ||
     matcherLocalEdits.matcherProviderId !== undefined ||
     matcherLocalEdits.matcherReasoningEffort !== undefined ||
-    matcherLocalEdits.bulkEnabled !== undefined ||
-    matcherLocalEdits.serializeOperations !== undefined ||
+    matcherLocalEdits.qualityPreset !== undefined ||
+    matcherLocalEdits.acceptedLocationTypes !== undefined ||
+    matcherLocalEdits.acceptedEmploymentTypes !== undefined ||
     matcherLocalEdits.batchSize !== undefined ||
     matcherLocalEdits.maxRetries !== undefined ||
     matcherLocalEdits.concurrencyLimit !== undefined ||
     matcherLocalEdits.timeoutMs !== undefined ||
-    matcherLocalEdits.circuitBreakerThreshold !== undefined ||
     matcherLocalEdits.autoMatchAfterScrape !== undefined;
 
   const aiWritingHasUnsavedChanges =
@@ -687,14 +705,14 @@ function SettingsContent() {
   // Setters for Matcher settings
   const setMatcherModel = (value: string) => setMatcherLocalEdits(prev => ({ ...prev, matcherModel: value }));
   const setMatcherReasoningEffort = (value: ReasoningEffort) => setMatcherLocalEdits(prev => ({ ...prev, matcherReasoningEffort: value }));
+  const setQualityPreset = (value: MatchQualityPreset) =>
+    setMatcherLocalEdits((prev) => ({ ...prev, qualityPreset: value }));
   const setAutoMatchAfterScrape = (value: boolean) =>
     setMatcherLocalEdits((prev) => ({ ...prev, autoMatchAfterScrape: value }));
-  const setBulkEnabled = (value: boolean) => setMatcherLocalEdits(prev => ({ ...prev, bulkEnabled: value }));
   const setBatchSize = (value: number) => setMatcherLocalEdits(prev => ({ ...prev, batchSize: value }));
   const setMaxRetries = (value: number) => setMatcherLocalEdits(prev => ({ ...prev, maxRetries: value }));
   const setConcurrencyLimit = (value: number) => setMatcherLocalEdits(prev => ({ ...prev, concurrencyLimit: value }));
   const setTimeoutMs = (value: number) => setMatcherLocalEdits(prev => ({ ...prev, timeoutMs: value }));
-  const setCircuitBreakerThreshold = (value: number) => setMatcherLocalEdits(prev => ({ ...prev, circuitBreakerThreshold: value }));
 
   // Auto-save setters for Resume Parser (independent from Matcher)
   const setResumeParserModel = (value: string) =>
@@ -858,13 +876,13 @@ function SettingsContent() {
           matcher_model: matcherModel,
           matcher_provider_id: matcherProviderId,
           matcher_reasoning_effort: matcherReasoningEffort,
-          matcher_bulk_enabled: bulkEnabled,
-          matcher_serialize_operations: serializeOperations,
+          matcher_quality_preset: qualityPreset,
+          matcher_accepted_location_types: acceptedLocationTypes,
+          matcher_accepted_employment_types: acceptedEmploymentTypes,
           matcher_batch_size: batchSize,
           matcher_max_retries: maxRetries,
           matcher_concurrency_limit: concurrencyLimit,
           matcher_timeout_ms: timeoutMs,
-          matcher_circuit_breaker_threshold: circuitBreakerThreshold,
           matcher_auto_match_after_scrape: autoMatchAfterScrape,
         },
         "Failed to save matcher settings"
@@ -876,13 +894,13 @@ function SettingsContent() {
         matcherModel: undefined,
         matcherProviderId: undefined,
         matcherReasoningEffort: undefined,
-        bulkEnabled: undefined,
-        serializeOperations: undefined,
+        qualityPreset: undefined,
+        acceptedLocationTypes: undefined,
+        acceptedEmploymentTypes: undefined,
         batchSize: undefined,
         maxRetries: undefined,
         concurrencyLimit: undefined,
         timeoutMs: undefined,
-        circuitBreakerThreshold: undefined,
         autoMatchAfterScrape: undefined,
       }));
       setMatcherSettingsSaved(true);
@@ -1078,22 +1096,26 @@ function SettingsContent() {
             onMatcherModelChange={setMatcherModel}
             matcherReasoningEffort={matcherReasoningEffort}
             onMatcherReasoningEffortChange={setMatcherReasoningEffort}
+            qualityPreset={qualityPreset}
+            onQualityPresetChange={setQualityPreset}
+            acceptedLocationTypes={acceptedLocationTypes}
+            onAcceptedLocationTypesChange={(value) => setMatcherLocalEdits(
+              (prev) => ({ ...prev, acceptedLocationTypes: value })
+            )}
+            acceptedEmploymentTypes={acceptedEmploymentTypes}
+            onAcceptedEmploymentTypesChange={(value) => setMatcherLocalEdits(
+              (prev) => ({ ...prev, acceptedEmploymentTypes: value })
+            )}
             autoMatchAfterScrape={autoMatchAfterScrape}
             onAutoMatchAfterScrapeChange={setAutoMatchAfterScrape}
-            bulkEnabled={bulkEnabled}
-            onBulkEnabledChange={setBulkEnabled}
             batchSize={batchSize}
             onBatchSizeChange={setBatchSize}
-            serializeOperations={serializeOperations}
-            onSerializeOperationsChange={(value) => setMatcherLocalEdits(prev => ({ ...prev, serializeOperations: value }))}
             maxRetries={maxRetries}
             onMaxRetriesChange={setMaxRetries}
             concurrencyLimit={concurrencyLimit}
             onConcurrencyLimitChange={setConcurrencyLimit}
             timeoutMs={timeoutMs}
             onTimeoutMsChange={setTimeoutMs}
-            circuitBreakerThreshold={circuitBreakerThreshold}
-            onCircuitBreakerThresholdChange={setCircuitBreakerThreshold}
             onSave={() => matcherSettingsMutation.mutate()}
             isSaving={matcherSettingsMutation.isPending}
             hasUnsavedChanges={matcherHasUnsavedChanges}

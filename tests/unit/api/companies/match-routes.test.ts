@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   matchBulk: vi.fn(),
   matchSingle: vi.fn(),
   matchWithTracking: vi.fn(),
+  getMatchPresentationsForJobIds: vi.fn(),
   select: vi.fn(),
 }));
 
@@ -25,6 +26,7 @@ vi.mock("@/lib/ai/matcher", () => ({
   matchBulk: mocks.matchBulk,
   matchSingle: mocks.matchSingle,
   matchWithTracking: mocks.matchWithTracking,
+  getMatchPresentationsForJobIds: mocks.getMatchPresentationsForJobIds,
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -58,6 +60,15 @@ describe("synchronous match routes", () => {
       succeeded: 1,
       failed: 0,
     });
+    mocks.getMatchPresentationsForJobIds.mockResolvedValue(new Map([
+      [11, {
+        matchResultId: "result-11",
+        matchConfidence: 0.85,
+        matchBreakdown: { mustHaveSkills: 100 },
+        matchStale: false,
+        scoringPolicyVersion: "policy-v1",
+      }],
+    ]));
   });
 
   it("forwards bulk-company request cancellation to tracked matching", async () => {
@@ -127,6 +138,11 @@ describe("synchronous match routes", () => {
       matchedSkills: ["TypeScript"],
       missingSkills: [],
       recommendations: [],
+      matchResultId: "result-11",
+      matchConfidence: 0.85,
+      matchBreakdown: { mustHaveSkills: 100 },
+      matchStale: false,
+      scoringPolicyVersion: "policy-v1",
     });
   });
 
@@ -155,7 +171,18 @@ describe("synchronous match routes", () => {
     );
     await expect(response.json()).resolves.toEqual({
       results: {
-        11: { score: 90, reasons: [], matchedSkills: [], missingSkills: [], recommendations: [] },
+        11: {
+          score: 90,
+          reasons: [],
+          matchedSkills: [],
+          missingSkills: [],
+          recommendations: [],
+          matchResultId: "result-11",
+          matchConfidence: 0.85,
+          matchBreakdown: { mustHaveSkills: 100 },
+          matchStale: false,
+          scoringPolicyVersion: "policy-v1",
+        },
         22: { error: "Provider timeout" },
       },
       summary: { total: 2, successful: 1 },

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   companies,
   jobs,
+  matchResults,
   matchSessions,
   scrapeMatchOutbox,
   scrapeQueueItems,
@@ -190,7 +191,6 @@ describe("LocalDataMaintenanceService", () => {
       workerId: "match-worker",
       leaseExpiresAt: new Date(Date.now() + 60_000),
     }).run();
-
     const deleted = await new LocalDataMaintenanceService(
       database
     ).deleteCompanyJobs([target.id]);
@@ -319,6 +319,19 @@ describe("LocalDataMaintenanceService", () => {
       })
       .returning({ id: jobs.id })
       .get();
+    database.insert(matchResults).values({
+      id: "match-result-1",
+      jobId: matchedJob.id,
+      candidateFingerprint: "a".repeat(64),
+      jobFingerprint: "b".repeat(64),
+      scoringPolicyVersion: "legacy-import-v1",
+      score: 94,
+      breakdownJson: '{"legacy":94}',
+      evidenceJson: '{"reasons":["fit"],"matchedSkills":["typescript"],"missingSkills":[],"recommendations":["apply"],"componentEvidence":{}}',
+      confidence: 0,
+      source: "legacy",
+      isStale: true,
+    }).run();
     database.insert(scrapeSessions).values({
       id: "scrape-session",
       triggerSource: "manual",
@@ -391,12 +404,13 @@ describe("LocalDataMaintenanceService", () => {
     expect(jobsCleared).toBe(1);
     expect(database.select().from(matchSessions).all()).toHaveLength(0);
     expect(database.select().from(scrapeMatchOutbox).all()).toHaveLength(0);
+    expect(database.select().from(matchResults).all()).toHaveLength(0);
     expect(database.select().from(jobs).get()).toMatchObject({
-      matchScore: null,
-      matchReasons: null,
-      matchedSkills: null,
-      missingSkills: null,
-      recommendations: null,
+      matchScore: 94,
+      matchReasons: '["fit"]',
+      matchedSkills: '["typescript"]',
+      missingSkills: "[]",
+      recommendations: '["apply"]',
       updatedAt: contentUpdatedAt,
     });
     expect(database.select().from(scrapingLogs).get()).toMatchObject({

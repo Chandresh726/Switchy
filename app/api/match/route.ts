@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { MatchRouteBodySchema } from "@/lib/ai/contracts";
-import { matchBulk, matchSingle } from "@/lib/ai/matcher";
+import {
+  getMatchPresentationsForJobIds,
+  matchBulk,
+  matchSingle,
+} from "@/lib/ai/matcher";
 import { assertAppRequest } from "@/lib/api";
 import { handleAIAPIError } from "@/lib/api/ai-error-handler";
 
@@ -13,17 +17,35 @@ export async function POST(request: NextRequest) {
 
     if ("jobId" in body) {
       const result = await matchSingle(body.jobId, request.signal);
-      return NextResponse.json(result);
+      const presentation = (await getMatchPresentationsForJobIds([body.jobId]))
+        .get(body.jobId);
+      return NextResponse.json({
+        ...result,
+        matchResultId: presentation?.matchResultId ?? null,
+        matchConfidence: presentation?.matchConfidence ?? null,
+        matchBreakdown: presentation?.matchBreakdown ?? null,
+        matchStale: presentation?.matchStale ?? false,
+        scoringPolicyVersion: presentation?.scoringPolicyVersion ?? null,
+      });
     }
 
     const results = await matchBulk(body.jobIds, undefined, request.signal);
+    const presentations = await getMatchPresentationsForJobIds(body.jobIds);
     const response: Record<string, unknown> = {};
 
     for (const [id, result] of results) {
       if (result instanceof Error) {
         response[id] = { error: result.message };
       } else {
-        response[id] = result;
+        const presentation = presentations.get(id);
+        response[id] = {
+          ...result,
+          matchResultId: presentation?.matchResultId ?? null,
+          matchConfidence: presentation?.matchConfidence ?? null,
+          matchBreakdown: presentation?.matchBreakdown ?? null,
+          matchStale: presentation?.matchStale ?? false,
+          scoringPolicyVersion: presentation?.scoringPolicyVersion ?? null,
+        };
       }
     }
 

@@ -11,7 +11,6 @@ import {
   fetchMatchingPreferences,
   logMatchFailure,
   persistMatchSuccess,
-  updateJobWithMatchResult,
 } from "../tracking";
 import type {
   JobData,
@@ -58,6 +57,7 @@ async function fetchProfileDataForMatch(): Promise<ProfileData | null> {
 
 async function persistPublicResult(input: {
   jobId: number;
+  matchResultId: string;
   result: MatchResult;
   sessionId?: string;
   attemptCount: number;
@@ -68,13 +68,12 @@ async function persistPublicResult(input: {
     await persistMatchSuccess(
       input.sessionId,
       input.jobId,
+      input.matchResultId,
       input.result,
       input.attemptCount,
       input.duration,
       input.modelUsed
     );
-  } else {
-    await updateJobWithMatchResult(input.jobId, input.result);
   }
 }
 
@@ -184,6 +183,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
         const publicResult = toPublicMatchResult(cached.score, cached.evidence);
         await persistPublicResult({
           jobId,
+          matchResultId: cached.id,
           result: publicResult,
           sessionId,
           attemptCount: 0,
@@ -280,6 +280,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
       const publicResult = toPublicMatchResult(persisted.score, persisted.evidence);
       await persistPublicResult({
         jobId,
+        matchResultId: persisted.id,
         result: publicResult,
         sessionId,
         attemptCount: attempts,

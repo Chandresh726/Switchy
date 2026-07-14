@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -16,19 +17,46 @@ import {
   createArtifactRepository,
   isMatchResultFresh,
 } from "@/lib/ai/artifacts/repository";
-import { aiRuns, companies, jobs, matchResults } from "@/lib/db/schema";
+import { ensureJobFingerprintProjection } from "@/lib/ai/artifacts/job-fingerprint-projection";
+import {
+  aiRuns,
+  companies,
+  jobs,
+  matchLogs,
+  matchResults,
+  matchSessions,
+} from "@/lib/db/schema";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-artifacts-");
+const preLinkMatchLogs = sqliteTable("match_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sessionId: text("session_id"),
+  jobId: integer("job_id"),
+  status: text("status").notNull(),
+  score: real("score"),
+});
+const preProjectionJobs = sqliteTable("jobs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  companyId: integer("company_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  url: text("url").notNull(),
+  matchScore: real("match_score"),
+  matchReasons: text("match_reasons"),
+  matchedSkills: text("matched_skills"),
+  missingSkills: text("missing_skills"),
+  recommendations: text("recommendations"),
+});
 
-function createPreArtifactMigrationsFolder(): string {
+function createMigrationsFolderThrough(maxIndex: number): string {
   const source = join(process.cwd(), "drizzle");
   const destination = mkdtempSync(join(tmpdir(), "switchy-pre-artifacts-"));
   mkdirSync(join(destination, "meta"), { recursive: true });
   const journal = JSON.parse(
     readFileSync(join(source, "meta", "_journal.json"), "utf8")
   ) as { entries: Array<{ idx: number; tag: string }> };
-  const entries = journal.entries.filter((entry) => entry.idx <= 15);
+  const entries = journal.entries.filter((entry) => entry.idx <= maxIndex);
   for (const entry of entries) {
     cpSync(join(source, `${entry.tag}.sql`), join(destination, `${entry.tag}.sql`));
   }
@@ -37,6 +65,10 @@ function createPreArtifactMigrationsFolder(): string {
     JSON.stringify({ ...journal, entries })
   );
   return destination;
+}
+
+function createPreArtifactMigrationsFolder(): string {
+  return createMigrationsFolderThrough(15);
 }
 
 function candidateEvidence() {
@@ -139,6 +171,27 @@ function insertJob(database: ReturnType<typeof harness.createDatabase>["database
     matchedSkills: matchScore === undefined ? null : '["TypeScript"]',
     missingSkills: matchScore === undefined ? null : "[]",
     recommendations: matchScore === undefined ? null : '["Apply"]',
+  }).returning().get();
+}
+
+function insertPreProjectionJob(
+  database: ReturnType<typeof harness.createDatabase>["database"],
+  matchScore: number
+) {
+  const company = database.insert(companies).values({
+    name: `Legacy ${crypto.randomUUID()}`,
+    careersUrl: `https://legacy-${crypto.randomUUID()}.example.com/careers`,
+  }).returning().get();
+  return database.insert(preProjectionJobs).values({
+    companyId: company.id,
+    title: "Legacy Backend Engineer",
+    description: "Legacy TypeScript services",
+    url: `https://legacy.example.com/jobs/${crypto.randomUUID()}`,
+    matchScore,
+    matchReasons: '["Strong skill fit"]',
+    matchedSkills: '["TypeScript"]',
+    missingSkills: "[]",
+    recommendations: '["Apply"]',
   }).returning().get();
 }
 
@@ -418,7 +471,7 @@ describe("versioned AI artifact repository", () => {
     const legacyMigrations = createPreArtifactMigrationsFolder();
     try {
       migrate(database, { migrationsFolder: legacyMigrations });
-      const persistedJob = insertJob(database, 91);
+      const persistedJob = insertPreProjectionJob(database, 91);
 
       migrate(database, { migrationsFolder: join(process.cwd(), "drizzle") });
       const repository = createArtifactRepository(database);
@@ -434,6 +487,70 @@ describe("versioned AI artifact repository", () => {
         .toMatchObject({ matchScore: 91 });
     } finally {
       rmSync(legacyMigrations, { recursive: true, force: true });
+    }
+  });
+
+  it("upgrades existing match logs and supports exact immutable result links", () => {
+    const { database } = harness.createDatabase({ migrate: false });
+    const previousMigrations = createMigrationsFolderThrough(16);
+    try {
+      migrate(database, { migrationsFolder: previousMigrations });
+      const persistedJob = insertPreProjectionJob(database, 82);
+      database.insert(matchSessions).values({
+        id: "pre-link-session",
+        triggerSource: "manual",
+        status: "completed",
+      }).run();
+      database.insert(preLinkMatchLogs).values({
+        sessionId: "pre-link-session",
+        jobId: persistedJob.id,
+        status: "success",
+        score: 82,
+      }).run();
+
+      migrate(database, { migrationsFolder: join(process.cwd(), "drizzle") });
+      expect(database.select().from(matchLogs).get()).toMatchObject({
+        score: 82,
+        matchResultId: null,
+      });
+      expect(database.select().from(jobs)
+        .where(eq(jobs.id, persistedJob.id)).get()?.aiFingerprint).toBeNull();
+      expect(ensureJobFingerprintProjection(database)).toMatchObject({ updated: 1 });
+      expect(database.select().from(jobs)
+        .where(eq(jobs.id, persistedJob.id)).get()?.aiFingerprint)
+        .toMatch(/^[a-f0-9]{64}$/);
+
+      database.insert(matchResults).values({
+        id: "linked-result",
+        jobId: persistedJob.id,
+        candidateFingerprint: "a".repeat(64),
+        jobFingerprint: "b".repeat(64),
+        scoringPolicyVersion: "evidence-score-v1-link-test",
+        score: 90,
+        breakdownJson: JSON.stringify({ mustHaveSkills: 100 }),
+        evidenceJson: JSON.stringify({
+          reasons: ["Exact result"],
+          matchedSkills: [],
+          missingSkills: [],
+          recommendations: [],
+          componentEvidence: {},
+        }),
+        confidence: 0.9,
+        source: "deterministic",
+      }).run();
+      database.insert(matchLogs).values({
+        sessionId: "pre-link-session",
+        jobId: persistedJob.id,
+        status: "success",
+        score: 90,
+        matchResultId: "linked-result",
+      }).run();
+
+      expect(database.select().from(matchLogs)
+        .where(eq(matchLogs.matchResultId, "linked-result")).get())
+        .toMatchObject({ score: 90, matchResultId: "linked-result" });
+    } finally {
+      rmSync(previousMigrations, { recursive: true, force: true });
     }
   });
 

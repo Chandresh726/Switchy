@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { count, desc, eq, sql } from "drizzle-orm";
+import { count, desc, eq, inArray, sql } from "drizzle-orm";
 
+import { MatchBreakdownSchema, MatchEvidenceSchema } from "@/lib/ai/artifacts";
+import { getMatchPresentations } from "@/lib/ai/matcher/presentation";
 import { assertAppRequest } from "@/lib/api";
 import { db } from "@/lib/db";
 import {
   companies,
   jobs,
   matchLogs,
+  matchResults,
   matchSessions,
 } from "@/lib/db/schema";
 import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
@@ -67,6 +70,7 @@ export async function GET(request: NextRequest) {
           companyName: companies.name,
           status: matchLogs.status,
           score: matchLogs.score,
+          matchResultId: matchLogs.matchResultId,
           attemptCount: matchLogs.attemptCount,
           errorType: matchLogs.errorType,
           errorMessage: matchLogs.errorMessage,
@@ -80,9 +84,69 @@ export async function GET(request: NextRequest) {
         .where(eq(matchLogs.sessionId, sessionId))
         .orderBy(desc(matchLogs.completedAt));
 
+      const loggedJobIds = Array.from(new Set(logs
+        .map((log) => log.jobId)
+        .filter((jobId): jobId is number => jobId !== null)));
+      const resultIds = Array.from(new Set(logs
+        .map((log) => log.matchResultId)
+        .filter((resultId): resultId is string => resultId !== null)));
+      const historicalResults = resultIds.length === 0
+        ? []
+        : await db.select().from(matchResults)
+            .where(inArray(matchResults.id, resultIds));
+      const currentJobs = loggedJobIds.length === 0
+        ? []
+        : await db.select({
+            id: jobs.id,
+            title: jobs.title,
+            description: jobs.description,
+            location: jobs.location,
+            locationType: jobs.locationType,
+            seniorityLevel: jobs.seniorityLevel,
+            department: jobs.department,
+            employmentType: jobs.employmentType,
+            salary: jobs.salary,
+          }).from(jobs).where(inArray(jobs.id, loggedJobIds));
+      const currentPresentations = await getMatchPresentations(
+        currentJobs,
+        undefined,
+        { includeStale: false }
+      );
+      const resultsById = new Map(historicalResults.map((result) => [result.id, result]));
+      const presentedLogs = logs.map((log) => {
+        const result = log.status === "success" && log.matchResultId
+          ? resultsById.get(log.matchResultId)
+          : undefined;
+        if (!result) {
+          return {
+            ...log,
+            matchResultId: null,
+            matchConfidence: null,
+            matchBreakdown: null,
+            matchStale: log.score !== null,
+            scoringPolicyVersion: null,
+          };
+        }
+        const evidence = MatchEvidenceSchema.parse(JSON.parse(result.evidenceJson));
+        const current = currentPresentations.get(result.jobId);
+        return {
+          ...log,
+          score: result.score,
+          reasons: evidence.reasons,
+          matchedSkills: evidence.matchedSkills,
+          missingSkills: evidence.missingSkills,
+          recommendations: evidence.recommendations,
+          matchResultId: result.id,
+          matchConfidence: result.confidence,
+          matchBreakdown: MatchBreakdownSchema.parse(JSON.parse(result.breakdownJson)),
+          matchStale: !current || current.matchResultId !== result.id || current.matchStale,
+          scoringPolicyVersion: result.scoringPolicyVersion,
+        };
+      });
+
       return NextResponse.json({
         session,
-        logs,
+        logs: presentedLogs,
       }, { headers: NO_STORE_HEADERS });
     }
 

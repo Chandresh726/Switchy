@@ -97,6 +97,7 @@ export const jobs = sqliteTable("jobs", {
   department: text("department"),
   employmentType: text("employment_type"), // "full-time", "part-time", "contract"
   seniorityLevel: text("seniority_level"), // "entry", "mid", "senior", "lead", "manager"
+  aiFingerprint: text("ai_fingerprint"), // Derived from AI-relevant job content; maintained without touching updatedAt
   status: text("status").notNull().default("new"), // "new", "viewed", "interested", "applied", "rejected", "archived"
   matchScore: real("match_score"), // 0-100
   matchReasons: text("match_reasons"), // JSON array
@@ -114,6 +115,7 @@ export const jobs = sqliteTable("jobs", {
   companyIdIdx: index("jobs_company_id_idx").on(table.companyId),
   statusIdx: index("jobs_status_idx").on(table.status),
   matchScoreIdx: index("jobs_match_score_idx").on(table.matchScore),
+  aiFingerprintIdx: index("jobs_ai_fingerprint_idx").on(table.aiFingerprint),
   companyExternalIdUnique: unique("jobs_company_external_id_unique").on(table.companyId, table.externalId),
   companyUrlUnique: unique("jobs_company_url_unique").on(table.companyId, table.url),
 }));
@@ -384,6 +386,7 @@ export const matchLogs = sqliteTable("match_logs", {
   jobId: integer("job_id").references(() => jobs.id, { onDelete: "cascade" }),
   status: text("status").notNull(), // "success" | "failed"
   score: real("score"), // Match score if successful
+  matchResultId: text("match_result_id").references(() => matchResults.id),
   attemptCount: integer("attempt_count").default(1),
   errorType: text("error_type"),
   errorMessage: text("error_message"),
@@ -607,6 +610,10 @@ export const matchLogsRelations = relations(matchLogs, ({ one }) => ({
   job: one(jobs, {
     fields: [matchLogs.jobId],
     references: [jobs.id],
+  }),
+  matchResult: one(matchResults, {
+    fields: [matchLogs.matchResultId],
+    references: [matchResults.id],
   }),
 }));
 

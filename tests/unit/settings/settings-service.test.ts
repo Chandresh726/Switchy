@@ -9,6 +9,8 @@ import {
 describe("settings service", () => {
   it("includes AI defaults required by the UI", () => {
     expect(DEFAULT_SETTINGS.matcher_reasoning_effort).toBe("medium");
+    expect(DEFAULT_SETTINGS.matcher_quality_preset).toBe("balanced");
+    expect(DEFAULT_SETTINGS.matcher_accepted_location_types).toBe("[]");
     expect(DEFAULT_SETTINGS.resume_parser_reasoning_effort).toBe("medium");
     expect(DEFAULT_SETTINGS.ai_writing_reasoning_effort).toBe("medium");
     expect(DEFAULT_SETTINGS.follow_up_tone).toBe("professional");
@@ -16,6 +18,29 @@ describe("settings service", () => {
     expect(DEFAULT_SETTINGS.scraper_max_parallel_scrapes).toBe("3");
     expect(DEFAULT_SETTINGS.scraper_keep_device_awake).toBe("true");
     expect(DEFAULT_SETTINGS.scraper_history_retention_days).toBe("90");
+  });
+
+  it("validates matching presets and normalizes preference lists", () => {
+    const parsed = parseSettingsUpdateBody({
+      matcher_quality_preset: "quality",
+      matcher_accepted_location_types: ["remote", "remote", "onsite"],
+      matcher_accepted_employment_types: ["contract", "full-time", "intern"],
+    });
+
+    expect(parsed.updates).toEqual(expect.arrayContaining([
+      { key: "matcher_quality_preset", value: "quality" },
+      {
+        key: "matcher_accepted_location_types",
+        value: JSON.stringify(["onsite", "remote"]),
+      },
+      {
+        key: "matcher_accepted_employment_types",
+        value: JSON.stringify(["contract", "full-time", "intern"]),
+      },
+    ]));
+    expect(() => parseSettingsUpdateBody({
+      matcher_accepted_location_types: ["anywhere"],
+    })).toThrow(APIValidationError);
   });
 
   it("parses scheduler toggles and numeric matcher settings", () => {

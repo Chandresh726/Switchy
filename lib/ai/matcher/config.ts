@@ -132,8 +132,8 @@ export function validateMatcherConfig(
   }
 
   if (config.maxRetries !== undefined) {
-    if (config.maxRetries < 1 || config.maxRetries > 5) {
-      errors.push("Max retries must be between 1 and 5");
+    if (config.maxRetries < 1 || config.maxRetries > 10) {
+      errors.push("Max attempts must be between 1 and 10");
     }
   }
 

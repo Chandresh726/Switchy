@@ -14,7 +14,6 @@ export {
 export {
   fetchProfileData,
   fetchJobsData,
-  updateJobWithMatchResult,
   persistMatchSuccess,
   getUnmatchedJobCount,
   getUnmatchedJobIds,
@@ -59,6 +58,16 @@ export {
 export { generateStructured } from "./generation";
 
 export { extractRequirements, htmlToText, chunkArray } from "./utils";
+
+export {
+  getCurrentMatchContext,
+  getMatchPresentations,
+  getMatchPresentationsForJobIds,
+  getFreshUnmatchedJobCount,
+  getFreshUnmatchedJobIds,
+  type CurrentMatchContext,
+  type MatchPresentation,
+} from "./presentation";
 
 export type {
   StrategyProgressCallback,

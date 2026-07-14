@@ -11,6 +11,9 @@ export const DEFAULT_SETTINGS = {
   matcher_model: "",
   matcher_provider_id: "",
   matcher_reasoning_effort: "medium",
+  matcher_quality_preset: "balanced",
+  matcher_accepted_location_types: "[]",
+  matcher_accepted_employment_types: "[]",
   resume_parser_model: "",
   resume_parser_provider_id: "",
   resume_parser_reasoning_effort: "medium",
@@ -145,6 +148,31 @@ function normalizeTitleKeywords(value: unknown): string {
   );
 }
 
+function normalizeEnumList(
+  key: SettingKey,
+  value: unknown,
+  allowed: readonly string[]
+): string {
+  const parsed = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? safeJsonParse<unknown>(value, null)
+      : null;
+  if (!Array.isArray(parsed)) {
+    throw new APIValidationError(`${key} must be an array`, "invalid_request");
+  }
+  const normalized = Array.from(new Set(parsed.map((item) =>
+    typeof item === "string" ? item.trim().toLocaleLowerCase("en-US") : ""
+  ).filter(Boolean)));
+  if (normalized.some((item) => !allowed.includes(item))) {
+    throw new APIValidationError(
+      `${key} contains an unsupported value`,
+      "invalid_request"
+    );
+  }
+  return JSON.stringify(normalized.sort());
+}
+
 function normalizeCoverLetterFocus(value: unknown): string {
   const allowed = ["skills", "experience", "cultural_fit", "all"] as const;
 
@@ -235,6 +263,29 @@ function parseSettingValue(
     case "ai_writing_reasoning_effort":
       return {
         value: ensureEnum(key, value, ["low", "medium", "high"] as const),
+        cronUpdated: false,
+        enabledChanged: false,
+        newEnabledValue: null,
+      };
+    case "matcher_quality_preset":
+      return {
+        value: ensureEnum(key, value, ["economy", "balanced", "quality"] as const),
+        cronUpdated: false,
+        enabledChanged: false,
+        newEnabledValue: null,
+      };
+    case "matcher_accepted_location_types":
+      return {
+        value: normalizeEnumList(key, value, ["remote", "hybrid", "onsite"]),
+        cronUpdated: false,
+        enabledChanged: false,
+        newEnabledValue: null,
+      };
+    case "matcher_accepted_employment_types":
+      return {
+        value: normalizeEnumList(key, value, [
+          "full-time", "part-time", "contract", "intern", "temporary",
+        ]),
         cronUpdated: false,
         enabledChanged: false,
         newEnabledValue: null,

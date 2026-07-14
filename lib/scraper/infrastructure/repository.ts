@@ -1,5 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 
+import { buildJobFingerprintFromRecord } from "@/lib/ai/artifacts/fingerprints";
 import { db } from "@/lib/db";
 import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
 import {
@@ -23,6 +24,32 @@ import type {
 } from "./types";
 
 const SQLITE_INSERT_CHUNK_SIZE = 50;
+
+function buildScrapedJobFingerprint(job: {
+  title: string;
+  description?: string | null;
+  location?: string | null;
+  locationType?: string | null;
+  seniorityLevel?: string | null;
+  department?: string | null;
+  employmentType?: string | null;
+  salary?: string | null;
+}): string | null {
+  try {
+    return buildJobFingerprintFromRecord({
+      title: job.title,
+      description: job.description ?? null,
+      location: job.location ?? null,
+      locationType: job.locationType ?? null,
+      seniorityLevel: job.seniorityLevel ?? null,
+      department: job.department ?? null,
+      employmentType: job.employmentType ?? null,
+      salary: job.salary ?? null,
+    });
+  } catch {
+    return null;
+  }
+}
 
 export class DrizzleScraperRepository implements IScraperRepository {
   constructor(private readonly database: typeof db = db) {}
@@ -86,10 +113,19 @@ export class DrizzleScraperRepository implements IScraperRepository {
           externalId: jobs.externalId,
           status: jobs.status,
           archiveSource: jobs.archiveSource,
+          title: jobs.title,
+          description: jobs.description,
+          location: jobs.location,
+          locationType: jobs.locationType,
+          seniorityLevel: jobs.seniorityLevel,
+          department: jobs.department,
+          employmentType: jobs.employmentType,
+          salary: jobs.salary,
         })
         .from(jobs)
         .where(eq(jobs.companyId, input.companyId))
         .all();
+      const currentJobsById = new Map(currentJobs.map((job) => [job.id, job]));
 
       const jobIdsToReopen = currentJobs
         .filter(
@@ -153,6 +189,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
 
       let jobsUpdated = 0;
       for (const { existingJobId, job } of input.existingJobUpdates) {
+        const existingJob = currentJobsById.get(existingJobId);
         jobsUpdated += tx
           .update(jobs)
           .set({
@@ -165,6 +202,17 @@ export class DrizzleScraperRepository implements IScraperRepository {
             descriptionFormat: job.descriptionFormat ?? "plain",
             salary: job.salary,
             employmentType: job.employmentType,
+            seniorityLevel: job.seniorityLevel,
+            aiFingerprint: buildScrapedJobFingerprint({
+              title: job.title,
+              description: job.description ?? existingJob?.description,
+              location: job.location ?? existingJob?.location,
+              locationType: job.locationType ?? existingJob?.locationType,
+              seniorityLevel: job.seniorityLevel ?? existingJob?.seniorityLevel,
+              department: job.department ?? existingJob?.department,
+              employmentType: job.employmentType ?? existingJob?.employmentType,
+              salary: job.salary ?? existingJob?.salary,
+            }),
             postedDate: job.postedDate,
             updatedAt: writeStartedAt,
           })
@@ -185,6 +233,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
               jobsToInsert.map((job) => ({
                 ...job,
                 companyId: input.companyId,
+                aiFingerprint: buildScrapedJobFingerprint(job),
               }))
             )
             .onConflictDoNothing()

@@ -1,11 +1,23 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+import { ensureJobFingerprintProjection } from "@/lib/ai/artifacts/job-fingerprint-projection";
+import {
+  getCurrentMatchContext,
+  getMatchPresentations,
+} from "@/lib/ai/matcher/presentation";
 import { handleApiError } from "@/lib/api";
 import { isCompanyScrapeSupported } from "@/lib/companies/scrape-support";
 import { db } from "@/lib/db";
-import { companies, jobs, people, matchSessions, scrapingLogs } from "@/lib/db/schema";
+import {
+  companies,
+  jobs,
+  matchResults,
+  matchSessions,
+  people,
+  scrapingLogs,
+} from "@/lib/db/schema";
 
 const ParamsSchema = z.object({
   id: z.coerce.number().int().positive(),
@@ -27,6 +39,24 @@ export async function GET(
       return NextResponse.json({ error: "Company not found" }, { status: 404 });
     }
 
+    ensureJobFingerprintProjection();
+    const currentContext = await getCurrentMatchContext();
+    const jobStatsPromise = currentContext
+      ? db.select({
+          openJobs: count(),
+          highMatchJobs: sql<number>`SUM(CASE WHEN ${matchResults.score} >= 75 THEN 1 ELSE 0 END)`,
+        }).from(jobs).leftJoin(matchResults, and(
+          eq(matchResults.jobId, jobs.id),
+          eq(matchResults.candidateFingerprint, currentContext.candidateFingerprint),
+          eq(matchResults.jobFingerprint, jobs.aiFingerprint),
+          eq(matchResults.scoringPolicyVersion, currentContext.scoringPolicyVersion),
+          eq(matchResults.isStale, false)
+        )).where(eq(jobs.companyId, parsedParams.id))
+      : db.select({
+          openJobs: count(),
+          highMatchJobs: sql<number>`0`,
+        }).from(jobs).where(eq(jobs.companyId, parsedParams.id));
+
     const [
       jobStatsResult,
       peopleStatsResult,
@@ -35,13 +65,7 @@ export async function GET(
       recentScrapeLogs,
       recentMatchSessions,
     ] = await Promise.all([
-      db
-        .select({
-          openJobs: sql<number>`count(*)`,
-          highMatchJobs: sql<number>`sum(case when ${jobs.matchScore} >= 75 then 1 else 0 end)`,
-        })
-        .from(jobs)
-        .where(eq(jobs.companyId, parsedParams.id)),
+      jobStatsPromise,
       db
         .select({
           mappedPeople: sql<number>`count(*)`,
@@ -58,11 +82,15 @@ export async function GET(
         .select({
           id: jobs.id,
           title: jobs.title,
+          description: jobs.description,
           url: jobs.url,
           status: jobs.status,
-          matchScore: jobs.matchScore,
           location: jobs.location,
           locationType: jobs.locationType,
+          seniorityLevel: jobs.seniorityLevel,
+          department: jobs.department,
+          employmentType: jobs.employmentType,
+          salary: jobs.salary,
           discoveredAt: jobs.discoveredAt,
           viewedAt: jobs.viewedAt,
         })
@@ -128,6 +156,19 @@ export async function GET(
     const jobStats = jobStatsResult[0];
     const peopleStats = peopleStatsResult[0];
     const canScrapeJobs = isCompanyScrapeSupported(company.careersUrl, company.platform);
+    const visiblePresentations = await getMatchPresentations(
+      companyJobs,
+      currentContext
+    );
+    const presentedCompanyJobs = companyJobs.map((job) => {
+      const presentation = visiblePresentations.get(job.id);
+      if (!presentation) throw new Error(`Missing match presentation for job ${job.id}`);
+      return {
+        ...job,
+        description: undefined,
+        ...presentation,
+      };
+    });
 
     return NextResponse.json({
       company: {
@@ -135,12 +176,12 @@ export async function GET(
         canScrapeJobs,
       },
       stats: {
-        openJobs: jobStats?.openJobs || 0,
-        highMatchJobs: jobStats?.highMatchJobs || 0,
+        openJobs: jobStats?.openJobs ?? 0,
+        highMatchJobs: Number(jobStats?.highMatchJobs ?? 0),
         mappedPeople: peopleStats?.mappedPeople || 0,
         starredPeople: peopleStats?.starredPeople || 0,
       },
-      jobs: companyJobs,
+      jobs: presentedCompanyJobs,
       people: companyPeople,
       activity: {
         scrapeLogs: recentScrapeLogs,

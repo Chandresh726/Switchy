@@ -1,4 +1,4 @@
-import { and, asc, count, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
 import { fetchCandidateProfileSnapshot } from "@/lib/ai/profile/profile-snapshot";
 import { db } from "@/lib/db";
@@ -58,25 +58,10 @@ export async function fetchMatchingPreferences(): Promise<{
   };
 }
 
-export async function updateJobWithMatchResult(
-  jobId: number,
-  result: { score: number; reasons: string[]; matchedSkills: string[]; missingSkills: string[]; recommendations: string[] }
-): Promise<void> {
-  await db
-    .update(jobs)
-    .set({
-      matchScore: result.score,
-      matchReasons: JSON.stringify(result.reasons),
-      matchedSkills: JSON.stringify(result.matchedSkills),
-      missingSkills: JSON.stringify(result.missingSkills),
-      recommendations: JSON.stringify(result.recommendations),
-    })
-    .where(eq(jobs.id, jobId));
-}
-
 export async function persistMatchSuccess(
   sessionId: string,
   jobId: number,
+  matchResultId: string,
   result: {
     score: number;
     reasons: string[];
@@ -88,48 +73,26 @@ export async function persistMatchSuccess(
   duration: number,
   modelUsed: string
 ): Promise<void> {
-  db.transaction((tx) => {
-    tx.update(jobs)
-      .set({
-        matchScore: result.score,
-        matchReasons: JSON.stringify(result.reasons),
-        matchedSkills: JSON.stringify(result.matchedSkills),
-        missingSkills: JSON.stringify(result.missingSkills),
-        recommendations: JSON.stringify(result.recommendations),
-      })
-      .where(eq(jobs.id, jobId))
-      .run();
-
-    tx.insert(matchLogs)
-      .values({
-        sessionId,
-        jobId,
-        status: "success",
-        score: result.score,
-        attemptCount,
-        duration,
-        modelUsed,
-      })
-      .run();
-  }, { behavior: "immediate" });
+  await db.insert(matchLogs).values({
+    sessionId,
+    jobId,
+    matchResultId,
+    status: "success",
+    score: result.score,
+    attemptCount,
+    duration,
+    modelUsed,
+  });
 }
 
 export async function getUnmatchedJobIds(): Promise<number[]> {
-  const unmatchedJobs = await db
-    .select({ id: jobs.id })
-    .from(jobs)
-    .where(isNull(jobs.matchScore));
-
-  return unmatchedJobs.map((j) => j.id);
+  const { getFreshUnmatchedJobIds } = await import("../presentation");
+  return getFreshUnmatchedJobIds();
 }
 
 export async function getUnmatchedJobCount(): Promise<number> {
-  const [result] = await db
-    .select({ value: count() })
-    .from(jobs)
-    .where(isNull(jobs.matchScore));
-
-  return result?.value ?? 0;
+  const { getFreshUnmatchedJobCount } = await import("../presentation");
+  return getFreshUnmatchedJobCount();
 }
 
 export async function createMatchSession(

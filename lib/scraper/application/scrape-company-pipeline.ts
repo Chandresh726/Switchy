@@ -363,6 +363,7 @@ export class ScrapeCompanyPipeline {
         descriptionFormat: job.descriptionFormat ?? "plain",
         salary: job.salary,
         employmentType: job.employmentType,
+        seniorityLevel: job.seniorityLevel,
         postedDate: job.postedDate,
         status: "new" as const,
       })),

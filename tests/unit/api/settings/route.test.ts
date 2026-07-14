@@ -74,6 +74,33 @@ describe("settings route", () => {
     expect(mocks.parseSettingsUpdateBody).not.toHaveBeenCalled();
   });
 
+  it("accepts matching quality and preference settings", async () => {
+    mocks.parseSettingsUpdateBody.mockReturnValue({
+      updates: [
+        { key: "matcher_quality_preset", value: "balanced" },
+        { key: "matcher_accepted_location_types", value: '["remote"]' },
+      ],
+      cronUpdated: false,
+      enabledChanged: false,
+      newEnabledValue: null,
+    });
+    const request = new Request("http://localhost/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        matcher_quality_preset: "balanced",
+        matcher_accepted_location_types: ["remote"],
+      }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(200);
+    expect(mocks.upsertSettings).toHaveBeenCalledWith(expect.arrayContaining([
+      { key: "matcher_quality_preset", value: "balanced" },
+    ]));
+  });
+
   it("accepts cover_letter_focus as JSON string for backward compatibility", async () => {
     mocks.parseSettingsUpdateBody.mockReturnValue({
       updates: [{ key: "cover_letter_focus", value: "[\"skills\",\"experience\"]" }],

@@ -15,6 +15,9 @@ export interface SettingsRecord {
   resume_parser_model: string;
   resume_parser_provider_id: string;
   matcher_reasoning_effort: string;
+  matcher_quality_preset: string;
+  matcher_accepted_location_types: string;
+  matcher_accepted_employment_types: string;
   resume_parser_reasoning_effort: string;
   matcher_bulk_enabled: string;
   matcher_serialize_operations: string;

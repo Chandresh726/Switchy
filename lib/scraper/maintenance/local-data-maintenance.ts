@@ -5,6 +5,7 @@ import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
 import {
   companies,
   jobs,
+  matchResults,
   matchSessions,
   scrapeMatchOutbox,
   scrapeQueueItems,
@@ -412,18 +413,13 @@ export class LocalDataMaintenanceService implements LocalDataMaintenance {
           tx,
           outboxes.map((outbox) => outbox.scrapingLogId)
         );
+        const matchedJobIds = tx
+          .selectDistinct({ jobId: matchResults.jobId })
+          .from(matchResults)
+          .all();
         tx.delete(matchSessions).run();
-        return tx
-          .update(jobs)
-          .set({
-            matchScore: null,
-            matchReasons: null,
-            matchedSkills: null,
-            missingSkills: null,
-            recommendations: null,
-          })
-          .returning({ id: jobs.id })
-          .all().length;
+        tx.delete(matchResults).run();
+        return matchedJobIds.length;
       }, { behavior: "immediate" })
     );
   }
