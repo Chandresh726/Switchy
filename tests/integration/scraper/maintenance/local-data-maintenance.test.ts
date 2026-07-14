@@ -302,6 +302,7 @@ describe("LocalDataMaintenanceService", () => {
   it("clears match data and all session history in one transaction", async () => {
     const database = createTestDatabase();
     const company = seedCompany(database, "MatchData");
+    const contentUpdatedAt = new Date("2026-01-15T00:00:00.000Z");
     const matchedJob = database
       .insert(jobs)
       .values({
@@ -314,6 +315,7 @@ describe("LocalDataMaintenanceService", () => {
         matchedSkills: '["typescript"]',
         missingSkills: "[]",
         recommendations: '["apply"]',
+        updatedAt: contentUpdatedAt,
       })
       .returning({ id: jobs.id })
       .get();
@@ -395,6 +397,7 @@ describe("LocalDataMaintenanceService", () => {
       matchedSkills: null,
       missingSkills: null,
       recommendations: null,
+      updatedAt: contentUpdatedAt,
     });
     expect(database.select().from(scrapingLogs).get()).toMatchObject({
       matcherStatus: null,

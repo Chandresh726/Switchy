@@ -293,6 +293,75 @@ export const aiRuns = sqliteTable("ai_runs", {
   statusCreatedIdx: index("ai_runs_status_created_idx").on(table.status, table.createdAt),
 }));
 
+// Immutable normalized candidate evidence used by versioned matching.
+export const candidateSnapshots = sqliteTable("candidate_snapshots", {
+  id: text("id").primaryKey(),
+  sourceProfileId: integer("source_profile_id"),
+  fingerprint: text("fingerprint").notNull(),
+  snapshotVersion: text("snapshot_version").notNull(),
+  evidenceJson: text("evidence_json").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  fingerprintVersionUnique: unique("candidate_snapshots_fingerprint_version_unique").on(
+    table.fingerprint,
+    table.snapshotVersion
+  ),
+  sourceProfileIdx: index("candidate_snapshots_source_profile_idx").on(
+    table.sourceProfileId,
+    table.createdAt
+  ),
+}));
+
+// Immutable structured job evidence, reusable across matching runs.
+export const jobAnalyses = sqliteTable("job_analyses", {
+  id: text("id").primaryKey(),
+  jobFingerprint: text("job_fingerprint").notNull(),
+  extractorVersion: text("extractor_version").notNull(),
+  evidenceJson: text("evidence_json").notNull(),
+  aiRunId: text("ai_run_id").references(() => aiRuns.id, { onDelete: "set null" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  fingerprintExtractorUnique: unique("job_analyses_fingerprint_extractor_unique").on(
+    table.jobFingerprint,
+    table.extractorVersion
+  ),
+  createdAtIdx: index("job_analyses_created_at_idx").on(table.createdAt),
+}));
+
+// Immutable versioned match outcomes. Legacy job columns remain only for rollback.
+export const matchResults = sqliteTable("match_results", {
+  id: text("id").primaryKey(),
+  jobId: integer("job_id").references(() => jobs.id, { onDelete: "cascade" }).notNull(),
+  candidateSnapshotId: text("candidate_snapshot_id").references(() => candidateSnapshots.id, { onDelete: "restrict" }),
+  jobAnalysisId: text("job_analysis_id").references(() => jobAnalyses.id, { onDelete: "restrict" }),
+  candidateFingerprint: text("candidate_fingerprint").notNull(),
+  jobFingerprint: text("job_fingerprint").notNull(),
+  scoringPolicyVersion: text("scoring_policy_version").notNull(),
+  score: real("score").notNull(),
+  breakdownJson: text("breakdown_json").notNull(),
+  evidenceJson: text("evidence_json").notNull(),
+  confidence: real("confidence").notNull(),
+  source: text("source").notNull(),
+  adjudicationRunId: text("adjudication_run_id").references(() => aiRuns.id, { onDelete: "set null" }),
+  isStale: integer("is_stale", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  artifactUnique: unique("match_results_artifact_unique").on(
+    table.jobId,
+    table.candidateFingerprint,
+    table.jobFingerprint,
+    table.scoringPolicyVersion
+  ),
+  jobCreatedIdx: index("match_results_job_created_idx").on(table.jobId, table.createdAt),
+  freshnessIdx: index("match_results_freshness_idx").on(
+    table.jobId,
+    table.candidateFingerprint,
+    table.jobFingerprint,
+    table.scoringPolicyVersion,
+    table.isStale
+  ),
+}));
+
 // Match Sessions - Track batch match operations
 export const matchSessions = sqliteTable("match_sessions", {
   id: text("id").primaryKey(), // UUID
@@ -602,6 +671,12 @@ export type AIGenerationHistory = typeof aiGenerationHistory.$inferSelect;
 export type NewAIGenerationHistory = typeof aiGenerationHistory.$inferInsert;
 export type AIProviderRecord = typeof aiProviders.$inferSelect;
 export type NewAIProviderRecord = typeof aiProviders.$inferInsert;
+export type CandidateSnapshot = typeof candidateSnapshots.$inferSelect;
+export type NewCandidateSnapshot = typeof candidateSnapshots.$inferInsert;
+export type JobAnalysis = typeof jobAnalyses.$inferSelect;
+export type NewJobAnalysis = typeof jobAnalyses.$inferInsert;
+export type PersistedMatchResult = typeof matchResults.$inferSelect;
+export type NewPersistedMatchResult = typeof matchResults.$inferInsert;
 export type AIRun = typeof aiRuns.$inferSelect;
 export type NewAIRun = typeof aiRuns.$inferInsert;
 export type Person = typeof people.$inferSelect;

@@ -421,7 +421,6 @@ export class LocalDataMaintenanceService implements LocalDataMaintenance {
             matchedSkills: null,
             missingSkills: null,
             recommendations: null,
-            updatedAt: new Date(),
           })
           .returning({ id: jobs.id })
           .all().length;

@@ -31,7 +31,7 @@
     "landing:build": "pnpm --filter switchy-landing build",
     "landing:verify": "pnpm --filter switchy-landing verify",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
-    "db:migrate": "drizzle-kit migrate --config=drizzle.config.ts",
+    "db:migrate": "drizzle-kit migrate --config=drizzle.config.ts && tsx scripts/import-legacy-match-results.ts",
     "db:studio": "drizzle-kit studio --config=drizzle.config.ts",
     "db:cleanup-job-duplicates": "tsx scripts/cleanup-job-duplicates.ts"
   },

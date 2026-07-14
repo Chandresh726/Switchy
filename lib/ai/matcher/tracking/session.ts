@@ -39,7 +39,6 @@ export async function updateJobWithMatchResult(
       matchedSkills: JSON.stringify(result.matchedSkills),
       missingSkills: JSON.stringify(result.missingSkills),
       recommendations: JSON.stringify(result.recommendations),
-      updatedAt: new Date(),
     })
     .where(eq(jobs.id, jobId));
 }
@@ -66,7 +65,6 @@ export async function persistMatchSuccess(
         matchedSkills: JSON.stringify(result.matchedSkills),
         missingSkills: JSON.stringify(result.missingSkills),
         recommendations: JSON.stringify(result.recommendations),
-        updatedAt: new Date(),
       })
       .where(eq(jobs.id, jobId))
       .run();
