@@ -1,4 +1,4 @@
-import { MockLanguageModelV4 } from "ai/test";
+import { MockLanguageModelV4, simulateReadableStream } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -386,6 +386,127 @@ describe("AI capability runtime", () => {
     expect(mocks.completeFailure).toHaveBeenCalledWith(
       "run-1",
       expect.objectContaining({ attempts: 0, error: reason })
+    );
+  });
+
+  it("streams text deltas and completes the same run ledger after consumption", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: async () => ({
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "text-start", id: "text-1" },
+            { type: "text-delta", id: "text-1", delta: "Grounded " },
+            { type: "text-delta", id: "text-1", delta: "draft" },
+            { type: "text-end", id: "text-1" },
+            {
+              type: "finish",
+              finishReason: { unified: "stop", raw: undefined },
+              logprobs: undefined,
+              usage: {
+                inputTokens: { total: 8, noCache: 8, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 2, text: 2, reasoning: 0 },
+              },
+            },
+          ],
+        }),
+      }),
+    });
+    useModel(model);
+    const runtime = await createAICapabilityRuntime({ capability: "writing_cover_letter" });
+    const deltas: string[] = [];
+
+    const result = await runtime.executeStreamingText({
+      ...executionInput(),
+      onDelta: (delta) => {
+        deltas.push(delta);
+      },
+    });
+
+    expect(deltas).toEqual(["Grounded ", "draft"]);
+    expect(result).toMatchObject({
+      output: "Grounded draft",
+      runId: "run-1",
+      attempts: 1,
+      usage: { inputTokens: 8, outputTokens: 2, totalTokens: 10 },
+    });
+    expect(model.doStreamCalls).toHaveLength(1);
+    expect(mocks.completeSuccess).toHaveBeenCalledWith(
+      "run-1",
+      expect.objectContaining({ finishReason: "stop", attempts: 1 })
+    );
+  });
+
+  it("forwards streaming cancellation to the provider and records failure", async () => {
+    const started = Promise.withResolvers<void>();
+    let providerAbortReason: unknown;
+    const model = new MockLanguageModelV4({
+      doStream: async ({ abortSignal }) => ({
+        stream: new ReadableStream({
+          start(controller) {
+            started.resolve();
+            abortSignal?.addEventListener("abort", () => {
+              providerAbortReason = abortSignal.reason;
+              controller.error(abortSignal.reason);
+            }, { once: true });
+          },
+        }),
+      }),
+    });
+    useModel(model);
+    const runtime = await createAICapabilityRuntime({ capability: "writing_referral" });
+    const controller = new AbortController();
+    const reason = new DOMException("client disconnected", "AbortError");
+    const pending = runtime.executeStreamingText({
+      ...executionInput({ signal: controller.signal }),
+      onDelta: vi.fn(),
+    });
+
+    await started.promise;
+    controller.abort(reason);
+
+    await expect(pending).rejects.toBe(reason);
+    expect(providerAbortReason).toBe(reason);
+    expect(mocks.completeFailure).toHaveBeenCalledWith(
+      "run-1",
+      expect.objectContaining({ error: reason, attempts: 1 })
+    );
+  });
+
+  it("rejects cancellation received after the final text delta before run success", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: async () => ({
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "text-start", id: "text-1" },
+            { type: "text-delta", id: "text-1", delta: "final draft" },
+            { type: "text-end", id: "text-1" },
+            {
+              type: "finish",
+              finishReason: { unified: "stop", raw: undefined },
+              logprobs: undefined,
+              usage: {
+                inputTokens: { total: 3, noCache: 3, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 2, text: 2, reasoning: 0 },
+              },
+            },
+          ],
+        }),
+      }),
+    });
+    useModel(model);
+    const runtime = await createAICapabilityRuntime({ capability: "writing_referral" });
+    const controller = new AbortController();
+    const reason = new DOMException("cancel after final delta", "AbortError");
+
+    await expect(runtime.executeStreamingText({
+      ...executionInput({ signal: controller.signal }),
+      onDelta: () => controller.abort(reason),
+    })).rejects.toBe(reason);
+
+    expect(mocks.completeSuccess).not.toHaveBeenCalled();
+    expect(mocks.completeFailure).toHaveBeenCalledWith(
+      "run-1",
+      expect.objectContaining({ error: reason, attempts: 1 })
     );
   });
 });

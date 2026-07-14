@@ -70,6 +70,8 @@ describe("POST /api/ai/content", () => {
       jobId: 42,
       type: "recruiter_follow_up",
       userPrompt: undefined,
+      parentVariantId: undefined,
+      signal: expect.any(AbortSignal),
     });
   });
 

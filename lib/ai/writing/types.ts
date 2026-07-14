@@ -4,6 +4,14 @@ export interface HistoryVariant {
   id: number;
   variant: string;
   userPrompt: string | null;
+  parentVariantId: number | null;
+  aiRunId: string | null;
+  source: "generated" | "manual_edit";
+  selectedAt: string | null;
+  copiedAt: string | null;
+  discardedAt: string | null;
+  editDistance: number | null;
+  editDistanceRatio: number | null;
   createdAt: string;
 }
 

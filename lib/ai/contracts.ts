@@ -26,11 +26,17 @@ export const AIContentPostBodySchema = z.object({
   jobId: z.coerce.number().int().positive(),
   type: AIContentTypeSchema,
   userPrompt: z.string().trim().max(4_000).nullable().optional(),
+  parentVariantId: z.coerce.number().int().positive().nullable().optional(),
 });
 
 export const AIContentPatchBodySchema = z.object({
   content: z.string().trim().min(1).max(20_000),
   userPrompt: z.string().trim().max(4_000).nullable().optional(),
+  parentVariantId: z.coerce.number().int().positive().nullable().optional(),
+});
+
+export const AIContentVariantSignalSchema = z.object({
+  action: z.enum(["selected", "copied", "discarded"]),
 });
 
 export const ProviderRouteParamsSchema = z.object({

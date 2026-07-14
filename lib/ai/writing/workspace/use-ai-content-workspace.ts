@@ -8,10 +8,19 @@ import type { AIContentType } from "@/lib/ai/contracts";
 import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { canonicalizeMarkdown } from "@/lib/ai/writing/rich-text";
 import type { GeneratedContent } from "@/lib/ai/writing/types";
+import {
+  selectAdjacentVariantIndex,
+  selectInitialVariantIndex,
+} from "@/lib/ai/writing/workspace/variants";
 
 interface ContentResponseEnvelope {
   exists: boolean;
   content: GeneratedContent | null;
+}
+
+interface StreamCompleteEnvelope {
+  content: GeneratedContent;
+  runId: string | null;
 }
 
 interface UseAIContentWorkspaceOptions {
@@ -29,6 +38,7 @@ interface UseAIContentWorkspaceResult {
   currentVariantPrompt: string | null;
   hasChanges: boolean;
   isContentLoading: boolean;
+  isDiscarding: boolean;
   isReady: boolean;
   isSaving: boolean;
   isSending: boolean;
@@ -36,6 +46,8 @@ interface UseAIContentWorkspaceResult {
   setEditedContent: (value: string) => void;
   setModificationPrompt: (value: string) => void;
   navigateVariant: (direction: "prev" | "next") => void;
+  discardCurrentVariant: () => Promise<void>;
+  recordCurrentVariantCopied: () => Promise<void>;
   saveEdit: () => Promise<void>;
   sendModification: () => Promise<void>;
   resetChanges: () => void;
@@ -49,13 +61,16 @@ export function useAIContentWorkspace({
 }: UseAIContentWorkspaceOptions): UseAIContentWorkspaceResult {
   const bootstrapInFlightRef = useRef(false);
   const generateInFlightRef = useRef(false);
+  const generationAbortRef = useRef<AbortController | null>(null);
   const [content, setContent] = useState<GeneratedContent | null>(null);
   const [currentVariantIndex, setCurrentVariantIndex] = useState(0);
   const [editedContent, setEditedContent] = useState("");
   const [originalContent, setOriginalContent] = useState("");
   const [modificationPrompt, setModificationPrompt] = useState("");
+  const [streamingContent, setStreamingContent] = useState<string | null>(null);
 
   const [isContentLoading, setIsContentLoading] = useState(false);
+  const [isDiscarding, setIsDiscarding] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isReady, setIsReady] = useState(false);
@@ -79,21 +94,86 @@ export function useAIContentWorkspace({
     [content]
   );
 
+  const recordVariantSignal = useCallback(async (
+    variantId: number,
+    action: "selected" | "copied" | "discarded"
+  ) => {
+    const response = await fetch(`/api/ai/content/variants/${variantId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
+      body: JSON.stringify({ action }),
+    });
+    if (!response.ok) throw new Error(`Failed to record ${action} signal`);
+  }, []);
+
+  const consumeContentStream = useCallback(async (
+    response: Response,
+    onDelta: (text: string) => void
+  ): Promise<StreamCompleteEnvelope> => {
+    if (!response.body) throw new Error("Streaming response is unavailable");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let complete: StreamCompleteEnvelope | null = null;
+
+    const processFrame = (frame: string) => {
+      let event = "";
+      const dataLines: string[] = [];
+      for (const line of frame.split(/\r?\n/)) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+      }
+      if (!event || dataLines.length === 0) return;
+      const data: unknown = JSON.parse(dataLines.join("\n"));
+      if (event === "delta") {
+        const text = (data as { text?: unknown }).text;
+        if (typeof text === "string") onDelta(text);
+      } else if (event === "complete") {
+        complete = data as StreamCompleteEnvelope;
+      } else if (event === "error") {
+        const message = (data as { message?: unknown }).message;
+        throw new Error(typeof message === "string" ? message : "Failed to generate content");
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, "\n");
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary >= 0) {
+        processFrame(buffer.slice(0, boundary));
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf("\n\n");
+      }
+      if (done) break;
+    }
+    if (buffer.trim()) processFrame(buffer);
+    if (!complete) throw new Error("Generation stream ended before completion");
+    return complete;
+  }, []);
+
   const generateContent = useCallback(
     async (userPrompt?: string) => {
       if (!enabled) return;
       if (generateInFlightRef.current) return;
       generateInFlightRef.current = true;
       setIsContentLoading(true);
+      const abortController = new AbortController();
+      generationAbortRef.current = abortController;
 
       try {
-        const res = await fetch("/api/ai/content", {
+        const parentVariantId = userPrompt
+          ? content?.history[currentVariantIndex]?.id ?? null
+          : null;
+        const res = await fetch("/api/ai/content/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
+          signal: abortController.signal,
           body: JSON.stringify({
             jobId,
             type: contentType,
             userPrompt: userPrompt || null,
+            parentVariantId,
           }),
         });
 
@@ -102,23 +182,34 @@ export function useAIContentWorkspace({
           throw new Error(error.error || "Failed to generate content");
         }
 
-        const data = await res.json();
-        const nextContent = data.content as GeneratedContent;
+        let accumulated = "";
+        const data = await consumeContentStream(res, (delta) => {
+          accumulated += delta;
+          setStreamingContent(accumulated);
+        });
+        const nextContent = data.content;
 
         setContent(nextContent);
         hasInitialized.current = true;
         setIsReady(true);
         selectVariantByIndex(nextContent.history.length - 1, nextContent);
       } catch (error) {
+        if (abortController.signal.aborted) return;
         console.error("Generation error:", error);
         toast.error(error instanceof Error ? error.message : "Failed to generate content");
       } finally {
         setIsContentLoading(false);
+        setStreamingContent(null);
+        if (generationAbortRef.current === abortController) generationAbortRef.current = null;
         generateInFlightRef.current = false;
       }
     },
-    [contentType, enabled, jobId, selectVariantByIndex]
+    [content, contentType, consumeContentStream, currentVariantIndex, enabled, jobId, selectVariantByIndex]
   );
+
+  useEffect(() => () => {
+    generationAbortRef.current?.abort();
+  }, []);
 
   const checkExistingContent = useCallback(async () => {
     if (!enabled) return;
@@ -138,12 +229,18 @@ export function useAIContentWorkspace({
         const nextContent = data.content;
         setContent(nextContent);
 
-        const requestedIndex = requestedVariantId
-          ? nextContent.history.findIndex((item) => item.id === requestedVariantId)
-          : -1;
-        const targetIndex = requestedIndex >= 0 ? requestedIndex : nextContent.history.length - 1;
+        const targetIndex = selectInitialVariantIndex(
+          nextContent.history,
+          requestedVariantId
+        );
 
         selectVariantByIndex(targetIndex, nextContent);
+        const selectedVariantId = nextContent.history[targetIndex]?.id;
+        if (selectedVariantId) {
+          void recordVariantSignal(selectedVariantId, "selected").catch((error) => {
+            console.error("Failed to record selected variant:", error);
+          });
+        }
         hasInitialized.current = true;
         setIsReady(true);
         return;
@@ -157,7 +254,15 @@ export function useAIContentWorkspace({
       setIsContentLoading(false);
       bootstrapInFlightRef.current = false;
     }
-  }, [contentType, enabled, generateContent, jobId, requestedVariantId, selectVariantByIndex]);
+  }, [
+    contentType,
+    enabled,
+    generateContent,
+    jobId,
+    recordVariantSignal,
+    requestedVariantId,
+    selectVariantByIndex,
+  ]);
 
   useEffect(() => {
     if (!enabled || !Number.isFinite(jobId) || hasInitialized.current) return;
@@ -175,6 +280,7 @@ export function useAIContentWorkspace({
         body: JSON.stringify({
           content: editedContent,
           userPrompt: "Manual edit",
+          parentVariantId: content.history[currentVariantIndex]?.id ?? null,
         }),
       });
 
@@ -194,10 +300,14 @@ export function useAIContentWorkspace({
     } finally {
       setIsSaving(false);
     }
-  }, [content, editedContent, selectVariantByIndex]);
+  }, [content, currentVariantIndex, editedContent, selectVariantByIndex]);
 
   const sendModification = useCallback(async () => {
     if (!modificationPrompt.trim()) return;
+    if (hasChanges) {
+      toast.error("Save or cancel your manual edits before asking AI for changes");
+      return;
+    }
     const prompt = modificationPrompt.trim();
 
     setModificationPrompt("");
@@ -207,33 +317,88 @@ export function useAIContentWorkspace({
     } finally {
       setIsSending(false);
     }
-  }, [generateContent, modificationPrompt]);
+  }, [generateContent, hasChanges, modificationPrompt]);
 
   const navigateVariant = useCallback(
     (direction: "prev" | "next") => {
       if (!content || content.history.length === 0) return;
-      const historyLength = content.history.length;
-
-      const nextIndex =
-        direction === "prev"
-          ? currentVariantIndex > 0
-            ? currentVariantIndex - 1
-            : historyLength - 1
-          : currentVariantIndex < historyLength - 1
-            ? currentVariantIndex + 1
-            : 0;
+      if (isDiscarding) return;
+      if (hasChanges) {
+        toast.error("Save or cancel your manual edits before changing variants");
+        return;
+      }
+      const nextIndex = selectAdjacentVariantIndex(
+        content.history,
+        currentVariantIndex,
+        direction
+      );
 
       selectVariantByIndex(nextIndex);
+      const nextVariantId = content.history[nextIndex]?.id;
+      if (nextVariantId) {
+        void recordVariantSignal(nextVariantId, "selected").catch((error) => {
+          console.error("Failed to record selected variant:", error);
+        });
+      }
     },
-    [content, currentVariantIndex, selectVariantByIndex]
+    [
+      content,
+      currentVariantIndex,
+      hasChanges,
+      isDiscarding,
+      recordVariantSignal,
+      selectVariantByIndex,
+    ]
   );
+
+  const recordCurrentVariantCopied = useCallback(async () => {
+    if (hasChanges) {
+      throw new Error("Save or cancel manual edits before copying");
+    }
+    const variantId = content?.history[currentVariantIndex]?.id;
+    if (variantId) await recordVariantSignal(variantId, "copied");
+  }, [content, currentVariantIndex, hasChanges, recordVariantSignal]);
+
+  const discardCurrentVariant = useCallback(async () => {
+    const variantId = content?.history[currentVariantIndex]?.id;
+    if (!variantId || !content || content.history.length < 2) return;
+    if (hasChanges) {
+      toast.error("Save or cancel your manual edits before discarding a variant");
+      return;
+    }
+    setIsDiscarding(true);
+    try {
+      await recordVariantSignal(variantId, "discarded");
+      const discardedAt = new Date().toISOString();
+      const nextContent = {
+        ...content,
+        history: content.history.map((item) => item.id === variantId
+          ? { ...item, discardedAt }
+          : item),
+      };
+      const nextIndex = selectAdjacentVariantIndex(
+        nextContent.history,
+        currentVariantIndex,
+        "prev"
+      );
+      setContent(nextContent);
+      selectVariantByIndex(nextIndex, nextContent);
+      toast.success("Variant marked as discarded");
+    } catch (error) {
+      console.error("Failed to discard writing variant:", error);
+      toast.error("Failed to discard variant");
+    } finally {
+      setIsDiscarding(false);
+    }
+  }, [content, currentVariantIndex, hasChanges, recordVariantSignal, selectVariantByIndex]);
 
   const currentVariantPrompt = content?.history[currentVariantIndex]?.userPrompt || null;
 
   const currentContent = useMemo(() => {
+    if (streamingContent !== null) return streamingContent;
     if (hasChanges) return editedContent;
     return content?.history[currentVariantIndex]?.variant || content?.content || "";
-  }, [content, currentVariantIndex, editedContent, hasChanges]);
+  }, [content, currentVariantIndex, editedContent, hasChanges, streamingContent]);
 
   const contentStatusText = isSaving
     ? "Saving variant..."
@@ -255,11 +420,14 @@ export function useAIContentWorkspace({
     currentVariantPrompt,
     hasChanges,
     isContentLoading,
+    isDiscarding,
     isReady,
     isSaving,
     isSending,
     modificationPrompt,
     navigateVariant,
+    discardCurrentVariant,
+    recordCurrentVariantCopied,
     resetChanges,
     saveEdit,
     sendModification,

@@ -25,7 +25,10 @@ import {
   buildScoringPolicyVersion,
   shouldAdjudicate,
 } from "../evidence/adjudication";
-import { buildScoringCandidate, enrichCandidateEvidence } from "../evidence/candidate";
+import {
+  buildScoringCandidate,
+  enrichCandidateEvidence,
+} from "../evidence/candidate";
 import { analyzeJobsForMatching } from "../evidence/job-analysis";
 import { scoreDeterministically } from "../evidence/scoring";
 

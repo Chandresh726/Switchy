@@ -417,6 +417,13 @@ export const aiGenerationHistory = sqliteTable("aiGenerationHistory", {
   variant: text("variant").notNull(),
   userPrompt: text("user_prompt"), // If user asked for modifications
   parentVariantId: integer("parent_variant_id").references(aiGenHistParentVariantRef, { onDelete: "cascade" }), // If derived from another variant
+  aiRunId: text("ai_run_id").references(() => aiRuns.id, { onDelete: "set null" }),
+  source: text("source").notNull().default("generated"), // "generated" | "manual_edit"
+  selectedAt: integer("selected_at", { mode: "timestamp" }),
+  copiedAt: integer("copied_at", { mode: "timestamp" }),
+  discardedAt: integer("discarded_at", { mode: "timestamp" }),
+  editDistance: integer("edit_distance"),
+  editDistanceRatio: real("edit_distance_ratio"),
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 

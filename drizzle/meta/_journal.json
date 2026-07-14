@@ -127,6 +127,13 @@
       "when": 1784056337574,
       "tag": "0017_square_gertrude_yorkes",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1784057135438,
+      "tag": "0018_classy_doorman",
+      "breakpoints": true
     }
   ]
 }

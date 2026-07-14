@@ -1,6 +1,7 @@
 import {
   generateText,
   Output,
+  streamText,
   type CallWarning,
   type LanguageModelUsage,
 } from "ai";
@@ -54,6 +55,10 @@ interface TextExecutionInput extends BaseExecutionInput {
   validate?: (output: string) => boolean;
 }
 
+interface StreamingTextExecutionInput extends TextExecutionInput {
+  onDelta: (delta: string) => void | Promise<void>;
+}
+
 interface StructuredExecutionInput<T extends z.ZodTypeAny> extends BaseExecutionInput {
   instructions: string;
   prompt: string | ((attempt: number) => string);
@@ -82,6 +87,7 @@ export interface AICapabilityRuntime {
   snapshot: ResolvedModelSnapshot;
   reasoningEffort: "low" | "medium" | "high";
   executeText(input: TextExecutionInput): Promise<AIExecutionResult<string>>;
+  executeStreamingText(input: StreamingTextExecutionInput): Promise<AIExecutionResult<string>>;
   executeStructured<T extends z.ZodTypeAny>(
     input: StructuredExecutionInput<T>
   ): Promise<AIExecutionResult<z.infer<T>>>;
@@ -227,6 +233,7 @@ async function executeWithLedger<T>(input: {
           composed.signal,
           recordTelemetry
         );
+        input.execution.signal?.throwIfAborted();
         qualityFailed = Boolean(input.validate && !input.validate(result.output));
 
         if (qualityFailed) {
@@ -375,6 +382,51 @@ export async function createAICapabilityRuntime(
           return {
             output: result.text,
           };
+        },
+      });
+    },
+
+    async executeStreamingText(input) {
+      if (input.policy.maxAttempts !== 1) {
+        throw new AIError({
+          type: "validation",
+          message: "Streaming AI executions require exactly one application attempt",
+        });
+      }
+
+      return executeWithLedger({
+        capability: options.capability,
+        snapshot,
+        resolvedReasoningEffort: context.reasoningEffort,
+        execution: input,
+        validate: input.validate,
+        perform: async (attempt, abortSignal, recordTelemetry) => {
+          const result = streamText({
+            model: snapshot.model,
+            instructions: secureInstructions(input.instructions),
+            prompt: resolvePrompt(input.prompt, attempt),
+            ...snapshot.providerOptions,
+            abortSignal,
+            timeout: input.policy.timeoutMs,
+            maxRetries: 0,
+            maxOutputTokens: input.policy.maxOutputTokens,
+          });
+          let output = "";
+          for await (const delta of result.textStream) {
+            output += delta;
+            await input.onDelta(delta);
+          }
+          const [usage, finishReason, warnings] = await Promise.all([
+            result.usage,
+            result.finishReason,
+            result.warnings,
+          ]);
+          recordTelemetry({
+            usage: normalizeUsage(usage),
+            finishReason,
+            warningCodes: normalizeWarnings(warnings),
+          });
+          return { output };
         },
       });
     },
