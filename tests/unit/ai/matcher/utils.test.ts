@@ -40,6 +40,16 @@ describe("matcher utils", () => {
     vi.useRealTimers();
   });
 
+  it("does not count employment beyond the fixed reference time", () => {
+    const referenceTime = Date.parse("2026-07-01T00:00:00.000Z");
+    const years = calculateTotalExperienceYears([
+      { startDate: "2024-07-01", endDate: "2030-07-01" },
+      { startDate: "2020-01-01", endDate: "not-a-date" },
+    ], referenceTime);
+
+    expect(years).toBe(2);
+  });
+
   it("derives candidate years from role history", () => {
     expect(deriveCandidateExperienceYears(3)).toBe(3);
     expect(deriveCandidateExperienceYears(null)).toBeNull();
@@ -55,7 +65,7 @@ describe("matcher utils", () => {
       "At least 4 years of experience with Node.js",
     ]);
 
-    expect(years).toBe(7);
+    expect(years).toBe(5);
   });
 
   it("applies score guardrails when experience gap is significant", () => {

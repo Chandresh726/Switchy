@@ -1,0 +1,79 @@
+{
+  "scenarios": [
+    {
+      "id": "strong_remote_fit",
+      "candidate": { "skills": ["typescript", "node.js", "aws"], "years": 6, "seniority": "senior", "locations": ["remote"], "employment": ["full-time"] },
+      "job": { "locationType": "remote", "employmentType": "full-time", "seniorityLevel": "senior" },
+      "analysis": { "must": ["typescript", "node.js"], "preferred": ["aws"], "years": 4, "seniority": "senior", "confidence": 0.95 },
+      "expected": { "min": 95, "max": 100, "hardCap": null }
+    },
+    {
+      "id": "missing_preferred_skill",
+      "candidate": { "skills": ["typescript", "node.js"], "years": 6, "seniority": "senior", "locations": ["remote"], "employment": ["full-time"] },
+      "job": { "locationType": "remote", "employmentType": "full-time", "seniorityLevel": "senior" },
+      "analysis": { "must": ["typescript", "node.js"], "preferred": ["aws"], "years": 4, "seniority": "senior", "confidence": 0.95 },
+      "expected": { "min": 85, "max": 95, "hardCap": null }
+    },
+    {
+      "id": "ambiguous_mid_fit",
+      "candidate": { "skills": ["typescript"], "years": 3, "seniority": "mid", "locations": ["remote"], "employment": ["contract"] },
+      "job": { "locationType": "remote", "employmentType": "full-time", "seniorityLevel": "senior" },
+      "analysis": { "must": ["typescript", "node.js"], "preferred": [], "years": 5, "seniority": "senior", "confidence": 0.4 },
+      "expected": { "min": 50, "max": 60, "hardCap": null }
+    },
+    {
+      "id": "experience_hard_gap",
+      "candidate": { "skills": ["typescript", "node.js", "aws"], "years": 1, "seniority": "mid", "locations": ["remote"], "employment": ["full-time"] },
+      "job": { "locationType": "remote", "employmentType": "full-time", "seniorityLevel": "mid" },
+      "analysis": { "must": ["typescript", "node.js"], "preferred": ["aws"], "years": 5, "seniority": "mid", "confidence": 0.95 },
+      "expected": { "min": 45, "max": 50, "hardCap": 50 }
+    },
+    {
+      "id": "seniority_hard_gap",
+      "candidate": { "skills": ["typescript", "node.js"], "years": 4, "seniority": "entry", "locations": ["remote"], "employment": ["full-time"] },
+      "job": { "locationType": "remote", "employmentType": "full-time", "seniorityLevel": "senior" },
+      "analysis": { "must": ["typescript", "node.js"], "preferred": [], "years": 3, "seniority": "senior", "confidence": 0.9 },
+      "expected": { "min": 50, "max": 55, "hardCap": 55 }
+    },
+    {
+      "id": "onsite_location_conflict",
+      "candidate": { "skills": ["typescript", "node.js"], "years": 5, "seniority": "senior", "locations": ["remote"], "employment": ["full-time"] },
+      "job": { "locationType": "onsite", "employmentType": "full-time", "seniorityLevel": "senior" },
+      "analysis": { "must": ["typescript", "node.js"], "preferred": [], "years": 4, "seniority": "senior", "confidence": 0.9 },
+      "expected": { "min": 45, "max": 50, "hardCap": 50 }
+    },
+    {
+      "id": "missing_job_components",
+      "candidate": { "skills": ["typescript"], "years": 2, "seniority": "mid", "locations": [], "employment": [] },
+      "job": { "locationType": null, "employmentType": null, "seniorityLevel": null },
+      "analysis": { "must": ["typescript"], "preferred": [], "years": null, "seniority": null, "confidence": 0.6 },
+      "expected": { "min": 100, "max": 100, "hardCap": null }
+    },
+    {
+      "id": "employment_conflict",
+      "candidate": { "skills": ["typescript"], "years": 3, "seniority": "mid", "locations": [], "employment": ["contract"] },
+      "job": { "locationType": null, "employmentType": "full-time", "seniorityLevel": null },
+      "analysis": { "must": ["typescript"], "preferred": [], "years": null, "seniority": null, "confidence": 0.8 },
+      "expected": { "min": 75, "max": 80, "hardCap": null }
+    },
+    {
+      "id": "weak_skill_fit",
+      "candidate": { "skills": ["python"], "years": 3, "seniority": "mid", "locations": ["remote"], "employment": ["full-time"] },
+      "job": { "locationType": "remote", "employmentType": "full-time", "seniorityLevel": "mid" },
+      "analysis": { "must": ["typescript", "node.js"], "preferred": ["aws"], "years": 3, "seniority": "mid", "confidence": 0.9 },
+      "expected": { "min": 50, "max": 60, "hardCap": null }
+    }
+  ],
+  "pairwise": [
+    ["strong_remote_fit", "missing_preferred_skill"],
+    ["strong_remote_fit", "ambiguous_mid_fit"],
+    ["strong_remote_fit", "experience_hard_gap"],
+    ["strong_remote_fit", "seniority_hard_gap"],
+    ["strong_remote_fit", "onsite_location_conflict"],
+    ["missing_preferred_skill", "ambiguous_mid_fit"],
+    ["missing_preferred_skill", "weak_skill_fit"],
+    ["employment_conflict", "ambiguous_mid_fit"],
+    ["weak_skill_fit", "experience_hard_gap"],
+    ["ambiguous_mid_fit", "onsite_location_conflict"]
+  ]
+}

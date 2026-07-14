@@ -26,6 +26,7 @@ vi.mock("@/lib/ai/matcher/queue", () => ({
 import { executeConfiguredMatchWork } from "@/lib/ai/matcher/execution/work-executor";
 
 const config: MatcherConfig = {
+  qualityPreset: "balanced",
   model: "test-model",
   reasoningEffort: "medium",
   bulkEnabled: false,

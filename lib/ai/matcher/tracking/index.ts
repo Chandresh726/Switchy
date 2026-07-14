@@ -1,6 +1,7 @@
 export {
   fetchProfileData,
   fetchJobsData,
+  fetchMatchingPreferences,
   updateJobWithMatchResult,
   persistMatchSuccess,
   getUnmatchedJobCount,

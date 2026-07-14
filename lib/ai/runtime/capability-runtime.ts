@@ -64,6 +64,10 @@ interface StructuredExecutionInput<T extends z.ZodTypeAny> extends BaseExecution
 interface CreateAICapabilityRuntimeOptions {
   capability: AICapability;
   model?: AIContextOverrides;
+  resolved?: {
+    snapshot: ResolvedModelSnapshot;
+    reasoningEffort: "low" | "medium" | "high";
+  };
 }
 
 const UNTRUSTED_INPUT_INSTRUCTION =
@@ -296,20 +300,28 @@ export async function createAICapabilityRuntime(
   options: CreateAICapabilityRuntimeOptions
 ): Promise<AICapabilityRuntime> {
   let context: Awaited<ReturnType<typeof resolveAIContextForCapability>>;
-  try {
-    context = await resolveAIContextForCapability(options.capability, options.model);
-  } catch (error) {
-    await aiRunRepository.recordResolutionFailure({
-      capability: options.capability,
-      inputFingerprint: fingerprintAIInput({
+  if (options.resolved) {
+    context = {
+      ...options.resolved.snapshot,
+      providerId: options.resolved.snapshot.providerRecordId,
+      reasoningEffort: options.resolved.reasoningEffort,
+    };
+  } else {
+    try {
+      context = await resolveAIContextForCapability(options.capability, options.model);
+    } catch (error) {
+      await aiRunRepository.recordResolutionFailure({
         capability: options.capability,
-        providerRecordId: options.model?.providerId ?? null,
-        modelId: options.model?.modelId ?? null,
-        reasoningEffort: options.model?.reasoningEffort ?? null,
-      }),
-      error,
-    });
-    throw error;
+        inputFingerprint: fingerprintAIInput({
+          capability: options.capability,
+          providerRecordId: options.model?.providerId ?? null,
+          modelId: options.model?.modelId ?? null,
+          reasoningEffort: options.model?.reasoningEffort ?? null,
+        }),
+        error,
+      });
+      throw error;
+    }
   }
   const snapshot: ResolvedModelSnapshot = {
     providerRecordId: context.providerRecordId,

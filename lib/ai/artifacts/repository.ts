@@ -187,6 +187,18 @@ export function createArtifactRepository(database: ArtifactDatabase) {
       return { ...row, evidence: parseJson(row.evidenceJson, JobAnalysisEvidenceSchema) };
     },
 
+    async findJobAnalysis(jobFingerprintInput: string, extractorVersionInput: string) {
+      const jobFingerprint = ArtifactFingerprintSchema.parse(jobFingerprintInput);
+      const extractorVersion = ArtifactVersionSchema.parse(extractorVersionInput);
+      const rows = await database.select().from(jobAnalyses).where(and(
+        eq(jobAnalyses.jobFingerprint, jobFingerprint),
+        eq(jobAnalyses.extractorVersion, extractorVersion)
+      )).limit(1);
+      const row = rows[0];
+      if (!row) return null;
+      return { ...row, evidence: parseJson(row.evidenceJson, JobAnalysisEvidenceSchema) };
+    },
+
     async createMatchResult(input: CreateMatchResultInput) {
       const candidateFingerprint = ArtifactFingerprintSchema.parse(input.candidateFingerprint);
       const jobFingerprint = ArtifactFingerprintSchema.parse(input.jobFingerprint);

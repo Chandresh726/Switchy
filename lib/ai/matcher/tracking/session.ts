@@ -2,7 +2,7 @@ import { and, asc, count, eq, inArray, isNull } from "drizzle-orm";
 
 import { fetchCandidateProfileSnapshot } from "@/lib/ai/profile/profile-snapshot";
 import { db } from "@/lib/db";
-import { jobs, matchSessions, matchLogs } from "@/lib/db/schema";
+import { jobs, matchSessions, matchLogs, settings } from "@/lib/db/schema";
 
 import type { MatchSessionResult, TriggerSource, ProfileData, JobData } from "../types";
 
@@ -25,6 +25,37 @@ export async function fetchJobsData(jobIds: number[]): Promise<Map<number, JobDa
 
   const allJobs = await db.select().from(jobs).where(inArray(jobs.id, jobIds));
   return new Map(allJobs.map((j) => [j.id, j]));
+}
+
+function parsePreferenceList(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return Array.from(new Set(parsed
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim().toLocaleLowerCase("en-US"))
+      .filter(Boolean)))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchMatchingPreferences(): Promise<{
+  acceptedLocationTypes: string[];
+  acceptedEmploymentTypes: string[];
+}> {
+  const keys = [
+    "matcher_accepted_location_types",
+    "matcher_accepted_employment_types",
+  ];
+  const rows = await db.select().from(settings).where(inArray(settings.key, keys));
+  const values = new Map(rows.map((row) => [row.key, row.value]));
+  return {
+    acceptedLocationTypes: parsePreferenceList(values.get(keys[0])),
+    acceptedEmploymentTypes: parsePreferenceList(values.get(keys[1])),
+  };
 }
 
 export async function updateJobWithMatchResult(

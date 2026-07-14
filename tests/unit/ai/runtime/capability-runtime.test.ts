@@ -112,6 +112,35 @@ describe("AI capability runtime", () => {
     );
   });
 
+  it("reuses a concrete resolved snapshot without resolving or decrypting again", async () => {
+    const model = new MockLanguageModelV4({
+      doGenerate: successfulProviderResult(),
+    });
+    const runtime = await createAICapabilityRuntime({
+      capability: "match_adjudication",
+      resolved: {
+        snapshot: {
+          providerRecordId: "provider-1",
+          provider: "openai",
+          modelId: "gpt-test",
+          model,
+        },
+        reasoningEffort: "medium",
+      },
+    });
+
+    await runtime.executeText(executionInput());
+
+    expect(mocks.resolveAIContextForCapability).not.toHaveBeenCalled();
+    expect(mocks.createRun).toHaveBeenCalledWith(expect.objectContaining({
+      capability: "match_adjudication",
+      snapshot: expect.objectContaining({
+        providerRecordId: "provider-1",
+        modelId: "gpt-test",
+      }),
+    }));
+  });
+
   it("records a sanitized failed run when model resolution fails", async () => {
     const resolutionError = new Error("provider rejected sk-super-secret");
     mocks.resolveAIContextForCapability.mockRejectedValue(resolutionError);

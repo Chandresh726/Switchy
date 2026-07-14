@@ -183,6 +183,11 @@ export function canonicalizeCandidateEvidence(input: CandidateEvidence): Candida
         evidence.preferences.acceptedEmploymentTypes
       ),
     },
+    totalExperienceYears: evidence.totalExperienceYears,
+    experienceAsOfMonth: evidence.experienceAsOfMonth,
+    seniorityLevel: evidence.seniorityLevel,
+    managementExperience: evidence.managementExperience,
+    domainKeywords: normalizeStringArray(evidence.domainKeywords),
   };
   return CandidateEvidenceSchema.parse(normalized);
 }

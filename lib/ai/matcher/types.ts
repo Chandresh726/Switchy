@@ -27,12 +27,14 @@ export const BulkMatchResultSchema = z.object({
 });
 
 export type ErrorType = AIErrorType;
+export type MatchQualityPreset = "economy" | "balanced" | "quality";
 
 export type TriggerSource = "manual" | "auto_match" | "company_refresh" | "match_unmatched";
 
 export type MatchPhase = "queued" | "matching" | "completed";
 
 export interface MatcherConfig {
+  qualityPreset: MatchQualityPreset;
   model: string;
   reasoningEffort: string;
   bulkEnabled: boolean;
@@ -50,6 +52,7 @@ export interface MatcherConfig {
 }
 
 export const DEFAULT_MATCHER_CONFIG: MatcherConfig = {
+  qualityPreset: "balanced",
   model: "",
   reasoningEffort: "medium",
   bulkEnabled: true,
@@ -130,7 +133,12 @@ export type StrategyResultMap = Map<number, StrategyResultItem>;
 export type MatchStrategy = "single" | "bulk" | "parallel";
 
 export interface ProfileData {
-  profile: { id: number; summary: string | null };
+  profile: {
+    id: number;
+    summary: string | null;
+    preferredCountry: string | null;
+    preferredCity: string | null;
+  };
   skills: Array<{
     name: string;
     category: string | null;
@@ -139,14 +147,30 @@ export interface ProfileData {
     title: string;
     company: string;
     description: string | null;
+    location: string | null;
     startDate: string;
     endDate: string | null;
+    highlights: string | null;
   }>;
-  education: Array<{ institution: string; degree: string; field: string | null }>;
+  education: Array<{
+    institution: string;
+    degree: string;
+    field: string | null;
+    startDate: string | null;
+    endDate: string | null;
+    gpa: string | null;
+    honors: string | null;
+  }>;
 }
 
 export interface JobData {
   id: number;
   title: string;
   description: string | null;
+  location: string | null;
+  locationType: string | null;
+  salary: string | null;
+  department: string | null;
+  employmentType: string | null;
+  seniorityLevel: string | null;
 }

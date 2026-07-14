@@ -57,17 +57,21 @@ function toTimestamp(value: string | null | undefined): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-export function calculateTotalExperienceYears(experience: ExperienceEntry[]): number | null {
+export function calculateTotalExperienceYears(
+  experience: ExperienceEntry[],
+  referenceTime = Date.now()
+): number | null {
   if (experience.length === 0) return null;
 
-  const now = Date.now();
   const intervals: Array<[number, number]> = [];
 
   for (const item of experience) {
     const start = toTimestamp(item.startDate);
     if (start === null) continue;
 
-    const end = toTimestamp(item.endDate) ?? now;
+    const parsedEnd = toTimestamp(item.endDate);
+    if (item.endDate && parsedEnd === null) continue;
+    const end = Math.min(parsedEnd ?? referenceTime, referenceTime);
     if (end <= start) continue;
 
     intervals.push([start, end]);
@@ -123,21 +127,23 @@ export function estimateRequiredExperienceYears(
   requirements: string[]
 ): number | null {
   const fullText = [description ?? "", ...requirements].join("\n").toLowerCase();
+  const experienceRangePattern = /(\d+)\s*(?:-|–|to)\s*(\d+)\s*(?:\+)?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:experience|exp)\b/gi;
 
   const rangeYears = collectNumbers(
-    /(\d+)\s*(?:-|–|to)\s*(\d+)\s*(?:\+)?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:experience|exp)\b/gi,
+    experienceRangePattern,
     fullText,
     (match) => {
       const min = parseInt(match[1] ?? "", 10);
       const max = parseInt(match[2] ?? "", 10);
       if (Number.isNaN(min) || Number.isNaN(max)) return null;
-      return Math.max(min, max);
+      return Math.min(min, max);
     }
   );
+  const textWithoutRanges = fullText.replace(experienceRangePattern, " ");
 
   const explicitYears = collectNumbers(
     /(\d+)\s*(?:\+|plus)?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:experience|exp)\b/gi,
-    fullText,
+    textWithoutRanges,
     (match) => {
       const years = parseInt(match[1] ?? "", 10);
       return Number.isNaN(years) ? null : years;
@@ -146,7 +152,7 @@ export function estimateRequiredExperienceYears(
 
   const minimumYears = collectNumbers(
     /(?:minimum|min|at\s+least)\s+(\d+)\s*(?:\+|plus)?\s*(?:years?|yrs?)\b/gi,
-    fullText,
+    textWithoutRanges,
     (match) => {
       const years = parseInt(match[1] ?? "", 10);
       return Number.isNaN(years) ? null : years;

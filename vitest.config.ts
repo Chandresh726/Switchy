@@ -40,6 +40,15 @@ export default defineConfig({
           setupFiles: ["tests/setup/ui.ts"],
         },
       },
+      {
+        extends: true,
+        test: {
+          name: "eval",
+          environment: "node",
+          include: ["tests/evals/**/*.test.ts"],
+          setupFiles: ["tests/setup/node.ts"],
+        },
+      },
     ],
   },
 });

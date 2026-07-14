@@ -33,6 +33,13 @@ export const CandidateEvidenceSchema = z.object({
     acceptedLocationTypes: z.array(z.string().min(1).max(100)).max(20),
     acceptedEmploymentTypes: z.array(z.string().min(1).max(100)).max(20),
   }).strict(),
+  totalExperienceYears: z.number().min(0).max(100).nullable().default(null),
+  experienceAsOfMonth: z.string().regex(/^\d{4}-\d{2}$/).nullable().default(null),
+  seniorityLevel: z.enum([
+    "entry", "mid", "senior", "lead", "manager", "director", "executive",
+  ]).nullable().default(null),
+  managementExperience: z.boolean().default(false),
+  domainKeywords: z.array(z.string().min(1).max(200)).max(200).default([]),
 }).strict();
 
 export type CandidateEvidence = z.infer<typeof CandidateEvidenceSchema>;
