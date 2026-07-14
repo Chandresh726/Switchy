@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { MatchWorkExecutionOptions } from "@/lib/ai/matcher/execution";
+import type { MatchWorkExecutionOptions } from "@/lib/ai/matcher/execution/work-executor";
 import type { MatcherConfig } from "@/lib/ai/matcher/types";
 
 const mocks = vi.hoisted(() => ({
@@ -24,7 +24,7 @@ vi.mock("@/lib/ai/matcher/queue", () => ({
   getQueueStatus: mocks.getQueueStatus,
 }));
 
-vi.mock("@/lib/ai/matcher/execution", () => ({
+vi.mock("@/lib/ai/matcher/execution/work-executor", () => ({
   executeConfiguredMatchWork: vi.fn(async (
     config: MatcherConfig,
     jobIds: number[],

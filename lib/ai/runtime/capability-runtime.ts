@@ -9,8 +9,13 @@ import { z } from "zod";
 
 import type { AIContextOverrides } from "@/lib/ai/runtime-context";
 import { resolveAIContextForCapability } from "@/lib/ai/runtime-context";
-import { AIError, isRetryableError } from "@/lib/ai/shared/errors";
+import {
+  AIError,
+  getRetryAfterMs,
+  isRetryableError,
+} from "@/lib/ai/shared/errors";
 
+import { adaptiveProviderLimiter } from "./adaptive-provider-limiter";
 import { aiRunRepository } from "./default-run-repository";
 import { fingerprintAIInput } from "./fingerprint";
 import type {
@@ -68,6 +73,7 @@ interface StructuredExecutionInput<T extends z.ZodTypeAny> extends BaseExecution
 
 interface CreateAICapabilityRuntimeOptions {
   capability: AICapability;
+  providerConcurrencyLimit?: number;
   model?: AIContextOverrides;
   resolved?: {
     snapshot: ResolvedModelSnapshot;
@@ -188,6 +194,7 @@ async function executeWithLedger<T>(input: {
     recordTelemetry: (telemetry: AttemptTelemetry) => void
   ) => Promise<ProviderCallResult<T>>;
   validate?: (output: T) => boolean;
+  providerConcurrencyLimit?: number;
 }): Promise<AIExecutionResult<T>> {
   const runId = await aiRunRepository.create({
     capability: input.capability,
@@ -218,9 +225,12 @@ async function executeWithLedger<T>(input: {
     }
 
     for (let attempt = 1; attempt <= input.execution.policy.maxAttempts; attempt++) {
-      attempts = attempt;
       input.execution.signal?.throwIfAborted();
       const composed = composeAbortSignal(input.execution.signal);
+      const useAdaptiveLimiter =
+        input.providerConcurrencyLimit !== undefined &&
+        (input.capability === "job_analysis" || input.capability === "match_adjudication");
+      let permit: Awaited<ReturnType<typeof adaptiveProviderLimiter.acquire>> | undefined;
       const recordTelemetry = (telemetry: AttemptTelemetry) => {
         accumulatedUsage = mergeUsage(accumulatedUsage, telemetry.usage);
         telemetry.warningCodes.forEach((warning) => warningCodes.add(warning));
@@ -228,11 +238,26 @@ async function executeWithLedger<T>(input: {
       };
 
       try {
-        const result = await input.perform(
-          attempt,
-          composed.signal,
-          recordTelemetry
-        );
+        permit = useAdaptiveLimiter
+          ? await adaptiveProviderLimiter.acquire(
+              input.snapshot.providerRecordId,
+              input.providerConcurrencyLimit!,
+              composed.signal
+            )
+          : undefined;
+        attempts = attempt;
+        let result: ProviderCallResult<T>;
+        try {
+          result = await input.perform(
+            attempt,
+            composed.signal,
+            recordTelemetry
+          );
+          permit?.success();
+        } catch (error) {
+          permit?.failure(error);
+          throw error;
+        }
         input.execution.signal?.throwIfAborted();
         qualityFailed = Boolean(input.validate && !input.validate(result.output));
 
@@ -270,10 +295,14 @@ async function executeWithLedger<T>(input: {
         }
         const baseDelayMs = input.execution.retry?.baseDelayMs ?? 250;
         const maxDelayMs = input.execution.retry?.maxDelayMs ?? 2_000;
-        const delayMs = Math.min(
+        const exponentialDelayMs = Math.min(
           baseDelayMs * 2 ** (attempt - 1),
           maxDelayMs
         );
+        const providerDelayMs = getRetryAfterMs(error) ?? 0;
+        // The application cap bounds our exponential backoff, but a provider's
+        // explicit Retry-After is a minimum that must not be shortened.
+        const delayMs = Math.max(exponentialDelayMs, providerDelayMs);
         await retryDelay(delayMs, input.execution.signal);
       } finally {
         composed.dispose();
@@ -350,6 +379,7 @@ export async function createAICapabilityRuntime(
         resolvedReasoningEffort: context.reasoningEffort,
         execution: input,
         validate: input.validate,
+        providerConcurrencyLimit: options.providerConcurrencyLimit,
         perform: async (attempt, abortSignal, recordTelemetry) => {
           let telemetryRecorded = false;
           const result = await generateText({
@@ -400,6 +430,7 @@ export async function createAICapabilityRuntime(
         resolvedReasoningEffort: context.reasoningEffort,
         execution: input,
         validate: input.validate,
+        providerConcurrencyLimit: options.providerConcurrencyLimit,
         perform: async (attempt, abortSignal, recordTelemetry) => {
           const result = streamText({
             model: snapshot.model,
@@ -438,6 +469,7 @@ export async function createAICapabilityRuntime(
         resolvedReasoningEffort: context.reasoningEffort,
         execution: input,
         validate: input.validate,
+        providerConcurrencyLimit: options.providerConcurrencyLimit,
         perform: async (attempt, abortSignal, recordTelemetry) => {
           let telemetryRecorded = false;
           const result = await generateText({

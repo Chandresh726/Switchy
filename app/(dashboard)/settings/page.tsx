@@ -19,6 +19,7 @@ import { getProviderMetadata } from "@/lib/ai/providers/metadata";
 import type { AIProvider } from "@/lib/ai/providers/types";
 import type { MatchQualityPreset } from "@/lib/ai/matcher/types";
 import { APP_VERSION, DB_PATH } from "@/lib/constants";
+import { useMatchSession } from "@/lib/hooks/use-match-session";
 import type { ProviderModelsResponse } from "@/lib/types";
 import type {
   ProviderModelsState,
@@ -995,9 +996,13 @@ function SettingsContent() {
       ),
   });
 
-  const matchUnmatchedMutation = useMutation<{ total: number; matched: number; failed: number; sessionId: string }>({
+  const matchUnmatchedMutation = useMutation<{
+    total: number;
+    status: "queued";
+    sessionId: string;
+  }>({
     mutationFn: () =>
-      apiPost<{ total: number; matched: number; failed: number; sessionId: string }>(
+      apiPost<{ total: number; status: "queued"; sessionId: string }>(
         "/api/jobs/match-unmatched",
         {},
         "Failed to match jobs"
@@ -1011,41 +1016,11 @@ function SettingsContent() {
 
   const [matchSessionId, setMatchSessionId] = useState<string | null>(null);
 
-  const { data: matchProgress } = useQuery<{
-    sessionId: string;
-    status: string;
-    total: number;
-    completed: number;
-    succeeded: number;
-    failed: number;
-  } | null>({
-    queryKey: ["match-progress", matchSessionId],
-    queryFn: async () => {
-      if (!matchSessionId) return null;
-      const res = await fetch(`/api/jobs/match-unmatched?sessionId=${matchSessionId}`, {
-        cache: "no-store",
-      });
-      if (!res.ok) return null;
-      return res.json();
-    },
-    enabled: !!matchSessionId,
-    refetchInterval: (query) => {
-      const progress = query.state.data;
-      if (!!matchSessionId && progress?.status !== "completed" && progress?.status !== "failed") {
-        return 1000;
-      }
-      return false;
+  const { data: matchProgress } = useMatchSession(matchSessionId, {
+    onSettled: () => {
+      setMatchSessionId(null);
     },
   });
-
-  useEffect(() => {
-    if (!matchUnmatchedMutation.isPending && matchSessionId && matchProgress?.status === "completed") {
-      setMatchSessionId(null);
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["unmatched-jobs-count"] });
-      queryClient.invalidateQueries({ queryKey: ["match-history"] });
-    }
-  }, [matchUnmatchedMutation.isPending, matchSessionId, matchProgress, queryClient]);
 
   if (isInitialLoading) {
     return <SettingsPageSkeleton />;

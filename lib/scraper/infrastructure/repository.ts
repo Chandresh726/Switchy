@@ -1,18 +1,18 @@
 import { and, eq, inArray } from "drizzle-orm";
 
 import { buildJobFingerprintFromRecord } from "@/lib/ai/artifacts/fingerprints";
+import { createAIWorkRecords } from "@/lib/ai/work-items/contracts";
 import { db } from "@/lib/db";
 import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
 import {
+  aiWorkItems,
   companies,
   jobs,
   matchSessions,
-  scrapeMatchOutbox,
   scrapeSessions,
   scrapingLogs,
   settings,
 } from "@/lib/db/schema";
-import { createMatchWorkRecords } from "@/lib/scraper/matching/work-contracts";
 
 import type {
   IScraperRepository,
@@ -281,15 +281,16 @@ export class DrizzleScraperRepository implements IScraperRepository {
 
       const matchOutboxId = matchableJobIds.length > 0 ? crypto.randomUUID() : null;
       if (matchOutboxId) {
-        const matchWork = createMatchWorkRecords({
+        const matchWork = createAIWorkRecords({
           id: matchOutboxId,
           scrapingLogId: insertedLog.id,
           companyId: input.companyId,
           jobIds: matchableJobIds,
+          triggerSource: "auto_match",
           now: completedAt,
         });
         tx.insert(matchSessions).values(matchWork.session).run();
-        tx.insert(scrapeMatchOutbox).values(matchWork.outbox).run();
+        tx.insert(aiWorkItems).values(matchWork.workItem).run();
       }
 
       return {

@@ -1,3 +1,5 @@
+import PQueue from "p-queue";
+
 import {
   artifactRepository,
   buildCandidateEvidence,
@@ -138,6 +140,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
         modelId: config.model,
         reasoningEffort: config.reasoningEffort,
       },
+      providerConcurrencyLimit: config.concurrencyLimit,
     });
   } catch (error) {
     console.warn("[EvidenceMatcher] Model policy unavailable; using retryable deterministic results.", error);
@@ -163,14 +166,34 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
   let completed = 0;
   let succeeded = 0;
   let failed = 0;
-  let adjudicationRuntime: Awaited<ReturnType<typeof createAICapabilityRuntime>> | null = null;
+  type CapabilityRuntime = Awaited<ReturnType<typeof createAICapabilityRuntime>>;
+  let adjudicationRuntimePromise: Promise<CapabilityRuntime | null> | null = null;
   let adjudicationUnavailable = !modelPolicyResolved;
 
-  for (const jobId of jobIds) {
+  const resolveAdjudicationRuntime = (): Promise<CapabilityRuntime | null> => {
+    if (adjudicationUnavailable) return Promise.resolve(null);
+    adjudicationRuntimePromise ??= createAICapabilityRuntime({
+      capability: "match_adjudication",
+      resolved: {
+        snapshot: modelRuntime!.snapshot,
+        reasoningEffort: modelRuntime!.reasoningEffort,
+      },
+      providerConcurrencyLimit: config.concurrencyLimit,
+    }).catch((error) => {
+      adjudicationUnavailable = true;
+      console.warn("[EvidenceMatcher] Adjudication unavailable; using deterministic score.", error);
+      return null;
+    });
+    return adjudicationRuntimePromise;
+  };
+  const matchQueue = new PQueue({ concurrency: Math.max(1, config.concurrencyLimit) });
+
+  await Promise.all(jobIds.map((jobId) => matchQueue.add(async () => {
     throwIfAborted(signal);
-    if (shouldStop && await shouldStop()) break;
+    if (shouldStop && await shouldStop()) return;
     const startedAt = performance.now();
     const analyzed = analyses.get(jobId);
+    let adjudicationRuntime: CapabilityRuntime | null = null;
 
     try {
       if (!analyzed) throw new Error(`Job with ID ${jobId} not found`);
@@ -195,7 +218,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
         });
         results.set(jobId, publicResult);
         succeeded++;
-        continue;
+        return;
       }
 
       const deterministic = scoreDeterministically(
@@ -214,20 +237,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
       );
 
       if (adjudicationRequired && !adjudicationUnavailable) {
-        if (!adjudicationRuntime) {
-          try {
-            adjudicationRuntime = await createAICapabilityRuntime({
-              capability: "match_adjudication",
-              resolved: {
-                snapshot: modelRuntime!.snapshot,
-                reasoningEffort: modelRuntime!.reasoningEffort,
-              },
-            });
-          } catch (error) {
-            adjudicationUnavailable = true;
-            console.warn("[EvidenceMatcher] Adjudication unavailable; using deterministic score.", error);
-          }
-        }
+        adjudicationRuntime = await resolveAdjudicationRuntime();
         if (adjudicationRuntime) {
           try {
             const adjudicated = await adjudicateMatch(
@@ -308,7 +318,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
       completed++;
       onProgress?.(completed, jobIds.length, succeeded, failed);
     }
-  }
+  })));
 
   return results;
 }

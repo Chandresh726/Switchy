@@ -1,8 +1,8 @@
 import { db } from "@/lib/db";
 import {
-  DrizzleMatchWorkStore,
+  DrizzleAIWorkStore,
   type StopMatchSessionResult,
-} from "@/lib/scraper/matching/match-work-store";
+} from "@/lib/ai/work-items/repository";
 import {
   getLocalDataOperationGate,
   type LocalDataOperationGate,
@@ -14,5 +14,5 @@ export async function stopMatchSession(
   dataOperationGate: LocalDataOperationGate = getLocalDataOperationGate()
 ): Promise<StopMatchSessionResult> {
   dataOperationGate.cancelMatches({ sessionId });
-  return new DrizzleMatchWorkStore(database).stopSession(sessionId);
+  return new DrizzleAIWorkStore(database).stopSession(sessionId);
 }

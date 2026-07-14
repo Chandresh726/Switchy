@@ -1,5 +1,3 @@
-export { createMatchEngine, matchSingle, matchBulk, matchWithTracking, matchUnmatchedJobs, type MatchEngine } from "./engine";
-
 export { getMatcherConfig, getDefaultConfig, getProviderDefaults, validateMatcherConfig } from "./config";
 
 export {

@@ -19,6 +19,7 @@ export {
   isRetryableError,
   isServerError,
   isRateLimitError,
+  getRetryAfterMs,
   createAIError,
   type AIErrorType,
   type AIErrorOptions,

@@ -242,6 +242,54 @@ export const scrapeMatchOutbox = sqliteTable("scrape_match_outbox", {
   leaseIdx: index("scrape_match_outbox_lease_idx").on(table.status, table.leaseExpiresAt),
 }));
 
+// Generic durable local AI work. Payload/result JSON is validated by the work repository.
+export const aiWorkItems = sqliteTable("ai_work_items", {
+  id: text("id").primaryKey(),
+  workType: text("work_type").notNull(),
+  matchSessionId: text("match_session_id")
+    .references(() => matchSessions.id, { onDelete: "cascade" }),
+  scrapingLogId: integer("scraping_log_id")
+    .references(() => scrapingLogs.id, { onDelete: "restrict" }),
+  companyId: integer("company_id")
+    .references(() => companies.id, { onDelete: "restrict" }),
+  payloadJson: text("payload_json").notNull(),
+  status: text("status").notNull().default("queued"),
+  priority: integer("priority").notNull().default(100),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  availableAt: integer("available_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  workerId: text("worker_id"),
+  lockedAt: integer("locked_at", { mode: "timestamp" }),
+  leaseExpiresAt: integer("lease_expires_at", { mode: "timestamp" }),
+  cancelRequested: integer("cancel_requested", { mode: "boolean" }).notNull().default(false),
+  resultJson: text("result_json"),
+  lastErrorCode: text("last_error_code"),
+  lastError: text("last_error"),
+  startedAt: integer("started_at", { mode: "timestamp" }),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  sessionWorkUnique: unique("ai_work_items_session_work_unique").on(
+    table.matchSessionId,
+    table.workType
+  ),
+  claimIdx: index("ai_work_items_claim_idx").on(
+    table.workType,
+    table.status,
+    table.availableAt,
+    table.priority,
+    table.createdAt
+  ),
+  sessionStatusIdx: index("ai_work_items_session_status_idx").on(
+    table.matchSessionId,
+    table.status
+  ),
+  scrapingLogIdx: index("ai_work_items_scraping_log_idx").on(table.scrapingLogId),
+  companyStatusIdx: index("ai_work_items_company_status_idx").on(table.companyId, table.status),
+  leaseIdx: index("ai_work_items_lease_idx").on(table.status, table.leaseExpiresAt),
+}));
+
 // Match Sessions - Track batch match operations
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
@@ -682,6 +730,8 @@ export type MatchLog = typeof matchLogs.$inferSelect;
 export type NewMatchLog = typeof matchLogs.$inferInsert;
 export type Resume = typeof resumes.$inferSelect;
 export type NewResume = typeof resumes.$inferInsert;
+export type AIWorkItem = typeof aiWorkItems.$inferSelect;
+export type NewAIWorkItem = typeof aiWorkItems.$inferInsert;
 export type AIGeneratedContent = typeof aiGeneratedContent.$inferSelect;
 export type NewAIGeneratedContent = typeof aiGeneratedContent.$inferInsert;
 export type AIGenerationHistory = typeof aiGenerationHistory.$inferSelect;

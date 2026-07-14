@@ -357,6 +357,62 @@ describe("evidence matcher executor", () => {
     );
   });
 
+  it("runs adjudications concurrently up to the configured provider ceiling", async () => {
+    const secondJob = { ...job, id: 102, title: "Platform Engineer" };
+    const secondAnalysis = {
+      ...analysis,
+      job: secondJob,
+      jobEvidence: { ...analysis.jobEvidence, title: secondJob.title },
+      jobFingerprint: "c".repeat(64),
+      jobAnalysisId: "analysis-2",
+    };
+    mocks.fetchJobsData.mockResolvedValue(new Map([
+      [101, job],
+      [102, secondJob],
+    ]));
+    mocks.fetchProfileData.mockResolvedValue({
+      profile: { id: 1, summary: "Backend engineer", preferredCountry: null, preferredCity: null },
+      skills: [],
+      experience: [],
+      education: [],
+    });
+    mocks.analyzeJobsForMatching.mockResolvedValue(new Map([
+      [101, analysis],
+      [102, secondAnalysis],
+    ]));
+    mocks.shouldAdjudicate.mockReturnValue(true);
+    const release = Promise.withResolvers<void>();
+    let active = 0;
+    let maxActive = 0;
+    mocks.adjudicateMatch.mockImplementation(async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await release.promise;
+      active -= 1;
+      return {
+        score: 90,
+        runId: "adjudication-run",
+        attempts: 1,
+        rationale: "Synthetic adjudication",
+        evidenceReferences: ["must-have:typescript"],
+      };
+    });
+
+    const pending = executeMatch({ config, jobIds: [101, 102] });
+    await vi.waitFor(() => expect(mocks.adjudicateMatch).toHaveBeenCalledTimes(2));
+    expect(maxActive).toBe(2);
+    expect(mocks.createAICapabilityRuntime).toHaveBeenCalledTimes(2);
+
+    release.resolve();
+    const results = await pending;
+
+    expect(results.size).toBe(2);
+    expect(Array.from(results.values())).toEqual([
+      expect.objectContaining({ score: 90 }),
+      expect.objectContaining({ score: 90 }),
+    ]);
+  });
+
   it("does not reuse an authoritative cache entry when concrete model resolution fails", async () => {
     mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
     mocks.fetchProfileData.mockResolvedValue({

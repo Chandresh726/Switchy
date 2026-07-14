@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { useParams, usePathname } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, Loader2 } from "lucide-react";
@@ -18,6 +20,7 @@ import {
 } from "@/components/companies/company-detail";
 import { CompanyLayoutClient } from "@/components/companies/company-detail/company-layout-client";
 import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { useMatchSession } from "@/lib/hooks/use-match-session";
 
 function CompanyLayoutContent({
     children,
@@ -27,9 +30,14 @@ function CompanyLayoutContent({
     const params = useParams();
     const pathname = usePathname();
     const queryClient = useQueryClient();
+    const [matchSessionId, setMatchSessionId] = useState<string | null>(null);
     const { noteSaveIndicator } = useCompanyNotesContext();
 
     const companyId = Number(params.id);
+    useMatchSession(matchSessionId, {
+        extraInvalidationKeys: [["company-overview", companyId]],
+        onSettled: () => setMatchSessionId(null),
+    });
     const activeTab = pathname?.startsWith(`/companies/${companyId}/people`)
         ? "people"
         : pathname?.startsWith(`/companies/${companyId}/activity`)
@@ -78,11 +86,9 @@ function CompanyLayoutContent({
             if (!res.ok) throw new Error("Failed to run matching");
             return res.json();
         },
-        onSuccess: (result) => {
-            queryClient.invalidateQueries({ queryKey: ["company-overview", companyId] });
-            queryClient.invalidateQueries({ queryKey: ["jobs"] });
-            queryClient.invalidateQueries({ queryKey: ["match-history"] });
-            toast.success(result.message || "Matching completed successfully");
+        onSuccess: (result: { sessionId: string; total: number }) => {
+            setMatchSessionId(result.sessionId || null);
+            toast.success(`Queued ${result.total} jobs for matching`);
         },
         onError: () => {
             toast.error("Failed to run matching");
@@ -121,7 +127,7 @@ function CompanyLayoutContent({
                             canRefreshJobs={data.company.canScrapeJobs}
                             canRunMatching={data.stats.openJobs > 0}
                             isRefreshing={refreshJobsMutation.isPending}
-                            isMatching={runMatchingMutation.isPending}
+                            isMatching={runMatchingMutation.isPending || Boolean(matchSessionId)}
                             onRefreshJobs={() => refreshJobsMutation.mutate()}
                             onRunMatching={() => runMatchingMutation.mutate()}
                         />

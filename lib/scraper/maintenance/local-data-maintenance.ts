@@ -1,8 +1,10 @@
 import { and, eq, inArray } from "drizzle-orm";
 
+import { parseMatchWorkPayload } from "@/lib/ai/work-items/contracts";
 import { db } from "@/lib/db";
 import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
 import {
+  aiWorkItems,
   companies,
   jobs,
   matchResults,
@@ -178,8 +180,9 @@ function findOutboxes(
   companyIds: readonly number[] | null,
   activeOnly: boolean
 ): OutboxReference[] {
+  const scopedLegacy: OutboxReference[] = [];
   if (companyIds === null) {
-    return tx
+    scopedLegacy.push(...tx
       .select({
         sessionId: scrapeMatchOutbox.id,
         scrapingLogId: scrapeMatchOutbox.scrapingLogId,
@@ -190,13 +193,11 @@ function findOutboxes(
           ? inArray(scrapeMatchOutbox.status, ["pending", "running"])
           : undefined
       )
-      .all();
-  }
-
-  const outboxes: OutboxReference[] = [];
-  for (const companyBatch of chunkSqliteParameters(companyIds)) {
-    outboxes.push(
-      ...tx
+      .all());
+  } else {
+    for (const companyBatch of chunkSqliteParameters(companyIds)) {
+      scopedLegacy.push(
+        ...tx
         .select({
           sessionId: scrapeMatchOutbox.id,
           scrapingLogId: scrapeMatchOutbox.scrapingLogId,
@@ -211,16 +212,52 @@ function findOutboxes(
             : inArray(scrapeMatchOutbox.companyId, companyBatch)
         )
         .all()
-    );
+      );
+    }
   }
-  return outboxes;
+
+  const targetJobIds = companyIds === null ? null : new Set<number>();
+  if (companyIds !== null && targetJobIds) {
+    for (const companyBatch of chunkSqliteParameters(companyIds)) {
+      for (const row of tx
+        .select({ id: jobs.id })
+        .from(jobs)
+        .where(inArray(jobs.companyId, companyBatch))
+        .all()) {
+        targetJobIds.add(row.id);
+      }
+    }
+  }
+  const aiRows = tx.select({
+    sessionId: aiWorkItems.matchSessionId,
+    scrapingLogId: aiWorkItems.scrapingLogId,
+    payloadJson: aiWorkItems.payloadJson,
+    status: aiWorkItems.status,
+  }).from(aiWorkItems).where(
+    activeOnly ? inArray(aiWorkItems.status, ["queued", "running"]) : undefined
+  ).all();
+  const aiRefs = aiRows.filter((row) => {
+    if (companyIds === null) return true;
+    const payload = parseMatchWorkPayload(row.payloadJson);
+    return payload.jobIds.some((jobId) => targetJobIds?.has(jobId));
+  }).flatMap((row) => row.sessionId && row.scrapingLogId
+    ? [{ sessionId: row.sessionId, scrapingLogId: row.scrapingLogId }]
+    : row.sessionId
+      ? [{ sessionId: row.sessionId, scrapingLogId: 0 }]
+      : []);
+  const bySession = new Map<string, OutboxReference>();
+  for (const reference of [...scopedLegacy, ...aiRefs]) {
+    const existing = bySession.get(reference.sessionId);
+    if (!existing || existing.scrapingLogId === 0) bySession.set(reference.sessionId, reference);
+  }
+  return Array.from(bySession.values());
 }
 
 function resetMatcherProjections(
   tx: Transaction,
   scrapingLogIds: readonly number[]
 ): void {
-  for (const logBatch of chunkSqliteParameters(scrapingLogIds)) {
+  for (const logBatch of chunkSqliteParameters(scrapingLogIds.filter((id) => id > 0))) {
     tx.update(scrapingLogs)
       .set(RESET_MATCHER_PROJECTION)
       .where(inArray(scrapingLogs.id, logBatch))
@@ -380,17 +417,13 @@ export class LocalDataMaintenanceService implements LocalDataMaintenance {
     );
     return this.dataOperationGate.runMaintenance(() =>
       this.database.transaction((tx) => {
-        const outboxes = tx
-          .select({
-            sessionId: scrapeMatchOutbox.id,
-            scrapingLogId: scrapeMatchOutbox.scrapingLogId,
-          })
-          .from(scrapeMatchOutbox)
-          .where(sessionId ? eq(scrapeMatchOutbox.id, sessionId) : undefined)
-          .all();
+        const outboxes = findOutboxes(tx, null, false);
+        const scopedOutboxes = sessionId
+          ? outboxes.filter((outbox) => outbox.sessionId === sessionId)
+          : outboxes;
         resetMatcherProjections(
           tx,
-          outboxes.map((outbox) => outbox.scrapingLogId)
+          scopedOutboxes.map((outbox) => outbox.scrapingLogId)
         );
 
         if (sessionId) {

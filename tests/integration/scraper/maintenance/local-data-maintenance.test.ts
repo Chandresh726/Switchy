@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  aiWorkItems,
   companies,
   jobs,
   matchResults,
@@ -11,6 +12,8 @@ import {
   scrapeSessions,
   scrapingLogs,
 } from "@/lib/db/schema";
+import { DEFAULT_SQLITE_PARAMETER_CHUNK_SIZE } from "@/lib/db/sqlite-utils";
+import { createAIWorkRecords } from "@/lib/ai/work-items/contracts";
 import { ScrapeWorkHandler } from "@/lib/scraper/application/scrape-work-handler";
 import type { ScrapeCompanyPipeline } from "@/lib/scraper/application/scrape-company-pipeline";
 import type { ScrapeSessionProjector } from "@/lib/scraper/application/scrape-session-projector";
@@ -422,7 +425,8 @@ describe("LocalDataMaintenanceService", () => {
 
   it("deletes large company selections in bounded SQLite batches", async () => {
     const database = createTestDatabase();
-    const companyValues = Array.from({ length: 405 }, (_, index) => ({
+    const companyCount = DEFAULT_SQLITE_PARAMETER_CHUNK_SIZE + 5;
+    const companyValues = Array.from({ length: companyCount }, (_, index) => ({
       name: `Company ${index}`,
       careersUrl: `https://example.com/company-${index}`,
     }));
@@ -434,12 +438,35 @@ describe("LocalDataMaintenanceService", () => {
       .from(companies)
       .all()
       .map((company) => company.id);
+    const lastCompanyId = companyIds.at(-1);
+    if (lastCompanyId === undefined) throw new Error("Expected seeded companies");
+    const targetJob = database
+      .insert(jobs)
+      .values({
+        companyId: lastCompanyId,
+        externalId: "large-selection-role",
+        title: "Large selection role",
+        url: "https://example.com/large-selection-role",
+      })
+      .returning({ id: jobs.id })
+      .get();
+    const records = createAIWorkRecords({
+      id: "large-selection-match",
+      jobIds: [targetJob.id],
+      triggerSource: "company_refresh",
+      companyId: lastCompanyId,
+      now: new Date(),
+    });
+    database.insert(matchSessions).values(records.session).run();
+    database.insert(aiWorkItems).values(records.workItem).run();
 
     const result = await new LocalDataMaintenanceService(
       database
     ).deleteCompanies(companyIds);
 
-    expect(result).toEqual({ deletedCompanies: 405, deletedJobs: 0 });
+    expect(result).toEqual({ deletedCompanies: companyCount, deletedJobs: 1 });
     expect(database.select().from(companies).all()).toHaveLength(0);
+    expect(database.select().from(matchSessions).all()).toHaveLength(0);
+    expect(database.select().from(aiWorkItems).all()).toHaveLength(0);
   });
 });

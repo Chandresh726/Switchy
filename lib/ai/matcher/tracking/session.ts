@@ -3,6 +3,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { fetchCandidateProfileSnapshot } from "@/lib/ai/profile/profile-snapshot";
 import { db } from "@/lib/db";
 import { jobs, matchSessions, matchLogs, settings } from "@/lib/db/schema";
+import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
 
 import type { MatchSessionResult, TriggerSource, ProfileData, JobData } from "../types";
 
@@ -20,10 +21,18 @@ export async function fetchProfileData(): Promise<ProfileData | null> {
   };
 }
 
-export async function fetchJobsData(jobIds: number[]): Promise<Map<number, JobData>> {
+export async function fetchJobsData(
+  jobIds: number[],
+  database: typeof db = db
+): Promise<Map<number, JobData>> {
   if (jobIds.length === 0) return new Map();
 
-  const allJobs = await db.select().from(jobs).where(inArray(jobs.id, jobIds));
+  const allJobs: JobData[] = [];
+  for (const jobIdChunk of chunkSqliteParameters(Array.from(new Set(jobIds)))) {
+    allJobs.push(
+      ...await database.select().from(jobs).where(inArray(jobs.id, jobIdChunk))
+    );
+  }
   return new Map(allJobs.map((j) => [j.id, j]));
 }
 

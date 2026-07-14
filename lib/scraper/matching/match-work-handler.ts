@@ -3,7 +3,7 @@ import { z } from "zod";
 import {
   executeMatchWork,
   type MatchWorkExecutionOptions,
-} from "@/lib/ai/matcher/execution";
+} from "@/lib/ai/matcher/execution/work-executor";
 import type { MatchResultMap } from "@/lib/ai/matcher/types";
 import type { ScrapeMatchOutboxItem } from "@/lib/db/schema";
 

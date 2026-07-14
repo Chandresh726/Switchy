@@ -1,31 +1,65 @@
+import { APICallError } from "ai";
+import { MockLanguageModelV4 } from "ai/test";
 import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 
+import { createAICapabilityRuntime } from "@/lib/ai/runtime/capability-runtime";
+import {
+  adaptiveProviderLimiter,
+  resetAdaptiveProviderLimiter,
+} from "@/lib/ai/runtime/adaptive-provider-limiter";
 import { db } from "@/lib/db";
 import {
   companies,
   jobs,
   matchLogs,
   matchSessions,
-  scrapeMatchOutbox,
+  aiWorkItems,
   scrapeQueueItems,
   scrapeSessions,
   scrapingLogs,
+  settings,
 } from "@/lib/db/schema";
 import { DrizzleScraperRepository } from "@/lib/scraper/infrastructure/repository";
 import { LocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 import { stopMatchSession } from "@/lib/scraper/matching/lifecycle";
-import { DrizzleMatchWorkStore } from "@/lib/scraper/matching/match-work-store";
-import { ScrapeMatchOutboxDispatcher } from "@/lib/scraper/matching/outbox";
+import { AIWorkDispatcher } from "@/lib/ai/work-items/dispatcher";
+import { DrizzleAIWorkStore, enqueueMatchWork } from "@/lib/ai/work-items/repository";
 import { InProcessLocalDataOperationGate } from "@/lib/scraper/runtime/data-operation-gate";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 vi.mock("@/lib/db", () => ({ db: {} }));
+vi.mock("@/lib/ai/runtime-context", () => ({
+  resolveAIContextForCapability: vi.fn(),
+}));
 vi.mock("@/lib/ai/matcher", () => ({ matchWithTracking: vi.fn() }));
-vi.mock("@/lib/ai/matcher/execution", () => ({ executeMatchWork: vi.fn() }));
+vi.mock("@/lib/ai/matcher/execution/work-executor", () => ({ executeMatchWork: vi.fn() }));
+const runtimeMocks = vi.hoisted(() => ({
+  create: vi.fn(),
+  recordResolutionFailure: vi.fn(),
+  completeSuccess: vi.fn(),
+  completeFailure: vi.fn(),
+}));
+vi.mock("@/lib/ai/runtime/default-run-repository", () => ({
+  aiRunRepository: runtimeMocks,
+}));
 
 const sqlite = createSqliteTestHarness("switchy-match-outbox-");
 const createTestDatabase = () => sqlite.createDatabase().database;
+
+function successfulProviderResult(
+  text = "Synthetic analysis"
+): Awaited<ReturnType<MockLanguageModelV4["doGenerate"]>> {
+  return {
+    content: [{ type: "text", text }],
+    finishReason: { unified: "stop", raw: "stop" },
+    usage: {
+      inputTokens: { total: 4, noCache: 4, cacheRead: 0, cacheWrite: 0 },
+      outputTokens: { total: 2, text: 2, reasoning: 0 },
+    },
+    warnings: [],
+  };
+}
 
 function seedCompanyAndSession(database: ReturnType<typeof createTestDatabase>) {
   const company = database
@@ -77,7 +111,181 @@ async function persistMatchableJob(
   });
 }
 
-describe("ScrapeMatchOutboxDispatcher", () => {
+describe("AIWorkDispatcher", () => {
+  it("shares adaptive provider limiting across concurrent durable sessions", async () => {
+    resetAdaptiveProviderLimiter();
+    runtimeMocks.create.mockReset();
+    runtimeMocks.completeSuccess.mockReset();
+    runtimeMocks.completeFailure.mockReset();
+    let runNumber = 0;
+    runtimeMocks.create.mockImplementation(async () => `run-${++runNumber}`);
+    runtimeMocks.completeSuccess.mockResolvedValue(undefined);
+    runtimeMocks.completeFailure.mockResolvedValue(undefined);
+    const database = createTestDatabase();
+    database.insert(settings).values({ key: "matcher_concurrency_limit", value: "2" }).run();
+    const settingsBefore = database.select().from(settings).all();
+    const initialStarted = Promise.withResolvers<void>();
+    const releaseInitial = Promise.withResolvers<void>();
+    let mode: "initial" | "rate_limit" | "success" = "initial";
+    let initialActive = 0;
+    let maxInitialActive = 0;
+    let rateLimited = false;
+    let rateFailureAt = 0;
+    let rateRetryAt = 0;
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => {
+        if (mode === "initial") {
+          initialActive += 1;
+          maxInitialActive = Math.max(maxInitialActive, initialActive);
+          if (initialActive === 2) initialStarted.resolve();
+          await releaseInitial.promise;
+          initialActive -= 1;
+          return successfulProviderResult();
+        }
+        if (mode === "rate_limit" && !rateLimited) {
+          rateLimited = true;
+          rateFailureAt = Date.now();
+          throw new APICallError({
+            message: "Synthetic provider rate limit",
+            url: "https://provider.invalid/generate",
+            requestBodyValues: {},
+            statusCode: 429,
+            responseHeaders: { "retry-after-ms": "20" },
+            responseBody: "rate limited",
+            isRetryable: true,
+          });
+        }
+        if (mode === "rate_limit") rateRetryAt = Date.now();
+        return successfulProviderResult();
+      },
+    });
+    const executeMatch = vi.fn(async (jobIds: number[]) => {
+      const runtime = await createAICapabilityRuntime({
+        capability: "job_analysis",
+        resolved: {
+          snapshot: {
+            providerRecordId: "provider-shared",
+            provider: "openai",
+            modelId: "synthetic-model",
+            model,
+          },
+          reasoningEffort: "medium",
+        },
+        providerConcurrencyLimit: 2,
+      });
+      await runtime.executeText({
+        instructions: "Extract synthetic evidence",
+        prompt: "Untrusted synthetic job text",
+        policy: { maxAttempts: 2, timeoutMs: 1_000, reasoningEffort: "medium" },
+        versions: { prompt: "p1", schema: "s1", policy: "e1" },
+        inputFingerprint: String(jobIds[0]).padStart(64, "0"),
+        retry: { baseDelayMs: 0, maxDelayMs: 0 },
+      });
+      return new Map(jobIds.map((jobId) => [jobId, {
+        score: 90,
+        reasons: [],
+        matchedSkills: [],
+        missingSkills: [],
+        recommendations: [],
+      }]));
+    });
+    const dispatcher = new AIWorkDispatcher(database, executeMatch);
+    for (const id of [1, 2]) {
+      enqueueMatchWork(database, {
+        id: `adaptive-initial-${id}`,
+        jobIds: [id],
+        triggerSource: "manual",
+        now: new Date(id),
+      });
+    }
+
+    const initialDispatch = dispatcher.runAvailable();
+    await initialStarted.promise;
+    expect(maxInitialActive).toBe(2);
+    releaseInitial.resolve();
+    await initialDispatch;
+
+    mode = "rate_limit";
+    enqueueMatchWork(database, {
+      id: "adaptive-rate-limit",
+      jobIds: [3],
+      triggerSource: "manual",
+      now: new Date(3),
+    });
+    await dispatcher.runAvailable();
+    expect(rateRetryAt - rateFailureAt).toBeGreaterThanOrEqual(15);
+    expect(adaptiveProviderLimiter.getSnapshot("provider-shared")).toMatchObject({
+      ceiling: 2,
+      currentLimit: 1,
+      consecutiveSuccesses: 1,
+    });
+
+    mode = "success";
+    for (let id = 4; id < 23; id += 1) {
+      enqueueMatchWork(database, {
+        id: `adaptive-recovery-${id}`,
+        jobIds: [id],
+        triggerSource: "manual",
+        now: new Date(id),
+      });
+    }
+    await dispatcher.runAvailable();
+
+    expect(adaptiveProviderLimiter.getSnapshot("provider-shared")).toMatchObject({
+      ceiling: 2,
+      currentLimit: 2,
+      consecutiveSuccesses: 0,
+    });
+    expect(database.select().from(settings).all()).toEqual(settingsBefore);
+  });
+
+  it("claims independent durable sessions concurrently while provider work is pending", async () => {
+    const database = createTestDatabase();
+    enqueueMatchWork(database, {
+      id: "concurrent-session-1",
+      jobIds: [1],
+      triggerSource: "manual",
+      now: new Date(0),
+    });
+    enqueueMatchWork(database, {
+      id: "concurrent-session-2",
+      jobIds: [2],
+      triggerSource: "manual",
+      now: new Date(1),
+    });
+    const bothStarted = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let active = 0;
+    let maxActive = 0;
+    const executeMatch = vi.fn(async (jobIds: number[]) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      if (active === 2) bothStarted.resolve();
+      await release.promise;
+      active -= 1;
+      return new Map(jobIds.map((jobId) => [jobId, {
+        score: 90,
+        reasons: [],
+        matchedSkills: [],
+        missingSkills: [],
+        recommendations: [],
+      }]));
+    });
+    const dispatcher = new AIWorkDispatcher(database, executeMatch);
+
+    const pending = dispatcher.runAvailable();
+    await bothStarted.promise;
+    expect(maxActive).toBe(2);
+    release.resolve();
+    const summary = await pending;
+
+    expect(summary).toMatchObject({ claimed: 2, completed: 2, failed: 0 });
+    expect(database.select().from(aiWorkItems).all()).toEqual([
+      expect.objectContaining({ id: "concurrent-session-1", status: "completed" }),
+      expect.objectContaining({ id: "concurrent-session-2", status: "completed" }),
+    ]);
+  });
+
   it("resumes a durable matching handoff after a crash following scrape commit", async () => {
     const database = createTestDatabase();
     const company = seedCompanyAndSession(database);
@@ -129,7 +337,7 @@ describe("ScrapeMatchOutboxDispatcher", () => {
     });
 
     // A newly constructed dispatcher represents the process restarting after commit.
-    const dispatcher = new ScrapeMatchOutboxDispatcher(database, executeMatch);
+    const dispatcher = new AIWorkDispatcher(database, executeMatch);
     const summary = await dispatcher.runAvailable();
 
     expect(executeMatch).toHaveBeenCalledWith(
@@ -140,7 +348,7 @@ describe("ScrapeMatchOutboxDispatcher", () => {
       })
     );
     expect(summary).toMatchObject({ claimed: 1, completed: 1, failed: 0 });
-    expect(database.select().from(scrapeMatchOutbox).get()).toMatchObject({
+    expect(database.select().from(aiWorkItems).get()).toMatchObject({
       id: persisted.matchOutboxId,
       status: "completed",
       workerId: null,
@@ -196,7 +404,7 @@ describe("ScrapeMatchOutboxDispatcher", () => {
       .where(eq(matchSessions.id, persisted.matchOutboxId))
       .run();
     const executeMatch = vi.fn();
-    const dispatcher = new ScrapeMatchOutboxDispatcher(database, executeMatch);
+    const dispatcher = new AIWorkDispatcher(database, executeMatch);
 
     const summary = await dispatcher.runAvailable();
 
@@ -205,8 +413,8 @@ describe("ScrapeMatchOutboxDispatcher", () => {
     expect(
       database
         .select()
-        .from(scrapeMatchOutbox)
-        .where(eq(scrapeMatchOutbox.id, persisted.matchOutboxId))
+        .from(aiWorkItems)
+        .where(eq(aiWorkItems.id, persisted.matchOutboxId))
         .get()
     ).toMatchObject({ status: "completed" });
   });
@@ -227,7 +435,7 @@ describe("ScrapeMatchOutboxDispatcher", () => {
         }),
       })),
     } as unknown as typeof db;
-    const store = new DrizzleMatchWorkStore(fakeDatabase, {
+    const store = new DrizzleAIWorkStore(fakeDatabase, {
       busyRetries: 1,
       busyRetryDelayMs: 0,
     });
@@ -286,8 +494,8 @@ describe("ScrapeMatchOutboxDispatcher", () => {
     expect(
       database
         .select()
-        .from(scrapeMatchOutbox)
-        .where(eq(scrapeMatchOutbox.id, persisted.matchOutboxId))
+        .from(aiWorkItems)
+        .where(eq(aiWorkItems.id, persisted.matchOutboxId))
         .get()
     ).toBeUndefined();
     expect(() =>
@@ -295,7 +503,7 @@ describe("ScrapeMatchOutboxDispatcher", () => {
     ).not.toThrow();
   });
 
-  it.each(["pending", "running"] as const)(
+  it.each(["queued", "running"] as const)(
     "atomically stops a %s durable auto-match without dispatching it again",
     async (outboxStatus) => {
       const database = createTestDatabase();
@@ -309,22 +517,22 @@ describe("ScrapeMatchOutboxDispatcher", () => {
           .where(eq(matchSessions.id, persisted.matchOutboxId))
           .run();
         database
-          .update(scrapeMatchOutbox)
+          .update(aiWorkItems)
           .set({
             status: "running",
             workerId: "worker-1",
             leaseExpiresAt: new Date(Date.now() + 60_000),
           })
-          .where(eq(scrapeMatchOutbox.id, persisted.matchOutboxId))
+          .where(eq(aiWorkItems.id, persisted.matchOutboxId))
           .run();
       }
 
       const result = await stopMatchSession(persisted.matchOutboxId, database);
       const executeMatch = vi.fn();
-      const dispatcher = new ScrapeMatchOutboxDispatcher(database, executeMatch);
+      const dispatcher = new AIWorkDispatcher(database, executeMatch);
       await dispatcher.runAvailable();
 
-      expect(result).toEqual({ exists: true, stopped: true, status: "failed" });
+      expect(result).toEqual({ exists: true, stopped: true, status: "cancelled" });
       expect(executeMatch).not.toHaveBeenCalled();
       expect(
         database
@@ -332,15 +540,15 @@ describe("ScrapeMatchOutboxDispatcher", () => {
           .from(matchSessions)
           .where(eq(matchSessions.id, persisted.matchOutboxId))
           .get()
-      ).toMatchObject({ status: "failed" });
+      ).toMatchObject({ status: "cancelled" });
       expect(
         database
           .select()
-          .from(scrapeMatchOutbox)
-          .where(eq(scrapeMatchOutbox.id, persisted.matchOutboxId))
+          .from(aiWorkItems)
+          .where(eq(aiWorkItems.id, persisted.matchOutboxId))
           .get()
       ).toMatchObject({
-        status: "failed",
+        status: "cancelled",
         workerId: null,
         leaseExpiresAt: null,
       });
@@ -368,13 +576,13 @@ describe("ScrapeMatchOutboxDispatcher", () => {
       .where(eq(matchSessions.id, persisted.matchOutboxId))
       .run();
     database
-      .update(scrapeMatchOutbox)
+      .update(aiWorkItems)
       .set({
         status: "running",
         workerId: "worker-1",
         leaseExpiresAt: new Date(Date.now() + 60_000),
       })
-      .where(eq(scrapeMatchOutbox.id, persisted.matchOutboxId))
+      .where(eq(aiWorkItems.id, persisted.matchOutboxId))
       .run();
 
     await stopMatchSession(persisted.matchOutboxId, database);
@@ -386,7 +594,7 @@ describe("ScrapeMatchOutboxDispatcher", () => {
         .where(eq(matchSessions.id, persisted.matchOutboxId))
         .get()
     ).toMatchObject({
-      status: "failed",
+      status: "cancelled",
       jobsCompleted: 1,
       jobsSucceeded: 1,
       jobsFailed: 0,
@@ -417,8 +625,8 @@ describe("ScrapeMatchOutboxDispatcher", () => {
     expect(
       database
         .select()
-        .from(scrapeMatchOutbox)
-        .where(eq(scrapeMatchOutbox.id, persisted.matchOutboxId))
+        .from(aiWorkItems)
+        .where(eq(aiWorkItems.id, persisted.matchOutboxId))
         .get()
     ).toBeUndefined();
     expect(database.select().from(scrapingLogs).get()).toMatchObject({
@@ -490,8 +698,8 @@ describe("ScrapeMatchOutboxDispatcher", () => {
     expect(
       database
         .select()
-        .from(scrapeMatchOutbox)
-        .where(eq(scrapeMatchOutbox.id, persisted.matchOutboxId))
+        .from(aiWorkItems)
+        .where(eq(aiWorkItems.id, persisted.matchOutboxId))
         .get()
     ).toBeUndefined();
     expect(database.select().from(scrapingLogs).get()).toMatchObject({
@@ -533,11 +741,18 @@ describe("ScrapeMatchOutboxDispatcher", () => {
       jobsFailed: 0,
       errorCount: 0,
     }).run();
-    database.insert(scrapeMatchOutbox).values({
+    database.insert(aiWorkItems).values({
       id: "outbox-expired",
+      workType: "match_jobs",
+      matchSessionId: "outbox-expired",
       scrapingLogId: log.id,
       companyId: company.id,
-      jobIdsJson: "[42]",
+      payloadJson: JSON.stringify({
+        jobIds: [42],
+        triggerSource: "auto_match",
+        companyId: company.id,
+        scrapingLogId: log.id,
+      }),
       status: "running",
       attemptCount: 1,
       maxAttempts: 3,
@@ -559,13 +774,13 @@ describe("ScrapeMatchOutboxDispatcher", () => {
         ],
       ])
     );
-    const dispatcher = new ScrapeMatchOutboxDispatcher(database, executeMatch);
+    const dispatcher = new AIWorkDispatcher(database, executeMatch);
 
     const summary = await dispatcher.runAvailable();
 
     expect(summary).toMatchObject({ recovered: 1, claimed: 1, completed: 1 });
-    expect(database.select().from(scrapeMatchOutbox).where(
-      eq(scrapeMatchOutbox.id, "outbox-expired")
+    expect(database.select().from(aiWorkItems).where(
+      eq(aiWorkItems.id, "outbox-expired")
     ).get()).toMatchObject({
       status: "completed",
       attemptCount: 2,
@@ -618,14 +833,14 @@ describe("ScrapeMatchOutboxDispatcher", () => {
       },
     ]).run();
     database
-      .update(scrapeMatchOutbox)
+      .update(aiWorkItems)
       .set({ maxAttempts: 1 })
-      .where(eq(scrapeMatchOutbox.id, persisted.matchOutboxId))
+      .where(eq(aiWorkItems.id, persisted.matchOutboxId))
       .run();
     const executeMatch = vi.fn(async () => {
       throw new Error("provider unavailable");
     });
-    const dispatcher = new ScrapeMatchOutboxDispatcher(database, executeMatch);
+    const dispatcher = new AIWorkDispatcher(database, executeMatch);
 
     const summary = await dispatcher.runAvailable();
 
@@ -662,14 +877,14 @@ describe("ScrapeMatchOutboxDispatcher", () => {
       score: 92,
     }).run();
     database
-      .update(scrapeMatchOutbox)
+      .update(aiWorkItems)
       .set({ maxAttempts: 1 })
-      .where(eq(scrapeMatchOutbox.id, persisted.matchOutboxId))
+      .where(eq(aiWorkItems.id, persisted.matchOutboxId))
       .run();
     const executeMatch = vi.fn(async () => {
       throw new Error("provider unavailable");
     });
-    const dispatcher = new ScrapeMatchOutboxDispatcher(database, executeMatch);
+    const dispatcher = new AIWorkDispatcher(database, executeMatch);
 
     const summary = await dispatcher.runAvailable();
 
@@ -686,14 +901,14 @@ describe("ScrapeMatchOutboxDispatcher", () => {
         .get()
     ).toMatchObject({
       status: "failed",
-      jobsCompleted: 1,
+      jobsCompleted: 2,
       jobsSucceeded: 1,
-      jobsFailed: 0,
+      jobsFailed: 1,
     });
     expect(database.select().from(scrapingLogs).get()).toMatchObject({
       matcherStatus: "failed",
-      matcherJobsCompleted: 1,
-      matcherErrorCount: 0,
+      matcherJobsCompleted: 2,
+      matcherErrorCount: 1,
     });
   });
 
@@ -720,7 +935,7 @@ describe("ScrapeMatchOutboxDispatcher", () => {
             })
         )
     );
-    const dispatcher = new ScrapeMatchOutboxDispatcher(database, executeMatch, {
+    const dispatcher = new AIWorkDispatcher(database, executeMatch, {
       heartbeatIntervalMs: 60_000,
     });
 
@@ -738,10 +953,10 @@ describe("ScrapeMatchOutboxDispatcher", () => {
     expect(
       database
         .select()
-        .from(scrapeMatchOutbox)
-        .where(eq(scrapeMatchOutbox.id, persisted.matchOutboxId))
+        .from(aiWorkItems)
+        .where(eq(aiWorkItems.id, persisted.matchOutboxId))
         .get()
-    ).toMatchObject({ status: "failed", workerId: null });
+    ).toMatchObject({ status: "cancelled", workerId: null });
   });
 
   it("aborts in-flight manual matching when its session is stopped", async () => {
@@ -776,7 +991,7 @@ describe("ScrapeMatchOutboxDispatcher", () => {
         .from(matchSessions)
         .where(eq(matchSessions.id, "manual-session"))
         .get()
-    ).toMatchObject({ status: "failed" });
+    ).toMatchObject({ status: "cancelled" });
   });
 
   it("closes an exhausted recovered lease with its durable checkpoint counters", async () => {
@@ -830,7 +1045,7 @@ describe("ScrapeMatchOutboxDispatcher", () => {
       .where(eq(matchSessions.id, persisted.matchOutboxId))
       .run();
     database
-      .update(scrapeMatchOutbox)
+      .update(aiWorkItems)
       .set({
         status: "running",
         attemptCount: 3,
@@ -838,9 +1053,9 @@ describe("ScrapeMatchOutboxDispatcher", () => {
         workerId: "dead-worker",
         leaseExpiresAt: new Date(0),
       })
-      .where(eq(scrapeMatchOutbox.id, persisted.matchOutboxId))
+      .where(eq(aiWorkItems.id, persisted.matchOutboxId))
       .run();
-    const dispatcher = new ScrapeMatchOutboxDispatcher(database, vi.fn());
+    const dispatcher = new AIWorkDispatcher(database, vi.fn());
 
     const summary = await dispatcher.runAvailable();
 
@@ -890,18 +1105,25 @@ describe("ScrapeMatchOutboxDispatcher", () => {
       jobsFailed: 0,
       errorCount: 0,
     }).run();
-    database.insert(scrapeMatchOutbox).values({
+    database.insert(aiWorkItems).values({
       id: "outbox-waiting-for-lease",
+      workType: "match_jobs",
+      matchSessionId: "outbox-waiting-for-lease",
       scrapingLogId: log.id,
       companyId: company.id,
-      jobIdsJson: "[42]",
+      payloadJson: JSON.stringify({
+        jobIds: [42],
+        triggerSource: "auto_match",
+        companyId: company.id,
+        scrapingLogId: log.id,
+      }),
       status: "running",
       attemptCount: 1,
       workerId: "crashed-worker",
       leaseExpiresAt,
     }).run();
     const executeMatch = vi.fn();
-    const dispatcher = new ScrapeMatchOutboxDispatcher(database, executeMatch);
+    const dispatcher = new AIWorkDispatcher(database, executeMatch);
 
     const summary = await dispatcher.runAvailable();
 

@@ -125,10 +125,11 @@ describe("job analysis cache and fallback", () => {
       executeStructured: mocks.executeStructured,
     });
     mocks.executeStructured.mockResolvedValue({ runId: "run-1", output: [] });
-    const shouldStop = vi.fn()
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true);
+    let stopChecks = 0;
+    const shouldStop = vi.fn(async () => {
+      stopChecks += 1;
+      return stopChecks >= 3;
+    });
 
     const results = await analyzeJobsForMatching(
       [job, { ...job, id: 2 }],
@@ -139,6 +140,38 @@ describe("job analysis cache and fallback", () => {
 
     expect(results.size).toBe(0);
     expect(mocks.executeStructured).not.toHaveBeenCalled();
-    expect(shouldStop).toHaveBeenCalledTimes(3);
+    expect(shouldStop).toHaveBeenCalledTimes(4);
+  });
+
+  it("executes changed analysis batches up to the configured concurrency", async () => {
+    const release = Promise.withResolvers<void>();
+    let active = 0;
+    let maxActive = 0;
+    mocks.createAICapabilityRuntime.mockResolvedValue({
+      reasoningEffort: "medium",
+      executeStructured: mocks.executeStructured,
+    });
+    mocks.executeStructured.mockImplementation(async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await release.promise;
+      active -= 1;
+      return { runId: "run-1", output: [] };
+    });
+    const jobs = [1, 2, 3].map((id) => ({ ...job, id }));
+
+    const pending = analyzeJobsForMatching(jobs, {
+      ...DEFAULT_MATCHER_CONFIG,
+      batchSize: 1,
+      concurrencyLimit: 2,
+    });
+    await vi.waitFor(() => expect(mocks.executeStructured).toHaveBeenCalledTimes(2));
+    expect(maxActive).toBe(2);
+
+    release.resolve();
+    const results = await pending;
+
+    expect(results.size).toBe(3);
+    expect(mocks.executeStructured).toHaveBeenCalledTimes(3);
   });
 });

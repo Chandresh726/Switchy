@@ -5,7 +5,7 @@ import type { ScrapeMatchOutboxItem } from "@/lib/db/schema";
 import { MatchWorkHandler } from "@/lib/scraper/matching/match-work-handler";
 import type { MatchWorkStore } from "@/lib/scraper/matching/match-work-store";
 
-vi.mock("@/lib/ai/matcher/execution", () => ({ executeMatchWork: vi.fn() }));
+vi.mock("@/lib/ai/matcher/execution/work-executor", () => ({ executeMatchWork: vi.fn() }));
 
 function createItem(): ScrapeMatchOutboxItem {
   const now = new Date();

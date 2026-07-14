@@ -7,7 +7,7 @@ import type {
 } from "./types";
 import { getMatcherConfig } from "./config";
 import { getQueueStatus } from "./queue";
-import { executeConfiguredMatchWork } from "./execution";
+import { executeConfiguredMatchWork } from "./execution/work-executor";
 import {
   createMatchSession,
   finalizeMatchSession,

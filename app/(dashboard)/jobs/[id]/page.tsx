@@ -16,6 +16,7 @@ import { JobAIActions } from "@/components/jobs/job-ai-actions";
 import { MarkdownRenderer } from "@/components/jobs/markdown-renderer";
 import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { sanitizeHtmlContent } from "@/lib/jobs/description-processor";
+import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
 import {
   Building2,
   Calendar,
@@ -89,6 +90,13 @@ export default function JobDetailPage() {
   });
 
   const job = jobData?.jobs?.[0];
+  const {
+    mutation: calculateMatchMutation,
+    isMatching,
+  } = useQueuedJobMatch({
+    jobId,
+    extraInvalidationKeys: [["job", jobId]],
+  });
   const isReadOnlyPostingAction = job?.status === "applied" || job?.status === "archived";
 
   const updateStatusMutation = useMutation({
@@ -99,23 +107,6 @@ export default function JobDetailPage() {
         body: JSON.stringify({ id: jobId, status: newStatus }),
       });
       if (!res.ok) throw new Error("Failed to update status");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["job", jobId] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["stats"] });
-    },
-  });
-
-  const calculateMatchMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/match", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({ jobId }),
-      });
-      if (!res.ok) throw new Error("Failed to calculate match");
       return res.json();
     },
     onSuccess: () => {
@@ -305,14 +296,14 @@ export default function JobDetailPage() {
             variant="outline"
             size="sm"
             onClick={() => calculateMatchMutation.mutate()}
-            disabled={calculateMatchMutation.isPending}
+            disabled={isMatching}
           >
-            {calculateMatchMutation.isPending ? (
+            {isMatching ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Sparkles className="h-4 w-4" />
             )}
-            {calculateMatchMutation.isPending
+            {isMatching
               ? "Scoring..."
               : job.matchResultId ? "Refresh Match" : "Calculate Match"}
           </Button>

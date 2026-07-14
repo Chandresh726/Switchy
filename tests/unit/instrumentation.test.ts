@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  dispatchPendingScrapeMatches: vi.fn(),
+  dispatchPendingAIWork: vi.fn(),
+  importLegacyMatchWork: vi.fn(),
   recoverPending: vi.fn(),
   startScheduler: vi.fn(),
 }));
@@ -16,8 +17,9 @@ vi.mock("@/lib/scraper", () => ({
   }),
 }));
 
-vi.mock("@/lib/scraper/matching/outbox", () => ({
-  dispatchPendingScrapeMatches: mocks.dispatchPendingScrapeMatches,
+vi.mock("@/lib/ai/work-items", () => ({
+  dispatchPendingAIWork: mocks.dispatchPendingAIWork,
+  importLegacyMatchWork: mocks.importLegacyMatchWork,
 }));
 
 import { register } from "@/instrumentation";
@@ -36,7 +38,8 @@ describe("server startup instrumentation", () => {
       cancelled: 0,
       nextAvailableAt: null,
     });
-    mocks.dispatchPendingScrapeMatches.mockReturnValue(undefined);
+    mocks.dispatchPendingAIWork.mockReturnValue(undefined);
+    mocks.importLegacyMatchWork.mockReturnValue(0);
   });
 
   it("does nothing outside the Node.js runtime", async () => {
@@ -46,7 +49,7 @@ describe("server startup instrumentation", () => {
 
     expect(mocks.startScheduler).not.toHaveBeenCalled();
     expect(mocks.recoverPending).not.toHaveBeenCalled();
-    expect(mocks.dispatchPendingScrapeMatches).not.toHaveBeenCalled();
+    expect(mocks.dispatchPendingAIWork).not.toHaveBeenCalled();
   });
 
   it("starts scheduler, scrape recovery, and matcher recovery independently", async () => {
@@ -57,7 +60,8 @@ describe("server startup instrumentation", () => {
 
     expect(mocks.startScheduler).toHaveBeenCalledTimes(1);
     expect(mocks.recoverPending).toHaveBeenCalledTimes(1);
-    expect(mocks.dispatchPendingScrapeMatches).toHaveBeenCalledTimes(1);
+    expect(mocks.importLegacyMatchWork).toHaveBeenCalledTimes(1);
+    expect(mocks.dispatchPendingAIWork).toHaveBeenCalledTimes(1);
   });
 
   it("isolates failures so every startup recovery path is still attempted", async () => {
@@ -68,7 +72,7 @@ describe("server startup instrumentation", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.startScheduler.mockRejectedValue(schedulerError);
     mocks.recoverPending.mockRejectedValue(queueError);
-    mocks.dispatchPendingScrapeMatches.mockImplementation(() => {
+    mocks.dispatchPendingAIWork.mockImplementation(() => {
       throw matcherError;
     });
 
@@ -77,7 +81,7 @@ describe("server startup instrumentation", () => {
 
     expect(mocks.startScheduler).toHaveBeenCalledTimes(1);
     expect(mocks.recoverPending).toHaveBeenCalledTimes(1);
-    expect(mocks.dispatchPendingScrapeMatches).toHaveBeenCalledTimes(1);
+    expect(mocks.dispatchPendingAIWork).toHaveBeenCalledTimes(1);
     expect(consoleError).toHaveBeenCalledWith(
       "[Instrumentation] Failed to start scheduler:",
       schedulerError
@@ -89,6 +93,25 @@ describe("server startup instrumentation", () => {
     expect(consoleError).toHaveBeenCalledWith(
       "[Instrumentation] Failed to recover matcher outbox:",
       matcherError
+    );
+  });
+
+  it("dispatches current AI work even when legacy import fails", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "nodejs");
+    const importError = new Error("legacy payload failed");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.importLegacyMatchWork.mockImplementation(() => {
+      throw importError;
+    });
+
+    await register();
+    await flushPromises();
+
+    expect(mocks.importLegacyMatchWork).toHaveBeenCalledTimes(1);
+    expect(mocks.dispatchPendingAIWork).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith(
+      "[Instrumentation] Failed to import legacy matcher outbox:",
+      importError
     );
   });
 });

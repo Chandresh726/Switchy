@@ -10,6 +10,7 @@ import { MatchBreakdown, type MatchBreakdownValue } from "./match-breakdown";
 import { ApplyButton } from "./apply-button";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { sanitizeHtmlContent } from "@/lib/jobs/description-processor";
+import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
 import {
   Building2,
   Calendar,
@@ -71,6 +72,10 @@ const STATUS_OPTIONS = [
 
 export function JobDetail({ job, onClose }: JobDetailProps) {
   const queryClient = useQueryClient();
+  const {
+    mutation: calculateMatchMutation,
+    isMatching,
+  } = useQueuedJobMatch({ jobId: job.id });
   const isReadOnlyPostingAction = job.status === "applied" || job.status === "archived";
 
   const updateStatusMutation = useMutation({
@@ -81,22 +86,6 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
         body: JSON.stringify({ id: job.id, status: newStatus }),
       });
       if (!res.ok) throw new Error("Failed to update status");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["stats"] });
-    },
-  });
-
-  const calculateMatchMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/match", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({ jobId: job.id }),
-      });
-      if (!res.ok) throw new Error("Failed to calculate match");
       return res.json();
     },
     onSuccess: () => {
@@ -209,9 +198,9 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
                 variant="outline"
                 size="sm"
                 onClick={() => calculateMatchMutation.mutate()}
-                disabled={calculateMatchMutation.isPending}
+                disabled={isMatching}
               >
-                {calculateMatchMutation.isPending ? (
+                {isMatching ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Sparkles className="h-4 w-4" />

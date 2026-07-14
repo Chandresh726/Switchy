@@ -1,3 +1,4 @@
+import { APICallError } from "ai";
 import { MockLanguageModelV4, simulateReadableStream } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -24,6 +25,7 @@ vi.mock("@/lib/ai/runtime/default-run-repository", () => ({
 }));
 
 import { createAICapabilityRuntime } from "@/lib/ai/runtime/capability-runtime";
+import { resetAdaptiveProviderLimiter } from "@/lib/ai/runtime/adaptive-provider-limiter";
 
 function successfulProviderResult(
   text = "Generated text"
@@ -60,6 +62,7 @@ function executionInput(overrides: {
 
 describe("AI capability runtime", () => {
   beforeEach(() => {
+    resetAdaptiveProviderLimiter();
     vi.clearAllMocks();
     mocks.createRun.mockResolvedValue("run-1");
     mocks.recordResolutionFailure.mockResolvedValue("resolution-run-1");
@@ -246,6 +249,134 @@ describe("AI capability runtime", () => {
         usage: { inputTokens: 24, outputTokens: 10, totalTokens: 34 },
       })
     );
+  });
+
+  it("honors an AI SDK retry-after delay before the next provider attempt", async () => {
+    vi.useFakeTimers();
+    const firstAttempted = Promise.withResolvers<void>();
+    let callCount = 0;
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => {
+        callCount += 1;
+        if (callCount === 1) {
+          firstAttempted.resolve();
+          throw new APICallError({
+            message: "Provider rate limit",
+            url: "https://provider.invalid/generate",
+            requestBodyValues: {},
+            statusCode: 429,
+            responseHeaders: { "retry-after-ms": "500" },
+            responseBody: "rate limited",
+            isRetryable: true,
+          });
+        }
+        return successfulProviderResult("Recovered response");
+      },
+    });
+    useModel(model);
+    const runtime = await createAICapabilityRuntime({
+      capability: "job_analysis",
+      providerConcurrencyLimit: 2,
+    });
+    const pending = runtime.executeText({
+      ...executionInput({ maxAttempts: 2 }),
+      retry: { baseDelayMs: 100, maxDelayMs: 1_000 },
+    });
+
+    await firstAttempted.promise;
+    await vi.advanceTimersByTimeAsync(499);
+    expect(model.doGenerateCalls).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(pending).resolves.toMatchObject({
+      output: "Recovered response",
+      attempts: 2,
+    });
+    expect(model.doGenerateCalls).toHaveLength(2);
+  });
+
+  it("treats provider retry-after as a floor above the application backoff cap", async () => {
+    vi.useFakeTimers();
+    const firstAttempted = Promise.withResolvers<void>();
+    let callCount = 0;
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => {
+        callCount += 1;
+        if (callCount === 1) {
+          firstAttempted.resolve();
+          throw new APICallError({
+            message: "Provider rate limit",
+            url: "https://provider.invalid/generate",
+            requestBodyValues: {},
+            statusCode: 429,
+            responseHeaders: { "retry-after-ms": "2500" },
+            responseBody: "rate limited",
+            isRetryable: true,
+          });
+        }
+        return successfulProviderResult("Recovered response");
+      },
+    });
+    useModel(model);
+    const runtime = await createAICapabilityRuntime({
+      capability: "job_analysis",
+      providerConcurrencyLimit: 2,
+    });
+    const pending = runtime.executeText({
+      ...executionInput({ maxAttempts: 2 }),
+      retry: { baseDelayMs: 100, maxDelayMs: 1_000 },
+    });
+
+    await firstAttempted.promise;
+    await vi.advanceTimersByTimeAsync(2_499);
+    expect(model.doGenerateCalls).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(pending).resolves.toMatchObject({
+      output: "Recovered response",
+      attempts: 2,
+    });
+    expect(model.doGenerateCalls).toHaveLength(2);
+  });
+
+  it("limits matching provider attempts while preserving cancellation", async () => {
+    const firstStarted = Promise.withResolvers<void>();
+    const releaseFirst = Promise.withResolvers<
+      Awaited<ReturnType<MockLanguageModelV4["doGenerate"]>>
+    >();
+    let callCount = 0;
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => {
+        callCount += 1;
+        if (callCount === 1) {
+          firstStarted.resolve();
+          return releaseFirst.promise;
+        }
+        return successfulProviderResult("Second response");
+      },
+    });
+    useModel(model);
+    const runtime = await createAICapabilityRuntime({
+      capability: "match_adjudication",
+      providerConcurrencyLimit: 1,
+    });
+    const first = runtime.executeText(executionInput());
+    await firstStarted.promise;
+
+    const controller = new AbortController();
+    const reason = new DOMException("session cancelled", "AbortError");
+    const waiting = runtime.executeText(
+      executionInput({ signal: controller.signal })
+    );
+    await Promise.resolve();
+    expect(model.doGenerateCalls).toHaveLength(1);
+
+    controller.abort(reason);
+    await expect(waiting).rejects.toBe(reason);
+    expect(model.doGenerateCalls).toHaveLength(1);
+
+    releaseFirst.resolve(successfulProviderResult("First response"));
+    await expect(first).resolves.toMatchObject({ output: "First response" });
   });
 
   it("records accumulated usage when the quality gate exhausts all attempts", async () => {

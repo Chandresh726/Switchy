@@ -23,12 +23,24 @@ export async function register() {
     }
 
     try {
-      const { dispatchPendingScrapeMatches } = await import(
-        "@/lib/scraper/matching/outbox"
+      const { dispatchPendingAIWork, importLegacyMatchWork } = await import(
+        "@/lib/ai/work-items"
       );
-      dispatchPendingScrapeMatches();
+      try {
+        const imported = importLegacyMatchWork();
+        if (imported > 0) {
+          console.log(`[Instrumentation] Imported ${imported} legacy matcher work items`);
+        }
+      } catch (error) {
+        console.error("[Instrumentation] Failed to import legacy matcher outbox:", error);
+      }
+      try {
+        dispatchPendingAIWork();
+      } catch (error) {
+        console.error("[Instrumentation] Failed to recover matcher outbox:", error);
+      }
     } catch (error) {
-      console.error("[Instrumentation] Failed to recover matcher outbox:", error);
+      console.error("[Instrumentation] Failed to load matcher recovery:", error);
     }
   }
 }

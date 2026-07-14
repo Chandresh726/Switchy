@@ -1,4 +1,5 @@
 import { z } from "zod";
+import PQueue from "p-queue";
 
 import {
   buildJobEvidenceInput,
@@ -277,6 +278,7 @@ export async function analyzeJobsForMatching(
           modelId: config.model,
           reasoningEffort: config.reasoningEffort,
         },
+        providerConcurrencyLimit: config.concurrencyLimit,
       });
     } catch (error) {
       runtime = null;
@@ -285,9 +287,11 @@ export async function analyzeJobsForMatching(
   }
 
   const pendingById = new Map(pending.map((item) => [item.job.id, item]));
-  for (const batch of buildAnalysisBatches(pending.map((item) => item.job), config.batchSize)) {
+  const queue = new PQueue({ concurrency: Math.max(1, config.concurrencyLimit) });
+  const batches = buildAnalysisBatches(pending.map((item) => item.job), config.batchSize);
+  await Promise.all(batches.map((batch) => queue.add(async () => {
     signal?.throwIfAborted();
-    if (shouldStop && await shouldStop()) break;
+    if (shouldStop && await shouldStop()) return;
     let extracted = new Map<number, { evidence: JobAnalysisEvidence; runId?: string }>();
     if (runtime) {
       try {
@@ -356,7 +360,7 @@ export async function analyzeJobsForMatching(
         analysis: artifact.evidence,
       });
     }
-  }
+  })));
 
   return resolved;
 }
