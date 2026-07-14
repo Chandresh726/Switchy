@@ -98,4 +98,29 @@ describe("SchedulerRecoveryListener", () => {
     await act(async () => vi.advanceTimersByTimeAsync(20_000));
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+
+  it("does not schedule more recovery work after unmounting in flight", async () => {
+    setDocumentState({ visible: true, focused: true, online: true });
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let resolveRecovery: ((response: Response) => void) | undefined;
+    vi.mocked(fetch).mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveRecovery = resolve;
+        })
+    );
+    const { unmount } = render(<SchedulerRecoveryListener />);
+
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    unmount();
+    await act(async () => {
+      resolveRecovery?.(new Response(null, { status: 503 }));
+      await Promise.resolve();
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
 });

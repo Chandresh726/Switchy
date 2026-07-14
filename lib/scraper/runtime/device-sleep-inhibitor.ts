@@ -31,6 +31,7 @@ export class CaffeinateDeviceSleepInhibitor implements DeviceSleepInhibitor {
     }
 
     let activeProcess: ChildProcess | null = null;
+    let pendingProcess: ChildProcess | null = null;
     let released = false;
 
     const stopProcess = (child: ChildProcess | null) => {
@@ -53,17 +54,31 @@ export class CaffeinateDeviceSleepInhibitor implements DeviceSleepInhibitor {
           "-t",
           String(ASSERTION_TIMEOUT_SECONDS),
         ]);
-        nextProcess.on("error", (error) => {
+        const supersededPendingProcess = pendingProcess;
+        pendingProcess = nextProcess;
+        stopProcess(supersededPendingProcess);
+
+        nextProcess.once("spawn", () => {
+          if (released || pendingProcess !== nextProcess) {
+            stopProcess(nextProcess);
+            return;
+          }
+
+          const previousProcess = activeProcess;
+          pendingProcess = null;
+          activeProcess = nextProcess;
+          stopProcess(previousProcess);
+        });
+        nextProcess.once("error", (error) => {
+          if (pendingProcess === nextProcess) {
+            pendingProcess = null;
+          }
           console.warn(
             "[DeviceSleepInhibitor] Failed to start caffeinate assertion:",
             error
           );
         });
         nextProcess.unref();
-
-        const previousProcess = activeProcess;
-        activeProcess = nextProcess;
-        stopProcess(previousProcess);
       } catch (error) {
         console.warn(
           "[DeviceSleepInhibitor] Failed to start caffeinate assertion:",
@@ -81,7 +96,9 @@ export class CaffeinateDeviceSleepInhibitor implements DeviceSleepInhibitor {
         if (released) return;
         released = true;
         clearInterval(renewalTimer);
+        stopProcess(pendingProcess);
         stopProcess(activeProcess);
+        pendingProcess = null;
         activeProcess = null;
       },
     };

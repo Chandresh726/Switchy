@@ -41,9 +41,12 @@ describe("CaffeinateDeviceSleepInhibitor", () => {
       "-t",
       "300",
     ]);
+    first.emit("spawn");
 
     await vi.advanceTimersByTimeAsync(240_000);
     expect(spawnProcess).toHaveBeenCalledTimes(2);
+    expect(first.kill).not.toHaveBeenCalled();
+    second.emit("spawn");
     expect(first.kill).toHaveBeenCalledTimes(1);
 
     await lease.release();
@@ -52,6 +55,31 @@ describe("CaffeinateDeviceSleepInhibitor", () => {
 
     await vi.advanceTimersByTimeAsync(240_000);
     expect(spawnProcess).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the active assertion when a renewal fails to spawn", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const first = createChildProcess();
+    const failedRenewal = createChildProcess();
+    const spawnProcess = vi
+      .fn()
+      .mockReturnValueOnce(first)
+      .mockReturnValueOnce(failedRenewal);
+    const inhibitor = new CaffeinateDeviceSleepInhibitor(
+      "darwin",
+      spawnProcess
+    );
+
+    const lease = await inhibitor.acquire();
+    first.emit("spawn");
+    await vi.advanceTimersByTimeAsync(240_000);
+    failedRenewal.emit("error", new Error("launch failed"));
+
+    expect(first.kill).not.toHaveBeenCalled();
+
+    await lease.release();
+    expect(first.kill).toHaveBeenCalledTimes(1);
   });
 
   it("does not spawn a process outside macOS", async () => {

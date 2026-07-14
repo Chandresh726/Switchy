@@ -18,7 +18,10 @@ import { DrizzleScrapeSessionProjectionStore } from "@/lib/scraper/queue/project
 import type { LocalLeasedWorkRunnerConfig } from "@/lib/scraper/runtime/leased-work-runner";
 import type { DeviceSleepInhibitor } from "@/lib/scraper/runtime/device-sleep-inhibitor";
 import type { IScraperRegistry } from "@/lib/scraper/services";
-import { StoredScrapeSettingsProvider } from "@/lib/scraper/settings/provider";
+import {
+  type ScrapeSettingsProvider,
+  StoredScrapeSettingsProvider,
+} from "@/lib/scraper/settings/provider";
 
 import { DrizzleLocalScrapeQueueRepository } from "@/lib/scraper/queue/repository";
 import { LocalScrapeQueueService } from "@/lib/scraper/queue/service";
@@ -56,6 +59,7 @@ interface TestServiceOptions {
   registry?: IScraperRegistry;
   runnerConfig?: Partial<LocalLeasedWorkRunnerConfig>;
   deviceSleepInhibitor?: DeviceSleepInhibitor;
+  settingsProvider?: ScrapeSettingsProvider;
 }
 
 function createService(
@@ -74,7 +78,9 @@ function createService(
     scraperRepository,
     scraperRepository
   );
-  const settingsProvider = new StoredScrapeSettingsProvider(scraperRepository);
+  const settingsProvider =
+    options.settingsProvider ??
+    new StoredScrapeSettingsProvider(scraperRepository);
   const workHandler = new ScrapeWorkHandler(
     pipeline,
     scraperRepository,
@@ -175,6 +181,43 @@ describe("LocalScrapeQueueService", () => {
     const result = await service.scrapeCompanies([company.id], "manual");
 
     expect(result.summary.successfulCompanies).toBe(1);
+    expect(console.warn).toHaveBeenCalledWith(
+      "[LocalScrapeQueueService] Failed to inhibit idle sleep:",
+      expect.any(Error)
+    );
+  });
+
+  it("keeps scrape dispatch non-fatal when the keep-awake setting lookup fails", async () => {
+    const database = createTestDatabase();
+    const company = database
+      .insert(companies)
+      .values({ name: "One", careersUrl: "https://example.com/one" })
+      .returning({ id: companies.id })
+      .get();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const storedSettingsProvider = new StoredScrapeSettingsProvider(
+      new DrizzleScraperRepository(database)
+    );
+    const settingsProvider: ScrapeSettingsProvider = {
+      getFilters: (defaults) => storedSettingsProvider.getFilters(defaults),
+      getMaxParallelScrapes: () =>
+        storedSettingsProvider.getMaxParallelScrapes(),
+      getKeepDeviceAwake: vi.fn(async () => {
+        throw new Error("settings unavailable");
+      }),
+      getHistoryRetentionDays: () =>
+        storedSettingsProvider.getHistoryRetentionDays(),
+    };
+    const acquire = vi.fn();
+    const { service } = createService(database, {
+      settingsProvider,
+      deviceSleepInhibitor: { acquire },
+    });
+
+    const result = await service.scrapeCompanies([company.id], "manual");
+
+    expect(result.summary.successfulCompanies).toBe(1);
+    expect(acquire).not.toHaveBeenCalled();
     expect(console.warn).toHaveBeenCalledWith(
       "[LocalScrapeQueueService] Failed to inhibit idle sleep:",
       expect.any(Error)

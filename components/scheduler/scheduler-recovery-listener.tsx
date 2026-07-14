@@ -20,7 +20,7 @@ async function requestRecovery(): Promise<void> {
   }
 }
 
-export function SchedulerRecoveryListener() {
+export const SchedulerRecoveryListener = () => {
   const inFlightRef = useRef(false);
   const lastAttemptAtRef = useRef(0);
   const recoveryPendingRef = useRef(false);
@@ -119,6 +119,7 @@ export function SchedulerRecoveryListener() {
     window.addEventListener("offline", handleOffline);
 
     return () => {
+      recoveryPendingRef.current = false;
       window.clearInterval(interval);
       clearStabilizationTimer();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
@@ -129,4 +130,4 @@ export function SchedulerRecoveryListener() {
   }, []);
 
   return null;
-}
+};

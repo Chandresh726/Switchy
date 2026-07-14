@@ -187,6 +187,87 @@ describe("WorkdayScraper", () => {
     expect(browserClient.bootstrap).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps refreshed detail retries within the configured batch size", async () => {
+    const allJobs = createWorkdayListResponse().jobPostings.concat({
+      title: "Data Engineer",
+      externalPath: "/job/REQ-3",
+      locationsText: "Pune, India",
+      postedOn: "2026-07-02",
+      remoteType: "Onsite",
+      bulletFields: [],
+    });
+    const attempts = new Map<string, number>();
+    let activeRequests = 0;
+    let maxActiveRequests = 0;
+    const httpClient = createHttpClientStub({
+      post: vi.fn(async () => ({ total: 3, jobPostings: allJobs })) as IHttpClient["post"],
+      get: vi.fn(async (url: string) => {
+        const id = url.split("/").pop() ?? "";
+        activeRequests++;
+        maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
+        await Promise.resolve();
+        activeRequests--;
+        const attempt = (attempts.get(id) ?? 0) + 1;
+        attempts.set(id, attempt);
+        if (attempt === 1) throw new Error("expired session");
+        return {
+          jobPostingInfo: {
+            jobDescription: "Recovered description",
+            timeType: "Full time",
+            externalUrl: `https://acme.wd5.myworkdayjobs.com/Acme/job/${id}`,
+          },
+        };
+      }) as IHttpClient["get"],
+    });
+    const scraper = new FastWorkdayScraper(httpClient, createBrowserClient(), {
+      detailBatchSize: 2,
+      requestDelayBaseMs: 0,
+      requestDelayJitterMs: 0,
+    });
+
+    const result = await scraper.scrape(
+      "https://acme.wd5.myworkdayjobs.com/Acme"
+    );
+
+    expect(result.outcome).toBe("success");
+    expect(result.jobs).toHaveLength(3);
+    expect(maxActiveRequests).toBe(2);
+  });
+
+  it("preserves unkeyed listings and marks their identities non-authoritative", async () => {
+    const httpClient = createHttpClientStub({
+      post: vi.fn(async () => ({
+        total: 2,
+        jobPostings: [
+          { title: "Engineer I", externalPath: "" },
+          { title: "Engineer II", externalPath: "" },
+        ],
+      })) as IHttpClient["post"],
+      get: vi.fn() as IHttpClient["get"],
+    });
+    const scraper = new FastWorkdayScraper(httpClient, createBrowserClient(), {
+      requestDelayBaseMs: 0,
+      requestDelayJitterMs: 0,
+    });
+
+    const result = await scraper.scrape(
+      "https://acme.wd5.myworkdayjobs.com/Acme"
+    );
+
+    expect(result).toMatchObject({
+      outcome: "partial",
+      totalListings: 2,
+      listingCompleteness: "partial",
+    });
+    expect(result.jobs).toHaveLength(2);
+    expect(new Set(result.jobs.map((job) => job.externalId)).size).toBe(2);
+    expect(new Set(result.openExternalIds).size).toBe(2);
+    if (result.outcome !== "partial") throw new Error("Expected partial result");
+    expect(result.issues?.[0]?.message).toContain(
+      "2 listings lacked a stable Workday ID"
+    );
+  });
+
   it("marks a successful multi-page listing authoritative", async () => {
     const scraper = new FastWorkdayScraper(createPaginatedHttpClient(), createBrowserClient(), {
       listPageSize: 2,

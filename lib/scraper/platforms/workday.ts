@@ -31,6 +31,7 @@ type WorkdayJobListItem = {
   postedOn: string;
   remoteType: string;
   bulletFields: string[];
+  listingIdentity?: string;
 };
 
 type WorkdayJobListResponse = {
@@ -43,6 +44,7 @@ type WorkdayListFetchResult = {
   isComplete: boolean;
   advertisedCount: number;
   missingOffsets: number[];
+  unidentifiedCount: number;
   session: WorkdaySession;
 };
 
@@ -207,13 +209,13 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
 
       const allJobListItems = listResult.jobs;
       const activeSession = listResult.session;
-      const openExternalIds = allJobListItems
-        .map((job) => {
-          const jobPostingId = this.getJobPostingId(job);
-          if (!jobPostingId) return null;
-          return this.generateExternalId(this.platform, activeSession.board, jobPostingId);
-        })
-        .filter((externalId): externalId is string => Boolean(externalId));
+      const openExternalIds = allJobListItems.map((job) =>
+        this.generateExternalId(
+          this.platform,
+          activeSession.board,
+          this.getListingIdentity(job)
+        )
+      );
 
       if (allJobListItems.length === 0) {
         if (!listResult.isComplete) {
@@ -241,14 +243,11 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           location: job.locationsText,
         }),
         getExternalId: (job) => {
-          const jobPostingId = this.getJobPostingId(job);
-          return jobPostingId
-            ? this.generateExternalId(
-                this.platform,
-                activeSession.board,
-                jobPostingId
-              )
-            : null;
+          return this.generateExternalId(
+            this.platform,
+            activeSession.board,
+            this.getListingIdentity(job)
+          );
         },
       });
       const jobsToFetch = selection.listings;
@@ -291,12 +290,27 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       if (failedDetailJobs.length > 0) {
         const refreshedSession = await refreshSession();
         if (refreshedSession) {
-          const retryResult = await this.processJobBatch(
-            refreshedSession,
-            failedDetailJobs
-          );
-          scrapedJobs.push(...retryResult.jobs);
-          unresolvedDetailJobs = retryResult.failedJobs;
+          unresolvedDetailJobs = [];
+          for (
+            let i = 0;
+            i < failedDetailJobs.length;
+            i += this.config.detailBatchSize
+          ) {
+            const retryBatch = failedDetailJobs.slice(
+              i,
+              i + this.config.detailBatchSize
+            );
+            const retryResult = await this.processJobBatch(
+              refreshedSession,
+              retryBatch
+            );
+            scrapedJobs.push(...retryResult.jobs);
+            unresolvedDetailJobs.push(...retryResult.failedJobs);
+
+            if (i + this.config.detailBatchSize < failedDetailJobs.length) {
+              await this.delayWithJitter();
+            }
+          }
         }
       }
 
@@ -446,12 +460,20 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
 
     const total = firstBatch.total || 0;
     const jobsById = new Map<string, WorkdayJobListItem>();
-    const addJobs = (jobs: WorkdayJobListItem[]) => {
-      for (const job of jobs) {
-        jobsById.set(this.getJobPostingId(job) ?? job.externalPath, job);
+    const addJobs = (jobs: WorkdayJobListItem[], offset: number) => {
+      for (let index = 0; index < jobs.length; index++) {
+        const job = jobs[index];
+        if (!job) continue;
+        const jobPostingId = this.getJobPostingId(job);
+        const listingIdentity =
+          jobPostingId ?? `unkeyed-${offset + index}`;
+        const key = jobPostingId
+          ? `id:${jobPostingId}`
+          : `offset:${offset + index}`;
+        jobsById.set(key, { ...job, listingIdentity });
       }
     };
-    addJobs(firstBatch.jobPostings);
+    addJobs(firstBatch.jobPostings, 0);
     const missingOffsets = new Set<number>();
     if (firstBatch.jobPostings.length < Math.min(this.config.listPageSize, total)) {
       missingOffsets.add(0);
@@ -490,7 +512,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           if (!result || !Array.isArray(result.jobPostings)) {
             missingOffsets.add(offset);
           } else {
-            addJobs(result.jobPostings);
+            addJobs(result.jobPostings, offset);
             const expectedCount = Math.min(this.config.listPageSize, total - offset);
             if (result.jobPostings.length < expectedCount) {
               missingOffsets.add(offset);
@@ -512,7 +534,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           const result = await fetchSafely(activeSession, offset);
           if (!result || !Array.isArray(result.jobPostings)) continue;
 
-          addJobs(result.jobPostings);
+          addJobs(result.jobPostings, offset);
           const expectedCount = Math.min(this.config.listPageSize, total - offset);
           if (result.jobPostings.length >= expectedCount) {
             missingOffsets.delete(offset);
@@ -522,15 +544,22 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
     }
 
     const allJobs = Array.from(jobsById.values());
+    const unidentifiedCount = allJobs.filter(
+      (job) => !this.getJobPostingId(job)
+    ).length;
     if (allJobs.length >= total) {
       missingOffsets.clear();
     }
 
     return {
       jobs: allJobs,
-      isComplete: missingOffsets.size === 0 && allJobs.length >= total,
+      isComplete:
+        missingOffsets.size === 0 &&
+        allJobs.length >= total &&
+        unidentifiedCount === 0,
       advertisedCount: total,
       missingOffsets: Array.from(missingOffsets).sort((a, b) => a - b),
+      unidentifiedCount,
       session: activeSession,
     };
   }
@@ -625,7 +654,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
     session: WorkdaySession,
     job: WorkdayJobListItem
   ): ScrapedJob {
-    const jobPostingId = this.getJobPostingId(job) ?? job.externalPath;
+    const jobPostingId = this.getListingIdentity(job);
     return {
       externalId: this.generateExternalId(
         this.platform,
@@ -641,10 +670,18 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
   }
 
   private createListIssue(result: WorkdayListFetchResult): ScraperError {
+    const unidentifiedSuffix =
+      result.unidentifiedCount > 0
+        ? `; ${result.unidentifiedCount} listing${result.unidentifiedCount === 1 ? "" : "s"} lacked a stable Workday ID`
+        : "";
     return createScraperError(
       "network_error",
-      `Workday listings were only partially fetched (${result.jobs.length} of ${result.advertisedCount} advertised jobs; ${result.missingOffsets.length} page offset${result.missingOffsets.length === 1 ? "" : "s"} unresolved).`
+      `Workday listings were only partially fetched (${result.jobs.length} of ${result.advertisedCount} advertised jobs; ${result.missingOffsets.length} page offset${result.missingOffsets.length === 1 ? "" : "s"} unresolved${unidentifiedSuffix}).`
     );
+  }
+
+  private getListingIdentity(job: WorkdayJobListItem): string {
+    return this.getJobPostingId(job) ?? job.listingIdentity ?? "unkeyed";
   }
 
   private getJobPostingId(job: WorkdayJobListItem): string | null {

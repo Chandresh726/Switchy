@@ -5,6 +5,7 @@ import type {
   BrowserSession,
   IBrowserClient,
 } from "@/lib/scraper/infrastructure/browser-client";
+import { BrowserSessionBootstrapError } from "@/lib/scraper/infrastructure/browser-session-error";
 import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 import {
   HttpError,
@@ -228,6 +229,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
             return (await this.bootstrapSession(url))?.cookies ?? null;
           } catch (error) {
             throwIfScrapeAborted(error);
+            if (error instanceof BrowserSessionBootstrapError) throw error;
             return null;
           }
         }

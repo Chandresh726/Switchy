@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { IBrowserClient } from "@/lib/scraper/infrastructure/browser-client";
+import { BrowserSessionBootstrapError } from "@/lib/scraper/infrastructure/browser-session-error";
 import type { HttpRequestOptions } from "@/lib/scraper/infrastructure/http-client";
 import { EightfoldScraper } from "@/lib/scraper/platforms/eightfold";
 import {
@@ -221,6 +222,55 @@ describe("EightfoldScraper", () => {
     expect(secondPageCalls).toHaveLength(2);
     expect(secondPageCalls[1]?.[1]?.headers).toMatchObject({
       Cookie: "session=fresh",
+    });
+    const detailCall = getFetchCalls(fetchMock).find(([url]) =>
+      url.includes("position_details")
+    );
+    expect(detailCall?.[1]?.headers).toMatchObject({
+      Cookie: "session=fresh",
+    });
+  });
+
+  it("preserves typed browser errors when the recovery session cannot start", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("start=0")) {
+        return createEightfoldSearchResponse(
+          Array.from({ length: 10 }, (_, index) => index + 1),
+          15
+        );
+      }
+      return new Response("expired", { status: 403 });
+    });
+    const bootstrap = vi
+      .fn()
+      .mockResolvedValueOnce({
+        baseUrl: "https://apply.careers.microsoft.com",
+        cookies: "session=old",
+        domain: "microsoft.com",
+      })
+      .mockRejectedValueOnce(new BrowserSessionBootstrapError("navigation"));
+    const scraper = new EightfoldScraper(
+      createHttpClientStub({ fetch: fetchMock }),
+      {
+        bootstrap,
+        withBrowser: vi.fn(async () => {
+          throw new Error("not used");
+        }),
+        close: vi.fn(async () => undefined),
+      },
+      { requestDelayMs: 0 }
+    );
+
+    const result = await scraper.scrape(
+      "https://apply.careers.microsoft.com/careers"
+    );
+
+    expect(result).toMatchObject({
+      outcome: "error",
+      error: {
+        code: "browser_error",
+        message: "Failed to establish browser session during navigation.",
+      },
     });
   });
 

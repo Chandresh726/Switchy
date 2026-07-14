@@ -188,15 +188,15 @@ export class LocalScrapeQueueService {
 
   private async runDispatch(): Promise<QueueRunSummary> {
     let sleepInhibitorLease: DeviceSleepInhibitorLease | null = null;
-    if (await this.dependencies.settingsProvider.getKeepDeviceAwake()) {
-      try {
+    try {
+      if (await this.dependencies.settingsProvider.getKeepDeviceAwake()) {
         sleepInhibitorLease = await this.deviceSleepInhibitor.acquire();
-      } catch (error) {
-        console.warn(
-          "[LocalScrapeQueueService] Failed to inhibit idle sleep:",
-          error
-        );
       }
+    } catch (error) {
+      console.warn(
+        "[LocalScrapeQueueService] Failed to inhibit idle sleep:",
+        error
+      );
     }
 
     try {
