@@ -1,0 +1,25 @@
+{
+  "name": "  Alex Rivera  ",
+  "portfolioUrl": "http://169.254.169.254/profile",
+  "skills": [
+    { "name": " TypeScript ", "category": " language " },
+    { "name": "typescript", "category": "language" },
+    { "name": " " }
+  ],
+  "experience": [
+    {
+      "company": " Northstar Labs ",
+      "title": " Senior Engineer ",
+      "startDate": "June 2021",
+      "endDate": "",
+      "highlights": [" Built local-first tools. ", " "]
+    }
+  ],
+  "education": [
+    {
+      "institution": " Example University ",
+      "degree": " ",
+      "endDate": "2018"
+    }
+  ]
+}

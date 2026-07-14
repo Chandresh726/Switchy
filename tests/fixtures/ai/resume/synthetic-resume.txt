@@ -1,0 +1,23 @@
+Alex Rivera
+alex.rivera@example.test
+Toronto, Canada
+https://www.linkedin.com/in/alex-rivera-example
+https://github.com/alex-rivera-example
+
+SUMMARY
+Software engineer focused on reliable local-first developer tools.
+
+SKILLS
+TypeScript, React, SQLite, Node.js
+
+EXPERIENCE
+Senior Software Engineer, Northstar Labs
+2021-06 to Present
+Built offline-capable TypeScript applications and reliable background workers.
+
+Software Engineer, Cedar Systems
+2018-04 to 2021-05
+Developed React interfaces and Node.js APIs.
+
+EDUCATION
+BSc Computer Science, Example University, 2018-05

@@ -109,6 +109,11 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
         setSuccess(true);
         if (autofill && result.parsedData) {
           onParsed(result.parsedData, autofill);
+          if (Array.isArray(result.warnings) && result.warnings.length > 0) {
+            toast.warning(
+              `Resume parsed with ${result.warnings.length} field warning${result.warnings.length === 1 ? "" : "s"}. Review the autofilled profile before saving.`
+            );
+          }
         } else {
           toast.success("Resume uploaded without autofill.");
         }

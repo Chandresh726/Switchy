@@ -26,6 +26,9 @@ export const resumes = sqliteTable("resumes", {
   fileName: text("file_name").notNull(),
   filePath: text("file_path").notNull(),
   parsedData: text("parsed_data").notNull(), // JSON string
+  aiRunId: text("ai_run_id").references(() => aiRuns.id),
+  parserVersion: text("parser_version"),
+  validationWarnings: text("validation_warnings"), // JSON array validated by resume repository
   version: integer("version").notNull(),
   isCurrent: integer("is_current", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
