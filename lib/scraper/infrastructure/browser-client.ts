@@ -7,6 +7,15 @@ import {
   runWithScrapeSignal,
   throwIfScrapeAborted,
 } from "./cancellation";
+import {
+  BrowserSessionBootstrapError,
+  type BrowserSessionBootstrapStage,
+} from "./browser-session-error";
+
+export {
+  BrowserSessionBootstrapError,
+  type BrowserSessionBootstrapStage,
+} from "./browser-session-error";
 
 export interface BrowserSessionConfig {
   headless: boolean;
@@ -198,9 +207,12 @@ export class GenericBrowserClient extends PlaywrightBrowserClient {
 
   async bootstrap(url: string): Promise<BrowserSession | null> {
     const parsedUrl = this.parseUrl(url);
-    if (!parsedUrl) return null;
+    if (!parsedUrl) {
+      throw new BrowserSessionBootstrapError("navigation");
+    }
 
     let resources: BrowserResources | null = null;
+    let stage: BrowserSessionBootstrapStage = "launch";
     try {
       resources = await this.acquireBrowser();
       const { context, page } = resources;
@@ -220,14 +232,17 @@ export class GenericBrowserClient extends PlaywrightBrowserClient {
         }
       });
 
+      stage = "navigation";
       await this.raceWithAbort(
         page.goto(url, {
           waitUntil: "domcontentloaded",
           timeout: this.config.timeout,
         })
       );
+      stage = "settle";
       await this.raceWithAbort(page.waitForTimeout(this.waitForMs));
 
+      stage = "session_extraction";
       const finalUrlObj = new URL(page.url());
       const baseUrl = `${finalUrlObj.protocol}//${finalUrlObj.host}`;
 
@@ -245,11 +260,9 @@ export class GenericBrowserClient extends PlaywrightBrowserClient {
         domain: detectedDomain ?? undefined,
       };
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        throw error;
-      }
-      console.error("[BrowserClient] Bootstrap failed:", error);
-      return null;
+      throwIfScrapeAborted(error);
+      if (error instanceof BrowserSessionBootstrapError) throw error;
+      throw new BrowserSessionBootstrapError(stage);
     } finally {
       if (resources) await this.closeResources(resources);
     }

@@ -323,7 +323,153 @@ describe("ServiceNowScraper", () => {
     expect(result.outcome).not.toBe("error");
     expect(result.jobs).toHaveLength(2);
     expect(result.listingCompleteness).toBe("partial");
+    expect(result.outcome).toBe("partial");
+    if (result.outcome !== "partial") throw new Error("Expected partial result");
+    expect(result.issues?.[0]?.message).toContain(
+      "2 of 5 advertised pages"
+    );
     expect(page.goto).toHaveBeenCalledWith("https://careers.servicenow.com/jobs?page=2", expect.any(Object));
+  });
+
+  it("fetches advertised listing pages beyond the previous ten-page limit", async () => {
+    let currentUrl = "https://careers.servicenow.com/jobs";
+    const page = {
+      goto: vi.fn(async (url: string) => {
+        currentUrl = url;
+      }),
+      waitForTimeout: vi.fn(async () => undefined),
+      content: vi.fn(async () => {
+        const detailMatch = currentUrl.match(/\/jobs\/(\d+)\/role-/);
+        if (detailMatch?.[1]) {
+          return detailHtml({
+            title: `Role ${detailMatch[1]}`,
+            locationText: "Bengaluru, India",
+            locationHref: "/locations/apj/bengaluru-india/",
+            description: `Description ${detailMatch[1]}`,
+          });
+        }
+        const pageNumber = Number(new URL(currentUrl).searchParams.get("page") ?? "1");
+        return (
+          listingHtml([
+            {
+              id: String(pageNumber),
+              slug: `role-${pageNumber}`,
+              title: `Role ${pageNumber}`,
+              city: "Bengaluru",
+            },
+          ]) + '<nav><a href="/jobs?page=12">12</a></nav>'
+        );
+      }),
+      url: vi.fn(() => currentUrl),
+    } as unknown as Page;
+    const scraper = new ServiceNowScraper(
+      createHttpClientStub(),
+      createBrowserClient(page),
+      { requestDelayMs: 0 }
+    );
+
+    const result = await scraper.scrape(
+      "https://careers.servicenow.com/jobs"
+    );
+
+    expect(result).toMatchObject({
+      outcome: "success",
+      totalListings: 12,
+      listingCompleteness: "complete",
+    });
+    expect(result.jobs).toHaveLength(12);
+    expect(page.goto).toHaveBeenCalledWith(
+      "https://careers.servicenow.com/jobs?page=12",
+      expect.any(Object)
+    );
+  });
+
+  it("retries failed listing-page navigation before reporting a partial run", async () => {
+    const page1Html =
+      listingHtml([
+        { id: "1", slug: "role-1", title: "Role 1", city: "Bengaluru" },
+      ]) + '<nav><a href="/jobs?page=2">2</a></nav>';
+    const page2Html = listingHtml([
+      { id: "2", slug: "role-2", title: "Role 2", city: "Bengaluru" },
+    ]);
+    let pageTwoAttempts = 0;
+    const page = {
+      goto: vi.fn(async (target: string) => {
+        if (target.includes("page=2") && pageTwoAttempts++ === 0) {
+          throw new Error("temporary navigation failure");
+        }
+      }),
+      waitForTimeout: vi.fn(async () => undefined),
+      content: vi
+        .fn()
+        .mockResolvedValueOnce(page1Html)
+        .mockResolvedValueOnce(page2Html)
+        .mockResolvedValueOnce(detailHtml({ title: "Role 1", locationText: "Bengaluru", locationHref: "/jobs/?location=Bengaluru", description: "One" }))
+        .mockResolvedValueOnce(detailHtml({ title: "Role 2", locationText: "Bengaluru", locationHref: "/jobs/?location=Bengaluru", description: "Two" })),
+      url: vi.fn(() => "https://careers.servicenow.com/jobs"),
+    } as unknown as Page;
+    const scraper = new ServiceNowScraper(
+      createHttpClientStub(),
+      createBrowserClient(page),
+      { retries: 1, baseDelay: 0, requestDelayMs: 0 }
+    );
+
+    const result = await scraper.scrape(
+      "https://careers.servicenow.com/jobs"
+    );
+
+    expect(result).toMatchObject({
+      outcome: "success",
+      listingCompleteness: "complete",
+    });
+    expect(pageTwoAttempts).toBe(2);
+  });
+
+  it("filters listings before detail hydration while retaining every open ID", async () => {
+    const listing = listingHtml([
+      { id: "1", slug: "platform-engineer", title: "Platform Engineer", city: "Bengaluru" },
+      { id: "2", slug: "backend-engineer", title: "Backend Engineer", city: "Bengaluru" },
+    ]);
+    const page = {
+      goto: vi.fn(async () => undefined),
+      waitForTimeout: vi.fn(async () => undefined),
+      content: vi
+        .fn()
+        .mockResolvedValueOnce(listing)
+        .mockResolvedValueOnce(
+          detailHtml({
+            title: "Backend Engineer",
+            locationText: "Bengaluru, India",
+            locationHref: "/locations/apj/bengaluru-india/",
+            description: "Build services.",
+          })
+        ),
+      url: vi.fn(() => "https://careers.servicenow.com/jobs"),
+    } as unknown as Page;
+    const scraper = new ServiceNowScraper(
+      createHttpClientStub(),
+      createBrowserClient(page),
+      { requestDelayMs: 0 }
+    );
+
+    const result = await scraper.scrape(
+      "https://careers.servicenow.com/jobs",
+      {
+        filters: { titleKeywords: ["engineer"] },
+        existingExternalIds: new Set(["servicenow-1"]),
+      }
+    );
+
+    expect(result.jobs).toHaveLength(1);
+    expect(result.jobs[0]?.externalId).toBe("servicenow-2");
+    expect(result.openExternalIds).toEqual([
+      "servicenow-1",
+      "servicenow-2",
+    ]);
+    expect(page.goto).not.toHaveBeenCalledWith(
+      expect.stringContaining("/jobs/1/"),
+      expect.any(Object)
+    );
   });
 
   it("extracts location from /jobs/?location= href pattern", async () => {

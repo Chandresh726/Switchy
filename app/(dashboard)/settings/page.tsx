@@ -63,6 +63,7 @@ interface ScraperLocalEdits {
   schedulerEnabled?: boolean;
   schedulerCron?: string;
   maxParallelScrapes?: number;
+  keepDeviceAwake?: boolean;
   historyRetentionDays?: number;
   filterCountry?: string;
   filterCity?: string;
@@ -417,6 +418,9 @@ function SettingsContent() {
             10
           ) || DEFAULT_SCRAPER_MAX_PARALLEL_SCRAPES
         ),
+      keepDeviceAwake:
+        scraperLocalEdits.keepDeviceAwake ??
+        (settings?.scraper_keep_device_awake !== "false"),
       historyRetentionDays:
         scraperLocalEdits.historyRetentionDays ??
         clampScraperHistoryRetentionDays(
@@ -469,7 +473,7 @@ function SettingsContent() {
 
   const {
     matcherModel, matcherProviderId, resumeParserModel, resumeParserProviderId, matcherReasoningEffort, resumeParserReasoningEffort, bulkEnabled, serializeOperations, batchSize, maxRetries, concurrencyLimit, timeoutMs,
-    circuitBreakerThreshold, autoMatchAfterScrape, schedulerEnabled, schedulerCron, maxParallelScrapes, historyRetentionDays, filterCountry, filterCity, filterTitleKeywords,
+    circuitBreakerThreshold, autoMatchAfterScrape, schedulerEnabled, schedulerCron, maxParallelScrapes, keepDeviceAwake, historyRetentionDays, filterCountry, filterCity, filterTitleKeywords,
     aiWritingModel, aiWritingProviderId, aiWritingReasoningEffort, referralTone, referralLength,
     followUpTone, followUpLength, coverLetterTone, coverLetterLength, coverLetterFocus
   } = derivedValues;
@@ -650,6 +654,7 @@ function SettingsContent() {
   const scraperHasUnsavedChanges =
     scraperLocalEdits.schedulerCron !== undefined ||
     scraperLocalEdits.maxParallelScrapes !== undefined ||
+    scraperLocalEdits.keepDeviceAwake !== undefined ||
     scraperLocalEdits.historyRetentionDays !== undefined ||
     scraperLocalEdits.filterCountry !== undefined ||
     scraperLocalEdits.filterCity !== undefined ||
@@ -700,6 +705,8 @@ function SettingsContent() {
     setScraperLocalEdits((prev) => ({ ...prev, schedulerCron: value }));
   const setMaxParallelScrapes = (value: number) =>
     setScraperLocalEdits((prev) => ({ ...prev, maxParallelScrapes: clampScraperParallelScrapes(value) }));
+  const setKeepDeviceAwake = (value: boolean) =>
+    setScraperLocalEdits((prev) => ({ ...prev, keepDeviceAwake: value }));
   const setHistoryRetentionDays = (value: number) =>
     setScraperLocalEdits((prev) => ({
       ...prev,
@@ -891,6 +898,7 @@ function SettingsContent() {
         {
           scheduler_cron: schedulerCron,
           scraper_max_parallel_scrapes: maxParallelScrapes,
+          scraper_keep_device_awake: keepDeviceAwake,
           scraper_history_retention_days: historyRetentionDays,
           scraper_filter_country: filterCountry,
           scraper_filter_city: filterCity,
@@ -905,6 +913,7 @@ function SettingsContent() {
         ...prev,
         schedulerCron: undefined,
         maxParallelScrapes: undefined,
+        keepDeviceAwake: undefined,
         historyRetentionDays: undefined,
         filterCountry: undefined,
         filterCity: undefined,
@@ -1166,6 +1175,8 @@ function SettingsContent() {
             onSchedulerCronChange={setSchedulerCron}
             maxParallelScrapes={maxParallelScrapes}
             onMaxParallelScrapesChange={setMaxParallelScrapes}
+            keepDeviceAwake={keepDeviceAwake}
+            onKeepDeviceAwakeChange={setKeepDeviceAwake}
             historyRetentionDays={historyRetentionDays}
             onHistoryRetentionDaysChange={setHistoryRetentionDays}
             filterCountry={filterCountry}

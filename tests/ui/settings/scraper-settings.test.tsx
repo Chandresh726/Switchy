@@ -11,6 +11,8 @@ function createProps() {
     onSchedulerCronChange: vi.fn(),
     maxParallelScrapes: 3,
     onMaxParallelScrapesChange: vi.fn(),
+    keepDeviceAwake: true,
+    onKeepDeviceAwakeChange: vi.fn(),
     historyRetentionDays: 90,
     onHistoryRetentionDaysChange: vi.fn(),
     filterCountry: "",
@@ -71,5 +73,20 @@ describe("ScraperSettings", () => {
     expect((saveButton as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(saveButton);
     expect(props.onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("explains and toggles macOS idle-sleep prevention", () => {
+    const props = createProps();
+    render(<ScraperSettings {...props} />);
+
+    expect(screen.getByText("macOS")).toBeTruthy();
+    expect(
+      screen.getByText(/The display and screensaver can still turn on/)
+    ).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Keep Mac awake while scraping" })
+    );
+    expect(props.onKeepDeviceAwakeChange).toHaveBeenCalledWith(false);
   });
 });

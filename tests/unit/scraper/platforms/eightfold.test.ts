@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { IBrowserClient } from "@/lib/scraper/infrastructure/browser-client";
+import { BrowserSessionBootstrapError } from "@/lib/scraper/infrastructure/browser-session-error";
 import type { HttpRequestOptions } from "@/lib/scraper/infrastructure/http-client";
 import { EightfoldScraper } from "@/lib/scraper/platforms/eightfold";
 import {
@@ -157,6 +158,170 @@ describe("EightfoldScraper", () => {
       String(url).includes("/api/pcsx/position_details")
     );
     expect(detailCall?.[1]?.headers).not.toHaveProperty("Cookie");
+  });
+
+  it("refreshes the browser session and retries only missing list offsets", async () => {
+    let secondPageAttempts = 0;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/api/pcsx/search")) {
+        const offset = Number(new URL(url).searchParams.get("start"));
+        if (offset === 0) {
+          return createEightfoldSearchResponse(
+            Array.from({ length: 10 }, (_, index) => index + 1),
+            15
+          );
+        }
+        if (secondPageAttempts++ === 0) {
+          return new Response("expired", { status: 403 });
+        }
+        return createEightfoldSearchResponse([11, 12, 13, 14, 15], 15);
+      }
+
+      const requestedId = Number(new URL(url).searchParams.get("position_id"));
+      return createEightfoldDetailResponse(requestedId);
+    });
+    const bootstrap = vi
+      .fn()
+      .mockResolvedValueOnce({
+        baseUrl: "https://apply.careers.microsoft.com",
+        cookies: "session=old",
+        domain: "microsoft.com",
+      })
+      .mockResolvedValueOnce({
+        baseUrl: "https://apply.careers.microsoft.com",
+        cookies: "session=fresh",
+        domain: "microsoft.com",
+      });
+    const browserClient: IBrowserClient = {
+      bootstrap,
+      withBrowser: vi.fn(async () => {
+        throw new Error("not used");
+      }),
+      close: vi.fn(async () => undefined),
+    };
+    const scraper = new EightfoldScraper(
+      createHttpClientStub({ fetch: fetchMock }),
+      browserClient,
+      { requestDelayMs: 0 }
+    );
+
+    const result = await scraper.scrape(
+      "https://apply.careers.microsoft.com/careers"
+    );
+
+    expect(result).toMatchObject({
+      outcome: "success",
+      totalListings: 15,
+      listingCompleteness: "complete",
+    });
+    expect(result.jobs).toHaveLength(15);
+    expect(bootstrap).toHaveBeenCalledTimes(2);
+    const secondPageCalls = getFetchCalls(fetchMock).filter(([url]) =>
+      url.includes("start=10")
+    );
+    expect(secondPageCalls).toHaveLength(2);
+    expect(secondPageCalls[1]?.[1]?.headers).toMatchObject({
+      Cookie: "session=fresh",
+    });
+    const detailCall = getFetchCalls(fetchMock).find(([url]) =>
+      url.includes("position_details")
+    );
+    expect(detailCall?.[1]?.headers).toMatchObject({
+      Cookie: "session=fresh",
+    });
+  });
+
+  it("preserves typed browser errors when the recovery session cannot start", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("start=0")) {
+        return createEightfoldSearchResponse(
+          Array.from({ length: 10 }, (_, index) => index + 1),
+          15
+        );
+      }
+      return new Response("expired", { status: 403 });
+    });
+    const bootstrap = vi
+      .fn()
+      .mockResolvedValueOnce({
+        baseUrl: "https://apply.careers.microsoft.com",
+        cookies: "session=old",
+        domain: "microsoft.com",
+      })
+      .mockRejectedValueOnce(new BrowserSessionBootstrapError("navigation"));
+    const scraper = new EightfoldScraper(
+      createHttpClientStub({ fetch: fetchMock }),
+      {
+        bootstrap,
+        withBrowser: vi.fn(async () => {
+          throw new Error("not used");
+        }),
+        close: vi.fn(async () => undefined),
+      },
+      { requestDelayMs: 0 }
+    );
+
+    const result = await scraper.scrape(
+      "https://apply.careers.microsoft.com/careers"
+    );
+
+    expect(result).toMatchObject({
+      outcome: "error",
+      error: {
+        code: "browser_error",
+        message: "Failed to establish browser session during navigation.",
+      },
+    });
+  });
+
+  it("reports fetched and advertised counts when an offset remains missing", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/api/pcsx/search")) {
+        const offset = Number(new URL(url).searchParams.get("start"));
+        return offset === 0
+          ? createEightfoldSearchResponse(
+              Array.from({ length: 10 }, (_, index) => index + 1),
+              15
+            )
+          : new Response("blocked", { status: 403 });
+      }
+
+      const requestedId = Number(new URL(url).searchParams.get("position_id"));
+      return createEightfoldDetailResponse(requestedId);
+    });
+    const bootstrap = vi.fn(async () => ({
+      baseUrl: "https://apply.careers.microsoft.com",
+      cookies: "session=abc",
+      domain: "microsoft.com",
+    }));
+    const scraper = new EightfoldScraper(
+      createHttpClientStub({ fetch: fetchMock }),
+      {
+        bootstrap,
+        withBrowser: vi.fn(async () => {
+          throw new Error("not used");
+        }),
+        close: vi.fn(async () => undefined),
+      },
+      { requestDelayMs: 0 }
+    );
+
+    const result = await scraper.scrape(
+      "https://apply.careers.microsoft.com/careers"
+    );
+
+    expect(result).toMatchObject({
+      outcome: "partial",
+      totalListings: 10,
+      listingCompleteness: "partial",
+      issues: [
+        expect.objectContaining({
+          message: expect.stringContaining("10 of 15 advertised positions"),
+        }),
+      ],
+    });
+    expect(result.openExternalIds).toHaveLength(10);
+    expect(bootstrap).toHaveBeenCalledTimes(2);
   });
 
 });

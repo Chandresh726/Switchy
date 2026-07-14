@@ -30,6 +30,9 @@ export const DEFAULT_SETTINGS = {
   scraper_max_parallel_scrapes: String(
     SCRAPER_SETTINGS.maxParallelScrapes.defaultValue
   ),
+  scraper_keep_device_awake: String(
+    SCRAPER_SETTINGS.keepDeviceAwake.defaultValue
+  ),
   scraper_history_retention_days: String(
     SCRAPER_SETTINGS.historyRetentionDays.defaultValue
   ),
@@ -205,6 +208,7 @@ function parseSettingValue(
     case "matcher_bulk_enabled":
     case "matcher_serialize_operations":
     case "matcher_auto_match_after_scrape":
+    case "scraper_keep_device_awake":
       return { value: parseBooleanValue(value), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     case "scheduler_cron": {
       const cronExpr = String(value ?? "").trim();

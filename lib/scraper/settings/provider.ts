@@ -13,6 +13,7 @@ export interface ScrapeSettingsProvider {
     defaults?: ScraperFilterSettings
   ): Promise<ScraperFilterSettings>;
   getMaxParallelScrapes(): Promise<number>;
+  getKeepDeviceAwake(): Promise<boolean>;
   getHistoryRetentionDays(): Promise<number>;
 }
 
@@ -71,6 +72,15 @@ export class StoredScrapeSettingsProvider implements ScrapeSettingsProvider {
       setting.minimum,
       setting.maximum
     );
+  }
+
+  async getKeepDeviceAwake(): Promise<boolean> {
+    const value = await this.source.getSetting(
+      SCRAPER_SETTINGS.keepDeviceAwake.key
+    );
+    return value === null
+      ? SCRAPER_SETTINGS.keepDeviceAwake.defaultValue
+      : value !== "false";
   }
 
   async getHistoryRetentionDays(): Promise<number> {

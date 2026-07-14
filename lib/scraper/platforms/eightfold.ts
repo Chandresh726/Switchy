@@ -5,6 +5,7 @@ import type {
   BrowserSession,
   IBrowserClient,
 } from "@/lib/scraper/infrastructure/browser-client";
+import { BrowserSessionBootstrapError } from "@/lib/scraper/infrastructure/browser-session-error";
 import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 import {
   HttpError,
@@ -119,6 +120,9 @@ interface EightfoldNormalizedPosition {
 interface EightfoldListFetchResult {
   positions: EightfoldNormalizedPosition[];
   isComplete: boolean;
+  advertisedCount: number;
+  missingOffsets: number[];
+  sessionCookies: string;
 }
 
 interface EightfoldDetailFetchResult {
@@ -216,7 +220,20 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
 
       const resolvedDomain = domain;
       const boardToken = domain.replace(/\.com$/i, "");
-      const listResult = await this.fetchAllPositions(baseUrl, resolvedDomain, session.cookies);
+      const listResult = await this.fetchAllPositions(
+        baseUrl,
+        resolvedDomain,
+        session.cookies,
+        async () => {
+          try {
+            return (await this.bootstrapSession(url))?.cookies ?? null;
+          } catch (error) {
+            throwIfScrapeAborted(error);
+            if (error instanceof BrowserSessionBootstrapError) throw error;
+            return null;
+          }
+        }
+      );
 
       if (!listResult) {
         return this.failure("network_error", "Failed to fetch Eightfold jobs list.");
@@ -263,7 +280,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
           : [
               createScraperError(
                 "network_error",
-                "Eightfold listings were only partially fetched."
+                `Eightfold listings were only partially fetched (${allPositions.length} of ${listResult.advertisedCount} advertised positions; ${listResult.missingOffsets.length} page offset${listResult.missingOffsets.length === 1 ? "" : "s"} unresolved).`
               ),
             ];
         return {
@@ -302,7 +319,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
               baseUrl,
               resolvedDomain,
               position.id,
-              session.cookies
+              listResult.sessionCookies
             );
 
             const isRateLimited = detailResult.status === 403 || detailResult.status === 429;
@@ -345,7 +362,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         issues.push(
           createScraperError(
             "network_error",
-            "Eightfold listings were only partially fetched."
+            `Eightfold listings were only partially fetched (${allPositions.length} of ${listResult.advertisedCount} advertised positions; ${listResult.missingOffsets.length} page offset${listResult.missingOffsets.length === 1 ? "" : "s"} unresolved).`
           )
         );
       }
@@ -478,17 +495,49 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
   private async fetchAllPositions(
     baseUrl: string,
     domain: string,
-    cookies: string
+    cookies: string,
+    refreshCookies: () => Promise<string | null>
   ): Promise<EightfoldListFetchResult | null> {
-    const firstBatch = await this.fetchJobList(baseUrl, domain, cookies, 0);
+    const fetchSafely = async (activeCookies: string, offset: number) => {
+      try {
+        return await this.fetchJobList(baseUrl, domain, activeCookies, offset);
+      } catch (error) {
+        if (error instanceof ScraperPayloadError) throw error;
+        throwIfScrapeAborted(error);
+        return null;
+      }
+    };
+
+    let activeCookies = cookies;
+    let sessionRefreshed = false;
+    const refreshOnce = async () => {
+      if (sessionRefreshed) return null;
+      sessionRefreshed = true;
+      return refreshCookies();
+    };
+    let firstBatch = await fetchSafely(activeCookies, 0);
+
+    if (!firstBatch || firstBatch.status !== 200 || !firstBatch.data) {
+      const refreshedCookies = await refreshOnce();
+      if (!refreshedCookies) return null;
+      activeCookies = refreshedCookies;
+      firstBatch = await fetchSafely(activeCookies, 0);
+    }
 
     if (!firstBatch || firstBatch.status !== 200 || !firstBatch.data) {
       return null;
     }
 
     const total = firstBatch.data.count || 0;
-    const allPositions = firstBatch.data.positions.map((position) => this.normalizePosition(position));
-    let failedPages = 0;
+    const positionsById = new Map<number, EightfoldNormalizedPosition>();
+    for (const position of firstBatch.data.positions) {
+      const normalized = this.normalizePosition(position);
+      positionsById.set(normalized.id, normalized);
+    }
+    const missingOffsets = new Set<number>();
+    if (firstBatch.data.positions.length < Math.min(this.config.pageSize, total)) {
+      missingOffsets.add(0);
+    }
 
     if (total > this.config.pageSize) {
       const totalPages = Math.ceil(total / this.config.pageSize);
@@ -504,7 +553,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       ): Promise<EightfoldSearchResponse | null> => {
         await this.delay(index * 50);
         try {
-          return await this.fetchJobList(baseUrl, domain, cookies, offset);
+          return await this.fetchJobList(baseUrl, domain, activeCookies, offset);
         } catch (error) {
           throwIfScrapeAborted(error);
           return null;
@@ -517,11 +566,21 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
           batchOffsets.map((offset, idx) => fetchWithStagger(offset, idx))
         );
 
-        for (const result of results) {
+        for (let resultIndex = 0; resultIndex < results.length; resultIndex++) {
+          const result = results[resultIndex];
+          const offset = batchOffsets[resultIndex];
+          if (offset === undefined) continue;
           if (!result || !result.data || !Array.isArray(result.data.positions)) {
-            failedPages++;
+            missingOffsets.add(offset);
           } else {
-            allPositions.push(...result.data.positions.map((position) => this.normalizePosition(position)));
+            for (const position of result.data.positions) {
+              const normalized = this.normalizePosition(position);
+              positionsById.set(normalized.id, normalized);
+            }
+            const expectedCount = Math.min(this.config.pageSize, total - offset);
+            if (result.data.positions.length < expectedCount) {
+              missingOffsets.add(offset);
+            }
           }
         }
 
@@ -531,9 +590,37 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       }
     }
 
+    if (missingOffsets.size > 0) {
+      const retryCookies = sessionRefreshed ? activeCookies : await refreshOnce();
+      if (retryCookies) {
+        activeCookies = retryCookies;
+        for (const offset of Array.from(missingOffsets).sort((a, b) => a - b)) {
+          const result = await fetchSafely(activeCookies, offset);
+          if (!result?.data || !Array.isArray(result.data.positions)) continue;
+
+          for (const position of result.data.positions) {
+            const normalized = this.normalizePosition(position);
+            positionsById.set(normalized.id, normalized);
+          }
+          const expectedCount = Math.min(this.config.pageSize, total - offset);
+          if (result.data.positions.length >= expectedCount) {
+            missingOffsets.delete(offset);
+          }
+        }
+      }
+    }
+
+    const allPositions = Array.from(positionsById.values());
+    if (allPositions.length >= total) {
+      missingOffsets.clear();
+    }
+
     return {
       positions: allPositions,
-      isComplete: failedPages === 0 && allPositions.length >= total,
+      isComplete: missingOffsets.size === 0 && allPositions.length >= total,
+      advertisedCount: total,
+      missingOffsets: Array.from(missingOffsets).sort((a, b) => a - b),
+      sessionCookies: activeCookies,
     };
   }
 

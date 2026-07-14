@@ -112,6 +112,7 @@ export function createLocalScrapeQueueService(
       new DrizzleScrapeHistoryStore(),
       scrapingModule.settingsProvider
     ),
+    settingsProvider: scrapingModule.settingsProvider,
     runnerConfig: { concurrency: 10, ...runnerConfig },
   });
 }

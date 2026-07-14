@@ -1,5 +1,6 @@
 import type { z } from "zod";
 
+import { BrowserSessionBootstrapError } from "@/lib/scraper/infrastructure/browser-session-error";
 import { HttpError } from "@/lib/scraper/infrastructure/http-client";
 
 import {
@@ -69,6 +70,10 @@ export function parseExternalItems<T>(
 }
 
 export function createFailureFromUnknown(error: unknown): ScraperErrorResult {
+  if (error instanceof BrowserSessionBootstrapError) {
+    return createScraperFailure("browser_error", error.message);
+  }
+
   if (error instanceof ScraperPayloadError) {
     return createScraperFailure("parse_error", error.message);
   }

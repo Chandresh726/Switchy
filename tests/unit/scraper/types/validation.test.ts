@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { HttpError } from "@/lib/scraper/infrastructure/http-client";
+import { BrowserSessionBootstrapError } from "@/lib/scraper/infrastructure/browser-client";
 import {
   createFailureFromUnknown,
   parseExternalItems,
@@ -63,5 +64,20 @@ describe("scraper payload validation", () => {
     expect(
       createFailureFromUnknown(new DOMException("Request timed out", "AbortError"))
     ).toMatchObject({ error: { code: "timeout", retryable: true } });
+  });
+
+  it("maps sanitized browser-session failures to retryable scraper errors", () => {
+    expect(
+      createFailureFromUnknown(
+        new BrowserSessionBootstrapError("session_extraction")
+      )
+    ).toMatchObject({
+      outcome: "error",
+      error: {
+        code: "browser_error",
+        retryable: true,
+        message: "Failed to establish browser session during session extraction.",
+      },
+    });
   });
 });

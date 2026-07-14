@@ -1,9 +1,12 @@
-export function createEightfoldSearchResponse(positionIds: number[]): Response {
+export function createEightfoldSearchResponse(
+  positionIds: number[],
+  advertisedCount = positionIds.length
+): Response {
   return new Response(
     JSON.stringify({
       status: 200,
       data: {
-        count: positionIds.length,
+        count: advertisedCount,
         positions: positionIds.map((id) => ({
           id,
           name: `Role ${id}`,

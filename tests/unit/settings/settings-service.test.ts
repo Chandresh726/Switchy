@@ -14,6 +14,7 @@ describe("settings service", () => {
     expect(DEFAULT_SETTINGS.follow_up_tone).toBe("professional");
     expect(DEFAULT_SETTINGS.follow_up_length).toBe("medium");
     expect(DEFAULT_SETTINGS.scraper_max_parallel_scrapes).toBe("3");
+    expect(DEFAULT_SETTINGS.scraper_keep_device_awake).toBe("true");
     expect(DEFAULT_SETTINGS.scraper_history_retention_days).toBe("90");
   });
 
@@ -58,6 +59,14 @@ describe("settings service", () => {
         key: "scraper_max_parallel_scrapes",
         value: "4",
       },
+    ]);
+  });
+
+  it("serializes the scraper keep-awake toggle as a boolean setting", () => {
+    expect(
+      parseSettingsUpdateBody({ scraper_keep_device_awake: false }).updates
+    ).toEqual([
+      { key: "scraper_keep_device_awake", value: "false" },
     ]);
   });
 

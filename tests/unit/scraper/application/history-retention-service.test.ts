@@ -11,6 +11,7 @@ describe("HistoryRetentionService", () => {
     const settings = {
       getFilters: vi.fn(),
       getMaxParallelScrapes: vi.fn(),
+      getKeepDeviceAwake: vi.fn(async () => true),
       getHistoryRetentionDays: vi.fn(async () => 90),
     };
     const service = new HistoryRetentionService(store, settings, () => now);
@@ -32,6 +33,7 @@ describe("HistoryRetentionService", () => {
       {
         getFilters: vi.fn(),
         getMaxParallelScrapes: vi.fn(),
+        getKeepDeviceAwake: vi.fn(async () => true),
         getHistoryRetentionDays: vi.fn(async () => 90),
       },
       () => new Date("2026-07-13T00:00:00.000Z")

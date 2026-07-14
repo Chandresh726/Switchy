@@ -54,6 +54,18 @@ describe("StoredScrapeSettingsProvider", () => {
   });
 
   it.each([
+    [null, true],
+    ["true", true],
+    ["false", false],
+  ])("parses keep-awake value %s as %s", async (stored, expected) => {
+    const { provider } = createProvider({
+      scraper_keep_device_awake: stored,
+    });
+
+    await expect(provider.getKeepDeviceAwake()).resolves.toBe(expected);
+  });
+
+  it.each([
     ["7", 7],
     ["3650", 3650],
     ["6", 90],

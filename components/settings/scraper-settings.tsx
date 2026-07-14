@@ -5,6 +5,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -32,6 +33,8 @@ interface ScraperSettingsProps {
   onSchedulerCronChange: (value: string) => void;
   maxParallelScrapes: number;
   onMaxParallelScrapesChange: (value: number) => void;
+  keepDeviceAwake: boolean;
+  onKeepDeviceAwakeChange: (value: boolean) => void;
   historyRetentionDays: number;
   onHistoryRetentionDaysChange: (value: number) => void;
   filterCountry: string;
@@ -53,6 +56,8 @@ export function ScraperSettings({
   onSchedulerCronChange,
   maxParallelScrapes,
   onMaxParallelScrapesChange,
+  keepDeviceAwake,
+  onKeepDeviceAwakeChange,
   historyRetentionDays,
   onHistoryRetentionDaysChange,
   filterCountry,
@@ -167,6 +172,29 @@ export function ScraperSettings({
               onMaxParallelScrapesChange(Math.min(10, Math.max(1, Number.isNaN(parsed) ? 1 : parsed)));
             }}
             className="bg-background/60 border-border w-[100px] text-center shrink-0"
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-6 pt-4 border-t border-border">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="scraper-keep-device-awake">
+                Keep Mac awake while scraping
+              </Label>
+              <Badge variant="secondary">macOS</Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Prevents idle system sleep while scrape work is active. The display and
+              screensaver can still turn on. Closing the lid may still put the Mac to
+              sleep. This setting has no effect on other operating systems.
+            </p>
+          </div>
+          <Switch
+            id="scraper-keep-device-awake"
+            checked={keepDeviceAwake}
+            onCheckedChange={onKeepDeviceAwakeChange}
+            aria-label="Keep Mac awake while scraping"
+            className="shrink-0"
           />
         </div>
 

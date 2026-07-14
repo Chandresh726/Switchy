@@ -41,7 +41,10 @@ vi.mock("playwright", () => ({
   chromium: { launch: browserMocks.launch },
 }));
 
-import { GenericBrowserClient } from "@/lib/scraper/infrastructure/browser-client";
+import {
+  BrowserSessionBootstrapError,
+  GenericBrowserClient,
+} from "@/lib/scraper/infrastructure/browser-client";
 
 describe("GenericBrowserClient", () => {
   beforeEach(() => {
@@ -93,6 +96,36 @@ describe("GenericBrowserClient", () => {
     );
     expect(browserMocks.context.close).toHaveBeenCalledTimes(1);
     expect(browserMocks.browser.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports sanitized, retryable browser bootstrap stages", async () => {
+    const client = new GenericBrowserClient({ waitForMs: 0 });
+    browserMocks.page.goto.mockRejectedValueOnce(
+      new Error("secret-token=do-not-persist")
+    );
+
+    const error = await client
+      .bootstrap("https://jobs.example.com/careers")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(BrowserSessionBootstrapError);
+    expect(error).toMatchObject({ stage: "navigation", retryable: true });
+    expect((error as Error).message).not.toContain("secret-token");
+    expect(browserMocks.context.close).toHaveBeenCalledTimes(1);
+    expect(browserMocks.browser.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("classifies browser launch failures without returning null", async () => {
+    const client = new GenericBrowserClient();
+    browserMocks.launch.mockRejectedValueOnce(new Error("launch failed"));
+
+    await expect(
+      client.bootstrap("https://jobs.example.com/careers")
+    ).rejects.toMatchObject({
+      name: "BrowserSessionBootstrapError",
+      stage: "launch",
+      retryable: true,
+    });
   });
 
   it("tracks concurrent browser sessions independently", async () => {
