@@ -1,4 +1,5 @@
 import { load } from "cheerio";
+import type { Page } from "playwright";
 import { z } from "zod";
 
 import type { IBrowserClient } from "@/lib/scraper/infrastructure/browser-client";
@@ -12,6 +13,7 @@ import {
   type ScraperError,
 } from "@/lib/scraper/types";
 import { AbstractBrowserScraper, DEFAULT_BROWSER_CONFIG } from "../core";
+import { selectListingsForHydration } from "./shared/listing-selection";
 import type { BrowserScraperConfig, ScrapeOptions, ScrapedJob, ScraperResult } from "../core/types";
 
 type ServiceNowListItem = {
@@ -45,7 +47,7 @@ export type ServiceNowConfig = BrowserScraperConfig & {
 export const DEFAULT_SERVICENOW_CONFIG: ServiceNowConfig = {
   ...DEFAULT_BROWSER_CONFIG,
   requestDelayMs: 200,
-  maxPages: 10,
+  maxPages: 100,
 };
 
 export class ServiceNowScraper extends AbstractBrowserScraper<ServiceNowConfig> {
@@ -75,10 +77,11 @@ export class ServiceNowScraper extends AbstractBrowserScraper<ServiceNowConfig> 
   }
 
   async scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult> {
-    void options;
     try {
       return await this.browserClient.withBrowser(async (page) => {
-        await page.goto(url, { waitUntil: "domcontentloaded", timeout: this.config.timeout });
+        if (!(await this.navigateListingPage(page, url))) {
+          throw new TypeError("Failed to navigate to ServiceNow listings.");
+        }
         await page.waitForTimeout(2500);
 
         const baseUrl = page.url().replace(/[?#].*$/, "");
@@ -95,17 +98,18 @@ export class ServiceNowScraper extends AbstractBrowserScraper<ServiceNowConfig> 
           );
         }
         allItems.push(...firstPageItems);
-        let fetchedAllPlannedPages = true;
+        let fetchedPages = 1;
 
         for (let pageNum = 2; pageNum <= pagesToScrape; pageNum++) {
           const pageUrl = `${baseUrl}?page=${pageNum}`;
-          await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: this.config.timeout });
+          const navigated = await this.navigateListingPage(page, pageUrl);
+          if (!navigated) continue;
           await page.waitForTimeout(1500);
           const pageItems = this.extractListingItems(baseUrl, await page.content());
           if (pageItems.length === 0) {
-            fetchedAllPlannedPages = false;
-            break;
+            continue;
           }
+          fetchedPages++;
           allItems.push(...pageItems);
         }
 
@@ -119,10 +123,21 @@ export class ServiceNowScraper extends AbstractBrowserScraper<ServiceNowConfig> 
           "ServiceNow listings"
         );
 
+        const selection = selectListingsForHydration({
+          listings: items,
+          filters: options?.filters,
+          existingExternalIds: options?.existingExternalIds,
+          toFilterable: (item) => ({
+            title: item.title,
+            location: item.location ?? "",
+          }),
+          getExternalId: (item) =>
+            this.generateExternalId(this.platform, item.id),
+        });
         const jobs: ScrapedJob[] = [];
         let detailFailures = 0;
 
-        for (const item of items) {
+        for (const item of selection.listings) {
           try {
             await page.goto(item.url, { waitUntil: "domcontentloaded", timeout: this.config.timeout });
             await page.waitForTimeout(this.config.requestDelayMs);
@@ -141,14 +156,13 @@ export class ServiceNowScraper extends AbstractBrowserScraper<ServiceNowConfig> 
           }
         }
 
-        const listingComplete =
-          fetchedAllPlannedPages && pagesToScrape >= totalPages;
+        const listingComplete = fetchedPages >= totalPages;
         const issues: ScraperError[] = [];
         if (!listingComplete) {
           issues.push(
             createScraperError(
               "network_error",
-              "ServiceNow listings were only partially fetched."
+              `ServiceNow listings were only partially fetched (${fetchedPages} of ${totalPages} advertised pages).`
             )
           );
         }
@@ -165,7 +179,10 @@ export class ServiceNowScraper extends AbstractBrowserScraper<ServiceNowConfig> 
           outcome: issues.length > 0 ? "partial" : "success",
           jobs,
           totalListings: items.length,
-          openExternalIds: jobs.map((job) => job.externalId),
+          earlyFiltered: selection.earlyFiltered,
+          openExternalIds: items.map((item) =>
+            this.generateExternalId(this.platform, item.id)
+          ),
           listingCompleteness: listingComplete ? "complete" : "partial",
           issues: issues.length > 0 ? issues : undefined,
         };
@@ -175,19 +192,25 @@ export class ServiceNowScraper extends AbstractBrowserScraper<ServiceNowConfig> 
     }
   }
 
+  private async navigateListingPage(page: Page, url: string): Promise<boolean> {
+    for (let attempt = 0; attempt <= this.config.retries; attempt++) {
+      try {
+        await page.goto(url, {
+          waitUntil: "domcontentloaded",
+          timeout: this.config.timeout,
+        });
+        return true;
+      } catch (error) {
+        throwIfScrapeAborted(error);
+        if (attempt >= this.config.retries) return false;
+        await this.delay(this.config.baseDelay * 2 ** attempt);
+      }
+    }
+    return false;
+  }
+
   private extractTotalPages(html: string): number {
     const $ = load(html);
-    const lastPageLink = $('a[href*="page="]').filter((_, el) => {
-      const text = $(el).text().trim();
-      return /^\d+$/.test(text);
-    }).last();
-
-    if (lastPageLink.length) {
-      const pageText = lastPageLink.text().trim();
-      const parsed = Number(pageText);
-      if (Number.isFinite(parsed) && parsed > 0) return parsed;
-    }
-
     let maxPage = 1;
     $('a[href*="page="]').each((_, el) => {
       const href = $(el).attr("href") ?? "";
@@ -197,6 +220,10 @@ export class ServiceNowScraper extends AbstractBrowserScraper<ServiceNowConfig> 
         if (Number.isFinite(parsed) && parsed > maxPage) {
           maxPage = parsed;
         }
+      }
+      const textPage = Number($(el).text().trim());
+      if (Number.isFinite(textPage) && textPage > maxPage) {
+        maxPage = textPage;
       }
     });
 

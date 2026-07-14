@@ -14,6 +14,10 @@ export const SCRAPER_SETTINGS = {
     minimum: 1,
     maximum: 10,
   },
+  keepDeviceAwake: {
+    key: "scraper_keep_device_awake",
+    defaultValue: true,
+  },
   historyRetentionDays: {
     key: "scraper_history_retention_days",
     defaultValue: 90,
