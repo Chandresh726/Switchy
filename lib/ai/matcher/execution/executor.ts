@@ -175,6 +175,9 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
       providerConcurrencyLimit: config.concurrencyLimit,
     });
   } catch (error) {
+    if (error instanceof AIError && !error.retryable) {
+      throw error;
+    }
     warnWithSanitizedError(
       "[EvidenceMatcher] Model policy unavailable; using retryable deterministic results.",
       error
@@ -211,6 +214,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
       capability: "match_adjudication",
       resolved: {
         snapshot: modelRuntime!.snapshot,
+        backend: modelRuntime!.backend,
         reasoningEffort: modelRuntime!.reasoningEffort,
       },
       providerConcurrencyLimit: config.concurrencyLimit,

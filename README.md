@@ -24,6 +24,8 @@ It helps you discover jobs from multiple ATS platforms, match them against your 
 - Cerebras
 - Groq
 - NVIDIA (NIM)
+- Codex CLI (uses the CLI's existing login; no credential is stored by Switchy)
+- OpenCode (uses OpenCode's existing provider configuration; no credential is stored by Switchy)
 
 ## Prerequisites
 
@@ -32,6 +34,7 @@ It helps you discover jobs from multiple ATS platforms, match them against your 
 - Native build tools for `better-sqlite3` (Python + C/C++ toolchain)
 - Internet access on first install (Playwright Chromium is auto-installed)
 - AI provider credentials (optional, only required for AI-powered features)
+- Optional local CLI provider: an installed and authenticated `codex` or `opencode` executable
 
 ## Local Setup
 

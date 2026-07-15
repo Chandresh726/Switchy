@@ -4,11 +4,14 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ModelCombobox } from "@/components/settings/model-combobox";
+import {
+  hasInvalidReasoningSelection,
+  ReasoningEffortControl,
+} from "@/components/settings/reasoning-effort-control";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, FileText, Loader2, MessageCircle, Save, Send, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { REASONING_EFFORT_OPTIONS } from "@/lib/ai/providers/metadata";
 import type { ReasoningEffort } from "@/lib/settings/types";
 import type { Provider, ProviderModelOption } from "@/lib/types";
 
@@ -96,7 +99,12 @@ export function AIWritingSection({
   settingsSaved,
 }: AIWritingSectionProps) {
   const currentModel = aiWritingSettings.aiWritingModel;
-  const supportsReasoning = models.find(m => m.modelId === currentModel)?.supportsReasoning ?? false;
+  const selectedModel = models.find((model) => model.modelId === currentModel);
+  const reasoningSelectionInvalid = hasInvalidReasoningSelection(
+    selectedModel,
+    aiWritingSettings.aiWritingReasoningEffort
+  );
+  const configuredModelUnavailable = Boolean(currentModel) && !selectedModel;
 
   const toggleFocus = (value: string) => {
     const current = aiWritingSettings.coverLetterFocus || [];
@@ -143,34 +151,37 @@ export function AIWritingSection({
                 <ModelCombobox
                   models={models}
                   value={currentModel}
-                  onValueChange={(value) => onAIWritingSettingsChange({ aiWritingModel: value })}
+                  onValueChange={(value) => {
+                    const model = models.find((candidate) => candidate.modelId === value);
+                    const defaultReasoningEffort = model?.reasoningControl.kind === "effort"
+                      ? model.reasoningControl.defaultValue ?? model.reasoningControl.options[0]?.value ?? ""
+                      : "";
+                    onAIWritingSettingsChange({
+                      aiWritingModel: value,
+                      aiWritingReasoningEffort: defaultReasoningEffort,
+                    });
+                  }}
                   disabled={modelsLoading || models.length === 0}
                   loading={modelsLoading}
                   error={modelsError}
                   placeholder="Select model"
                 />
-                {supportsReasoning && (
-                  <Select
-                    value={aiWritingSettings.aiWritingReasoningEffort || "medium"}
-                    onValueChange={(value) => onAIWritingSettingsChange({ aiWritingReasoningEffort: value as ReasoningEffort })}
-                  >
-                    <SelectTrigger className="w-32 bg-background/60 border-border">
-                      <SelectValue placeholder="Effort" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {REASONING_EFFORT_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
+                <ReasoningEffortControl
+                  model={selectedModel}
+                  value={aiWritingSettings.aiWritingReasoningEffort}
+                  onValueChange={(value) => onAIWritingSettingsChange({ aiWritingReasoningEffort: value })}
+                />
               </div>
               {modelsError && (
                 <p className="text-xs text-amber-400 flex items-center gap-2">
                   <AlertTriangle className="h-3.5 w-3.5" />
                   {modelsError}
+                </p>
+              )}
+              {configuredModelUnavailable && (
+                <p className="text-xs text-amber-400 flex items-center gap-2">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  The configured model is unavailable. Choose another model or refresh the catalog.
                 </p>
               )}
               {modelsStale && !modelsError && (
@@ -384,7 +395,7 @@ export function AIWritingSection({
         </p>
         <Button
           onClick={onSave}
-          disabled={isSaving || !hasUnsavedChanges || !hasProviders || !aiWritingSettings.aiWritingModel}
+          disabled={isSaving || !hasUnsavedChanges || !hasProviders || !aiWritingSettings.aiWritingModel || configuredModelUnavailable || reasoningSelectionInvalid}
           className="bg-emerald-600 hover:bg-emerald-500 text-foreground min-w-[120px]"
         >
           {isSaving ? (

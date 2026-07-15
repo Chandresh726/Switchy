@@ -5,6 +5,7 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { z } from "zod";
 
 import { sanitizeAIError } from "@/lib/ai/shared/errors";
+import { isReasoningEffort } from "@/lib/ai/providers/types";
 import type * as databaseSchema from "@/lib/db/schema";
 import { aiRuns } from "@/lib/db/schema";
 
@@ -28,33 +29,43 @@ const AICapabilitySchema = z.enum([
   "resume_parse",
 ]);
 
+const RuntimeMetadataSchema = z.object({
+  backendKind: z.enum(["ai_sdk", "codex_cli", "opencode_cli"]).optional(),
+  cliVersion: z.string().min(1).max(80).optional(),
+  upstreamProvider: z.string().min(1).max(120).optional(),
+  reasoningEffort: z.union([
+    z.literal("provider_default"),
+    z.string().refine(isReasoningEffort),
+  ]).optional(),
+});
+
 const CAPABILITY_METADATA_SCHEMAS: Record<
   AICapability,
   z.ZodType<SafeAIMetadata>
 > = {
-  job_analysis: z.object({
+  job_analysis: RuntimeMetadataSchema.extend({
     batchSize: z.number().int().min(1).max(100).optional(),
     jobCount: z.number().int().min(1).max(10_000).optional(),
     fallbackUsed: z.boolean().optional(),
   }).strict(),
-  match_adjudication: z.object({
+  match_adjudication: RuntimeMetadataSchema.extend({
     batchSize: z.number().int().min(1).max(100).optional(),
     jobCount: z.number().int().min(1).max(10_000).optional(),
     preset: z.enum(["economy", "balanced", "quality"]).optional(),
   }).strict(),
-  writing_cover_letter: z.object({
+  writing_cover_letter: RuntimeMetadataSchema.extend({
     streamed: z.boolean().optional(),
     modification: z.boolean().optional(),
   }).strict(),
-  writing_referral: z.object({
+  writing_referral: RuntimeMetadataSchema.extend({
     streamed: z.boolean().optional(),
     modification: z.boolean().optional(),
   }).strict(),
-  writing_recruiter_follow_up: z.object({
+  writing_recruiter_follow_up: RuntimeMetadataSchema.extend({
     streamed: z.boolean().optional(),
     modification: z.boolean().optional(),
   }).strict(),
-  resume_parse: z.object({
+  resume_parse: RuntimeMetadataSchema.extend({
     fileType: z.enum(["pdf", "doc", "docx", "txt", "md"]).optional(),
     pageCount: z.number().int().min(1).max(10_000).optional(),
   }).strict(),
@@ -86,12 +97,15 @@ const SUBJECT_SCHEMAS: Record<AICapability, z.ZodType<AIExecutionSubject>> = {
     id: z.string().regex(/^[a-f0-9]{24}$/),
   }).strict(),
 };
-const ProviderRecordIdSchema = z.string().uuid();
+const ProviderRecordIdSchema = z.union([
+  z.string().uuid(),
+  z.enum(["builtin:codex-cli", "builtin:opencode-cli"]),
+]);
 const ModelIdentifierSchema = z
   .string()
   .min(1)
-  .max(160)
-  .regex(/^[a-zA-Z0-9._:/-]+$/);
+  .max(240)
+  .regex(/^[a-zA-Z0-9._:/@+-]+$/);
 
 const WarningCodesSchema = z.array(z.string().min(1).max(120)).max(20);
 

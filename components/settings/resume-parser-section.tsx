@@ -16,8 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ModelCombobox } from "@/components/settings/model-combobox";
+import { ReasoningEffortControl } from "@/components/settings/reasoning-effort-control";
 import { AlertTriangle, Terminal } from "lucide-react";
-import { REASONING_EFFORT_OPTIONS } from "@/lib/ai/providers/metadata";
 import type { ReasoningEffort } from "@/lib/settings/types";
 import type { Provider, ProviderModelOption } from "@/lib/types";
 
@@ -50,7 +50,8 @@ export function ResumeParserSection({
   resumeParserReasoningEffort,
   onResumeParserReasoningEffortChange,
 }: ResumeParserSectionProps) {
-  const supportsReasoning = models.find((model) => model.modelId === resumeParserModel)?.supportsReasoning ?? false;
+  const selectedModel = models.find((model) => model.modelId === resumeParserModel);
+  const configuredModelUnavailable = Boolean(resumeParserModel) && !selectedModel;
 
   return (
     <Card className="border-border bg-card/70 rounded-xl">
@@ -93,25 +94,22 @@ export function ResumeParserSection({
                   error={modelsError}
                   placeholder="Select model"
                 />
-                {supportsReasoning && (
-                  <Select value={resumeParserReasoningEffort} onValueChange={onResumeParserReasoningEffortChange}>
-                    <SelectTrigger className="w-32 bg-background/60 border-border">
-                      <SelectValue placeholder="Effort" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {REASONING_EFFORT_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
+                <ReasoningEffortControl
+                  model={selectedModel}
+                  value={resumeParserReasoningEffort}
+                  onValueChange={onResumeParserReasoningEffortChange}
+                />
               </div>
               {modelsError && (
                 <p className="text-xs text-amber-400 flex items-center gap-2">
                   <AlertTriangle className="h-3.5 w-3.5" />
                   {modelsError}
+                </p>
+              )}
+              {configuredModelUnavailable && (
+                <p className="text-xs text-amber-400 flex items-center gap-2">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  The configured model is unavailable. Choose another model or refresh the catalog.
                 </p>
               )}
               {modelsStale && !modelsError && (

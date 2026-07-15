@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 
 import { AISettingsUpdateSchema } from "@/lib/ai/contracts";
 import { assertAppRequest } from "@/lib/api";
-import { handleAIAPIError } from "@/lib/api/ai-error-handler";
+import { APIValidationError, handleAIAPIError } from "@/lib/api/ai-error-handler";
+import { getCachedProviderModelDefinition } from "@/lib/ai/providers/model-catalog";
+import { BUILTIN_CLI_PROVIDER_IDS } from "@/lib/ai/local-cli/constants";
 import {
   clearSchedulerEnabledCache,
   getSchedulerEnabled,
@@ -37,6 +39,8 @@ const AI_SETTING_KEYS: ReadonlySet<SettingKey> = new Set([
   "cover_letter_tone",
   "cover_letter_length",
   "cover_letter_focus",
+  "codex_cli_executable",
+  "opencode_cli_executable",
 ]);
 
 function pickAISettings(body: Record<string, unknown>): Record<string, unknown> {
@@ -49,6 +53,76 @@ function pickAISettings(body: Record<string, unknown>): Record<string, unknown> 
   }
 
   return aiOnly;
+}
+
+const LEGACY_REASONING_VALUES = new Set(["low", "medium", "high"]);
+const REASONING_FEATURE_SETTINGS = [
+  {
+    provider: "matcher_provider_id",
+    model: "matcher_model",
+    effort: "matcher_reasoning_effort",
+  },
+  {
+    provider: "resume_parser_provider_id",
+    model: "resume_parser_model",
+    effort: "resume_parser_reasoning_effort",
+  },
+  {
+    provider: "ai_writing_provider_id",
+    model: "ai_writing_model",
+    effort: "ai_writing_reasoning_effort",
+  },
+] as const;
+
+async function reconcileReasoningSettings(
+  body: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const current = await getSettingsWithDefaults();
+  const reconciled = { ...body };
+
+  for (const keys of REASONING_FEATURE_SETTINGS) {
+    const touchesSelection = keys.provider in body || keys.model in body || keys.effort in body;
+    if (!touchesSelection) continue;
+
+    const providerId = String(body[keys.provider] ?? current[keys.provider]).trim();
+    const modelId = String(body[keys.model] ?? current[keys.model]).trim();
+    const requestedEffort = String(body[keys.effort] ?? current[keys.effort]);
+    if (!providerId || !modelId) {
+      reconciled[keys.effort] = "";
+      continue;
+    }
+
+    const model = await getCachedProviderModelDefinition(providerId, modelId);
+    if (!model) {
+      throw new APIValidationError(
+        "Refresh the selected provider's model catalog before saving AI settings",
+        "invalid_request"
+      );
+    }
+
+    if (model.reasoningControl.kind === "provider_default") {
+      if (requestedEffort && !LEGACY_REASONING_VALUES.has(requestedEffort)) {
+        throw new APIValidationError(
+          `Model "${modelId}" does not advertise selectable reasoning efforts`,
+          "invalid_request"
+        );
+      }
+      reconciled[keys.effort] = "";
+      continue;
+    }
+
+    const available = model.reasoningControl.options.map(({ value }) => value);
+    const selected = requestedEffort || model.reasoningControl.defaultValue || available[0];
+    if (!selected || !available.includes(selected)) {
+      throw new APIValidationError(
+        `Reasoning effort "${requestedEffort}" is unavailable for model "${modelId}"`,
+        "invalid_request"
+      );
+    }
+    reconciled[keys.effort] = selected;
+  }
+
+  return reconciled;
 }
 
 export async function GET() {
@@ -73,15 +147,33 @@ export async function POST(request: Request) {
       );
     }
 
-    const aiOnlyPayload = pickAISettings(body as Record<string, unknown>);
+    const reconciledBody = await reconcileReasoningSettings(
+      body as Record<string, unknown>
+    );
+    const aiOnlyPayload = pickAISettings(reconciledBody);
     if (Object.keys(aiOnlyPayload).length > 0) {
       AISettingsUpdateSchema.parse(aiOnlyPayload);
     }
 
-    const { updates, cronUpdated, enabledChanged, newEnabledValue } = parseSettingsUpdateBody(body);
+    const { updates, cronUpdated, enabledChanged, newEnabledValue } = parseSettingsUpdateBody(reconciledBody);
 
     if (updates.length > 0) {
       await upsertSettings(updates);
+      const updatedCLIProviders = updates.flatMap(({ key }) =>
+        key === "codex_cli_executable"
+          ? ["codex_cli" as const]
+          : key === "opencode_cli_executable"
+            ? ["opencode_cli" as const]
+            : []
+      );
+      if (updatedCLIProviders.length > 0) {
+        const { resetLocalCLIProvider } = await import("@/lib/ai/local-cli/service");
+        const { deleteStoredProviderModelsCache } = await import("@/lib/ai/providers/model-catalog");
+        await Promise.all(updatedCLIProviders.flatMap((provider) => [
+          resetLocalCLIProvider(provider),
+          deleteStoredProviderModelsCache(BUILTIN_CLI_PROVIDER_IDS[provider]),
+        ]));
+      }
     }
 
     let shouldRestartScheduler = false;

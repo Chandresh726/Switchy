@@ -1,14 +1,10 @@
-import {
-  generateText,
-  Output,
-  streamText,
-  type CallWarning,
-  type LanguageModelUsage,
-} from "ai";
+import { zodSchema, type LanguageModel } from "ai";
 import { z } from "zod";
 
+import type { AIGenerationBackend } from "@/lib/ai/local-cli/types";
 import type { AIContextOverrides } from "@/lib/ai/runtime-context";
 import { resolveAIContextForCapability } from "@/lib/ai/runtime-context";
+import { AISDKGenerationBackend } from "@/lib/ai/runtime/ai-sdk-backend";
 import {
   AIError,
   getRetryAfterMs,
@@ -18,6 +14,7 @@ import {
 import { adaptiveProviderLimiter } from "./adaptive-provider-limiter";
 import { aiRunRepository } from "./default-run-repository";
 import { fingerprintAIInput } from "./fingerprint";
+import type { createAIRunRepository } from "./run-repository";
 import type {
   AICapability,
   AIExecutionPolicy,
@@ -38,6 +35,27 @@ interface AttemptTelemetry {
   usage: AIExecutionUsage;
   finishReason?: string;
   warningCodes: string[];
+}
+
+function recordTelemetryFromError(
+  error: unknown,
+  recordTelemetry: (telemetry: AttemptTelemetry) => void
+): void {
+  if (!error || typeof error !== "object") return;
+  const candidate = error as {
+    usage?: AIExecutionUsage;
+    finishReason?: string;
+  };
+  if (!candidate.usage) return;
+  recordTelemetry({
+    usage: {
+      inputTokens: candidate.usage.inputTokens,
+      outputTokens: candidate.usage.outputTokens,
+      totalTokens: candidate.usage.totalTokens,
+    },
+    finishReason: candidate.finishReason,
+    warningCodes: [],
+  });
 }
 
 interface BaseExecutionInput {
@@ -71,13 +89,23 @@ interface StructuredExecutionInput<T extends z.ZodTypeAny> extends BaseExecution
   validate?: (output: z.infer<T>) => boolean;
 }
 
-interface CreateAICapabilityRuntimeOptions {
+type AIRunRepository = ReturnType<typeof createAIRunRepository>;
+
+export interface CreateAICapabilityRuntimeOptions {
   capability: AICapability;
   providerConcurrencyLimit?: number;
   model?: AIContextOverrides;
+  /** Testable storage boundary; production executions use the local default repository. */
+  runRepository?: AIRunRepository;
   resolved?: {
-    snapshot: ResolvedModelSnapshot;
-    reasoningEffort: "low" | "medium" | "high";
+    snapshot: Omit<ResolvedModelSnapshot, "backendKind"> & {
+      backendKind?: ResolvedModelSnapshot["backendKind"];
+      /** Compatibility for callers that previously cached the AI SDK model. */
+      model?: LanguageModel;
+      providerOptions?: Record<string, unknown>;
+    };
+    backend?: AIGenerationBackend;
+    reasoningEffort?: string;
   };
 }
 
@@ -91,24 +119,13 @@ function secureInstructions(instructions: string): string {
 export interface AICapabilityRuntime {
   capability: AICapability;
   snapshot: ResolvedModelSnapshot;
-  reasoningEffort: "low" | "medium" | "high";
+  reasoningEffort?: string;
+  backend: AIGenerationBackend;
   executeText(input: TextExecutionInput): Promise<AIExecutionResult<string>>;
   executeStreamingText(input: StreamingTextExecutionInput): Promise<AIExecutionResult<string>>;
   executeStructured<T extends z.ZodTypeAny>(
     input: StructuredExecutionInput<T>
   ): Promise<AIExecutionResult<z.infer<T>>>;
-}
-
-function normalizeUsage(usage: LanguageModelUsage): AIExecutionUsage {
-  return {
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    totalTokens: usage.totalTokens,
-  };
-}
-
-function normalizeWarnings(warnings?: CallWarning[]): string[] {
-  return Array.from(new Set((warnings ?? []).map((warning) => warning.type))).slice(0, 20);
 }
 
 function mergeUsage(
@@ -153,14 +170,15 @@ function resolvePrompt(
   return typeof prompt === "function" ? prompt(attempt) : prompt;
 }
 
-function composeAbortSignal(signal?: AbortSignal): {
+function composeAbortSignal(signal: AbortSignal | undefined, timeoutMs: number): {
   signal: AbortSignal;
   dispose: () => void;
 } {
   const lifecycleController = new AbortController();
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const composed = signal
-    ? AbortSignal.any([signal, lifecycleController.signal])
-    : lifecycleController.signal;
+    ? AbortSignal.any([signal, timeoutSignal, lifecycleController.signal])
+    : AbortSignal.any([timeoutSignal, lifecycleController.signal]);
 
   return {
     signal: composed,
@@ -186,7 +204,7 @@ function validatePolicy(policy: AIExecutionPolicy): void {
 async function executeWithLedger<T>(input: {
   capability: AICapability;
   snapshot: ResolvedModelSnapshot;
-  resolvedReasoningEffort: "low" | "medium" | "high";
+  resolvedReasoningEffort?: string;
   execution: BaseExecutionInput;
   perform: (
     attempt: number,
@@ -195,15 +213,24 @@ async function executeWithLedger<T>(input: {
   ) => Promise<ProviderCallResult<T>>;
   validate?: (output: T) => boolean;
   providerConcurrencyLimit?: number;
+  runRepository: AIRunRepository;
 }): Promise<AIExecutionResult<T>> {
-  const runId = await aiRunRepository.create({
+  const runId = await input.runRepository.create({
     capability: input.capability,
     subject: input.execution.subject,
     snapshot: input.snapshot,
     versions: input.execution.versions,
     inputFingerprint: input.execution.inputFingerprint,
     cacheStatus: input.execution.cacheStatus ?? "miss",
-    metadata: input.execution.metadata,
+    metadata: {
+      ...input.execution.metadata,
+      backendKind: input.snapshot.backendKind,
+      ...(input.snapshot.cliVersion ? { cliVersion: input.snapshot.cliVersion } : {}),
+      ...(input.snapshot.upstreamProvider
+        ? { upstreamProvider: input.snapshot.upstreamProvider }
+        : {}),
+      reasoningEffort: input.resolvedReasoningEffort ?? "provider_default",
+    },
   });
   const startedAt = performance.now();
   let attempts = 0;
@@ -226,7 +253,10 @@ async function executeWithLedger<T>(input: {
 
     for (let attempt = 1; attempt <= input.execution.policy.maxAttempts; attempt++) {
       input.execution.signal?.throwIfAborted();
-      const composed = composeAbortSignal(input.execution.signal);
+      const composed = composeAbortSignal(
+        input.execution.signal,
+        input.execution.policy.timeoutMs
+      );
       const useAdaptiveLimiter =
         input.providerConcurrencyLimit !== undefined &&
         (input.capability === "job_analysis" || input.capability === "match_adjudication");
@@ -270,7 +300,7 @@ async function executeWithLedger<T>(input: {
         }
 
         const durationMs = Math.round(performance.now() - startedAt);
-        await aiRunRepository.completeSuccess(runId, {
+        await input.runRepository.completeSuccess(runId, {
           attempts,
           usage: accumulatedUsage,
           durationMs,
@@ -312,7 +342,7 @@ async function executeWithLedger<T>(input: {
     throw new Error("AI execution exhausted its configured attempts");
   } catch (error) {
     const durationMs = Math.round(performance.now() - startedAt);
-    await aiRunRepository.completeFailure(runId, {
+    await input.runRepository.completeFailure(runId, {
       attempts,
       usage: accumulatedUsage,
       durationMs,
@@ -328,25 +358,41 @@ async function executeWithLedger<T>(input: {
   }
 }
 
-function isArraySchema(schema: z.ZodTypeAny): schema is z.ZodArray<z.ZodTypeAny> {
-  return schema instanceof z.ZodArray;
-}
-
 export async function createAICapabilityRuntime(
   options: CreateAICapabilityRuntimeOptions
 ): Promise<AICapabilityRuntime> {
+  const runRepository = options.runRepository ?? aiRunRepository;
   let context: Awaited<ReturnType<typeof resolveAIContextForCapability>>;
   if (options.resolved) {
+    const legacyModel = options.resolved.snapshot.model;
+    const backend = options.resolved.backend ?? (legacyModel
+      ? new AISDKGenerationBackend(
+          legacyModel,
+          options.resolved.snapshot.providerOptions
+        )
+      : undefined);
+    if (!backend) {
+      throw new AIError({
+        type: "validation",
+        message: "A resolved AI execution must include its backend",
+      });
+    }
     context = {
-      ...options.resolved.snapshot,
+      providerRecordId: options.resolved.snapshot.providerRecordId,
+      provider: options.resolved.snapshot.provider,
+      modelId: options.resolved.snapshot.modelId,
+      backendKind: options.resolved.snapshot.backendKind ?? "ai_sdk",
+      cliVersion: options.resolved.snapshot.cliVersion,
+      upstreamProvider: options.resolved.snapshot.upstreamProvider,
       providerId: options.resolved.snapshot.providerRecordId,
       reasoningEffort: options.resolved.reasoningEffort,
+      backend,
     };
   } else {
     try {
       context = await resolveAIContextForCapability(options.capability, options.model);
     } catch (error) {
-      await aiRunRepository.recordResolutionFailure({
+      await runRepository.recordResolutionFailure({
         capability: options.capability,
         inputFingerprint: fingerprintAIInput({
           capability: options.capability,
@@ -359,18 +405,33 @@ export async function createAICapabilityRuntime(
       throw error;
     }
   }
+  const legacyContext = context as typeof context & {
+    model?: LanguageModel;
+    providerOptions?: Record<string, unknown>;
+  };
+  const backend = context.backend ?? (legacyContext.model
+    ? new AISDKGenerationBackend(legacyContext.model, legacyContext.providerOptions)
+    : undefined);
+  if (!backend) {
+    throw new AIError({
+      type: "validation",
+      message: "The resolved AI execution does not provide a backend",
+    });
+  }
   const snapshot: ResolvedModelSnapshot = {
     providerRecordId: context.providerRecordId,
     provider: context.provider,
     modelId: context.modelId,
-    model: context.model,
-    providerOptions: context.providerOptions,
+    backendKind: context.backendKind ?? "ai_sdk",
+    cliVersion: context.cliVersion,
+    upstreamProvider: context.upstreamProvider,
   };
 
   return {
     capability: options.capability,
     snapshot,
     reasoningEffort: context.reasoningEffort,
+    backend,
 
     async executeText(input) {
       return executeWithLedger({
@@ -380,37 +441,21 @@ export async function createAICapabilityRuntime(
         execution: input,
         validate: input.validate,
         providerConcurrencyLimit: options.providerConcurrencyLimit,
+        runRepository,
         perform: async (attempt, abortSignal, recordTelemetry) => {
-          let telemetryRecorded = false;
-          const result = await generateText({
-            model: snapshot.model,
+          const result = await backend.generateText({
             instructions: secureInstructions(input.instructions),
             prompt: resolvePrompt(input.prompt, attempt),
-            ...snapshot.providerOptions,
-            abortSignal,
-            timeout: input.policy.timeoutMs,
-            maxRetries: 0,
+            modelId: snapshot.modelId,
+            reasoningEffort: context.reasoningEffort,
+            signal: abortSignal,
+            timeoutMs: input.policy.timeoutMs,
             maxOutputTokens: input.policy.maxOutputTokens,
-            onEnd: (event) => {
-              telemetryRecorded = true;
-              recordTelemetry({
-                usage: normalizeUsage(event.usage),
-                finishReason: event.finishReason,
-                warningCodes: normalizeWarnings(event.warnings),
-              });
-            },
           });
-
-          if (!telemetryRecorded) {
-            recordTelemetry({
-              usage: normalizeUsage(result.usage),
-              finishReason: result.finishReason,
-              warningCodes: normalizeWarnings(result.warnings),
-            });
-          }
+          recordTelemetry(result);
 
           return {
-            output: result.text,
+            output: result.output,
           };
         },
       });
@@ -431,33 +476,20 @@ export async function createAICapabilityRuntime(
         execution: input,
         validate: input.validate,
         providerConcurrencyLimit: options.providerConcurrencyLimit,
+        runRepository,
         perform: async (attempt, abortSignal, recordTelemetry) => {
-          const result = streamText({
-            model: snapshot.model,
+          const result = await backend.streamText({
             instructions: secureInstructions(input.instructions),
             prompt: resolvePrompt(input.prompt, attempt),
-            ...snapshot.providerOptions,
-            abortSignal,
-            timeout: input.policy.timeoutMs,
-            maxRetries: 0,
+            modelId: snapshot.modelId,
+            reasoningEffort: context.reasoningEffort,
+            signal: abortSignal,
+            timeoutMs: input.policy.timeoutMs,
             maxOutputTokens: input.policy.maxOutputTokens,
+            onDelta: input.onDelta,
           });
-          let output = "";
-          for await (const delta of result.textStream) {
-            output += delta;
-            await input.onDelta(delta);
-          }
-          const [usage, finishReason, warnings] = await Promise.all([
-            result.usage,
-            result.finishReason,
-            result.warnings,
-          ]);
-          recordTelemetry({
-            usage: normalizeUsage(usage),
-            finishReason,
-            warningCodes: normalizeWarnings(warnings),
-          });
-          return { output };
+          recordTelemetry(result);
+          return { output: result.output };
         },
       });
     },
@@ -470,37 +502,28 @@ export async function createAICapabilityRuntime(
         execution: input,
         validate: input.validate,
         providerConcurrencyLimit: options.providerConcurrencyLimit,
+        runRepository,
         perform: async (attempt, abortSignal, recordTelemetry) => {
-          let telemetryRecorded = false;
-          const result = await generateText({
-            model: snapshot.model,
-            output: isArraySchema(input.schema)
-              ? Output.array({ element: input.schema.element })
-              : Output.object({ schema: input.schema }),
-            instructions: secureInstructions(input.instructions),
-            prompt: resolvePrompt(input.prompt, attempt),
-            ...snapshot.providerOptions,
-            abortSignal,
-            timeout: input.policy.timeoutMs,
-            maxRetries: 0,
-            maxOutputTokens: input.policy.maxOutputTokens,
-            onEnd: (event) => {
-              telemetryRecorded = true;
-              recordTelemetry({
-                usage: normalizeUsage(event.usage),
-                finishReason: event.finishReason,
-                warningCodes: normalizeWarnings(event.warnings),
-              });
-            },
-          });
-
-          if (!telemetryRecorded) {
-            recordTelemetry({
-              usage: normalizeUsage(result.usage),
-              finishReason: result.finishReason,
-              warningCodes: normalizeWarnings(result.warnings),
+          const converted = zodSchema(input.schema);
+          const jsonSchema = await converted.jsonSchema as Record<string, unknown>;
+          let result;
+          try {
+            result = await backend.generateStructured({
+              instructions: secureInstructions(input.instructions),
+              prompt: resolvePrompt(input.prompt, attempt),
+              modelId: snapshot.modelId,
+              reasoningEffort: context.reasoningEffort,
+              signal: abortSignal,
+              timeoutMs: input.policy.timeoutMs,
+              maxOutputTokens: input.policy.maxOutputTokens,
+              jsonSchema,
+              validate: (value) => input.schema.parse(value),
             });
+          } catch (error) {
+            recordTelemetryFromError(error, recordTelemetry);
+            throw error;
           }
+          recordTelemetry(result);
 
           if (result.output === undefined || result.output === null) {
             throw new AIError({
@@ -510,7 +533,7 @@ export async function createAICapabilityRuntime(
           }
 
           return {
-            output: result.output as z.infer<T>,
+            output: result.output,
           };
         },
       });

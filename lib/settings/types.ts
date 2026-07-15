@@ -42,6 +42,8 @@ export interface SettingsRecord {
   ai_writing_model?: string;
   ai_writing_provider_id?: string;
   ai_writing_reasoning_effort?: string;
+  codex_cli_executable?: string;
+  opencode_cli_executable?: string;
 }
 
 export interface ProviderSettingsListItem {
@@ -51,6 +53,12 @@ export interface ProviderSettingsListItem {
   hasApiKey: boolean;
   createdAt: string | Date | null;
   updatedAt: string | Date | null;
+  kind: "api_key" | "local_cli";
+  connectionStatus?: import("@/lib/ai/local-cli/types").LocalCLIConnectionStatus;
+  selectable: boolean;
+  cliVersion?: string;
+  statusMessage?: string;
+  lastCheckedAt?: string;
 }
 
 export type { ReasoningEffort };

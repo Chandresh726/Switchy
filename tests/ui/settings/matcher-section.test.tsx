@@ -1,9 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { MatcherSection } from "@/components/settings/matcher-section";
+import {
+  MatcherSection,
+  type MatcherSectionProps,
+} from "@/components/settings/matcher-section";
 
-function createProps() {
+function createProps(): MatcherSectionProps {
   return {
     availableProviders: [{ id: "provider-1", provider: "openai", name: "OpenAI" }],
     hasProviders: true,
@@ -12,6 +15,11 @@ function createProps() {
       label: "GPT-5 mini",
       description: "Test model",
       supportsReasoning: true,
+      reasoningControl: {
+        kind: "effort" as const,
+        options: ["low", "medium", "high"].map((value) => ({ value })),
+        defaultValue: "medium",
+      },
     }],
     modelsLoading: false,
     modelsStale: false,
@@ -95,12 +103,70 @@ describe("MatcherSection", () => {
     expect(screen.getByLabelText("Concurrency")).toBeTruthy();
   });
 
-  it("hides reasoning effort when the selected model does not support it", () => {
+  it("uses provider default when the model does not publish exact efforts", () => {
     const props = createProps();
     props.models[0].supportsReasoning = false;
+    props.models[0].reasoningControl = { kind: "provider_default" };
 
     render(<MatcherSection {...props} />);
 
     expect(screen.queryByRole("combobox", { name: "Reasoning effort" })).toBeNull();
+    expect(screen.getByText("Provider default")).toBeTruthy();
+  });
+
+  it("renders provider-native effort values and blocks a stale selection", () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const props = createProps();
+    props.hasUnsavedChanges = true;
+    props.matcherReasoningEffort = "retired";
+    props.models[0].reasoningControl = {
+      kind: "effort",
+      options: [
+        { value: "xhigh", label: "XHigh" },
+        { value: "max" },
+        { value: "future_v1" },
+      ],
+      defaultValue: "xhigh",
+    };
+
+    render(<MatcherSection {...props} />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Reasoning effort" }));
+
+    expect(screen.getByText("XHigh")).toBeTruthy();
+    expect(screen.getByText("Max")).toBeTruthy();
+    expect(screen.getByText("Future V1")).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "Escape" });
+    expect(screen.getByText(/choose an advertised value/i)).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "Save Changes" }) as HTMLButtonElement).disabled
+    ).toBe(true);
+  });
+
+  it("retains an unavailable configured model with a clear warning", () => {
+    const props = createProps();
+    props.matcherModel = "retired-model";
+
+    render(<MatcherSection {...props} />);
+
+    expect(screen.getByText("Configured: retired-model")).toBeTruthy();
+    expect(screen.getByText(/configured model is unavailable/i)).toBeTruthy();
+  });
+
+  it("retains saved model and reasoning values when the catalog is empty", () => {
+    const props = createProps();
+    props.models = [];
+    props.modelsError = "Catalog unavailable";
+    props.matcherModel = "retired-model";
+    props.matcherReasoningEffort = "xhigh";
+    props.hasUnsavedChanges = true;
+
+    render(<MatcherSection {...props} />);
+
+    expect(screen.getByText("Configured: retired-model")).toBeTruthy();
+    expect(screen.getByText("xhigh (unavailable)")).toBeTruthy();
+    expect(screen.getByText(/configured model is unavailable/i)).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "Save Changes" }) as HTMLButtonElement).disabled
+    ).toBe(true);
   });
 });

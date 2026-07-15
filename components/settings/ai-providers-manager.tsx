@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Eye, EyeOff, Key, Loader2, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { Check, Eye, EyeOff, Key, Loader2, Pencil, Plus, RefreshCw, Settings2, Terminal, Trash2, X } from "lucide-react";
 
 import {
   AlertDialog,
@@ -35,6 +35,10 @@ interface AIProvidersManagerProps {
   onDeleteProvider: (id: string) => Promise<void>;
   onUpdateProviderApiKey: (id: string, apiKey?: string) => Promise<void>;
   onRefreshProviderModels: (id: string) => Promise<void>;
+  onCheckProvider: (id: string) => Promise<void>;
+  codexExecutablePath: string;
+  openCodeExecutablePath: string;
+  onSaveExecutablePaths: (paths: { codex: string; opencode: string }) => Promise<void>;
 }
 
 interface ProviderApiKeyHelpProps {
@@ -67,6 +71,10 @@ export function AIProvidersManager({
   onDeleteProvider,
   onUpdateProviderApiKey,
   onRefreshProviderModels,
+  onCheckProvider,
+  codexExecutablePath,
+  openCodeExecutablePath,
+  onSaveExecutablePaths,
 }: AIProvidersManagerProps) {
   const [isAddingProvider, setIsAddingProvider] = useState(false);
   const [selectedProviderType, setSelectedProviderType] = useState<string>("");
@@ -79,15 +87,23 @@ export function AIProvidersManager({
   const [editApiKey, setEditApiKey] = useState("");
   const [isEditLoading, setIsEditLoading] = useState(false);
   const [refreshingProviderIds, setRefreshingProviderIds] = useState<Record<string, boolean>>({});
+  const [checkingProviderIds, setCheckingProviderIds] = useState<Record<string, boolean>>({});
+  const [showCLIAdvanced, setShowCLIAdvanced] = useState(false);
+  const [codexPath, setCodexPath] = useState(codexExecutablePath);
+  const [openCodePath, setOpenCodePath] = useState(openCodeExecutablePath);
+  const [savingPaths, setSavingPaths] = useState(false);
 
   const providerMetadata = getAllProviderMetadata();
+  const localCLIProviders = providers.filter((provider) => provider.kind === "local_cli");
+  const apiProviders = providers.filter((provider) => provider.kind === "api_key");
   const selectedProviderMetadata = providerMetadata.find((p) => p.id === selectedProviderType);
 
   const requiresProviderApiKey = (providerId: string) =>
     providerMetadata.find((metadata) => metadata.id === providerId)?.requiresApiKey ?? true;
 
   const availableProviders = providerMetadata.filter(
-    (metadata) => !providers.some((provider) => provider.provider === metadata.id)
+    (metadata) => metadata.kind === "api_key" &&
+      !providers.some((provider) => provider.provider === metadata.id)
   );
 
   const getProviderMeta = (providerType: string): ProviderMetadata | undefined => {
@@ -168,6 +184,24 @@ export function AIProvidersManager({
     }
   };
 
+  const handleCheckProvider = async (providerId: string) => {
+    setCheckingProviderIds((previous) => ({ ...previous, [providerId]: true }));
+    try {
+      await onCheckProvider(providerId);
+    } finally {
+      setCheckingProviderIds((previous) => ({ ...previous, [providerId]: false }));
+    }
+  };
+
+  const handleSavePaths = async () => {
+    setSavingPaths(true);
+    try {
+      await onSaveExecutablePaths({ codex: codexPath.trim(), opencode: openCodePath.trim() });
+    } finally {
+      setSavingPaths(false);
+    }
+  };
+
   return (
     <Card className="border-border bg-card/70 rounded-xl">
       <CardHeader>
@@ -184,7 +218,106 @@ export function AIProvidersManager({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {providers.length === 0 && !isAddingProvider ? (
+        <div className="grid gap-3">
+          <div className="flex items-center gap-2">
+            <Terminal className="h-4 w-4 text-emerald-500" />
+            <h3 className="text-sm font-medium">Local CLI providers</h3>
+          </div>
+          {localCLIProviders.map((provider) => {
+            const metadata = getProviderMeta(provider.provider);
+            const checking = Boolean(checkingProviderIds[provider.id]);
+            const refreshing = Boolean(refreshingProviderIds[provider.id]);
+            const ready = provider.connectionStatus === "ready";
+            const setupCommand = provider.provider === "codex_cli"
+              ? "codex login"
+              : "opencode auth login";
+
+            return (
+              <div key={provider.id} className="rounded-lg border border-border bg-background/30 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="grid gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{metadata?.displayName ?? provider.provider}</span>
+                      <Badge variant="outline" className={ready ? "text-green-400" : "text-amber-400"}>
+                        {ready ? <Check className="mr-1 h-3 w-3" /> : <X className="mr-1 h-3 w-3" />}
+                        {(provider.connectionStatus ?? "error").replaceAll("_", " ")}
+                      </Badge>
+                      {provider.cliVersion && (
+                        <span className="text-xs text-muted-foreground">v{provider.cliVersion}</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{provider.statusMessage}</p>
+                    {!ready && (
+                      <p className="text-xs text-muted-foreground">
+                        Switchy will not install or log in for you. Setup: <code>{setupCommand}</code>
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleCheckProvider(provider.id)}
+                      disabled={checking}
+                    >
+                      {checking && <Loader2 className="animate-spin" data-icon="inline-start" />}
+                      Check again
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRefreshProviderModels(provider.id)}
+                      disabled={!ready || refreshing}
+                    >
+                      <RefreshCw className={refreshing ? "animate-spin" : ""} data-icon="inline-start" />
+                      Refresh models
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-fit"
+            onClick={() => setShowCLIAdvanced((visible) => !visible)}
+          >
+            <Settings2 data-icon="inline-start" />
+            {showCLIAdvanced ? "Hide executable paths" : "Advanced executable paths"}
+          </Button>
+          {showCLIAdvanced && (
+            <div className="grid gap-4 rounded-lg border border-border bg-background/30 p-4">
+              <div className="grid gap-2">
+                <Label htmlFor="codex-cli-path">Codex CLI executable</Label>
+                <Input
+                  id="codex-cli-path"
+                  value={codexPath}
+                  onChange={(event) => setCodexPath(event.target.value)}
+                  placeholder="Use SWITCHY_CODEX_CLI_PATH or PATH"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="opencode-cli-path">OpenCode executable</Label>
+                <Input
+                  id="opencode-cli-path"
+                  value={openCodePath}
+                  onChange={(event) => setOpenCodePath(event.target.value)}
+                  placeholder="Use SWITCHY_OPENCODE_CLI_PATH or PATH"
+                />
+              </div>
+              <Button className="w-fit" onClick={handleSavePaths} disabled={savingPaths}>
+                {savingPaths && <Loader2 className="animate-spin" data-icon="inline-start" />}
+                Save paths
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-border pt-4">
+          <h3 className="text-sm font-medium">API-key providers</h3>
+        </div>
+        {apiProviders.length === 0 && !isAddingProvider ? (
           <div className="text-center py-8 text-muted-foreground">
             <p className="mb-4">No AI providers configured yet.</p>
             <Button onClick={() => setIsAddingProvider(true)}>
@@ -194,7 +327,7 @@ export function AIProvidersManager({
           </div>
         ) : (
           <>
-            {providers.map((provider) => {
+            {apiProviders.map((provider) => {
               const metadata = getProviderMeta(provider.provider);
               const isEditing = editingProviderId === provider.id;
               const requiresApiKey = metadata?.requiresApiKey ?? true;

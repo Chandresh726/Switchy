@@ -8,16 +8,19 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ModelCombobox } from "@/components/settings/model-combobox";
+import {
+  hasInvalidReasoningSelection,
+  ReasoningEffortControl,
+} from "@/components/settings/reasoning-effort-control";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { REASONING_EFFORT_OPTIONS } from "@/lib/ai/providers/metadata";
 import type { MatchQualityPreset } from "@/lib/ai/matcher/types";
 import type { ReasoningEffort } from "@/lib/settings/types";
 import type { Provider, ProviderModelOption } from "@/lib/types";
 
-interface MatcherSectionProps {
+export interface MatcherSectionProps {
   availableProviders: Provider[];
   hasProviders: boolean;
   models: ProviderModelOption[];
@@ -95,7 +98,12 @@ export function MatcherSection({
   unmatchedCount,
 }: MatcherSectionProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const supportsReasoning = models.find((model) => model.modelId === matcherModel)?.supportsReasoning ?? false;
+  const selectedModel = models.find((model) => model.modelId === matcherModel);
+  const reasoningSelectionInvalid = hasInvalidReasoningSelection(
+    selectedModel,
+    matcherReasoningEffort
+  );
+  const configuredModelUnavailable = Boolean(matcherModel) && !selectedModel;
   const toggleValue = (
     current: string[],
     value: string,
@@ -211,30 +219,22 @@ export function MatcherSection({
                     error={modelsError}
                     placeholder="Select model"
                   />
-                  {supportsReasoning && (
-                    <Select value={matcherReasoningEffort} onValueChange={onMatcherReasoningEffortChange}>
-                      <SelectTrigger
-                        aria-label="Reasoning effort"
-                        className="w-32 bg-background/60 border-border"
-                      >
-                        <SelectValue placeholder="Effort" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {REASONING_EFFORT_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  )}
+                  <ReasoningEffortControl
+                    model={selectedModel}
+                    value={matcherReasoningEffort}
+                    onValueChange={onMatcherReasoningEffortChange}
+                  />
                 </div>
                 {modelsError && (
                   <p className="text-xs text-amber-400 flex items-center gap-2">
                     <AlertTriangle className="h-3.5 w-3.5" />
                     {modelsError}
+                  </p>
+                )}
+                {configuredModelUnavailable && (
+                  <p className="text-xs text-amber-400 flex items-center gap-2">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    The configured model is unavailable. Choose another model or refresh the catalog.
                   </p>
                 )}
                 {modelsStale && !modelsError && (
@@ -415,7 +415,7 @@ export function MatcherSection({
         </p>
         <Button
           onClick={onSave}
-          disabled={isSaving || !hasUnsavedChanges || !hasProviders || !matcherModel}
+          disabled={isSaving || !hasUnsavedChanges || !hasProviders || !matcherModel || configuredModelUnavailable || reasoningSelectionInvalid}
           className="bg-emerald-600 hover:bg-emerald-500 text-foreground min-w-[120px]"
         >
           {isSaving ? (

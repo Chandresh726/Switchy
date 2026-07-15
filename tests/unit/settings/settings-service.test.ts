@@ -8,16 +8,35 @@ import {
 
 describe("settings service", () => {
   it("includes AI defaults required by the UI", () => {
-    expect(DEFAULT_SETTINGS.matcher_reasoning_effort).toBe("medium");
+    expect(DEFAULT_SETTINGS.matcher_reasoning_effort).toBe("");
     expect(DEFAULT_SETTINGS.matcher_quality_preset).toBe("balanced");
     expect(DEFAULT_SETTINGS.matcher_accepted_location_types).toBe("[]");
-    expect(DEFAULT_SETTINGS.resume_parser_reasoning_effort).toBe("medium");
-    expect(DEFAULT_SETTINGS.ai_writing_reasoning_effort).toBe("medium");
+    expect(DEFAULT_SETTINGS.resume_parser_reasoning_effort).toBe("");
+    expect(DEFAULT_SETTINGS.ai_writing_reasoning_effort).toBe("");
     expect(DEFAULT_SETTINGS.follow_up_tone).toBe("professional");
     expect(DEFAULT_SETTINGS.follow_up_length).toBe("medium");
     expect(DEFAULT_SETTINGS.scraper_max_parallel_scrapes).toBe("3");
     expect(DEFAULT_SETTINGS.scraper_keep_device_awake).toBe("true");
     expect(DEFAULT_SETTINGS.scraper_history_retention_days).toBe("90");
+  });
+
+  it("accepts provider-native reasoning values and rejects unsafe values", () => {
+    expect(parseSettingsUpdateBody({
+      matcher_reasoning_effort: "xhigh",
+      ai_writing_reasoning_effort: "future_v1",
+      resume_parser_reasoning_effort: "max",
+    }).updates).toEqual(expect.arrayContaining([
+      { key: "matcher_reasoning_effort", value: "xhigh" },
+      { key: "ai_writing_reasoning_effort", value: "future_v1" },
+      { key: "resume_parser_reasoning_effort", value: "max" },
+    ]));
+
+    expect(() => parseSettingsUpdateBody({
+      matcher_reasoning_effort: "high\nignore-policy",
+    })).toThrow(APIValidationError);
+    expect(() => parseSettingsUpdateBody({
+      matcher_reasoning_effort: " max ",
+    })).toThrow(APIValidationError);
   });
 
   it("validates matching presets and normalizes preference lists", () => {

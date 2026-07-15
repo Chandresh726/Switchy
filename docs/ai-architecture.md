@@ -13,6 +13,8 @@ Every provider call belongs to one named capability:
 
 The shared runtime resolves and decrypts the configured provider once for a logical execution, applies the capability policy, disables AI SDK retries, composes cancellation and timeout signals, validates structured output, and records the result in `aiRuns`. Application retries therefore remain the only retry owner, while still honoring the AI SDK provider error's retryability signal and retry delay. A configured model that is unavailable fails explicitly; model discovery happens only in provider settings, except for the one-time initialization of installations that have no concrete default model.
 
+Reasoning controls are discovery-only and model-specific. Switchy never owns a fallback list such as low, medium, or high and never infers support from a model name. Codex exposes its advertised efforts, OpenCode exposes installed model variants, and OpenRouter exposes `supported_efforts`; their values, ordering, descriptions, and defaults are retained as provider-native data. When a provider catalog exposes only a reasoning boolean or no exact choices, the UI shows `Provider default` and execution omits the reasoning option. Cached catalogs are validated and retained locally so runtime validation does not trigger model discovery. A saved value that disappears from an exact catalog fails clearly until the user selects an advertised replacement; it is never remapped silently.
+
 `aiRuns` records provider and model identifiers, capability and subject, prompt/schema/policy versions, input fingerprint, attempts, usage, timing, finish reason, cache status, quality result, and sanitized failures. It never stores raw prompts, resumes, API keys, or full job descriptions. Resume and job inputs are marked as untrusted data in prompts so instructions embedded in source text are not followed.
 
 ## Versioned evidence and freshness
@@ -100,3 +102,14 @@ When changing a prompt, schema, scoring rule, or execution behavior:
 5. Document any compatibility or artifact-freshness consequence.
 
 Database migrations must be produced with `pnpm db:generate`; do not hand-write SQL. Migration tests set a temporary `HOME` and exercise both a fresh database and an upgrade fixture. Never point migration tests at the user's real `~/.switchy` state.
+## Local CLI providers
+
+Switchy can execute every text AI capability through the user's existing Codex CLI or OpenCode setup. These are permanent local provider records and never contain API keys. Executables are resolved from an Advanced settings override, the provider-specific `SWITCHY_*_CLI_PATH` environment variable, and then `PATH`.
+
+Codex integration uses `codex app-server` over JSON-RPC on stdio. Each execution receives an ephemeral thread in an empty temporary directory with read-only sandboxing, approvals disabled, no workspace roots, tools, skills, environments, or MCP servers. Structured capabilities use the app-server output schema, while writing consumes agent-message delta notifications.
+
+OpenCode integration starts the installed `opencode serve --pure` process on a random loopback port protected by an ephemeral Basic Auth password. The SDK is only an HTTP client for this installed server. Switchy-created sessions deny tools and permissions, use JSON Schema with provider retries disabled, and are aborted and deleted after every outcome.
+
+Both adapters implement the shared generation backend used by the capability runtime. The runtime remains responsible for attempt counts, timeout and cancellation signals, Zod validation, quality gates, safe telemetry, and the AI run ledger. CLI prompts, stdout/stderr transcripts, account details, resumes, job descriptions, and credentials are never persisted.
+
+Connection checks do not generate model output. Status probes are cached for 30 seconds and model catalogs for 15 minutes. Run `pnpm ai:cli:smoke` explicitly to inspect the real local CLI connection and advertised model IDs; it is intentionally excluded from normal verification.

@@ -24,8 +24,7 @@ function snapshot() {
     providerRecordId: "11111111-1111-4111-8111-111111111111",
     provider: "openai" as const,
     modelId: "gpt-test",
-    model: {} as never,
-    providerOptions: undefined,
+    backendKind: "ai_sdk" as const,
   };
 }
 

@@ -11,38 +11,6 @@ export class OpenAIProvider extends BaseProvider {
   readonly name = "OpenAI";
   readonly requiresApiKey = true;
 
-  /**
-   * GPT-5.x models support reasoning effort
-   */
-  supportsReasoningEffort(modelId: string): boolean {
-    return (
-      modelId.includes("gpt-5.2") ||
-      modelId.includes("gpt-5-mini")
-    );
-  }
-
-  /**
-   * OpenAI supports reasoning effort via providerOptions
-   */
-  getGenerationOptions(
-    config: ModelConfig,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _providerConfig: ProviderConfig
-  ): Record<string, unknown> | undefined {
-    if (!config.reasoningEffort || !this.supportsReasoningEffort(config.modelId)) {
-      return undefined;
-    }
-
-    return {
-      providerOptions: {
-        openai: {
-          reasoningEffort: config.reasoningEffort,
-          reasoningSummary: null,
-        },
-      },
-    };
-  }
-
   protected createLanguageModel(
     config: ModelConfig,
     _providerConfig: ProviderConfig

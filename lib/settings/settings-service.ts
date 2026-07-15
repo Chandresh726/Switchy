@@ -2,6 +2,7 @@ import cron from "node-cron";
 import { eq } from "drizzle-orm";
 
 import { APIValidationError } from "@/lib/api/ai-error-handler";
+import { isReasoningEffort } from "@/lib/ai/providers/types";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { SCRAPER_SETTINGS } from "@/lib/scraper/settings/definitions";
@@ -10,13 +11,13 @@ import { safeJsonParse } from "@/lib/utils/safe-json";
 export const DEFAULT_SETTINGS = {
   matcher_model: "",
   matcher_provider_id: "",
-  matcher_reasoning_effort: "medium",
+  matcher_reasoning_effort: "",
   matcher_quality_preset: "balanced",
   matcher_accepted_location_types: "[]",
   matcher_accepted_employment_types: "[]",
   resume_parser_model: "",
   resume_parser_provider_id: "",
-  resume_parser_reasoning_effort: "medium",
+  resume_parser_reasoning_effort: "",
   matcher_batch_size: "2",
   matcher_max_retries: "3",
   matcher_concurrency_limit: "3",
@@ -47,7 +48,9 @@ export const DEFAULT_SETTINGS = {
   cover_letter_focus: "[\"skills\",\"experience\",\"cultural_fit\"]",
   ai_writing_model: "",
   ai_writing_provider_id: "",
-  ai_writing_reasoning_effort: "medium",
+  ai_writing_reasoning_effort: "",
+  codex_cli_executable: "",
+  opencode_cli_executable: "",
 } as const;
 
 export type SettingKey = keyof typeof DEFAULT_SETTINGS;
@@ -94,6 +97,15 @@ function ensureNonEmptyString(key: SettingKey, value: unknown): string {
     throw new APIValidationError(`${key} must be a non-empty string`, "invalid_request");
   }
   return parsed;
+}
+
+function normalizeReasoningSetting(key: SettingKey, value: unknown): string {
+  const parsed = String(value ?? "");
+  if (parsed === "" || isReasoningEffort(parsed)) return parsed;
+  throw new APIValidationError(
+    `${key} must be an effort advertised by the selected provider model`,
+    "invalid_request"
+  );
 }
 
 function ensureEnum<T extends readonly string[]>(
@@ -252,7 +264,7 @@ function parseSettingValue(
     case "resume_parser_reasoning_effort":
     case "ai_writing_reasoning_effort":
       return {
-        value: ensureEnum(key, value, ["low", "medium", "high"] as const),
+        value: normalizeReasoningSetting(key, value),
         cronUpdated: false,
         enabledChanged: false,
         newEnabledValue: null,
@@ -322,6 +334,9 @@ function parseSettingValue(
     case "matcher_provider_id":
     case "resume_parser_provider_id":
     case "ai_writing_provider_id":
+      return { value: String(value ?? "").trim(), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
+    case "codex_cli_executable":
+    case "opencode_cli_executable":
       return { value: String(value ?? "").trim(), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     default:
       return { value: String(value ?? ""), cronUpdated: false, enabledChanged: false, newEnabledValue: null };

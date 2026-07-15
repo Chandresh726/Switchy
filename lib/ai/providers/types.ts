@@ -11,18 +11,35 @@ export const AI_PROVIDER_IDS = [
   "cerebras",
   "groq",
   "nvidia",
+  "codex_cli",
+  "opencode_cli",
 ] as const;
 
 export type AIProvider = (typeof AI_PROVIDER_IDS)[number];
+
+export const LOCAL_CLI_PROVIDER_IDS = ["codex_cli", "opencode_cli"] as const;
+export type LocalCLIProvider = (typeof LOCAL_CLI_PROVIDER_IDS)[number];
+
+export function isLocalCLIProvider(value: string): value is LocalCLIProvider {
+  return (LOCAL_CLI_PROVIDER_IDS as readonly string[]).includes(value);
+}
 
 export function isAIProvider(value: string): value is AIProvider {
   return (AI_PROVIDER_IDS as readonly string[]).includes(value);
 }
 
-/**
- * Reasoning effort levels for models that support it
- */
-export type ReasoningEffort = "low" | "medium" | "high";
+/** Provider-native reasoning option. Values are discovered from model catalogs. */
+export type ReasoningEffort = string;
+
+export const MAX_REASONING_EFFORT_LENGTH = 64;
+const REASONING_EFFORT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
+
+export function isReasoningEffort(value: unknown): value is ReasoningEffort {
+  return typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= MAX_REASONING_EFFORT_LENGTH &&
+    REASONING_EFFORT_PATTERN.test(value);
+}
 
 /**
  * Configuration for creating an AI model instance
@@ -66,8 +83,6 @@ export interface AIProviderInterface {
   readonly name: string;
   /** Whether this provider requires an API key */
   readonly requiresApiKey: boolean;
-  /** Whether this provider supports reasoning effort */
-  supportsReasoningEffort(modelId: string): boolean;
   /** Create a language model instance */
   createModel(options: CreateModelOptions): LanguageModel;
   /** Get provider-specific generation options (like reasoningEffort) */

@@ -113,6 +113,38 @@ describe("AI capability runtime", () => {
         usage: { inputTokens: 12, outputTokens: 5, totalTokens: 17 },
       })
     );
+    expect(mocks.createRun).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ reasoningEffort: "medium" }),
+    }));
+  });
+
+  it("records provider-default reasoning and sends no effort to the backend", async () => {
+    const model = new MockLanguageModelV4({
+      doGenerate: successfulProviderResult(),
+    });
+    mocks.resolveAIContextForCapability.mockResolvedValue({
+      providerRecordId: "provider-1",
+      providerId: "provider-1",
+      provider: "openai",
+      modelId: "gpt-test",
+      model,
+      providerOptions: undefined,
+      reasoningEffort: undefined,
+    });
+    const runtime = await createAICapabilityRuntime({
+      capability: "writing_cover_letter",
+    });
+    const input = executionInput();
+
+    await runtime.executeText({
+      ...input,
+      policy: { ...input.policy, reasoningEffort: undefined },
+    });
+
+    expect(mocks.createRun).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ reasoningEffort: "provider_default" }),
+    }));
+    expect(model.doGenerateCalls).toHaveLength(1);
   });
 
   it("reuses a concrete resolved snapshot without resolving or decrypting again", async () => {
@@ -669,5 +701,41 @@ describe("AI capability runtime", () => {
       "run-1",
       expect.objectContaining({ error: reason, attempts: 1 })
     );
+  });
+
+  it("composes the per-attempt timeout into a local CLI backend signal", async () => {
+    let backendSignal: AbortSignal | undefined;
+    const backend = {
+      generateText: vi.fn(async (input: { signal: AbortSignal }) => {
+        backendSignal = input.signal;
+        await new Promise<void>((_resolve, reject) => {
+          input.signal.addEventListener("abort", () => reject(input.signal.reason), { once: true });
+        });
+        throw new Error("unreachable");
+      }),
+      streamText: vi.fn(),
+      generateStructured: vi.fn(),
+    };
+    const runtime = await createAICapabilityRuntime({
+      capability: "job_analysis",
+      resolved: {
+        snapshot: {
+          providerRecordId: "builtin:codex-cli",
+          provider: "codex_cli",
+          modelId: "gpt-test",
+          backendKind: "codex_cli",
+        },
+        backend,
+        reasoningEffort: "medium",
+      },
+    });
+
+    await expect(runtime.executeText(executionInput({ timeoutMs: 15 })))
+      .rejects.toMatchObject({ name: "TimeoutError" });
+    expect(backendSignal?.aborted).toBe(true);
+    expect(backend.generateText).toHaveBeenCalledTimes(1);
+    expect(mocks.createRun).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ backendKind: "codex_cli" }),
+    }));
   });
 });

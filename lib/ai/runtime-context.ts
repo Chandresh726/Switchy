@@ -1,16 +1,24 @@
 import type { LanguageModel } from "ai";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
-import { getProviderModelsForResolvedProvider } from "@/lib/ai/providers/model-catalog";
+import {
+  getCachedProviderModelDefinition,
+  getProviderModelsForResolvedProvider,
+  type ProviderReasoningControl,
+} from "@/lib/ai/providers/model-catalog";
+import { getLocalCLIExecutionTarget } from "@/lib/ai/local-cli/service";
+import type { AIGenerationBackend } from "@/lib/ai/local-cli/types";
 import { providerRegistry } from "@/lib/ai/providers";
 import {
   AIError,
   isAIProvider,
+  isReasoningEffort,
   type AIProvider,
+  isLocalCLIProvider,
   type ModelConfig,
-  type ReasoningEffort,
 } from "@/lib/ai/providers/types";
 import type { AICapability, ResolvedModelSnapshot } from "@/lib/ai/runtime/types";
+import { AISDKGenerationBackend } from "@/lib/ai/runtime/ai-sdk-backend";
 import { db } from "@/lib/db";
 import { aiProviders, settings } from "@/lib/db/schema";
 import { decryptApiKey } from "@/lib/encryption";
@@ -20,12 +28,13 @@ export type AIFeature = "matcher" | "writing" | "resume_parser";
 export interface AIContextOverrides {
   modelId?: string;
   providerId?: string;
-  reasoningEffort?: string | ReasoningEffort;
+  reasoningEffort?: string;
 }
 
 export interface ResolvedAIContext extends ResolvedModelSnapshot {
   providerId: string;
-  reasoningEffort: ReasoningEffort;
+  reasoningEffort?: string;
+  backend: AIGenerationBackend;
 }
 
 interface ResolvedProviderRecord {
@@ -73,17 +82,21 @@ function normalizeOptional(value?: string | null): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-export function parseReasoningEffort(value?: string | null): ReasoningEffort {
-  if (value === "low" || value === "medium" || value === "high") {
-    return value;
-  }
-  return "medium";
+export function parseReasoningEffort(value?: string | null): string | undefined {
+  if (value === undefined || value === null || value.length === 0) return undefined;
+  if (isReasoningEffort(value)) return value;
+
+  throw new AIError({
+    type: "reasoning_not_supported",
+    message: "Configured reasoning effort is invalid; refresh models and choose an advertised value",
+    retryable: false,
+  });
 }
 
 async function getFeatureSettings(feature: AIFeature): Promise<{
   modelId?: string;
   providerId?: string;
-  reasoningEffort: ReasoningEffort;
+  reasoningEffort?: string;
 }> {
   const keys = FEATURE_SETTING_KEYS[feature];
   const selected = await db
@@ -98,6 +111,32 @@ async function getFeatureSettings(feature: AIFeature): Promise<{
     providerId: normalizeOptional(map.get(keys.provider)),
     reasoningEffort: parseReasoningEffort(map.get(keys.reasoning)),
   };
+}
+
+function resolveAdvertisedReasoningEffort(
+  requested: string | undefined,
+  control: ProviderReasoningControl | undefined,
+  modelId: string
+): string | undefined {
+  if (!requested) {
+    return undefined;
+  }
+  if (!control) {
+    throw new AIError({
+      type: "reasoning_not_supported",
+      message: `Reasoning capabilities are unavailable for model "${modelId}"; refresh models before using the configured value`,
+      retryable: false,
+    });
+  }
+  if (control.kind === "provider_default") return undefined;
+  if (!control.options.some(({ value }) => value === requested)) {
+    throw new AIError({
+      type: "reasoning_not_supported",
+      message: `Configured reasoning effort "${requested}" is unavailable for model "${modelId}"; refresh models and choose an advertised value`,
+      retryable: false,
+    });
+  }
+  return requested;
 }
 
 function decryptProviderKey(record: typeof aiProviders.$inferSelect): string | undefined {
@@ -132,9 +171,11 @@ async function resolveProviderRecord(providerId?: string): Promise<ResolvedProvi
         .from(aiProviders)
         .where(eq(aiProviders.isActive, true))
         .orderBy(desc(aiProviders.isDefault), asc(aiProviders.createdAt))
-        .limit(1);
+        .limit(100);
 
-  const record = rows[0];
+  const record = normalizedProviderId
+    ? rows[0]
+    : rows.find((candidate) => !isLocalCLIProvider(candidate.provider));
   if (!record) {
     throw new AIError({
       type: "provider_not_found",
@@ -218,11 +259,31 @@ async function resolveAIContext(
   modelSettingKey?: string
 ): Promise<ResolvedAIContext> {
   const providerRecord = await resolveProviderRecord(options.providerId);
-  const reasoningEffort = parseReasoningEffort(options.reasoningEffort);
+  const requestedReasoningEffort = parseReasoningEffort(options.reasoningEffort);
   const modelId =
     normalizeOptional(options.modelId) ??
     await initializeConcreteModel(providerRecord, modelSettingKey);
   const provider = providerRegistry.get(providerRecord.provider);
+
+  if (isLocalCLIProvider(providerRecord.provider)) {
+    const target = await getLocalCLIExecutionTarget(providerRecord.provider, modelId);
+    const reasoningEffort = resolveAdvertisedReasoningEffort(
+      requestedReasoningEffort,
+      target.reasoningControl,
+      modelId
+    );
+    return {
+      providerRecordId: providerRecord.id,
+      providerId: providerRecord.id,
+      provider: providerRecord.provider,
+      modelId,
+      reasoningEffort,
+      backendKind: providerRecord.provider,
+      backend: target.backend,
+      cliVersion: target.cliVersion,
+      upstreamProvider: target.upstreamProvider,
+    };
+  }
 
   if (!provider) {
     throw new AIError({
@@ -237,7 +298,16 @@ async function resolveAIContext(
     });
   }
 
-  const modelConfig: ModelConfig = { modelId, reasoningEffort };
+  const cachedModel = await getCachedProviderModelDefinition(providerRecord.id, modelId);
+  const reasoningEffort = resolveAdvertisedReasoningEffort(
+    requestedReasoningEffort,
+    cachedModel?.reasoningControl,
+    modelId
+  );
+  const modelConfig: ModelConfig = {
+    modelId,
+    ...(reasoningEffort ? { reasoningEffort } : {}),
+  };
   const providerConfig = { apiKey: providerRecord.apiKey };
   const model: LanguageModel = provider.createModel({
     config: modelConfig,
@@ -253,9 +323,9 @@ async function resolveAIContext(
     providerId: providerRecord.id,
     provider: providerRecord.provider,
     modelId,
-    model,
     reasoningEffort,
-    providerOptions,
+    backendKind: "ai_sdk",
+    backend: new AISDKGenerationBackend(model, providerOptions),
   };
 }
 

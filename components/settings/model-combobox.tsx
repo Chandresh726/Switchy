@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import type { ProviderModelOption } from "@/lib/types";
 import {
@@ -92,7 +92,8 @@ export function ModelCombobox({
       (m) =>
         m.label.toLowerCase().includes(q) ||
         m.description.toLowerCase().includes(q) ||
-        m.modelId.toLowerCase().includes(q),
+        m.modelId.toLowerCase().includes(q) ||
+        m.group?.toLowerCase().includes(q),
     );
   }, [models, search]);
 
@@ -105,7 +106,9 @@ export function ModelCombobox({
     return (
       <div className="flex-1 flex items-center gap-2 rounded-none border border-border bg-background/60 px-3 py-2 text-xs text-muted-foreground">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        Loading models...
+        <span className="truncate">
+          {value ? `Configured: ${value}` : "Loading models..."}
+        </span>
       </div>
     );
   }
@@ -113,7 +116,9 @@ export function ModelCombobox({
   if (models.length === 0) {
     return (
       <div className="flex-1 flex items-center rounded-none border border-border bg-background/60 px-3 py-2 text-xs text-muted-foreground">
-        {error || emptyMessage}
+        <span className="truncate" title={error || emptyMessage}>
+          {value ? `Configured: ${value}` : error || emptyMessage}
+        </span>
       </div>
     );
   }
@@ -138,7 +143,7 @@ export function ModelCombobox({
           disabled={disabled}
         >
           <span className={`truncate text-left ${selectedModel ? "" : "text-muted-foreground"}`}>
-            {selectedModel?.label ?? placeholder}
+            {selectedModel?.label ?? (value ? `Configured: ${value}` : placeholder)}
           </span>
         </ComboboxTrigger>
       </div>
@@ -150,28 +155,37 @@ export function ModelCombobox({
           />
         )}
         <ComboboxList>
-          {filteredModels.map((model) => (
-            <ComboboxItem
-              key={model.modelId}
-              value={model.modelId}
-              showIndicator={false}
-              className="group/model-item"
-            >
-              <div className="flex items-center min-w-0 flex-1">
-                <span className="font-medium shrink-0 whitespace-nowrap">
-                  {model.label}
-                </span>
-                {model.description && (
-                  <>
-                    <span className="text-muted-foreground text-xs shrink-0 px-1.5">
-                      •
-                    </span>
-                    <DescriptionMarquee text={model.description} />
-                  </>
+          {filteredModels.map((model, index) => {
+            const showGroup = Boolean(model.group) && filteredModels[index - 1]?.group !== model.group;
+            return (
+              <Fragment key={model.modelId}>
+                {showGroup && (
+                  <div className="px-2 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {model.group}
+                  </div>
                 )}
-              </div>
-            </ComboboxItem>
-          ))}
+                <ComboboxItem
+                  value={model.modelId}
+                  showIndicator={false}
+                  className="group/model-item"
+                >
+                  <div className="flex items-center min-w-0 flex-1">
+                    <span className="font-medium shrink-0 whitespace-nowrap">
+                      {model.label}
+                    </span>
+                    {model.description && (
+                      <>
+                        <span className="text-muted-foreground text-xs shrink-0 px-1.5">
+                          •
+                        </span>
+                        <DescriptionMarquee text={model.description} />
+                      </>
+                    )}
+                  </div>
+                </ComboboxItem>
+              </Fragment>
+            );
+          })}
           {filteredModels.length === 0 && (
             <div className="text-muted-foreground py-6 text-center text-xs">
               No models found

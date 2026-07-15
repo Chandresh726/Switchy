@@ -15,7 +15,7 @@ export type MatchQualityPreset = "economy" | "balanced" | "quality";
 export interface MatcherConfig {
   qualityPreset: MatchQualityPreset;
   model: string;
-  reasoningEffort: string;
+  reasoningEffort?: string;
   batchSize: number;
   maxRetries: number;
   concurrencyLimit: number;
@@ -28,7 +28,7 @@ export interface MatcherConfig {
 export const DEFAULT_MATCHER_CONFIG: MatcherConfig = {
   qualityPreset: "balanced",
   model: "",
-  reasoningEffort: "medium",
+  reasoningEffort: "",
   batchSize: 2,
   maxRetries: 3,
   concurrencyLimit: 3,

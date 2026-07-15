@@ -1,15 +1,19 @@
 import { randomUUID } from "crypto";
 
 import { asc, eq } from "drizzle-orm";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
 import { AIError } from "@/lib/ai/shared/errors";
 import { db } from "@/lib/db";
 import { aiProviders } from "@/lib/db/schema";
+import type * as databaseSchema from "@/lib/db/schema";
 import { decryptApiKey, encryptApiKey } from "@/lib/encryption";
 
-import { clearProviderModelsCache } from "./model-catalog";
+import { deleteStoredProviderModelsCache } from "./model-catalog";
+import { BUILTIN_CLI_PROVIDER_IDS } from "../local-cli/constants";
+import { getProviderMetadata } from "./metadata";
 import { providerRegistry } from "./index";
-import { isAIProvider, type AIProvider } from "./types";
+import { isAIProvider, isLocalCLIProvider, type AIProvider } from "./types";
 
 export type ProviderRecord = typeof aiProviders.$inferSelect;
 
@@ -21,6 +25,8 @@ export interface ProviderPublic {
   createdAt: Date | null;
   updatedAt: Date | null;
   hasApiKey: boolean;
+  kind: "api_key" | "local_cli";
+  selectable: boolean;
 }
 
 export interface ProviderValidationContext {
@@ -38,10 +44,40 @@ export function toProviderPublic(record: ProviderRecord): ProviderPublic {
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     hasApiKey: !!record.apiKey,
+    kind: isAIProvider(record.provider)
+      ? getProviderMetadata(record.provider).kind
+      : "api_key",
+    selectable: record.isActive !== false && !isLocalCLIProvider(record.provider),
   };
 }
 
+export async function ensureBuiltinCLIProviders(
+  database: BetterSQLite3Database<typeof databaseSchema> = db
+): Promise<void> {
+  const now = new Date();
+  await database
+    .insert(aiProviders)
+    .values([
+      {
+        id: BUILTIN_CLI_PROVIDER_IDS.codex_cli,
+        provider: "codex_cli",
+        isActive: true,
+        isDefault: false,
+        updatedAt: now,
+      },
+      {
+        id: BUILTIN_CLI_PROVIDER_IDS.opencode_cli,
+        provider: "opencode_cli",
+        isActive: true,
+        isDefault: false,
+        updatedAt: now,
+      },
+    ])
+    .onConflictDoNothing({ target: aiProviders.id });
+}
+
 export async function listProviders(): Promise<ProviderRecord[]> {
+  await ensureBuiltinCLIProviders();
   return db.select().from(aiProviders).orderBy(aiProviders.createdAt);
 }
 
@@ -87,8 +123,17 @@ export async function createProvider(options: {
   provider: AIProvider;
   apiKey?: string;
 }): Promise<ProviderRecord> {
+  if (isLocalCLIProvider(options.provider)) {
+    throw new AIError({
+      type: "validation",
+      message: "Local CLI providers are created automatically",
+    });
+  }
+  await ensureBuiltinCLIProviders();
   const allProviders = await db.select().from(aiProviders);
-  const isFirstProvider = allProviders.length === 0;
+  const isFirstProvider = !allProviders.some(
+    (provider) => !isLocalCLIProvider(provider.provider)
+  );
   const encryptedApiKey = options.apiKey?.trim()
     ? encryptApiKey(options.apiKey.trim())
     : undefined;
@@ -112,6 +157,13 @@ export async function updateProviderApiKey(
   providerId: string,
   apiKey?: string | null
 ): Promise<void> {
+  const provider = await requireProviderById(providerId);
+  if (isLocalCLIProvider(provider.provider)) {
+    throw new AIError({
+      type: "validation",
+      message: "Local CLI providers do not store API keys",
+    });
+  }
   const normalized = apiKey?.trim();
   const encryptedApiKey = normalized ? encryptApiKey(normalized) : null;
 
@@ -123,14 +175,20 @@ export async function updateProviderApiKey(
     })
     .where(eq(aiProviders.id, providerId));
 
-  clearProviderModelsCache(providerId);
+  await deleteStoredProviderModelsCache(providerId);
 }
 
 export async function deleteProvider(providerId: string): Promise<void> {
   const provider = await requireProviderById(providerId);
+  if (isLocalCLIProvider(provider.provider)) {
+    throw new AIError({
+      type: "validation",
+      message: "Built-in local CLI providers cannot be deleted",
+    });
+  }
 
   await db.delete(aiProviders).where(eq(aiProviders.id, providerId));
-  clearProviderModelsCache(providerId);
+  await deleteStoredProviderModelsCache(providerId);
 
   if (!provider.isDefault) {
     return;
@@ -141,8 +199,11 @@ export async function deleteProvider(providerId: string): Promise<void> {
     .from(aiProviders)
     .where(eq(aiProviders.isActive, true))
     .orderBy(asc(aiProviders.createdAt));
+  const remainingAPIProviders = remaining.filter(
+    (candidate) => !isLocalCLIProvider(candidate.provider)
+  );
 
-  if (remaining.length === 0) {
+  if (remainingAPIProviders.length === 0) {
     return;
   }
 
@@ -160,7 +221,7 @@ export async function deleteProvider(providerId: string): Promise<void> {
       isDefault: true,
       updatedAt: new Date(),
     })
-    .where(eq(aiProviders.id, remaining[0].id));
+    .where(eq(aiProviders.id, remainingAPIProviders[0].id));
 }
 
 export async function getProviderValidationContext(
@@ -176,7 +237,7 @@ export async function getProviderValidationContext(
     });
   }
 
-  if (!providerRegistry.get(provider.provider)) {
+  if (!isLocalCLIProvider(provider.provider) && !providerRegistry.get(provider.provider)) {
     throw new AIError({
       type: "provider_not_found",
       message: "Provider is not registered",

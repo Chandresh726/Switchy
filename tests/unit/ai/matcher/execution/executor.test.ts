@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { AIError } from "@/lib/ai/shared/errors";
+
 const mocks = vi.hoisted(() => ({
   buildCandidateEvidence: vi.fn(),
   getOrCreateCandidateSnapshot: vi.fn(),
@@ -529,5 +531,26 @@ describe("evidence matcher executor", () => {
     );
     expect(JSON.stringify(warning.mock.calls)).not.toContain("SENTINEL_CANDIDATE_DATA");
     warning.mockRestore();
+  });
+
+  it("blocks matching when the configured reasoning effort is stale", async () => {
+    mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
+    mocks.fetchProfileData.mockResolvedValue({
+      profile: { id: 1, summary: "Backend engineer", preferredCountry: null, preferredCity: null },
+      skills: [],
+      experience: [],
+      education: [],
+    });
+    const configurationError = new AIError({
+      type: "reasoning_not_supported",
+      message: "Refresh models and choose an advertised value",
+      retryable: false,
+    });
+    mocks.createAICapabilityRuntime.mockRejectedValue(configurationError);
+
+    await expect(executeMatch({ config, jobIds: [101] })).rejects.toBe(configurationError);
+
+    expect(mocks.analyzeJobsForMatching).not.toHaveBeenCalled();
+    expect(mocks.createMatchResult).not.toHaveBeenCalled();
   });
 });

@@ -14,6 +14,7 @@ import { ResumeParserSection } from "@/components/settings/resume-parser-section
 import { SystemInfo } from "@/components/settings/system-info";
 import { AIWritingSection, type AIWritingSettings } from "@/components/settings/ai-writing-section";
 import { AIProvidersManager } from "@/components/settings/ai-providers-manager";
+import { resolveReasoningSelection } from "@/components/settings/reasoning-effort-control";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getProviderMetadata } from "@/lib/ai/providers/metadata";
 import type { AIProvider } from "@/lib/ai/providers/types";
@@ -28,7 +29,6 @@ import type {
   SettingsRecord,
 } from "@/lib/settings/types";
 
-const getDefaultReasoningEffort = (): ReasoningEffort => "medium";
 const PROVIDER_MODELS_STALE_TIME_MS = 15 * 60 * 1000;
 const DEFAULT_SCRAPER_MAX_PARALLEL_SCRAPES = 3;
 const DEFAULT_SCRAPER_HISTORY_RETENTION_DAYS = 90;
@@ -227,7 +227,7 @@ function SettingsContent() {
     queries: providers.map((provider) => ({
       queryKey: ["provider-models", provider.id],
       queryFn: async () => fetchProviderModels(provider.id),
-      enabled: Boolean(provider.id),
+      enabled: Boolean(provider.id) && (provider.kind === "api_key" || provider.selectable),
       staleTime: PROVIDER_MODELS_STALE_TIME_MS,
       retry: 1,
     })),
@@ -247,7 +247,11 @@ function SettingsContent() {
         loading: query?.isPending ?? false,
         isRefreshing: (query?.isFetching ?? false) && !(query?.isPending ?? false),
         isStale: data?.isStale ?? false,
-        error: queryError ?? warning,
+        error: queryError ?? warning ?? (
+          provider.kind === "local_cli" && !provider.selectable
+            ? provider.statusMessage
+            : undefined
+        ),
       };
     });
 
@@ -262,6 +266,33 @@ function SettingsContent() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to refresh model list");
     }
+  };
+
+  const checkProvider = async (providerId: string): Promise<void> => {
+    try {
+      await apiPost(`/api/providers/${providerId}/validate`, {}, "Failed to check provider");
+      toast.success("CLI connection is ready");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "CLI connection check failed");
+    } finally {
+      await queryClient.invalidateQueries({ queryKey: ["providers"] });
+      await queryClient.invalidateQueries({ queryKey: ["provider-models", providerId] });
+    }
+  };
+
+  const saveCLIExecutablePaths = async (paths: { codex: string; opencode: string }) => {
+    await apiPost<SettingsRecord>(
+      "/api/settings",
+      {
+        codex_cli_executable: paths.codex,
+        opencode_cli_executable: paths.opencode,
+      },
+      "Failed to save CLI executable paths"
+    );
+    await queryClient.invalidateQueries({ queryKey: ["settings"] });
+    await queryClient.invalidateQueries({ queryKey: ["providers"] });
+    await queryClient.invalidateQueries({ queryKey: ["provider-models"] });
+    toast.success("CLI executable paths saved");
   };
 
   const isInitialLoading = isSettingsLoading || isProvidersLoading;
@@ -321,8 +352,16 @@ function SettingsContent() {
   });
 
   const derivedValues = useMemo(() => {
-    const hasProviders = providers.length > 0;
-    const firstProviderId = providers[0]?.id || "";
+    const savedProviderIds = new Set([
+      settings?.matcher_provider_id,
+      settings?.resume_parser_provider_id,
+      settings?.ai_writing_provider_id,
+    ].filter(Boolean));
+    const candidateProviders = providers.filter(
+      (provider) => provider.selectable || savedProviderIds.has(provider.id)
+    );
+    const hasProviders = candidateProviders.length > 0;
+    const firstProviderId = candidateProviders[0]?.id || "";
     const getModelsState = (providerId: string): ProviderModelsState | undefined => providerModelsById[providerId];
 
     const getDefaultForProvider = (providerId: string) =>
@@ -338,7 +377,7 @@ function SettingsContent() {
       if (!hasProviders) return "";
 
       const candidateId = localProviderId || savedProviderId || firstProviderId;
-      return providers.some((provider) => provider.id === candidateId) ? candidateId : firstProviderId;
+      return candidateProviders.some((provider) => provider.id === candidateId) ? candidateId : firstProviderId;
     };
 
     const resolvedMatcherProviderId = resolveProviderId(
@@ -364,8 +403,7 @@ function SettingsContent() {
 
       if (savedModel) {
         const providerChangedFromSaved = Boolean(savedProviderId) && savedProviderId !== providerId;
-        const modelsState = getModelsState(providerId);
-        const shouldKeepSavedModel = !providerChangedFromSaved && (!modelsState || modelsState.loading || (modelsState.error && modelsState.models.length === 0));
+        const shouldKeepSavedModel = !providerChangedFromSaved;
         if (shouldKeepSavedModel || isValidModelForProvider(savedModel, providerId)) {
           return savedModel;
         }
@@ -374,22 +412,64 @@ function SettingsContent() {
       return hasProviders ? getDefaultForProvider(providerId) : "";
     };
 
+    const resolvedMatcherModel = getValidModelOrDefault(
+      matcherLocalEdits.matcherModel,
+      settings?.matcher_model,
+      resolvedMatcherProviderId,
+      settings?.matcher_provider_id
+    );
+    const resolvedResumeParserModel = getValidModelOrDefault(
+      resumeParserLocalEdits.resumeParserModel,
+      settings?.resume_parser_model,
+      resolvedResumeParserProviderId,
+      settings?.resume_parser_provider_id
+    );
+    const resolvedAIWritingModel = getValidModelOrDefault(
+      aiWritingLocalEdits.aiWritingModel,
+      settings?.ai_writing_model,
+      resolvedAIWritingProviderId,
+      settings?.ai_writing_provider_id
+    );
+
+    const resolveReasoningEffort = ({
+      localValue,
+      savedValue,
+      providerId,
+      modelId,
+      providerWasEdited,
+    }: {
+      localValue: ReasoningEffort | undefined;
+      savedValue: string | undefined;
+      providerId: string;
+      modelId: string;
+      providerWasEdited: boolean;
+    }): ReasoningEffort => {
+      if (localValue !== undefined) return localValue;
+      if (!providerWasEdited) return savedValue || "";
+
+      const model = getModelsState(providerId)?.models.find(
+        (candidate) => candidate.modelId === modelId
+      );
+      return resolveReasoningSelection({
+        localValue,
+        savedValue,
+        providerWasEdited,
+        model,
+      });
+    };
+
     return {
-      matcherModel: getValidModelOrDefault(
-        matcherLocalEdits.matcherModel,
-        settings?.matcher_model,
-        resolvedMatcherProviderId,
-        settings?.matcher_provider_id
-      ),
+      matcherModel: resolvedMatcherModel,
       matcherProviderId: resolvedMatcherProviderId,
-      resumeParserModel: getValidModelOrDefault(
-        resumeParserLocalEdits.resumeParserModel,
-        settings?.resume_parser_model,
-        resolvedResumeParserProviderId,
-        settings?.resume_parser_provider_id
-      ),
+      resumeParserModel: resolvedResumeParserModel,
       resumeParserProviderId: resolvedResumeParserProviderId,
-      matcherReasoningEffort: matcherLocalEdits.matcherReasoningEffort ?? ((settings?.matcher_reasoning_effort as ReasoningEffort) || getDefaultReasoningEffort()),
+      matcherReasoningEffort: resolveReasoningEffort({
+        localValue: matcherLocalEdits.matcherReasoningEffort,
+        savedValue: settings?.matcher_reasoning_effort,
+        providerId: resolvedMatcherProviderId,
+        modelId: resolvedMatcherModel,
+        providerWasEdited: matcherLocalEdits.matcherProviderId !== undefined,
+      }),
       qualityPreset: matcherLocalEdits.qualityPreset ?? (
         settings?.matcher_quality_preset === "economy" ||
         settings?.matcher_quality_preset === "quality"
@@ -412,7 +492,13 @@ function SettingsContent() {
           return [];
         }
       })(),
-      resumeParserReasoningEffort: resumeParserLocalEdits.resumeParserReasoningEffort ?? ((settings?.resume_parser_reasoning_effort as ReasoningEffort) || getDefaultReasoningEffort()),
+      resumeParserReasoningEffort: resolveReasoningEffort({
+        localValue: resumeParserLocalEdits.resumeParserReasoningEffort,
+        savedValue: settings?.resume_parser_reasoning_effort,
+        providerId: resolvedResumeParserProviderId,
+        modelId: resolvedResumeParserModel,
+        providerWasEdited: resumeParserLocalEdits.resumeParserProviderId !== undefined,
+      }),
       batchSize: matcherLocalEdits.batchSize ?? parseInt(settings?.matcher_batch_size || "2", 10),
       maxRetries: matcherLocalEdits.maxRetries ?? parseInt(settings?.matcher_max_retries || "3", 10),
       concurrencyLimit: matcherLocalEdits.concurrencyLimit ?? parseInt(settings?.matcher_concurrency_limit || "3", 10),
@@ -463,14 +549,15 @@ function SettingsContent() {
         }
       })(),
       // AI Writing
-      aiWritingModel: getValidModelOrDefault(
-        aiWritingLocalEdits.aiWritingModel,
-        settings?.ai_writing_model,
-        resolvedAIWritingProviderId,
-        settings?.ai_writing_provider_id
-      ),
+      aiWritingModel: resolvedAIWritingModel,
       aiWritingProviderId: resolvedAIWritingProviderId,
-      aiWritingReasoningEffort: aiWritingLocalEdits.aiWritingReasoningEffort ?? ((settings?.ai_writing_reasoning_effort as ReasoningEffort) || getDefaultReasoningEffort()),
+      aiWritingReasoningEffort: resolveReasoningEffort({
+        localValue: aiWritingLocalEdits.aiWritingReasoningEffort,
+        savedValue: settings?.ai_writing_reasoning_effort,
+        providerId: resolvedAIWritingProviderId,
+        modelId: resolvedAIWritingModel,
+        providerWasEdited: aiWritingLocalEdits.aiWritingProviderId !== undefined,
+      }),
       referralTone: aiWritingLocalEdits.referralTone ?? (settings?.referral_tone || "professional"),
       referralLength: aiWritingLocalEdits.referralLength ?? (settings?.referral_length || "medium"),
       followUpTone: aiWritingLocalEdits.followUpTone ?? (settings?.follow_up_tone || "professional"),
@@ -498,7 +585,14 @@ function SettingsContent() {
   } = derivedValues;
 
   const providerOptions = useMemo(() => {
-    return providers.map((provider) => {
+    const configuredProviderIds = new Set([
+      settings?.matcher_provider_id,
+      settings?.resume_parser_provider_id,
+      settings?.ai_writing_provider_id,
+    ].filter(Boolean));
+    return providers.filter(
+      (provider) => provider.selectable || configuredProviderIds.has(provider.id)
+    ).map((provider) => {
       const meta = getProviderMetadata(provider.provider as AIProvider);
       return {
         id: provider.id,
@@ -507,7 +601,7 @@ function SettingsContent() {
         isActive: provider.isActive,
       };
     });
-  }, [providers]);
+  }, [providers, settings]);
 
   const getProviderModelsState = (providerId: string): ProviderModelsState => {
     return providerModelsById[providerId] ?? {
@@ -704,7 +798,17 @@ function SettingsContent() {
     aiWritingLocalEdits.aiWritingReasoningEffort !== undefined;
 
   // Setters for Matcher settings
-  const setMatcherModel = (value: string) => setMatcherLocalEdits(prev => ({ ...prev, matcherModel: value }));
+  const setMatcherModel = (value: string) => {
+    const defaultReasoningEffort = resolveReasoningSelection({
+      providerWasEdited: true,
+      model: matcherModelsState.models.find((model) => model.modelId === value),
+    });
+    setMatcherLocalEdits((previous) => ({
+      ...previous,
+      matcherModel: value,
+      matcherReasoningEffort: defaultReasoningEffort,
+    }));
+  };
   const setMatcherReasoningEffort = (value: ReasoningEffort) => setMatcherLocalEdits(prev => ({ ...prev, matcherReasoningEffort: value }));
   const setQualityPreset = (value: MatchQualityPreset) =>
     setMatcherLocalEdits((prev) => ({ ...prev, qualityPreset: value }));
@@ -717,7 +821,17 @@ function SettingsContent() {
 
   // Auto-save setters for Resume Parser (independent from Matcher)
   const setResumeParserModel = (value: string) =>
-    setResumeParserLocalEdits(prev => ({ ...prev, resumeParserModel: value }));
+    setResumeParserLocalEdits((previous) => {
+      const defaultReasoningEffort = resolveReasoningSelection({
+        providerWasEdited: true,
+        model: resumeParserModelsState.models.find((model) => model.modelId === value),
+      });
+      return {
+        ...previous,
+        resumeParserModel: value,
+        resumeParserReasoningEffort: defaultReasoningEffort,
+      };
+    });
   const setResumeParserReasoningEffort = (value: ReasoningEffort) =>
     setResumeParserLocalEdits(prev => ({ ...prev, resumeParserReasoningEffort: value }));
   const setSchedulerCron = (value: string) =>
@@ -1050,11 +1164,15 @@ function SettingsContent() {
               await updateProviderApiKeyMutation.mutateAsync({ id, apiKey });
             }}
             onRefreshProviderModels={refreshProviderModels}
+            onCheckProvider={checkProvider}
+            codexExecutablePath={settings?.codex_cli_executable ?? ""}
+            openCodeExecutablePath={settings?.opencode_cli_executable ?? ""}
+            onSaveExecutablePaths={saveCLIExecutablePaths}
           />
 
           <MatcherSection
             availableProviders={providerOptions}
-            hasProviders={providers.length > 0}
+            hasProviders={providerOptions.length > 0}
             models={matcherModelsState.models}
             modelsLoading={matcherModelsState.loading}
             modelsError={matcherModelsState.error}
@@ -1064,7 +1182,8 @@ function SettingsContent() {
               setMatcherLocalEdits((prev) => ({ 
                 ...prev, 
                 matcherProviderId: id,
-                matcherModel: undefined 
+                matcherModel: undefined,
+                matcherReasoningEffort: undefined,
               }));
             }}
             matcherModel={matcherModel}
@@ -1116,7 +1235,7 @@ function SettingsContent() {
 
           <AIWritingSection
             availableProviders={providerOptions}
-            hasProviders={providers.length > 0}
+            hasProviders={providerOptions.length > 0}
             models={aiWritingModelsState.models}
             modelsLoading={aiWritingModelsState.loading}
             modelsError={aiWritingModelsState.error}
@@ -1126,7 +1245,8 @@ function SettingsContent() {
               setAIWritingLocalEdits((prev) => ({ 
                 ...prev, 
                 aiWritingProviderId: id,
-                aiWritingModel: undefined 
+                aiWritingModel: undefined,
+                aiWritingReasoningEffort: undefined,
               }));
             }}
             aiWritingSettings={{
@@ -1190,7 +1310,7 @@ function SettingsContent() {
 
           <ResumeParserSection
             availableProviders={providerOptions}
-            hasProviders={providers.length > 0}
+            hasProviders={providerOptions.length > 0}
             models={resumeParserModelsState.models}
             modelsLoading={resumeParserModelsState.loading}
             modelsError={resumeParserModelsState.error}
@@ -1200,7 +1320,8 @@ function SettingsContent() {
               setResumeParserLocalEdits((prev) => ({ 
                 ...prev, 
                 resumeParserProviderId: id,
-                resumeParserModel: undefined 
+                resumeParserModel: undefined,
+                resumeParserReasoningEffort: undefined,
               }));
             }}
             resumeParserModel={resumeParserModel}

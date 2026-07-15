@@ -9,6 +9,8 @@ import {
   toProviderPublic,
 } from "@/lib/ai/providers/provider-service";
 import { isAIProvider } from "@/lib/ai/providers/types";
+import { isLocalCLIProvider } from "@/lib/ai/providers/types";
+import { getLocalCLIStatus } from "@/lib/ai/local-cli/service";
 import { assertAppRequest } from "@/lib/api";
 import { APIValidationError, handleAIAPIError } from "@/lib/api/ai-error-handler";
 import { upsertSettings } from "@/lib/settings/settings-service";
@@ -21,7 +23,19 @@ const CreateProviderBodySchema = z.object({
 export async function GET() {
   try {
     const providers = await listProviders();
-    return NextResponse.json(providers.map(toProviderPublic));
+    return NextResponse.json(await Promise.all(providers.map(async (provider) => {
+      const publicProvider = toProviderPublic(provider);
+      if (!isLocalCLIProvider(provider.provider)) return publicProvider;
+      const connection = await getLocalCLIStatus(provider.provider);
+      return {
+        ...publicProvider,
+        connectionStatus: connection.status,
+        selectable: connection.selectable,
+        cliVersion: connection.cliVersion,
+        statusMessage: connection.statusMessage,
+        lastCheckedAt: connection.lastCheckedAt,
+      };
+    })));
   } catch (error) {
     return handleAIAPIError(error, "Failed to fetch providers", "providers_fetch_failed");
   }
@@ -38,6 +52,10 @@ export async function POST(request: NextRequest) {
 
     if (!isAIProvider(providerType)) {
       throw new APIValidationError("Invalid provider type", "invalid_provider");
+    }
+
+    if (isLocalCLIProvider(providerType)) {
+      throw new APIValidationError("Local CLI providers are built in", "invalid_provider");
     }
 
     const metadata = getProviderMetadata(providerType);

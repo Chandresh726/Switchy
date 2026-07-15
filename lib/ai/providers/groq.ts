@@ -11,36 +11,6 @@ export class GroqProvider extends BaseProvider {
   readonly name = "Groq";
   readonly requiresApiKey = true;
 
-  /**
-   * Groq models that support reasoning effort
-   */
-  supportsReasoningEffort(modelId: string): boolean {
-    const reasoningModels = [
-      "llama-3.3-70b-versatile",
-      "gpt-oss-120b",
-      "gpt-oss-20b",
-      "qwen3-32b",
-    ];
-    return reasoningModels.some((model) => modelId.includes(model));
-  }
-
-  /**
-   * Groq supports reasoning effort via providerOptions
-   */
-  getGenerationOptions(
-    config: ModelConfig,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _providerConfig: ProviderConfig
-  ): Record<string, unknown> | undefined {
-    return this.buildProviderReasoningOptions("groq", config, (reasoningEffort, modelConfig) => {
-      if (modelConfig.modelId.includes("qwen3-32b")) {
-        return reasoningEffort === "low" ? "none" : "default";
-      }
-
-      return reasoningEffort;
-    });
-  }
-
   protected createLanguageModel(
     config: ModelConfig,
     _providerConfig: ProviderConfig

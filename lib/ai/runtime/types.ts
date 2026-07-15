@@ -1,5 +1,3 @@
-import type { LanguageModel } from "ai";
-
 import type { AIProvider } from "@/lib/ai/providers/types";
 
 export type AICapability =
@@ -13,7 +11,7 @@ export type AICapability =
 export interface AIExecutionPolicy {
   maxAttempts: number;
   timeoutMs: number;
-  reasoningEffort: "low" | "medium" | "high";
+  reasoningEffort?: string;
   maxOutputTokens?: number;
 }
 
@@ -21,8 +19,9 @@ export interface ResolvedModelSnapshot {
   providerRecordId: string;
   provider: AIProvider;
   modelId: string;
-  model: LanguageModel;
-  providerOptions?: Record<string, unknown>;
+  backendKind: "ai_sdk" | "codex_cli" | "opencode_cli";
+  cliVersion?: string;
+  upstreamProvider?: string;
 }
 
 export interface AIExecutionUsage {
