@@ -44,10 +44,16 @@ describe("semantic match presentation", () => {
     expect(screen.getByText(/AWS evidence supports transferable cloud competency/)).toBeTruthy();
   });
 
-  it("presents a compatibility score rather than a probability percentage", () => {
+  it("presents the compatibility score using the original percentage badge", () => {
     render(<MatchBadge score={82} band="good" showLabel />);
 
-    expect(screen.getByText("82/100 · Good match")).toBeTruthy();
-    expect(screen.queryByText("82%")).toBeNull();
+    expect(screen.getByText("82% Strong")).toBeTruthy();
+    expect(screen.queryByText("82/100 · Good match")).toBeNull();
+  });
+
+  it("does not present low-evidence scores as a strong match", () => {
+    render(<MatchBadge score={82} band="insufficient_evidence" showLabel />);
+
+    expect(screen.getByText("82% More evidence needed")).toBeTruthy();
   });
 });
