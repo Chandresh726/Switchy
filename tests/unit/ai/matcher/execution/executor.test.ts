@@ -18,7 +18,6 @@ const mocks = vi.hoisted(() => ({
   shouldAdjudicate: vi.fn(),
   buildScoringPolicyVersion: vi.fn(),
   adjudicateMatch: vi.fn(),
-  categorizeError: vi.fn(),
 }));
 
 vi.mock("@/lib/ai/artifacts", () => ({
@@ -61,28 +60,18 @@ vi.mock("@/lib/ai/matcher/evidence/adjudication", () => ({
   shouldAdjudicate: mocks.shouldAdjudicate,
 }));
 
-vi.mock("@/lib/ai/matcher/resilience", () => ({
-  categorizeError: mocks.categorizeError,
-  throwIfAborted: (signal?: AbortSignal) => signal?.throwIfAborted(),
-}));
-
 import { executeMatch } from "@/lib/ai/matcher/execution/executor";
 
 const config = {
   qualityPreset: "balanced" as const,
   model: "configured-model",
   reasoningEffort: "medium",
-  bulkEnabled: true,
   batchSize: 4,
   maxRetries: 2,
   concurrencyLimit: 2,
-  serializeOperations: false,
-  interRequestDelayMs: 0,
   timeoutMs: 30_000,
   backoffBaseDelay: 0,
   backoffMaxDelay: 0,
-  circuitBreakerThreshold: 10,
-  circuitBreakerResetTimeout: 60_000,
   autoMatchAfterScrape: true,
 };
 
@@ -191,16 +180,33 @@ describe("evidence matcher executor", () => {
     }));
     mocks.persistMatchSuccess.mockResolvedValue(undefined);
     mocks.logMatchFailure.mockResolvedValue(undefined);
-    mocks.categorizeError.mockReturnValue("unknown");
   });
 
   it("returns deterministic failures when profile data is missing", async () => {
     mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
     mocks.fetchProfileData.mockResolvedValue(null);
+    const progress = vi.fn();
 
-    const results = await executeMatch({ config, jobIds: [101], sessionId: "session-1" });
+    const results = await executeMatch({
+      config,
+      jobIds: [101],
+      sessionId: "session-1",
+      onProgress: progress,
+    });
 
-    expect(results.get(101)).toEqual(new Error("No profile found"));
+    expect(results.get(101)).toMatchObject({
+      type: "missing_profile",
+      retryable: false,
+    });
+    expect(mocks.logMatchFailure).toHaveBeenCalledWith(
+      "session-1",
+      101,
+      0,
+      expect.objectContaining({ type: "missing_profile" }),
+      0,
+      "deterministic"
+    );
+    expect(progress).toHaveBeenLastCalledWith(1, 1, 0, 1);
     expect(mocks.analyzeJobsForMatching).not.toHaveBeenCalled();
     expect(mocks.createAICapabilityRuntime).not.toHaveBeenCalled();
   });
@@ -284,6 +290,68 @@ describe("evidence matcher executor", () => {
       expect.any(Number),
       "cache"
     );
+  });
+
+  it("does not persist a cached success when cancellation wins the lookup race", async () => {
+    const cacheLookup = Promise.withResolvers<{
+      id: string;
+      score: number;
+      evidence: typeof deterministic.evidence;
+    }>();
+    const controller = new AbortController();
+    mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
+    mocks.fetchProfileData.mockResolvedValue({
+      profile: { id: 1, summary: "Backend engineer", preferredCountry: null, preferredCity: null },
+      skills: [],
+      experience: [],
+      education: [],
+    });
+    mocks.findFreshMatch.mockReturnValue(cacheLookup.promise);
+
+    const pending = executeMatch({
+      config,
+      jobIds: [101],
+      sessionId: "session-1",
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(mocks.findFreshMatch).toHaveBeenCalledOnce());
+    controller.abort(new DOMException("Cancelled", "AbortError"));
+    cacheLookup.resolve({
+      id: "cached-result-1",
+      score: 92,
+      evidence: deterministic.evidence,
+    });
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(mocks.persistMatchSuccess).not.toHaveBeenCalled();
+    expect(mocks.createMatchResult).not.toHaveBeenCalled();
+    expect(mocks.logMatchFailure).not.toHaveBeenCalled();
+  });
+
+  it("does not persist a new result when cancellation occurs before the write", async () => {
+    const controller = new AbortController();
+    mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
+    mocks.fetchProfileData.mockResolvedValue({
+      profile: { id: 1, summary: "Backend engineer", preferredCountry: null, preferredCity: null },
+      skills: [],
+      experience: [],
+      education: [],
+    });
+    mocks.scoreDeterministically.mockImplementation(() => {
+      controller.abort(new DOMException("Cancelled", "AbortError"));
+      return deterministic;
+    });
+
+    await expect(executeMatch({
+      config,
+      jobIds: [101],
+      sessionId: "session-1",
+      signal: controller.signal,
+    })).rejects.toMatchObject({ name: "AbortError" });
+
+    expect(mocks.createMatchResult).not.toHaveBeenCalled();
+    expect(mocks.persistMatchSuccess).not.toHaveBeenCalled();
+    expect(mocks.logMatchFailure).not.toHaveBeenCalled();
   });
 
   it("does not begin job analysis after session cancellation", async () => {
@@ -421,7 +489,10 @@ describe("evidence matcher executor", () => {
       experience: [],
       education: [],
     });
-    mocks.createAICapabilityRuntime.mockRejectedValue(new Error("provider unavailable"));
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    mocks.createAICapabilityRuntime.mockRejectedValue(
+      new Error("provider exposed SENTINEL_CANDIDATE_DATA")
+    );
 
     await executeMatch({ config: { ...config, model: "" }, jobIds: [101] });
 
@@ -433,5 +504,7 @@ describe("evidence matcher executor", () => {
     expect(mocks.createMatchResult.mock.calls[0]?.[0].evidence.reasons).toContain(
       "Deterministic fallback shown; concrete model resolution will be retried"
     );
+    expect(JSON.stringify(warning.mock.calls)).not.toContain("SENTINEL_CANDIDATE_DATA");
+    warning.mockRestore();
   });
 });

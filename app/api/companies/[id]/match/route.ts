@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { eq } from "drizzle-orm";
 
-import { queueMatchWork } from "@/lib/ai/work-items";
+import { completeEmptyMatchSession, queueMatchWork } from "@/lib/ai/work-items";
 import { assertAppRequest } from "@/lib/api";
 import { db } from "@/lib/db";
 import { companies, jobs } from "@/lib/db/schema";
@@ -25,7 +25,10 @@ export async function POST(request: Request, { params }: RouteParams) {
       .where(eq(jobs.companyId, companyId));
     if (jobIds.length === 0) {
       return NextResponse.json(
-        { sessionId: "", status: "queued", total: 0 },
+        completeEmptyMatchSession({
+          triggerSource: "company_refresh",
+          companyId,
+        }),
         { status: 202 }
       );
     }

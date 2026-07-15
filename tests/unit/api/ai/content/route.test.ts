@@ -1,6 +1,9 @@
 import type { NextRequest } from "next/server";
 
+import { APICallError } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { AIError } from "@/lib/ai/shared/errors";
 import { APIValidationError } from "@/lib/api/ai-error-handler";
 
 const APP_HEADERS = {
@@ -123,8 +126,58 @@ describe("POST /api/ai/content", () => {
 
     expect(response.status).toBe(500);
     expect(body).toEqual({
-      error: "boom",
+      error: "Failed to delete AI generated content",
       code: "ai_content_delete_all_failed",
+    });
+  });
+
+  it("sanitizes synchronous provider failures", async () => {
+    mocks.generateContent.mockRejectedValue(new APICallError({
+      message: "Provider exposed SENTINEL_WRITING_EVIDENCE",
+      url: "https://provider.invalid/generate",
+      requestBodyValues: { prompt: "SENTINEL_WRITING_EVIDENCE" },
+      statusCode: 503,
+      responseHeaders: {},
+      responseBody: "SENTINEL_PROVIDER_BODY",
+      isRetryable: true,
+    }));
+    const request = new Request("http://localhost/api/ai/content", {
+      method: "POST",
+      headers: APP_HEADERS,
+      body: JSON.stringify({ jobId: 42, type: "cover_letter" }),
+    });
+
+    const response = await POST(request as NextRequest);
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({
+      error: "The AI provider could not complete the request.",
+      code: "generation_failed",
+    });
+    expect(JSON.stringify(body)).not.toContain("SENTINEL_WRITING_EVIDENCE");
+    expect(JSON.stringify(body)).not.toContain("SENTINEL_PROVIDER_BODY");
+  });
+
+  it("preserves the safe writing quality-gate message", async () => {
+    mocks.generateContent.mockRejectedValue(new AIError({
+      type: "quality_gate",
+      message: "Generated content quality was too low. Please try again.",
+      retryable: false,
+    }));
+    const request = new Request("http://localhost/api/ai/content", {
+      method: "POST",
+      headers: APP_HEADERS,
+      body: JSON.stringify({ jobId: 42, type: "cover_letter" }),
+    });
+
+    const response = await POST(request as NextRequest);
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body).toEqual({
+      error: "Generated content quality was too low. Please try again.",
+      code: "quality_gate_failed",
     });
   });
 

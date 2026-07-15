@@ -4,6 +4,7 @@ import { assertAppRequest } from "@/lib/api";
 import { persistResumeVersion } from "@/lib/ai/resume/repository";
 import { extractResumeText } from "@/lib/ai/resume/text-extraction";
 import { parseResumeWithProvenance } from "@/lib/ai/resume-parser";
+import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { MAX_RESUME_FILE_SIZE, MAX_RESUME_TEXT_LENGTH } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { profile } from "@/lib/db/schema";
@@ -42,9 +43,9 @@ export async function POST(request: NextRequest) {
     if (shouldAutofill) {
       try {
         resumeText = (await extractResumeText(file)).text;
-      } catch (error) {
+      } catch {
         return NextResponse.json(
-          { error: error instanceof Error ? error.message : "Could not extract resume text." },
+          { error: "Could not extract resume text." },
           { status: 400 }
         );
       }
@@ -109,9 +110,10 @@ export async function POST(request: NextRequest) {
       warnings: parseResult?.warnings ?? [],
     });
   } catch (error) {
-    console.error("Failed to parse resume:", error);
+    const sanitized = sanitizeAIError(error);
+    console.error(`Failed to parse resume: [${sanitized.code}] ${sanitized.message}`);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to parse resume" },
+      { error: sanitized.message, code: sanitized.code },
       { status: 500 }
     );
   }

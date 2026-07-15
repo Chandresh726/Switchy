@@ -7,8 +7,18 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { afterEach, describe, expect, it } from "vitest";
 
+import {
+  clearWritingHistory,
+  getWritingHistoryContents,
+} from "@/lib/ai/observability/writing-history";
 import { persistWritingVariant } from "@/lib/ai/writing/repository";
-import { aiGeneratedContent, aiGenerationHistory, companies, jobs } from "@/lib/db/schema";
+import {
+  aiGeneratedContent,
+  aiGenerationHistory,
+  aiRuns,
+  companies,
+  jobs,
+} from "@/lib/db/schema";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-writing-history-");
@@ -119,7 +129,7 @@ describe("AI writing history persistence", () => {
     expect(database.select().from(aiGenerationHistory).all()).toEqual([]);
   });
 
-  it("upgrades existing writing history with safe defaults and preserved content", () => {
+  it("upgrades existing writing history with safe defaults and preserved content", async () => {
     const { database } = harness.createDatabase({ migrate: false });
     migrate(database, { migrationsFolder: migrationsThrough(17) });
     const job = insertJob(database);
@@ -142,5 +152,121 @@ describe("AI writing history persistence", () => {
       aiRunId: null,
       parentVariantId: null,
     });
+    const firstRead = await getWritingHistoryContents(database);
+    const secondRead = await getWritingHistoryContents(database);
+    expect(firstRead[0]?.history[0]?.createdAt).toBe(content.createdAt?.toISOString());
+    expect(secondRead[0]?.history[0]?.createdAt).toBe(firstRead[0]?.history[0]?.createdAt);
+  });
+
+  it("loads and atomically clears more than one SQLite parameter chunk", async () => {
+    const { database } = harness.createDatabase();
+    const count = 401;
+    const company = database.insert(companies).values({
+      name: "History Scale Test",
+      careersUrl: "https://example.com/history-scale",
+    }).returning().get();
+    const timestamps = Array.from(
+      { length: count },
+      (_, index) => new Date(1_700_000_000_000 + index * 1_000)
+    );
+
+    const jobRows = Array.from({ length: count }, (_, index) => ({
+      id: index + 1,
+      companyId: company.id,
+      title: `Role ${index + 1}`,
+      description: "Build reliable local software",
+      url: `https://example.com/jobs/${index + 1}`,
+    }));
+    for (let index = 0; index < jobRows.length; index += 50) {
+      database.insert(jobs).values(jobRows.slice(index, index + 50)).run();
+    }
+
+    const runRows = Array.from({ length: count }, (_, index) => ({
+      id: `writing-run-${index + 1}`,
+      capability: "writing_cover_letter",
+      providerRecordId: "provider-1",
+      provider: "openai",
+      modelId: "synthetic-model",
+      promptVersion: "writing-v1",
+      schemaVersion: "writing-v1",
+      policyVersion: "writing-v1",
+      inputFingerprint: (index + 1).toString(16).padStart(64, "0"),
+      status: "succeeded",
+      attemptCount: 1,
+      totalTokens: 100,
+      durationMs: 250,
+      finishReason: "stop",
+      qualityResult: "passed",
+      startedAt: timestamps[index]!,
+      completedAt: timestamps[index]!,
+      createdAt: timestamps[index]!,
+    }));
+    for (let index = 0; index < runRows.length; index += 25) {
+      database.insert(aiRuns).values(runRows.slice(index, index + 25)).run();
+    }
+
+    const contentRows = Array.from({ length: count }, (_, index) => ({
+      id: index + 1,
+      jobId: index + 1,
+      type: "cover_letter",
+      content: `Draft ${index + 1}`,
+      createdAt: timestamps[index]!,
+      updatedAt: timestamps[index]!,
+    }));
+    for (let index = 0; index < contentRows.length; index += 50) {
+      database.insert(aiGeneratedContent)
+        .values(contentRows.slice(index, index + 50))
+        .run();
+    }
+
+    const historyRows = Array.from({ length: count }, (_, index) => ({
+      id: index + 1,
+      contentId: index + 1,
+      variant: `Draft ${index + 1}`,
+      aiRunId: `writing-run-${index + 1}`,
+      source: "generated",
+      createdAt: timestamps[index]!,
+    }));
+    for (let index = 0; index < historyRows.length; index += 50) {
+      database.insert(aiGenerationHistory)
+        .values(historyRows.slice(index, index + 50))
+        .run();
+    }
+
+    const contents = await getWritingHistoryContents(database);
+
+    expect(contents).toHaveLength(count);
+    expect(contents.map((content) => content.id)).toEqual(
+      Array.from({ length: count }, (_, index) => count - index)
+    );
+    expect(contents.map((content) => content.history.map((history) => history.aiRunId)))
+      .toEqual(Array.from(
+        { length: count },
+        (_, index) => [`writing-run-${count - index}`]
+      ));
+    expect(contents[0]).toMatchObject({
+      id: count,
+      history: [{
+        aiRunId: `writing-run-${count}`,
+        aiRun: {
+          id: `writing-run-${count}`,
+          modelId: "synthetic-model",
+        },
+      }],
+    });
+    expect(contents[count - 1]).toMatchObject({
+      id: 1,
+      history: [{
+        aiRunId: "writing-run-1",
+        aiRun: { id: "writing-run-1", modelId: "synthetic-model" },
+      }],
+    });
+
+    clearWritingHistory(database);
+
+    expect(database.select().from(aiGenerationHistory).all()).toEqual([]);
+    expect(database.select().from(aiGeneratedContent).all()).toEqual([]);
+    expect(database.select().from(aiRuns).all()).toHaveLength(count);
+    expect(database.select().from(jobs).all()).toHaveLength(count);
   });
 });

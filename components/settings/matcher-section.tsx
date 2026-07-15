@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ModelCombobox } from "@/components/settings/model-combobox";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -211,6 +211,25 @@ export function MatcherSection({
                     error={modelsError}
                     placeholder="Select model"
                   />
+                  {supportsReasoning && (
+                    <Select value={matcherReasoningEffort} onValueChange={onMatcherReasoningEffortChange}>
+                      <SelectTrigger
+                        aria-label="Reasoning effort"
+                        className="w-32 bg-background/60 border-border"
+                      >
+                        <SelectValue placeholder="Effort" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {REASONING_EFFORT_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
                 {modelsError && (
                   <p className="text-xs text-amber-400 flex items-center gap-2">
@@ -318,24 +337,7 @@ export function MatcherSection({
               </div>
 
               {showAdvanced && (
-                <div className="grid gap-4 rounded-lg border border-border bg-background/30 p-4 sm:grid-cols-2 lg:grid-cols-5">
-                    {supportsReasoning && (
-                      <div className="space-y-2">
-                        <Label className="text-xs text-muted-foreground">Reasoning effort</Label>
-                        <Select value={matcherReasoningEffort} onValueChange={onMatcherReasoningEffortChange}>
-                          <SelectTrigger className="bg-background/60 border-border">
-                            <SelectValue placeholder="Effort" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {REASONING_EFFORT_OPTIONS.map((option) => (
-                              <SelectItem key={option.value} value={option.value}>
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
+                <div className="grid gap-4 rounded-lg border border-border bg-background/30 p-4 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="space-y-2">
                       <Label htmlFor="batch-size" className="text-xs text-muted-foreground">Analysis batch</Label>
                       <Input

@@ -1,4 +1,5 @@
 import type { AIContentType } from "@/lib/ai/contracts";
+import type { AIRunSummary } from "@/lib/ai/observability";
 
 export interface HistoryVariant {
   id: number;
@@ -6,13 +7,14 @@ export interface HistoryVariant {
   userPrompt: string | null;
   parentVariantId: number | null;
   aiRunId: string | null;
+  aiRun?: AIRunSummary | null;
   source: "generated" | "manual_edit";
   selectedAt: string | null;
   copiedAt: string | null;
   discardedAt: string | null;
   editDistance: number | null;
   editDistanceRatio: number | null;
-  createdAt: string;
+  createdAt: string | null;
 }
 
 export interface GeneratedContent {

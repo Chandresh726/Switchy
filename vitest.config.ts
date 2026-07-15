@@ -7,8 +7,8 @@ export default defineConfig({
   test: {
     coverage: {
       provider: "v8",
-      include: ["lib/scraper/**/*.ts"],
-      exclude: ["lib/scraper/**/index.ts"],
+      include: ["lib/ai/**/*.ts", "lib/scraper/**/*.ts"],
+      exclude: ["lib/ai/**/index.ts", "lib/scraper/**/index.ts"],
       reporter: ["text", "html"],
       reportsDirectory: "coverage",
     },

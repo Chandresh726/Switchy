@@ -344,6 +344,7 @@ export const aiRuns = sqliteTable("ai_runs", {
   ),
   subjectIdx: index("ai_runs_subject_idx").on(table.subjectType, table.subjectId),
   statusCreatedIdx: index("ai_runs_status_created_idx").on(table.status, table.createdAt),
+  createdAtIdx: index("ai_runs_created_at_idx").on(table.createdAt),
 }));
 
 // Immutable normalized candidate evidence used by versioned matching.
@@ -446,6 +447,10 @@ export const matchLogs = sqliteTable("match_logs", {
   completedAt: integer("completed_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 }, (table) => ({
   sessionIdIdx: index("match_logs_session_id_idx").on(table.sessionId),
+  modelCompletedIdx: index("match_logs_model_completed_idx").on(
+    table.modelUsed,
+    table.completedAt
+  ),
 }));
 
 export const aiGeneratedContent = sqliteTable("aiGeneratedContent", {

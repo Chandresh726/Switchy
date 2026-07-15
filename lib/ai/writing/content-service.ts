@@ -240,7 +240,10 @@ function toContentResponse(
       discardedAt: item.discardedAt ? formatDate(item.discardedAt) : null,
       editDistance: item.editDistance,
       editDistanceRatio: item.editDistanceRatio,
-      createdAt: formatDate(item.createdAt),
+      createdAt: item.createdAt?.toISOString()
+        ?? content.createdAt?.toISOString()
+        ?? content.updatedAt?.toISOString()
+        ?? null,
     })),
   };
 }

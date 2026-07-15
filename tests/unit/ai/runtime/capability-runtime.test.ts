@@ -214,6 +214,36 @@ describe("AI capability runtime", () => {
     );
   });
 
+  it("does not retry a provider failure marked nonretryable by the AI SDK", async () => {
+    const providerError = new APICallError({
+      message: "Unauthorized",
+      url: "https://provider.invalid/generate",
+      requestBodyValues: {},
+      statusCode: 401,
+      responseHeaders: {},
+      responseBody: "unauthorized",
+      isRetryable: false,
+    });
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => {
+        throw providerError;
+      },
+    });
+    useModel(model);
+    const runtime = await createAICapabilityRuntime({
+      capability: "writing_referral",
+    });
+
+    await expect(runtime.executeText(executionInput({ maxAttempts: 3 })))
+      .rejects.toBe(providerError);
+
+    expect(model.doGenerateCalls).toHaveLength(1);
+    expect(mocks.completeFailure).toHaveBeenCalledWith(
+      "run-1",
+      expect.objectContaining({ attempts: 1 })
+    );
+  });
+
   it("honors configured cancellable backoff and accumulates retry usage", async () => {
     vi.useFakeTimers();
     const model = new MockLanguageModelV4({

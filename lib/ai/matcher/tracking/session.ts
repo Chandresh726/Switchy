@@ -1,11 +1,12 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 import { fetchCandidateProfileSnapshot } from "@/lib/ai/profile/profile-snapshot";
+import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { db } from "@/lib/db";
 import { jobs, matchSessions, matchLogs, settings } from "@/lib/db/schema";
 import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
 
-import type { MatchSessionResult, TriggerSource, ProfileData, JobData } from "../types";
+import type { ProfileData, JobData } from "../types";
 
 export async function fetchProfileData(): Promise<ProfileData | null> {
   const snapshot = await fetchCandidateProfileSnapshot();
@@ -104,147 +105,26 @@ export async function getUnmatchedJobCount(): Promise<number> {
   return getFreshUnmatchedJobCount();
 }
 
-export async function createMatchSession(
-  jobIds: number[],
-  triggerSource: TriggerSource,
-  companyId?: number
-): Promise<string> {
-  const sessionId = crypto.randomUUID();
-
-  await db.insert(matchSessions).values({
-    id: sessionId,
-    triggerSource,
-    companyId: companyId || null,
-    status: "in_progress",
-    jobsTotal: jobIds.length,
-    jobsCompleted: 0,
-    jobsSucceeded: 0,
-    jobsFailed: 0,
-    errorCount: 0,
-    startedAt: new Date(),
-  });
-
-  return sessionId;
-}
-
-export async function updateMatchSession(
-  sessionId: string,
-  updates: {
-    status?: "queued" | "in_progress" | "completed" | "failed";
-    jobsCompleted?: number;
-    jobsSucceeded?: number;
-    jobsFailed?: number;
-    errorCount?: number;
-    startedAt?: Date;
-  }
-): Promise<void> {
-  await db
-    .update(matchSessions)
-    .set({
-      ...updates,
-      ...(updates.status === "completed" || updates.status === "failed"
-        ? { completedAt: new Date() }
-        : {}),
-    })
-    .where(eq(matchSessions.id, sessionId));
-}
-
-export async function updateMatchSessionIfActive(
-  sessionId: string,
-  updates: {
-    status?: "queued" | "in_progress" | "completed" | "failed";
-    jobsCompleted?: number;
-    jobsSucceeded?: number;
-    jobsFailed?: number;
-    errorCount?: number;
-    startedAt?: Date;
-  }
-): Promise<boolean> {
-  const updated = await db
-    .update(matchSessions)
-    .set({
-      ...updates,
-      ...(updates.status === "completed" || updates.status === "failed"
-        ? { completedAt: new Date() }
-        : {}),
-    })
-    .where(
-      and(
-        eq(matchSessions.id, sessionId),
-        inArray(matchSessions.status, ["in_progress", "queued"])
-      )
-    )
-    .returning({ id: matchSessions.id });
-
-  return updated.length > 0;
-}
-
-export async function logMatchSuccess(
-  sessionId: string,
-  jobId: number,
-  score: number,
-  attemptCount: number,
-  duration: number,
-  modelUsed: string
-): Promise<void> {
-  await db.insert(matchLogs).values({
-    sessionId,
-    jobId,
-    status: "success",
-    score,
-    attemptCount,
-    duration,
-    modelUsed,
-  });
-}
-
 export async function logMatchFailure(
   sessionId: string,
   jobId: number,
   duration: number,
-  errorType: string,
-  errorMessage: string,
+  error: unknown,
   attemptCount: number,
-  modelUsed: string
+  modelUsed: string,
+  database: typeof db = db
 ): Promise<void> {
-  await db.insert(matchLogs).values({
+  const sanitized = sanitizeAIError(error);
+  await database.insert(matchLogs).values({
     sessionId,
     jobId,
     status: "failed",
-    errorType,
-    errorMessage: errorMessage.slice(0, 1000),
+    errorType: sanitized.code,
+    errorMessage: sanitized.message,
     attemptCount,
     duration,
     modelUsed,
   });
-}
-
-export async function finalizeMatchSession(
-  sessionId: string,
-  succeeded: number,
-  failed: number,
-  total: number
-): Promise<MatchSessionResult> {
-  const finalStatus = failed === total ? "failed" : "completed";
-
-  await db
-    .update(matchSessions)
-    .set({
-      status: finalStatus,
-      jobsCompleted: total,
-      jobsSucceeded: succeeded,
-      jobsFailed: failed,
-      errorCount: failed,
-      completedAt: new Date(),
-    })
-    .where(eq(matchSessions.id, sessionId));
-
-  return {
-    sessionId,
-    total,
-    succeeded,
-    failed,
-  };
 }
 
 export async function getMatchSessionStatus(sessionId: string) {
@@ -264,41 +144,4 @@ export async function getMatchSessionStatus(sessionId: string) {
     .limit(1);
 
   return session || null;
-}
-
-export interface MatchSessionCheckpoint {
-  completedJobIds: number[];
-  succeeded: number;
-  failed: number;
-}
-
-export async function getMatchSessionCheckpoint(
-  sessionId: string,
-  jobIds: number[]
-): Promise<MatchSessionCheckpoint> {
-  if (jobIds.length === 0) {
-    return { completedJobIds: [], succeeded: 0, failed: 0 };
-  }
-
-  const logs = await db
-    .select({ id: matchLogs.id, jobId: matchLogs.jobId, status: matchLogs.status })
-    .from(matchLogs)
-    .where(
-      and(
-        eq(matchLogs.sessionId, sessionId),
-        inArray(matchLogs.jobId, jobIds)
-      )
-    )
-    .orderBy(asc(matchLogs.id));
-  const finalStatusByJob = new Map<number, string>();
-  for (const log of logs) {
-    if (log.jobId !== null) finalStatusByJob.set(log.jobId, log.status);
-  }
-
-  const statuses = Array.from(finalStatusByJob.values());
-  return {
-    completedJobIds: Array.from(finalStatusByJob.keys()),
-    succeeded: statuses.filter((status) => status === "success").length,
-    failed: statuses.filter((status) => status !== "success").length,
-  };
 }

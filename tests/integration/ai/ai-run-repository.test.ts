@@ -7,7 +7,7 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createAIRunRepository } from "@/lib/ai/runtime/run-repository";
-import { aiRuns, settings } from "@/lib/db/schema";
+import { aiRuns, aiWorkItems, settings } from "@/lib/db/schema";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-ai-runs-");
@@ -225,12 +225,21 @@ describe("AI run migration and repository", () => {
     );
 
     const databasePath = join(home, ".switchy", "switchy.db");
-    const { database } = harness.connect(databasePath);
+    const { connection, database } = harness.connect(databasePath);
     expect(database.select().from(aiRuns).all()).toEqual([]);
+    expect(database.select().from(aiWorkItems).all()).toEqual([]);
+    expect(connection.pragma("index_list('ai_runs')")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "ai_runs_created_at_idx" })])
+    );
+    expect(connection.pragma("index_list('match_logs')")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "match_logs_model_completed_idx" }),
+      ])
+    );
   });
 
   it("upgrades a populated pre-ledger database without losing existing data", () => {
-    const { database } = harness.createDatabase({ migrate: false });
+    const { connection, database } = harness.createDatabase({ migrate: false });
     migrate(database, { migrationsFolder: createLegacyMigrationsFolder() });
     database.insert(settings).values({ key: "fixture", value: "preserved" }).run();
 
@@ -242,5 +251,13 @@ describe("AI run migration and repository", () => {
       expect.objectContaining({ key: "fixture", value: "preserved" })
     );
     expect(runs).toEqual([]);
+    expect(connection.pragma("index_list('ai_runs')")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "ai_runs_created_at_idx" })])
+    );
+    expect(connection.pragma("index_list('match_logs')")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "match_logs_model_completed_idx" }),
+      ])
+    );
   });
 });

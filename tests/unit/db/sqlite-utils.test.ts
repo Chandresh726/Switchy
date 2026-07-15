@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   chunkSqliteParameters,
   isSqliteBusyError,
+  loadSqliteParameterChunks,
   withSqliteBusyRetry,
 } from "@/lib/db/sqlite-utils";
 
@@ -15,6 +16,19 @@ describe("SQLite utilities", () => {
     expect(chunks).toEqual([[values[0], values[1]], [values[2]]]);
     expect(chunks[0]?.[0]).toBe(values[0]);
     expect(() => chunkSqliteParameters(values, 0)).toThrow(RangeError);
+  });
+
+  it("loads more parameters than one SQLite-safe chunk in stable order", async () => {
+    const values = Array.from({ length: 1_001 }, (_, index) => index + 1);
+    const load = vi.fn(async (chunk: number[]) => chunk.map((value) => `row-${value}`));
+
+    const rows = await loadSqliteParameterChunks(values, load);
+
+    expect(load).toHaveBeenCalledTimes(3);
+    expect(load.mock.calls.map(([chunk]) => chunk.length)).toEqual([400, 400, 201]);
+    expect(rows).toHaveLength(1_001);
+    expect(rows[0]).toBe("row-1");
+    expect(rows.at(-1)).toBe("row-1001");
   });
 
   it("detects wrapped SQLite busy errors but not unrelated failures", () => {

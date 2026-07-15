@@ -375,6 +375,39 @@ describe("versioned AI artifact repository", () => {
     expect(database.select().from(matchResults).all()).toEqual([]);
   });
 
+  it("does not persist a match result when cancellation is already requested", async () => {
+    const { database } = harness.createDatabase();
+    const repository = createArtifactRepository(database);
+    const persistedJob = insertJob(database);
+    const candidateArtifact = await repository.getOrCreateCandidateSnapshot({
+      snapshotVersion: "candidate-v1",
+      evidence: candidateEvidence(),
+    });
+    const jobArtifact = await repository.getOrCreateJobAnalysis({
+      jobEvidence: jobEvidence(),
+      extractorVersion: "extractor-v1",
+      evidence: analysisEvidence(),
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(repository.createMatchResult({
+      jobId: persistedJob.id,
+      candidateSnapshotId: candidateArtifact.id,
+      jobAnalysisId: jobArtifact.id,
+      candidateFingerprint: candidateArtifact.fingerprint,
+      jobFingerprint: jobArtifact.jobFingerprint,
+      scoringPolicyVersion: "scoring-v1",
+      score: 80,
+      breakdown: { experience: 80 },
+      evidence: { reasons: [] },
+      confidence: 0.8,
+      source: "deterministic",
+      signal: controller.signal,
+    })).rejects.toMatchObject({ name: "AbortError" });
+    expect(database.select().from(matchResults).all()).toEqual([]);
+  });
+
   it("forces legacy results to remain stale at the repository boundary", async () => {
     const { database } = harness.createDatabase();
     const repository = createArtifactRepository(database);

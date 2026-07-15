@@ -101,6 +101,7 @@ export interface CreateMatchResultInput {
   source: "legacy" | "deterministic" | "adjudicated";
   adjudicationRunId?: string;
   isStale?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface MatchFreshnessInput {
@@ -200,6 +201,7 @@ export function createArtifactRepository(database: ArtifactDatabase) {
     },
 
     async createMatchResult(input: CreateMatchResultInput) {
+      input.signal?.throwIfAborted();
       const candidateFingerprint = ArtifactFingerprintSchema.parse(input.candidateFingerprint);
       const jobFingerprint = ArtifactFingerprintSchema.parse(input.jobFingerprint);
       const scoringPolicyVersion = ArtifactVersionSchema.parse(input.scoringPolicyVersion);
@@ -224,6 +226,7 @@ export function createArtifactRepository(database: ArtifactDatabase) {
       }
       if (source === "adjudicated") {
         await requireSuccessfulRun(input.adjudicationRunId!, "match_adjudication");
+        input.signal?.throwIfAborted();
       }
       if (source !== "legacy") {
         const [candidateArtifact, jobArtifact] = await Promise.all([
@@ -244,6 +247,7 @@ export function createArtifactRepository(database: ArtifactDatabase) {
         }
       }
 
+      input.signal?.throwIfAborted();
       await database.insert(matchResults).values({
         id: randomUUID(),
         jobId: input.jobId,

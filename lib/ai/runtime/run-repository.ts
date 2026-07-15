@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { z } from "zod";
 
-import { AIError, categorizeError } from "@/lib/ai/shared/errors";
+import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import type * as databaseSchema from "@/lib/db/schema";
 import { aiRuns } from "@/lib/db/schema";
 
@@ -130,48 +130,6 @@ interface RecordResolutionFailureInput {
   capability: AICapability;
   inputFingerprint: string;
   error: unknown;
-}
-
-export interface SanitizedAIError {
-  code: string;
-  message: string;
-}
-
-function toError(error: unknown): Error {
-  return error instanceof Error ? error : new Error("Unknown AI execution failure");
-}
-
-export function sanitizeAIError(error: unknown): SanitizedAIError {
-  const normalized = toError(error);
-
-  if (normalized.name === "AbortError") {
-    return { code: "aborted", message: "The AI request was cancelled." };
-  }
-
-  const code = normalized instanceof AIError
-    ? normalized.type
-    : categorizeError(normalized);
-  const messages: Record<string, string> = {
-    circuit_breaker: "The AI provider is temporarily unavailable.",
-    decryption_failed: "The configured provider credentials could not be read.",
-    generation_failed: "The AI provider could not complete the request.",
-    invalid_model: "The configured AI model is unavailable.",
-    json_parse: "The AI provider returned an invalid structured response.",
-    missing_api_key: "The configured provider is missing an API key.",
-    network: "The AI provider could not be reached.",
-    no_object: "The AI provider did not return the required structured response.",
-    provider_not_found: "The configured AI provider is unavailable.",
-    rate_limit: "The AI provider rate limit was reached.",
-    reasoning_not_supported: "The configured model does not support this reasoning policy.",
-    timeout: "The AI request timed out.",
-    validation: "The AI response failed validation.",
-    unknown: "The AI request failed.",
-  };
-
-  return {
-    code,
-    message: messages[code] ?? messages.unknown,
-  };
 }
 
 function serializeMetadata(

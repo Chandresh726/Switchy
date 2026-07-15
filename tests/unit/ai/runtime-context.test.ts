@@ -35,8 +35,7 @@ vi.mock("@/lib/ai/providers", () => ({
 }));
 
 import {
-  resolveAIContextForFeature,
-  resolveAIContextFromExplicitConfig,
+  resolveAIContextForCapability,
 } from "@/lib/ai/runtime-context";
 
 interface SelectResponse {
@@ -95,7 +94,7 @@ describe("AI runtime context resolution", () => {
       { rows: [providerRecord()] }
     );
 
-    const context = await resolveAIContextForFeature("matcher");
+    const context = await resolveAIContextForCapability("job_analysis");
 
     expect(context).toMatchObject({
       providerRecordId: "provider-1",
@@ -132,7 +131,7 @@ describe("AI runtime context resolution", () => {
       source: "live",
     });
 
-    const context = await resolveAIContextForFeature("resume_parser");
+    const context = await resolveAIContextForCapability("resume_parse");
 
     expect(context.modelId).toBe("initialized-model");
     expect(mocks.decryptApiKey).toHaveBeenCalledTimes(1);
@@ -174,8 +173,8 @@ describe("AI runtime context resolution", () => {
     }>();
     mocks.getProviderModelsForResolvedProvider.mockReturnValue(discovery.promise);
 
-    const first = resolveAIContextForFeature("resume_parser");
-    const second = resolveAIContextForFeature("resume_parser");
+    const first = resolveAIContextForCapability("resume_parse");
+    const second = resolveAIContextForCapability("resume_parse");
     await vi.waitFor(() => {
       expect(mocks.getProviderModelsForResolvedProvider).toHaveBeenCalledTimes(1);
     });
@@ -196,10 +195,10 @@ describe("AI runtime context resolution", () => {
   });
 
   it("fails clearly when an explicit provider is unavailable", async () => {
-    selectQueue.push({ rows: [] });
+    selectQueue.push({ rows: [] }, { rows: [] });
 
     await expect(
-      resolveAIContextFromExplicitConfig({
+      resolveAIContextForCapability("job_analysis", {
         providerId: "missing-provider",
         modelId: "configured-model",
       })

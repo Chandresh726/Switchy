@@ -22,6 +22,7 @@ import Link from "next/link";
 import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
 import { toast } from "sonner";
 import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import type { AIRunSummary } from "@/lib/ai/observability";
 import { formatDurationMs, formatDurationFromDates, formatDateTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
 
@@ -54,6 +55,10 @@ interface MatchLog {
   duration: number | null;
   modelUsed: string | null;
   completedAt: Date | null;
+  analysisRunId?: string | null;
+  analysisRun?: AIRunSummary | null;
+  adjudicationRunId?: string | null;
+  adjudicationRun?: AIRunSummary | null;
 }
 
 interface SessionDetailResponse {
@@ -410,6 +415,20 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
                     {log.modelUsed && (
                       <div className="mt-2 text-xs text-muted-foreground">
                         Model: {log.modelUsed}
+                      </div>
+                    )}
+                    {(log.analysisRun || log.adjudicationRun) && (
+                      <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
+                        {log.analysisRun ? (
+                          <p title={`Run ${log.analysisRun.id}`}>
+                            Analysis: {log.analysisRun.modelId} · {log.analysisRun.status}
+                          </p>
+                        ) : null}
+                        {log.adjudicationRun ? (
+                          <p title={`Run ${log.adjudicationRun.id}`}>
+                            Adjudication: {log.adjudicationRun.modelId} · {log.adjudicationRun.attempts} attempt{log.adjudicationRun.attempts === 1 ? "" : "s"}
+                          </p>
+                        ) : null}
                       </div>
                     )}
                   </Link>

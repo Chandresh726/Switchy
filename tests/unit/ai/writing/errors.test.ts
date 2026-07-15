@@ -12,9 +12,11 @@ describe("writing error compatibility", () => {
       })
     );
 
-    expect(normalized).toEqual(
-      new Error("Generated content quality was too low. Please try again.")
-    );
+    expect(normalized).toMatchObject({
+      type: "quality_gate",
+      message: "Generated content quality was too low. Please try again.",
+      retryable: false,
+    });
   });
 
   it("does not rewrite unrelated provider failures", () => {

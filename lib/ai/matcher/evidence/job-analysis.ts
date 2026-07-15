@@ -12,6 +12,7 @@ import {
 } from "@/lib/ai/artifacts/schemas";
 import { fingerprintAIInput } from "@/lib/ai/runtime/fingerprint";
 import type { AICapabilityRuntime } from "@/lib/ai/runtime/capability-runtime";
+import { sanitizeAIError } from "@/lib/ai/shared/errors";
 
 import type { JobData, MatcherConfig } from "../types";
 import { estimateRequiredExperienceYears, extractRequirements, htmlToText } from "../utils";
@@ -19,6 +20,11 @@ import { normalizeSkill } from "./candidate";
 
 export const JOB_ANALYSIS_EXTRACTOR_VERSION = "job-analysis-v1";
 export const MAX_ANALYSIS_PROMPT_CHARS = 40_000;
+
+function warnWithSanitizedError(message: string, error: unknown): void {
+  const sanitized = sanitizeAIError(error);
+  console.warn(`${message} [${sanitized.code}] ${sanitized.message}`);
+}
 
 const ANALYSIS_PROMPT_HEADER = `Extract structured hiring evidence for each job below.
 
@@ -282,7 +288,10 @@ export async function analyzeJobsForMatching(
       });
     } catch (error) {
       runtime = null;
-      console.warn("[JobAnalysis] AI model unavailable; using deterministic extraction.", error);
+      warnWithSanitizedError(
+        "[JobAnalysis] AI model unavailable; using deterministic extraction.",
+        error
+      );
     }
   }
 
@@ -335,12 +344,16 @@ export async function analyzeJobsForMatching(
         }));
       } catch (error) {
         signal?.throwIfAborted();
-        console.warn("[JobAnalysis] Batch extraction failed; using deterministic fallback.", error);
+        warnWithSanitizedError(
+          "[JobAnalysis] Batch extraction failed; using deterministic fallback.",
+          error
+        );
       }
     }
 
     for (const job of batch) {
       if (shouldStop && await shouldStop()) break;
+      signal?.throwIfAborted();
       const item = pendingById.get(job.id);
       if (!item) continue;
       const analysisResult = extracted.get(job.id) ?? {

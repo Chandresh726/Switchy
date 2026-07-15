@@ -13,6 +13,7 @@ import { dispatchPendingAIWork } from "./dispatcher";
 import {
   DrizzleAIWorkStore,
   enqueueMatchWork,
+  insertCompletedEmptyMatchSession,
   type StopMatchSessionResult,
 } from "./repository";
 
@@ -31,6 +32,12 @@ export function queueMatchWork(input: QueueMatchInput): {
   const queued = enqueueMatchWork(db, input);
   dispatchPendingAIWork();
   return queued;
+}
+
+export function completeEmptyMatchSession(
+  input: Omit<QueueMatchInput, "jobIds">
+): { sessionId: string; status: "completed"; total: 0 } {
+  return insertCompletedEmptyMatchSession(db, input);
 }
 
 export async function stopAIWorkSession(

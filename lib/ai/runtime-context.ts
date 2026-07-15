@@ -259,13 +259,7 @@ async function resolveAIContext(
   };
 }
 
-export async function resolveAIContextFromExplicitConfig(
-  options: AIContextOverrides
-): Promise<ResolvedAIContext> {
-  return resolveAIContext(options);
-}
-
-export async function resolveAIContextForFeature(
+async function resolveAIContextForFeature(
   feature: AIFeature,
   overrides: AIContextOverrides = {}
 ): Promise<ResolvedAIContext> {

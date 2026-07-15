@@ -17,16 +17,12 @@ export const DEFAULT_SETTINGS = {
   resume_parser_model: "",
   resume_parser_provider_id: "",
   resume_parser_reasoning_effort: "medium",
-  matcher_bulk_enabled: "true",
   matcher_batch_size: "2",
   matcher_max_retries: "3",
   matcher_concurrency_limit: "3",
-  matcher_serialize_operations: "false",
   matcher_timeout_ms: "30000",
   matcher_backoff_base_delay: "2000",
   matcher_backoff_max_delay: "32000",
-  matcher_circuit_breaker_threshold: "10",
-  matcher_circuit_breaker_reset_timeout: "60000",
   matcher_auto_match_after_scrape: "true",
   scheduler_enabled: "true",
   scheduler_cron: "0 */6 * * *",
@@ -229,12 +225,6 @@ function parseSettingValue(
       return { value: parseNumberInRange(key, value, 500, 10_000), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     case "matcher_backoff_max_delay":
       return { value: parseNumberInRange(key, value, 5_000, 120_000), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
-    case "matcher_circuit_breaker_threshold":
-      return { value: parseNumberInRange(key, value, 3, 50), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
-    case "matcher_circuit_breaker_reset_timeout":
-      return { value: parseNumberInRange(key, value, 10_000, 300_000), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
-    case "matcher_bulk_enabled":
-    case "matcher_serialize_operations":
     case "matcher_auto_match_after_scrape":
     case "scraper_keep_device_awake":
       return { value: parseBooleanValue(value), cronUpdated: false, enabledChanged: false, newEnabledValue: null };

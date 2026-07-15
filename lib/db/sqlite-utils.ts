@@ -19,6 +19,18 @@ export function chunkSqliteParameters<T>(
   return chunks;
 }
 
+export async function loadSqliteParameterChunks<TValue, TResult>(
+  values: readonly TValue[],
+  load: (chunk: TValue[]) => PromiseLike<readonly TResult[]>,
+  chunkSize = DEFAULT_SQLITE_PARAMETER_CHUNK_SIZE
+): Promise<TResult[]> {
+  const results: TResult[] = [];
+  for (const chunk of chunkSqliteParameters(values, chunkSize)) {
+    results.push(...await load(chunk));
+  }
+  return results;
+}
+
 export function isSqliteBusyError(error: unknown): boolean {
   let current: unknown = error;
   for (

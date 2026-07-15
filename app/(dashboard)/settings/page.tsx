@@ -998,11 +998,11 @@ function SettingsContent() {
 
   const matchUnmatchedMutation = useMutation<{
     total: number;
-    status: "queued";
+    status: "queued" | "completed";
     sessionId: string;
   }>({
     mutationFn: () =>
-      apiPost<{ total: number; status: "queued"; sessionId: string }>(
+      apiPost<{ total: number; status: "queued" | "completed"; sessionId: string }>(
         "/api/jobs/match-unmatched",
         {},
         "Failed to match jobs"

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { AIError } from "@/lib/ai/shared/errors";
+import { AIError, sanitizeAIError } from "@/lib/ai/shared/errors";
 import { AppError } from "./error-handler";
 
 export interface APIErrorPayload {
@@ -27,8 +27,10 @@ export class APIValidationError extends Error {
 const AI_ERROR_STATUS_BY_TYPE: Partial<Record<AIError["type"], number>> = {
   provider_not_found: 404,
   missing_api_key: 400,
+  missing_profile: 400,
   invalid_model: 400,
   reasoning_not_supported: 400,
+  quality_gate: 422,
   decryption_failed: 500,
   timeout: 504,
   rate_limit: 429,
@@ -36,14 +38,15 @@ const AI_ERROR_STATUS_BY_TYPE: Partial<Record<AIError["type"], number>> = {
   validation: 400,
   json_parse: 400,
   no_object: 422,
-  circuit_breaker: 503,
 };
 
 const AI_ERROR_CODE_BY_TYPE: Partial<Record<AIError["type"], string>> = {
   provider_not_found: "provider_not_found",
   missing_api_key: "missing_api_key",
+  missing_profile: "missing_profile",
   invalid_model: "invalid_model",
   reasoning_not_supported: "reasoning_not_supported",
+  quality_gate: "quality_gate_failed",
   decryption_failed: "decryption_failed",
   timeout: "ai_timeout",
   rate_limit: "rate_limited",
@@ -51,7 +54,6 @@ const AI_ERROR_CODE_BY_TYPE: Partial<Record<AIError["type"], string>> = {
   validation: "validation_error",
   json_parse: "json_parse_error",
   no_object: "no_structured_output",
-  circuit_breaker: "circuit_breaker_open",
 };
 
 function buildValidationDetails(error: z.ZodError): Array<{
@@ -130,13 +132,13 @@ export function handleAIAPIError(
   }
 
   if (error instanceof AIError) {
+    const sanitized = sanitizeAIError(error);
     const status = AI_ERROR_STATUS_BY_TYPE[error.type] ?? 500;
     const code = AI_ERROR_CODE_BY_TYPE[error.type] ?? "ai_error";
     return apiErrorResponse(
       {
-        error: error.message,
+        error: sanitized.message,
         code,
-        ...(error.context !== undefined ? { details: error.context } : {}),
       },
       status,
       headers
@@ -144,12 +146,17 @@ export function handleAIAPIError(
   }
 
   if (error instanceof Error) {
+    const sanitized = sanitizeAIError(error);
+    const typedCode = sanitized.code as AIError["type"];
+    const isUnknown = sanitized.code === "unknown";
     return apiErrorResponse(
       {
-        error: error.message || fallbackMessage,
-        code: fallbackCode,
+        error: isUnknown ? fallbackMessage : sanitized.message,
+        code: isUnknown
+          ? fallbackCode
+          : AI_ERROR_CODE_BY_TYPE[typedCode] ?? sanitized.code,
       },
-      500,
+      isUnknown ? 500 : AI_ERROR_STATUS_BY_TYPE[typedCode] ?? 500,
       headers
     );
   }

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { fetchCompanyJobIds, queueMatchWork } from "@/lib/ai/work-items";
+import {
+  completeEmptyMatchSession,
+  fetchCompanyJobIds,
+  queueMatchWork,
+} from "@/lib/ai/work-items";
 import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
 
 export async function POST(request: NextRequest) {
@@ -13,7 +17,7 @@ export async function POST(request: NextRequest) {
     const jobIds = await fetchCompanyJobIds(companyIds);
     if (jobIds.length === 0) {
       return NextResponse.json(
-        { sessionId: "", status: "queued", total: 0 },
+        completeEmptyMatchSession({ triggerSource: "manual" }),
         { status: 202 }
       );
     }

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { and, asc, eq, inArray, lte } from "drizzle-orm";
 
-import { sanitizeAIError } from "@/lib/ai/runtime/run-repository";
+import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { db } from "@/lib/db";
 import {
   aiWorkItems,
@@ -19,6 +19,7 @@ import {
   MatchWorkResultSchema,
   parseMatchWorkPayload,
   type CreateAIWorkRecordsInput,
+  type MatchWorkPayload,
   type MatchWorkResult,
 } from "./contracts";
 
@@ -121,6 +122,33 @@ export function enqueueMatchWork(
     tx.insert(aiWorkItems).values(records.workItem).run();
   }, { behavior: "immediate" });
   return { sessionId: id, status: "queued", total: records.session.jobsTotal ?? 0 };
+}
+
+export function insertCompletedEmptyMatchSession(
+  database: typeof db,
+  input: {
+    triggerSource: MatchWorkPayload["triggerSource"];
+    companyId?: number | null;
+    id?: string;
+    now?: Date;
+  }
+): { sessionId: string; status: "completed"; total: 0 } {
+  const id = input.id ?? randomUUID();
+  const now = input.now ?? new Date();
+  database.insert(matchSessions).values({
+    id,
+    triggerSource: input.triggerSource,
+    companyId: input.companyId ?? null,
+    status: "completed",
+    jobsTotal: 0,
+    jobsCompleted: 0,
+    jobsSucceeded: 0,
+    jobsFailed: 0,
+    errorCount: 0,
+    startedAt: now,
+    completedAt: now,
+  }).run();
+  return { sessionId: id, status: "completed", total: 0 };
 }
 
 export class DrizzleAIWorkStore implements AIWorkStore {

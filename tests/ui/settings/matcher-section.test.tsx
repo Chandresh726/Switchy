@@ -85,13 +85,22 @@ describe("MatcherSection", () => {
   it("keeps operational overrides behind Advanced settings", () => {
     render(<MatcherSection {...createProps()} />);
 
+    expect(screen.getByRole("combobox", { name: "Reasoning effort" })).toBeTruthy();
     expect(screen.queryByLabelText("Analysis batch")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show advanced" }));
 
-    expect(screen.getByText("Reasoning effort")).toBeTruthy();
     expect(screen.getByLabelText("Analysis batch")).toBeTruthy();
     expect(screen.getByLabelText("Max attempts")).toBeTruthy();
     expect(screen.getByLabelText("Timeout (sec)")).toBeTruthy();
     expect(screen.getByLabelText("Concurrency")).toBeTruthy();
+  });
+
+  it("hides reasoning effort when the selected model does not support it", () => {
+    const props = createProps();
+    props.models[0].supportsReasoning = false;
+
+    render(<MatcherSection {...props} />);
+
+    expect(screen.queryByRole("combobox", { name: "Reasoning effort" })).toBeNull();
   });
 });

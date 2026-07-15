@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { AIContentPostBodySchema } from "@/lib/ai/contracts";
+import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { assertAppRequest } from "@/lib/api";
 import { APIValidationError } from "@/lib/api/ai-error-handler";
-import { sanitizeAIError } from "@/lib/ai/runtime/run-repository";
 import { streamGeneratedContent } from "@/lib/ai/writing/content-service";
 
 const encoder = new TextEncoder();

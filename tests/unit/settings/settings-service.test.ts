@@ -146,12 +146,13 @@ describe("settings service", () => {
     ).toThrow(APIValidationError);
   });
 
-  it("throws validation errors for out-of-range matcher values", () => {
-    expect(() =>
-      parseSettingsUpdateBody({
-        matcher_circuit_breaker_threshold: 100,
-      })
-    ).toThrow(APIValidationError);
+  it("ignores removed matcher settings so legacy rows stay inert", () => {
+    expect(parseSettingsUpdateBody({
+      matcher_bulk_enabled: true,
+      matcher_serialize_operations: true,
+      matcher_circuit_breaker_threshold: 10,
+      matcher_circuit_breaker_reset_timeout: 60_000,
+    }).updates).toEqual([]);
   });
 
   it("throws validation errors for out-of-range scraper parallel scrapes", () => {

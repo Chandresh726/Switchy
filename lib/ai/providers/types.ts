@@ -93,7 +93,6 @@ export {
   AIRateLimitError,
   AIValidationError,
   AINetworkError,
-  AICircuitBreakerError,
 } from "../shared/errors";
 
 export type { AIErrorType } from "../shared/errors";

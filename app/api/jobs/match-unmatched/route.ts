@@ -5,7 +5,11 @@ import {
   getUnmatchedJobCount,
   getUnmatchedJobIds,
 } from "@/lib/ai/matcher";
-import { getAIWorkSession, queueMatchWork } from "@/lib/ai/work-items";
+import {
+  completeEmptyMatchSession,
+  getAIWorkSession,
+  queueMatchWork,
+} from "@/lib/ai/work-items";
 import { assertAppRequest } from "@/lib/api";
 import { handleAIAPIError } from "@/lib/api/ai-error-handler";
 
@@ -64,7 +68,7 @@ export async function POST(request: Request) {
 
     if (unmatchedJobIds.length === 0) {
       return NextResponse.json(
-        { sessionId: "", status: "queued", total: 0 },
+        completeEmptyMatchSession({ triggerSource: "match_unmatched" }),
         { status: 202 }
       );
     }

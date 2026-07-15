@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   assertAppRequest: vi.fn(),
   handleApiError: vi.fn(),
   fetchCompanyJobIds: vi.fn(),
+  completeEmptyMatchSession: vi.fn(),
   queueMatchWork: vi.fn(),
   select: vi.fn(),
 }));
@@ -17,6 +18,7 @@ vi.mock("@/lib/api", () => ({
 }));
 vi.mock("@/lib/api/ai-error-handler", () => ({ handleAIAPIError: vi.fn() }));
 vi.mock("@/lib/ai/work-items", () => ({
+  completeEmptyMatchSession: mocks.completeEmptyMatchSession,
   fetchCompanyJobIds: mocks.fetchCompanyJobIds,
   queueMatchWork: mocks.queueMatchWork,
 }));
@@ -57,6 +59,11 @@ describe("durable match routes", () => {
       status: "queued",
       total: 1,
     });
+    mocks.completeEmptyMatchSession.mockReturnValue({
+      sessionId: "empty-session",
+      status: "completed",
+      total: 0,
+    });
   });
 
   it("queues bulk-company matching and returns 202 without request-lifetime execution", async () => {
@@ -90,6 +97,45 @@ describe("durable match routes", () => {
       jobIds: [11],
       triggerSource: "company_refresh",
       companyId: 1,
+    });
+  });
+
+  it("creates a pollable completed session for a bulk-company no-op", async () => {
+    mocks.fetchCompanyJobIds.mockResolvedValue([]);
+
+    const response = await postCompaniesMatch(createRequest("/api/companies/match", {
+      companyIds: [1],
+    }));
+
+    expect(response.status).toBe(202);
+    expect(mocks.completeEmptyMatchSession).toHaveBeenCalledWith({
+      triggerSource: "manual",
+    });
+    await expect(response.json()).resolves.toEqual({
+      sessionId: "empty-session",
+      status: "completed",
+      total: 0,
+    });
+  });
+
+  it("creates a pollable completed session for a single-company no-op", async () => {
+    queueSelectResult([{ id: 1 }]);
+    queueSelectResult([]);
+
+    const response = await postCompanyMatch(
+      createRequest("/api/companies/1/match", {}),
+      { params: Promise.resolve({ id: "1" }) }
+    );
+
+    expect(response.status).toBe(202);
+    expect(mocks.completeEmptyMatchSession).toHaveBeenCalledWith({
+      triggerSource: "company_refresh",
+      companyId: 1,
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      sessionId: "empty-session",
+      status: "completed",
+      total: 0,
     });
   });
 

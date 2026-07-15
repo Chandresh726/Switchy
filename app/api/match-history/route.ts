@@ -3,15 +3,18 @@ import { count, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { MatchBreakdownSchema, MatchEvidenceSchema } from "@/lib/ai/artifacts";
 import { getMatchPresentations } from "@/lib/ai/matcher/presentation";
+import { getAIRunSummaries } from "@/lib/ai/observability";
 import { assertAppRequest } from "@/lib/api";
 import { db } from "@/lib/db";
 import {
   companies,
+  jobAnalyses,
   jobs,
   matchLogs,
   matchResults,
   matchSessions,
 } from "@/lib/db/schema";
+import { loadSqliteParameterChunks } from "@/lib/db/sqlite-utils";
 import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 import { stopMatchSession } from "@/lib/scraper/matching/lifecycle";
 import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
@@ -90,13 +93,29 @@ export async function GET(request: NextRequest) {
       const resultIds = Array.from(new Set(logs
         .map((log) => log.matchResultId)
         .filter((resultId): resultId is string => resultId !== null)));
-      const historicalResults = resultIds.length === 0
-        ? []
-        : await db.select().from(matchResults)
-            .where(inArray(matchResults.id, resultIds));
-      const currentJobs = loggedJobIds.length === 0
-        ? []
-        : await db.select({
+      const historicalResults = await loadSqliteParameterChunks(resultIds, (resultIdChunk) =>
+        db.select().from(matchResults)
+          .where(inArray(matchResults.id, resultIdChunk))
+      );
+      const analysisIds = Array.from(new Set(historicalResults
+        .map((result) => result.jobAnalysisId)
+        .filter((analysisId): analysisId is string => typeof analysisId === "string")));
+      const analyses = await loadSqliteParameterChunks(analysisIds, (analysisIdChunk) =>
+        db.select({
+            id: jobAnalyses.id,
+            aiRunId: jobAnalyses.aiRunId,
+          }).from(jobAnalyses).where(inArray(jobAnalyses.id, analysisIdChunk))
+      );
+      const analysisById = new Map(analyses.map((analysis) => [analysis.id, analysis]));
+      const runSummaries = await getAIRunSummaries(historicalResults.flatMap((result) => {
+        const analysisRunId = result.jobAnalysisId
+          ? analysisById.get(result.jobAnalysisId)?.aiRunId
+          : null;
+        return [result.adjudicationRunId, analysisRunId]
+          .filter((runId): runId is string => runId !== null && runId !== undefined);
+      }));
+      const currentJobs = await loadSqliteParameterChunks(loggedJobIds, (jobIdChunk) =>
+        db.select({
             id: jobs.id,
             title: jobs.title,
             description: jobs.description,
@@ -106,7 +125,8 @@ export async function GET(request: NextRequest) {
             department: jobs.department,
             employmentType: jobs.employmentType,
             salary: jobs.salary,
-          }).from(jobs).where(inArray(jobs.id, loggedJobIds));
+          }).from(jobs).where(inArray(jobs.id, jobIdChunk))
+      );
       const currentPresentations = await getMatchPresentations(
         currentJobs,
         undefined,
@@ -125,10 +145,17 @@ export async function GET(request: NextRequest) {
             matchBreakdown: null,
             matchStale: log.score !== null,
             scoringPolicyVersion: null,
+            analysisRunId: null,
+            analysisRun: null,
+            adjudicationRunId: null,
+            adjudicationRun: null,
           };
         }
         const evidence = MatchEvidenceSchema.parse(JSON.parse(result.evidenceJson));
         const current = currentPresentations.get(result.jobId);
+        const analysisRunId = result.jobAnalysisId
+          ? analysisById.get(result.jobAnalysisId)?.aiRunId ?? null
+          : null;
         return {
           ...log,
           score: result.score,
@@ -141,6 +168,12 @@ export async function GET(request: NextRequest) {
           matchBreakdown: MatchBreakdownSchema.parse(JSON.parse(result.breakdownJson)),
           matchStale: !current || current.matchResultId !== result.id || current.matchStale,
           scoringPolicyVersion: result.scoringPolicyVersion,
+          analysisRunId,
+          analysisRun: analysisRunId ? runSummaries.get(analysisRunId) ?? null : null,
+          adjudicationRunId: result.adjudicationRunId,
+          adjudicationRun: result.adjudicationRunId
+            ? runSummaries.get(result.adjudicationRunId) ?? null
+            : null,
         };
       });
 

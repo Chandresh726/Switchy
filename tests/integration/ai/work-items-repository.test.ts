@@ -5,8 +5,11 @@ import {
   importLegacyMatchWork,
   parseMatchWorkPayload,
 } from "@/lib/ai/work-items";
-import { enqueueMatchWork } from "@/lib/ai/work-items/repository";
-import { DrizzleAIWorkStore } from "@/lib/ai/work-items/repository";
+import {
+  DrizzleAIWorkStore,
+  enqueueMatchWork,
+  insertCompletedEmptyMatchSession,
+} from "@/lib/ai/work-items/repository";
 import {
   aiWorkItems,
   companies,
@@ -54,6 +57,29 @@ describe("generic local AI work repository", () => {
       status: "queued",
     });
     expect(parseMatchWorkPayload(work!.payloadJson)).toMatchObject({ jobIds: [3, 7] });
+  });
+
+  it("persists a pollable terminal session when there is no work", () => {
+    const { database } = harness.createDatabase();
+    const completed = insertCompletedEmptyMatchSession(database, {
+      triggerSource: "match_unmatched",
+      id: "empty-session",
+      now: new Date("2026-07-15T00:00:00.000Z"),
+    });
+
+    expect(completed).toEqual({
+      sessionId: "empty-session",
+      status: "completed",
+      total: 0,
+    });
+    expect(database.select().from(matchSessions).get()).toMatchObject({
+      id: "empty-session",
+      status: "completed",
+      jobsTotal: 0,
+      jobsCompleted: 0,
+      completedAt: new Date("2026-07-15T00:00:00.000Z"),
+    });
+    expect(database.select().from(aiWorkItems).all()).toEqual([]);
   });
 
   it("rolls back the session when the work item cannot satisfy its company FK", () => {

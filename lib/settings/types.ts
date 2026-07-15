@@ -19,13 +19,10 @@ export interface SettingsRecord {
   matcher_accepted_location_types: string;
   matcher_accepted_employment_types: string;
   resume_parser_reasoning_effort: string;
-  matcher_bulk_enabled: string;
-  matcher_serialize_operations: string;
   matcher_batch_size: string;
   matcher_max_retries: string;
   matcher_concurrency_limit: string;
   matcher_timeout_ms: string;
-  matcher_circuit_breaker_threshold: string;
   matcher_auto_match_after_scrape: string;
   scheduler_enabled: string;
   scheduler_cron: string;

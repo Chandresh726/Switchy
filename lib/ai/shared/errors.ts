@@ -3,8 +3,10 @@ import { APICallError } from "ai";
 export type AIErrorType =
   | "provider_not_found"
   | "missing_api_key"
+  | "missing_profile"
   | "invalid_model"
   | "reasoning_not_supported"
+  | "quality_gate"
   | "generation_failed"
   | "decryption_failed"
   | "timeout"
@@ -13,7 +15,6 @@ export type AIErrorType =
   | "validation"
   | "json_parse"
   | "no_object"
-  | "circuit_breaker"
   | "unknown";
 
 export interface AIErrorOptions {
@@ -23,6 +24,11 @@ export interface AIErrorOptions {
   retryable?: boolean;
   retryAfterMs?: number;
   context?: Record<string, unknown>;
+}
+
+export interface SanitizedAIError {
+  code: string;
+  message: string;
 }
 
 export class AIError extends Error {
@@ -45,8 +51,10 @@ export class AIError extends Error {
     const nonRetryableTypes: AIErrorType[] = [
       "provider_not_found",
       "missing_api_key",
+      "missing_profile",
       "invalid_model",
       "reasoning_not_supported",
+      "quality_gate",
       "decryption_failed",
       "validation",
       "json_parse",
@@ -126,18 +134,6 @@ export class AINetworkError extends AIError {
       retryable: true,
     });
     this.name = "AINetworkError";
-  }
-}
-
-export class AICircuitBreakerError extends AIError {
-  constructor(message: string, cause?: Error) {
-    super({
-      type: "circuit_breaker",
-      message,
-      cause,
-      retryable: false,
-    });
-    this.name = "AICircuitBreakerError";
   }
 }
 
@@ -247,11 +243,15 @@ export function categorizeError(error: Error): AIErrorType {
   const message = error.message.toLowerCase();
   const name = error.name || "";
 
+  for (const candidate of errorChain(error)) {
+    if (!APICallError.isInstance(candidate)) continue;
+    if (candidate.statusCode === 429) return "rate_limit";
+    if (candidate.statusCode === 408) return "timeout";
+    return "generation_failed";
+  }
+
   if (error instanceof AIValidationError) {
     return "validation";
-  }
-  if (error instanceof AICircuitBreakerError) {
-    return "circuit_breaker";
   }
   if (error instanceof AITimeoutError) {
     return "timeout";
@@ -261,9 +261,6 @@ export function categorizeError(error: Error): AIErrorType {
   }
   if (error instanceof AINetworkError) {
     return "network";
-  }
-  if (name.includes("CircuitBreakerOpenError") || message.includes("circuit breaker")) {
-    return "circuit_breaker";
   }
   if (name.includes("NoObjectGeneratedError") || message.includes("no object generated")) {
     return "no_object";
@@ -287,9 +284,10 @@ export function categorizeError(error: Error): AIErrorType {
   if (message.includes("network") || message.includes("fetch") || message.includes("econnrefused")) {
     return "network";
   }
-  if (isServerError(error) || isRateLimitError(error)) {
+  if (isRateLimitError(error)) {
     return "rate_limit";
   }
+  if (isServerError(error)) return "generation_failed";
   if (
     message.includes("json") ||
     message.includes("parse") ||
@@ -311,11 +309,50 @@ export function categorizeError(error: Error): AIErrorType {
 }
 
 export function isRetryableError(error: Error): boolean {
+  for (const candidate of errorChain(error)) {
+    if (APICallError.isInstance(candidate)) return candidate.isRetryable;
+  }
   if (error instanceof AIError) {
     return error.retryable;
   }
   const errorType = categorizeError(error);
   return AIError.isRetryableType(errorType);
+}
+
+export function sanitizeAIError(error: unknown): SanitizedAIError {
+  const normalized = error instanceof Error
+    ? error
+    : new Error("Unknown AI execution failure");
+
+  if (normalized.name === "AbortError") {
+    return { code: "aborted", message: "The AI request was cancelled." };
+  }
+
+  const code = normalized instanceof AIError
+    ? normalized.type
+    : categorizeError(normalized);
+  const messages: Record<string, string> = {
+    decryption_failed: "The configured provider credentials could not be read.",
+    generation_failed: "The AI provider could not complete the request.",
+    invalid_model: "The configured AI model is unavailable.",
+    json_parse: "The AI provider returned an invalid structured response.",
+    missing_api_key: "The configured provider is missing an API key.",
+    missing_profile: "Create a candidate profile before matching jobs.",
+    network: "The AI provider could not be reached.",
+    no_object: "The AI provider did not return the required structured response.",
+    provider_not_found: "The configured AI provider is unavailable.",
+    quality_gate: "Generated content quality was too low. Please try again.",
+    rate_limit: "The AI provider rate limit was reached.",
+    reasoning_not_supported: "The configured model does not support this reasoning policy.",
+    timeout: "The AI request timed out.",
+    validation: "The AI response failed validation.",
+    unknown: "The AI request failed.",
+  };
+
+  return {
+    code,
+    message: messages[code] ?? messages.unknown,
+  };
 }
 
 export function createAIError(
@@ -333,8 +370,6 @@ export function createAIError(
       return new AIRateLimitError(message, cause, getRetryAfterMs(cause));
     case "network":
       return new AINetworkError(message, cause);
-    case "circuit_breaker":
-      return new AICircuitBreakerError(message, cause);
     default:
       return new AIError({ type, message, cause, context });
   }

@@ -70,7 +70,10 @@ describe("job analysis cache and fallback", () => {
   });
 
   it("persists deterministic low-confidence evidence when provider resolution fails", async () => {
-    mocks.createAICapabilityRuntime.mockRejectedValue(new Error("provider unavailable"));
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    mocks.createAICapabilityRuntime.mockRejectedValue(
+      new Error("provider exposed SENTINEL_JOB_DESCRIPTION")
+    );
 
     const results = await analyzeJobsForMatching([job], DEFAULT_MATCHER_CONFIG);
 
@@ -82,6 +85,8 @@ describe("job analysis cache and fallback", () => {
       aiRunId: undefined,
       evidence: expect.objectContaining({ ambiguities: [expect.stringContaining("fallback")] }),
     }));
+    expect(JSON.stringify(warning.mock.calls)).not.toContain("SENTINEL_JOB_DESCRIPTION");
+    warning.mockRestore();
   });
 
   it("links successful structured extraction to its job-analysis run", async () => {

@@ -23,6 +23,7 @@ export class NvidiaProvider extends BaseProvider {
       name: "nvidia",
       baseURL: NVIDIA_BASE_URL,
       apiKey: providerConfig.apiKey,
+      supportsStructuredOutputs: true,
     });
 
     return nvidia(config.modelId);

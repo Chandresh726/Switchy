@@ -1,3 +1,4 @@
+import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { db } from "@/lib/db";
 import type { AIWorkItem } from "@/lib/db/schema";
 import {
@@ -56,7 +57,10 @@ const scheduledDispatcher = new ScheduledSingleFlightDispatcher({
   run: () => defaultDispatcher.runAvailable(),
   getNextRunAt: (summary) => summary.nextAvailableAt,
   failureRetryMs: DEFAULT_CONFIG.baseRetryDelayMs,
-  onError: (error) => console.error("[AI Work] Dispatch failed:", error),
+  onError: (error) => {
+    const sanitized = sanitizeAIError(error);
+    console.error(`[AI Work] Dispatch failed: [${sanitized.code}] ${sanitized.message}`);
+  },
 });
 
 export function dispatchPendingAIWork(): void {

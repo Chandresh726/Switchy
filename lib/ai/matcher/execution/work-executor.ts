@@ -4,9 +4,11 @@ import {
 } from "@/lib/scraper/runtime/data-operation-gate";
 
 import { getMatcherConfig } from "../config";
-import { withQueue } from "../queue";
-import type { StrategyProgressCallback } from "../strategies";
-import type { MatcherConfig, MatchResultMap } from "../types";
+import type {
+  MatcherConfig,
+  MatchResultMap,
+  StrategyProgressCallback,
+} from "../types";
 
 import { executeMatch } from "./executor";
 
@@ -28,24 +30,19 @@ export async function executeConfiguredMatchWork(
   return dataOperationGate.runMatch(
     { jobIds, sessionId: options.sessionId },
     options.signal,
-    (workSignal) =>
-    withQueue(
-      config,
-      async () => {
-        workSignal.throwIfAborted();
-        if ((await options.onStart?.()) === false) return new Map();
-        return executeMatch({
-          config,
-          jobIds,
-          sessionId: options.sessionId,
-          signal: workSignal,
-          onProgress: options.onProgress,
-          shouldStop: options.shouldStop,
-        });
-      },
-      options.onQueued,
-      workSignal
-    )
+    async (workSignal) => {
+      workSignal.throwIfAborted();
+      options.onQueued?.(0);
+      if ((await options.onStart?.()) === false) return new Map();
+      return executeMatch({
+        config,
+        jobIds,
+        sessionId: options.sessionId,
+        signal: workSignal,
+        onProgress: options.onProgress,
+        shouldStop: options.shouldStop,
+      });
+    }
   );
 }
 

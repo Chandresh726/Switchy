@@ -6,8 +6,8 @@ import {
   type MatchEvidence,
 } from "@/lib/ai/artifacts";
 import { createAICapabilityRuntime } from "@/lib/ai/runtime";
+import { AIError, sanitizeAIError } from "@/lib/ai/shared/errors";
 
-import { categorizeError, throwIfAborted } from "../resilience";
 import {
   fetchJobsData,
   fetchMatchingPreferences,
@@ -20,8 +20,8 @@ import type {
   MatchResult,
   MatchResultMap,
   ProfileData,
+  StrategyProgressCallback,
 } from "../types";
-import type { StrategyProgressCallback } from "../strategies";
 import {
   adjudicateMatch,
   buildScoringPolicyVersion,
@@ -35,6 +35,10 @@ import { analyzeJobsForMatching } from "../evidence/job-analysis";
 import { scoreDeterministically } from "../evidence/scoring";
 
 const CANDIDATE_SNAPSHOT_VERSION = "candidate-evidence-v1";
+
+function throwIfAborted(signal?: AbortSignal): void {
+  signal?.throwIfAborted();
+}
 
 export interface ExecuteMatchOptions {
   config: MatcherConfig & { providerId?: string };
@@ -88,17 +92,24 @@ async function persistFailure(input: {
   sessionId?: string;
   duration: number;
   modelUsed: string;
+  attemptCount?: number;
 }): Promise<void> {
   if (!input.sessionId) return;
   await logMatchFailure(
     input.sessionId,
     input.jobId,
     input.duration,
-    categorizeError(input.error),
-    input.error.message,
-    (input.error as Error & { attemptCount?: number }).attemptCount ?? 1,
+    input.error,
+    input.attemptCount
+      ?? (input.error as Error & { attemptCount?: number }).attemptCount
+      ?? 1,
     input.modelUsed
   );
+}
+
+function warnWithSanitizedError(message: string, error: unknown): void {
+  const sanitized = sanitizeAIError(error);
+  console.warn(`${message} [${sanitized.code}] ${sanitized.message}`);
 }
 
 export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchResultMap> {
@@ -114,7 +125,28 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
   throwIfAborted(signal);
 
   if (!profileData) {
-    return new Map(jobIds.map((jobId) => [jobId, new Error("No profile found")]));
+    const missingProfileError = new AIError({
+      type: "missing_profile",
+      message: "Create a candidate profile before matching jobs.",
+      retryable: false,
+    });
+    const missingProfileResults: MatchResultMap = new Map();
+    let completed = 0;
+    for (const jobId of jobIds) {
+      throwIfAborted(signal);
+      missingProfileResults.set(jobId, missingProfileError);
+      await persistFailure({
+        jobId,
+        error: missingProfileError,
+        sessionId,
+        duration: 0,
+        modelUsed: "deterministic",
+        attemptCount: 0,
+      });
+      completed += 1;
+      onProgress?.(completed, jobIds.length, 0, completed);
+    }
+    return missingProfileResults;
   }
 
   const candidateEvidence = enrichCandidateEvidence(buildCandidateEvidence({
@@ -143,7 +175,10 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
       providerConcurrencyLimit: config.concurrencyLimit,
     });
   } catch (error) {
-    console.warn("[EvidenceMatcher] Model policy unavailable; using retryable deterministic results.", error);
+    warnWithSanitizedError(
+      "[EvidenceMatcher] Model policy unavailable; using retryable deterministic results.",
+      error
+    );
   }
   const concreteConfig = modelRuntime
     ? {
@@ -181,7 +216,10 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
       providerConcurrencyLimit: config.concurrencyLimit,
     }).catch((error) => {
       adjudicationUnavailable = true;
-      console.warn("[EvidenceMatcher] Adjudication unavailable; using deterministic score.", error);
+      warnWithSanitizedError(
+        "[EvidenceMatcher] Adjudication unavailable; using deterministic score.",
+        error
+      );
       return null;
     });
     return adjudicationRuntimePromise;
@@ -207,6 +245,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
         : null;
       if (cached) {
         const publicResult = toPublicMatchResult(cached.score, cached.evidence);
+        throwIfAborted(signal);
         await persistPublicResult({
           jobId,
           matchResultId: cached.id,
@@ -256,7 +295,10 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
             evidence.componentEvidence.adjudication = adjudicated.evidenceReferences;
           } catch (error) {
             throwIfAborted(signal);
-            console.warn(`[EvidenceMatcher] Adjudication failed for job ${jobId}; using deterministic score.`, error);
+            warnWithSanitizedError(
+              `[EvidenceMatcher] Adjudication failed for job ${jobId}; using deterministic score.`,
+              error
+            );
           }
         }
       }
@@ -276,6 +318,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
         );
       }
 
+      throwIfAborted(signal);
       const persisted = await artifactRepository.createMatchResult({
         jobId,
         candidateSnapshotId: candidateArtifact.id,
@@ -289,8 +332,10 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
         confidence: deterministic.confidence,
         source,
         adjudicationRunId,
+        signal,
       });
       const publicResult = toPublicMatchResult(persisted.score, persisted.evidence);
+      throwIfAborted(signal);
       await persistPublicResult({
         jobId,
         matchResultId: persisted.id,

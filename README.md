@@ -10,7 +10,7 @@ It helps you discover jobs from multiple ATS platforms, match them against your 
 - Track companies (single and bulk operations), with support for custom career pages + manual ATS override
 - Manage a job pipeline with filters, search, sorting, saved/applied tabs, and match score views
 - Upload and parse resumes, then manage profile, skills, experience, and education data
-- Configure AI-based matching (provider/model, reasoning effort, bulk mode, retry/concurrency/timeout tuning)
+- Configure evidence-based AI matching with Economy, Balanced, or Quality presets and advanced retry, concurrency, and timeout controls
 - Generate AI referral messages and cover letters per job, with editable AI history
 - Run scheduled scraping through a crash-recoverable local queue and review scrape/match/AI histories
 - Keep data local in `~/.switchy` (database, uploads, encryption secret)
@@ -68,6 +68,10 @@ No `.env` setup is required for standard local usage.
 
 Scraping is API-first with direct HTTP and browser fallbacks where a platform requires them. Manual refreshes, scheduled runs, retries, cancellation, and restart recovery share a durable SQLite work queue. See [Scraper Architecture](docs/scraper-architecture.md) for the platform decision tree, reliability guarantees, tuning, and recovery runbook.
 
+## AI Internals
+
+AI execution, evidence-based matching, grounded writing, resume parsing, privacy boundaries, and queue recovery are described in [AI Architecture](docs/ai-architecture.md).
+
 ## Useful Commands
 
 | Command | Description |
@@ -81,6 +85,7 @@ Scraping is API-first with direct HTTP and browser fallbacks where a platform re
 | `pnpm audit` | Check dependencies for known vulnerabilities |
 | `pnpm verify` | Run lint, typecheck, tests, audit, and production build |
 | `pnpm verify:all` | Run root verification plus landing app verification |
+| `pnpm ai:eval` | Run deterministic AI matching, writing, and resume evaluations |
 | `pnpm db:generate` | Generate Drizzle migrations from schema changes |
 | `pnpm db:migrate` | Apply Drizzle migrations |
 | `pnpm db:studio` | Open Drizzle Studio |

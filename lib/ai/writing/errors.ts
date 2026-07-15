@@ -11,7 +11,11 @@ export function preserveWritingGenerationError(error: unknown): unknown {
     error.type === "generation_failed" &&
     error.message === INTERNAL_QUALITY_GATE_MESSAGE
   ) {
-    return new Error(COMPATIBLE_QUALITY_ERROR_MESSAGE);
+    return new AIError({
+      type: "quality_gate",
+      message: COMPATIBLE_QUALITY_ERROR_MESSAGE,
+      retryable: false,
+    });
   }
   return error;
 }
