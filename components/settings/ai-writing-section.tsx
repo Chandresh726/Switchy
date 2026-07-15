@@ -2,15 +2,14 @@
 
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ModelCombobox } from "@/components/settings/model-combobox";
 import {
   hasInvalidReasoningSelection,
   ReasoningEffortControl,
 } from "@/components/settings/reasoning-effort-control";
 import { Separator } from "@/components/ui/separator";
-import { Button } from "@/components/ui/button";
-import { AlertTriangle, FileText, Loader2, MessageCircle, Save, Send, Wand2 } from "lucide-react";
+import { AlertTriangle, FileText, Loader2, MessageCircle, Send, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReasoningEffort } from "@/lib/settings/types";
 import type { Provider, ProviderModelOption } from "@/lib/types";
@@ -39,10 +38,7 @@ interface AIWritingSectionProps {
   onAIWritingProviderIdChange: (value: string) => void;
   aiWritingSettings: AIWritingSettings;
   onAIWritingSettingsChange: (settings: Partial<AIWritingSettings>) => void;
-  onSave: () => void;
   isSaving: boolean;
-  hasUnsavedChanges: boolean;
-  settingsSaved: boolean;
 }
 
 const REFERRAL_TONE_OPTIONS = [
@@ -93,10 +89,7 @@ export function AIWritingSection({
   onAIWritingProviderIdChange,
   aiWritingSettings,
   onAIWritingSettingsChange,
-  onSave,
   isSaving,
-  hasUnsavedChanges,
-  settingsSaved,
 }: AIWritingSectionProps) {
   const currentModel = aiWritingSettings.aiWritingModel;
   const selectedModel = models.find((model) => model.modelId === currentModel);
@@ -141,11 +134,13 @@ export function AIWritingSection({
                     <SelectValue placeholder="Select provider" />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableProviders.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
+                    <SelectGroup>
+                      {availableProviders.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
                 <ModelCombobox
@@ -184,6 +179,12 @@ export function AIWritingSection({
                   The configured model is unavailable. Choose another model or refresh the catalog.
                 </p>
               )}
+              {reasoningSelectionInvalid && (
+                <p className="text-xs text-destructive flex items-center gap-2">
+                  <AlertTriangle />
+                  Choose a reasoning value advertised by this model.
+                </p>
+              )}
               {modelsStale && !modelsError && (
                 <p className="text-xs text-amber-400 flex items-center gap-2">
                   <AlertTriangle className="h-3.5 w-3.5" />
@@ -212,11 +213,13 @@ export function AIWritingSection({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {COVER_LETTER_TONE_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
+                        <SelectGroup>
+                          {COVER_LETTER_TONE_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                   </div>
@@ -231,11 +234,13 @@ export function AIWritingSection({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {COVER_LETTER_LENGTH_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
+                        <SelectGroup>
+                          {COVER_LETTER_LENGTH_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                   </div>
@@ -285,11 +290,13 @@ export function AIWritingSection({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {REFERRAL_TONE_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
+                          <SelectGroup>
+                            {REFERRAL_TONE_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
                         </SelectContent>
                       </Select>
                     </div>
@@ -304,11 +311,13 @@ export function AIWritingSection({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {REFERRAL_LENGTH_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
+                          <SelectGroup>
+                            {REFERRAL_LENGTH_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
                         </SelectContent>
                       </Select>
                     </div>
@@ -338,11 +347,13 @@ export function AIWritingSection({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {FOLLOW_UP_TONE_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
+                          <SelectGroup>
+                            {FOLLOW_UP_TONE_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
                         </SelectContent>
                       </Select>
                     </div>
@@ -357,11 +368,13 @@ export function AIWritingSection({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {FOLLOW_UP_LENGTH_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
+                          <SelectGroup>
+                            {FOLLOW_UP_LENGTH_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
                         </SelectContent>
                       </Select>
                     </div>
@@ -378,33 +391,11 @@ export function AIWritingSection({
           </div>
         )}
       </CardContent>
-      <CardFooter className="flex items-center justify-between border-t border-border bg-card/70 px-6 py-4 rounded-b-xl">
-        <p className="text-xs text-muted-foreground">
-          {!hasProviders ? (
-            "Add a provider to configure AI writing"
-          ) : settingsSaved ? (
-            <span className="flex items-center text-emerald-400 gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              Changes saved successfully
-            </span>
-          ) : hasUnsavedChanges ? (
-            <span className="text-yellow-400">Unsaved changes</span>
-          ) : (
-            "Settings are up to date"
-          )}
+      <CardFooter className="rounded-b-xl border-t border-border bg-card/70 px-6 py-4">
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {isSaving ? <Loader2 className="animate-spin" /> : null}
+          {isSaving ? "Saving changes…" : "Changes save automatically"}
         </p>
-        <Button
-          onClick={onSave}
-          disabled={isSaving || !hasUnsavedChanges || !hasProviders || !aiWritingSettings.aiWritingModel || configuredModelUnavailable || reasoningSelectionInvalid}
-          className="bg-emerald-600 hover:bg-emerald-500 text-foreground min-w-[120px]"
-        >
-          {isSaving ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="mr-2 h-4 w-4" />
-          )}
-          {isSaving ? "Saving..." : "Save Changes"}
-        </Button>
       </CardFooter>
     </Card>
   );

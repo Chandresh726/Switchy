@@ -2,21 +2,17 @@
 
 import { useState } from "react";
 
-import { AlertTriangle, Cpu, Loader2, Save, Settings2, Sparkles } from "lucide-react";
+import { AlertTriangle, Cpu, Loader2, Settings2, Sparkles } from "lucide-react";
 
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ModelCombobox } from "@/components/settings/model-combobox";
-import {
-  hasInvalidReasoningSelection,
-  ReasoningEffortControl,
-} from "@/components/settings/reasoning-effort-control";
+import { ReasoningEffortControl } from "@/components/settings/reasoning-effort-control";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import type { MatchQualityPreset } from "@/lib/ai/matcher/types";
 import type { ReasoningEffort } from "@/lib/settings/types";
 import type { Provider, ProviderModelOption } from "@/lib/types";
 
@@ -33,8 +29,6 @@ export interface MatcherSectionProps {
   onMatcherModelChange: (value: string) => void;
   matcherReasoningEffort: ReasoningEffort;
   onMatcherReasoningEffortChange: (value: ReasoningEffort) => void;
-  qualityPreset: MatchQualityPreset;
-  onQualityPresetChange: (value: MatchQualityPreset) => void;
   acceptedLocationTypes: string[];
   onAcceptedLocationTypesChange: (value: string[]) => void;
   acceptedEmploymentTypes: string[];
@@ -49,10 +43,7 @@ export interface MatcherSectionProps {
   onConcurrencyLimitChange: (value: number) => void;
   timeoutMs: number;
   onTimeoutMsChange: (value: number) => void;
-  onSave: () => void;
   isSaving: boolean;
-  hasUnsavedChanges: boolean;
-  settingsSaved: boolean;
   onMatchUnmatched: () => void;
   isMatching: boolean;
   matchProgress?: { completed: number; total: number; succeeded: number; failed: number };
@@ -72,8 +63,6 @@ export function MatcherSection({
   onMatcherModelChange,
   matcherReasoningEffort,
   onMatcherReasoningEffortChange,
-  qualityPreset,
-  onQualityPresetChange,
   acceptedLocationTypes,
   onAcceptedLocationTypesChange,
   acceptedEmploymentTypes,
@@ -88,10 +77,7 @@ export function MatcherSection({
   onConcurrencyLimitChange,
   timeoutMs,
   onTimeoutMsChange,
-  onSave,
   isSaving,
-  hasUnsavedChanges,
-  settingsSaved,
   onMatchUnmatched,
   isMatching,
   matchProgress,
@@ -99,10 +85,6 @@ export function MatcherSection({
 }: MatcherSectionProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const selectedModel = models.find((model) => model.modelId === matcherModel);
-  const reasoningSelectionInvalid = hasInvalidReasoningSelection(
-    selectedModel,
-    matcherReasoningEffort
-  );
   const configuredModelUnavailable = Boolean(matcherModel) && !selectedModel;
   const toggleValue = (
     current: string[],
@@ -122,7 +104,7 @@ export function MatcherSection({
               <CardTitle>Matching Engine</CardTitle>
             </div>
             <CardDescription>
-              Choose how Switchy scores jobs and when AI should review ambiguity
+              One scoring policy using the provider and job preferences below.
             </CardDescription>
           </div>
           <Button
@@ -160,40 +142,6 @@ export function MatcherSection({
           <>
             {/* Primary Settings */}
             <div className="grid gap-6">
-              <div className="space-y-3">
-                <div>
-                  <Label>Matching quality</Label>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Balanced is recommended. Higher quality asks the model to review more ambiguous matches.
-                  </p>
-                </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  {([
-                    ["economy", "Economy", "Use AI only for unresolved critical requirements."],
-                    ["balanced", "Balanced", "Reason about unclear important requirements and transferable experience."],
-                    ["quality", "Quality", "Review every meaningful requirement for maximum nuance."],
-                  ] as const).map(([value, label, description]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      aria-pressed={qualityPreset === value}
-                      onClick={() => onQualityPresetChange(value)}
-                      className={cn(
-                        "rounded-lg border p-4 text-left transition-colors",
-                        qualityPreset === value
-                          ? "border-emerald-500/60 bg-emerald-500/10"
-                          : "border-border bg-background/30 hover:border-muted-foreground/40"
-                      )}
-                    >
-                      <span className="text-sm font-medium text-foreground">{label}</span>
-                      <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-                        {description}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               {/* Provider and Model */}
               <div className="space-y-3">
                 <Label>AI Provider & Model</Label>
@@ -203,11 +151,13 @@ export function MatcherSection({
                       <SelectValue placeholder="Select provider" />
                     </SelectTrigger>
                     <SelectContent>
-                      {availableProviders.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.name}
-                        </SelectItem>
-                      ))}
+                      <SelectGroup>
+                        {availableProviders.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                   <ModelCombobox
@@ -234,7 +184,7 @@ export function MatcherSection({
                 {configuredModelUnavailable && (
                   <p className="text-xs text-amber-400 flex items-center gap-2">
                     <AlertTriangle className="h-3.5 w-3.5" />
-                    The configured model is unavailable. Choose another model or refresh the catalog.
+                    The configured model is unavailable. Choose an available model or refresh the catalog.
                   </p>
                 )}
                 {modelsStale && !modelsError && (
@@ -244,6 +194,10 @@ export function MatcherSection({
                   </p>
                 )}
               </div>
+
+              <p className="text-xs text-muted-foreground">
+                Selected preferences add score when a job states them.
+              </p>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="flex items-start gap-3 rounded-lg border border-border bg-background/30 p-4">
@@ -398,33 +352,11 @@ export function MatcherSection({
           </div>
         )}
       </CardContent>
-      <CardFooter className="flex items-center justify-between border-t border-border bg-card/70 px-6 py-4 rounded-b-xl">
-        <p className="text-xs text-muted-foreground">
-          {!hasProviders ? (
-            "Add a provider to configure matching"
-          ) : settingsSaved ? (
-            <span className="flex items-center text-emerald-400 gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              Changes saved successfully
-            </span>
-          ) : hasUnsavedChanges ? (
-            <span className="text-yellow-400">Unsaved changes</span>
-          ) : (
-            "Settings are up to date"
-          )}
+      <CardFooter className="rounded-b-xl border-t border-border bg-card/70 px-6 py-4">
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {isSaving ? <Loader2 className="animate-spin" /> : null}
+          {isSaving ? "Saving changes…" : "Changes save automatically"}
         </p>
-        <Button
-          onClick={onSave}
-          disabled={isSaving || !hasUnsavedChanges || !hasProviders || !matcherModel || configuredModelUnavailable || reasoningSelectionInvalid}
-          className="bg-emerald-600 hover:bg-emerald-500 text-foreground min-w-[120px]"
-        >
-          {isSaving ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="mr-2 h-4 w-4" />
-          )}
-          {isSaving ? "Saving..." : "Save Changes"}
-        </Button>
       </CardFooter>
     </Card>
   );

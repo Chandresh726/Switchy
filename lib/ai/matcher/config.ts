@@ -9,7 +9,6 @@ import {
 
 const MATCHER_SETTING_KEYS = [
   "matcher_model",
-  "matcher_quality_preset",
   "matcher_provider_id",
   "matcher_reasoning_effort",
   "matcher_batch_size",
@@ -44,11 +43,6 @@ export async function getMatcherConfig(): Promise<MatcherConfig & { providerId?:
   const storedModelId = settingsMap.get("matcher_model") || undefined;
 
   return {
-    qualityPreset:
-      settingsMap.get("matcher_quality_preset") === "economy" ||
-      settingsMap.get("matcher_quality_preset") === "quality"
-        ? settingsMap.get("matcher_quality_preset") as "economy" | "quality"
-        : "balanced",
     providerId: storedProviderId,
     model: storedModelId ?? "",
     reasoningEffort:

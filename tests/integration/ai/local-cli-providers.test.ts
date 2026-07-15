@@ -3,47 +3,88 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { BUILTIN_CLI_PROVIDER_IDS } from "@/lib/ai/local-cli/constants";
 import { createLocalCLICatalogCache } from "@/lib/ai/local-cli/catalog-cache";
 import {
-  ensureBuiltinCLIProviders,
+  createProvider,
+  deleteProvider,
+  listProviders,
   toProviderPublic,
 } from "@/lib/ai/providers/provider-service";
-import { aiProviders } from "@/lib/db/schema";
+import { aiProviders, settings } from "@/lib/db/schema";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-cli-providers-");
 
-describe("built-in local CLI provider records", () => {
-  it("creates deterministic non-default keyless records idempotently", async () => {
+describe("local CLI provider records", () => {
+  it("starts empty and exposes explicitly added CLI records without credentials", async () => {
     const { database } = harness.createDatabase();
 
-    await ensureBuiltinCLIProviders(database);
-    await ensureBuiltinCLIProviders(database);
+    expect(await listProviders(database)).toEqual([]);
+    const created = await createProvider({ provider: "codex_cli" }, database);
 
-    const providers = await database
-      .select()
-      .from(aiProviders)
-      .orderBy(asc(aiProviders.id));
-    expect(providers).toHaveLength(2);
-    expect(providers).toEqual([
-      expect.objectContaining({
-        id: BUILTIN_CLI_PROVIDER_IDS.codex_cli,
-        provider: "codex_cli",
-        apiKey: null,
-        isDefault: false,
-        isActive: true,
-      }),
-      expect.objectContaining({
-        id: BUILTIN_CLI_PROVIDER_IDS.opencode_cli,
-        provider: "opencode_cli",
-        apiKey: null,
-        isDefault: false,
-        isActive: true,
-      }),
-    ]);
+    const providers = await database.select().from(aiProviders).orderBy(asc(aiProviders.id));
+    expect(providers).toEqual([expect.objectContaining({
+      id: created.id,
+      provider: "codex_cli",
+      apiKey: null,
+      isDefault: true,
+      isActive: true,
+    })]);
     expect(JSON.stringify(providers.map(toProviderPublic))).not.toContain("apiKey");
     expect(JSON.stringify(providers.map(toProviderPublic))).not.toContain("credential");
+    await expect(createProvider({ provider: "codex_cli" }, database)).rejects.toThrow(
+      "already been added"
+    );
+  });
+
+  it("moves feature selections to an available provider and model when deleting one", async () => {
+    const { database } = harness.createDatabase();
+    const selected = await createProvider({ provider: "codex_cli" }, database);
+    const fallback = await createProvider({ provider: "opencode_cli" }, database);
+    await database.insert(settings).values([
+      { key: "matcher_provider_id", value: selected.id },
+      { key: "matcher_model", value: "codex-model" },
+      { key: "matcher_reasoning_effort", value: "high" },
+      { key: "ai_writing_provider_id", value: selected.id },
+      { key: "ai_writing_model", value: "codex-model" },
+      { key: "ai_writing_reasoning_effort", value: "high" },
+    ]);
+
+    const result = await deleteProvider(selected.id, {
+      database,
+      deleteModelsCache: vi.fn().mockResolvedValue(undefined),
+      resetLocalProvider: vi.fn().mockResolvedValue(undefined),
+      resolveModels: vi.fn().mockResolvedValue({
+        models: [{
+          modelId: "fallback-model",
+          label: "Fallback model",
+          description: "",
+          supportsReasoning: true,
+          reasoningControl: {
+            kind: "effort" as const,
+            options: [{ value: "medium" }],
+            defaultValue: "medium",
+          },
+          supportedReasoningEfforts: ["medium"],
+          defaultReasoningEffort: "medium",
+          isDefault: true,
+        }],
+      }),
+    });
+
+    const storedSettings = new Map(
+      (await database.select().from(settings)).map(({ key, value }) => [key, value])
+    );
+    expect(result).toEqual({
+      fallbackProviderId: fallback.id,
+      fallbackModelId: "fallback-model",
+      updatedFeatures: ["matcher_provider_id", "ai_writing_provider_id"],
+    });
+    expect(storedSettings.get("matcher_provider_id")).toBe(fallback.id);
+    expect(storedSettings.get("matcher_model")).toBe("fallback-model");
+    expect(storedSettings.get("matcher_reasoning_effort")).toBe("medium");
+    expect(storedSettings.get("ai_writing_provider_id")).toBe(fallback.id);
+    expect(storedSettings.get("ai_writing_model")).toBe("fallback-model");
   });
 
   it("persists validated capability metadata and can reuse stale metadata for execution", async () => {

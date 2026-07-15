@@ -46,6 +46,12 @@ const modelCache = new Map<LocalCLIProvider, ModelEntry>();
 const modelFlights = new Map<LocalCLIProvider, Promise<ProviderModelDefinition[]>>();
 const openCodeConnectionCache = new Map<LocalCLIProvider, ConnectedProviderEntry>();
 
+export function getCachedLocalCLIStatus(
+  provider: LocalCLIProvider
+): LocalCLIStatus | undefined {
+  return statusCache.get(provider)?.value;
+}
+
 function filterConnectedOpenCodeModels(
   models: ProviderModelDefinition[],
   connectedProviderIds: string[]

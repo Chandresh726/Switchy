@@ -274,7 +274,6 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
       let adjudicationRunId: string | undefined;
       let attempts = 0;
       const adjudicationRequired = shouldAdjudicate(
-        config.qualityPreset,
         deterministic
       );
 

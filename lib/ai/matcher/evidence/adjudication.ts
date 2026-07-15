@@ -8,7 +8,7 @@ import {
 import type { AICapabilityRuntime } from "@/lib/ai/runtime/capability-runtime";
 import { fingerprintAIInput } from "@/lib/ai/runtime/fingerprint";
 
-import type { MatcherConfig, MatchQualityPreset } from "../types";
+import type { MatcherConfig } from "../types";
 import type { CandidateEvidenceItem, ScoringCandidate } from "./candidate";
 import {
   JOB_ANALYSIS_EXTRACTOR_VERSION,
@@ -208,34 +208,22 @@ export interface AdjudicatedScore {
 }
 
 export function shouldAdjudicate(
-  preset: MatchQualityPreset,
   deterministic: DeterministicScoreResult
 ): boolean {
   const meaningful = deterministic.requirementAssessments.filter((assessment) =>
     assessment.importance !== "contextual"
   );
   if (meaningful.length === 0) return false;
-  const unresolvedCritical = meaningful.some((assessment) =>
-    assessment.importance === "critical" &&
-    (assessment.status === "unknown" || assessment.status === "missing")
-  );
-  if (preset === "economy") {
-    return unresolvedCritical || deterministic.confidence < 0.4;
-  }
-
   const unresolvedImportant = meaningful.some((assessment) =>
     (assessment.importance === "critical" || assessment.importance === "important") &&
     (assessment.status === "unknown" || assessment.status === "missing" ||
       assessment.status === "partial_match")
   );
-  if (preset === "balanced") {
-    return unresolvedImportant || deterministic.confidence < 0.75;
-  }
-  return meaningful.length > 0 || deterministic.confidence < 0.9;
+  return unresolvedImportant || deterministic.confidence < 0.75;
 }
 
 export function buildScoringPolicyVersion(
-  config: Pick<MatcherConfig, "qualityPreset" | "model" | "reasoningEffort"> & {
+  config: Pick<MatcherConfig, "model" | "reasoningEffort"> & {
     providerId?: string;
   },
   extractorVersion = JOB_ANALYSIS_EXTRACTOR_VERSION
@@ -245,7 +233,6 @@ export function buildScoringPolicyVersion(
     extractor: extractorVersion,
     candidateEvidence: "candidate-evidence-v3",
     semanticAssessment: "match-semantic-assessment-v5",
-    preset: config.qualityPreset,
     providerId: config.providerId ?? null,
     modelId: config.model || null,
     reasoningEffort: config.reasoningEffort,

@@ -8,9 +8,8 @@ import {
   listProviders,
   toProviderPublic,
 } from "@/lib/ai/providers/provider-service";
-import { isAIProvider } from "@/lib/ai/providers/types";
-import { isLocalCLIProvider } from "@/lib/ai/providers/types";
-import { getLocalCLIStatus } from "@/lib/ai/local-cli/service";
+import { isAIProvider, isLocalCLIProvider } from "@/lib/ai/providers/types";
+import { getCachedLocalCLIStatus } from "@/lib/ai/local-cli/service";
 import { assertAppRequest } from "@/lib/api";
 import { APIValidationError, handleAIAPIError } from "@/lib/api/ai-error-handler";
 import { upsertSettings } from "@/lib/settings/settings-service";
@@ -26,14 +25,14 @@ export async function GET() {
     return NextResponse.json(await Promise.all(providers.map(async (provider) => {
       const publicProvider = toProviderPublic(provider);
       if (!isLocalCLIProvider(provider.provider)) return publicProvider;
-      const connection = await getLocalCLIStatus(provider.provider);
+      const connection = getCachedLocalCLIStatus(provider.provider);
       return {
         ...publicProvider,
-        connectionStatus: connection.status,
-        selectable: connection.selectable,
-        cliVersion: connection.cliVersion,
-        statusMessage: connection.statusMessage,
-        lastCheckedAt: connection.lastCheckedAt,
+        connectionStatus: connection?.status ?? "not_checked",
+        selectable: connection?.selectable ?? false,
+        cliVersion: connection?.cliVersion,
+        statusMessage: connection?.statusMessage ?? "Check this CLI connection before using it.",
+        lastCheckedAt: connection?.lastCheckedAt,
       };
     })));
   } catch (error) {
@@ -52,10 +51,6 @@ export async function POST(request: NextRequest) {
 
     if (!isAIProvider(providerType)) {
       throw new APIValidationError("Invalid provider type", "invalid_provider");
-    }
-
-    if (isLocalCLIProvider(providerType)) {
-      throw new APIValidationError("Local CLI providers are built in", "invalid_provider");
     }
 
     const metadata = getProviderMetadata(providerType);

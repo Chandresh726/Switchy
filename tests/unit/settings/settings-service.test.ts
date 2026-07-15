@@ -9,7 +9,6 @@ import {
 describe("settings service", () => {
   it("includes AI defaults required by the UI", () => {
     expect(DEFAULT_SETTINGS.matcher_reasoning_effort).toBe("");
-    expect(DEFAULT_SETTINGS.matcher_quality_preset).toBe("balanced");
     expect(DEFAULT_SETTINGS.matcher_accepted_location_types).toBe("[]");
     expect(DEFAULT_SETTINGS.resume_parser_reasoning_effort).toBe("");
     expect(DEFAULT_SETTINGS.ai_writing_reasoning_effort).toBe("");
@@ -39,15 +38,13 @@ describe("settings service", () => {
     })).toThrow(APIValidationError);
   });
 
-  it("validates matching presets and normalizes preference lists", () => {
+  it("normalizes matching preference lists", () => {
     const parsed = parseSettingsUpdateBody({
-      matcher_quality_preset: "quality",
       matcher_accepted_location_types: ["remote", "remote", "onsite"],
       matcher_accepted_employment_types: ["contract", "full-time", "intern"],
     });
 
     expect(parsed.updates).toEqual(expect.arrayContaining([
-      { key: "matcher_quality_preset", value: "quality" },
       {
         key: "matcher_accepted_location_types",
         value: JSON.stringify(["onsite", "remote"]),

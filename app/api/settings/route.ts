@@ -4,7 +4,10 @@ import { AISettingsUpdateSchema } from "@/lib/ai/contracts";
 import { assertAppRequest } from "@/lib/api";
 import { APIValidationError, handleAIAPIError } from "@/lib/api/ai-error-handler";
 import { getCachedProviderModelDefinition } from "@/lib/ai/providers/model-catalog";
-import { BUILTIN_CLI_PROVIDER_IDS } from "@/lib/ai/local-cli/constants";
+import { eq } from "drizzle-orm";
+
+import { db } from "@/lib/db";
+import { aiProviders } from "@/lib/db/schema";
 import {
   clearSchedulerEnabledCache,
   getSchedulerEnabled,
@@ -23,7 +26,6 @@ const AI_SETTING_KEYS: ReadonlySet<SettingKey> = new Set([
   "matcher_model",
   "matcher_provider_id",
   "matcher_reasoning_effort",
-  "matcher_quality_preset",
   "matcher_accepted_location_types",
   "matcher_accepted_employment_types",
   "resume_parser_model",
@@ -169,10 +171,14 @@ export async function POST(request: Request) {
       if (updatedCLIProviders.length > 0) {
         const { resetLocalCLIProvider } = await import("@/lib/ai/local-cli/service");
         const { deleteStoredProviderModelsCache } = await import("@/lib/ai/providers/model-catalog");
-        await Promise.all(updatedCLIProviders.flatMap((provider) => [
-          resetLocalCLIProvider(provider),
-          deleteStoredProviderModelsCache(BUILTIN_CLI_PROVIDER_IDS[provider]),
-        ]));
+        await Promise.all(updatedCLIProviders.map(async (provider) => {
+          const records = await db
+            .select({ id: aiProviders.id })
+            .from(aiProviders)
+            .where(eq(aiProviders.provider, provider));
+          await resetLocalCLIProvider(provider);
+          await Promise.all(records.map(({ id }) => deleteStoredProviderModelsCache(id)));
+        }));
       }
     }
 

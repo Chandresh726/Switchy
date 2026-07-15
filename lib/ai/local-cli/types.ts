@@ -1,6 +1,7 @@
 import type { AIExecutionUsage } from "@/lib/ai/runtime/types";
 
 export type LocalCLIConnectionStatus =
+  | "not_checked"
   | "ready"
   | "not_installed"
   | "not_authenticated"

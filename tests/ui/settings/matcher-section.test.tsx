@@ -29,8 +29,6 @@ function createProps(): MatcherSectionProps {
     onMatcherModelChange: vi.fn(),
     matcherReasoningEffort: "medium" as const,
     onMatcherReasoningEffortChange: vi.fn(),
-    qualityPreset: "balanced" as const,
-    onQualityPresetChange: vi.fn(),
     acceptedLocationTypes: ["remote"],
     onAcceptedLocationTypesChange: vi.fn(),
     acceptedEmploymentTypes: ["full-time"],
@@ -45,10 +43,7 @@ function createProps(): MatcherSectionProps {
     onConcurrencyLimitChange: vi.fn(),
     timeoutMs: 30_000,
     onTimeoutMsChange: vi.fn(),
-    onSave: vi.fn(),
     isSaving: false,
-    hasUnsavedChanges: false,
-    settingsSaved: false,
     onMatchUnmatched: vi.fn(),
     isMatching: false,
     unmatchedCount: 0,
@@ -56,16 +51,11 @@ function createProps(): MatcherSectionProps {
 }
 
 describe("MatcherSection", () => {
-  it("selects a matching quality preset", () => {
-    const props = createProps();
-    render(<MatcherSection {...props} />);
+  it("uses one matching policy without quality presets", () => {
+    render(<MatcherSection {...createProps()} />);
 
-    expect(
-      screen.getByRole("button", { name: /Balanced/ }).getAttribute("aria-pressed")
-    ).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: /Quality/ }));
-
-    expect(props.onQualityPresetChange).toHaveBeenCalledWith("quality");
+    expect(screen.getByText(/One scoring policy/)).toBeTruthy();
+    expect(screen.queryByText("Matching quality")).toBeNull();
   });
 
   it("updates accepted work arrangements and employment types", () => {
@@ -117,7 +107,6 @@ describe("MatcherSection", () => {
   it("renders provider-native effort values and blocks a stale selection", () => {
     Element.prototype.scrollIntoView = vi.fn();
     const props = createProps();
-    props.hasUnsavedChanges = true;
     props.matcherReasoningEffort = "retired";
     props.models[0].reasoningControl = {
       kind: "effort",
@@ -137,9 +126,7 @@ describe("MatcherSection", () => {
     expect(screen.getByText("Future V1")).toBeTruthy();
     fireEvent.keyDown(screen.getByRole("listbox"), { key: "Escape" });
     expect(screen.getByText(/choose an advertised value/i)).toBeTruthy();
-    expect(
-      (screen.getByRole("button", { name: "Save Changes" }) as HTMLButtonElement).disabled
-    ).toBe(true);
+    expect(screen.queryByRole("button", { name: /save/i })).toBeNull();
   });
 
   it("retains an unavailable configured model with a clear warning", () => {
@@ -149,7 +136,7 @@ describe("MatcherSection", () => {
     render(<MatcherSection {...props} />);
 
     expect(screen.getByText("Configured: retired-model")).toBeTruthy();
-    expect(screen.getByText(/configured model is unavailable/i)).toBeTruthy();
+    expect(screen.getByText(/choose an available model/i)).toBeTruthy();
   });
 
   it("retains saved model and reasoning values when the catalog is empty", () => {
@@ -158,15 +145,12 @@ describe("MatcherSection", () => {
     props.modelsError = "Catalog unavailable";
     props.matcherModel = "retired-model";
     props.matcherReasoningEffort = "xhigh";
-    props.hasUnsavedChanges = true;
 
     render(<MatcherSection {...props} />);
 
     expect(screen.getByText("Configured: retired-model")).toBeTruthy();
     expect(screen.getByText("xhigh (unavailable)")).toBeTruthy();
-    expect(screen.getByText(/configured model is unavailable/i)).toBeTruthy();
-    expect(
-      (screen.getByRole("button", { name: "Save Changes" }) as HTMLButtonElement).disabled
-    ).toBe(true);
+    expect(screen.getByText(/choose an available model/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /save/i })).toBeNull();
   });
 });

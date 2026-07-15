@@ -22,32 +22,35 @@ migrate(migrationDatabase, { migrationsFolder: path.join(process.cwd(), "drizzle
 migrationConnection.close();
 
 const { db } = await import("../../../lib/db/index");
-const { BUILTIN_CLI_PROVIDER_IDS } = await import("../../../lib/ai/local-cli/constants");
 const { saveStoredLocalCLICatalog } = await import("../../../lib/ai/local-cli/catalog-cache");
 const { resetLocalCLIProvider } = await import("../../../lib/ai/local-cli/service");
-const { ensureBuiltinCLIProviders } = await import("../../../lib/ai/providers/provider-service");
+const { createProvider } = await import("../../../lib/ai/providers/provider-service");
 const { enqueueMatchWork } = await import("../../../lib/ai/work-items/repository");
 const { AIWorkDispatcher } = await import("../../../lib/ai/work-items/dispatcher");
 const { parseResumeWithProvenance } = await import("../../../lib/ai/resume-parser");
 const { POST: streamWriting } = await import("../../../app/api/ai/content/stream/route");
 
-await ensureBuiltinCLIProviders();
+const existingCodexProviders = await db
+  .select()
+  .from(schema.aiProviders)
+  .where(eq(schema.aiProviders.provider, "codex_cli"))
+  .limit(1);
+const codexProvider = existingCodexProviders[0] ?? await createProvider({ provider: "codex_cli" });
 
 const settingValues: Record<string, string> = {
   codex_cli_executable: codexExecutable,
-  matcher_provider_id: BUILTIN_CLI_PROVIDER_IDS.codex_cli,
+  matcher_provider_id: codexProvider.id,
   matcher_model: "gpt-visible",
   matcher_reasoning_effort: "medium",
-  matcher_quality_preset: "economy",
   matcher_batch_size: "1",
   matcher_max_retries: "1",
   matcher_concurrency_limit: "1",
   matcher_timeout_ms: "5000",
-  ai_writing_provider_id: BUILTIN_CLI_PROVIDER_IDS.codex_cli,
+  ai_writing_provider_id: codexProvider.id,
   ai_writing_model: "gpt-visible",
   ai_writing_reasoning_effort: "medium",
   cover_letter_length: "short",
-  resume_parser_provider_id: BUILTIN_CLI_PROVIDER_IDS.codex_cli,
+  resume_parser_provider_id: codexProvider.id,
   resume_parser_model: "gpt-visible",
   resume_parser_reasoning_effort: "medium",
 };

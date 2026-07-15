@@ -65,7 +65,6 @@ vi.mock("@/lib/ai/matcher/evidence/adjudication", () => ({
 import { executeMatch } from "@/lib/ai/matcher/execution/executor";
 
 const config = {
-  qualityPreset: "balanced" as const,
   model: "configured-model",
   reasoningEffort: "medium",
   batchSize: 4,

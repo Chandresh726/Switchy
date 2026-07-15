@@ -54,18 +54,16 @@ function result(
 }
 
 describe("semantic match assessment selection", () => {
-  it("reviews unresolved requirements by preset instead of numeric score windows", () => {
-    expect(shouldAdjudicate("economy", result("missing", "critical"))).toBe(true);
-    expect(shouldAdjudicate("economy", result("unknown", "important", 0.8))).toBe(false);
-    expect(shouldAdjudicate("balanced", result("unknown", "important"))).toBe(true);
-    expect(shouldAdjudicate("balanced", result("partial_match", "important"))).toBe(true);
-    expect(shouldAdjudicate("balanced", result("direct_match", "important", 0.8))).toBe(false);
-    expect(shouldAdjudicate("quality", result("direct_match"))).toBe(true);
+  it("reviews unresolved important requirements with one scoring policy", () => {
+    expect(shouldAdjudicate(result("missing", "critical"))).toBe(true);
+    expect(shouldAdjudicate(result("unknown", "important", 0.8))).toBe(true);
+    expect(shouldAdjudicate(result("partial_match", "important"))).toBe(true);
+    expect(shouldAdjudicate(result("direct_match", "important", 0.8))).toBe(false);
+    expect(shouldAdjudicate(result("direct_match", "important", 0.7))).toBe(true);
   });
 
   it("changes the policy version when model policy changes", () => {
     const base = {
-      qualityPreset: "balanced" as const,
       model: "model-a",
       reasoningEffort: "medium",
       providerId: "provider-a",
@@ -73,9 +71,6 @@ describe("semantic match assessment selection", () => {
 
     expect(buildScoringPolicyVersion(base)).not.toBe(
       buildScoringPolicyVersion({ ...base, model: "model-b" })
-    );
-    expect(buildScoringPolicyVersion(base)).not.toBe(
-      buildScoringPolicyVersion({ ...base, qualityPreset: "quality" })
     );
     expect(buildScoringPolicyVersion(base, "extractor-v1")).not.toBe(
       buildScoringPolicyVersion(base, "extractor-v2")

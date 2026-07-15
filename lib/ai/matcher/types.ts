@@ -10,10 +10,7 @@ export const MatchResultSchema = z.object({
 
 export type MatchResult = z.infer<typeof MatchResultSchema>;
 
-export type MatchQualityPreset = "economy" | "balanced" | "quality";
-
 export interface MatcherConfig {
-  qualityPreset: MatchQualityPreset;
   model: string;
   reasoningEffort?: string;
   batchSize: number;
@@ -26,7 +23,6 @@ export interface MatcherConfig {
 }
 
 export const DEFAULT_MATCHER_CONFIG: MatcherConfig = {
-  qualityPreset: "balanced",
   model: "",
   reasoningEffort: "",
   batchSize: 2,

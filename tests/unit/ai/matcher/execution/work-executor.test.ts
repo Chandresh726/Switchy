@@ -18,7 +18,6 @@ vi.mock("@/lib/ai/matcher/config", () => ({
 import { executeConfiguredMatchWork } from "@/lib/ai/matcher/execution/work-executor";
 
 const config: MatcherConfig = {
-  qualityPreset: "balanced",
   model: "test-model",
   reasoningEffort: "medium",
   batchSize: 1,

@@ -54,7 +54,6 @@ export const AISettingsUpdateSchema = z.object({
   matcher_model: z.string().trim().min(1).optional(),
   matcher_provider_id: z.string().trim().optional(),
   matcher_reasoning_effort: ReasoningEffortSchema.optional(),
-  matcher_quality_preset: z.enum(["economy", "balanced", "quality"]).optional(),
   matcher_accepted_location_types: z.array(
     z.enum(["remote", "hybrid", "onsite"])
   ).optional(),

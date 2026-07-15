@@ -1,14 +1,5 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    try {
-      const { ensureBuiltinCLIProviders } = await import(
-        "@/lib/ai/providers/provider-service"
-      );
-      await ensureBuiltinCLIProviders();
-    } catch (error) {
-      console.error("[Instrumentation] Failed to initialize local CLI providers:", error);
-    }
-
     const { startScheduler } = await import("@/lib/jobs/scheduler");
     try {
       await startScheduler();

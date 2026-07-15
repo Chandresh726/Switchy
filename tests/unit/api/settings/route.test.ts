@@ -147,10 +147,9 @@ describe("settings route", () => {
     expect(mocks.parseSettingsUpdateBody).not.toHaveBeenCalled();
   });
 
-  it("accepts matching quality and preference settings", async () => {
+  it("accepts matching preference settings", async () => {
     mocks.parseSettingsUpdateBody.mockReturnValue({
       updates: [
-        { key: "matcher_quality_preset", value: "balanced" },
         { key: "matcher_accepted_location_types", value: '["remote"]' },
       ],
       cronUpdated: false,
@@ -161,7 +160,6 @@ describe("settings route", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        matcher_quality_preset: "balanced",
         matcher_accepted_location_types: ["remote"],
       }),
     });
@@ -170,7 +168,7 @@ describe("settings route", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.upsertSettings).toHaveBeenCalledWith(expect.arrayContaining([
-      { key: "matcher_quality_preset", value: "balanced" },
+      { key: "matcher_accepted_location_types", value: '["remote"]' },
     ]));
   });
 

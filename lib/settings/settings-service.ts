@@ -12,7 +12,6 @@ export const DEFAULT_SETTINGS = {
   matcher_model: "",
   matcher_provider_id: "",
   matcher_reasoning_effort: "",
-  matcher_quality_preset: "balanced",
   matcher_accepted_location_types: "[]",
   matcher_accepted_employment_types: "[]",
   resume_parser_model: "",
@@ -265,13 +264,6 @@ function parseSettingValue(
     case "ai_writing_reasoning_effort":
       return {
         value: normalizeReasoningSetting(key, value),
-        cronUpdated: false,
-        enabledChanged: false,
-        newEnabledValue: null,
-      };
-    case "matcher_quality_preset":
-      return {
-        value: ensureEnum(key, value, ["economy", "balanced", "quality"] as const),
         cronUpdated: false,
         enabledChanged: false,
         newEnabledValue: null,
