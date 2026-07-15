@@ -7,7 +7,7 @@ Switchy's AI subsystem is local-first. SQLite stores all durable state, provider
 Every provider call belongs to one named capability:
 
 - `job_analysis` extracts structured evidence from untrusted job text.
-- `match_adjudication` makes a bounded adjustment when deterministic evidence is inconclusive.
+- `match_adjudication` performs structured semantic comparison when requirement evidence is ambiguous or potentially transferable.
 - `writing_cover_letter`, `writing_referral`, and `writing_recruiter_follow_up` produce grounded drafts.
 - `resume_parse` normalizes deterministically extracted resume text.
 
@@ -25,36 +25,37 @@ flowchart LR
   J["Job fields"] --> A["Job analysis"]
   C --> M["Deterministic match result"]
   A --> M
-  M -->|"only when preset threshold applies"| D["Bounded adjudication"]
+  M -->|"when requirement evidence needs reasoning"| D["Semantic requirement assessment"]
   D --> M
 ```
 
 Canonical JSON is hashed with SHA-256. Candidate fingerprints include the summary, normalized skills, non-overlapping experience, education, and matching preferences. Job fingerprints include title, description, location and location type, seniority, department, employment type, and compensation text. Ordering and optional values are normalized before hashing.
 
-A match is fresh only when its candidate fingerprint, job fingerprint, and scoring-policy version exactly match the current inputs. Status, saved, and application changes do not change these fingerprints. A profile-only change creates a candidate snapshot while reusing unchanged job analyses. Legacy job match columns are retained for data preservation but are neither read nor updated by current matching flows.
+A match is fresh only when its candidate fingerprint, job fingerprint, and scoring-policy version exactly match the current inputs. Status, saved, and application changes do not change these fingerprints. A profile-only change creates a candidate snapshot while reusing unchanged job analyses. Legacy job match columns are retained for data preservation and may still be presented as explicitly labeled legacy results, but the current engine never updates them or treats them as fresh evidence artifacts.
 
 JSON text columns are accessed through repository methods that validate their contents with Zod. Corrupt or incompatible data fails at the repository boundary instead of propagating unchecked objects.
 
 ## Evidence-based scoring
 
-Job analysis extracts must-have and preferred skills, minimum experience, seniority and management requirements, education, location constraints, employment type, compensation display data, domain keywords, confidence, and unresolved ambiguities. Changed jobs are analyzed in batches bounded by both job count and prompt characters. A failed extraction falls back to deterministic requirement and experience extraction with low confidence.
+Job analysis v5 extracts typed requirement atoms rather than treating every technology name as mandatory. Each atom records its type, exact source evidence, terms and alternatives, importance (`critical`, `important`, `preferred`, or `contextual`), explicitness, scoped experience, and confidence. Source excerpts are normalized and checked against the supplied job before an atom can be persisted. Technology names that merely describe the employer's stack are contextual and do not lower the match. Changed jobs remain cached and batched by both job count and prompt characters. A failed extraction produces conservative, low-confidence evidence under a separate fallback extractor version, so a later provider recovery retries structured extraction instead of treating fallback evidence as permanent.
 
-The base score weights are:
+Candidate evidence includes explicit skills plus bounded references to the summary, role descriptions, highlights, and education. Evidence items are bounded before concatenation, and the complete semantic prompt has a hard serialized-size budget. Deterministic comparison recognizes exact evidence and conservative technology families. When more reasoning is needed, the model returns one evidence-cited assessment per requirement: direct, equivalent, transferable, partial, missing, unknown, or not applicable. Scoped experience and management assessments feed the calibrated components instead of being reduced to total years or a binary title heuristic. Low-confidence semantic labels remain unresolved or are weighted toward the neutral prior; they cannot receive full status credit. The model does not invent the final score.
+
+The calibrated role-fit score uses these base component weights:
 
 | Component | Weight |
 | --- | ---: |
-| Must-have skills | 35 |
-| Preferred skills | 10 |
-| Experience | 20 |
-| Seniority | 10 |
-| Location compatibility | 15 |
-| Employment type | 10 |
+| Requirement fit | 50 |
+| Relevant experience | 35 |
+| Seniority and management | 15 |
 
-Unavailable components are removed and the remaining weights are renormalized. An explicit experience gap of at least three years caps the score at 50, a seniority mismatch of at least two levels caps it at 55, and an explicit onsite-location conflict caps it at 50. Adjudication can adjust a score by at most 10 points and cannot exceed a deterministic cap.
+Requirements are weighted by importance rather than counted equally. Unknown evidence lowers coverage instead of becoming a failure. The score is shrunk toward a neutral prior when the job exposes fewer score-bearing components, so one known component cannot become a misleading `100`; evidence coverage instead reports how much of the available job evidence could be resolved. An experience difference of six months or less receives full credit; larger gaps use a gradual curve without arbitrary hard caps. Significant experience gaps and multi-level seniority differences also apply gradual whole-role calibration so strong keyword overlap cannot misleadingly produce a top-band result. Scoped duration claims require dated experience entries that both cover the requested duration and support the requested scope. Location, authorization, license, and employment constraints are presented separately so a strong role fit can still explain why a job is unavailable or outside the user's preferences.
 
-Economy adjudicates below 0.40 confidence. Balanced adjudicates scores from 50 through 75 below 0.75 confidence. Quality adjudicates scores from 40 through 85 or whenever confidence is below 0.90. Confidence combines job-extraction confidence with the proportion of score-bearing evidence available.
+Scores are ordinal compatibility values, not probabilities. The primary interpretation is High, Good, Possible, Stretch, Low, or More evidence needed. The UI separately reports score confidence, extraction confidence, evidence coverage, and the type and importance of each requirement. Dashboard and company promotion views query the authoritative semantic High/Good bands on the server rather than scanning numeric thresholds in the browser; blocking eligibility constraints remain visible on promoted roles.
 
-The committed synthetic corpus covers score bands, hard constraints, missing information, and pairwise rankings without personal data. A scoring-policy cutover requires deterministic checks and at least 85 percent pairwise ranking accuracy.
+Economy requests semantic comparison only for unresolved critical requirements. Balanced reviews unresolved critical and important requirements, including possible transferable matches. Quality reviews all meaningful requirements. These rules are based on evidence state rather than an arbitrary numeric score window.
+
+The committed synthetic corpus covers score bands, six-month experience tolerance, contextual stack mentions, transferable technologies, missing information, separated constraints, and pairwise rankings without personal data. A scoring-policy cutover requires deterministic checks and at least 85 percent pairwise ranking accuracy.
 
 ## Durable matching queue
 
@@ -92,7 +93,7 @@ The suite covers matcher scoring and ranking, writing validators, and resume nor
 
 When changing a prompt, schema, scoring rule, or execution behavior:
 
-1. Increment the corresponding prompt, schema, scoring-policy, extractor, parser, or execution-policy version.
+1. Increment the corresponding prompt, schema, semantic-assessment, scoring-policy, extractor, parser, or execution-policy version.
 2. Add or update synthetic fixtures that demonstrate the intended behavior and failure cases.
 3. Run `pnpm ai:eval` and the focused unit/integration tests.
 4. Confirm existing fingerprints remain stable unless their canonical inputs intentionally changed.

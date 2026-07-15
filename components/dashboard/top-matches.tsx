@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { MatchBadge } from "@/components/jobs/match-badge";
+import { MatchBadge, type MatchBand } from "@/components/jobs/match-badge";
 import { Building2, MapPin, Clock, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { formatRelativeTime } from "@/lib/utils/format";
@@ -13,6 +13,8 @@ interface Job {
   location: string | null;
   locationType: string | null;
   matchScore: number | null;
+  matchBand?: MatchBand | null;
+  matchLegacy?: boolean;
   discoveredAt: string;
   company: {
     id: number;
@@ -25,10 +27,10 @@ export function TopMatches() {
   const { data, isLoading } = useQuery({
     queryKey: ["jobs", "top-matches"],
     queryFn: async () => {
-      // Fetch top 5 unviewed jobs with highest match scores
-      const res = await fetch("/api/jobs?status=new&sortBy=matchScore&sortOrder=desc&limit=5");
+      // Fetch the five unviewed jobs with the highest compatibility scores.
+      const res = await fetch("/api/jobs?matchBands=high,good&status=new&sortBy=matchScore&sortOrder=desc&limit=5");
       if (!res.ok) throw new Error("Failed to fetch jobs");
-      return res.json();
+      return res.json() as Promise<{ jobs: Job[] }>;
     },
   });
 
@@ -51,7 +53,7 @@ export function TopMatches() {
     return (
       <div className="rounded-lg border border-dashed border-border p-8 text-center">
         <p className="text-sm text-muted-foreground">
-          No new jobs with match scores yet. Add companies and refresh to see your top matches.
+          No new jobs with compatibility results yet. Add companies and refresh to see your top matches.
         </p>
       </div>
     );
@@ -72,7 +74,7 @@ export function TopMatches() {
                   {job.title}
                 </h3>
                 {job.matchScore !== null && (
-                  <MatchBadge score={job.matchScore} size="sm" />
+                  <MatchBadge score={job.matchScore} band={job.matchBand} size="sm" />
                 )}
               </div>
               <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
@@ -99,7 +101,7 @@ export function TopMatches() {
 
       {jobs.length === 5 && (
         <Link
-          href="/jobs?status=new&sortBy=matchScore"
+          href="/jobs?matchBands=high,good&status=new&sortBy=matchScore"
           className="block text-center text-sm text-muted-foreground hover:text-foreground/80"
         >
           View all jobs

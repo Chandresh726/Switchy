@@ -4,6 +4,7 @@ import { and, count, desc, eq, sql } from "drizzle-orm";
 
 import { ensureJobFingerprintProjection } from "@/lib/ai/artifacts/job-fingerprint-projection";
 import { getCurrentMatchContext } from "@/lib/ai/matcher/presentation";
+import { countPromotedMatchRows } from "@/lib/ai/matcher/promotion";
 import { db } from "@/lib/db";
 import { companies, jobs, matchResults, people, scrapeSessions } from "@/lib/db/schema";
 import { getUnmatchedCompaniesSummary } from "@/lib/people/sync/unmatched";
@@ -14,16 +15,19 @@ export async function GET() {
     const currentContext = await getCurrentMatchContext();
     const matchStatsPromise = currentContext
       ? db.select({
-          highMatchJobs: sql<number>`SUM(CASE WHEN ${matchResults.score} >= 75 THEN 1 ELSE 0 END)`,
-          jobsWithScore: count(),
-        }).from(jobs).innerJoin(matchResults, and(
+          evidenceJson: matchResults.evidenceJson,
+          legacyScore: jobs.matchScore,
+        }).from(jobs).leftJoin(matchResults, and(
           eq(matchResults.jobId, jobs.id),
           eq(matchResults.candidateFingerprint, currentContext.candidateFingerprint),
           eq(matchResults.jobFingerprint, jobs.aiFingerprint),
           eq(matchResults.scoringPolicyVersion, currentContext.scoringPolicyVersion),
           eq(matchResults.isStale, false)
         ))
-      : Promise.resolve([{ highMatchJobs: 0, jobsWithScore: 0 }]);
+      : db.select({
+          evidenceJson: sql<string | null>`null`,
+          legacyScore: jobs.matchScore,
+        }).from(jobs);
     const [
       jobStatsResult,
       companyStatsResult,
@@ -60,7 +64,10 @@ export async function GET() {
     const companyStats = companyStatsResult[0];
     const lastSession = lastSessionResult;
     const peopleStats = peopleStatsResult[0];
-    const matchStats = matchStatsResult[0];
+    const highMatchJobs = countPromotedMatchRows(matchStatsResult);
+    const jobsWithScore = matchStatsResult.filter((row) =>
+      row.evidenceJson !== null || row.legacyScore !== null
+    ).length;
 
     const unmatchedSummary = (peopleStats?.totalPeople ?? 0) > 0
       ? await getUnmatchedCompaniesSummary()
@@ -69,12 +76,12 @@ export async function GET() {
     return NextResponse.json({
       totalJobs: jobStats?.totalJobs ?? 0,
       totalCompanies: companyStats?.totalCompanies ?? 0,
-      highMatchJobs: Number(matchStats?.highMatchJobs ?? 0),
+      highMatchJobs,
       appliedJobs: jobStats?.appliedJobs ?? 0,
       newJobs: jobStats?.newJobs ?? 0,
       viewedJobs: jobStats?.viewedJobs ?? 0,
       savedJobs: jobStats?.savedJobs ?? 0,
-      jobsWithScore: matchStats?.jobsWithScore ?? 0,
+      jobsWithScore,
       lastScan: lastSession[0] || null,
       totalPeople: peopleStats?.totalPeople ?? 0,
       starredPeople: peopleStats?.starredPeople ?? 0,

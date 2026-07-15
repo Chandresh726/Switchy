@@ -406,7 +406,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
                         <span className="font-mono text-lg text-emerald-600 dark:text-emerald-400">
                           {log.score?.toFixed(0)}
                         </span>
-                        <span className="text-muted-foreground text-xs">match score</span>
+                        <span className="text-muted-foreground text-xs">compatibility score</span>
                       </div>
                       <span className="text-muted-foreground text-xs">
                         {formatDurationMs(log.duration)}
@@ -449,7 +449,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
                         <span className="font-mono text-lg text-emerald-600 dark:text-emerald-400">
                           {log.score?.toFixed(0)}
                         </span>
-                        <span className="text-muted-foreground text-xs">match score</span>
+                        <span className="text-muted-foreground text-xs">compatibility score</span>
                       </div>
                       <span className="text-muted-foreground text-xs">
                         {formatDurationMs(log.duration)}

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { normalizeSkill, type ScoringCandidate } from "@/lib/ai/matcher/evidence/candidate";
+import { buildScoringCandidate } from "@/lib/ai/matcher/evidence/candidate";
 import { scoreDeterministically } from "@/lib/ai/matcher/evidence/scoring";
 
 const NullableString = z.string().nullable();
@@ -25,6 +25,7 @@ const ScenarioSchema = z.object({
   analysis: z.object({
     must: z.array(z.string()),
     preferred: z.array(z.string()),
+    contextual: z.array(z.string()).default([]),
     years: z.number().nullable(),
     seniority: NullableString,
     confidence: z.number().min(0).max(1),
@@ -32,7 +33,8 @@ const ScenarioSchema = z.object({
   expected: z.object({
     min: z.number(),
     max: z.number(),
-    hardCap: z.number().nullable(),
+    band: z.enum(["high", "good", "possible", "stretch", "low", "insufficient_evidence"]),
+    blockingConflict: z.boolean().default(false),
   }),
 });
 const CorpusSchema = z.object({
@@ -63,14 +65,48 @@ function evaluateScenario(scenario: z.infer<typeof ScenarioSchema>) {
     managementExperience: false,
     domainKeywords: [],
   };
-  const candidate: ScoringCandidate = {
-    evidence,
-    normalizedSkills: new Set(scenario.candidate.skills.map(normalizeSkill)),
-    totalExperienceYears: scenario.candidate.years,
-    seniorityLevel: scenario.candidate.seniority,
-    managementExperience: false,
-    domainKeywords: new Set(),
-  };
+  const candidate = buildScoringCandidate(evidence);
+  const requirements = [
+    ...scenario.analysis.must.map((skill, index) => ({
+      id: `requirement:${index + 1}`,
+      type: "technology" as const,
+      text: `${skill} experience`,
+      terms: [skill],
+      alternatives: [],
+      importance: "important" as const,
+      explicitness: "explicit" as const,
+      experienceYears: null,
+      experienceScope: null,
+      sourceEvidence: `${skill} experience`,
+      confidence: scenario.analysis.confidence,
+    })),
+    ...scenario.analysis.preferred.map((skill, index) => ({
+      id: `preferred:${index + 1}`,
+      type: "technology" as const,
+      text: `${skill} preferred`,
+      terms: [skill],
+      alternatives: [],
+      importance: "preferred" as const,
+      explicitness: "explicit" as const,
+      experienceYears: null,
+      experienceScope: null,
+      sourceEvidence: `${skill} preferred`,
+      confidence: scenario.analysis.confidence,
+    })),
+    ...scenario.analysis.contextual.map((skill, index) => ({
+      id: `contextual:${index + 1}`,
+      type: "technology" as const,
+      text: `${skill} appears in the team stack`,
+      terms: [skill],
+      alternatives: [],
+      importance: "contextual" as const,
+      explicitness: "implied" as const,
+      experienceYears: null,
+      experienceScope: null,
+      sourceEvidence: `Our stack includes ${skill}`,
+      confidence: scenario.analysis.confidence,
+    })),
+  ];
   return scoreDeterministically(candidate, {
     title: "Synthetic role",
     description: null,
@@ -93,6 +129,7 @@ function evaluateScenario(scenario: z.infer<typeof ScenarioSchema>) {
     domainKeywords: [],
     extractionConfidence: scenario.analysis.confidence,
     ambiguities: [],
+    requirements,
   });
 }
 
@@ -101,12 +138,14 @@ describe("synthetic evidence matcher evaluation", () => {
     scenario.id,
     evaluateScenario(scenario),
   ]));
-
   it.each(corpus.scenarios)("keeps $id inside its labeled score band", (scenario) => {
     const result = scores.get(scenario.id)!;
     expect(result.score).toBeGreaterThanOrEqual(scenario.expected.min);
     expect(result.score).toBeLessThanOrEqual(scenario.expected.max);
-    expect(result.hardCap).toBe(scenario.expected.hardCap);
+    expect(result.matchBand).toBe(scenario.expected.band);
+    expect(result.constraints.some((constraint) =>
+      constraint.status === "conflict" && constraint.severity === "blocking"
+    )).toBe(scenario.expected.blockingConflict);
   });
 
   it("achieves at least 85% pairwise ranking accuracy", () => {
@@ -115,5 +154,15 @@ describe("synthetic evidence matcher evaluation", () => {
     ).length;
     const accuracy = correct / corpus.pairwise.length;
     expect(accuracy).toBeGreaterThanOrEqual(0.85);
+  });
+
+  it("keeps a six-month experience difference within two score points of a full match", () => {
+    expect(scores.get("strong_remote_fit")!.score - scores.get("six_month_gap")!.score)
+      .toBeLessThanOrEqual(2);
+  });
+
+  it("does not let contextual stack technologies reduce fit", () => {
+    expect(scores.get("contextual_stack_mention")!.score)
+      .toBe(scores.get("strong_remote_fit")!.score);
   });
 });

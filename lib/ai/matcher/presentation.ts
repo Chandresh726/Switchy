@@ -18,8 +18,11 @@ import {
   buildJobFingerprint,
   MatchBreakdownSchema,
   MatchEvidenceSchema,
+  type MatchBand,
   type MatchBreakdown,
+  type MatchConstraint,
   type MatchEvidence,
+  type RequirementAssessment,
 } from "@/lib/ai/artifacts";
 import { ensureJobFingerprintProjection } from "@/lib/ai/artifacts/job-fingerprint-projection";
 import { db } from "@/lib/db";
@@ -83,6 +86,13 @@ export interface MatchPresentation {
   matchBreakdown: MatchBreakdown | null;
   matchStale: boolean;
   matchLegacy: boolean;
+  matchSummary: string;
+  matchBand: MatchBand | null;
+  matchRoleFitScore: number | null;
+  matchEvidenceCoverage: number | null;
+  matchExtractionConfidence: number | null;
+  matchConstraints: MatchConstraint[];
+  matchRequirementAssessments: RequirementAssessment[];
   scoringPolicyVersion: string | null;
 }
 
@@ -101,6 +111,13 @@ const EMPTY_MATCH_PRESENTATION: MatchPresentation = {
   matchBreakdown: null,
   matchStale: false,
   matchLegacy: false,
+  matchSummary: "",
+  matchBand: null,
+  matchRoleFitScore: null,
+  matchEvidenceCoverage: null,
+  matchExtractionConfidence: null,
+  matchConstraints: [],
+  matchRequirementAssessments: [],
   scoringPolicyVersion: null,
 };
 
@@ -129,6 +146,13 @@ function buildLegacyPresentation(job: MatchableJob): MatchPresentation | null {
     matchBreakdown: null,
     matchStale: false,
     matchLegacy: true,
+    matchSummary: "",
+    matchBand: null,
+    matchRoleFitScore: null,
+    matchEvidenceCoverage: null,
+    matchExtractionConfidence: null,
+    matchConstraints: [],
+    matchRequirementAssessments: [],
     scoringPolicyVersion: "legacy",
   };
 }
@@ -191,6 +215,13 @@ function parseMatchRow(row: PresentationMatchRow): {
       matchBreakdown: breakdown,
       matchStale: false,
       matchLegacy: row.source === "legacy",
+      matchSummary: evidence.summary,
+      matchBand: evidence.matchBand,
+      matchRoleFitScore: evidence.roleFitScore,
+      matchEvidenceCoverage: evidence.evidenceCoverage,
+      matchExtractionConfidence: evidence.extractionConfidence,
+      matchConstraints: evidence.constraints,
+      matchRequirementAssessments: evidence.requirementAssessments,
       scoringPolicyVersion: row.scoringPolicyVersion,
     },
     candidateFingerprint: row.candidateFingerprint,

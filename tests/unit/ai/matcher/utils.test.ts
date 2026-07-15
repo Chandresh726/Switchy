@@ -68,6 +68,17 @@ describe("matcher utils", () => {
     expect(years).toBe(5);
   });
 
+  it("estimates required years written as words", () => {
+    expect(estimateRequiredExperienceYears(
+      "At least five years of experience are expected.",
+      []
+    )).toBe(5);
+    expect(estimateRequiredExperienceYears(
+      "Twenty-five years of experience",
+      []
+    )).toBe(25);
+  });
+
   it("applies score guardrails when experience gap is significant", () => {
     const adjusted = applyExperienceScoreGuardrails(88, 6, 2);
 

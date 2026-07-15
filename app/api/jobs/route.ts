@@ -7,13 +7,16 @@ import {
   desc,
   eq,
   gte,
+  isNull,
   like,
+  lt,
   lte,
   notInArray,
   or,
   sql,
 } from "drizzle-orm";
 
+import { MatchBandSchema, type MatchBand } from "@/lib/ai/artifacts";
 import {
   getCurrentMatchContext,
   getMatchPresentations,
@@ -61,6 +64,15 @@ const JOB_LIST_SELECTION = {
   },
 } as const;
 
+function legacyBandCondition(requestedMatchBands: MatchBand[]) {
+  const includesHigh = requestedMatchBands.includes("high");
+  const includesGood = requestedMatchBands.includes("good");
+  if (includesHigh && includesGood) return gte(jobs.matchScore, 70);
+  if (includesHigh) return gte(jobs.matchScore, 85);
+  if (includesGood) return and(gte(jobs.matchScore, 70), lt(jobs.matchScore, 85));
+  return sql`0 = 1`;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -73,6 +85,12 @@ export async function GET(request: NextRequest) {
     const excludeStatus = searchParams.get("excludeStatus");
     const minScore = searchParams.get("minScore");
     const maxScore = searchParams.get("maxScore");
+    const requestedMatchBands: MatchBand[] = (searchParams.get("matchBands") ?? "")
+      .split(",")
+      .flatMap((value) => {
+        const parsed = MatchBandSchema.safeParse(value);
+        return parsed.success ? [parsed.data] : [];
+      });
     const locationType = searchParams.get("locationType");
     const search = searchParams.get("search");
     const department = searchParams.get("department");
@@ -180,7 +198,7 @@ export async function GET(request: NextRequest) {
       .where(whereClause);
 
     const scoreAwarePagination = sortBy === "matchScore" ||
-      minScore !== null || maxScore !== null;
+      minScore !== null || maxScore !== null || requestedMatchBands.length > 0;
     if (!scoreAwarePagination) {
       const sortDirection = sortOrder === "asc" ? asc : desc;
       const query = buildJobsQuery();
@@ -254,6 +272,9 @@ export async function GET(request: NextRequest) {
       const scoreConditions = [...conditions];
       if (hasMinScore) scoreConditions.push(gte(jobs.matchScore, parsedMinScore!));
       if (hasMaxScore) scoreConditions.push(lte(jobs.matchScore, parsedMaxScore!));
+      if (requestedMatchBands.length > 0) {
+        scoreConditions.push(legacyBandCondition(requestedMatchBands));
+      }
       const scoreWhere = scoreConditions.length > 0 ? and(...scoreConditions) : undefined;
       const scoreDirection = sortOrder === "asc" ? asc : desc;
       const scoreOrderBy = (() => {
@@ -299,9 +320,20 @@ export async function GET(request: NextRequest) {
         eq(matchResults.isStale, false)
       );
       const effectiveMatchScore = sql<number | null>`coalesce(${matchResults.score}, ${jobs.matchScore})`;
+      const effectiveMatchBand = sql<string | null>`json_extract(${matchResults.evidenceJson}, '$.matchBand')`;
       const scoreConditions = [...conditions];
       if (hasMinScore) scoreConditions.push(gte(effectiveMatchScore, parsedMinScore!));
       if (hasMaxScore) scoreConditions.push(lte(effectiveMatchScore, parsedMaxScore!));
+      if (requestedMatchBands.length > 0) {
+        const currentBandCondition = or(
+          ...requestedMatchBands.map((band) => eq(effectiveMatchBand, band))
+        );
+        const bandCondition = or(
+          currentBandCondition,
+          and(isNull(matchResults.id), legacyBandCondition(requestedMatchBands))
+        );
+        if (bandCondition) scoreConditions.push(bandCondition);
+      }
       const scoreWhere = scoreConditions.length > 0 ? and(...scoreConditions) : undefined;
       const scoreDirection = sortOrder === "asc" ? asc : desc;
       const scoreOrderBy = (() => {

@@ -128,6 +128,7 @@ function analysisEvidence() {
     domainKeywords: ["services"],
     extractionConfidence: 0.9,
     ambiguities: [],
+    requirements: [],
   };
 }
 

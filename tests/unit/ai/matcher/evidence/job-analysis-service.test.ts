@@ -48,7 +48,7 @@ describe("job analysis cache and fallback", () => {
       id: "cached-analysis",
       evidence: {
         mustHaveSkills: ["typescript"],
-        preferredSkills: [],
+        preferredSkills: ["amazon web services"],
         minimumExperienceYears: 5,
         seniorityLevel: "senior",
         managementTrack: null,
@@ -110,6 +110,31 @@ describe("job analysis cache and fallback", () => {
         domainKeywords: [],
         extractionConfidence: 0.9,
         ambiguities: [],
+        requirements: [{
+          id: "provider-id-is-replaced",
+          type: "technology",
+          text: "TypeScript for backend services",
+          terms: ["TypeScript", "TS"],
+          alternatives: [],
+          importance: "important",
+          explicitness: "explicit",
+          experienceYears: null,
+          experienceScope: null,
+          sourceEvidence: "TypeScript",
+          confidence: 0.95,
+        }, {
+          id: "provider-id-is-replaced-2",
+          type: "technology",
+          text: "AWS appears in the current stack",
+          terms: ["AWS"],
+          alternatives: [],
+          importance: "contextual",
+          explicitness: "implied",
+          experienceYears: null,
+          experienceScope: null,
+          sourceEvidence: "AWS preferred",
+          confidence: 0.8,
+        }],
       }],
     });
 
@@ -120,7 +145,81 @@ describe("job analysis cache and fallback", () => {
       evidence: expect.objectContaining({
         mustHaveSkills: ["typescript"],
         preferredSkills: ["amazon web services"],
+        requirements: [
+          expect.objectContaining({
+            id: "requirement:1",
+            terms: ["typescript"],
+            importance: "important",
+          }),
+          expect.objectContaining({
+            id: "requirement:2",
+            terms: ["amazon web services"],
+            importance: "preferred",
+          }),
+        ],
       }),
+    }));
+    expect(mocks.executeStructured).toHaveBeenCalledWith(expect.objectContaining({
+      versions: {
+        prompt: "job-analysis-prompt-v5",
+        schema: "job-analysis-schema-v5",
+        policy: "job-analysis-policy-v5",
+      },
+    }));
+  });
+
+  it("keeps deterministic fallback artifacts retryable after provider recovery", async () => {
+    mocks.createAICapabilityRuntime.mockRejectedValueOnce(new Error("temporary outage"));
+
+    await analyzeJobsForMatching([job], DEFAULT_MATCHER_CONFIG);
+
+    expect(mocks.getOrCreateJobAnalysis).toHaveBeenLastCalledWith(expect.objectContaining({
+      extractorVersion: "job-analysis-v5-fallback",
+      aiRunId: undefined,
+    }));
+
+    mocks.createAICapabilityRuntime.mockResolvedValue({
+      reasoningEffort: "medium",
+      executeStructured: mocks.executeStructured,
+    });
+    mocks.executeStructured.mockResolvedValue({
+      runId: "recovered-run",
+      output: [{
+        jobId: 1,
+        mustHaveSkills: ["TypeScript"],
+        preferredSkills: [],
+        minimumExperienceYears: 5,
+        seniorityLevel: "senior",
+        managementTrack: null,
+        educationRequirements: [],
+        locationConstraints: ["Remote"],
+        employmentType: "full-time",
+        compensationText: null,
+        domainKeywords: [],
+        extractionConfidence: 0.9,
+        ambiguities: [],
+        requirements: [{
+          id: "model-id",
+          type: "technology",
+          text: "TypeScript",
+          terms: ["TypeScript"],
+          alternatives: [],
+          importance: "important",
+          explicitness: "explicit",
+          experienceYears: null,
+          experienceScope: null,
+          sourceEvidence: "TypeScript",
+          confidence: 0.9,
+        }],
+      }],
+    });
+
+    await analyzeJobsForMatching([job], DEFAULT_MATCHER_CONFIG);
+
+    expect(mocks.executeStructured).toHaveBeenCalled();
+    expect(mocks.getOrCreateJobAnalysis).toHaveBeenLastCalledWith(expect.objectContaining({
+      extractorVersion: "job-analysis-v5",
+      aiRunId: "recovered-run",
     }));
   });
 

@@ -34,7 +34,7 @@ import {
 import { analyzeJobsForMatching } from "../evidence/job-analysis";
 import { scoreDeterministically } from "../evidence/scoring";
 
-const CANDIDATE_SNAPSHOT_VERSION = "candidate-evidence-v1";
+const CANDIDATE_SNAPSHOT_VERSION = "candidate-evidence-v2";
 
 function throwIfAborted(signal?: AbortSignal): void {
   signal?.throwIfAborted();
@@ -265,11 +265,10 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
         analyzed.jobEvidence,
         analyzed.analysis
       );
-      let score = deterministic.score;
+      let scored = deterministic;
       let source: "deterministic" | "adjudicated" = "deterministic";
       let adjudicationRunId: string | undefined;
       let attempts = 0;
-      const evidence: MatchEvidence = structuredClone(deterministic.evidence);
       const adjudicationRequired = shouldAdjudicate(
         config.qualityPreset,
         deterministic
@@ -287,12 +286,16 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
               concreteConfig,
               signal
             );
-            score = adjudicated.score;
+            scored = scoreDeterministically(
+              candidate,
+              analyzed.jobEvidence,
+              analyzed.analysis,
+              adjudicated.assessments,
+              adjudicated.summary
+            );
             source = "adjudicated";
             adjudicationRunId = adjudicated.runId;
             attempts = adjudicated.attempts;
-            evidence.reasons.push(`Adjudication: ${adjudicated.rationale}`);
-            evidence.componentEvidence.adjudication = adjudicated.evidenceReferences;
           } catch (error) {
             throwIfAborted(signal);
             warnWithSanitizedError(
@@ -305,12 +308,19 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
 
       const resultPolicyVersion = !modelPolicyResolved
         ? `${scoringPolicyVersion}-model-resolution-pending`
+        : analyzed.analysisSource === "fallback"
+          ? `${scoringPolicyVersion}-analysis-pending`
         : adjudicationRequired && source !== "adjudicated"
           ? `${scoringPolicyVersion}-adjudication-pending`
           : scoringPolicyVersion;
+      const evidence: MatchEvidence = structuredClone(scored.evidence);
       if (!modelPolicyResolved) {
         evidence.reasons.push(
           "Deterministic fallback shown; concrete model resolution will be retried"
+        );
+      } else if (analyzed.analysisSource === "fallback") {
+        evidence.reasons.push(
+          "Deterministic job analysis shown; structured extraction will be retried"
         );
       } else if (resultPolicyVersion !== scoringPolicyVersion) {
         evidence.reasons.push(
@@ -326,10 +336,10 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
         candidateFingerprint: candidateArtifact.fingerprint,
         jobFingerprint: analyzed.jobFingerprint,
         scoringPolicyVersion: resultPolicyVersion,
-        score,
-        breakdown: deterministic.breakdown,
+        score: scored.score,
+        breakdown: scored.breakdown,
         evidence,
-        confidence: deterministic.confidence,
+        confidence: scored.confidence,
         source,
         adjudicationRunId,
         signal,

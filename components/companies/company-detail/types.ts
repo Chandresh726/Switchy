@@ -1,3 +1,5 @@
+import type { MatchBand } from "@/components/jobs/match-badge";
+
 export type Tab = "jobs" | "people" | "activity" | "notes";
 
 export interface CompanyOverview {
@@ -25,6 +27,13 @@ export interface CompanyJob {
   url: string;
   status: string;
   matchScore: number | null;
+  matchBand?: MatchBand | null;
+  matchLegacy?: boolean;
+  matchConstraints?: Array<{
+    status: "satisfied" | "conflict" | "unknown";
+    severity: "blocking" | "preference" | "informational";
+    message: string;
+  }>;
   location: string | null;
   locationType: string | null;
   discoveredAt: string | null;
@@ -76,6 +85,7 @@ export interface CompanyOverviewResponse {
   company: CompanyOverview;
   stats: CompanyStats;
   jobs: CompanyJob[];
+  topMatches: CompanyJob[];
   people: CompanyPerson[];
   activity: CompanyActivity;
 }

@@ -52,6 +52,27 @@ interface Job {
   matchBreakdown: MatchBreakdownValue | null;
   matchStale: boolean;
   matchLegacy: boolean;
+  matchSummary: string;
+  matchBand: "high" | "good" | "possible" | "stretch" | "low" | "insufficient_evidence" | null;
+  matchRoleFitScore: number | null;
+  matchEvidenceCoverage: number | null;
+  matchExtractionConfidence: number | null;
+  matchConstraints: Array<{
+    type: "location" | "authorization" | "license" | "employment" | "management";
+    status: "satisfied" | "conflict" | "unknown";
+    severity: "blocking" | "preference" | "informational";
+    message: string;
+  }>;
+  matchRequirementAssessments: Array<{
+    requirementId: string;
+    status: "direct_match" | "equivalent_match" | "transferable_match" | "partial_match" | "missing" | "unknown" | "not_applicable";
+    confidence: number;
+    evidenceReferences: string[];
+    rationale: string;
+    requirementType?: string;
+    requirementImportance?: "critical" | "important" | "preferred" | "contextual";
+    requirementText?: string;
+  }>;
   scoringPolicyVersion: string | null;
   matchReasons: string[];
   matchedSkills: string[];
@@ -239,7 +260,7 @@ export default function JobDetailPage() {
           </div>
 
           {job.matchScore !== null ? (
-            <MatchBadge score={job.matchScore} size="lg" showLabel />
+            <MatchBadge score={job.matchScore} size="lg" showLabel band={job.matchBand} />
           ) : job.matchStale ? (
             <Badge variant="outline" className="border-amber-500/40 text-amber-300">
               Match stale
@@ -364,11 +385,17 @@ export default function JobDetailPage() {
             {job.matchLegacy ? (
               <LegacyMatchAlert />
             ) : (
-              <MatchBreakdown
-                breakdown={job.matchBreakdown}
-                confidence={job.matchConfidence}
-                stale={job.matchStale}
-              />
+                  <MatchBreakdown
+                    breakdown={job.matchBreakdown}
+                    confidence={job.matchConfidence}
+                    stale={job.matchStale}
+                    summary={job.matchSummary}
+                    band={job.matchBand}
+                    evidenceCoverage={job.matchEvidenceCoverage}
+                    extractionConfidence={job.matchExtractionConfidence}
+                    constraints={job.matchConstraints}
+                    requirementAssessments={job.matchRequirementAssessments}
+                  />
             )}
             {/* Match Reasons */}
             {job.matchReasons.length > 0 && (

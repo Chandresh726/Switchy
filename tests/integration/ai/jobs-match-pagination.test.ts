@@ -27,7 +27,7 @@ describe("score-aware jobs pagination", () => {
       getMatchPresentations: vi.fn().mockImplementation(async (
         jobRows: Array<{ id: number; matchScore: number | null }>
       ) => new Map(jobRows.map((job) => [job.id, {
-        matchScore: job.id === 1 ? 80 : job.matchScore,
+        matchScore: job.id === 1 ? 80 : job.id === 5 ? 99 : job.matchScore,
         matchReasons: [],
         matchedSkills: [],
         missingSkills: [],
@@ -76,6 +76,13 @@ describe("score-aware jobs pagination", () => {
         url: "https://example.com/jobs/legacy",
         matchScore: 91,
       },
+      {
+        id: 5,
+        companyId: company.id,
+        title: "High numeric but insufficient evidence",
+        description: "Sparse evidence",
+        url: "https://example.com/jobs/insufficient",
+      },
     ].map((job) => ({
       ...job,
       aiFingerprint: buildJobFingerprintFromRecord({
@@ -98,8 +105,20 @@ describe("score-aware jobs pagination", () => {
         scoringPolicyVersion: context.scoringPolicyVersion,
         score: 80,
         breakdownJson: "{}",
-        evidenceJson: "{}",
+        evidenceJson: JSON.stringify({ matchBand: "good" }),
         confidence: 0.8,
+        source: "deterministic",
+      },
+      {
+        id: "insufficient-result",
+        jobId: 5,
+        candidateFingerprint: context.candidateFingerprint,
+        jobFingerprint: jobValues[4].aiFingerprint,
+        scoringPolicyVersion: context.scoringPolicyVersion,
+        score: 99,
+        breakdownJson: "{}",
+        evidenceJson: JSON.stringify({ matchBand: "insufficient_evidence" }),
+        confidence: 0.2,
         source: "deterministic",
       },
       {
@@ -120,8 +139,8 @@ describe("score-aware jobs pagination", () => {
       "http://localhost/api/jobs?sortBy=matchScore&sortOrder=desc&limit=1"
     ) as NextRequest);
     expect(await firstPage.json()).toMatchObject({
-      jobs: [{ id: 4, title: "Legacy match", matchScore: 91 }],
-      totalCount: 4,
+      jobs: [{ id: 5, title: "High numeric but insufficient evidence", matchScore: 99 }],
+      totalCount: 5,
       hasMore: true,
     });
 
@@ -130,11 +149,40 @@ describe("score-aware jobs pagination", () => {
     ) as NextRequest);
     expect(await filtered.json()).toMatchObject({
       jobs: [
+        { id: 5, matchScore: 99 },
+        { id: 4, matchScore: 91 },
+        { id: 1, matchScore: 80 },
+      ],
+      totalCount: 3,
+      hasMore: false,
+    });
+
+    const promoted = await GET(new Request(
+      "http://localhost/api/jobs?matchBands=high,good&sortBy=matchScore&limit=10"
+    ) as NextRequest);
+    expect(await promoted.json()).toMatchObject({
+      jobs: [
         { id: 4, matchScore: 91 },
         { id: 1, matchScore: 80 },
       ],
       totalCount: 2,
       hasMore: false,
+    });
+
+    const highOnly = await GET(new Request(
+      "http://localhost/api/jobs?matchBands=high&sortBy=matchScore&limit=10"
+    ) as NextRequest);
+    expect(await highOnly.json()).toMatchObject({
+      jobs: [{ id: 4, matchScore: 91 }],
+      totalCount: 1,
+    });
+
+    const goodOnly = await GET(new Request(
+      "http://localhost/api/jobs?matchBands=good&sortBy=matchScore&limit=10"
+    ) as NextRequest);
+    expect(await goodOnly.json()).toMatchObject({
+      jobs: [{ id: 1, matchScore: 80 }],
+      totalCount: 1,
     });
   });
 
@@ -167,9 +215,15 @@ describe("score-aware jobs pagination", () => {
     database.insert(jobs).values([
       {
         companyId: company.id,
+        title: "Legacy good match",
+        url: "https://example.com/jobs/legacy-good",
+        matchScore: 84,
+      },
+      {
+        companyId: company.id,
         title: "Legacy high match",
         url: "https://example.com/jobs/legacy-high",
-        matchScore: 84,
+        matchScore: 90,
       },
       {
         companyId: company.id,
@@ -182,9 +236,28 @@ describe("score-aware jobs pagination", () => {
       "http://localhost/api/jobs?minScore=75&sortBy=matchScore&limit=10"
     ) as NextRequest);
     expect(await response.json()).toMatchObject({
-      jobs: [{ title: "Legacy high match", matchScore: 84, matchLegacy: true }],
-      totalCount: 1,
+      jobs: [
+        { title: "Legacy high match", matchScore: 90, matchLegacy: true },
+        { title: "Legacy good match", matchScore: 84, matchLegacy: true },
+      ],
+      totalCount: 2,
       hasMore: false,
+    });
+
+    const high = await GET(new Request(
+      "http://localhost/api/jobs?matchBands=high&sortBy=matchScore&limit=10"
+    ) as NextRequest);
+    expect(await high.json()).toMatchObject({
+      jobs: [{ title: "Legacy high match", matchScore: 90 }],
+      totalCount: 1,
+    });
+
+    const good = await GET(new Request(
+      "http://localhost/api/jobs?matchBands=good&sortBy=matchScore&limit=10"
+    ) as NextRequest);
+    expect(await good.json()).toMatchObject({
+      jobs: [{ title: "Legacy good match", matchScore: 84 }],
+      totalCount: 1,
     });
   });
 });

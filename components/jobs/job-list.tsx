@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { JobCard } from "./job-card";
 import { JobFilters } from "./job-filters";
+import type { MatchBand } from "./match-badge";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Briefcase, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ interface Filters {
   employmentType: string[];
   seniorityLevel: string[];
   minScore: string;
+  matchBands: string;
   department: string;
   locationSearch: string;
   sortBy: string;
@@ -33,6 +35,7 @@ const defaultFilters: Filters = {
   employmentType: [],
   seniorityLevel: [],
   minScore: "",
+  matchBands: "",
   department: "",
   locationSearch: "",
   sortBy: "matchScore",
@@ -64,6 +67,7 @@ function parseFiltersFromSearchParams(searchParams: URLSearchParams): Partial<Fi
   const employmentType = searchParams.get("employmentType");
   const seniorityLevel = searchParams.get("seniorityLevel");
   const minScore = searchParams.get("minScore");
+  const matchBands = searchParams.get("matchBands");
   const department = searchParams.get("department");
   const locationSearch = searchParams.get("locationSearch");
   const sortBy = searchParams.get("sortBy");
@@ -81,6 +85,7 @@ function parseFiltersFromSearchParams(searchParams: URLSearchParams): Partial<Fi
   if (employmentType) filters.employmentType = employmentType.split(",").filter(Boolean);
   if (seniorityLevel) filters.seniorityLevel = seniorityLevel.split(",").filter(Boolean);
   if (minScore) filters.minScore = minScore;
+  if (matchBands) filters.matchBands = matchBands;
   if (department) filters.department = department;
   if (locationSearch) filters.locationSearch = locationSearch;
   if (sortBy) filters.sortBy = sortBy;
@@ -106,6 +111,7 @@ function buildQueryString(filters: Filters, tab: TabType): string {
   if (filters.employmentType.length > 0) params.set("employmentType", filters.employmentType.join(","));
   if (filters.seniorityLevel.length > 0) params.set("seniorityLevel", filters.seniorityLevel.join(","));
   if (filters.minScore) params.set("minScore", filters.minScore);
+  if (filters.matchBands) params.set("matchBands", filters.matchBands);
   if (filters.department) params.set("department", filters.department);
   if (filters.locationSearch) params.set("locationSearch", filters.locationSearch);
   if (filters.sortBy && filters.sortBy !== defaultFilters.sortBy) {
@@ -131,6 +137,7 @@ interface Job {
   seniorityLevel: string | null;
   status: string;
   matchScore: number | null;
+  matchBand?: MatchBand | null;
   postedDate: string | null;
   discoveredAt: string;
   company: {
@@ -301,6 +308,7 @@ export function JobList() {
       params.set("seniorityLevel", filters.seniorityLevel.join(","));
     }
     if (filters.minScore) params.set("minScore", filters.minScore);
+    if (filters.matchBands) params.set("matchBands", filters.matchBands);
     if (debouncedDepartment) params.set("department", debouncedDepartment);
     if (debouncedLocationSearch) params.set("locationSearch", debouncedLocationSearch);
     if (filters.sortBy) params.set("sortBy", filters.sortBy);
@@ -320,6 +328,7 @@ export function JobList() {
     filters.employmentType,
     filters.seniorityLevel,
     filters.minScore,
+    filters.matchBands,
     debouncedDepartment,
     debouncedLocationSearch,
     filters.sortBy,

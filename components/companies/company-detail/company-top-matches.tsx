@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { ChevronRight, MapPin, CalendarDays } from "lucide-react";
 
+import { MatchBadge } from "@/components/jobs/match-badge";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/utils/format";
+import { isPromotedMatch } from "@/lib/ai/matcher/promotion";
 
 import type { CompanyJob } from "./types";
 
@@ -19,27 +20,6 @@ const LOCATION_TYPE_LABELS: Record<string, string> = {
   onsite: "On-site",
 };
 
-function getMatchScoreConfig(score: number | null): { label: string; className: string } {
-  if (typeof score !== "number") {
-    return {
-      label: "No score",
-      className: "border-border bg-muted/40 text-muted-foreground",
-    };
-  }
-
-  if (score >= 85) {
-    return {
-      label: `${score.toFixed(0)}% match`,
-      className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
-    };
-  }
-
-  return {
-    label: `${score.toFixed(0)}% match`,
-    className: "border-blue-500/30 bg-blue-500/10 text-blue-400",
-  };
-}
-
 function parseDate(value: string | null): Date | null {
   if (!value) return null;
   const parsed = new Date(value);
@@ -48,10 +28,7 @@ function parseDate(value: string | null): Date | null {
 }
 
 export function CompanyTopMatches({ jobs }: CompanyTopMatchesProps) {
-  const topJobs = jobs
-    .filter((job) => typeof job.matchScore === "number" && job.matchScore >= 75)
-    .sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0))
-    .slice(0, 3);
+  const topJobs = jobs.filter(isPromotedMatch).slice(0, 3);
 
   if (topJobs.length === 0) return null;
 
@@ -67,8 +44,10 @@ export function CompanyTopMatches({ jobs }: CompanyTopMatchesProps) {
 
       <div className="grid grid-cols-3 gap-3">
         {topJobs.map((job) => {
-          const matchConfig = getMatchScoreConfig(job.matchScore);
           const postedDate = parseDate(job.discoveredAt);
+          const hasBlockingConstraint = job.matchConstraints?.some((constraint) =>
+            constraint.status === "conflict" && constraint.severity === "blocking"
+          ) ?? false;
 
           return (
             <Link
@@ -96,14 +75,14 @@ export function CompanyTopMatches({ jobs }: CompanyTopMatchesProps) {
               </div>
 
               <div className="mt-auto flex items-center justify-between pt-2">
-                <span
-                  className={cn(
-                    "inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium",
-                    matchConfig.className
+                <div className="flex flex-col items-start gap-1">
+                  <MatchBadge score={job.matchScore} band={job.matchBand} size="sm" showLabel />
+                  {hasBlockingConstraint && (
+                    <span className="text-[10px] font-medium text-destructive">
+                      Eligibility constraint
+                    </span>
                   )}
-                >
-                  {matchConfig.label}
-                </span>
+                </div>
                 {postedDate && (
                   <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                     <CalendarDays className="h-3 w-3" />

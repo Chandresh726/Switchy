@@ -13,6 +13,7 @@ interface JobFilters {
   employmentType: string[];
   seniorityLevel: string[];
   minScore: string;
+  matchBands: string;
   department: string;
   locationSearch: string;
   sortBy: string;
@@ -54,14 +55,14 @@ const SENIORITY_LEVEL_OPTIONS = [
 
 const SCORE_OPTIONS = [
   { value: "", label: "Any Score" },
-  { value: "75", label: "75%+" },
-  { value: "60", label: "60%+" },
-  { value: "45", label: "45%+" },
-  { value: "30", label: "30%+" },
+  { value: "85", label: "High match (85+)" },
+  { value: "70", label: "Good match (70+)" },
+  { value: "55", label: "Possible match (55+)" },
+  { value: "40", label: "Stretch match (40+)" },
 ];
 
 const SORT_OPTIONS = [
-  { value: "matchScore", label: "Match Score" },
+  { value: "matchScore", label: "Compatibility" },
   { value: "discoveredAt", label: "Date Added" },
   { value: "postedDate", label: "Date Posted" },
   { value: "companyName", label: "Company" },
@@ -367,6 +368,13 @@ export function JobFilters({
         onRemove: () => onFiltersChange({ ...filters, minScore: "" }),
       });
     }
+    if (filters.matchBands) {
+      chips.push({
+        key: "matchBands",
+        label: "Good or high compatibility",
+        onRemove: () => onFiltersChange({ ...filters, matchBands: "" }),
+      });
+    }
 
     if (filters.department) {
       chips.push({
@@ -398,6 +406,7 @@ export function JobFilters({
       employmentType: [],
       seniorityLevel: [],
       minScore: "",
+      matchBands: "",
       department: "",
       locationSearch: "",
       sortBy: filters.sortBy,
@@ -505,7 +514,7 @@ export function JobFilters({
         <select
           value={filters.minScore}
           onChange={(e) =>
-            onFiltersChange({ ...filters, minScore: e.target.value })
+            onFiltersChange({ ...filters, minScore: e.target.value, matchBands: "" })
           }
           className="h-7 border border-border bg-muted px-3 text-xs text-foreground/80"
         >

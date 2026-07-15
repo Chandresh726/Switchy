@@ -161,9 +161,9 @@ export function MatcherSection({
                 </div>
                 <div className="grid gap-3 md:grid-cols-3">
                   {([
-                    ["economy", "Economy", "Mostly deterministic; review only very low-confidence matches."],
-                    ["balanced", "Balanced", "Review ambiguous mid-range matches while reusing cached evidence."],
-                    ["quality", "Quality", "Review a wider score range for maximum nuance."],
+                    ["economy", "Economy", "Use AI only for unresolved critical requirements."],
+                    ["balanced", "Balanced", "Reason about unclear important requirements and transferable experience."],
+                    ["quality", "Quality", "Review every meaningful requirement for maximum nuance."],
                   ] as const).map(([value, label, description]) => (
                     <button
                       key={value}

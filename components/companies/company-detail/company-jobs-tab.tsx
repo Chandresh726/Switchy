@@ -14,6 +14,7 @@ import type { CompanyJob, CompanyOverview } from "./types";
 interface CompanyJobsTabProps {
   company: CompanyOverview;
   jobs: CompanyJob[];
+  topMatches: CompanyJob[];
 }
 
 type SortKey = "matchScore" | "discoveredAt";
@@ -21,7 +22,7 @@ type SortDir = "desc" | "asc";
 type StatusFilter = "active" | "all" | "new" | "viewed" | "interested" | "applied" | "rejected" | "archived";
 
 const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
-  { key: "matchScore", label: "Match Score" },
+  { key: "matchScore", label: "Compatibility" },
   { key: "discoveredAt", label: "Posted Date" },
 ];
 
@@ -59,7 +60,7 @@ function parseDate(value: string | null): Date | null {
   return parsed;
 }
 
-export function CompanyJobsTab({ company, jobs }: CompanyJobsTabProps) {
+export function CompanyJobsTab({ company, jobs, topMatches }: CompanyJobsTabProps) {
   const [currentTime] = useState(() => Date.now());
   const [sortKey, setSortKey] = useState<SortKey>("discoveredAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -127,7 +128,7 @@ export function CompanyJobsTab({ company, jobs }: CompanyJobsTabProps) {
         </span>
       </div>
 
-      <CompanyTopMatches jobs={jobs} />
+      <CompanyTopMatches jobs={topMatches} />
 
       <div className="space-y-3">
         {/* Header + controls row */}

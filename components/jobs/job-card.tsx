@@ -5,7 +5,7 @@ import Link from "next/link";
 import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { MatchBadge } from "./match-badge";
+import { MatchBadge, type MatchBand } from "./match-badge";
 import { ApplyButton } from "./apply-button";
 import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
 import {
@@ -31,6 +31,7 @@ interface Job {
   seniorityLevel: string | null;
   status: string;
   matchScore: number | null;
+  matchBand?: MatchBand | null;
   postedDate: string | null;
   discoveredAt: string;
   company: {
@@ -132,7 +133,7 @@ export function JobCard({ job }: JobCardProps) {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <MatchBadge score={job.matchScore} />
+          <MatchBadge score={job.matchScore} band={job.matchBand} />
           {job.status !== "new" && (
             <Badge
               variant="outline"

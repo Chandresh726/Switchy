@@ -114,6 +114,7 @@ const analysis = {
   },
   jobFingerprint: "b".repeat(64),
   jobAnalysisId: "analysis-1",
+  analysisSource: "ai",
   analysis: {
     mustHaveSkills: ["typescript"],
     preferredSkills: [],
@@ -425,6 +426,29 @@ describe("evidence matcher executor", () => {
     );
   });
 
+  it("marks a deterministic job-analysis fallback as pending so extraction is retried", async () => {
+    mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
+    mocks.fetchProfileData.mockResolvedValue({
+      profile: { id: 1, summary: "Backend engineer", preferredCountry: null, preferredCity: null },
+      skills: [],
+      experience: [],
+      education: [],
+    });
+    mocks.analyzeJobsForMatching.mockResolvedValue(new Map([[101, {
+      ...analysis,
+      analysisSource: "fallback",
+    }]]));
+
+    await executeMatch({ config, jobIds: [101] });
+
+    expect(mocks.createMatchResult).toHaveBeenCalledWith(expect.objectContaining({
+      scoringPolicyVersion: "evidence-score-v1-fixture-analysis-pending",
+    }));
+    expect(mocks.createMatchResult.mock.calls[0]?.[0].evidence.reasons).toContain(
+      "Deterministic job analysis shown; structured extraction will be retried"
+    );
+  });
+
   it("runs adjudications concurrently up to the configured provider ceiling", async () => {
     const secondJob = { ...job, id: 102, title: "Platform Engineer" };
     const secondAnalysis = {
@@ -458,11 +482,10 @@ describe("evidence matcher executor", () => {
       await release.promise;
       active -= 1;
       return {
-        score: 90,
         runId: "adjudication-run",
         attempts: 1,
-        rationale: "Synthetic adjudication",
-        evidenceReferences: ["must-have:typescript"],
+        summary: "Synthetic semantic assessment",
+        assessments: [],
       };
     });
 
@@ -476,8 +499,8 @@ describe("evidence matcher executor", () => {
 
     expect(results.size).toBe(2);
     expect(Array.from(results.values())).toEqual([
-      expect.objectContaining({ score: 90 }),
-      expect.objectContaining({ score: 90 }),
+      expect.objectContaining({ score: 88 }),
+      expect.objectContaining({ score: 88 }),
     ]);
   });
 

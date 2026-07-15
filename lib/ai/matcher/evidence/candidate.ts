@@ -18,6 +18,17 @@ export interface ScoringCandidate {
   seniorityLevel: SeniorityLevel | null;
   managementExperience: boolean;
   domainKeywords: Set<string>;
+  evidenceItems: CandidateEvidenceItem[];
+}
+
+export interface CandidateEvidenceItem {
+  id: string;
+  type: "skill" | "summary" | "experience" | "education";
+  label: string;
+  text: string;
+  roleTitle?: string;
+  startDate?: string | null;
+  endDate?: string | null;
 }
 
 const SKILL_ALIASES: ReadonlyArray<ReadonlyArray<string>> = [
@@ -41,6 +52,25 @@ const DOMAIN_STOP_WORDS = new Set([
   "and", "engineer", "engineering", "developer", "development", "manager",
   "senior", "lead", "the", "with", "for", "from", "that", "this", "work",
 ]);
+
+const MAX_EVIDENCE_ITEM_CHARS = 2_000;
+
+function boundedEvidenceText(values: Array<string | null | undefined>): string {
+  const parts: string[] = [];
+  let remaining = MAX_EVIDENCE_ITEM_CHARS;
+  for (const value of values) {
+    if (!value || remaining <= 0) continue;
+    const normalized = value.trim();
+    if (!normalized) continue;
+    const separatorLength = parts.length === 0 ? 0 : 1;
+    const available = remaining - separatorLength;
+    if (available <= 0) break;
+    const bounded = normalized.slice(0, available);
+    parts.push(bounded);
+    remaining -= bounded.length + separatorLength;
+  }
+  return parts.join("\n");
+}
 
 export function normalizeSkill(value: string): string {
   const normalized = value.normalize("NFC").trim().toLocaleLowerCase("en-US")
@@ -119,6 +149,42 @@ export function enrichCandidateEvidence(
 
 export function buildScoringCandidate(evidence: CandidateEvidence): ScoringCandidate {
   const normalizedSkills = new Set(evidence.skills.map((skill) => normalizeSkill(skill.name)));
+  const evidenceItems: CandidateEvidenceItem[] = [
+    ...evidence.skills.map((skill, index) => ({
+      id: `skill:${index}`,
+      type: "skill" as const,
+      label: skill.name,
+      text: boundedEvidenceText([skill.name, skill.category]),
+    })),
+    ...(evidence.summary
+      ? [{
+          id: "summary",
+          type: "summary" as const,
+          label: "Professional summary",
+          text: evidence.summary.slice(0, MAX_EVIDENCE_ITEM_CHARS),
+        }]
+      : []),
+    ...evidence.experience.map((item, index) => ({
+      id: `experience:${index}`,
+      type: "experience" as const,
+      label: `${item.title} at ${item.company}`,
+      roleTitle: item.title,
+      startDate: item.startDate,
+      endDate: item.endDate,
+      text: boundedEvidenceText([
+        `Dates: ${item.startDate ?? "unknown"} to ${item.endDate ?? "present"}`,
+        item.title,
+        item.description,
+        ...item.highlights,
+      ]),
+    })),
+    ...evidence.education.map((item, index) => ({
+      id: `education:${index}`,
+      type: "education" as const,
+      label: `${item.degree} at ${item.institution}`,
+      text: boundedEvidenceText([item.degree, item.field, item.institution, item.honors]),
+    })),
+  ];
 
   return {
     evidence,
@@ -127,5 +193,6 @@ export function buildScoringCandidate(evidence: CandidateEvidence): ScoringCandi
     seniorityLevel: evidence.seniorityLevel,
     managementExperience: evidence.managementExperience,
     domainKeywords: new Set(evidence.domainKeywords),
+    evidenceItems,
   };
 }

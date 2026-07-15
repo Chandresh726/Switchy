@@ -122,11 +122,54 @@ function collectNumbers(regex: RegExp, text: string, mapper: (match: RegExpExecA
   return values;
 }
 
+const SMALL_NUMBER_WORDS = [
+  "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+  "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+  "seventeen", "eighteen", "nineteen",
+] as const;
+const TENS_NUMBER_WORDS: Record<number, string> = {
+  20: "twenty",
+  30: "thirty",
+  40: "forty",
+  50: "fifty",
+};
+
+function numberWord(value: number): string | null {
+  if (value < SMALL_NUMBER_WORDS.length) return SMALL_NUMBER_WORDS[value] ?? null;
+  const tens = Math.floor(value / 10) * 10;
+  const ones = value % 10;
+  const tensWord = TENS_NUMBER_WORDS[tens];
+  if (!tensWord) return null;
+  return ones === 0 ? tensWord : `${tensWord} ${SMALL_NUMBER_WORDS[ones]}`;
+}
+
+export function normalizeExperienceNumberWords(value: string): string {
+  let normalized = value;
+  const replacements = Array.from({ length: 50 }, (_, index) => index + 1)
+    .flatMap((number) => {
+      const word = numberWord(number);
+      return word ? [{ number, word }] : [];
+    })
+    .sort((left, right) => right.word.length - left.word.length);
+  for (const replacement of replacements) {
+    const pattern = replacement.word.split(" ").map((part) =>
+      part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    ).join("[-\\s]+");
+    normalized = normalized.replace(
+      new RegExp(`\\b${pattern}\\b`, "giu"),
+      String(replacement.number)
+    );
+  }
+  return normalized;
+}
+
 export function estimateRequiredExperienceYears(
   description: string | null,
   requirements: string[]
 ): number | null {
-  const fullText = [description ?? "", ...requirements].join("\n").toLowerCase();
+  const fullText = normalizeExperienceNumberWords(
+    [description ?? "", ...requirements].join("\n").toLowerCase()
+  );
   const experienceRangePattern = /(\d+)\s*(?:-|–|to)\s*(\d+)\s*(?:\+)?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:experience|exp)\b/gi;
 
   const rangeYears = collectNumbers(
