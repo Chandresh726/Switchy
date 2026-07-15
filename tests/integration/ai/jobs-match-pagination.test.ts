@@ -25,9 +25,9 @@ describe("score-aware jobs pagination", () => {
     vi.doMock("@/lib/ai/matcher/presentation", () => ({
       getCurrentMatchContext: vi.fn().mockResolvedValue(context),
       getMatchPresentations: vi.fn().mockImplementation(async (
-        jobRows: Array<{ id: number }>
+        jobRows: Array<{ id: number; matchScore: number | null }>
       ) => new Map(jobRows.map((job) => [job.id, {
-        matchScore: job.id === 1 ? 80 : null,
+        matchScore: job.id === 1 ? 80 : job.matchScore,
         matchReasons: [],
         matchedSkills: [],
         missingSkills: [],
@@ -36,6 +36,7 @@ describe("score-aware jobs pagination", () => {
         matchConfidence: job.id === 1 ? 0.8 : null,
         matchBreakdown: null,
         matchStale: false,
+        matchLegacy: job.matchScore !== null,
         scoringPolicyVersion: context.scoringPolicyVersion,
       }]))),
     }));
@@ -66,6 +67,14 @@ describe("score-aware jobs pagination", () => {
         title: "Unmatched",
         description: "No result",
         url: "https://example.com/jobs/unmatched",
+      },
+      {
+        id: 4,
+        companyId: company.id,
+        title: "Legacy match",
+        description: "Matched by the previous engine",
+        url: "https://example.com/jobs/legacy",
+        matchScore: 91,
       },
     ].map((job) => ({
       ...job,
@@ -111,8 +120,8 @@ describe("score-aware jobs pagination", () => {
       "http://localhost/api/jobs?sortBy=matchScore&sortOrder=desc&limit=1"
     ) as NextRequest);
     expect(await firstPage.json()).toMatchObject({
-      jobs: [{ id: 1, title: "Fresh match", matchScore: 80 }],
-      totalCount: 3,
+      jobs: [{ id: 4, title: "Legacy match", matchScore: 91 }],
+      totalCount: 4,
       hasMore: true,
     });
 
@@ -120,7 +129,60 @@ describe("score-aware jobs pagination", () => {
       "http://localhost/api/jobs?minScore=75&sortBy=matchScore&limit=10"
     ) as NextRequest);
     expect(await filtered.json()).toMatchObject({
-      jobs: [{ id: 1, matchScore: 80 }],
+      jobs: [
+        { id: 4, matchScore: 91 },
+        { id: 1, matchScore: 80 },
+      ],
+      totalCount: 2,
+      hasMore: false,
+    });
+  });
+
+  it("sorts and filters legacy scores when current match context is unavailable", async () => {
+    const { database } = harness.createDatabase();
+    vi.doMock("@/lib/db", () => ({ db: database }));
+    vi.doMock("@/lib/ai/matcher/presentation", () => ({
+      getCurrentMatchContext: vi.fn().mockResolvedValue(null),
+      getMatchPresentations: vi.fn().mockImplementation(async (
+        jobRows: Array<{ id: number; matchScore: number | null }>
+      ) => new Map(jobRows.map((job) => [job.id, {
+        matchScore: job.matchScore,
+        matchReasons: [],
+        matchedSkills: [],
+        missingSkills: [],
+        recommendations: [],
+        matchResultId: null,
+        matchConfidence: null,
+        matchBreakdown: null,
+        matchStale: false,
+        matchLegacy: job.matchScore !== null,
+        scoringPolicyVersion: job.matchScore !== null ? "legacy" : null,
+      }]))),
+    }));
+    const { GET } = await import("@/app/api/jobs/route");
+    const company = database.insert(companies).values({
+      name: "Legacy-only pagination fixture",
+      careersUrl: "https://example.com/legacy-only-careers",
+    }).returning().get();
+    database.insert(jobs).values([
+      {
+        companyId: company.id,
+        title: "Legacy high match",
+        url: "https://example.com/jobs/legacy-high",
+        matchScore: 84,
+      },
+      {
+        companyId: company.id,
+        title: "No score",
+        url: "https://example.com/jobs/no-score",
+      },
+    ]).run();
+
+    const response = await GET(new Request(
+      "http://localhost/api/jobs?minScore=75&sortBy=matchScore&limit=10"
+    ) as NextRequest);
+    expect(await response.json()).toMatchObject({
+      jobs: [{ title: "Legacy high match", matchScore: 84, matchLegacy: true }],
       totalCount: 1,
       hasMore: false,
     });

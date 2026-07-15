@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MatchBadge } from "./match-badge";
 import { MatchBreakdown, type MatchBreakdownValue } from "./match-breakdown";
+import { LegacyMatchAlert } from "./legacy-match-alert";
 import { ApplyButton } from "./apply-button";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { sanitizeHtmlContent } from "@/lib/jobs/description-processor";
@@ -41,6 +42,7 @@ interface Job {
   matchConfidence: number | null;
   matchBreakdown: MatchBreakdownValue | null;
   matchStale: boolean;
+  matchLegacy: boolean;
   scoringPolicyVersion: string | null;
   matchReasons: string[];
   matchedSkills: string[];
@@ -205,17 +207,25 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
                 ) : (
                   <Sparkles className="h-4 w-4" />
                 )}
-                {job.matchResultId ? "Refresh Match" : "Calculate Match"}
+                {job.matchLegacy
+                  ? "Rematch"
+                  : job.matchResultId
+                    ? "Refresh Match"
+                    : "Calculate Match"}
               </Button>
             </div>
 
-            {job.matchResultId !== null && (
+            {(job.matchResultId !== null || job.matchLegacy) && (
               <div className="mt-4 space-y-4">
-                <MatchBreakdown
-                  breakdown={job.matchBreakdown}
-                  confidence={job.matchConfidence}
-                  stale={job.matchStale}
-                />
+                {job.matchLegacy ? (
+                  <LegacyMatchAlert />
+                ) : (
+                  <MatchBreakdown
+                    breakdown={job.matchBreakdown}
+                    confidence={job.matchConfidence}
+                    stale={job.matchStale}
+                  />
+                )}
                 {/* Match Reasons */}
                 {job.matchReasons.length > 0 && (
                   <div>

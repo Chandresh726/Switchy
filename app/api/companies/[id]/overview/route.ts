@@ -44,7 +44,7 @@ export async function GET(
     const jobStatsPromise = currentContext
       ? db.select({
           openJobs: count(),
-          highMatchJobs: sql<number>`SUM(CASE WHEN ${matchResults.score} >= 75 THEN 1 ELSE 0 END)`,
+          highMatchJobs: sql<number>`SUM(CASE WHEN coalesce(${matchResults.score}, ${jobs.matchScore}) >= 75 THEN 1 ELSE 0 END)`,
         }).from(jobs).leftJoin(matchResults, and(
           eq(matchResults.jobId, jobs.id),
           eq(matchResults.candidateFingerprint, currentContext.candidateFingerprint),
@@ -54,7 +54,7 @@ export async function GET(
         )).where(eq(jobs.companyId, parsedParams.id))
       : db.select({
           openJobs: count(),
-          highMatchJobs: sql<number>`0`,
+          highMatchJobs: sql<number>`SUM(CASE WHEN ${jobs.matchScore} >= 75 THEN 1 ELSE 0 END)`,
         }).from(jobs).where(eq(jobs.companyId, parsedParams.id));
 
     const [
@@ -91,6 +91,11 @@ export async function GET(
           department: jobs.department,
           employmentType: jobs.employmentType,
           salary: jobs.salary,
+          matchScore: jobs.matchScore,
+          matchReasons: jobs.matchReasons,
+          matchedSkills: jobs.matchedSkills,
+          missingSkills: jobs.missingSkills,
+          recommendations: jobs.recommendations,
           discoveredAt: jobs.discoveredAt,
           viewedAt: jobs.viewedAt,
         })

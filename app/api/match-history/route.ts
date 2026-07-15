@@ -125,6 +125,11 @@ export async function GET(request: NextRequest) {
             department: jobs.department,
             employmentType: jobs.employmentType,
             salary: jobs.salary,
+            matchScore: jobs.matchScore,
+            matchReasons: jobs.matchReasons,
+            matchedSkills: jobs.matchedSkills,
+            missingSkills: jobs.missingSkills,
+            recommendations: jobs.recommendations,
           }).from(jobs).where(inArray(jobs.id, jobIdChunk))
       );
       const currentPresentations = await getMatchPresentations(

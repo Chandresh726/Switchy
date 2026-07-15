@@ -20,6 +20,11 @@ const job = {
   department: "Engineering",
   employmentType: "full-time",
   salary: null,
+  matchScore: null,
+  matchReasons: null,
+  matchedSkills: null,
+  missingSkills: null,
+  recommendations: null,
 };
 
 const jobFingerprint = buildJobFingerprint(buildJobEvidenceInput(job));
@@ -43,6 +48,7 @@ const row = {
     componentEvidence: {},
   }),
   confidence: 0.84,
+  source: "deterministic",
   isStale: false,
   createdAt: new Date("2026-07-14T00:00:00.000Z"),
 };
@@ -85,6 +91,47 @@ describe("authoritative match presentation", () => {
     expect(selectMatchPresentation(statusChanged, [row], context)).toMatchObject({
       matchScore: 88,
       matchStale: false,
+    });
+  });
+
+  it("presents legacy job columns as a valid legacy score", () => {
+    expect(selectMatchPresentation({
+      ...job,
+      matchScore: 77,
+      matchReasons: '["Strong skill fit"]',
+      matchedSkills: '["TypeScript"]',
+      missingSkills: "malformed",
+      recommendations: '["Apply"]',
+    }, [], context)).toMatchObject({
+      matchScore: 77,
+      matchReasons: ["Strong skill fit"],
+      matchedSkills: ["TypeScript"],
+      missingSkills: [],
+      recommendations: ["Apply"],
+      matchResultId: null,
+      matchStale: false,
+      matchLegacy: true,
+      scoringPolicyVersion: "legacy",
+    });
+  });
+
+  it("presents an imported legacy result without treating it as stale", () => {
+    expect(selectMatchPresentation({
+      ...job,
+      matchScore: 72,
+    }, [{
+      ...row,
+      score: 72,
+      source: "legacy",
+      isStale: true,
+      scoringPolicyVersion: "legacy-import-v1",
+    }], context)).toMatchObject({
+      matchScore: 72,
+      matchResultId: "result-1",
+      matchConfidence: null,
+      matchBreakdown: null,
+      matchStale: false,
+      matchLegacy: true,
     });
   });
 });

@@ -47,6 +47,11 @@ const JOB_LIST_SELECTION = {
     archiveSource: jobs.archiveSource,
     viewedAt: jobs.viewedAt,
     appliedAt: jobs.appliedAt,
+    matchScore: jobs.matchScore,
+    matchReasons: jobs.matchReasons,
+    matchedSkills: jobs.matchedSkills,
+    missingSkills: jobs.missingSkills,
+    recommendations: jobs.recommendations,
   },
   company: {
     id: companies.id,
@@ -243,33 +248,12 @@ export async function GET(request: NextRequest) {
     const hasMinScore = Number.isFinite(parsedMinScore);
     const hasMaxScore = Number.isFinite(parsedMaxScore);
 
-    if (!currentContext && (hasMinScore || hasMaxScore)) {
-      return NextResponse.json({ jobs: [], totalCount: 0, hasMore: false });
-    }
-
     let jobsData;
     let totalCount: number;
     if (!currentContext) {
-      jobsData = await buildJobsQuery()
-        .orderBy(desc(jobs.discoveredAt), desc(jobs.id))
-        .limit(limit)
-        .offset(offset);
-      const [total] = await db.select({ value: count() })
-        .from(jobs)
-        .innerJoin(companies, eq(jobs.companyId, companies.id))
-        .where(whereClause);
-      totalCount = total.value;
-    } else {
-      const currentResultJoin = and(
-        eq(matchResults.jobId, jobs.id),
-        eq(matchResults.candidateFingerprint, currentContext.candidateFingerprint),
-        eq(matchResults.jobFingerprint, jobs.aiFingerprint),
-        eq(matchResults.scoringPolicyVersion, currentContext.scoringPolicyVersion),
-        eq(matchResults.isStale, false)
-      );
       const scoreConditions = [...conditions];
-      if (hasMinScore) scoreConditions.push(gte(matchResults.score, parsedMinScore!));
-      if (hasMaxScore) scoreConditions.push(lte(matchResults.score, parsedMaxScore!));
+      if (hasMinScore) scoreConditions.push(gte(jobs.matchScore, parsedMinScore!));
+      if (hasMaxScore) scoreConditions.push(lte(jobs.matchScore, parsedMaxScore!));
       const scoreWhere = scoreConditions.length > 0 ? and(...scoreConditions) : undefined;
       const scoreDirection = sortOrder === "asc" ? asc : desc;
       const scoreOrderBy = (() => {
@@ -288,8 +272,56 @@ export async function GET(request: NextRequest) {
             return [scoreDirection(jobs.title), desc(jobs.discoveredAt)];
           default:
             return [
-              sql`CASE WHEN ${matchResults.score} IS NULL THEN 1 ELSE 0 END`,
-              scoreDirection(matchResults.score),
+              sql`CASE WHEN ${jobs.matchScore} IS NULL THEN 1 ELSE 0 END`,
+              scoreDirection(jobs.matchScore),
+              desc(jobs.discoveredAt),
+            ];
+        }
+      })();
+      jobsData = await db.select(JOB_LIST_SELECTION)
+        .from(jobs)
+        .innerJoin(companies, eq(jobs.companyId, companies.id))
+        .where(scoreWhere)
+        .orderBy(...scoreOrderBy)
+        .limit(limit)
+        .offset(offset);
+      const [total] = await db.select({ value: count() })
+        .from(jobs)
+        .innerJoin(companies, eq(jobs.companyId, companies.id))
+        .where(scoreWhere);
+      totalCount = total.value;
+    } else {
+      const currentResultJoin = and(
+        eq(matchResults.jobId, jobs.id),
+        eq(matchResults.candidateFingerprint, currentContext.candidateFingerprint),
+        eq(matchResults.jobFingerprint, jobs.aiFingerprint),
+        eq(matchResults.scoringPolicyVersion, currentContext.scoringPolicyVersion),
+        eq(matchResults.isStale, false)
+      );
+      const effectiveMatchScore = sql<number | null>`coalesce(${matchResults.score}, ${jobs.matchScore})`;
+      const scoreConditions = [...conditions];
+      if (hasMinScore) scoreConditions.push(gte(effectiveMatchScore, parsedMinScore!));
+      if (hasMaxScore) scoreConditions.push(lte(effectiveMatchScore, parsedMaxScore!));
+      const scoreWhere = scoreConditions.length > 0 ? and(...scoreConditions) : undefined;
+      const scoreDirection = sortOrder === "asc" ? asc : desc;
+      const scoreOrderBy = (() => {
+        switch (sortBy) {
+          case "postedDate":
+            return [
+              sql`CASE WHEN ${jobs.postedDate} IS NULL THEN 1 ELSE 0 END`,
+              scoreDirection(jobs.postedDate),
+              desc(jobs.id),
+            ];
+          case "discoveredAt":
+            return [scoreDirection(jobs.discoveredAt), desc(jobs.id)];
+          case "companyName":
+            return [scoreDirection(companies.name), desc(jobs.discoveredAt)];
+          case "title":
+            return [scoreDirection(jobs.title), desc(jobs.discoveredAt)];
+          default:
+            return [
+              sql`CASE WHEN ${effectiveMatchScore} IS NULL THEN 1 ELSE 0 END`,
+              scoreDirection(effectiveMatchScore),
               desc(jobs.discoveredAt),
             ];
         }

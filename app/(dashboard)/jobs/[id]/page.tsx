@@ -13,6 +13,7 @@ import {
 } from "@/components/jobs/match-breakdown";
 import { ApplyButton } from "@/components/jobs/apply-button";
 import { JobAIActions } from "@/components/jobs/job-ai-actions";
+import { LegacyMatchAlert } from "@/components/jobs/legacy-match-alert";
 import { MarkdownRenderer } from "@/components/jobs/markdown-renderer";
 import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { sanitizeHtmlContent } from "@/lib/jobs/description-processor";
@@ -50,6 +51,7 @@ interface Job {
   matchConfidence: number | null;
   matchBreakdown: MatchBreakdownValue | null;
   matchStale: boolean;
+  matchLegacy: boolean;
   scoringPolicyVersion: string | null;
   matchReasons: string[];
   matchedSkills: string[];
@@ -305,7 +307,11 @@ export default function JobDetailPage() {
             )}
             {isMatching
               ? "Scoring..."
-              : job.matchResultId ? "Refresh Match" : "Calculate Match"}
+              : job.matchLegacy
+                ? "Rematch"
+                : job.matchResultId
+                  ? "Refresh Match"
+                  : "Calculate Match"}
           </Button>
 
           {/* Status selector */}
@@ -350,16 +356,20 @@ export default function JobDetailPage() {
       </div>
 
       {/* Match Analysis */}
-      {job.matchResultId !== null && (
+      {(job.matchResultId !== null || job.matchLegacy) && (
         <div className="mb-6 rounded-lg border border-border bg-card/70 p-6">
           <h2 className="mb-4 text-lg font-medium text-foreground">Match Analysis</h2>
 
           <div className="space-y-4">
-            <MatchBreakdown
-              breakdown={job.matchBreakdown}
-              confidence={job.matchConfidence}
-              stale={job.matchStale}
-            />
+            {job.matchLegacy ? (
+              <LegacyMatchAlert />
+            ) : (
+              <MatchBreakdown
+                breakdown={job.matchBreakdown}
+                confidence={job.matchConfidence}
+                stale={job.matchStale}
+              />
+            )}
             {/* Match Reasons */}
             {job.matchReasons.length > 0 && (
               <div>

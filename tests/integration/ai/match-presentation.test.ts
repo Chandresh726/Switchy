@@ -120,4 +120,57 @@ describe("authoritative match presentation queries", () => {
       matchStale: false,
     });
   });
+
+  it("shows legacy columns and excludes them from unmatched jobs", async () => {
+    const { database } = harness.createDatabase();
+    vi.doMock("@/lib/db", () => ({ db: database }));
+    const {
+      getFreshUnmatchedJobCount,
+      getFreshUnmatchedJobIds,
+      getMatchPresentations,
+    } = await import("@/lib/ai/matcher/presentation");
+    const company = database.insert(companies).values({
+      name: "Legacy presentation fixture",
+      careersUrl: "https://example.com/legacy-careers",
+    }).returning().get();
+    const [legacyJob, unmatchedJob] = database.insert(jobs).values([
+      {
+        companyId: company.id,
+        title: "Legacy matched role",
+        description: "Old matcher result",
+        url: "https://example.com/jobs/legacy-matched",
+        matchScore: 79,
+        matchReasons: '["Relevant experience"]',
+        matchedSkills: '["TypeScript"]',
+      },
+      {
+        companyId: company.id,
+        title: "Unmatched role",
+        description: "No matcher result",
+        url: "https://example.com/jobs/unmatched-role",
+      },
+    ]).returning().all();
+    const context = {
+      candidateFingerprint: "d".repeat(64),
+      scoringPolicyVersion: "policy-current",
+    };
+
+    const presentations = await getMatchPresentations(
+      [legacyJob, unmatchedJob],
+      context
+    );
+    expect(presentations.get(legacyJob.id)).toMatchObject({
+      matchScore: 79,
+      matchReasons: ["Relevant experience"],
+      matchedSkills: ["TypeScript"],
+      matchLegacy: true,
+      matchStale: false,
+    });
+    expect(presentations.get(unmatchedJob.id)).toMatchObject({
+      matchScore: null,
+      matchLegacy: false,
+    });
+    expect(await getFreshUnmatchedJobIds(context)).toEqual([unmatchedJob.id]);
+    expect(await getFreshUnmatchedJobCount(context)).toBe(1);
+  });
 });
