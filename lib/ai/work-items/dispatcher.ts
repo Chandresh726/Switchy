@@ -6,6 +6,11 @@ import {
   type LocalLeasedWorkRunSummary,
 } from "@/lib/scraper/runtime/leased-work-runner";
 import { ScheduledSingleFlightDispatcher } from "@/lib/scraper/runtime/single-flight-dispatcher";
+import {
+  recordDispatchSuccess,
+  recordRuntimeError,
+  setMatcherDispatchRecovery,
+} from "@/lib/runtime/health";
 
 import type { MatchWorkResult } from "./contracts";
 import { AIMatchWorkHandler, type MatchWorkExecutor } from "./match-handler";
@@ -54,15 +59,22 @@ export class AIWorkDispatcher {
 
 const defaultDispatcher = new AIWorkDispatcher();
 const scheduledDispatcher = new ScheduledSingleFlightDispatcher({
-  run: () => defaultDispatcher.runAvailable(),
+  run: async () => {
+    const summary = await defaultDispatcher.runAvailable();
+    recordDispatchSuccess();
+    setMatcherDispatchRecovery("ready");
+    return summary;
+  },
   getNextRunAt: (summary) => summary.nextAvailableAt,
   failureRetryMs: DEFAULT_CONFIG.baseRetryDelayMs,
   onError: (error) => {
+    setMatcherDispatchRecovery("failed");
+    recordRuntimeError("matcher", "matcher_dispatch_failed");
     const sanitized = sanitizeAIError(error);
     console.error(`[AI Work] Dispatch failed: [${sanitized.code}] ${sanitized.message}`);
   },
 });
 
-export function dispatchPendingAIWork(): void {
-  void scheduledDispatcher.request();
+export function dispatchPendingAIWork(): Promise<AIWorkRunSummary> {
+  return scheduledDispatcher.request();
 }

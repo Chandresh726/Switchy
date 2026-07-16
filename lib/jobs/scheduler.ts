@@ -7,12 +7,18 @@ import { scrapeSessions, settings } from "@/lib/db/schema";
 import {
   getLocalScrapeQueueService,
 } from "@/lib/scraper";
+import {
+  logRuntimeEvent,
+  recordRuntimeError,
+  setSchedulerInitialization,
+} from "@/lib/runtime/health";
 
 import { getSchedulerLeaseStore } from "./scheduler-lease-store";
 
 const DEFAULT_CRON = "0 */6 * * *";
 const SCHEDULER_ENABLED_KEY = "scheduler_enabled";
 const SCHEDULER_LAST_RUN_KEY = "scheduler.lastRun";
+const SCHEDULER_RECOVERY_STATE_KEY = "scheduler.recovery.v1";
 const SCHEDULER_PENDING_RECOVERY_KEY = "scheduler.pendingRecovery";
 const SCHEDULER_MISSED_COUNT_KEY = "scheduler.missedCount";
 const SCHEDULER_OLDEST_MISSED_RUN_KEY = "scheduler.oldestMissedRun";
@@ -28,6 +34,52 @@ interface SchedulerRecoveryState {
   pendingMissedCount: number;
   oldestMissedRun: Date | null;
   latestMissedRun: Date | null;
+}
+
+interface PersistedSchedulerRecoveryState {
+  version: 1;
+  pendingMissedCount: number;
+  oldestMissedRun: string | null;
+  latestMissedRun: string | null;
+}
+
+const EMPTY_RECOVERY_STATE: SchedulerRecoveryState = {
+  pendingMissedCount: 0,
+  oldestMissedRun: null,
+  latestMissedRun: null,
+};
+
+function serializeRecoveryState(state: SchedulerRecoveryState): string {
+  return JSON.stringify({
+    version: 1,
+    pendingMissedCount: state.pendingMissedCount,
+    oldestMissedRun: state.oldestMissedRun?.toISOString() ?? null,
+    latestMissedRun: state.latestMissedRun?.toISOString() ?? null,
+  } satisfies PersistedSchedulerRecoveryState);
+}
+
+function parseRecoveryRecord(value: string | null): SchedulerRecoveryState | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as Partial<PersistedSchedulerRecoveryState>;
+    if (parsed.version !== 1 || !Number.isInteger(parsed.pendingMissedCount) || parsed.pendingMissedCount! < 0) {
+      return null;
+    }
+    const oldestMissedRun = parsed.oldestMissedRun ? new Date(parsed.oldestMissedRun) : null;
+    const latestMissedRun = parsed.latestMissedRun ? new Date(parsed.latestMissedRun) : null;
+    if (oldestMissedRun && !Number.isFinite(oldestMissedRun.getTime())) return null;
+    if (latestMissedRun && !Number.isFinite(latestMissedRun.getTime())) return null;
+    if (parsed.pendingMissedCount === 0 && (oldestMissedRun || latestMissedRun)) return null;
+    if (parsed.pendingMissedCount! > 0 && (!oldestMissedRun || !latestMissedRun)) return null;
+    if (oldestMissedRun && latestMissedRun && oldestMissedRun > latestMissedRun) return null;
+    return {
+      pendingMissedCount: parsed.pendingMissedCount!,
+      oldestMissedRun,
+      latestMissedRun,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function parseRecoveryState(values: Record<string, string | null>): SchedulerRecoveryState {
@@ -90,35 +142,75 @@ async function getLastRunFromDB(): Promise<Date | null> {
 }
 
 async function getRecoveryState(): Promise<SchedulerRecoveryState> {
-  const [pendingValue, missedCountValue, oldestValue, latestValue] = await Promise.all([
-    getSettingValue(SCHEDULER_PENDING_RECOVERY_KEY),
-    getSettingValue(SCHEDULER_MISSED_COUNT_KEY),
-    getSettingValue(SCHEDULER_OLDEST_MISSED_RUN_KEY),
-    getSettingValue(SCHEDULER_LATEST_MISSED_RUN_KEY),
-  ]);
-
-  return parseRecoveryState({
-    [SCHEDULER_PENDING_RECOVERY_KEY]: pendingValue,
-    [SCHEDULER_MISSED_COUNT_KEY]: missedCountValue,
-    [SCHEDULER_OLDEST_MISSED_RUN_KEY]: oldestValue,
-    [SCHEDULER_LATEST_MISSED_RUN_KEY]: latestValue,
-  });
+  const value = await getSettingValue(SCHEDULER_RECOVERY_STATE_KEY);
+  if (!value) return EMPTY_RECOVERY_STATE;
+  const parsed = parseRecoveryRecord(value);
+  if (!parsed) throw new Error("Scheduler recovery state is invalid or unsupported");
+  return parsed;
 }
 
 async function saveRecoveryState(state: SchedulerRecoveryState): Promise<void> {
   const updatedAt = new Date();
-  const values = [
-    [SCHEDULER_PENDING_RECOVERY_KEY, state.pendingMissedCount > 0 ? "true" : "false"],
-    [SCHEDULER_MISSED_COUNT_KEY, String(state.pendingMissedCount)],
-    [SCHEDULER_OLDEST_MISSED_RUN_KEY, state.oldestMissedRun?.toISOString() ?? null],
-    [SCHEDULER_LATEST_MISSED_RUN_KEY, state.latestMissedRun?.toISOString() ?? null],
-  ] as const;
+  await db.insert(settings).values({
+    key: SCHEDULER_RECOVERY_STATE_KEY,
+    value: serializeRecoveryState(state),
+    updatedAt,
+  }).onConflictDoUpdate({
+    target: settings.key,
+    set: { value: serializeRecoveryState(state), updatedAt },
+  });
+}
+
+export function migrateSchedulerRecoveryState(): void {
   db.transaction((tx) => {
-    for (const [key, value] of values) {
-      tx.insert(settings).values({ key, value, updatedAt }).onConflictDoUpdate({
+    const current = tx.select({ value: settings.value }).from(settings)
+      .where(eq(settings.key, SCHEDULER_RECOVERY_STATE_KEY)).get()?.value ?? null;
+    if (current) {
+      let version: unknown;
+      try {
+        version = (JSON.parse(current) as { version?: unknown }).version;
+      } catch {
+        throw new Error("Scheduler recovery state is invalid");
+      }
+      if (version !== 1) {
+        throw new Error("Scheduler recovery state version is unsupported");
+      }
+      if (!parseRecoveryRecord(current)) {
+        throw new Error("Scheduler recovery state is invalid");
+      }
+    } else {
+      const legacyKeys = [
+        SCHEDULER_PENDING_RECOVERY_KEY,
+        SCHEDULER_MISSED_COUNT_KEY,
+        SCHEDULER_OLDEST_MISSED_RUN_KEY,
+        SCHEDULER_LATEST_MISSED_RUN_KEY,
+      ];
+      const legacyValues = Object.fromEntries(legacyKeys.map((key) => [
+        key,
+        tx.select({ value: settings.value }).from(settings).where(eq(settings.key, key)).get()?.value ?? null,
+      ]));
+      const migrated = parseRecoveryState(legacyValues);
+      const serialized = serializeRecoveryState(migrated);
+      if (!parseRecoveryRecord(serialized)) {
+        throw new Error("Legacy scheduler recovery state is inconsistent");
+      }
+      const updatedAt = new Date();
+      tx.insert(settings).values({
+        key: SCHEDULER_RECOVERY_STATE_KEY,
+        value: serialized,
+        updatedAt,
+      }).onConflictDoUpdate({
         target: settings.key,
-        set: { value, updatedAt },
+        set: { value: serialized, updatedAt },
       }).run();
+    }
+    for (const key of [
+      SCHEDULER_PENDING_RECOVERY_KEY,
+      SCHEDULER_MISSED_COUNT_KEY,
+      SCHEDULER_OLDEST_MISSED_RUN_KEY,
+      SCHEDULER_LATEST_MISSED_RUN_KEY,
+    ]) {
+      tx.delete(settings).where(eq(settings.key, key)).run();
     }
   }, { behavior: "immediate" });
 }
@@ -146,17 +238,9 @@ function inferMissedExecutionTime(context: TaskContext): Date {
 
 async function recordMissedExecution(scheduledFor: Date): Promise<void> {
   db.transaction((tx) => {
-    const keys = [
-      SCHEDULER_PENDING_RECOVERY_KEY,
-      SCHEDULER_MISSED_COUNT_KEY,
-      SCHEDULER_OLDEST_MISSED_RUN_KEY,
-      SCHEDULER_LATEST_MISSED_RUN_KEY,
-    ];
-    const persisted = Object.fromEntries(keys.map((key) => [
-      key,
-      tx.select({ value: settings.value }).from(settings).where(eq(settings.key, key)).get()?.value ?? null,
-    ]));
-    const recoveryState = parseRecoveryState(persisted);
+    const persisted = tx.select({ value: settings.value }).from(settings)
+      .where(eq(settings.key, SCHEDULER_RECOVERY_STATE_KEY)).get()?.value ?? null;
+    const recoveryState = parseRecoveryRecord(persisted) ?? EMPTY_RECOVERY_STATE;
     const nextState: SchedulerRecoveryState = {
       pendingMissedCount: recoveryState.pendingMissedCount + 1,
       oldestMissedRun: !recoveryState.oldestMissedRun || scheduledFor < recoveryState.oldestMissedRun
@@ -167,18 +251,14 @@ async function recordMissedExecution(scheduledFor: Date): Promise<void> {
         : recoveryState.latestMissedRun,
     };
     const updatedAt = new Date();
-    const values = [
-      [SCHEDULER_PENDING_RECOVERY_KEY, "true"],
-      [SCHEDULER_MISSED_COUNT_KEY, String(nextState.pendingMissedCount)],
-      [SCHEDULER_OLDEST_MISSED_RUN_KEY, nextState.oldestMissedRun?.toISOString() ?? null],
-      [SCHEDULER_LATEST_MISSED_RUN_KEY, nextState.latestMissedRun?.toISOString() ?? null],
-    ] as const;
-    for (const [key, value] of values) {
-      tx.insert(settings).values({ key, value, updatedAt }).onConflictDoUpdate({
-        target: settings.key,
-        set: { value, updatedAt },
-      }).run();
-    }
+    tx.insert(settings).values({
+      key: SCHEDULER_RECOVERY_STATE_KEY,
+      value: serializeRecoveryState(nextState),
+      updatedAt,
+    }).onConflictDoUpdate({
+      target: settings.key,
+      set: { value: serializeRecoveryState(nextState), updatedAt },
+    }).run();
     tx.insert(scrapeSessions).values({
       id: crypto.randomUUID(),
       triggerSource: "scheduler",
@@ -259,11 +339,13 @@ async function handleMissedExecution(context: TaskContext): Promise<void> {
 export async function startScheduler(): Promise<void> {
   const isEnabled = await getSchedulerEnabled();
   if (!isEnabled) {
+    setSchedulerInitialization("ready");
     console.log("[Scheduler] Not enabled, skipping start");
     return;
   }
 
   if (schedulerTask) {
+    setSchedulerInitialization("ready");
     console.log("[Scheduler] Already running");
     return;
   }
@@ -279,6 +361,7 @@ export async function startScheduler(): Promise<void> {
     await runScheduledRefresh();
   });
   schedulerTask.on("execution:missed", handleMissedExecution);
+  setSchedulerInitialization("ready");
 
   console.log(`[Scheduler] Started with cron: ${currentCronExpression}`);
 }
@@ -312,9 +395,13 @@ async function saveLastRun(time: Date): Promise<void> {
   }
 }
 
-async function runSchedulerBatch(triggerSource: "scheduler" | "scheduler_recovery"): Promise<"started" | "already_running"> {
+async function runSchedulerBatch(
+  triggerSource: "scheduler" | "scheduler_recovery",
+  requestId?: string
+): Promise<"started" | "already_running"> {
+  const sessionId = crypto.randomUUID();
   if (isRunning) {
-    console.log("[Scheduler] Already running (in-memory), skipping");
+    logRuntimeEvent("scheduler", "scheduler_run_skipped", { requestId, sessionId, code: "already_running" });
     return "already_running";
   }
 
@@ -323,10 +410,21 @@ async function runSchedulerBatch(triggerSource: "scheduler" | "scheduler_recover
   const leaseStore = getSchedulerLeaseStore();
   const queueService = getLocalScrapeQueueService();
   const ownerId = `scheduler-${process.pid}-${crypto.randomUUID()}`;
-  const lockToken = await leaseStore.acquire(ownerId);
+  let lockToken: string | null;
+  try {
+    lockToken = await leaseStore.acquire(ownerId);
+  } catch (error) {
+    recordRuntimeError("scheduler", "scheduler_lease_acquire_failed");
+    logRuntimeEvent("scheduler", "scheduler_lease_acquire_failed", {
+      requestId,
+      sessionId,
+      code: "scheduler_lease_acquire_failed",
+    });
+    throw error;
+  }
 
   if (!lockToken) {
-    console.log("[Scheduler] Another instance is running, skipping");
+    logRuntimeEvent("scheduler", "scheduler_run_skipped", { requestId, sessionId, code: "lease_held" });
     return "already_running";
   }
 
@@ -346,10 +444,22 @@ async function runSchedulerBatch(triggerSource: "scheduler" | "scheduler_recover
         if (refreshedToken) return;
         lockLost = true;
         activeLockToken = null;
+        recordRuntimeError("scheduler", "scheduler_lease_lost");
+        logRuntimeEvent("scheduler", "scheduler_lease_lost", {
+          requestId,
+          sessionId,
+          code: "scheduler_lease_lost",
+        });
         console.error("[Scheduler] Lost scheduler lock while running; run will end without releasing lock token");
       } catch (error) {
         lockLost = true;
         activeLockToken = null;
+        recordRuntimeError("scheduler", "scheduler_lease_refresh_failed");
+        logRuntimeEvent("scheduler", "scheduler_lease_refresh_failed", {
+          requestId,
+          sessionId,
+          code: "scheduler_lease_refresh_failed",
+        });
         console.error("[Scheduler] Failed to refresh scheduler lock:", error);
       }
     })();
@@ -364,10 +474,10 @@ async function runSchedulerBatch(triggerSource: "scheduler" | "scheduler_recover
   }
 
   const startTime = new Date();
-  console.log(`[Scheduler] Starting ${triggerSource === "scheduler" ? "scheduled" : "recovery"} refresh`);
+  logRuntimeEvent("scheduler", "scheduler_run_started", { requestId, sessionId });
 
   try {
-    const result = await queueService.scrapeAllCompanies(triggerSource);
+    await queueService.scrapeAllCompanies(triggerSource);
 
     if (!lockLost) {
       await saveLastRun(startTime);
@@ -376,17 +486,27 @@ async function runSchedulerBatch(triggerSource: "scheduler" | "scheduler_recover
       console.error("[Scheduler] Skipping state updates because lock ownership was lost");
     }
 
-    console.log(
-      `[Scheduler] Completed: ${result.summary.successfulCompanies}/${result.summary.totalCompanies} companies, ${result.summary.totalJobsAdded} jobs added`
-    );
+    logRuntimeEvent("scheduler", "scheduler_run_completed", { requestId, sessionId });
   } catch (error) {
+    recordRuntimeError("scheduler", "scheduler_run_failed");
+    logRuntimeEvent("scheduler", "scheduler_run_failed", { requestId, sessionId, code: "scheduler_run_failed" });
     console.error("[Scheduler] Error during refresh:", error);
   } finally {
     clearInterval(refreshTimer);
     await refreshInFlight;
     isRunning = false;
     if (activeLockToken) {
-      await leaseStore.release(activeLockToken);
+      try {
+        await leaseStore.release(activeLockToken);
+      } catch (error) {
+        recordRuntimeError("scheduler", "scheduler_lease_release_failed");
+        logRuntimeEvent("scheduler", "scheduler_lease_release_failed", {
+          requestId,
+          sessionId,
+          code: "scheduler_lease_release_failed",
+        });
+        throw error;
+      }
     }
   }
 
@@ -397,7 +517,7 @@ export async function runScheduledRefresh(): Promise<void> {
   await runSchedulerBatch("scheduler");
 }
 
-export async function recoverMissedSchedulerRuns(): Promise<SchedulerRecoveryResult> {
+export async function recoverMissedSchedulerRuns(requestId?: string): Promise<SchedulerRecoveryResult> {
   const isEnabled = await getSchedulerEnabled();
   const recoveryState = await getRecoveryState();
 
@@ -415,7 +535,7 @@ export async function recoverMissedSchedulerRuns(): Promise<SchedulerRecoveryRes
     };
   }
 
-  const status = await runSchedulerBatch("scheduler_recovery");
+  const status = await runSchedulerBatch("scheduler_recovery", requestId);
   const nextState = await getRecoveryState();
 
   return {

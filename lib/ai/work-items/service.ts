@@ -34,7 +34,7 @@ export function queueMatchWork(input: QueueMatchInput): {
   total: number;
 } {
   const queued = enqueueMatchWork(db, input);
-  dispatchPendingAIWork();
+  void dispatchPendingAIWork();
   return queued;
 }
 
@@ -44,7 +44,7 @@ export function queueProfileRematchWork(jobIds: number[]): {
   total: number;
 } {
   const queued = enqueueCoalescedProfileMatchWork(db, jobIds);
-  dispatchPendingAIWork();
+  void dispatchPendingAIWork();
   return queued;
 }
 

@@ -389,7 +389,7 @@ export class ScrapeCompanyPipeline {
 
     logger.added(persistenceResult.jobsAdded, dedupeResult.duplicates.length);
     if (persistenceResult.matchOutboxId) {
-      dispatchPendingAIWork();
+      void dispatchPendingAIWork();
     }
 
     return {
