@@ -1,9 +1,9 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { AIContentVariantSignalSchema, ProviderRouteParamsSchema } from "@/lib/ai/contracts";
-import { assertAppRequest } from "@/lib/api";
-import { handleAIAPIError } from "@/lib/api/ai-error-handler";
+import { AIContentVariantSignalSchema } from "@/lib/ai/contracts";
+import { assertAppRequest, handleApiError, NotFoundError } from "@/lib/api";
+import { numericIdParamsSchema } from "@/lib/api/contracts/matching";
 import { recordVariantSignal } from "@/lib/ai/writing/content-service";
 
 export async function PATCH(
@@ -12,18 +12,14 @@ export async function PATCH(
 ) {
   try {
     assertAppRequest(request);
-    const { id } = ProviderRouteParamsSchema.parse(await params);
-    const variantId = Number.parseInt(id, 10);
-    if (!Number.isInteger(variantId) || variantId < 1) {
-      return NextResponse.json({ error: "Invalid id", code: "invalid_id" }, { status: 400 });
-    }
+    const { id: variantId } = numericIdParamsSchema.parse(await params);
     const { action } = AIContentVariantSignalSchema.parse(await request.json());
     const updated = await recordVariantSignal(variantId, action);
     if (!updated) {
-      return NextResponse.json({ error: "Variant not found", code: "not_found" }, { status: 404 });
+      throw new NotFoundError("Variant not found");
     }
     return NextResponse.json({ success: true });
   } catch (error) {
-    return handleAIAPIError(error, "Failed to record writing signal", "ai_content_signal_failed");
+    return handleApiError(error, { request, fallbackMessage: "Failed to record writing signal", fallbackCode: "ai_content_signal_failed" });
   }
 }

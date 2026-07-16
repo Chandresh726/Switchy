@@ -8,7 +8,8 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
   assertAppRequest: mocks.assertAppRequest,
 }));
 
@@ -48,7 +49,11 @@ describe("companies bulk route", () => {
     const body = await response.json();
 
     expect(response.status).toBe(400);
-    expect(body).toEqual({ error: "companyIds must be a non-empty array" });
+    expect(body).toMatchObject({
+      error: "Invalid request payload",
+      code: "invalid_request",
+      requestId: expect.any(String),
+    });
     expect(mocks.deleteCompanies).not.toHaveBeenCalled();
   });
 
@@ -75,7 +80,11 @@ describe("companies bulk route", () => {
     const body = await response.json();
 
     expect(response.status).toBe(400);
-    expect(body).toEqual({ error: "isActive must be a boolean" });
+    expect(body).toMatchObject({
+      error: "Invalid request payload",
+      code: "invalid_request",
+      requestId: expect.any(String),
+    });
     expect(mocks.update).not.toHaveBeenCalled();
   });
 });

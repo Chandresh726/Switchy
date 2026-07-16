@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { getProfile, saveProfile } from "@/lib/api/clients/profile";
 import { useState, useEffect, useMemo } from "react";
 import { Loader2, Save, User } from "lucide-react";
 import { toast } from "sonner";
@@ -45,9 +45,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
   const { data: profile, isLoading } = useQuery({
     queryKey: ["profile"],
     queryFn: async () => {
-      const res = await fetch("/api/profile");
-      if (!res.ok) throw new Error("Failed to fetch profile");
-      return res.json();
+      return getProfile();
     },
   });
 
@@ -104,13 +102,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
 
   const mutation = useMutation({
     mutationFn: async (data: ProfileData) => {
-      const res = await fetch("/api/profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Failed to save profile");
-      return res.json();
+      return saveProfile(data);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["profile"] });

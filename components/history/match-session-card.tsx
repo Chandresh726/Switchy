@@ -28,7 +28,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { mutateMatchHistory } from "@/lib/api/clients/history";
 import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
 import {
   formatDurationFromDates,
@@ -73,12 +73,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/match-history?sessionId=${session.id}`, {
-        method: "DELETE",
-        headers: APP_REQUEST_HEADERS,
-      });
-
-      if (!res.ok) throw new Error("Failed to delete session");
+      await mutateMatchHistory("DELETE", session.id);
 
       queryClient.invalidateQueries({ queryKey: ["match-history"] });
       toast.success("Match session deleted successfully");
@@ -128,12 +123,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
     markSessionStoppedInCache();
 
     try {
-      const res = await fetch(`/api/match-history?sessionId=${encodeURIComponent(session.id)}`, {
-        method: "PATCH",
-        headers: APP_REQUEST_HEADERS,
-      });
-
-      if (!res.ok) throw new Error("Failed to stop session");
+      await mutateMatchHistory("PATCH", session.id);
 
       toast.success("Stopping match session");
       queryClient.invalidateQueries({ queryKey: ["match-history"] });

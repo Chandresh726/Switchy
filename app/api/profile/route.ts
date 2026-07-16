@@ -2,10 +2,11 @@ import { db } from "@/lib/db";
 import { profile, skills, experience, education, resumes } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
-import { assertAppRequest } from "@/lib/api";
+import { assertAppRequest, handleApiError } from "@/lib/api";
+import { profileWriteBodySchema } from "@/lib/api/contracts/profile";
 import { scheduleProfileRematch } from "@/lib/ai/matcher/profile-rematch";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const profiles = await db.select().from(profile).limit(1);
 
@@ -30,11 +31,7 @@ export async function GET() {
       resumes: resumesData,
     });
   } catch (error) {
-    console.error("Failed to fetch profile:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch profile" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to fetch profile", fallbackCode: "profile_fetch_failed" });
   }
 }
 
@@ -42,7 +39,7 @@ export async function POST(request: NextRequest) {
   try {
     assertAppRequest(request);
 
-    const body = await request.json();
+    const body = profileWriteBodySchema.parse(await request.json());
     const {
       name,
       email,
@@ -111,10 +108,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(newProfile);
     }
   } catch (error) {
-    console.error("Failed to save profile:", error);
-    return NextResponse.json(
-      { error: "Failed to save profile" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to save profile", fallbackCode: "profile_save_failed" });
   }
 }

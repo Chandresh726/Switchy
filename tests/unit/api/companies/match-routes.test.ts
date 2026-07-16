@@ -16,7 +16,6 @@ vi.mock("@/lib/api", () => ({
   handleApiError: mocks.handleApiError,
   ValidationError: class ValidationError extends Error {},
 }));
-vi.mock("@/lib/api/ai-error-handler", () => ({ handleAIAPIError: vi.fn() }));
 vi.mock("@/lib/ai/work-items", () => ({
   completeEmptyMatchSession: mocks.completeEmptyMatchSession,
   fetchCompanyJobIds: mocks.fetchCompanyJobIds,

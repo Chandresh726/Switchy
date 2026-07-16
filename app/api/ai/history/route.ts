@@ -4,21 +4,17 @@ import {
   clearWritingHistory,
   getWritingHistoryContents,
 } from "@/lib/ai/observability";
-import { assertAppRequest } from "@/lib/api";
+import { assertAppRequest, handleApiError } from "@/lib/api";
 import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     return NextResponse.json(
       { contents: await getWritingHistoryContents() },
       { headers: NO_STORE_HEADERS }
     );
   } catch (error) {
-    console.error("[Get AI History] Error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch history" },
-      { status: 500, headers: NO_STORE_HEADERS }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to fetch history", fallbackCode: "ai_history_fetch_failed", headers: NO_STORE_HEADERS });
   }
 }
 
@@ -30,7 +26,6 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("[Delete AI History] Error:", error);
-    return NextResponse.json({ error: "Failed to clear AI history" }, { status: 500 });
+    return handleApiError(error, { request, fallbackMessage: "Failed to clear AI history", fallbackCode: "ai_history_clear_failed" });
   }
 }

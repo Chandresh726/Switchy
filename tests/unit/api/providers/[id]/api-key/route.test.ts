@@ -30,7 +30,7 @@ describe("GET /api/providers/[id]/api-key", () => {
     const body = await response.json();
 
     expect(response.status).toBe(403);
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       error: "Cross-origin requests are not allowed",
       code: "cross_origin_forbidden",
     });

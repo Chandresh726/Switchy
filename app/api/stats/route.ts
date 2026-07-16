@@ -4,11 +4,12 @@ import { and, count, desc, eq, sql } from "drizzle-orm";
 
 import { getCurrentMatchContext } from "@/lib/ai/matcher/presentation";
 import { countPromotedMatchRows } from "@/lib/ai/matcher/promotion";
+import { handleApiError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { companies, jobs, matchResults, people, scrapeSessions } from "@/lib/db/schema";
 import { getUnmatchedCompaniesSummary } from "@/lib/people/sync/unmatched";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const currentContext = await getCurrentMatchContext();
     const matchStatsPromise = currentContext
@@ -86,10 +87,6 @@ export async function GET() {
       unmatchedPeopleCount: unmatchedSummary.unmatchedPeopleCount,
     });
   } catch (error) {
-    console.error("Failed to fetch stats:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch stats" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to fetch stats", fallbackCode: "stats_fetch_failed" });
   }
 }

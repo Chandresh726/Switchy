@@ -2,8 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { AIContentPostBodySchema, AIContentQuerySchema } from "@/lib/ai/contracts";
-import { assertAppRequest } from "@/lib/api";
-import { handleAIAPIError } from "@/lib/api/ai-error-handler";
+import { assertAppRequest, handleApiError } from "@/lib/api";
 import {
   clearAllGeneratedContent,
   generateContent,
@@ -26,7 +25,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ exists: true, content });
   } catch (error) {
-    return handleAIAPIError(error, "Failed to get content", "ai_content_get_failed");
+    return handleApiError(error, { request, fallbackMessage: "Failed to get content", fallbackCode: "ai_content_get_failed" });
   }
 }
 
@@ -48,7 +47,7 @@ export async function POST(request: NextRequest) {
       runId: content.history.at(-1)?.aiRunId ?? null,
     });
   } catch (error) {
-    return handleAIAPIError(error, "Failed to generate content", "ai_content_generate_failed");
+    return handleApiError(error, { request, fallbackMessage: "Failed to generate content", fallbackCode: "ai_content_generate_failed" });
   }
 }
 
@@ -59,6 +58,6 @@ export async function DELETE(request: NextRequest) {
     const result = await clearAllGeneratedContent();
     return NextResponse.json(result);
   } catch (error) {
-    return handleAIAPIError(error, "Failed to delete AI generated content", "ai_content_delete_all_failed");
+    return handleApiError(error, { request, fallbackMessage: "Failed to delete AI generated content", fallbackCode: "ai_content_delete_all_failed" });
   }
 }

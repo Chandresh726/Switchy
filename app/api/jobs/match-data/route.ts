@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-import { assertAppRequest } from "@/lib/api";
+import { assertAppRequest, handleApiError } from "@/lib/api";
 import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 
 /**
@@ -22,10 +22,6 @@ export async function DELETE(request: NextRequest) {
       message: `Cleared match data from ${jobsCleared} jobs`,
     });
   } catch (error) {
-    console.error("[Match Data API] DELETE error:", error);
-    return NextResponse.json(
-      { error: "Failed to delete match data" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to delete match data", fallbackCode: "match_data_delete_failed" });
   }
 }

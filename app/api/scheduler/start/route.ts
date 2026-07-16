@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { assertAppRequest } from "@/lib/api";
+import { assertAppRequest, handleApiError } from "@/lib/api";
 import { startScheduler, restartScheduler, getSchedulerStatus } from "@/lib/jobs/scheduler";
 
 export async function POST(request: NextRequest) {
@@ -29,10 +29,6 @@ export async function POST(request: NextRequest) {
       message: currentStatus.isActive ? "Scheduler restarted" : "Scheduler started",
     });
   } catch (error) {
-    console.error("[Scheduler Start API] Error:", error);
-    return NextResponse.json(
-      { error: "Failed to start scheduler" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to start scheduler", fallbackCode: "scheduler_start_failed" });
   }
 }

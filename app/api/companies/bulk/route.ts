@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { inArray } from "drizzle-orm";
 
-import { assertAppRequest } from "@/lib/api";
+import { assertAppRequest, handleApiError } from "@/lib/api";
+import {
+  companyBulkActiveBodySchema,
+  companyIdsBodySchema,
+} from "@/lib/api/contracts/companies";
 import { db } from "@/lib/db";
 import { companies } from "@/lib/db/schema";
 import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
@@ -10,15 +14,7 @@ export async function DELETE(request: NextRequest) {
   try {
     assertAppRequest(request);
 
-    const body = await request.json();
-    const { companyIds } = body as { companyIds: number[] };
-
-    if (!Array.isArray(companyIds) || companyIds.length === 0) {
-      return NextResponse.json(
-        { error: "companyIds must be a non-empty array" },
-        { status: 400 }
-      );
-    }
+    const { companyIds } = companyIdsBodySchema.parse(await request.json());
 
     const { deletedJobs, deletedCompanies } =
       await getLocalDataMaintenanceService().deleteCompanies(companyIds);
@@ -30,11 +26,7 @@ export async function DELETE(request: NextRequest) {
       message: `Deleted ${deletedCompanies} companies and ${deletedJobs} jobs`,
     });
   } catch (error) {
-    console.error("Failed to delete companies:", error);
-    return NextResponse.json(
-      { error: "Failed to delete companies" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to delete companies", fallbackCode: "companies_bulk_delete_failed" });
   }
 }
 
@@ -42,25 +34,7 @@ export async function PATCH(request: NextRequest) {
   try {
     assertAppRequest(request);
 
-    const body = await request.json();
-    const { companyIds, isActive } = body as {
-      companyIds: number[];
-      isActive: boolean;
-    };
-
-    if (!Array.isArray(companyIds) || companyIds.length === 0) {
-      return NextResponse.json(
-        { error: "companyIds must be a non-empty array" },
-        { status: 400 }
-      );
-    }
-
-    if (typeof isActive !== "boolean") {
-      return NextResponse.json(
-        { error: "isActive must be a boolean" },
-        { status: 400 }
-      );
-    }
+    const { companyIds, isActive } = companyBulkActiveBodySchema.parse(await request.json());
 
     const updated = await db
       .update(companies)
@@ -74,10 +48,6 @@ export async function PATCH(request: NextRequest) {
       message: `Updated ${updated.length} companies to ${isActive ? "active" : "paused"}`,
     });
   } catch (error) {
-    console.error("Failed to update companies:", error);
-    return NextResponse.json(
-      { error: "Failed to update companies" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to update companies", fallbackCode: "companies_bulk_update_failed" });
   }
 }

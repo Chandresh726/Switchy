@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { assertAppRequest } from "@/lib/api";
+import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
 import { persistResumeVersion } from "@/lib/ai/resume/repository";
 import { extractResumeText } from "@/lib/ai/resume/text-extraction";
 import { parseResumeWithProvenance } from "@/lib/ai/resume-parser";
-import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { MAX_RESUME_FILE_SIZE, MAX_RESUME_TEXT_LENGTH } from "@/lib/constants";
+import { resumeUploadFormSchema } from "@/lib/api/contracts/profile";
 import { db } from "@/lib/db";
 import { profile } from "@/lib/db/schema";
 import { deleteResumeFile, saveResumeFile } from "@/lib/storage/files";
@@ -15,26 +15,25 @@ export async function POST(request: NextRequest) {
     assertAppRequest(request);
 
     const formData = await request.formData();
-    const file = formData.get("file") as File | null;
-    const shouldAutofill = formData.get("autofill") !== "false";
-
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
-    }
+    const { file, autofill: shouldAutofill } = resumeUploadFormSchema.parse({
+      file: formData.get("file"),
+      autofill: formData.get("autofill") ?? undefined,
+    });
 
     const fileName = file.name.toLowerCase();
 
     if (file.size > MAX_RESUME_FILE_SIZE) {
-      return NextResponse.json(
-        { error: "File too large. Maximum resume size is 5MB." },
-        { status: 400 }
+      throw new ValidationError(
+        "File too large. Maximum resume size is 5MB.",
+        "resume_file_too_large",
+        413
       );
     }
 
     if (!fileName.endsWith(".pdf") && !fileName.endsWith(".docx") && !fileName.endsWith(".doc") && !fileName.endsWith(".txt") && !fileName.endsWith(".md")) {
-      return NextResponse.json(
-        { error: "Unsupported file format. Please upload PDF, DOCX, DOC, TXT, or MD." },
-        { status: 400 }
+      throw new ValidationError(
+        "Unsupported file format. Please upload PDF, DOCX, DOC, TXT, or MD.",
+        "unsupported_resume_format"
       );
     }
 
@@ -44,23 +43,23 @@ export async function POST(request: NextRequest) {
       try {
         resumeText = (await extractResumeText(file)).text;
       } catch {
-        return NextResponse.json(
-          { error: "Could not extract resume text." },
-          { status: 400 }
+        throw new ValidationError(
+          "Could not extract resume text.",
+          "resume_text_extraction_failed"
         );
       }
 
       if (!resumeText || resumeText.trim().length < 50) {
-        return NextResponse.json(
-          { error: "Could not extract text from file. Please ensure the file contains readable text." },
-          { status: 400 }
+        throw new ValidationError(
+          "Could not extract text from file. Please ensure the file contains readable text.",
+          "resume_text_empty"
         );
       }
 
       if (resumeText.length > MAX_RESUME_TEXT_LENGTH) {
-        return NextResponse.json(
-          { error: "Resume text is too long to parse safely. Please upload a shorter resume." },
-          { status: 400 }
+        throw new ValidationError(
+          "Resume text is too long to parse safely. Please upload a shorter resume.",
+          "resume_text_too_long"
         );
       }
     }
@@ -110,11 +109,6 @@ export async function POST(request: NextRequest) {
       warnings: parseResult?.warnings ?? [],
     });
   } catch (error) {
-    const sanitized = sanitizeAIError(error);
-    console.error(`Failed to parse resume: [${sanitized.code}] ${sanitized.message}`);
-    return NextResponse.json(
-      { error: sanitized.message, code: sanitized.code },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to parse resume", fallbackCode: "resume_parse_failed" });
   }
 }

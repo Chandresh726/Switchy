@@ -25,6 +25,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { isNewJob } from "@/lib/jobs/is-new-job";
 import { formatRelativeTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
+import { getJobs } from "@/lib/api/clients/jobs";
+import { getProfile } from "@/lib/api/clients/profile";
+import { getStats } from "@/lib/api/clients/stats";
 
 interface ScrapeSession {
   id: string;
@@ -70,7 +73,7 @@ interface Job {
   matchScore: number | null;
   matchLegacy?: boolean;
   status: string;
-  discoveredAt: string;
+  discoveredAt: string | null;
   viewedAt: string | null;
   appliedAt: string | null;
   company: {
@@ -196,7 +199,9 @@ function JobRow({
         <span className="text-[10px] text-muted-foreground font-medium">
           {type === "applied" && job.appliedAt
             ? `Applied ${formatRelativeTime(new Date(job.appliedAt))}`
-            : formatRelativeTime(new Date(job.discoveredAt))}
+            : job.discoveredAt
+              ? formatRelativeTime(new Date(job.discoveredAt))
+              : "Date unavailable"}
         </span>
       </div>
     </Link>
@@ -207,21 +212,17 @@ function JobRow({
 export default function DashboardPage() {
   const [currentTime] = useState(() => Date.now());
 
-  const { data: profile, isLoading: isProfileLoading } = useQuery<Profile>({
+  const { data: profile, isLoading: isProfileLoading } = useQuery<Profile | null>({
     queryKey: ["profile"],
     queryFn: async () => {
-      const res = await fetch("/api/profile");
-      if (!res.ok) throw new Error("Failed to fetch profile");
-      return res.json();
+      return getProfile();
     },
   });
 
   const { data: stats, isLoading: isStatsLoading } = useQuery<Stats>({
     queryKey: ["stats"],
     queryFn: async () => {
-      const res = await fetch("/api/stats");
-      if (!res.ok) throw new Error("Failed to fetch stats");
-      return res.json();
+      return getStats();
     },
   });
 
@@ -231,9 +232,7 @@ export default function DashboardPage() {
   const { data: highMatchData } = useQuery({
     queryKey: ["jobs", "high-match"],
     queryFn: async () => {
-      const res = await fetch(`/api/jobs?matchBands=high,good&excludeStatus=applied,archived&sortBy=matchScore&sortOrder=desc&limit=${DASHBOARD_LIST_MAX_ITEMS}`);
-      if (!res.ok) throw new Error("Failed to fetch jobs");
-      return res.json() as Promise<{ jobs: Job[] }>;
+      return getJobs(`matchBands=high,good&excludeStatus=applied,archived&sortBy=matchScore&sortOrder=desc&limit=${DASHBOARD_LIST_MAX_ITEMS}`);
     },
   });
 
@@ -241,9 +240,7 @@ export default function DashboardPage() {
   const { data: recentJobsData } = useQuery({
     queryKey: ["jobs", "recent"],
     queryFn: async () => {
-      const res = await fetch(`/api/jobs?excludeStatus=applied,archived&sortBy=discoveredAt&sortOrder=desc&limit=${DASHBOARD_LIST_MAX_ITEMS}`);
-      if (!res.ok) throw new Error("Failed to fetch jobs");
-      return res.json();
+      return getJobs(`excludeStatus=applied,archived&sortBy=discoveredAt&sortOrder=desc&limit=${DASHBOARD_LIST_MAX_ITEMS}`);
     },
   });
 
@@ -251,9 +248,7 @@ export default function DashboardPage() {
   const { data: appliedJobsData } = useQuery({
     queryKey: ["jobs", "applied-recent"],
     queryFn: async () => {
-      const res = await fetch("/api/jobs?status=applied&sortBy=discoveredAt&sortOrder=desc&limit=5");
-      if (!res.ok) throw new Error("Failed to fetch jobs");
-      return res.json();
+      return getJobs("status=applied&sortBy=discoveredAt&sortOrder=desc&limit=5");
     },
   });
 

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { createCompanies, updateCompany } from "@/lib/api/clients/companies";
 import { PLATFORM_OPTIONS } from "@/lib/constants";
 import { detectPlatformFromUrl, getPlatformLabel } from "@/lib/scraper/platform-detection";
 
@@ -33,19 +33,6 @@ interface CompanyFormProps {
 const PLATFORMS = [
   ...PLATFORM_OPTIONS.filter((platform) => platform.value !== "uber"),
 ];
-
-async function getApiErrorMessage(response: Response, fallbackMessage: string): Promise<string> {
-  try {
-    const data = await response.json();
-    if (data && typeof data.error === "string" && data.error.trim().length > 0) {
-      return data.error;
-    }
-  } catch {
-    // Ignore invalid JSON error responses and use fallback message.
-  }
-
-  return fallbackMessage;
-}
 
 function getErrorMessage(error: unknown, fallbackMessage: string): string {
   if (error instanceof Error && error.message.trim().length > 0) {
@@ -103,15 +90,7 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      const res = await fetch("/api/companies", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) {
-        throw new Error(await getApiErrorMessage(res, "Failed to create company"));
-      }
-      return res.json();
+      return createCompanies(data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
@@ -124,15 +103,7 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
 
   const updateMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      const res = await fetch(`/api/companies/${company!.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) {
-        throw new Error(await getApiErrorMessage(res, "Failed to update company"));
-      }
-      return res.json();
+      return updateCompany(company!.id, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });

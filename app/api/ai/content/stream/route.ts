@@ -4,8 +4,13 @@ import { z } from "zod";
 
 import { AIContentPostBodySchema } from "@/lib/ai/contracts";
 import { sanitizeAIError } from "@/lib/ai/shared/errors";
-import { assertAppRequest } from "@/lib/api";
-import { APIValidationError } from "@/lib/api/ai-error-handler";
+import {
+  assertAppRequest,
+  createApiRequestContext,
+  handleApiError,
+  logApiFailure,
+  ValidationError,
+} from "@/lib/api";
 import { streamGeneratedContent } from "@/lib/ai/writing/content-service";
 
 const encoder = new TextEncoder();
@@ -18,7 +23,7 @@ function safeStreamError(error: unknown): { code: string; message: string } {
   if (error instanceof z.ZodError) {
     return { code: "invalid_request", message: "Invalid request payload" };
   }
-  if (error instanceof APIValidationError) {
+  if (error instanceof ValidationError) {
     return { code: error.code, message: error.message };
   }
   const sanitized = sanitizeAIError(error);
@@ -26,6 +31,7 @@ function safeStreamError(error: unknown): { code: string; message: string } {
 }
 
 export async function POST(request: NextRequest) {
+  const context = createApiRequestContext(request);
   try {
     assertAppRequest(request);
     const body = AIContentPostBodySchema.parse(await request.json());
@@ -49,8 +55,14 @@ export async function POST(request: NextRequest) {
               runId: content.history.at(-1)?.aiRunId ?? null,
             }));
           } catch (error) {
+            logApiFailure(context, "ai_content_stream_failed", 500, error);
             if (!signal.aborted) {
-              controller.enqueue(sseEvent("error", safeStreamError(error)));
+              controller.enqueue(
+                sseEvent("error", {
+                  ...safeStreamError(error),
+                  requestId: context.requestId,
+                })
+              );
             }
           } finally {
             try {
@@ -73,10 +85,15 @@ export async function POST(request: NextRequest) {
         Connection: "keep-alive",
         "Content-Type": "text/event-stream; charset=utf-8",
         "X-Accel-Buffering": "no",
+        "x-request-id": context.requestId,
       },
     });
   } catch (error) {
-    const safe = safeStreamError(error);
-    return NextResponse.json({ error: safe.message, code: safe.code }, { status: 400 });
+    return handleApiError(error, {
+      request,
+      context,
+      fallbackMessage: "Failed to start writing stream",
+      fallbackCode: "ai_content_stream_failed",
+    });
   }
 }

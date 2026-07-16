@@ -4,45 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import { MatchSessionCard } from "./match-session-card";
 import { Loader2, Sparkles } from "lucide-react";
 import { formatDurationMs, groupSessionsByDate } from "@/lib/utils/format";
-
-interface MatchSession {
-  id: string;
-  triggerSource: string;
-  companyId: number | null;
-  companyName: string | null;
-  status: string;
-  jobsTotal: number | null;
-  jobsCompleted: number | null;
-  jobsSucceeded: number | null;
-  jobsFailed: number | null;
-  errorCount: number | null;
-  startedAt: Date | null;
-  completedAt: Date | null;
-}
-
-interface MatchHistoryResponse {
-  sessions: MatchSession[];
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  };
-  stats: {
-    totalSessions: number;
-    successRate: number;
-    avgDuration: number;
-    totalJobsMatched: number;
-  };
-}
+import { getMatchHistoryList } from "@/lib/api/clients/history";
 
 export function MatchHistoryTab() {
-  const { data, isLoading, error } = useQuery<MatchHistoryResponse>({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["match-history"],
     queryFn: async () => {
-      const res = await fetch("/api/match-history", { cache: "no-store" });
-      if (!res.ok) throw new Error("Failed to fetch match history");
-      return res.json();
+      return getMatchHistoryList();
     },
     refetchInterval: (query) => {
       const sessions = query.state.data?.sessions || [];

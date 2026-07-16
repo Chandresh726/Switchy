@@ -1,26 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 
-import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
+import { assertAppRequest, handleApiError } from "@/lib/api";
+import { companyIdsBodySchema } from "@/lib/api/contracts/companies";
 import { getLocalScrapeQueueService } from "@/lib/scraper";
-
-const RefreshJobsSchema = z.object({
-  companyIds: z.array(z.coerce.number().int().positive()).min(1),
-});
 
 export async function POST(request: NextRequest) {
   try {
     assertAppRequest(request);
 
-    const body = await request.json();
-    const parsed = RefreshJobsSchema.safeParse(body);
-
-    if (!parsed.success) {
-      throw new ValidationError("companyIds must be a non-empty array of positive numbers");
-    }
+    const parsed = companyIdsBodySchema.parse(await request.json());
 
     const result = await getLocalScrapeQueueService().scrapeCompanies(
-      parsed.data.companyIds,
+      parsed.companyIds,
       "manual"
     );
     const { summary } = result;
@@ -53,6 +44,6 @@ export async function POST(request: NextRequest) {
       message: `${messageParts.join(", ")}. Found ${summary.totalJobsFound} jobs, added ${summary.totalJobsAdded} new.`,
     });
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(error, { request, fallbackMessage: "Failed to refresh company jobs", fallbackCode: "company_jobs_refresh_failed" });
   }
 }

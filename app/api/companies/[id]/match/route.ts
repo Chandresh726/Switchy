@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 
 import { completeEmptyMatchSession, queueMatchWork } from "@/lib/ai/work-items";
-import { assertAppRequest } from "@/lib/api";
+import { assertAppRequest, handleApiError, NotFoundError } from "@/lib/api";
+import { companyIdParamsSchema } from "@/lib/api/contracts/companies";
 import { db } from "@/lib/db";
 import { companies, jobs } from "@/lib/db/schema";
 
@@ -14,13 +15,10 @@ interface RouteParams {
 export async function POST(request: Request, { params }: RouteParams) {
   try {
     assertAppRequest(request);
-    const companyId = Number.parseInt((await params).id, 10);
-    if (!Number.isInteger(companyId)) {
-      return NextResponse.json({ error: "Invalid company ID" }, { status: 400 });
-    }
+    const { id: companyId } = companyIdParamsSchema.parse(await params);
     const company = await db.select({ id: companies.id }).from(companies)
       .where(eq(companies.id, companyId)).limit(1).then((rows) => rows[0]);
-    if (!company) return NextResponse.json({ error: "Company not found" }, { status: 404 });
+    if (!company) throw new NotFoundError("Company not found", "company_not_found");
     const jobIds = await db.select({ id: jobs.id }).from(jobs)
       .where(eq(jobs.companyId, companyId));
     if (jobIds.length === 0) {
@@ -39,7 +37,6 @@ export async function POST(request: Request, { params }: RouteParams) {
     });
     return NextResponse.json(queued, { status: 202 });
   } catch (error) {
-    console.error("[Company Match API] POST error:", error);
-    return NextResponse.json({ error: "Failed to queue company jobs" }, { status: 500 });
+    return handleApiError(error, { request, fallbackMessage: "Failed to queue company jobs", fallbackCode: "company_match_failed" });
   }
 }

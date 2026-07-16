@@ -10,7 +10,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import {
+  createEducation,
+  deleteEducation,
+  getEducation,
+  updateEducation,
+} from "@/lib/api/clients/profile";
 
 interface Education {
   id: number;
@@ -218,14 +223,12 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
     }
   }, [initialEducation]);
 
-  const { data: educationList = [], isLoading } = useQuery<Education[]>({
+  const { data: educationList = [], isLoading } = useQuery({
     queryKey: ["education", profileId],
     queryFn: async () => {
       try {
         if (!profileId) return [];
-        const res = await fetch(`/api/profile/education?profileId=${profileId}`);
-        if (!res.ok) throw new Error("Failed to fetch education");
-        return res.json();
+        return getEducation(profileId);
       } catch (error) {
         console.error("fetch education:", error);
         return [];
@@ -237,19 +240,13 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
   const addMutation = useMutation({
     mutationFn: async (edu: EducationFormData) => {
       try {
-        const res = await fetch("/api/profile/education", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-          body: JSON.stringify({
+        return createEducation({
             ...edu,
             profileId,
             endDate: edu.endDate || null,
             gpa: edu.gpa || null,
             honors: edu.honors || null,
-          }),
         });
-        if (!res.ok) throw new Error("Failed to add education");
-        return res.json();
       } catch (error) {
         console.error("add education:", error);
         throw error;
@@ -265,19 +262,13 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
   const updateMutation = useMutation({
     mutationFn: async ({ id, edu }: { id: number; edu: EducationFormData }) => {
       try {
-        const res = await fetch("/api/profile/education", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-          body: JSON.stringify({
+        return updateEducation({
             id,
             ...edu,
             endDate: edu.endDate || null,
             gpa: edu.gpa || null,
             honors: edu.honors || null,
-          }),
         });
-        if (!res.ok) throw new Error("Failed to update education");
-        return res.json();
       } catch (error) {
         console.error("update education:", error);
         throw error;
@@ -294,10 +285,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
     mutationFn: async (educationToAdd: InitialEducation[]) => {
       try {
         for (const edu of educationToAdd) {
-          const res = await fetch("/api/profile/education", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-            body: JSON.stringify({
+          await createEducation({
               institution: edu.institution,
               degree: edu.degree,
               field: edu.field || null,
@@ -306,9 +294,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
               gpa: edu.gpa || null,
               honors: edu.honors || null,
               profileId,
-            }),
           });
-          if (!res.ok) throw new Error("Failed to add education");
         }
       } catch (error) {
         console.error("bulk add education:", error);
@@ -332,12 +318,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       try {
-        const res = await fetch(`/api/profile/education?id=${id}`, {
-          method: "DELETE",
-          headers: APP_REQUEST_HEADERS,
-        });
-        if (!res.ok) throw new Error("Failed to delete education");
-        return res.json();
+        return deleteEducation(id);
       } catch (error) {
         console.error("delete education:", error);
         throw error;

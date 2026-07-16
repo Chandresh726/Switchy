@@ -7,6 +7,7 @@ import { Activity, DatabaseZap, Gauge, Loader2, Timer } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { AIUsageSummary } from "@/lib/ai/observability";
+import { getAIUsage } from "@/lib/api/clients/ai";
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("en-US", { notation: "compact" }).format(value);
@@ -28,9 +29,7 @@ export function AIUsageOverview() {
   const { data, isError, isLoading, refetch } = useQuery<AIUsageSummary>({
     queryKey: ["ai-usage", days],
     queryFn: async () => {
-      const response = await fetch(`/api/ai/usage?days=${days}`, { cache: "no-store" });
-      if (!response.ok) throw new Error("Failed to fetch AI usage");
-      return response.json();
+      return getAIUsage(days);
     },
   });
 

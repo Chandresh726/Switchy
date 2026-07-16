@@ -27,9 +27,12 @@ describe("local host proxy", () => {
     const response = proxy(request);
 
     expect(response.status).toBe(403);
-    await expect(response.json()).resolves.toEqual({
+    await expect(response.json()).resolves.toMatchObject({
       error: "Switchy is available only on this device",
+      code: "local_host_forbidden",
+      requestId: expect.any(String),
     });
+    expect(response.headers.get("x-request-id")).toBeTruthy();
   });
 
   it("rejects a conflicting Host header", () => {

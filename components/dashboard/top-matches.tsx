@@ -5,6 +5,7 @@ import { MatchBadge } from "@/components/jobs/match-badge";
 import { Building2, MapPin, Clock, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { formatRelativeTime } from "@/lib/utils/format";
+import { getJobs } from "@/lib/api/clients/jobs";
 
 interface Job {
   id: number;
@@ -14,7 +15,7 @@ interface Job {
   locationType: string | null;
   matchScore: number | null;
   matchLegacy?: boolean;
-  discoveredAt: string;
+  discoveredAt: string | null;
   company: {
     id: number;
     name: string;
@@ -27,9 +28,7 @@ export function TopMatches() {
     queryKey: ["jobs", "top-matches"],
     queryFn: async () => {
       // Fetch the five unviewed jobs with the highest compatibility scores.
-      const res = await fetch("/api/jobs?matchBands=high,good&status=new&sortBy=matchScore&sortOrder=desc&limit=5");
-      if (!res.ok) throw new Error("Failed to fetch jobs");
-      return res.json() as Promise<{ jobs: Job[] }>;
+      return getJobs("matchBands=high,good&status=new&sortBy=matchScore&sortOrder=desc&limit=5");
     },
   });
 
@@ -89,7 +88,9 @@ export function TopMatches() {
                 )}
                 <span className="flex items-center gap-1">
                   <Clock className="h-3.5 w-3.5" />
-                  {formatRelativeTime(new Date(job.discoveredAt))}
+                  {job.discoveredAt
+                    ? formatRelativeTime(new Date(job.discoveredAt))
+                    : "Date unavailable"}
                 </span>
               </div>
             </div>

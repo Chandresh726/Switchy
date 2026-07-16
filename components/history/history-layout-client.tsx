@@ -18,7 +18,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { clearAIHistory } from "@/lib/api/clients/ai";
+import { mutateMatchHistory, mutateScrapeHistory } from "@/lib/api/clients/history";
 
 interface HistoryLayoutClientProps {
   children: React.ReactNode;
@@ -55,33 +56,28 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
   const handleClearHistory = async () => {
     setIsDeleting(true);
     try {
-      let endpoint: string;
       let queryKey: string;
+      let clearRequest: Promise<unknown>;
 
       switch (activeTab) {
         case "scrape":
-          endpoint = "/api/scrape-history";
+          clearRequest = mutateScrapeHistory("DELETE");
           queryKey = "scrape-history";
           break;
         case "match":
-          endpoint = "/api/match-history";
+          clearRequest = mutateMatchHistory("DELETE");
           queryKey = "match-history";
           break;
         case "ai":
-          endpoint = "/api/ai/history";
+          clearRequest = clearAIHistory();
           queryKey = "ai-history-all";
           break;
         default:
-          endpoint = "/api/scrape-history";
+          clearRequest = mutateScrapeHistory("DELETE");
           queryKey = "scrape-history";
       }
 
-      const res = await fetch(endpoint, {
-        method: "DELETE",
-        headers: APP_REQUEST_HEADERS,
-      });
-
-      if (!res.ok) throw new Error("Failed to clear history");
+      await clearRequest;
 
       queryClient.invalidateQueries({
         queryKey: [queryKey],

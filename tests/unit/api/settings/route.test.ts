@@ -12,7 +12,8 @@ const mocks = vi.hoisted(() => ({
   getCachedProviderModelDefinition: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
   assertAppRequest: mocks.assertAppRequest,
 }));
 
@@ -63,7 +64,7 @@ describe("settings route", () => {
   });
 
   it("returns settings from service", async () => {
-    const response = await GET();
+    const response = await GET(new Request("http://localhost/api/settings"));
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -84,6 +85,23 @@ describe("settings route", () => {
 
     expect(response.status).toBe(400);
     expect(body.code).toBe("invalid_request");
+    expect(mocks.parseSettingsUpdateBody).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown setting keys instead of silently ignoring them", async () => {
+    const request = new Request("http://localhost/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ theme: "dark" }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "invalid_request",
+      requestId: expect.any(String),
+    });
     expect(mocks.parseSettingsUpdateBody).not.toHaveBeenCalled();
   });
 

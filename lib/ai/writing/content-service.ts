@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 
-import { APIValidationError } from "@/lib/api/ai-error-handler";
+import { ValidationError } from "@/lib/api";
 import type { AIContentType } from "@/lib/ai/contracts";
 import {
   createAICapabilityRuntime,
@@ -205,7 +205,7 @@ async function resolveParentVariant(
       eq(aiGenerationHistory.contentId, contentId)
     )).limit(1);
     if (!rows[0]) {
-      throw new APIValidationError("Selected parent draft was not found.", "invalid_parent_variant", 400);
+      throw new ValidationError("Selected parent draft was not found.", "invalid_parent_variant", 400);
     }
     return rows[0];
   }
@@ -263,12 +263,12 @@ async function prepareGeneration(input: GenerateContentInput): Promise<PreparedW
     Boolean(existing)
   );
   if (normalizedUserPrompt && !parentVariant) {
-    throw new APIValidationError("A selected draft is required for modification.", "missing_parent_variant", 400);
+    throw new ValidationError("A selected draft is required for modification.", "missing_parent_variant", 400);
   }
   if (input.type === "recruiter_follow_up") {
     const job = (await import("./utils")).fetchJobWithCompany(input.jobId);
     if ((await job)?.status !== "applied") {
-      throw new APIValidationError(
+      throw new ValidationError(
         "Recruiter follow-up is only available for applied jobs.",
         "invalid_request",
         400
@@ -457,7 +457,7 @@ export async function saveManualVariant(input: {
     true
   );
   if (!parentVariant) {
-    throw new APIValidationError("A selected draft is required for manual edits.", "missing_parent_variant", 400);
+    throw new ValidationError("A selected draft is required for manual edits.", "missing_parent_variant", 400);
   }
   const persisted = persistWritingVariant(db, {
     jobId: existing[0].jobId,

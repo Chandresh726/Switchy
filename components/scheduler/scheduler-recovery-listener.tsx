@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { recoverScheduler } from "@/lib/api/clients/runtime";
 
 const RECOVERY_COOLDOWN_MS = 15_000;
 const RECOVERY_STABILIZATION_MS = 10_000;
@@ -10,14 +10,7 @@ const SLEEP_DRIFT_THRESHOLD_MS = 75_000;
 const TICK_INTERVAL_MS = 30_000;
 
 async function requestRecovery(): Promise<void> {
-  const response = await fetch("/api/scheduler/recover", {
-    method: "POST",
-    headers: APP_REQUEST_HEADERS,
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    throw new Error(`Recovery request failed with HTTP ${response.status}`);
-  }
+  await recoverScheduler();
 }
 
 export const SchedulerRecoveryListener = () => {

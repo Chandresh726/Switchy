@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { createCompanies } from "@/lib/api/clients/companies";
 import {
   excludeExistingPresetCompanies,
   normalizeCareersUrl,
@@ -31,22 +31,6 @@ function getErrorMessage(error: unknown, fallback: string): string {
     return error.message;
   }
   return fallback;
-}
-
-async function getApiErrorMessage(
-  response: Response,
-  fallbackMessage: string
-): Promise<string> {
-  try {
-    const data = await response.json();
-    if (data && typeof data.error === "string" && data.error.trim().length > 0) {
-      return data.error;
-    }
-  } catch {
-    // Ignore invalid JSON in error response.
-  }
-
-  return fallbackMessage;
 }
 
 function extractAddedCareersUrls(data: unknown): string[] {
@@ -103,17 +87,7 @@ export function CompanyQuickAdd({ existingCompanies }: CompanyQuickAddProps) {
 
   const addMutation = useMutation({
     mutationFn: async (payload: Record<string, unknown> | Record<string, unknown>[]) => {
-      const response = await fetch("/api/companies", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw new Error(await getApiErrorMessage(response, "Failed to add companies"));
-      }
-
-      return response.json();
+      return createCompanies(payload);
     },
   });
 

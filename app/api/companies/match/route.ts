@@ -5,15 +5,13 @@ import {
   fetchCompanyJobIds,
   queueMatchWork,
 } from "@/lib/ai/work-items";
-import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
+import { assertAppRequest, handleApiError } from "@/lib/api";
+import { matchCompanyIdsBodySchema } from "@/lib/api/contracts/matching";
 
 export async function POST(request: NextRequest) {
   try {
     assertAppRequest(request);
-    const { companyIds } = await request.json() as { companyIds: number[] };
-    if (!Array.isArray(companyIds) || companyIds.length === 0) {
-      throw new ValidationError("companyIds must be a non-empty array");
-    }
+    const { companyIds } = matchCompanyIdsBodySchema.parse(await request.json());
     const jobIds = await fetchCompanyJobIds(companyIds);
     if (jobIds.length === 0) {
       return NextResponse.json(
@@ -27,6 +25,6 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json(queued, { status: 202 });
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(error, { request, fallbackMessage: "Failed to queue company matches", fallbackCode: "companies_match_failed" });
   }
 }

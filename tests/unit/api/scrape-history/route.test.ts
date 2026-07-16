@@ -1,4 +1,4 @@
-import type { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,7 +14,8 @@ const store = vi.hoisted(() => ({
   list: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
   assertAppRequest: store.assertAppRequest,
 }));
 
@@ -36,9 +37,9 @@ vi.mock("@/lib/scraper/history", () => ({
 import { DELETE, GET, PATCH } from "@/app/api/scrape-history/route";
 
 function createRequest(method: "GET" | "PATCH" | "DELETE", query = ""): NextRequest {
-  return new Request(`http://localhost/api/scrape-history${query}`, {
+  return new NextRequest(`http://localhost/api/scrape-history${query}`, {
     method,
-  }) as NextRequest;
+  });
 }
 
 describe("scrape history route", () => {
@@ -109,7 +110,10 @@ describe("scrape history route", () => {
     const response = await GET(createRequest("GET", "?sessionId=missing"));
 
     expect(response.status).toBe(404);
-    await expect(response.json()).resolves.toEqual({ error: "Session not found" });
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Session not found",
+      code: "scrape_session_not_found",
+    });
   });
 
   it("rejects deletion while durable work remains active", async () => {
@@ -122,8 +126,9 @@ describe("scrape history route", () => {
     expect(store.assertAppRequest).toHaveBeenCalledTimes(1);
     expect(store.deleteHistory).toHaveBeenCalledWith("session-1");
     expect(response.status).toBe(409);
-    await expect(response.json()).resolves.toEqual({
+    await expect(response.json()).resolves.toMatchObject({
       error: "Stop the active scrape before deleting its history",
+      code: "scrape_session_active",
     });
   });
 
@@ -135,6 +140,22 @@ describe("scrape history route", () => {
     expect(store.deleteHistory).toHaveBeenCalledWith(undefined);
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ success: true, deleted: 4 });
+  });
+
+  it("returns 404 only for a missing targeted scrape-history session", async () => {
+    store.deleteHistory.mockReturnValue({ active: false, deleted: 0 });
+
+    const targeted = await DELETE(
+      createRequest("DELETE", "?sessionId=missing")
+    );
+    const collection = await DELETE(createRequest("DELETE"));
+
+    expect(targeted.status).toBe(404);
+    await expect(targeted.json()).resolves.toMatchObject({
+      code: "scrape_session_not_found",
+      requestId: expect.any(String),
+    });
+    expect(collection.status).toBe(200);
   });
 
   it("requires a session ID before requesting cancellation", async () => {
@@ -182,6 +203,9 @@ describe("scrape history route", () => {
     );
 
     expect(response.status).toBe(404);
-    await expect(response.json()).resolves.toEqual({ error: "Session not found" });
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Session not found",
+      code: "scrape_session_not_found",
+    });
   });
 });

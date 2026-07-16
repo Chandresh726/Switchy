@@ -13,8 +13,7 @@ import {
   getAIWorkSession,
   queueMatchWork,
 } from "@/lib/ai/work-items";
-import { assertAppRequest } from "@/lib/api";
-import { handleAIAPIError } from "@/lib/api/ai-error-handler";
+import { assertAppRequest, handleApiError, NotFoundError } from "@/lib/api";
 
 const NO_STORE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -36,10 +35,7 @@ export async function GET(request: Request) {
     if (query.sessionId) {
       const session = await getAIWorkSession(query.sessionId);
       if (!session) {
-        return NextResponse.json(
-          { error: "Session not found", code: "session_not_found" },
-          { status: 404, headers: NO_STORE_HEADERS }
-        );
+        throw new NotFoundError("Session not found", "session_not_found");
       }
 
       return NextResponse.json(
@@ -63,12 +59,12 @@ export async function GET(request: Request) {
       { headers: NO_STORE_HEADERS }
     );
   } catch (error) {
-    return handleAIAPIError(
-      error,
-      "Failed to get unmatched job count",
-      "match_unmatched_get_failed",
-      NO_STORE_HEADERS
-    );
+    return handleApiError(error, {
+      request,
+      fallbackMessage: "Failed to get unmatched job count",
+      fallbackCode: "match_unmatched_get_failed",
+      headers: NO_STORE_HEADERS,
+    });
   }
 }
 
@@ -92,6 +88,6 @@ export async function POST(request: Request) {
     });
     return NextResponse.json(queued, { status: 202 });
   } catch (error) {
-    return handleAIAPIError(error, "Failed to start matching", "match_unmatched_post_failed");
+    return handleApiError(error, { request, fallbackMessage: "Failed to start matching", fallbackCode: "match_unmatched_post_failed" });
   }
 }

@@ -5,7 +5,12 @@ import { MatchBreakdownSchema, MatchEvidenceSchema } from "@/lib/ai/artifacts";
 import { getMatchPresentations } from "@/lib/ai/matcher/presentation";
 import { getMatchPipelineProgress } from "@/lib/ai/matcher/tracking";
 import { getAIRunSummaries } from "@/lib/ai/observability";
-import { assertAppRequest } from "@/lib/api";
+import {
+  assertAppRequest,
+  handleApiError,
+  NotFoundError,
+} from "@/lib/api";
+import { historyQuerySchema, historySessionQuerySchema } from "@/lib/api/contracts/history";
 import { db } from "@/lib/db";
 import {
   companies,
@@ -31,10 +36,8 @@ import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
  */
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const sessionId = searchParams.get("sessionId");
-    const limit = parseInt(searchParams.get("limit") || "50", 10);
-    const offset = parseInt(searchParams.get("offset") || "0", 10);
+    const query = historyQuerySchema.parse(Object.fromEntries(request.nextUrl.searchParams));
+    const { sessionId, limit, offset } = query;
 
     // If sessionId is provided, return session details with all logs
     if (sessionId) {
@@ -58,10 +61,7 @@ export async function GET(request: NextRequest) {
         .where(eq(matchSessions.id, sessionId));
 
       if (!session) {
-        return NextResponse.json(
-          { error: "Session not found" },
-          { status: 404, headers: NO_STORE_HEADERS }
-        );
+        throw new NotFoundError("Session not found", "match_session_not_found");
       }
 
       // Get all logs for this session
@@ -256,11 +256,7 @@ export async function GET(request: NextRequest) {
       },
     }, { headers: NO_STORE_HEADERS });
   } catch (error) {
-    console.error("[Match History API] GET error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch match history" },
-      { status: 500, headers: NO_STORE_HEADERS }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to fetch match history", fallbackCode: "match_history_fetch_failed", headers: NO_STORE_HEADERS });
   }
 }
 
@@ -268,19 +264,19 @@ export async function DELETE(request: NextRequest) {
   try {
     assertAppRequest(request);
 
-    const { searchParams } = new URL(request.url);
-    const sessionId = searchParams.get("sessionId");
-
-    await getLocalDataMaintenanceService().deleteMatchHistory(
-      sessionId ?? undefined
+    const { sessionId } = historyQuerySchema.parse(
+      Object.fromEntries(request.nextUrl.searchParams)
     );
+
+    const deleted = await getLocalDataMaintenanceService().deleteMatchHistory(
+      sessionId
+    );
+    if (sessionId && deleted === 0) {
+      throw new NotFoundError("Session not found", "match_session_not_found");
+    }
     return NextResponse.json({ success: true }, { headers: NO_STORE_HEADERS });
   } catch (error) {
-    console.error("Failed to delete match history:", error);
-    return NextResponse.json(
-      { error: "Failed to delete match history" },
-      { status: 500, headers: NO_STORE_HEADERS }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to delete match history", fallbackCode: "match_history_delete_failed", headers: NO_STORE_HEADERS });
   }
 }
 
@@ -288,25 +284,16 @@ export async function PATCH(request: NextRequest) {
   try {
     assertAppRequest(request);
 
-    const { searchParams } = new URL(request.url);
-    const sessionId = searchParams.get("sessionId");
-
-    if (!sessionId) {
-      return NextResponse.json(
-        { error: "sessionId is required" },
-        { status: 400, headers: NO_STORE_HEADERS }
-      );
-    }
+    const { sessionId } = historySessionQuerySchema.parse(
+      Object.fromEntries(request.nextUrl.searchParams)
+    );
 
     const result = await stopMatchSession(sessionId);
     if (result.stopped) {
       return NextResponse.json({ success: true, stopped: true }, { headers: NO_STORE_HEADERS });
     }
     if (!result.exists) {
-      return NextResponse.json(
-        { error: "Session not found" },
-        { status: 404, headers: NO_STORE_HEADERS }
-      );
+      throw new NotFoundError("Session not found", "match_session_not_found");
     }
 
     return NextResponse.json(
@@ -314,10 +301,6 @@ export async function PATCH(request: NextRequest) {
       { headers: NO_STORE_HEADERS }
     );
   } catch (error) {
-    console.error("Failed to stop match session:", error);
-    return NextResponse.json(
-      { error: "Failed to stop match session" },
-      { status: 500, headers: NO_STORE_HEADERS }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to stop match session", fallbackCode: "match_session_stop_failed", headers: NO_STORE_HEADERS });
   }
 }

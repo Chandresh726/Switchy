@@ -4,44 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import { SessionCard } from "./session-card";
 import { Loader2, History } from "lucide-react";
 import { formatDurationMs, groupSessionsByDate } from "@/lib/utils/format";
-
-interface ScrapeSession {
-  id: string;
-  triggerSource: string;
-  status: string;
-  companiesTotal: number | null;
-  companiesCompleted: number | null;
-  totalJobsFound: number | null;
-  totalJobsAdded: number | null;
-  totalJobsFiltered: number | null;
-  totalJobsArchived: number | null;
-  scheduledForAt?: Date | string | null;
-  startedAt: Date | null;
-  completedAt: Date | null;
-}
-
-interface HistoryResponse {
-  sessions: ScrapeSession[];
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  };
-  stats: {
-    totalSessions: number;
-    successRate: number;
-    avgDuration: number;
-  };
-}
+import { getScrapeHistoryList } from "@/lib/api/clients/history";
 
 export function SessionList() {
-  const { data, isLoading, error } = useQuery<HistoryResponse>({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["scrape-history"],
     queryFn: async () => {
-      const res = await fetch("/api/scrape-history", { cache: "no-store" });
-      if (!res.ok) throw new Error("Failed to fetch scrape history");
-      return res.json();
+      return getScrapeHistoryList();
     },
     refetchInterval: (query) => {
       const sessions = query.state.data?.sessions || [];

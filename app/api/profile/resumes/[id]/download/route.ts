@@ -4,21 +4,15 @@ import { resumes } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getResumeFilePath } from "@/lib/storage/files";
 import fs from "fs";
+import { handleApiError, NotFoundError } from "@/lib/api";
+import { numericIdParamsSchema } from "@/lib/api/contracts/matching";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
-    const resumeId = parseInt(id, 10);
-
-    if (isNaN(resumeId)) {
-      return NextResponse.json(
-        { error: "Invalid resume ID" },
-        { status: 400 }
-      );
-    }
+    const { id: resumeId } = numericIdParamsSchema.parse(await params);
 
     // Get the resume
     const [resume] = await db
@@ -27,20 +21,14 @@ export async function GET(
       .where(eq(resumes.id, resumeId));
 
     if (!resume) {
-      return NextResponse.json(
-        { error: "Resume not found" },
-        { status: 404 }
-      );
+      throw new NotFoundError("Resume not found", "resume_not_found");
     }
 
     // Get the full file path
     const fullPath = getResumeFilePath(resume.filePath);
 
     if (!fs.existsSync(fullPath)) {
-      return NextResponse.json(
-        { error: "File not found" },
-        { status: 404 }
-      );
+      throw new NotFoundError("File not found", "resume_file_not_found");
     }
 
     // Read the file
@@ -84,10 +72,6 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error("Failed to download resume:", error);
-    return NextResponse.json(
-      { error: "Failed to download resume" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to download resume", fallbackCode: "resume_download_failed" });
   }
 }

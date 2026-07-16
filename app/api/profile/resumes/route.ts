@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertAppRequest } from "@/lib/api";
+import {
+  assertAppRequest,
+  createApiRequestContext,
+  handleApiError,
+  logApiFailure,
+  NotFoundError,
+} from "@/lib/api";
+import { childIdQuerySchema } from "@/lib/api/contracts/profile";
 import { db } from "@/lib/db";
 import { resumes } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -9,23 +16,9 @@ export async function DELETE(request: NextRequest) {
   try {
     assertAppRequest(request);
 
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get("id");
-
-    if (!id) {
-      return NextResponse.json(
-        { error: "Resume ID is required" },
-        { status: 400 }
-      );
-    }
-
-    const resumeId = parseInt(id, 10);
-    if (isNaN(resumeId)) {
-      return NextResponse.json(
-        { error: "Invalid resume ID" },
-        { status: 400 }
-      );
-    }
+    const { id: resumeId } = childIdQuerySchema.parse(
+      Object.fromEntries(request.nextUrl.searchParams)
+    );
 
     // Get the resume to find the file path
     const [resume] = await db
@@ -34,10 +27,7 @@ export async function DELETE(request: NextRequest) {
       .where(eq(resumes.id, resumeId));
 
     if (!resume) {
-      return NextResponse.json(
-        { error: "Resume not found" },
-        { status: 404 }
-      );
+      throw new NotFoundError("Resume not found", "resume_not_found");
     }
 
     // Delete the file from storage
@@ -45,7 +35,7 @@ export async function DELETE(request: NextRequest) {
       try {
         await deleteResumeFile(resume.filePath);
       } catch (error) {
-        console.error("Failed to delete resume file:", error);
+        logApiFailure(createApiRequestContext(request), "resume_file_delete_failed", 500, error);
         // Continue with DB deletion even if file deletion fails
       }
     }
@@ -55,10 +45,6 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Failed to delete resume:", error);
-    return NextResponse.json(
-      { error: "Failed to delete resume" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to delete resume", fallbackCode: "resume_delete_failed" });
   }
 }

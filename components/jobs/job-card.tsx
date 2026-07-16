@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { updateJob } from "@/lib/api/clients/jobs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MatchBadge } from "./match-badge";
@@ -32,7 +32,7 @@ interface Job {
   status: string;
   matchScore: number | null;
   postedDate: string | null;
-  discoveredAt: string;
+  discoveredAt: string | null;
   company: {
     id: number;
     name: string;
@@ -80,13 +80,7 @@ export function JobCard({ job }: JobCardProps) {
 
   const updateStatusMutation = useMutation({
     mutationFn: async (newStatus: string) => {
-      const res = await fetch("/api/jobs", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({ id: job.id, status: newStatus }),
-      });
-      if (!res.ok) throw new Error("Failed to update status");
-      return res.json();
+      return updateJob({ id: job.id, status: newStatus });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });

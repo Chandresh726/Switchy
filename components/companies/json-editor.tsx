@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import Editor from "react-simple-code-editor";
 import { highlight, languages } from "prismjs";
 import "prismjs/components/prism-json";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { getCompanies, syncCompanies } from "@/lib/api/clients/companies";
 
 interface Company {
   name: string;
@@ -23,9 +23,7 @@ export function JsonEditor({ onSuccess }: { onSuccess: () => void }) {
   const { data: companies, isLoading: isLoadingCompanies } = useQuery<Company[]>({
     queryKey: ["companies"],
     queryFn: async () => {
-      const res = await fetch("/api/companies");
-      if (!res.ok) throw new Error("Failed to fetch companies");
-      return res.json();
+      return getCompanies();
     },
   });
 
@@ -65,16 +63,7 @@ function JsonEditorContent({ companies, onSuccess }: { companies: Company[]; onS
 
   const saveMutation = useMutation({
     mutationFn: async (data: Company[]) => {
-      const res = await fetch("/api/companies", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to save companies");
-      }
-      return res.json();
+      return syncCompanies(data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });

@@ -1,21 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getLocalCLIStatus } from "@/lib/ai/local-cli/service";
-import { isLocalCLIProvider } from "@/lib/ai/providers/types";
-import { handleAIAPIError } from "@/lib/api/ai-error-handler";
+import { handleApiError } from "@/lib/api";
+import { localCLIStatusQuerySchema } from "@/lib/api/contracts/providers";
 
 export async function GET(request: NextRequest) {
   try {
-    const provider = request.nextUrl.searchParams.get("provider") ?? "";
-    if (!isLocalCLIProvider(provider)) {
-      return NextResponse.json(
-        { error: "Invalid local CLI provider", code: "invalid_provider" },
-        { status: 400 }
-      );
-    }
+    const { provider } = localCLIStatusQuerySchema.parse(
+      Object.fromEntries(request.nextUrl.searchParams)
+    );
 
     return NextResponse.json(await getLocalCLIStatus(provider, { forceRefresh: true }));
   } catch (error) {
-    return handleAIAPIError(error, "Failed to check local CLI", "provider_validation_failed");
+    return handleApiError(error, { request, fallbackMessage: "Failed to check local CLI", fallbackCode: "provider_validation_failed" });
   }
 }

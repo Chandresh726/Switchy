@@ -16,7 +16,7 @@ import { ApplyButton } from "@/components/jobs/apply-button";
 import { JobAIActions } from "@/components/jobs/job-ai-actions";
 import { LegacyMatchAlert } from "@/components/jobs/legacy-match-alert";
 import { MarkdownRenderer } from "@/components/jobs/markdown-renderer";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { getJobs, updateJob } from "@/lib/api/clients/jobs";
 import { sanitizeHtmlContent } from "@/lib/jobs/description-processor";
 import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
 import {
@@ -54,7 +54,7 @@ interface Job {
   scoringPolicyVersion: string | null;
   matchedSkills: string[];
   postedDate: string | null;
-  discoveredAt: string;
+  discoveredAt: string | null;
   company: {
     id: number;
     name: string;
@@ -78,16 +78,14 @@ export default function JobDetailPage() {
   const queryClient = useQueryClient();
   const jobId = parseInt(params.id as string);
 
-  const { data: jobData, isLoading } = useQuery<{ jobs: Job[] }>({
+  const { data: jobData, isLoading } = useQuery({
     queryKey: ["job", jobId],
     queryFn: async () => {
-      const res = await fetch(`/api/jobs?id=${jobId}`);
-      if (!res.ok) throw new Error("Failed to fetch job");
-      return res.json();
+      return getJobs(`id=${jobId}`);
     },
   });
 
-  const job = jobData?.jobs?.[0];
+  const job = jobData?.jobs?.[0] as Job | undefined;
   const {
     mutation: calculateMatchMutation,
     isMatching,
@@ -99,13 +97,7 @@ export default function JobDetailPage() {
 
   const updateStatusMutation = useMutation({
     mutationFn: async (newStatus: string) => {
-      const res = await fetch("/api/jobs", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({ id: jobId, status: newStatus }),
-      });
-      if (!res.ok) throw new Error("Failed to update status");
-      return res.json();
+      return updateJob({ id: jobId, status: newStatus });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["job", jobId] });

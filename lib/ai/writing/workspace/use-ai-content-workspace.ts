@@ -5,23 +5,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { AIContentType } from "@/lib/ai/contracts";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import {
+  aiStreamCompleteSchema,
+  aiStreamDeltaSchema,
+  aiStreamErrorSchema,
+} from "@/lib/api/contracts/ai";
+import { APIClientError } from "@/lib/api/client";
+import {
+  getAIContent,
+  openAIContentStream,
+  recordAIVariantSignal,
+  saveAIContent,
+} from "@/lib/api/clients/ai";
 import { canonicalizeMarkdown } from "@/lib/ai/writing/rich-text";
 import type { GeneratedContent } from "@/lib/ai/writing/types";
 import {
   selectAdjacentVariantIndex,
   selectInitialVariantIndex,
 } from "@/lib/ai/writing/workspace/variants";
-
-interface ContentResponseEnvelope {
-  exists: boolean;
-  content: GeneratedContent | null;
-}
-
-interface StreamCompleteEnvelope {
-  content: GeneratedContent;
-  runId: string | null;
-}
 
 interface UseAIContentWorkspaceOptions {
   contentType: AIContentType;
@@ -98,23 +99,18 @@ export function useAIContentWorkspace({
     variantId: number,
     action: "selected" | "copied" | "discarded"
   ) => {
-    const response = await fetch(`/api/ai/content/variants/${variantId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-      body: JSON.stringify({ action }),
-    });
-    if (!response.ok) throw new Error(`Failed to record ${action} signal`);
+    await recordAIVariantSignal(variantId, action);
   }, []);
 
   const consumeContentStream = useCallback(async (
     response: Response,
     onDelta: (text: string) => void
-  ): Promise<StreamCompleteEnvelope> => {
+  ): Promise<ReturnType<typeof aiStreamCompleteSchema.parse>> => {
     if (!response.body) throw new Error("Streaming response is unavailable");
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let complete: StreamCompleteEnvelope | null = null;
+    let complete: ReturnType<typeof aiStreamCompleteSchema.parse> | null = null;
 
     const processFrame = (frame: string) => {
       let event = "";
@@ -126,13 +122,18 @@ export function useAIContentWorkspace({
       if (!event || dataLines.length === 0) return;
       const data: unknown = JSON.parse(dataLines.join("\n"));
       if (event === "delta") {
-        const text = (data as { text?: unknown }).text;
-        if (typeof text === "string") onDelta(text);
+        onDelta(aiStreamDeltaSchema.parse(data).text);
       } else if (event === "complete") {
-        complete = data as StreamCompleteEnvelope;
+        complete = aiStreamCompleteSchema.parse(data);
       } else if (event === "error") {
-        const message = (data as { message?: unknown }).message;
-        throw new Error(typeof message === "string" ? message : "Failed to generate content");
+        const streamError = aiStreamErrorSchema.parse(data);
+        throw new APIClientError(
+          streamError.message,
+          500,
+          streamError.code,
+          undefined,
+          streamError.requestId
+        );
       }
     };
 
@@ -165,22 +166,12 @@ export function useAIContentWorkspace({
         const parentVariantId = userPrompt
           ? content?.history[currentVariantIndex]?.id ?? null
           : null;
-        const res = await fetch("/api/ai/content/stream", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-          signal: abortController.signal,
-          body: JSON.stringify({
+        const res = await openAIContentStream({
             jobId,
             type: contentType,
             userPrompt: userPrompt || null,
             parentVariantId,
-          }),
-        });
-
-        if (!res.ok) {
-          const error = await res.json();
-          throw new Error(error.error || "Failed to generate content");
-        }
+        }, abortController.signal);
 
         let accumulated = "";
         const data = await consumeContentStream(res, (delta) => {
@@ -218,12 +209,7 @@ export function useAIContentWorkspace({
     setIsContentLoading(true);
 
     try {
-      const res = await fetch(`/api/ai/content?jobId=${jobId}&type=${contentType}`);
-      if (!res.ok) {
-        throw new Error("Failed to load saved content");
-      }
-
-      const data = (await res.json()) as ContentResponseEnvelope;
+      const data = await getAIContent(jobId, contentType);
 
       if (data.exists && data.content) {
         const nextContent = data.content;
@@ -274,23 +260,12 @@ export function useAIContentWorkspace({
 
     setIsSaving(true);
     try {
-      const res = await fetch(`/api/ai/content/${content.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({
+      const data = await saveAIContent(content.id, {
           content: editedContent,
           userPrompt: "Manual edit",
           parentVariantId: content.history[currentVariantIndex]?.id ?? null,
-        }),
       });
-
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Failed to save");
-      }
-
-      const data = await res.json();
-      const nextContent = data.content as GeneratedContent;
+      const nextContent = data.content;
       setContent(nextContent);
       selectVariantByIndex(nextContent.history.length - 1, nextContent);
       toast.success("Saved as new variant");

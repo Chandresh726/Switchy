@@ -34,6 +34,23 @@ describe("useQueuedJobMatch", () => {
         failed: 0,
         startedAt: null,
         completedAt: new Date().toISOString(),
+        analysis: {
+          total: 1,
+          completed: 1,
+          active: 0,
+          queued: 0,
+          cached: 0,
+          failed: 0,
+        },
+        matching: {
+          total: 1,
+          completed: 1,
+          active: 0,
+          queued: 0,
+          cached: 0,
+          failed: 0,
+        },
+        jobs: [],
       });
     }));
     const wrapper = ({ children }: PropsWithChildren) => (

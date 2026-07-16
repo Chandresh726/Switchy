@@ -8,7 +8,8 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import type { ResumeData } from "@/lib/ai/resume/contracts";
+import { uploadResume } from "@/lib/api/clients/profile";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,39 +20,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-
-interface ResumeData {
-  name: string;
-  email?: string;
-  phone?: string;
-  location?: string;
-  linkedinUrl?: string;
-  githubUrl?: string;
-  portfolioUrl?: string;
-  summary?: string;
-  skills: Array<{
-    name: string;
-    category?: string;
-  }>;
-  experience: Array<{
-    company: string;
-    title: string;
-    location?: string;
-    startDate: string;
-    endDate?: string;
-    description?: string;
-    highlights?: string[];
-  }>;
-  education?: Array<{
-    institution: string;
-    degree: string;
-    field?: string;
-    startDate?: string;
-    endDate?: string;
-    gpa?: string;
-    honors?: string;
-  }>;
-}
 
 interface Resume {
   id: number;
@@ -93,18 +61,7 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
         formData.append("file", file);
         formData.append("autofill", String(autofill));
 
-        const response = await fetch("/api/profile/parse-resume", {
-          method: "POST",
-          headers: APP_REQUEST_HEADERS,
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const data = await response.json();
-          throw new Error(data.error || "Failed to parse resume");
-        }
-
-        const result = await response.json();
+        const result = await uploadResume(formData);
 
         setSuccess(true);
         if (autofill && result.parsedData) {

@@ -2,9 +2,15 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 
 import { AISettingsUpdateSchema } from "@/lib/ai/contracts";
-import { assertAppRequest } from "@/lib/api";
-import { APIValidationError, handleAIAPIError } from "@/lib/api/ai-error-handler";
+import {
+  assertAppRequest,
+  createApiRequestContext,
+  handleApiError,
+  logApiFailure,
+  ValidationError,
+} from "@/lib/api";
 import { getCachedProviderModelDefinition } from "@/lib/ai/providers/model-catalog";
+import { settingsUpdateBodySchema } from "@/lib/api/contracts/settings";
 
 import { db } from "@/lib/db";
 import { aiProviders } from "@/lib/db/schema";
@@ -102,7 +108,7 @@ async function reconcileReasoningSettings(
 
     const model = await getCachedProviderModelDefinition(providerId, modelId);
     if (!model) {
-      throw new APIValidationError(
+      throw new ValidationError(
         "Refresh the selected provider's model catalog before saving AI settings",
         "invalid_request"
       );
@@ -110,7 +116,7 @@ async function reconcileReasoningSettings(
 
     if (model.reasoningControl.kind === "provider_default") {
       if (requestedEffort && !LEGACY_REASONING_VALUES.has(requestedEffort)) {
-        throw new APIValidationError(
+        throw new ValidationError(
           `Model "${modelId}" does not advertise selectable reasoning efforts`,
           "invalid_request"
         );
@@ -122,7 +128,7 @@ async function reconcileReasoningSettings(
     const available = model.reasoningControl.options.map(({ value }) => value);
     const selected = requestedEffort || model.reasoningControl.defaultValue || available[0];
     if (!selected || !available.includes(selected)) {
-      throw new APIValidationError(
+      throw new ValidationError(
         `Reasoning effort "${requestedEffort}" is unavailable for model "${modelId}"`,
         "invalid_request"
       );
@@ -133,12 +139,12 @@ async function reconcileReasoningSettings(
   return reconciled;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const allSettings = await getSettingsWithDefaults();
     return NextResponse.json(allSettings);
   } catch (error) {
-    return handleAIAPIError(error, "Failed to fetch settings", "settings_fetch_failed");
+    return handleApiError(error, { request, fallbackMessage: "Failed to fetch settings", fallbackCode: "settings_fetch_failed" });
   }
 }
 
@@ -146,17 +152,10 @@ export async function POST(request: Request) {
   try {
     assertAppRequest(request);
 
-    const body = await request.json();
-
-    if (typeof body !== "object" || body === null) {
-      return NextResponse.json(
-        { error: "Request body must be an object", code: "invalid_request" },
-        { status: 400 }
-      );
-    }
+    const body = settingsUpdateBodySchema.parse(await request.json());
 
     const reconciledBody = await reconcileReasoningSettings(
-      body as Record<string, unknown>
+      body
     );
     const aiOnlyPayload = pickAISettings(reconciledBody);
     if (Object.keys(aiOnlyPayload).length > 0) {
@@ -214,7 +213,7 @@ export async function POST(request: Request) {
         stopScheduler();
         console.log("[Settings API] Scheduler stopped due to enabled change");
       } catch (error) {
-        console.error("[Settings API] Failed to stop scheduler:", error);
+        logApiFailure(createApiRequestContext(request), "scheduler_stop_failed", 500, error);
       }
     }
 
@@ -228,9 +227,9 @@ export async function POST(request: Request) {
         }
       } catch (error) {
         if (enabledChanged) {
-          console.error("[Settings API] Failed to start scheduler:", error);
+          logApiFailure(createApiRequestContext(request), "scheduler_start_failed", 500, error);
         } else if (cronUpdated) {
-          console.error("[Settings API] Failed to restart scheduler:", error);
+          logApiFailure(createApiRequestContext(request), "scheduler_restart_failed", 500, error);
         }
       }
     }
@@ -238,7 +237,7 @@ export async function POST(request: Request) {
     const allSettings = await getSettingsWithDefaults();
     return NextResponse.json(allSettings);
   } catch (error) {
-    return handleAIAPIError(error, "Failed to update settings", "settings_update_failed");
+    return handleApiError(error, { request, fallbackMessage: "Failed to update settings", fallbackCode: "settings_update_failed" });
   }
 }
 

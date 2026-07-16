@@ -30,7 +30,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { TRIGGER_LABELS } from "./constants";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { mutateScrapeHistory } from "@/lib/api/clients/history";
 import {
   formatDurationFromDates,
   formatTime,
@@ -73,12 +73,7 @@ export function SessionCard({ session }: SessionCardProps) {
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/scrape-history?sessionId=${session.id}`, {
-        method: "DELETE",
-        headers: APP_REQUEST_HEADERS,
-      });
-
-      if (!res.ok) throw new Error("Failed to delete session");
+      await mutateScrapeHistory("DELETE", session.id);
 
       queryClient.invalidateQueries({ queryKey: ["scrape-history"] });
       toast.success("Session deleted successfully");
@@ -128,12 +123,7 @@ export function SessionCard({ session }: SessionCardProps) {
     markSessionStoppedInCache();
 
     try {
-      const res = await fetch(`/api/scrape-history?sessionId=${encodeURIComponent(session.id)}`, {
-        method: "PATCH",
-        headers: APP_REQUEST_HEADERS,
-      });
-
-      if (!res.ok) throw new Error("Failed to stop session");
+      await mutateScrapeHistory("PATCH", session.id);
 
       toast.success("Stopping scrape session");
       queryClient.invalidateQueries({ queryKey: ["scrape-history"] });

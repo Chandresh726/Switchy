@@ -1,21 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { assertAppRequest } from "@/lib/api";
+import { assertAppRequest, handleApiError } from "@/lib/api";
+import { companyIdsBodySchema } from "@/lib/api/contracts/companies";
 import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 
 export async function DELETE(request: NextRequest) {
   try {
     assertAppRequest(request);
 
-    const body = await request.json();
-    const { companyIds } = body as { companyIds: number[] };
-
-    if (!Array.isArray(companyIds) || companyIds.length === 0) {
-      return NextResponse.json(
-        { error: "companyIds must be a non-empty array" },
-        { status: 400 }
-      );
-    }
+    const { companyIds } = companyIdsBodySchema.parse(await request.json());
 
     const deletedCount =
       await getLocalDataMaintenanceService().deleteCompanyJobs(companyIds);
@@ -26,10 +19,6 @@ export async function DELETE(request: NextRequest) {
       message: `Deleted ${deletedCount} jobs from ${companyIds.length} companies`,
     });
   } catch (error) {
-    console.error("Failed to delete jobs:", error);
-    return NextResponse.json(
-      { error: "Failed to delete jobs" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to delete jobs", fallbackCode: "company_jobs_bulk_delete_failed" });
   }
 }

@@ -84,6 +84,8 @@ function queueItem(overrides: Record<string, unknown> = {}) {
     id: "queue-1",
     companyId: 7,
     companyName: "Acme",
+    companyLogoUrl: null,
+    platform: "eightfold",
     status: "running",
     attemptCount: 2,
     maxAttempts: 3,

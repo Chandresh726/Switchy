@@ -1,22 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { assertAppRequest } from "@/lib/api";
+import {
+  assertAppRequest,
+  ConflictError,
+  handleApiError,
+  NotFoundError,
+} from "@/lib/api";
+import {
+  historyOptionalSessionQuerySchema,
+  historySessionQuerySchema,
+  scrapeHistoryQuerySchema,
+} from "@/lib/api/contracts/history";
 import { getLocalScrapeQueueService } from "@/lib/scraper";
 import { getScrapeHistoryStore } from "@/lib/scraper/history";
 import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get("limit") || "20");
-    const offset = parseInt(searchParams.get("offset") || "0");
-    const sessionId = searchParams.get("sessionId");
+    const query = scrapeHistoryQuerySchema.parse(
+      Object.fromEntries(request.nextUrl.searchParams)
+    );
+    const { limit, offset, sessionId } = query;
     const historyStore = getScrapeHistoryStore();
 
     if (sessionId) {
       const detail = historyStore.getDetail(sessionId);
       if (!detail) {
-        return NextResponse.json({ error: "Session not found" }, { status: 404, headers: NO_STORE_HEADERS });
+        throw new NotFoundError("Session not found", "scrape_session_not_found");
       }
       return NextResponse.json(detail, { headers: NO_STORE_HEADERS });
     }
@@ -25,11 +35,7 @@ export async function GET(request: NextRequest) {
       headers: NO_STORE_HEADERS,
     });
   } catch (error) {
-    console.error("Failed to fetch scrape history:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch scrape history" },
-      { status: 500, headers: NO_STORE_HEADERS }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to fetch scrape history", fallbackCode: "scrape_history_fetch_failed", headers: NO_STORE_HEADERS });
   }
 }
 
@@ -37,26 +43,26 @@ export async function DELETE(request: NextRequest) {
   try {
     assertAppRequest(request);
 
-    const { searchParams } = new URL(request.url);
-    const sessionId = searchParams.get("sessionId");
+    const { sessionId } = historyOptionalSessionQuerySchema.parse(
+      Object.fromEntries(request.nextUrl.searchParams)
+    );
 
-    const deletion = getScrapeHistoryStore().delete(sessionId ?? undefined);
+    const deletion = getScrapeHistoryStore().delete(sessionId);
     if (deletion.active) {
-      return NextResponse.json(
-        { error: "Stop the active scrape before deleting its history" },
-        { status: 409, headers: NO_STORE_HEADERS }
+      throw new ConflictError(
+        "Stop the active scrape before deleting its history",
+        "scrape_session_active"
       );
+    }
+    if (sessionId && deletion.deleted === 0) {
+      throw new NotFoundError("Session not found", "scrape_session_not_found");
     }
     return NextResponse.json(
       { success: true, deleted: deletion.deleted },
       { headers: NO_STORE_HEADERS }
     );
   } catch (error) {
-    console.error("Failed to delete scrape history:", error);
-    return NextResponse.json(
-      { error: "Failed to delete scrape history" },
-      { status: 500, headers: NO_STORE_HEADERS }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to delete scrape history", fallbackCode: "scrape_history_delete_failed", headers: NO_STORE_HEADERS });
   }
 }
 
@@ -64,15 +70,9 @@ export async function PATCH(request: NextRequest) {
   try {
     assertAppRequest(request);
 
-    const { searchParams } = new URL(request.url);
-    const sessionId = searchParams.get("sessionId");
-
-    if (!sessionId) {
-      return NextResponse.json(
-        { error: "sessionId is required" },
-        { status: 400, headers: NO_STORE_HEADERS }
-      );
-    }
+    const { sessionId } = historySessionQuerySchema.parse(
+      Object.fromEntries(request.nextUrl.searchParams)
+    );
 
     const cancellation = await getLocalScrapeQueueService().cancelSession(sessionId);
     const stopped = cancellation.sessionStopped;
@@ -84,10 +84,7 @@ export async function PATCH(request: NextRequest) {
     const session = getScrapeHistoryStore().getSessionStatus(sessionId);
 
     if (!session) {
-      return NextResponse.json(
-        { error: "Session not found" },
-        { status: 404, headers: NO_STORE_HEADERS }
-      );
+      throw new NotFoundError("Session not found", "scrape_session_not_found");
     }
 
     return NextResponse.json(
@@ -95,10 +92,6 @@ export async function PATCH(request: NextRequest) {
       { headers: NO_STORE_HEADERS }
     );
   } catch (error) {
-    console.error("Failed to stop scrape session:", error);
-    return NextResponse.json(
-      { error: "Failed to stop scrape session" },
-      { status: 500, headers: NO_STORE_HEADERS }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to stop scrape session", fallbackCode: "scrape_session_stop_failed", headers: NO_STORE_HEADERS });
   }
 }

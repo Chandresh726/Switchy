@@ -1,21 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { z } from "zod";
 
-import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
+import { assertAppRequest, handleApiError, NotFoundError, ValidationError } from "@/lib/api";
+import { personIdParamsSchema, personPatchBodySchema } from "@/lib/api/contracts/people";
 import { db } from "@/lib/db";
 import { companies, people } from "@/lib/db/schema";
-
-const ParamsSchema = z.object({
-  id: z.coerce.number().int().positive(),
-});
-
-const PatchBodySchema = z.object({
-  isStarred: z.boolean().optional(),
-  notes: z.string().max(2000).nullable().optional(),
-  email: z.string().max(320).nullable().optional(),
-  mappedCompanyId: z.coerce.number().int().positive().nullable().optional(),
-});
 
 export async function PATCH(
   request: NextRequest,
@@ -24,8 +13,8 @@ export async function PATCH(
   try {
     assertAppRequest(request);
 
-    const parsedParams = ParamsSchema.parse(await params);
-    const body = PatchBodySchema.parse(await request.json());
+    const parsedParams = personIdParamsSchema.parse(await params);
+    const body = personPatchBodySchema.parse(await request.json());
 
     if (
       body.isStarred === undefined &&
@@ -59,11 +48,11 @@ export async function PATCH(
       .returning();
 
     if (!updated) {
-      return NextResponse.json({ error: "Person not found" }, { status: 404 });
+      throw new NotFoundError("Person not found", "person_not_found");
     }
 
     return NextResponse.json(updated);
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(error, { request, fallbackMessage: "Failed to update person", fallbackCode: "person_update_failed" });
   }
 }

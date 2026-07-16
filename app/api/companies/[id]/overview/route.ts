@@ -1,13 +1,13 @@
 import { and, count, desc, eq, gte, isNull, or, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 
 import {
   getCurrentMatchContext,
   getMatchPresentations,
 } from "@/lib/ai/matcher/presentation";
 import { countPromotedMatchRows } from "@/lib/ai/matcher/promotion";
-import { handleApiError } from "@/lib/api";
+import { handleApiError, NotFoundError } from "@/lib/api";
+import { companyIdParamsSchema } from "@/lib/api/contracts/companies";
 import { isCompanyScrapeSupported } from "@/lib/companies/scrape-support";
 import { db } from "@/lib/db";
 import {
@@ -18,10 +18,6 @@ import {
   people,
   scrapingLogs,
 } from "@/lib/db/schema";
-
-const ParamsSchema = z.object({
-  id: z.coerce.number().int().positive(),
-});
 
 const COMPANY_JOB_SELECTION = {
   id: jobs.id,
@@ -43,11 +39,11 @@ const COMPANY_JOB_SELECTION = {
 } as const;
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const parsedParams = ParamsSchema.parse(await params);
+    const parsedParams = companyIdParamsSchema.parse(await params);
 
     const [company] = await db
       .select()
@@ -55,7 +51,7 @@ export async function GET(
       .where(eq(companies.id, parsedParams.id));
 
     if (!company) {
-      return NextResponse.json({ error: "Company not found" }, { status: 404 });
+      throw new NotFoundError("Company not found", "company_not_found");
     }
 
     const currentContext = await getCurrentMatchContext();
@@ -242,6 +238,6 @@ export async function GET(
       },
     });
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(error, { request, fallbackMessage: "Failed to fetch company overview", fallbackCode: "company_overview_fetch_failed" });
   }
 }

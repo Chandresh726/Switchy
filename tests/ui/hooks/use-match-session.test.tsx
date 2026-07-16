@@ -27,6 +27,23 @@ describe("useMatchSession", () => {
         failed: 0,
         startedAt: null,
         completedAt: calls === 1 ? null : new Date().toISOString(),
+        analysis: {
+          total: 1,
+          completed: calls === 1 ? 0 : 1,
+          active: calls === 1 ? 1 : 0,
+          queued: 0,
+          cached: 0,
+          failed: 0,
+        },
+        matching: {
+          total: 1,
+          completed: calls === 1 ? 0 : 1,
+          active: calls === 1 ? 1 : 0,
+          queued: 0,
+          cached: 0,
+          failed: 0,
+        },
+        jobs: [],
       });
     }));
     const wrapper = ({ children }: PropsWithChildren) => (

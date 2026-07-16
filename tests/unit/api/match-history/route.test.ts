@@ -1,4 +1,4 @@
-import type { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -151,9 +151,9 @@ describe("match history detail", () => {
       matchStale: false,
     }]]));
 
-    const response = await GET(new Request(
+    const response = await GET(new NextRequest(
       "http://localhost/api/match-history?sessionId=session-1"
-    ) as NextRequest);
+    ));
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -201,9 +201,9 @@ describe("match history detail", () => {
       .mockImplementationOnce(() => selectWhere([]));
     mocks.getMatchPresentations.mockResolvedValue(new Map());
 
-    const response = await GET(new Request(
+    const response = await GET(new NextRequest(
       "http://localhost/api/match-history?sessionId=session-1"
-    ) as NextRequest);
+    ));
     const body = await response.json();
 
     expect(body.logs[0]).toMatchObject({
@@ -281,9 +281,9 @@ describe("match history detail", () => {
       }],
     ]))));
 
-    const response = await GET(new Request(
+    const response = await GET(new NextRequest(
       "http://localhost/api/match-history?sessionId=session-large"
-    ) as NextRequest);
+    ));
     const body = await response.json();
 
     expect(response.status).toBe(200);

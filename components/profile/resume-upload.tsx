@@ -1,42 +1,10 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import type { ResumeData } from "@/lib/ai/resume/contracts";
+import { uploadResume } from "@/lib/api/clients/profile";
 import { Button } from "@/components/ui/button";
 import { Upload, Loader2, Check, AlertCircle } from "lucide-react";
-
-interface ResumeData {
-  name: string;
-  email?: string;
-  phone?: string;
-  location?: string;
-  linkedinUrl?: string;
-  githubUrl?: string;
-  portfolioUrl?: string;
-  summary?: string;
-  skills: Array<{
-    name: string;
-    category?: string;
-  }>;
-  experience: Array<{
-    company: string;
-    title: string;
-    location?: string;
-    startDate: string;
-    endDate?: string;
-    description?: string;
-    highlights?: string[];
-  }>;
-  education?: Array<{
-    institution: string;
-    degree: string;
-    field?: string;
-    startDate?: string;
-    endDate?: string;
-    gpa?: string;
-    honors?: string;
-  }>;
-}
 
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -65,24 +33,14 @@ export function ResumeUpload({ onParsed, disabled }: ResumeUploadProps) {
         const formData = new FormData();
         formData.append("file", file);
 
-        const response = await fetch("/api/profile/parse-resume", {
-          method: "POST",
-          headers: APP_REQUEST_HEADERS,
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const data = await response.json();
-          throw new Error(data.error || "Failed to parse resume");
-        }
-
-        const result = await response.json();
+        const result = await uploadResume(formData);
         // The API now returns { parsedData, resumeRecord }
         // We only care about parsedData here for the form filling
-        const parsedData: ResumeData = result.parsedData || result;
-
+        if (!result.parsedData) {
+          throw new Error("Resume parsing returned no profile data");
+        }
         setSuccess(true);
-        onParsed(parsedData, autofill);
+        onParsed(result.parsedData, autofill);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to parse resume");
       } finally {

@@ -1,60 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 import { eq } from "drizzle-orm";
 
-import { assertAppRequest } from "@/lib/api";
+import {
+  assertAppRequest,
+  createApiRequestContext,
+  handleApiError,
+  logApiFailure,
+  NotFoundError,
+  ValidationError,
+} from "@/lib/api";
+import {
+  companyIdParamsSchema,
+  companyPatchBodySchema,
+  companyReplaceBodySchema,
+  companyPlatformSchema,
+} from "@/lib/api/contracts/companies";
 import { db } from "@/lib/db";
 import { companies } from "@/lib/db/schema";
 import { refreshUnmatchedCompanyMappings } from "@/lib/people/sync";
 import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
-
-const ParamsSchema = z.object({
-  id: z.coerce.number().int().positive(),
-});
-
-const PLATFORM_VALUES = [
-  "greenhouse",
-  "lever",
-  "ashby",
-  "workday",
-  "eightfold",
-  "servicenow",
-  "zwayam",
-  "mynexthire",
-  "uber",
-  "google",
-  "atlassian",
-  "rippling",
-  "visa",
-  "nutanix",
-  "custom",
-] as const;
-
-const PlatformOverrideSchema = z
-  .union([z.enum(PLATFORM_VALUES), z.literal(""), z.null()])
-  .optional()
-  .transform((value) => (value === "" ? null : value));
-
-const PutBodySchema = z.object({
-  name: z.string().trim().min(1),
-  careersUrl: z.string().trim().url(),
-  logoUrl: z.string().trim().url().nullable().optional().or(z.literal("")),
-  notes: z.string().nullable().optional().or(z.literal("")),
-  isActive: z.boolean().optional(),
-  platform: PlatformOverrideSchema,
-  boardToken: z.string().trim().nullable().optional().or(z.literal("")),
-});
-
-const PatchBodySchema = z.object({
-  name: z.string().trim().min(1).optional(),
-  careersUrl: z.string().trim().url().optional(),
-  logoUrl: z.string().trim().url().nullable().optional().or(z.literal("")),
-  notes: z.string().nullable().optional().or(z.literal("")),
-  isActive: z.boolean().optional(),
-  platform: PlatformOverrideSchema,
-  boardToken: z.string().trim().nullable().optional().or(z.literal("")),
-});
 
 type CompanyUpdatePayload = {
   name?: string;
@@ -114,7 +79,7 @@ function validateBoardTokenRequirement(
 
 async function getIdFromParams(params: Promise<{ id: string }>): Promise<number> {
   const resolved = await params;
-  const parsed = ParamsSchema.safeParse(resolved);
+  const parsed = companyIdParamsSchema.safeParse(resolved);
   if (!parsed.success) {
     throw new Error("Invalid company id");
   }
@@ -136,20 +101,16 @@ export async function GET(
       .where(eq(companies.id, id));
 
     if (!company) {
-      return NextResponse.json({ error: "Company not found" }, { status: 404 });
+      throw new NotFoundError("Company not found", "company_not_found");
     }
 
     return NextResponse.json(company);
   } catch (error) {
     if (error instanceof Error && error.message === "Invalid company id") {
-      return NextResponse.json({ error: "Invalid company id" }, { status: 400 });
+      return handleApiError(new ValidationError("Invalid company id", "invalid_company_id"), { request });
     }
 
-    console.error("Failed to fetch company:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch company" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to fetch company", fallbackCode: "company_fetch_failed" });
   }
 }
 
@@ -162,12 +123,14 @@ export async function PUT(
 
     const id = await getIdFromParams(params);
     const body = await request.json();
-    const parsed = PutBodySchema.safeParse(body);
+    const parsed = companyReplaceBodySchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid request body", details: parsed.error.flatten() },
-        { status: 400 }
+      throw new ValidationError(
+        "Invalid request body",
+        "invalid_request",
+        400,
+        parsed.error.flatten()
       );
     }
 
@@ -190,7 +153,7 @@ export async function PUT(
     );
 
     if (boardTokenError) {
-      return NextResponse.json({ error: boardTokenError }, { status: 400 });
+      throw new ValidationError(boardTokenError, "board_token_required");
     }
 
     const [updated] = await db
@@ -200,7 +163,7 @@ export async function PUT(
       .returning();
 
     if (!updated) {
-      return NextResponse.json({ error: "Company not found" }, { status: 404 });
+      throw new NotFoundError("Company not found", "company_not_found");
     }
 
     try {
@@ -208,20 +171,16 @@ export async function PUT(
         companyIds: [updated.id],
       });
     } catch (error) {
-      console.error("Failed to refresh unmatched company mappings:", error);
+      logApiFailure(createApiRequestContext(request), "unmatched_mapping_refresh_failed", 500, error);
     }
 
     return NextResponse.json(updated);
   } catch (error) {
     if (error instanceof Error && error.message === "Invalid company id") {
-      return NextResponse.json({ error: "Invalid company id" }, { status: 400 });
+      return handleApiError(new ValidationError("Invalid company id", "invalid_company_id"), { request });
     }
 
-    console.error("Failed to update company:", error);
-    return NextResponse.json(
-      { error: "Failed to update company" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to update company", fallbackCode: "company_update_failed" });
   }
 }
 
@@ -234,12 +193,14 @@ export async function PATCH(
 
     const id = await getIdFromParams(params);
     const body = await request.json();
-    const parsed = PatchBodySchema.safeParse(body);
+    const parsed = companyPatchBodySchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid request body", details: parsed.error.flatten() },
-        { status: 400 }
+      throw new ValidationError(
+        "Invalid request body",
+        "invalid_request",
+        400,
+        parsed.error.flatten()
       );
     }
 
@@ -266,10 +227,10 @@ export async function PATCH(
       .where(eq(companies.id, id));
 
     if (!existing) {
-      return NextResponse.json({ error: "Company not found" }, { status: 404 });
+      throw new NotFoundError("Company not found", "company_not_found");
     }
 
-    const existingPlatformParsed = PlatformOverrideSchema.safeParse(existing.platform);
+    const existingPlatformParsed = companyPlatformSchema.nullable().safeParse(existing.platform);
     const effectivePlatform =
       updateData.platform !== undefined
         ? updateData.platform
@@ -287,7 +248,7 @@ export async function PATCH(
     );
 
     if (boardTokenError) {
-      return NextResponse.json({ error: boardTokenError }, { status: 400 });
+      throw new ValidationError(boardTokenError, "board_token_required");
     }
 
     const [updated] = await db
@@ -302,21 +263,17 @@ export async function PATCH(
           companyIds: [updated.id],
         });
       } catch (error) {
-        console.error("Failed to refresh unmatched company mappings:", error);
+        logApiFailure(createApiRequestContext(request), "unmatched_mapping_refresh_failed", 500, error);
       }
     }
 
     return NextResponse.json(updated);
   } catch (error) {
     if (error instanceof Error && error.message === "Invalid company id") {
-      return NextResponse.json({ error: "Invalid company id" }, { status: 400 });
+      return handleApiError(new ValidationError("Invalid company id", "invalid_company_id"), { request });
     }
 
-    console.error("Failed to update company:", error);
-    return NextResponse.json(
-      { error: "Failed to update company" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to update company", fallbackCode: "company_update_failed" });
   }
 }
 
@@ -328,18 +285,17 @@ export async function DELETE(
     assertAppRequest(request);
 
     const id = await getIdFromParams(params);
-    await getLocalDataMaintenanceService().deleteCompanies([id]);
+    const result = await getLocalDataMaintenanceService().deleteCompanies([id]);
+    if (result.deletedCompanies === 0) {
+      throw new NotFoundError("Company not found", "company_not_found");
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
     if (error instanceof Error && error.message === "Invalid company id") {
-      return NextResponse.json({ error: "Invalid company id" }, { status: 400 });
+      return handleApiError(new ValidationError("Invalid company id", "invalid_company_id"), { request });
     }
 
-    console.error("Failed to delete company:", error);
-    return NextResponse.json(
-      { error: "Failed to delete company" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to delete company", fallbackCode: "company_delete_failed" });
   }
 }

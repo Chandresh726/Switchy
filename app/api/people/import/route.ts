@@ -1,24 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 
 import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
+import {
+  apolloMappingSchema,
+  peopleImportModeSchema,
+  peopleSourceSchema,
+} from "@/lib/api/contracts/people";
 import type { ApolloColumnMapping } from "@/lib/people/import/parsers/apollo";
 import { importPeopleCsv } from "@/lib/people/sync";
 import { MAX_CSV_FILE_SIZE } from "@/lib/constants";
 import type { ImportMode } from "@/lib/people/types";
-
-const SourceSchema = z.enum(["linkedin", "apollo"]);
-const ImportModeSchema = z.enum(["merge", "replace"]);
 
 export async function POST(request: NextRequest) {
   try {
     assertAppRequest(request);
 
     const formData = await request.formData();
-    const source = SourceSchema.parse(formData.get("source") ?? "linkedin");
+    const source = peopleSourceSchema.parse(formData.get("source") ?? "linkedin");
     const importModeRaw = formData.get("importMode");
     const importMode: ImportMode = importModeRaw
-      ? ImportModeSchema.parse(importModeRaw)
+      ? peopleImportModeSchema.parse(importModeRaw)
       : "merge";
     const mappingRaw = formData.get("mapping");
     const file = formData.get("file");
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
       if (typeof mappingRaw !== "string" || !mappingRaw.trim()) {
         throw new ValidationError("Apollo import requires mapping");
       }
-      mapping = JSON.parse(mappingRaw) as ApolloColumnMapping;
+      mapping = apolloMappingSchema.parse(JSON.parse(mappingRaw)) as ApolloColumnMapping;
     }
 
     const result = await importPeopleCsv({
@@ -52,6 +53,6 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json(result);
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(error, { request, fallbackMessage: "Failed to import people", fallbackCode: "people_import_failed" });
   }
 }

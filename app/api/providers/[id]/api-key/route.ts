@@ -4,7 +4,7 @@ import { ProviderRouteParamsSchema } from "@/lib/ai/contracts";
 import {
   requireProviderById,
 } from "@/lib/ai/providers/provider-service";
-import { APIValidationError, handleAIAPIError } from "@/lib/api/ai-error-handler";
+import { handleApiError, ValidationError } from "@/lib/api";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -39,7 +39,7 @@ function assertSameOrigin(request: NextRequest): void {
   const appOrigin = request.nextUrl.origin;
 
   if (!callerOrigin || callerOrigin !== appOrigin) {
-    throw new APIValidationError(
+    throw new ValidationError(
       "Cross-origin requests are not allowed",
       "cross_origin_forbidden",
       403
@@ -67,11 +67,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       { headers: STRICT_NO_STORE_HEADERS }
     );
   } catch (error) {
-    return handleAIAPIError(
-      error,
-      "Failed to fetch provider",
-      "provider_api_key_fetch_failed",
-      STRICT_NO_STORE_HEADERS
-    );
+    return handleApiError(error, {
+      request,
+      fallbackMessage: "Failed to fetch provider",
+      fallbackCode: "provider_api_key_fetch_failed",
+      headers: STRICT_NO_STORE_HEADERS,
+    });
   }
 }

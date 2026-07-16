@@ -1,4 +1,4 @@
-import type { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,13 +8,21 @@ const mocks = vi.hoisted(() => ({
   deleteCompanyJobs: vi.fn(),
   deleteMatchData: vi.fn(),
   deleteMatchHistory: vi.fn(),
+  findCompany: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
   assertAppRequest: mocks.assertAppRequest,
 }));
 
-vi.mock("@/lib/db", () => ({ db: {} }));
+vi.mock("@/lib/db", () => ({
+  db: {
+    query: {
+      companies: { findFirst: mocks.findCompany },
+    },
+  },
+}));
 
 vi.mock("@/lib/people/sync", () => ({
   refreshUnmatchedCompanyMappings: vi.fn(),
@@ -40,11 +48,11 @@ import { DELETE as deleteMatchData } from "@/app/api/jobs/match-data/route";
 import { DELETE as deleteMatchHistory } from "@/app/api/match-history/route";
 
 function request(url: string, body?: Record<string, unknown>): NextRequest {
-  return new Request(url, {
+  return new NextRequest(url, {
     method: "DELETE",
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
-  }) as NextRequest;
+  });
 }
 
 describe("maintenance API routes", () => {
@@ -57,6 +65,7 @@ describe("maintenance API routes", () => {
     mocks.deleteCompanyJobs.mockReturnValue(3);
     mocks.deleteMatchData.mockReturnValue(7);
     mocks.deleteMatchHistory.mockReturnValue(1);
+    mocks.findCompany.mockResolvedValue({ id: 42 });
   });
 
   it("routes a single company deletion through local maintenance", async () => {
@@ -68,6 +77,24 @@ describe("maintenance API routes", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ success: true });
     expect(mocks.deleteCompanies).toHaveBeenCalledWith([42]);
+  });
+
+  it("returns 404 when a targeted company deletion removes nothing", async () => {
+    mocks.deleteCompanies.mockResolvedValueOnce({
+      deletedCompanies: 0,
+      deletedJobs: 0,
+    });
+
+    const response = await deleteCompany(
+      request("http://localhost/api/companies/404"),
+      { params: Promise.resolve({ id: "404" }) }
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "company_not_found",
+      requestId: expect.any(String),
+    });
   });
 
   it("preserves single and bulk company-job deletion responses", async () => {
@@ -93,6 +120,22 @@ describe("maintenance API routes", () => {
     });
     expect(mocks.deleteCompanyJobs).toHaveBeenNthCalledWith(1, [42]);
     expect(mocks.deleteCompanyJobs).toHaveBeenNthCalledWith(2, [42, 43]);
+  });
+
+  it("returns 404 without deleting jobs for a missing company", async () => {
+    mocks.findCompany.mockResolvedValueOnce(undefined);
+
+    const response = await deleteCompanyJobs(
+      request("http://localhost/api/companies/404/jobs"),
+      { params: Promise.resolve({ id: "404" }) }
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "company_not_found",
+      requestId: expect.any(String),
+    });
+    expect(mocks.deleteCompanyJobs).not.toHaveBeenCalled();
   });
 
   it("clears all match data while preserving the response contract", async () => {
@@ -121,5 +164,23 @@ describe("maintenance API routes", () => {
     expect(all.status).toBe(200);
     expect(mocks.deleteMatchHistory).toHaveBeenNthCalledWith(1, "match-1");
     expect(mocks.deleteMatchHistory).toHaveBeenNthCalledWith(2, undefined);
+  });
+
+  it("returns 404 only for a missing targeted match-history session", async () => {
+    mocks.deleteMatchHistory.mockResolvedValue(0);
+
+    const targeted = await deleteMatchHistory(
+      request("http://localhost/api/match-history?sessionId=missing")
+    );
+    const collection = await deleteMatchHistory(
+      request("http://localhost/api/match-history")
+    );
+
+    expect(targeted.status).toBe(404);
+    await expect(targeted.json()).resolves.toMatchObject({
+      code: "match_session_not_found",
+      requestId: expect.any(String),
+    });
+    expect(collection.status).toBe(200);
   });
 });

@@ -19,7 +19,11 @@ import {
     type CompanyOverviewResponse,
 } from "@/components/companies/company-detail";
 import { CompanyLayoutClient } from "@/components/companies/company-detail/company-layout-client";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import {
+    getCompanyOverview,
+    matchCompanies,
+    refreshCompanyJobs,
+} from "@/lib/api/clients/companies";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
 
 function CompanyLayoutContent({
@@ -49,22 +53,14 @@ function CompanyLayoutContent({
     const { data, isLoading } = useQuery<CompanyOverviewResponse>({
         queryKey: ["company-overview", companyId],
         queryFn: async () => {
-            const res = await fetch(`/api/companies/${companyId}/overview`);
-            if (!res.ok) throw new Error("Failed to fetch company overview");
-            return res.json();
+            return getCompanyOverview(companyId);
         },
         enabled: Number.isFinite(companyId),
     });
 
     const refreshJobsMutation = useMutation({
         mutationFn: async () => {
-            const res = await fetch("/api/companies/refresh-jobs", {
-                method: "POST",
-                headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-                body: JSON.stringify({ companyIds: [companyId] }),
-            });
-            if (!res.ok) throw new Error("Failed to refresh jobs");
-            return res.json();
+            return refreshCompanyJobs([companyId]);
         },
         onSuccess: (result) => {
             queryClient.invalidateQueries({ queryKey: ["company-overview", companyId] });
@@ -78,13 +74,7 @@ function CompanyLayoutContent({
 
     const runMatchingMutation = useMutation({
         mutationFn: async () => {
-            const res = await fetch("/api/companies/match", {
-                method: "POST",
-                headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-                body: JSON.stringify({ companyIds: [companyId] }),
-            });
-            if (!res.ok) throw new Error("Failed to run matching");
-            return res.json();
+            return matchCompanies([companyId]);
         },
         onSuccess: (result: { sessionId: string; total: number }) => {
             setMatchSessionId(result.sessionId || null);

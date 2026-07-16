@@ -7,6 +7,17 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api/client";
+import { successSchema, stringRecordSchema } from "@/lib/api/contracts/common";
+import {
+  clearAiContentResponseSchema,
+  clearMatchDataResponseSchema,
+  providerCreateResponseSchema,
+  providerModelsResponseSchema,
+  providerSettingsListSchema,
+  queuedMatchResponseSchema,
+  settingsResponseSchema,
+  unmatchedJobsCountResponseSchema,
+} from "@/lib/api/contracts/settings";
 import { MatcherSection } from "@/components/settings/matcher-section";
 import { ScraperSettings } from "@/components/settings/scraper-settings";
 import { DangerZone } from "@/components/settings/danger-zone";
@@ -219,7 +230,7 @@ function SettingsContent() {
 
   const { data: settings, isLoading: isSettingsLoading } = useQuery<SettingsRecord>({
     queryKey: ["settings"],
-    queryFn: () => apiGet<SettingsRecord>("/api/settings", "Failed to fetch settings"),
+    queryFn: () => apiGet("/api/settings", settingsResponseSchema, "Failed to fetch settings"),
   });
 
   const fetchProviderModels = async (
@@ -227,15 +238,16 @@ function SettingsContent() {
     forceRefresh = false
   ): Promise<ProviderModelsResponse> => {
     const refreshQuery = forceRefresh ? "?refresh=1" : "";
-    return apiGet<ProviderModelsResponse>(
+    return apiGet(
       `/api/providers/${providerId}/models${refreshQuery}`,
+      providerModelsResponseSchema,
       "Failed to fetch provider models"
     );
   };
 
   const { data: providers = [], isLoading: isProvidersLoading } = useQuery<ProviderSettingsListItem[]>({
     queryKey: ["providers"],
-    queryFn: () => apiGet<ProviderSettingsListItem[]>("/api/providers", "Failed to fetch providers"),
+    queryFn: () => apiGet("/api/providers", providerSettingsListSchema, "Failed to fetch providers"),
   });
 
   const providerModelsQueries = useQueries({
@@ -284,12 +296,13 @@ function SettingsContent() {
   };
 
   const saveCLIExecutablePaths = useCallback(async (paths: { codex: string; opencode: string }) => {
-    await apiPost<SettingsRecord>(
+    await apiPost(
       "/api/settings",
       {
         codex_cli_executable: paths.codex,
         opencode_cli_executable: paths.opencode,
       },
+      settingsResponseSchema,
       "Failed to save CLI executable paths"
     );
     await queryClient.invalidateQueries({ queryKey: ["settings"] });
@@ -301,11 +314,12 @@ function SettingsContent() {
 
   const addProviderMutation = useMutation({
     mutationFn: async ({ provider, apiKey }: { provider: string; apiKey?: string }) => {
-      return apiPost<{
-        autoConfiguredDefaults?: boolean;
-        autoConfiguredModelId?: string;
-        autoConfiguredWarning?: string;
-      }>("/api/providers", { provider, apiKey }, "Failed to add provider");
+      return apiPost(
+        "/api/providers",
+        { provider, apiKey },
+        providerCreateResponseSchema,
+        "Failed to add provider"
+      );
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["providers"] });
@@ -328,7 +342,7 @@ function SettingsContent() {
   });
 
   const deleteProviderMutation = useMutation({
-    mutationFn: (id: string) => apiDelete<{ success: boolean }>(`/api/providers/${id}`, "Failed to delete provider"),
+    mutationFn: (id: string) => apiDelete(`/api/providers/${id}`, successSchema, "Failed to delete provider"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["providers"] });
       queryClient.invalidateQueries({ queryKey: ["provider-models"] });
@@ -340,9 +354,10 @@ function SettingsContent() {
 
   const updateProviderApiKeyMutation = useMutation({
     mutationFn: ({ id, apiKey }: { id: string; apiKey?: string }) =>
-      apiPatch<{ success: boolean }>(
+      apiPatch(
         `/api/providers/${id}`,
         { apiKey },
+        successSchema,
         "Failed to update provider API key"
       ),
     onSuccess: () => {
@@ -621,9 +636,10 @@ function SettingsContent() {
 
   const reconcileModelsMutation = useMutation({
     mutationFn: ({ updates }: { updates: Record<string, string>; features: string[] }) =>
-      apiPost<Record<string, string>>(
+      apiPost(
         "/api/settings",
         updates,
+        stringRecordSchema,
         "Failed to reconcile invalid model settings"
       ),
     onSuccess: (_data, variables) => {
@@ -895,7 +911,7 @@ function SettingsContent() {
   };
 
   const clearJobsMutation = useMutation({
-    mutationFn: () => apiDelete<{ success: boolean }>("/api/jobs", "Failed to clear jobs"),
+    mutationFn: () => apiDelete("/api/jobs", successSchema, "Failed to clear jobs"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["companies"] });
@@ -905,7 +921,11 @@ function SettingsContent() {
 
   const clearMatchDataMutation = useMutation<{ jobsCleared: number }>({
     mutationFn: () =>
-      apiDelete<{ jobsCleared: number }>("/api/jobs/match-data", "Failed to clear match data"),
+      apiDelete(
+        "/api/jobs/match-data",
+        clearMatchDataResponseSchema,
+        "Failed to clear match data"
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["match-history"] });
@@ -920,12 +940,11 @@ function SettingsContent() {
     message: string;
   }>({
     mutationFn: () =>
-      apiDelete<{
-        success: boolean;
-        contentDeleted: number;
-        historyDeleted: number;
-        message: string;
-      }>("/api/ai/content", "Failed to clear AI content"),
+      apiDelete(
+        "/api/ai/content",
+        clearAiContentResponseSchema,
+        "Failed to clear AI content"
+      ),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["ai-content"] });
       toast.success(data.message || "AI generated content deleted successfully");
@@ -935,9 +954,10 @@ function SettingsContent() {
 
   const resumeParserMutation = useMutation({
     mutationFn: (updates: { resume_parser_model?: string; resume_parser_provider_id?: string; resume_parser_reasoning_effort?: ReasoningEffort }) =>
-      apiPost<Record<string, string>>(
+      apiPost(
         "/api/settings",
         updates,
+        stringRecordSchema,
         "Failed to save resume parser settings"
       ),
     onSuccess: () => {
@@ -949,9 +969,10 @@ function SettingsContent() {
 
   const schedulerEnabledMutation = useMutation<SettingsRecord, Error, boolean, { previousEnabled: boolean }>({
     mutationFn: (enabled: boolean) =>
-      apiPost<SettingsRecord>(
+      apiPost(
         "/api/settings",
         { scheduler_enabled: enabled },
+        settingsResponseSchema,
         "Failed to save scheduler enabled setting"
       ),
     onMutate: (enabled: boolean) => {
@@ -1022,9 +1043,10 @@ function SettingsContent() {
 
   const matcherSettingsMutation = useMutation({
     mutationFn: ({ updates }: { updates: Record<string, unknown>; snapshot: MatcherLocalEdits }) =>
-      apiPost<Record<string, string>>(
+      apiPost(
         "/api/settings",
         updates,
+        stringRecordSchema,
         "Failed to save matcher settings"
       ),
     onSuccess: (data, variables) => {
@@ -1041,9 +1063,10 @@ function SettingsContent() {
     { updates: Record<string, unknown>; snapshot: ScraperLocalEdits }
   >({
     mutationFn: ({ updates }) =>
-      apiPost<Record<string, string>>(
+      apiPost(
         "/api/settings",
         updates,
+        stringRecordSchema,
         "Failed to save scraper settings"
       ),
     onSuccess: (data, variables) => {
@@ -1060,7 +1083,7 @@ function SettingsContent() {
       updates: Partial<AIWritingSettings>;
       snapshot: AIWritingLocalEdits;
     }) =>
-      apiPost<Record<string, string>>(
+      apiPost(
         "/api/settings",
         {
           referral_tone: updates.referralTone,
@@ -1074,6 +1097,7 @@ function SettingsContent() {
           ai_writing_provider_id: updates.aiWritingProviderId,
           ai_writing_reasoning_effort: updates.aiWritingReasoningEffort,
         },
+        stringRecordSchema,
         "Failed to save AI writing settings"
       ),
     onSuccess: (data, variables) => {
@@ -1246,8 +1270,9 @@ function SettingsContent() {
   }>({
     queryKey: ["unmatched-jobs-count", debouncedUnmatchedWindowDays],
     queryFn: () =>
-      apiGet<{ count: number; days: number }>(
+      apiGet(
         `/api/jobs/match-unmatched?days=${debouncedUnmatchedWindowDays}`,
+        unmatchedJobsCountResponseSchema,
         "Failed to fetch unmatched count"
       ),
   });
@@ -1258,9 +1283,10 @@ function SettingsContent() {
     sessionId: string;
   }, Error, number>({
     mutationFn: (days: number) =>
-      apiPost<{ total: number; status: "queued" | "completed"; sessionId: string }>(
+      apiPost(
         "/api/jobs/match-unmatched",
         { days },
+        queuedMatchResponseSchema,
         "Failed to match jobs"
       ),
     onSuccess: (data) => {

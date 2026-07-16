@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 
 import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
+import { peopleSourceSchema } from "@/lib/api/contracts/people";
 import { suggestApolloMapping } from "@/lib/people/import/parsers/apollo";
 import { parsePeopleCsvRows } from "@/lib/people/csv";
 import { MAX_CSV_FILE_SIZE } from "@/lib/constants";
-
-const SourceSchema = z.enum(["linkedin", "apollo"]);
 
 function toSampleRows(rows: string[][], limit = 5): Record<string, string>[] {
   if (rows.length < 2) return [];
@@ -25,7 +23,7 @@ export async function POST(request: NextRequest) {
     assertAppRequest(request);
 
     const formData = await request.formData();
-    const source = SourceSchema.parse(formData.get("source") ?? "linkedin");
+    const source = peopleSourceSchema.parse(formData.get("source") ?? "linkedin");
     const file = formData.get("file");
     if (!(file instanceof File)) {
       throw new ValidationError("file is required");
@@ -58,6 +56,6 @@ export async function POST(request: NextRequest) {
       totalRows: Math.max(0, rows.length - 1),
     });
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(error, { request, fallbackMessage: "Failed to preview people import", fallbackCode: "people_import_preview_failed" });
   }
 }

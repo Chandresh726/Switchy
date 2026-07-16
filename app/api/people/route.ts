@@ -1,28 +1,15 @@
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 
 import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
+import { manualPersonBodySchema, peopleListQuerySchema } from "@/lib/api/contracts/people";
 import { db } from "@/lib/db";
 import { companies } from "@/lib/db/schema";
 import { createManualPerson, deleteAllPeople, getPeopleList } from "@/lib/people/sync";
 
-const PeopleQuerySchema = z.object({
-  search: z.string().optional(),
-  companyId: z.coerce.number().int().positive().optional(),
-  source: z.enum(["linkedin", "apollo", "manual", "all"]).optional(),
-  starred: z.enum(["true", "false"]).optional(),
-  active: z.enum(["true", "false", "all"]).optional(),
-  unmatched: z.enum(["true", "false"]).optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional().default(100),
-  offset: z.coerce.number().int().min(0).optional().default(0),
-  sortBy: z.enum(["lastSeenAt", "fullName", "createdAt", "isStarred"]).optional().default("lastSeenAt"),
-  sortOrder: z.enum(["asc", "desc"]).optional().default("desc"),
-});
-
 export async function GET(request: NextRequest) {
   try {
-    const query = PeopleQuerySchema.parse({
+    const query = peopleListQuerySchema.parse({
       search: request.nextUrl.searchParams.get("search") ?? undefined,
       companyId: request.nextUrl.searchParams.get("companyId") ?? undefined,
       source: request.nextUrl.searchParams.get("source") ?? undefined,
@@ -50,27 +37,15 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(error, { request, fallbackMessage: "Failed to fetch people", fallbackCode: "people_fetch_failed" });
   }
 }
-
-const ManualPersonSchema = z.object({
-  fullName: z.string().trim().min(1).optional(),
-  firstName: z.string().trim().optional(),
-  lastName: z.string().trim().optional(),
-  profileUrl: z.string().trim().optional(),
-  email: z.string().trim().email().optional().or(z.literal("")),
-  companyRaw: z.string().trim().optional(),
-  position: z.string().trim().optional(),
-  notes: z.string().trim().max(2000).optional(),
-  mappedCompanyId: z.coerce.number().int().positive().optional().nullable(),
-});
 
 export async function POST(request: NextRequest) {
   try {
     assertAppRequest(request);
 
-    const body = ManualPersonSchema.parse(await request.json());
+    const body = manualPersonBodySchema.parse(await request.json());
     if (typeof body.mappedCompanyId === "number") {
       const [mappedCompany] = await db
         .select({ id: companies.id })
@@ -96,7 +71,7 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json(person);
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(error, { request, fallbackMessage: "Failed to create person", fallbackCode: "person_create_failed" });
   }
 }
 
@@ -107,6 +82,6 @@ export async function DELETE(request: NextRequest) {
     const result = await deleteAllPeople();
     return NextResponse.json(result);
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(error, { request, fallbackMessage: "Failed to clear people", fallbackCode: "people_clear_failed" });
   }
 }

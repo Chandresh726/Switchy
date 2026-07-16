@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 
-import { AIContentPatchBodySchema, ProviderRouteParamsSchema } from "@/lib/ai/contracts";
-import { assertAppRequest } from "@/lib/api";
-import { handleAIAPIError } from "@/lib/api/ai-error-handler";
+import { AIContentPatchBodySchema } from "@/lib/ai/contracts";
+import { assertAppRequest, handleApiError, NotFoundError } from "@/lib/api";
+import { numericIdParamsSchema } from "@/lib/api/contracts/matching";
 import { db } from "@/lib/db";
 import { aiGeneratedContent, aiGenerationHistory } from "@/lib/db/schema";
 import { saveManualVariant } from "@/lib/ai/writing/content-service";
@@ -15,11 +15,7 @@ export async function PATCH(
   try {
     assertAppRequest(request);
 
-    const parsedParams = ProviderRouteParamsSchema.parse(await params);
-    const parsedId = parseInt(parsedParams.id, 10);
-    if (Number.isNaN(parsedId)) {
-      return NextResponse.json({ error: "Invalid id", code: "invalid_id" }, { status: 400 });
-    }
+    const { id: parsedId } = numericIdParamsSchema.parse(await params);
 
     const body = AIContentPatchBodySchema.parse(await request.json());
 
@@ -30,11 +26,11 @@ export async function PATCH(
       parentVariantId: body.parentVariantId,
     });
     if (!content) {
-      return NextResponse.json({ error: "Content not found", code: "not_found" }, { status: 404 });
+      throw new NotFoundError("Content not found");
     }
     return NextResponse.json({ content });
   } catch (error) {
-    return handleAIAPIError(error, "Failed to save content", "ai_content_patch_failed");
+    return handleApiError(error, { request, fallbackMessage: "Failed to save content", fallbackCode: "ai_content_patch_failed" });
   }
 }
 
@@ -45,17 +41,19 @@ export async function DELETE(
   try {
     assertAppRequest(request);
 
-    const parsedParams = ProviderRouteParamsSchema.parse(await params);
-    const parsedId = parseInt(parsedParams.id, 10);
-    if (Number.isNaN(parsedId)) {
-      return NextResponse.json({ error: "Invalid id", code: "invalid_id" }, { status: 400 });
-    }
+    const { id: parsedId } = numericIdParamsSchema.parse(await params);
 
     await db.delete(aiGenerationHistory).where(eq(aiGenerationHistory.contentId, parsedId));
-    await db.delete(aiGeneratedContent).where(eq(aiGeneratedContent.id, parsedId));
+    const [deleted] = await db
+      .delete(aiGeneratedContent)
+      .where(eq(aiGeneratedContent.id, parsedId))
+      .returning({ id: aiGeneratedContent.id });
+    if (!deleted) {
+      throw new NotFoundError("Content not found", "ai_content_not_found");
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    return handleAIAPIError(error, "Failed to delete content", "ai_content_delete_failed");
+    return handleApiError(error, { request, fallbackMessage: "Failed to delete content", fallbackCode: "ai_content_delete_failed" });
   }
 }

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertAppRequest: vi.fn(),
+  handleApiError: vi.fn(),
   completeEmptyMatchSession: vi.fn(),
   getUnmatchedJobCount: vi.fn(),
   getUnmatchedJobIds: vi.fn(),
@@ -9,9 +10,9 @@ const mocks = vi.hoisted(() => ({
   queueMatchWork: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => ({ assertAppRequest: mocks.assertAppRequest }));
-vi.mock("@/lib/api/ai-error-handler", () => ({
-  handleAIAPIError: vi.fn(),
+vi.mock("@/lib/api", () => ({
+  assertAppRequest: mocks.assertAppRequest,
+  handleApiError: mocks.handleApiError,
 }));
 vi.mock("@/lib/ai/matcher", () => ({
   getUnmatchedJobCount: mocks.getUnmatchedJobCount,

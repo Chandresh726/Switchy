@@ -19,38 +19,15 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import {
+  getScrapeHistoryDetail,
+  mutateScrapeHistory,
+} from "@/lib/api/clients/history";
 import { formatDateTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
 
-import {
-  CompanyProgressList,
-  type ScrapeQueueItem,
-  type SessionLog,
-} from "./company-progress-list";
+import { CompanyProgressList } from "./company-progress-list";
 import { TRIGGER_LABELS } from "./constants";
-
-interface ScrapeSession {
-  id: string;
-  triggerSource: string;
-  status: string;
-  companiesTotal: number | null;
-  companiesCompleted: number | null;
-  totalJobsFound: number | null;
-  totalJobsAdded: number | null;
-  totalJobsFiltered: number | null;
-  totalJobsArchived: number | null;
-  skipReason?: string | null;
-  scheduledForAt?: Date | string | null;
-  startedAt: Date | null;
-  completedAt: Date | null;
-}
-
-interface SessionDetailResponse {
-  session: ScrapeSession;
-  logs: SessionLog[];
-  queueItems: ScrapeQueueItem[];
-}
 
 interface SessionDetailProps {
   sessionId: string;
@@ -59,14 +36,10 @@ interface SessionDetailProps {
 export function SessionDetail({ sessionId }: SessionDetailProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { data, isLoading, error } = useQuery<SessionDetailResponse>({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["scrape-history", sessionId],
     queryFn: async () => {
-      const res = await fetch(`/api/scrape-history?sessionId=${sessionId}`, {
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error("Failed to fetch session details");
-      return res.json();
+      return getScrapeHistoryDetail(sessionId);
     },
     refetchInterval: (query) => {
       const session = query.state.data?.session;
@@ -82,13 +55,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
 
   const stopMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/scrape-history?sessionId=${encodeURIComponent(sessionId)}`, {
-        method: "PATCH",
-        headers: APP_REQUEST_HEADERS,
-      });
-
-      if (!res.ok) throw new Error("Failed to stop session");
-      return res.json();
+      return mutateScrapeHistory("PATCH", sessionId);
     },
     onSuccess: () => {
       toast.success("Stopping scrape session");
@@ -102,13 +69,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/scrape-history?sessionId=${encodeURIComponent(sessionId)}`, {
-        method: "DELETE",
-        headers: APP_REQUEST_HEADERS,
-      });
-      if (!res.ok) throw new Error("Failed to delete session");
-      const text = await res.text();
-      return text ? JSON.parse(text) : null;
+      return mutateScrapeHistory("DELETE", sessionId);
     },
     onSuccess: () => {
       router.push("/history/scrape");

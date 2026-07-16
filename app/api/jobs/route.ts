@@ -20,7 +20,8 @@ import {
   getCurrentMatchContext,
   getMatchPresentations,
 } from "@/lib/ai/matcher/presentation";
-import { assertAppRequest } from "@/lib/api";
+import { assertAppRequest, handleApiError, NotFoundError } from "@/lib/api";
+import { jobsQuerySchema, jobUpdateBodySchema } from "@/lib/api/contracts/jobs";
 import { db } from "@/lib/db";
 import { companies, jobs, matchResults } from "@/lib/db/schema";
 import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
@@ -75,44 +76,43 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
 
-    // Parse query parameters
-    const id = searchParams.get("id");
-    const companyId = searchParams.get("companyId");
-    const companyIds = searchParams.get("companyIds");
-    const status = searchParams.get("status");
-    const excludeStatus = searchParams.get("excludeStatus");
-    const minScore = searchParams.get("minScore");
-    const maxScore = searchParams.get("maxScore");
-    const requestedMatchBands = (searchParams.get("matchBands") ?? "")
-      .split(",")
-      .filter((value): value is MatchBand => value === "high" || value === "good");
-    const locationType = searchParams.get("locationType");
-    const search = searchParams.get("search");
-    const department = searchParams.get("department");
-    const employmentType = searchParams.get("employmentType");
-    const seniorityLevel = searchParams.get("seniorityLevel");
-    const locationSearch = searchParams.get("locationSearch");
-    const sortBy = searchParams.get("sortBy") || "matchScore";
-    const sortOrder = searchParams.get("sortOrder") || "desc";
-    const offset = Math.max(0, parseInt(searchParams.get("offset") || "0"));
-    const requestedLimit = parseInt(searchParams.get("limit") || "25");
-    const limit = Math.min(Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : 25), id ? 1 : 100);
+    const query = jobsQuerySchema.parse(Object.fromEntries(searchParams));
+    const {
+      id,
+      companyId,
+      companyIds,
+      status,
+      excludeStatus,
+      minScore,
+      maxScore,
+      locationType,
+      search,
+      department,
+      employmentType,
+      seniorityLevel,
+      locationSearch,
+      sortBy,
+      sortOrder,
+      offset,
+    } = query;
+    const requestedMatchBands: MatchBand[] = query.matchBands ?? [];
+    const limit = id ? 1 : query.limit;
 
     // Build conditions array
     const conditions = [];
 
     // Support fetching single job by ID
     if (id) {
-      conditions.push(eq(jobs.id, parseInt(id)));
+      conditions.push(eq(jobs.id, id));
     }
 
     if (companyId) {
-      conditions.push(eq(jobs.companyId, parseInt(companyId)));
+      conditions.push(eq(jobs.companyId, companyId));
     }
 
     // Support multiple company IDs (comma-separated)
     if (companyIds) {
-      const companyIdList = companyIds.split(",").filter(Boolean).map((id) => parseInt(id));
+      const companyIdList = companyIds;
       if (companyIdList.length === 1) {
         conditions.push(eq(jobs.companyId, companyIdList[0]));
       } else if (companyIdList.length > 1) {
@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
     if (status) {
       conditions.push(eq(jobs.status, status));
     } else if (excludeStatus) {
-      const excludedStatuses = excludeStatus.split(",").filter(Boolean);
+      const excludedStatuses = excludeStatus;
       if (excludedStatuses.length > 0) {
         conditions.push(notInArray(jobs.status, excludedStatuses));
       }
@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
 
     if (locationType) {
       // Support multiple location types (comma-separated)
-      const locationTypes = locationType.split(",").filter(Boolean);
+      const locationTypes = locationType;
       if (locationTypes.length === 1) {
         conditions.push(eq(jobs.locationType, locationTypes[0]));
       } else if (locationTypes.length > 1) {
@@ -193,7 +193,7 @@ export async function GET(request: NextRequest) {
       .where(whereClause);
 
     const scoreAwarePagination = sortBy === "matchScore" ||
-      minScore !== null || maxScore !== null || requestedMatchBands.length > 0;
+      minScore !== undefined || maxScore !== undefined || requestedMatchBands.length > 0;
     if (!scoreAwarePagination) {
       const sortDirection = sortOrder === "asc" ? asc : desc;
       const query = buildJobsQuery();
@@ -255,17 +255,15 @@ export async function GET(request: NextRequest) {
     }
 
     const currentContext = await getCurrentMatchContext();
-    const parsedMinScore = minScore === null ? null : Number.parseFloat(minScore);
-    const parsedMaxScore = maxScore === null ? null : Number.parseFloat(maxScore);
-    const hasMinScore = Number.isFinite(parsedMinScore);
-    const hasMaxScore = Number.isFinite(parsedMaxScore);
+    const hasMinScore = minScore !== undefined;
+    const hasMaxScore = maxScore !== undefined;
 
     let jobsData;
     let totalCount: number;
     if (!currentContext) {
       const scoreConditions = [...conditions];
-      if (hasMinScore) scoreConditions.push(gte(jobs.matchScore, parsedMinScore!));
-      if (hasMaxScore) scoreConditions.push(lte(jobs.matchScore, parsedMaxScore!));
+      if (hasMinScore) scoreConditions.push(gte(jobs.matchScore, minScore));
+      if (hasMaxScore) scoreConditions.push(lte(jobs.matchScore, maxScore));
       if (requestedMatchBands.length > 0) {
         scoreConditions.push(legacyBandCondition(requestedMatchBands));
       }
@@ -313,8 +311,8 @@ export async function GET(request: NextRequest) {
       );
       const effectiveMatchScore = sql<number | null>`coalesce(${matchResults.score}, ${jobs.matchScore})`;
       const scoreConditions = [...conditions];
-      if (hasMinScore) scoreConditions.push(gte(effectiveMatchScore, parsedMinScore!));
-      if (hasMaxScore) scoreConditions.push(lte(effectiveMatchScore, parsedMaxScore!));
+      if (hasMinScore) scoreConditions.push(gte(effectiveMatchScore, minScore));
+      if (hasMaxScore) scoreConditions.push(lte(effectiveMatchScore, maxScore));
       if (requestedMatchBands.length > 0) {
         const includesHigh = requestedMatchBands.includes("high");
         const includesGood = requestedMatchBands.includes("good");
@@ -392,11 +390,7 @@ export async function GET(request: NextRequest) {
       hasMore,
     });
   } catch (error) {
-    console.error("Failed to fetch jobs:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch jobs" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to fetch jobs", fallbackCode: "jobs_fetch_failed" });
   }
 }
 
@@ -404,18 +398,15 @@ export async function PATCH(request: NextRequest) {
   try {
     assertAppRequest(request);
 
-    const body = await request.json();
-    const { id, status, viewedAt, appliedAt } = body;
-
-    if (!id) {
-      return NextResponse.json({ error: "id is required" }, { status: 400 });
-    }
+    const { id, status, viewedAt, appliedAt } = jobUpdateBodySchema.parse(
+      await request.json()
+    );
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
 
     if (status) updateData.status = status;
-    if (viewedAt) updateData.viewedAt = new Date(viewedAt);
-    if (appliedAt) updateData.appliedAt = new Date(appliedAt);
+    if (viewedAt) updateData.viewedAt = viewedAt;
+    if (appliedAt) updateData.appliedAt = appliedAt;
 
     if (status === "archived") {
       updateData.archivedAt = new Date();
@@ -441,13 +432,13 @@ export async function PATCH(request: NextRequest) {
       .where(eq(jobs.id, id))
       .returning();
 
+    if (!updated) {
+      throw new NotFoundError("Job not found", "job_not_found");
+    }
+
     return NextResponse.json(updated);
   } catch (error) {
-    console.error("Failed to update job:", error);
-    return NextResponse.json(
-      { error: "Failed to update job" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to update job", fallbackCode: "job_update_failed" });
   }
 }
 
@@ -458,10 +449,6 @@ export async function DELETE(request: NextRequest) {
     await getLocalDataMaintenanceService().deleteAllJobs();
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Failed to delete all jobs:", error);
-    return NextResponse.json(
-      { error: "Failed to delete all jobs" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to delete all jobs", fallbackCode: "jobs_delete_failed" });
   }
 }

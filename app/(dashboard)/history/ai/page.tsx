@@ -22,7 +22,7 @@ import { AIUsageOverview } from "@/components/history/ai-usage-overview";
 import type { AIContentType } from "@/lib/ai/contracts";
 import { getContentTypeLabel, getWorkspacePathWithVariant } from "@/lib/ai/writing/workspace/routes";
 import type { ContentResponse } from "@/lib/ai/writing/types";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { deleteAIContent, getAIHistory } from "@/lib/api/clients/ai";
 import { cn } from "@/lib/utils";
 import {
   AlertDialog,
@@ -228,20 +228,13 @@ export default function AIHistoryPage() {
   const { data, isLoading } = useQuery<{ contents: ContentResponse[] }>({
     queryKey: ["ai-history-all"],
     queryFn: async () => {
-      const res = await fetch("/api/ai/history");
-      if (!res.ok) throw new Error("Failed to fetch AI history");
-      return res.json();
+      return getAIHistory();
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/ai/content/${id}`, {
-        method: "DELETE",
-        headers: APP_REQUEST_HEADERS,
-      });
-      if (!res.ok) throw new Error("Failed to delete");
-      return res.json();
+      return deleteAIContent(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ai-history-all"] });

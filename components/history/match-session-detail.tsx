@@ -22,61 +22,12 @@ import {
 import Link from "next/link";
 import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
 import { toast } from "sonner";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
-import type { AIRunSummary } from "@/lib/ai/observability";
-import type {
-  MatchJobProgress,
-  MatchPhaseProgress,
-} from "@/lib/hooks/use-match-session";
+import {
+  getMatchHistoryDetail,
+  mutateMatchHistory,
+} from "@/lib/api/clients/history";
 import { formatDurationMs, formatDurationFromDates, formatDateTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
-
-interface MatchSession {
-  id: string;
-  triggerSource: string;
-  companyId: number | null;
-  companyName: string | null;
-  status: string;
-  jobsTotal: number | null;
-  jobsCompleted: number | null;
-  jobsSucceeded: number | null;
-  jobsFailed: number | null;
-  errorCount: number | null;
-  startedAt: Date | null;
-  completedAt: Date | null;
-}
-
-interface MatchLog {
-  id: number;
-  sessionId: string | null;
-  jobId: number | null;
-  jobTitle: string | null;
-  companyName: string | null;
-  status: string;
-  score: number | null;
-  attemptCount: number | null;
-  errorType: string | null;
-  errorMessage: string | null;
-  duration: number | null;
-  modelUsed: string | null;
-  completedAt: Date | null;
-  analysisRunId?: string | null;
-  analysisRun?: AIRunSummary | null;
-  adjudicationRunId?: string | null;
-  adjudicationRun?: AIRunSummary | null;
-  matchRunId?: string | null;
-  matchRun?: AIRunSummary | null;
-}
-
-interface SessionDetailResponse {
-  session: MatchSession;
-  logs: MatchLog[];
-  pipeline: {
-    analysis: MatchPhaseProgress;
-    matching: MatchPhaseProgress;
-    jobs: MatchJobProgress[];
-  };
-}
 
 interface MatchSessionDetailProps {
   sessionId: string;
@@ -85,26 +36,10 @@ interface MatchSessionDetailProps {
 export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { data, isLoading, error } = useQuery<SessionDetailResponse>({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["match-history", sessionId],
     queryFn: async () => {
-      const res = await fetch(`/api/match-history?sessionId=${encodeURIComponent(sessionId)}`, {
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error("Failed to fetch session details");
-      const json = await res.json();
-      return {
-        session: {
-          ...json.session,
-          startedAt: json.session.startedAt ? new Date(json.session.startedAt) : null,
-          completedAt: json.session.completedAt ? new Date(json.session.completedAt) : null,
-        },
-        logs: json.logs.map((log: MatchLog) => ({
-          ...log,
-          completedAt: log.completedAt ? new Date(log.completedAt) : null,
-        })),
-        pipeline: json.pipeline,
-      };
+      return getMatchHistoryDetail(sessionId);
     },
     refetchInterval: (query) => {
       const session = query.state.data?.session;
@@ -116,12 +51,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
 
   const stopMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/match-history?sessionId=${encodeURIComponent(sessionId)}`, {
-        method: "PATCH",
-        headers: APP_REQUEST_HEADERS,
-      });
-      if (!res.ok) throw new Error("Failed to stop session");
-      return res.json();
+      return mutateMatchHistory("PATCH", sessionId);
     },
     onSuccess: () => {
       toast.success("Stopping match session");
@@ -135,15 +65,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/match-history?sessionId=${encodeURIComponent(sessionId)}`, {
-        method: "DELETE",
-        headers: APP_REQUEST_HEADERS,
-      });
-      if (!res.ok) throw new Error("Failed to delete session");
-      if (res.status !== 204) {
-        return res.json();
-      }
-      return null;
+      return mutateMatchHistory("DELETE", sessionId);
     },
     onSuccess: () => {
       router.push("/history/match");

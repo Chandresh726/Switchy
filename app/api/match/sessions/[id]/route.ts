@@ -1,21 +1,20 @@
 import { NextResponse } from "next/server";
 
 import { getAIWorkSession, stopAIWorkSession } from "@/lib/ai/work-items";
-import { assertAppRequest } from "@/lib/api";
+import { assertAppRequest, handleApiError, NotFoundError } from "@/lib/api";
+import { matchSessionParamsSchema } from "@/lib/api/contracts/runtime";
 import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_request: Request, { params }: RouteParams) {
+export async function GET(request: Request, { params }: RouteParams) {
   try {
-    const session = await getAIWorkSession((await params).id);
+    const { id } = matchSessionParamsSchema.parse(await params);
+    const session = await getAIWorkSession(id);
     if (!session) {
-      return NextResponse.json(
-        { error: "Session not found", code: "session_not_found" },
-        { status: 404, headers: NO_STORE_HEADERS }
-      );
+      throw new NotFoundError("Session not found", "session_not_found");
     }
     return NextResponse.json({
       sessionId: session.id,
@@ -31,24 +30,17 @@ export async function GET(_request: Request, { params }: RouteParams) {
       jobs: session.pipeline.jobs,
     }, { headers: NO_STORE_HEADERS });
   } catch (error) {
-    console.error("Failed to read AI work session:", error);
-    return NextResponse.json(
-      { error: "Failed to read match session" },
-      { status: 500, headers: NO_STORE_HEADERS }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to read match session", fallbackCode: "match_session_read_failed", headers: NO_STORE_HEADERS });
   }
 }
 
 export async function DELETE(request: Request, { params }: RouteParams) {
   try {
     assertAppRequest(request);
-    const { id } = await params;
+    const { id } = matchSessionParamsSchema.parse(await params);
     const result = await stopAIWorkSession(id);
     if (!result.exists) {
-      return NextResponse.json(
-        { error: "Session not found", code: "session_not_found" },
-        { status: 404, headers: NO_STORE_HEADERS }
-      );
+      throw new NotFoundError("Session not found", "session_not_found");
     }
     return NextResponse.json({
       sessionId: id,
@@ -56,10 +48,6 @@ export async function DELETE(request: Request, { params }: RouteParams) {
       cancellationRequested: result.stopped,
     }, { headers: NO_STORE_HEADERS });
   } catch (error) {
-    console.error("Failed to cancel AI work session:", error);
-    return NextResponse.json(
-      { error: "Failed to cancel match session" },
-      { status: 500, headers: NO_STORE_HEADERS }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to cancel match session", fallbackCode: "match_session_cancel_failed", headers: NO_STORE_HEADERS });
   }
 }

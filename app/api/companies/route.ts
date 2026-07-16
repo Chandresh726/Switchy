@@ -1,50 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 import { desc, eq } from "drizzle-orm";
 
-import { assertAppRequest } from "@/lib/api";
+import {
+  assertAppRequest,
+  createApiRequestContext,
+  handleApiError,
+  logApiFailure,
+  ValidationError,
+} from "@/lib/api";
+import { companyCreateBodySchema } from "@/lib/api/contracts/companies";
 import { db } from "@/lib/db";
 import { companies } from "@/lib/db/schema";
 import { refreshUnmatchedCompanyMappings } from "@/lib/people/sync";
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 
-const PLATFORM_VALUES = [
-  "greenhouse",
-  "lever",
-  "ashby",
-  "workday",
-  "eightfold",
-  "servicenow",
-  "zwayam",
-  "mynexthire",
-  "uber",
-  "google",
-  "atlassian",
-  "rippling",
-  "visa",
-  "nutanix",
-  "custom",
-] as const;
-
-const PlatformOverrideSchema = z
-  .union([z.enum(PLATFORM_VALUES), z.literal("")])
-  .optional()
-  .transform((value) => (value === "" ? undefined : value));
-
-const CompanyInputSchema = z.object({
-  name: z.string().trim().min(1),
-  careersUrl: z.string().trim().url(),
-  logoUrl: z.string().trim().url().optional().or(z.literal("")),
-  notes: z.string().optional().or(z.literal("")),
-  platform: PlatformOverrideSchema,
-  boardToken: z.string().trim().optional().or(z.literal("")),
-});
-
-type CompanyInput = z.infer<typeof CompanyInputSchema>;
+type CompanyInput = typeof companyCreateBodySchema._output;
 
 const MANUAL_BOARD_TOKEN_REQUIRED = new Set(["greenhouse", "lever", "ashby"]);
 
-function normalizeOptionalText(value?: string): string | null {
+function normalizeOptionalText(value?: string | null): string | null {
   if (!value) return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
@@ -111,7 +85,7 @@ async function upsertCompany(input: CompanyInput) {
   return created;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const companiesData = await db
       .select()
@@ -120,11 +94,7 @@ export async function GET() {
 
     return NextResponse.json(companiesData);
   } catch (error) {
-    console.error("Failed to fetch companies:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch companies" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to fetch companies", fallbackCode: "companies_fetch_failed" });
   }
 }
 
@@ -138,16 +108,15 @@ export async function POST(request: NextRequest) {
     const results = [];
 
     for (const rawItem of rawItems) {
-      const parsed = CompanyInputSchema.safeParse(rawItem);
+      const parsed = companyCreateBodySchema.safeParse(rawItem);
 
       if (!parsed.success) {
         if (!isBulk) {
-          return NextResponse.json(
-            {
-              error: "Invalid request body",
-              details: parsed.error.flatten(),
-            },
-            { status: 400 }
+          throw new ValidationError(
+            "Invalid request body",
+            "invalid_request",
+            400,
+            parsed.error.flatten()
           );
         }
         continue;
@@ -158,11 +127,9 @@ export async function POST(request: NextRequest) {
 
       if (shouldRejectMissingBoardToken(input, detectedFromUrl)) {
         if (!isBulk) {
-          return NextResponse.json(
-            {
-              error: `boardToken is required when manually selecting ${input.platform} platform with a custom URL`,
-            },
-            { status: 400 }
+          throw new ValidationError(
+            `boardToken is required when manually selecting ${input.platform} platform with a custom URL`,
+            "board_token_required"
           );
         }
         continue;
@@ -180,15 +147,15 @@ export async function POST(request: NextRequest) {
           companyIds: results.map((company) => company.id),
         });
       } catch (error) {
-        console.error("Failed to refresh unmatched company mappings:", error);
+        logApiFailure(createApiRequestContext(request), "unmatched_mapping_refresh_failed", 500, error);
       }
     }
 
     if (!isBulk) {
       if (results.length === 0) {
-        return NextResponse.json(
-          { error: "name and careersUrl are required" },
-          { status: 400 }
+        throw new ValidationError(
+          "name and careersUrl are required",
+          "invalid_company"
         );
       }
       return NextResponse.json(results[0]);
@@ -196,11 +163,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(results);
   } catch (error) {
-    console.error("Failed to create/import companies:", error);
-    return NextResponse.json(
-      { error: "Failed to create/import companies" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to create/import companies", fallbackCode: "companies_import_failed" });
   }
 }
 
@@ -211,15 +174,15 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
 
     if (!Array.isArray(body)) {
-      return NextResponse.json(
-        { error: "Expected array of companies" },
-        { status: 400 }
+      throw new ValidationError(
+        "Expected array of companies",
+        "invalid_companies_sync"
       );
     }
 
     const validated: CompanyInput[] = [];
     for (const item of body) {
-      const parsed = CompanyInputSchema.safeParse(item);
+      const parsed = companyCreateBodySchema.safeParse(item);
       if (parsed.success) {
         validated.push(parsed.data);
       }
@@ -262,16 +225,12 @@ export async function PUT(request: NextRequest) {
           companyIds: touchedCompanyIds,
         });
       } catch (error) {
-        console.error("Failed to refresh unmatched company mappings:", error);
+        logApiFailure(createApiRequestContext(request), "unmatched_mapping_refresh_failed", 500, error);
       }
     }
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Failed to sync companies:", error);
-    return NextResponse.json(
-      { error: "Failed to sync companies" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to sync companies", fallbackCode: "companies_sync_failed" });
   }
 }
