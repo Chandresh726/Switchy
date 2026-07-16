@@ -8,7 +8,7 @@ import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { MAX_RESUME_FILE_SIZE, MAX_RESUME_TEXT_LENGTH } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { profile } from "@/lib/db/schema";
-import { deleteFile, saveFile } from "@/lib/storage/files";
+import { deleteResumeFile, saveResumeFile } from "@/lib/storage/files";
 
 export async function POST(request: NextRequest) {
   try {
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
     const parsedData = parseResult?.parsedData ?? null;
 
     // Save file to disk after validation so rejected files are not stored.
-    const savedFile = await saveFile(file, "resumes");
+    const savedFile = await saveResumeFile(file);
 
     // Get or create profile
     let currentProfile = await db.query.profile.findFirst();
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
         warnings: parseResult?.warnings ?? [],
       });
     } catch (error) {
-      await deleteFile(savedFile.path);
+      await deleteResumeFile(savedFile.path);
       throw error;
     }
 

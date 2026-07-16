@@ -3,7 +3,7 @@ import { assertAppRequest } from "@/lib/api";
 import { db } from "@/lib/db";
 import { resumes } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { deleteFile } from "@/lib/storage/files";
+import { deleteResumeFile } from "@/lib/storage/files";
 
 export async function DELETE(request: NextRequest) {
   try {
@@ -43,7 +43,7 @@ export async function DELETE(request: NextRequest) {
     // Delete the file from storage
     if (resume.filePath) {
       try {
-        await deleteFile(resume.filePath);
+        await deleteResumeFile(resume.filePath);
       } catch (error) {
         console.error("Failed to delete resume file:", error);
         // Continue with DB deletion even if file deletion fails

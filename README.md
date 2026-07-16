@@ -45,6 +45,11 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+Switchy intentionally binds to `127.0.0.1` and accepts connections only from
+the same device. It is not a LAN or internet-facing service, and the local
+request marker used by browser mutations is request-integrity protection rather
+than a user authentication system.
+
 ## Production
 
 ```bash
@@ -53,6 +58,8 @@ pnpm start
 ```
 
 Database migrations run automatically before `pnpm dev` and `pnpm start`.
+Production mode is also bound to `127.0.0.1`; use it only from the device where
+Switchy is running.
 
 ## Data Storage
 

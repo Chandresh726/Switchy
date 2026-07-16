@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { resumes } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { getFilePath } from "@/lib/storage/files";
+import { getResumeFilePath } from "@/lib/storage/files";
 import fs from "fs";
 
 export async function GET(
@@ -34,7 +34,7 @@ export async function GET(
     }
 
     // Get the full file path
-    const fullPath = getFilePath(resume.filePath);
+    const fullPath = getResumeFilePath(resume.filePath);
 
     if (!fs.existsSync(fullPath)) {
       return NextResponse.json(

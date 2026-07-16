@@ -3,24 +3,15 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { getUploadTypeDir, getUploadFilePath } from "../state/paths";
 
-const ALLOWED_UPLOAD_TYPES = new Set(["uploads", "resumes"]);
+const RESUME_UPLOAD_TYPE = "resumes";
 
-function assertAllowedUploadType(type: string): void {
-  if (!ALLOWED_UPLOAD_TYPES.has(type)) {
-    throw new Error("Invalid upload type");
-  }
-}
-
-export async function saveFile(
-  file: File,
-  type: string = "uploads"
+export async function saveResumeFile(
+  file: File
 ): Promise<{ path: string; filename: string }> {
-  assertAllowedUploadType(type);
   const bytes = await file.arrayBuffer();
   const buffer = Buffer.from(bytes);
 
-  // Create subdirectory for type
-  const typeDir = getUploadTypeDir(type);
+  const typeDir = getUploadTypeDir(RESUME_UPLOAD_TYPE);
 
   // Generate unique filename
   const ext = path.extname(file.name);
@@ -31,7 +22,7 @@ export async function saveFile(
   fs.writeFileSync(filePath, buffer, { mode: 0o600 });
 
   // Return relative path from uploads directory
-  const relativePath = path.join(type, filename);
+  const relativePath = path.join(RESUME_UPLOAD_TYPE, filename);
 
   return {
     path: relativePath,
@@ -39,7 +30,7 @@ export async function saveFile(
   };
 }
 
-export async function deleteFile(relativePath: string): Promise<void> {
+export async function deleteResumeFile(relativePath: string): Promise<void> {
   const fullPath = getUploadFilePath(relativePath);
 
   if (fs.existsSync(fullPath)) {
@@ -47,6 +38,6 @@ export async function deleteFile(relativePath: string): Promise<void> {
   }
 }
 
-export function getFilePath(relativePath: string): string {
+export function getResumeFilePath(relativePath: string): string {
   return getUploadFilePath(relativePath);
 }

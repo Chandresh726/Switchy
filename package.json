@@ -9,10 +9,10 @@
   "scripts": {
     "postinstall": "playwright install chromium",
     "predev": "NODE_ENV=development pnpm db:migrate",
-    "dev": "NODE_ENV=development next dev",
+    "dev": "NODE_ENV=development next dev --hostname 127.0.0.1",
     "prestart": "NODE_ENV=production pnpm db:migrate",
     "build": "next build",
-    "start": "NODE_ENV=production next start",
+    "start": "NODE_ENV=production next start --hostname 127.0.0.1",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
