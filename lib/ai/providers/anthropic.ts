@@ -11,14 +11,6 @@ export class AnthropicProvider extends BaseProvider {
   readonly name = "Anthropic (Claude)";
   readonly requiresApiKey = true;
 
-  /**
-   * Anthropic models currently do not support reasoning effort parameter
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  supportsReasoningEffort(_modelId: string): boolean {
-    return false;
-  }
-
   protected createLanguageModel(
     _config: ModelConfig,
     providerConfig: ProviderConfig

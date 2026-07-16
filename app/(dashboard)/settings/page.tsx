@@ -2,7 +2,7 @@
 
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
@@ -14,10 +14,16 @@ import { ResumeParserSection } from "@/components/settings/resume-parser-section
 import { SystemInfo } from "@/components/settings/system-info";
 import { AIWritingSection, type AIWritingSettings } from "@/components/settings/ai-writing-section";
 import { AIProvidersManager } from "@/components/settings/ai-providers-manager";
+import {
+  hasInvalidReasoningSelection,
+  resolveReasoningSelection,
+} from "@/components/settings/reasoning-effort-control";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getProviderMetadata } from "@/lib/ai/providers/metadata";
 import type { AIProvider } from "@/lib/ai/providers/types";
 import { APP_VERSION, DB_PATH } from "@/lib/constants";
+import { useDebounce } from "@/lib/hooks/use-debounce";
+import { useMatchSession } from "@/lib/hooks/use-match-session";
 import type { ProviderModelsResponse } from "@/lib/types";
 import type {
   ProviderModelsState,
@@ -26,7 +32,6 @@ import type {
   SettingsRecord,
 } from "@/lib/settings/types";
 
-const getDefaultReasoningEffort = (): ReasoningEffort => "medium";
 const PROVIDER_MODELS_STALE_TIME_MS = 15 * 60 * 1000;
 const DEFAULT_SCRAPER_MAX_PARALLEL_SCRAPES = 3;
 const DEFAULT_SCRAPER_HISTORY_RETENTION_DAYS = 90;
@@ -39,17 +44,27 @@ function clampScraperHistoryRetentionDays(value: number): number {
   return Math.min(3_650, Math.max(7, value));
 }
 
+function clearSavedEdits<T extends object>(current: T, saved: T): T {
+  const next = { ...current };
+  for (const key of Object.keys(saved) as Array<keyof T>) {
+    if (Object.is(current[key], saved[key])) {
+      delete next[key];
+    }
+  }
+  return next;
+}
+
 interface MatcherLocalEdits {
+  jobAnalysisModel?: string;
+  jobAnalysisProviderId?: string;
+  jobAnalysisReasoningEffort?: ReasoningEffort;
   matcherModel?: string;
   matcherProviderId?: string;
   matcherReasoningEffort?: ReasoningEffort;
-  bulkEnabled?: boolean;
-  serializeOperations?: boolean;
   batchSize?: number;
   maxRetries?: number;
   concurrencyLimit?: number;
   timeoutMs?: number;
-  circuitBreakerThreshold?: number;
   autoMatchAfterScrape?: boolean;
 }
 
@@ -195,10 +210,12 @@ function SettingsContent() {
   const [resumeParserLocalEdits, setResumeParserLocalEdits] = useState<ResumeParserLocalEdits>({});
   const [scraperLocalEdits, setScraperLocalEdits] = useState<ScraperLocalEdits>({});
   const [aiWritingLocalEdits, setAIWritingLocalEdits] = useState<AIWritingLocalEdits>({});
-  const [matcherSettingsSaved, setMatcherSettingsSaved] = useState(false);
-  const [scraperSettingsSaved, setScraperSettingsSaved] = useState(false);
-  const [aiWritingSettingsSaved, setAIWritingSettingsSaved] = useState(false);
+  const [unmatchedWindowDays, setUnmatchedWindowDays] = useState(5);
+  const debouncedUnmatchedWindowDays = useDebounce(unmatchedWindowDays, 250);
   const lastModelReconciliationRef = useRef<string | null>(null);
+  const matcherAutosaveAttemptRef = useRef<string | null>(null);
+  const scraperAutosaveAttemptRef = useRef<string | null>(null);
+  const aiWritingAutosaveAttemptRef = useRef<string | null>(null);
 
   const { data: settings, isLoading: isSettingsLoading } = useQuery<SettingsRecord>({
     queryKey: ["settings"],
@@ -225,7 +242,7 @@ function SettingsContent() {
     queries: providers.map((provider) => ({
       queryKey: ["provider-models", provider.id],
       queryFn: async () => fetchProviderModels(provider.id),
-      enabled: Boolean(provider.id),
+      enabled: Boolean(provider.id) && (provider.kind === "api_key" || provider.selectable),
       staleTime: PROVIDER_MODELS_STALE_TIME_MS,
       retry: 1,
     })),
@@ -245,7 +262,11 @@ function SettingsContent() {
         loading: query?.isPending ?? false,
         isRefreshing: (query?.isFetching ?? false) && !(query?.isPending ?? false),
         isStale: data?.isStale ?? false,
-        error: queryError ?? warning,
+        error: queryError ?? warning ?? (
+          provider.kind === "local_cli" && !provider.selectable
+            ? provider.statusMessage
+            : undefined
+        ),
       };
     });
 
@@ -261,6 +282,20 @@ function SettingsContent() {
       toast.error(error instanceof Error ? error.message : "Failed to refresh model list");
     }
   };
+
+  const saveCLIExecutablePaths = useCallback(async (paths: { codex: string; opencode: string }) => {
+    await apiPost<SettingsRecord>(
+      "/api/settings",
+      {
+        codex_cli_executable: paths.codex,
+        opencode_cli_executable: paths.opencode,
+      },
+      "Failed to save CLI executable paths"
+    );
+    await queryClient.invalidateQueries({ queryKey: ["settings"] });
+    await queryClient.invalidateQueries({ queryKey: ["providers"] });
+    await queryClient.invalidateQueries({ queryKey: ["provider-models"] });
+  }, [queryClient]);
 
   const isInitialLoading = isSettingsLoading || isProvidersLoading;
 
@@ -319,8 +354,17 @@ function SettingsContent() {
   });
 
   const derivedValues = useMemo(() => {
-    const hasProviders = providers.length > 0;
-    const firstProviderId = providers[0]?.id || "";
+    const savedProviderIds = new Set([
+      settings?.job_analysis_provider_id,
+      settings?.matcher_provider_id,
+      settings?.resume_parser_provider_id,
+      settings?.ai_writing_provider_id,
+    ].filter(Boolean));
+    const candidateProviders = providers.filter(
+      (provider) => provider.selectable || savedProviderIds.has(provider.id)
+    );
+    const hasProviders = candidateProviders.length > 0;
+    const firstProviderId = candidateProviders[0]?.id || "";
     const getModelsState = (providerId: string): ProviderModelsState | undefined => providerModelsById[providerId];
 
     const getDefaultForProvider = (providerId: string) =>
@@ -336,9 +380,13 @@ function SettingsContent() {
       if (!hasProviders) return "";
 
       const candidateId = localProviderId || savedProviderId || firstProviderId;
-      return providers.some((provider) => provider.id === candidateId) ? candidateId : firstProviderId;
+      return candidateProviders.some((provider) => provider.id === candidateId) ? candidateId : firstProviderId;
     };
 
+    const resolvedJobAnalysisProviderId = resolveProviderId(
+      matcherLocalEdits.jobAnalysisProviderId,
+      settings?.job_analysis_provider_id || settings?.matcher_provider_id
+    );
     const resolvedMatcherProviderId = resolveProviderId(
       matcherLocalEdits.matcherProviderId,
       settings?.matcher_provider_id
@@ -362,8 +410,7 @@ function SettingsContent() {
 
       if (savedModel) {
         const providerChangedFromSaved = Boolean(savedProviderId) && savedProviderId !== providerId;
-        const modelsState = getModelsState(providerId);
-        const shouldKeepSavedModel = !providerChangedFromSaved && (!modelsState || modelsState.loading || (modelsState.error && modelsState.models.length === 0));
+        const shouldKeepSavedModel = !providerChangedFromSaved;
         if (shouldKeepSavedModel || isValidModelForProvider(savedModel, providerId)) {
           return savedModel;
         }
@@ -372,34 +419,92 @@ function SettingsContent() {
       return hasProviders ? getDefaultForProvider(providerId) : "";
     };
 
+    const resolvedJobAnalysisModel = getValidModelOrDefault(
+      matcherLocalEdits.jobAnalysisModel,
+      settings?.job_analysis_model || settings?.matcher_model,
+      resolvedJobAnalysisProviderId,
+      settings?.job_analysis_provider_id || settings?.matcher_provider_id
+    );
+    const resolvedMatcherModel = getValidModelOrDefault(
+      matcherLocalEdits.matcherModel,
+      settings?.matcher_model,
+      resolvedMatcherProviderId,
+      settings?.matcher_provider_id
+    );
+    const resolvedResumeParserModel = getValidModelOrDefault(
+      resumeParserLocalEdits.resumeParserModel,
+      settings?.resume_parser_model,
+      resolvedResumeParserProviderId,
+      settings?.resume_parser_provider_id
+    );
+    const resolvedAIWritingModel = getValidModelOrDefault(
+      aiWritingLocalEdits.aiWritingModel,
+      settings?.ai_writing_model,
+      resolvedAIWritingProviderId,
+      settings?.ai_writing_provider_id
+    );
+
+    const resolveReasoningEffort = ({
+      localValue,
+      savedValue,
+      providerId,
+      modelId,
+      providerWasEdited,
+    }: {
+      localValue: ReasoningEffort | undefined;
+      savedValue: string | undefined;
+      providerId: string;
+      modelId: string;
+      providerWasEdited: boolean;
+    }): ReasoningEffort => {
+      if (localValue !== undefined) return localValue;
+      if (!providerWasEdited) return savedValue || "";
+
+      const model = getModelsState(providerId)?.models.find(
+        (candidate) => candidate.modelId === modelId
+      );
+      return resolveReasoningSelection({
+        localValue,
+        savedValue,
+        providerWasEdited,
+        model,
+      });
+    };
+
     return {
-      matcherModel: getValidModelOrDefault(
-        matcherLocalEdits.matcherModel,
-        settings?.matcher_model,
-        resolvedMatcherProviderId,
-        settings?.matcher_provider_id
-      ),
+      jobAnalysisModel: resolvedJobAnalysisModel,
+      jobAnalysisProviderId: resolvedJobAnalysisProviderId,
+      jobAnalysisReasoningEffort: resolveReasoningEffort({
+        localValue: matcherLocalEdits.jobAnalysisReasoningEffort,
+        savedValue: settings?.job_analysis_reasoning_effort || settings?.matcher_reasoning_effort,
+        providerId: resolvedJobAnalysisProviderId,
+        modelId: resolvedJobAnalysisModel,
+        providerWasEdited: matcherLocalEdits.jobAnalysisProviderId !== undefined,
+      }),
+      matcherModel: resolvedMatcherModel,
       matcherProviderId: resolvedMatcherProviderId,
-      resumeParserModel: getValidModelOrDefault(
-        resumeParserLocalEdits.resumeParserModel,
-        settings?.resume_parser_model,
-        resolvedResumeParserProviderId,
-        settings?.resume_parser_provider_id
-      ),
+      resumeParserModel: resolvedResumeParserModel,
       resumeParserProviderId: resolvedResumeParserProviderId,
-      matcherReasoningEffort: matcherLocalEdits.matcherReasoningEffort ?? ((settings?.matcher_reasoning_effort as ReasoningEffort) || getDefaultReasoningEffort()),
-      resumeParserReasoningEffort: resumeParserLocalEdits.resumeParserReasoningEffort ?? ((settings?.resume_parser_reasoning_effort as ReasoningEffort) || getDefaultReasoningEffort()),
-      bulkEnabled: matcherLocalEdits.bulkEnabled ?? (settings?.matcher_bulk_enabled !== "false"),
-      serializeOperations: matcherLocalEdits.serializeOperations ?? (settings?.matcher_serialize_operations === "true"),
+      matcherReasoningEffort: resolveReasoningEffort({
+        localValue: matcherLocalEdits.matcherReasoningEffort,
+        savedValue: settings?.matcher_reasoning_effort,
+        providerId: resolvedMatcherProviderId,
+        modelId: resolvedMatcherModel,
+        providerWasEdited: matcherLocalEdits.matcherProviderId !== undefined,
+      }),
+      resumeParserReasoningEffort: resolveReasoningEffort({
+        localValue: resumeParserLocalEdits.resumeParserReasoningEffort,
+        savedValue: settings?.resume_parser_reasoning_effort,
+        providerId: resolvedResumeParserProviderId,
+        modelId: resolvedResumeParserModel,
+        providerWasEdited: resumeParserLocalEdits.resumeParserProviderId !== undefined,
+      }),
       batchSize: matcherLocalEdits.batchSize ?? parseInt(settings?.matcher_batch_size || "2", 10),
       maxRetries: matcherLocalEdits.maxRetries ?? parseInt(settings?.matcher_max_retries || "3", 10),
       concurrencyLimit: matcherLocalEdits.concurrencyLimit ?? parseInt(settings?.matcher_concurrency_limit || "3", 10),
       timeoutMs:
         matcherLocalEdits.timeoutMs ??
-        parseInt(settings?.matcher_timeout_ms || "30000", 10),
-      circuitBreakerThreshold:
-        matcherLocalEdits.circuitBreakerThreshold ??
-        parseInt(settings?.matcher_circuit_breaker_threshold || "10", 10),
+        parseInt(settings?.matcher_timeout_ms || "120000", 10),
       autoMatchAfterScrape:
         matcherLocalEdits.autoMatchAfterScrape ??
         (settings?.matcher_auto_match_after_scrape !== "false"),
@@ -444,14 +549,15 @@ function SettingsContent() {
         }
       })(),
       // AI Writing
-      aiWritingModel: getValidModelOrDefault(
-        aiWritingLocalEdits.aiWritingModel,
-        settings?.ai_writing_model,
-        resolvedAIWritingProviderId,
-        settings?.ai_writing_provider_id
-      ),
+      aiWritingModel: resolvedAIWritingModel,
       aiWritingProviderId: resolvedAIWritingProviderId,
-      aiWritingReasoningEffort: aiWritingLocalEdits.aiWritingReasoningEffort ?? ((settings?.ai_writing_reasoning_effort as ReasoningEffort) || getDefaultReasoningEffort()),
+      aiWritingReasoningEffort: resolveReasoningEffort({
+        localValue: aiWritingLocalEdits.aiWritingReasoningEffort,
+        savedValue: settings?.ai_writing_reasoning_effort,
+        providerId: resolvedAIWritingProviderId,
+        modelId: resolvedAIWritingModel,
+        providerWasEdited: aiWritingLocalEdits.aiWritingProviderId !== undefined,
+      }),
       referralTone: aiWritingLocalEdits.referralTone ?? (settings?.referral_tone || "professional"),
       referralLength: aiWritingLocalEdits.referralLength ?? (settings?.referral_length || "medium"),
       followUpTone: aiWritingLocalEdits.followUpTone ?? (settings?.follow_up_tone || "professional"),
@@ -472,14 +578,23 @@ function SettingsContent() {
   }, [settings, matcherLocalEdits, resumeParserLocalEdits, scraperLocalEdits, aiWritingLocalEdits, providers, providerModelsById]);
 
   const {
-    matcherModel, matcherProviderId, resumeParserModel, resumeParserProviderId, matcherReasoningEffort, resumeParserReasoningEffort, bulkEnabled, serializeOperations, batchSize, maxRetries, concurrencyLimit, timeoutMs,
-    circuitBreakerThreshold, autoMatchAfterScrape, schedulerEnabled, schedulerCron, maxParallelScrapes, keepDeviceAwake, historyRetentionDays, filterCountry, filterCity, filterTitleKeywords,
+    jobAnalysisModel, jobAnalysisProviderId, jobAnalysisReasoningEffort,
+    matcherModel, matcherProviderId, resumeParserModel, resumeParserProviderId, matcherReasoningEffort, resumeParserReasoningEffort, batchSize, maxRetries, concurrencyLimit, timeoutMs,
+    autoMatchAfterScrape, schedulerEnabled, schedulerCron, maxParallelScrapes, keepDeviceAwake, historyRetentionDays, filterCountry, filterCity, filterTitleKeywords,
     aiWritingModel, aiWritingProviderId, aiWritingReasoningEffort, referralTone, referralLength,
     followUpTone, followUpLength, coverLetterTone, coverLetterLength, coverLetterFocus
   } = derivedValues;
 
   const providerOptions = useMemo(() => {
-    return providers.map((provider) => {
+    const configuredProviderIds = new Set([
+      settings?.job_analysis_provider_id,
+      settings?.matcher_provider_id,
+      settings?.resume_parser_provider_id,
+      settings?.ai_writing_provider_id,
+    ].filter(Boolean));
+    return providers.filter(
+      (provider) => provider.selectable || configuredProviderIds.has(provider.id)
+    ).map((provider) => {
       const meta = getProviderMetadata(provider.provider as AIProvider);
       return {
         id: provider.id,
@@ -488,7 +603,7 @@ function SettingsContent() {
         isActive: provider.isActive,
       };
     });
-  }, [providers]);
+  }, [providers, settings]);
 
   const getProviderModelsState = (providerId: string): ProviderModelsState => {
     return providerModelsById[providerId] ?? {
@@ -499,6 +614,7 @@ function SettingsContent() {
     };
   };
 
+  const jobAnalysisModelsState = getProviderModelsState(jobAnalysisProviderId);
   const matcherModelsState = getProviderModelsState(matcherProviderId);
   const resumeParserModelsState = getProviderModelsState(resumeParserProviderId);
   const aiWritingModelsState = getProviderModelsState(aiWritingProviderId);
@@ -573,6 +689,20 @@ function SettingsContent() {
       }
     };
 
+    if (!jobAnalysisModelsState.loading && jobAnalysisModelsState.models.length > 0) {
+      queueFeatureUpdate({
+        featureLabel: "Job Analysis",
+        providerSettingKey: "job_analysis_provider_id",
+        modelSettingKey: "job_analysis_model",
+        savedProviderId: settings.job_analysis_provider_id,
+        savedModelId: settings.job_analysis_model,
+        resolvedProviderId: jobAnalysisProviderId,
+        resolvedModelId: jobAnalysisModel,
+        localProviderEdited: matcherLocalEdits.jobAnalysisProviderId !== undefined,
+        localModelEdited: matcherLocalEdits.jobAnalysisModel !== undefined,
+      });
+    }
+
     if (!matcherModelsState.loading && matcherModelsState.models.length > 0) {
       queueFeatureUpdate({
         featureLabel: "Matcher",
@@ -630,6 +760,12 @@ function SettingsContent() {
   }, [
     settings,
     providers,
+    jobAnalysisModelsState.loading,
+    jobAnalysisModelsState.models.length,
+    jobAnalysisProviderId,
+    jobAnalysisModel,
+    matcherLocalEdits.jobAnalysisProviderId,
+    matcherLocalEdits.jobAnalysisModel,
     matcherModelsState.loading,
     matcherModelsState.models.length,
     matcherProviderId,
@@ -660,16 +796,16 @@ function SettingsContent() {
     scraperLocalEdits.filterCity !== undefined ||
     scraperLocalEdits.filterTitleKeywords !== undefined;
   const matcherHasUnsavedChanges =
+    matcherLocalEdits.jobAnalysisModel !== undefined ||
+    matcherLocalEdits.jobAnalysisProviderId !== undefined ||
+    matcherLocalEdits.jobAnalysisReasoningEffort !== undefined ||
     matcherLocalEdits.matcherModel !== undefined ||
     matcherLocalEdits.matcherProviderId !== undefined ||
     matcherLocalEdits.matcherReasoningEffort !== undefined ||
-    matcherLocalEdits.bulkEnabled !== undefined ||
-    matcherLocalEdits.serializeOperations !== undefined ||
     matcherLocalEdits.batchSize !== undefined ||
     matcherLocalEdits.maxRetries !== undefined ||
     matcherLocalEdits.concurrencyLimit !== undefined ||
     matcherLocalEdits.timeoutMs !== undefined ||
-    matcherLocalEdits.circuitBreakerThreshold !== undefined ||
     matcherLocalEdits.autoMatchAfterScrape !== undefined;
 
   const aiWritingHasUnsavedChanges =
@@ -685,20 +821,54 @@ function SettingsContent() {
     aiWritingLocalEdits.aiWritingReasoningEffort !== undefined;
 
   // Setters for Matcher settings
-  const setMatcherModel = (value: string) => setMatcherLocalEdits(prev => ({ ...prev, matcherModel: value }));
+  const setJobAnalysisModel = (value: string) => {
+    const defaultReasoningEffort = resolveReasoningSelection({
+      providerWasEdited: true,
+      model: jobAnalysisModelsState.models.find((model) => model.modelId === value),
+    });
+    setMatcherLocalEdits((previous) => ({
+      ...previous,
+      jobAnalysisModel: value,
+      jobAnalysisReasoningEffort: defaultReasoningEffort,
+    }));
+  };
+  const setJobAnalysisReasoningEffort = (value: ReasoningEffort) =>
+    setMatcherLocalEdits((previous) => ({
+      ...previous,
+      jobAnalysisReasoningEffort: value,
+    }));
+  const setMatcherModel = (value: string) => {
+    const defaultReasoningEffort = resolveReasoningSelection({
+      providerWasEdited: true,
+      model: matcherModelsState.models.find((model) => model.modelId === value),
+    });
+    setMatcherLocalEdits((previous) => ({
+      ...previous,
+      matcherModel: value,
+      matcherReasoningEffort: defaultReasoningEffort,
+    }));
+  };
   const setMatcherReasoningEffort = (value: ReasoningEffort) => setMatcherLocalEdits(prev => ({ ...prev, matcherReasoningEffort: value }));
   const setAutoMatchAfterScrape = (value: boolean) =>
     setMatcherLocalEdits((prev) => ({ ...prev, autoMatchAfterScrape: value }));
-  const setBulkEnabled = (value: boolean) => setMatcherLocalEdits(prev => ({ ...prev, bulkEnabled: value }));
   const setBatchSize = (value: number) => setMatcherLocalEdits(prev => ({ ...prev, batchSize: value }));
   const setMaxRetries = (value: number) => setMatcherLocalEdits(prev => ({ ...prev, maxRetries: value }));
   const setConcurrencyLimit = (value: number) => setMatcherLocalEdits(prev => ({ ...prev, concurrencyLimit: value }));
   const setTimeoutMs = (value: number) => setMatcherLocalEdits(prev => ({ ...prev, timeoutMs: value }));
-  const setCircuitBreakerThreshold = (value: number) => setMatcherLocalEdits(prev => ({ ...prev, circuitBreakerThreshold: value }));
 
   // Auto-save setters for Resume Parser (independent from Matcher)
   const setResumeParserModel = (value: string) =>
-    setResumeParserLocalEdits(prev => ({ ...prev, resumeParserModel: value }));
+    setResumeParserLocalEdits((previous) => {
+      const defaultReasoningEffort = resolveReasoningSelection({
+        providerWasEdited: true,
+        model: resumeParserModelsState.models.find((model) => model.modelId === value),
+      });
+      return {
+        ...previous,
+        resumeParserModel: value,
+        resumeParserReasoningEffort: defaultReasoningEffort,
+      };
+    });
   const setResumeParserReasoningEffort = (value: ReasoningEffort) =>
     setResumeParserLocalEdits(prev => ({ ...prev, resumeParserReasoningEffort: value }));
   const setSchedulerCron = (value: string) =>
@@ -851,82 +1021,45 @@ function SettingsContent() {
   ]);
 
   const matcherSettingsMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: ({ updates }: { updates: Record<string, unknown>; snapshot: MatcherLocalEdits }) =>
       apiPost<Record<string, string>>(
         "/api/settings",
-        {
-          matcher_model: matcherModel,
-          matcher_provider_id: matcherProviderId,
-          matcher_reasoning_effort: matcherReasoningEffort,
-          matcher_bulk_enabled: bulkEnabled,
-          matcher_serialize_operations: serializeOperations,
-          matcher_batch_size: batchSize,
-          matcher_max_retries: maxRetries,
-          matcher_concurrency_limit: concurrencyLimit,
-          matcher_timeout_ms: timeoutMs,
-          matcher_circuit_breaker_threshold: circuitBreakerThreshold,
-          matcher_auto_match_after_scrape: autoMatchAfterScrape,
-        },
+        updates,
         "Failed to save matcher settings"
       ),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
-      setMatcherLocalEdits((prev) => ({
-        ...prev,
-        matcherModel: undefined,
-        matcherProviderId: undefined,
-        matcherReasoningEffort: undefined,
-        bulkEnabled: undefined,
-        serializeOperations: undefined,
-        batchSize: undefined,
-        maxRetries: undefined,
-        concurrencyLimit: undefined,
-        timeoutMs: undefined,
-        circuitBreakerThreshold: undefined,
-        autoMatchAfterScrape: undefined,
-      }));
-      setMatcherSettingsSaved(true);
-      setTimeout(() => setMatcherSettingsSaved(false), 3000);
+    onSuccess: (data, variables) => {
+      matcherAutosaveAttemptRef.current = null;
+      queryClient.setQueryData(["settings"], data);
+      setMatcherLocalEdits((current) => clearSavedEdits(current, variables.snapshot));
     },
     onError: () => toast.error("Failed to save matcher settings"),
   });
 
-  const scraperSettingsMutation = useMutation<unknown, Error>({
-    mutationFn: () =>
+  const scraperSettingsMutation = useMutation<
+    Record<string, string>,
+    Error,
+    { updates: Record<string, unknown>; snapshot: ScraperLocalEdits }
+  >({
+    mutationFn: ({ updates }) =>
       apiPost<Record<string, string>>(
         "/api/settings",
-        {
-          scheduler_cron: schedulerCron,
-          scraper_max_parallel_scrapes: maxParallelScrapes,
-          scraper_keep_device_awake: keepDeviceAwake,
-          scraper_history_retention_days: historyRetentionDays,
-          scraper_filter_country: filterCountry,
-          scraper_filter_city: filterCity,
-          scraper_filter_title_keywords: JSON.stringify(filterTitleKeywords),
-        },
+        updates,
         "Failed to save scraper settings"
       ),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
+    onSuccess: (data, variables) => {
+      scraperAutosaveAttemptRef.current = null;
+      queryClient.setQueryData(["settings"], data);
       queryClient.invalidateQueries({ queryKey: ["scheduler-status"] });
-      setScraperLocalEdits((prev) => ({
-        ...prev,
-        schedulerCron: undefined,
-        maxParallelScrapes: undefined,
-        keepDeviceAwake: undefined,
-        historyRetentionDays: undefined,
-        filterCountry: undefined,
-        filterCity: undefined,
-        filterTitleKeywords: undefined,
-      }));
-      setScraperSettingsSaved(true);
-      setTimeout(() => setScraperSettingsSaved(false), 3000);
+      setScraperLocalEdits((current) => clearSavedEdits(current, variables.snapshot));
     },
     onError: (error) => toast.error(error.message || "Failed to save scraper settings"),
   });
 
   const aiWritingMutation = useMutation({
-    mutationFn: (updates: Partial<AIWritingSettings>) =>
+    mutationFn: ({ updates }: {
+      updates: Partial<AIWritingSettings>;
+      snapshot: AIWritingLocalEdits;
+    }) =>
       apiPost<Record<string, string>>(
         "/api/settings",
         {
@@ -943,48 +1076,200 @@ function SettingsContent() {
         },
         "Failed to save AI writing settings"
       ),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
-      setAIWritingLocalEdits({});
-      setAIWritingSettingsSaved(true);
-      setTimeout(() => setAIWritingSettingsSaved(false), 3000);
+    onSuccess: (data, variables) => {
+      aiWritingAutosaveAttemptRef.current = null;
+      queryClient.setQueryData(["settings"], data);
+      setAIWritingLocalEdits((current) => clearSavedEdits(current, variables.snapshot));
     },
     onError: () => toast.error("Failed to save AI writing settings"),
   });
+  const saveMatcherSettings = matcherSettingsMutation.mutate;
+  const matcherSettingsSaving = matcherSettingsMutation.isPending;
+  const saveScraperSettings = scraperSettingsMutation.mutate;
+  const scraperSettingsSaving = scraperSettingsMutation.isPending;
+  const saveAIWritingSettings = aiWritingMutation.mutate;
+  const aiWritingSettingsSaving = aiWritingMutation.isPending;
 
-  const saveAIWritingSettings = () => {
-    aiWritingMutation.mutate({
-      referralTone,
-      referralLength,
-      followUpTone,
-      followUpLength,
-      coverLetterTone,
-      coverLetterLength,
-      coverLetterFocus,
-      aiWritingModel,
-      aiWritingProviderId,
-      aiWritingReasoningEffort,
-    });
-  };
+  useEffect(() => {
+    if (!matcherHasUnsavedChanges || matcherSettingsSaving || providerOptions.length === 0) return;
+    const signature = JSON.stringify(matcherLocalEdits);
+    if (matcherAutosaveAttemptRef.current === signature) return;
+    const selectedAnalysisModel = jobAnalysisModelsState.models.find(
+      (model) => model.modelId === jobAnalysisModel
+    );
+    const selectedModel = matcherModelsState.models.find((model) => model.modelId === matcherModel);
+    if (
+      !selectedAnalysisModel ||
+      hasInvalidReasoningSelection(selectedAnalysisModel, jobAnalysisReasoningEffort) ||
+      !selectedModel ||
+      hasInvalidReasoningSelection(selectedModel, matcherReasoningEffort)
+    ) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      matcherAutosaveAttemptRef.current = signature;
+      saveMatcherSettings({
+        snapshot: matcherLocalEdits,
+        updates: {
+          job_analysis_model: jobAnalysisModel,
+          job_analysis_provider_id: jobAnalysisProviderId,
+          job_analysis_reasoning_effort: jobAnalysisReasoningEffort,
+          matcher_model: matcherModel,
+          matcher_provider_id: matcherProviderId,
+          matcher_reasoning_effort: matcherReasoningEffort,
+          matcher_batch_size: batchSize,
+          matcher_max_retries: maxRetries,
+          matcher_concurrency_limit: concurrencyLimit,
+          matcher_timeout_ms: timeoutMs,
+          matcher_auto_match_after_scrape: autoMatchAfterScrape,
+        },
+      });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [
+    autoMatchAfterScrape,
+    batchSize,
+    concurrencyLimit,
+    jobAnalysisModel,
+    jobAnalysisModelsState.models,
+    jobAnalysisProviderId,
+    jobAnalysisReasoningEffort,
+    matcherHasUnsavedChanges,
+    matcherLocalEdits,
+    matcherModel,
+    matcherModelsState.models,
+    matcherProviderId,
+    matcherReasoningEffort,
+    matcherSettingsSaving,
+    maxRetries,
+    providerOptions.length,
+    saveMatcherSettings,
+    timeoutMs,
+  ]);
+
+  useEffect(() => {
+    if (!scraperHasUnsavedChanges || scraperSettingsSaving) return;
+    const signature = JSON.stringify(scraperLocalEdits);
+    if (scraperAutosaveAttemptRef.current === signature) return;
+
+    const timer = setTimeout(() => {
+      scraperAutosaveAttemptRef.current = signature;
+      saveScraperSettings({
+        snapshot: scraperLocalEdits,
+        updates: {
+          scheduler_cron: schedulerCron,
+          scraper_max_parallel_scrapes: maxParallelScrapes,
+          scraper_keep_device_awake: keepDeviceAwake,
+          scraper_history_retention_days: historyRetentionDays,
+          scraper_filter_country: filterCountry,
+          scraper_filter_city: filterCity,
+          scraper_filter_title_keywords: filterTitleKeywords,
+        },
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [
+    filterCity,
+    filterCountry,
+    filterTitleKeywords,
+    historyRetentionDays,
+    keepDeviceAwake,
+    maxParallelScrapes,
+    schedulerCron,
+    scraperHasUnsavedChanges,
+    scraperLocalEdits,
+    saveScraperSettings,
+    scraperSettingsSaving,
+  ]);
+
+  useEffect(() => {
+    if (!aiWritingHasUnsavedChanges || aiWritingSettingsSaving || providerOptions.length === 0) return;
+    const signature = JSON.stringify(aiWritingLocalEdits);
+    if (aiWritingAutosaveAttemptRef.current === signature) return;
+    const selectedModel = aiWritingModelsState.models.find(
+      (model) => model.modelId === aiWritingModel
+    );
+    if (
+      !selectedModel ||
+      hasInvalidReasoningSelection(selectedModel, aiWritingReasoningEffort)
+    ) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      aiWritingAutosaveAttemptRef.current = signature;
+      saveAIWritingSettings({
+        snapshot: aiWritingLocalEdits,
+        updates: {
+          referralTone,
+          referralLength,
+          followUpTone,
+          followUpLength,
+          coverLetterTone,
+          coverLetterLength,
+          coverLetterFocus,
+          aiWritingModel,
+          aiWritingProviderId,
+          aiWritingReasoningEffort,
+        },
+      });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [
+    aiWritingHasUnsavedChanges,
+    aiWritingLocalEdits,
+    aiWritingModel,
+    aiWritingModelsState.models,
+    aiWritingSettingsSaving,
+    aiWritingProviderId,
+    aiWritingReasoningEffort,
+    coverLetterFocus,
+    coverLetterLength,
+    coverLetterTone,
+    followUpLength,
+    followUpTone,
+    providerOptions.length,
+    referralLength,
+    referralTone,
+    saveAIWritingSettings,
+  ]);
 
   // Query for unmatched jobs count
-  const { data: unmatchedData } = useQuery<{ count: number }>({
-    queryKey: ["unmatched-jobs-count"],
+  const {
+    data: unmatchedData,
+    isFetching: unmatchedCountLoading,
+    refetch: refetchUnmatchedCount,
+  } = useQuery<{
+    count: number;
+    days: number;
+  }>({
+    queryKey: ["unmatched-jobs-count", debouncedUnmatchedWindowDays],
     queryFn: () =>
-      apiGet<{ count: number }>(
-        "/api/jobs/match-unmatched",
+      apiGet<{ count: number; days: number }>(
+        `/api/jobs/match-unmatched?days=${debouncedUnmatchedWindowDays}`,
         "Failed to fetch unmatched count"
       ),
   });
 
-  const matchUnmatchedMutation = useMutation<{ total: number; matched: number; failed: number; sessionId: string }>({
-    mutationFn: () =>
-      apiPost<{ total: number; matched: number; failed: number; sessionId: string }>(
+  const matchUnmatchedMutation = useMutation<{
+    total: number;
+    status: "queued" | "completed";
+    sessionId: string;
+  }, Error, number>({
+    mutationFn: (days: number) =>
+      apiPost<{ total: number; status: "queued" | "completed"; sessionId: string }>(
         "/api/jobs/match-unmatched",
-        {},
+        { days },
         "Failed to match jobs"
       ),
     onSuccess: (data) => {
+      toast.success(`${data.total} ${data.total === 1 ? "job" : "jobs"} queued for matching`, {
+        action: {
+          label: "Details",
+          onClick: () => router.push("/history/match"),
+        },
+      });
       if (data.sessionId) {
         setMatchSessionId(data.sessionId);
       }
@@ -993,41 +1278,12 @@ function SettingsContent() {
 
   const [matchSessionId, setMatchSessionId] = useState<string | null>(null);
 
-  const { data: matchProgress } = useQuery<{
-    sessionId: string;
-    status: string;
-    total: number;
-    completed: number;
-    succeeded: number;
-    failed: number;
-  } | null>({
-    queryKey: ["match-progress", matchSessionId],
-    queryFn: async () => {
-      if (!matchSessionId) return null;
-      const res = await fetch(`/api/jobs/match-unmatched?sessionId=${matchSessionId}`, {
-        cache: "no-store",
-      });
-      if (!res.ok) return null;
-      return res.json();
-    },
-    enabled: !!matchSessionId,
-    refetchInterval: (query) => {
-      const progress = query.state.data;
-      if (!!matchSessionId && progress?.status !== "completed" && progress?.status !== "failed") {
-        return 1000;
-      }
-      return false;
+  const { data: matchProgress } = useMatchSession(matchSessionId, {
+    onSettled: () => {
+      setMatchSessionId(null);
+      void queryClient.invalidateQueries({ queryKey: ["unmatched-jobs-count"] });
     },
   });
-
-  useEffect(() => {
-    if (!matchUnmatchedMutation.isPending && matchSessionId && matchProgress?.status === "completed") {
-      setMatchSessionId(null);
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["unmatched-jobs-count"] });
-      queryClient.invalidateQueries({ queryKey: ["match-history"] });
-    }
-  }, [matchUnmatchedMutation.isPending, matchSessionId, matchProgress, queryClient]);
 
   if (isInitialLoading) {
     return <SettingsPageSkeleton />;
@@ -1057,11 +1313,31 @@ function SettingsContent() {
               await updateProviderApiKeyMutation.mutateAsync({ id, apiKey });
             }}
             onRefreshProviderModels={refreshProviderModels}
+            codexExecutablePath={settings?.codex_cli_executable ?? ""}
+            openCodeExecutablePath={settings?.opencode_cli_executable ?? ""}
+            onSaveExecutablePaths={saveCLIExecutablePaths}
           />
 
           <MatcherSection
             availableProviders={providerOptions}
-            hasProviders={providers.length > 0}
+            hasProviders={providerOptions.length > 0}
+            jobAnalysisModels={jobAnalysisModelsState.models}
+            jobAnalysisModelsLoading={jobAnalysisModelsState.loading}
+            jobAnalysisModelsError={jobAnalysisModelsState.error}
+            jobAnalysisModelsStale={jobAnalysisModelsState.isStale}
+            jobAnalysisProviderId={jobAnalysisProviderId}
+            onJobAnalysisProviderIdChange={(id) => {
+              setMatcherLocalEdits((previous) => ({
+                ...previous,
+                jobAnalysisProviderId: id,
+                jobAnalysisModel: undefined,
+                jobAnalysisReasoningEffort: undefined,
+              }));
+            }}
+            jobAnalysisModel={jobAnalysisModel}
+            onJobAnalysisModelChange={setJobAnalysisModel}
+            jobAnalysisReasoningEffort={jobAnalysisReasoningEffort}
+            onJobAnalysisReasoningEffortChange={setJobAnalysisReasoningEffort}
             models={matcherModelsState.models}
             modelsLoading={matcherModelsState.loading}
             modelsError={matcherModelsState.error}
@@ -1071,7 +1347,8 @@ function SettingsContent() {
               setMatcherLocalEdits((prev) => ({ 
                 ...prev, 
                 matcherProviderId: id,
-                matcherModel: undefined 
+                matcherModel: undefined,
+                matcherReasoningEffort: undefined,
               }));
             }}
             matcherModel={matcherModel}
@@ -1080,46 +1357,31 @@ function SettingsContent() {
             onMatcherReasoningEffortChange={setMatcherReasoningEffort}
             autoMatchAfterScrape={autoMatchAfterScrape}
             onAutoMatchAfterScrapeChange={setAutoMatchAfterScrape}
-            bulkEnabled={bulkEnabled}
-            onBulkEnabledChange={setBulkEnabled}
             batchSize={batchSize}
             onBatchSizeChange={setBatchSize}
-            serializeOperations={serializeOperations}
-            onSerializeOperationsChange={(value) => setMatcherLocalEdits(prev => ({ ...prev, serializeOperations: value }))}
             maxRetries={maxRetries}
             onMaxRetriesChange={setMaxRetries}
             concurrencyLimit={concurrencyLimit}
             onConcurrencyLimitChange={setConcurrencyLimit}
             timeoutMs={timeoutMs}
             onTimeoutMsChange={setTimeoutMs}
-            circuitBreakerThreshold={circuitBreakerThreshold}
-            onCircuitBreakerThresholdChange={setCircuitBreakerThreshold}
-            onSave={() => matcherSettingsMutation.mutate()}
-            isSaving={matcherSettingsMutation.isPending}
-            hasUnsavedChanges={matcherHasUnsavedChanges}
-            settingsSaved={matcherSettingsSaved}
-            onMatchUnmatched={() => {
-              toast.success("Match triggered", {
-                action: {
-                  label: "Details",
-                  onClick: () => router.push("/history/match")
-                }
-              });
-              matchUnmatchedMutation.mutate();
+            onMatchUnmatched={(days) => matchUnmatchedMutation.mutate(days)}
+            isMatching={matchUnmatchedMutation.isPending || matchSessionId !== null}
+            matchProgress={matchProgress ?? undefined}
+            unmatchedWindowDays={unmatchedWindowDays}
+            onUnmatchedWindowDaysChange={setUnmatchedWindowDays}
+            onUnmatchedWindowOpen={() => {
+              void refetchUnmatchedCount();
             }}
-            isMatching={matchUnmatchedMutation.isPending}
-            matchProgress={matchProgress ? {
-              completed: matchProgress.completed,
-              total: matchProgress.total,
-              succeeded: matchProgress.succeeded,
-              failed: matchProgress.failed,
-            } : undefined}
             unmatchedCount={unmatchedData?.count ?? 0}
+            unmatchedCountLoading={
+              unmatchedCountLoading || debouncedUnmatchedWindowDays !== unmatchedWindowDays
+            }
           />
 
           <AIWritingSection
             availableProviders={providerOptions}
-            hasProviders={providers.length > 0}
+            hasProviders={providerOptions.length > 0}
             models={aiWritingModelsState.models}
             modelsLoading={aiWritingModelsState.loading}
             modelsError={aiWritingModelsState.error}
@@ -1129,7 +1391,8 @@ function SettingsContent() {
               setAIWritingLocalEdits((prev) => ({ 
                 ...prev, 
                 aiWritingProviderId: id,
-                aiWritingModel: undefined 
+                aiWritingModel: undefined,
+                aiWritingReasoningEffort: undefined,
               }));
             }}
             aiWritingSettings={{
@@ -1145,10 +1408,6 @@ function SettingsContent() {
               aiWritingReasoningEffort,
             }}
             onAIWritingSettingsChange={handleAIWritingSettingsChange}
-            onSave={saveAIWritingSettings}
-            isSaving={aiWritingMutation.isPending}
-            hasUnsavedChanges={aiWritingHasUnsavedChanges}
-            settingsSaved={aiWritingSettingsSaved}
           />
 
           <DangerZone
@@ -1185,15 +1444,11 @@ function SettingsContent() {
             onFilterCityChange={setFilterCity}
             filterTitleKeywords={filterTitleKeywords}
             onFilterTitleKeywordsChange={setFilterTitleKeywords}
-            onSave={() => scraperSettingsMutation.mutate()}
-            isSaving={scraperSettingsMutation.isPending}
-            hasUnsavedChanges={scraperHasUnsavedChanges}
-            settingsSaved={scraperSettingsSaved}
           />
 
           <ResumeParserSection
             availableProviders={providerOptions}
-            hasProviders={providers.length > 0}
+            hasProviders={providerOptions.length > 0}
             models={resumeParserModelsState.models}
             modelsLoading={resumeParserModelsState.loading}
             modelsError={resumeParserModelsState.error}
@@ -1203,7 +1458,8 @@ function SettingsContent() {
               setResumeParserLocalEdits((prev) => ({ 
                 ...prev, 
                 resumeParserProviderId: id,
-                resumeParserModel: undefined 
+                resumeParserModel: undefined,
+                resumeParserReasoningEffort: undefined,
               }));
             }}
             resumeParserModel={resumeParserModel}

@@ -5,7 +5,6 @@ import {
   type CreateModelOptions,
   type ProviderConfig,
   type ModelConfig,
-  type ReasoningEffort,
   AIError,
 } from "./types";
 
@@ -17,12 +16,6 @@ export abstract class BaseProvider implements AIProviderInterface {
   abstract readonly id: AIProvider;
   abstract readonly name: string;
   abstract readonly requiresApiKey: boolean;
-
-  /**
-   * Check if a model supports reasoning effort
-   * Default implementation can be overridden by subclasses
-   */
-  abstract supportsReasoningEffort(modelId: string): boolean;
 
   /**
    * Validate the provider configuration
@@ -39,21 +32,16 @@ export abstract class BaseProvider implements AIProviderInterface {
 
   protected buildProviderReasoningOptions(
     providerKey: string,
-    config: ModelConfig,
-    transform?: (reasoningEffort: ReasoningEffort, config: ModelConfig) => unknown
+    config: ModelConfig
   ): Record<string, unknown> | undefined {
-    if (!config.reasoningEffort || !this.supportsReasoningEffort(config.modelId)) {
+    if (!config.reasoningEffort) {
       return undefined;
     }
-
-    const reasoningEffort = transform
-      ? transform(config.reasoningEffort, config)
-      : config.reasoningEffort;
 
     return {
       providerOptions: {
         [providerKey]: {
-          reasoningEffort,
+          reasoningEffort: config.reasoningEffort,
         },
       },
     };

@@ -1,25 +1,18 @@
 export {
-  CircuitBreaker,
-  CircuitState,
-  createCircuitBreaker,
-  getMatcherCircuitBreaker,
-  resetMatcherCircuitBreaker,
-  type CircuitBreakerOptions,
-} from "./circuit-breaker";
-
-export {
   AIError,
   AIProviderError,
   AITimeoutError,
   AIRateLimitError,
   AIValidationError,
   AINetworkError,
-  AICircuitBreakerError,
   categorizeError,
   isRetryableError,
   isServerError,
   isRateLimitError,
+  getRetryAfterMs,
   createAIError,
+  sanitizeAIError,
   type AIErrorType,
   type AIErrorOptions,
+  type SanitizedAIError,
 } from "./errors";

@@ -2,12 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   select: vi.fn(),
+  insert: vi.fn(),
+  insertValues: vi.fn(),
   decryptApiKey: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
   db: {
     select: mocks.select,
+    insert: mocks.insert,
   },
 }));
 
@@ -41,6 +44,14 @@ describe("model catalog", () => {
     mocks.decryptApiKey.mockReturnValue("sk-test");
 
     mocks.select.mockReset();
+    mocks.insert.mockReset();
+    mocks.insertValues.mockReset();
+    mocks.insert.mockReturnValue({
+      values: (value: unknown) => {
+        mocks.insertValues(value);
+        return { onConflictDoUpdate: async () => undefined };
+      },
+    });
     mocks.select.mockImplementation(() => {
       const response = selectQueue.shift() ?? {};
       return {
@@ -70,7 +81,11 @@ describe("model catalog", () => {
       updatedAt: new Date("2026-02-20T00:00:00.000Z"),
     };
 
-    queueSelectResponses({ limit: [providerRecord] }, { limit: [providerRecord] });
+    queueSelectResponses(
+      { limit: [providerRecord] },
+      { limit: [] },
+      { limit: [providerRecord] }
+    );
 
     fetchMock.mockResolvedValue({
       ok: true,
@@ -104,7 +119,11 @@ describe("model catalog", () => {
       updatedAt: new Date("2026-02-20T00:00:00.000Z"),
     };
 
-    queueSelectResponses({ limit: [providerRecord] }, { limit: [providerRecord] });
+    queueSelectResponses(
+      { limit: [providerRecord] },
+      { limit: [] },
+      { limit: [providerRecord] }
+    );
 
     fetchMock
       .mockResolvedValueOnce({
@@ -125,7 +144,157 @@ describe("model catalog", () => {
     expect(stale.models).toEqual(live.models);
   });
 
-  it("resolves provider/model using default active provider and first valid model", async () => {
+  it("preserves OpenRouter reasoning efforts, ordering, and default from the catalog", async () => {
+    const providerRecord = {
+      id: "provider-openrouter",
+      provider: "openrouter",
+      apiKey: "encrypted-key",
+      updatedAt: new Date("2026-02-20T00:00:00.000Z"),
+    };
+    queueSelectResponses({ limit: [providerRecord] }, { limit: [] });
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{
+          id: "provider/future-model",
+          name: "Future model",
+          architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+          supported_parameters: ["reasoning"],
+          reasoning: {
+            supported_efforts: ["max", "xhigh", "medium", "future_v1"],
+            default_effort: "xhigh",
+          },
+        }],
+      }),
+    });
+
+    const response = await getProviderModels(providerRecord.id);
+    expect(response.models[0]).toMatchObject({
+      reasoningControl: {
+        kind: "effort",
+        options: [
+          { value: "max" },
+          { value: "xhigh" },
+          { value: "medium" },
+          { value: "future_v1" },
+        ],
+        defaultValue: "xhigh",
+      },
+      supportedReasoningEfforts: ["max", "xhigh", "medium", "future_v1"],
+      defaultReasoningEffort: "xhigh",
+    });
+  });
+
+  it("bounds provider display metadata without dropping discovered reasoning options", async () => {
+    const providerRecord = {
+      id: "provider-openrouter-verbose",
+      provider: "openrouter",
+      apiKey: "encrypted-key",
+      updatedAt: new Date("2026-02-20T00:00:00.000Z"),
+    };
+    queueSelectResponses({ limit: [providerRecord] }, { limit: [] });
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{
+          id: "provider/verbose-model",
+          name: "N".repeat(300),
+          description: "D".repeat(2_500),
+          reasoning: {
+            supported_efforts: ["xhigh", "max", "future_v1"],
+            default_effort: "max",
+          },
+        }],
+      }),
+    });
+
+    const response = await getProviderModels(providerRecord.id);
+
+    expect(response.source).toBe("live");
+    expect(response.models[0]?.label).toHaveLength(240);
+    expect(response.models[0]?.description).toHaveLength(2_000);
+    expect(response.models[0]?.reasoningControl).toEqual({
+      kind: "effort",
+      options: [{ value: "xhigh" }, { value: "max" }, { value: "future_v1" }],
+      defaultValue: "max",
+    });
+    const stored = mocks.insertValues.mock.calls.at(-1)?.[0] as { value: string };
+    expect(stored.value).toContain("future_v1");
+  });
+
+  it("reuses validated reasoning metadata from the durable cache without discovery", async () => {
+    const providerRecord = {
+      id: "provider-openrouter-durable",
+      provider: "openrouter",
+      apiKey: "encrypted-key",
+      updatedAt: new Date("2026-02-20T00:00:00.000Z"),
+    };
+    queueSelectResponses({ limit: [providerRecord] }, { limit: [] });
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{
+          id: "provider/model",
+          reasoning: {
+            supported_efforts: ["xhigh", "max"],
+            default_effort: "xhigh",
+          },
+        }],
+      }),
+    });
+    await getProviderModels(providerRecord.id);
+    const stored = mocks.insertValues.mock.calls.at(-1)?.[0] as { value: string };
+    clearProviderModelsCache(providerRecord.id);
+    queueSelectResponses(
+      { limit: [{ id: providerRecord.id, updatedAt: providerRecord.updatedAt }] },
+      { limit: [{ value: stored.value }] }
+    );
+
+    const { getCachedProviderModelDefinition } = await import(
+      "@/lib/ai/providers/model-catalog"
+    );
+    const cached = await getCachedProviderModelDefinition(
+      providerRecord.id,
+      "provider/model"
+    );
+
+    expect(cached?.reasoningControl).toEqual({
+      kind: "effort",
+      options: [{ value: "xhigh" }, { value: "max" }],
+      defaultValue: "xhigh",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses provider-default when a catalog does not enumerate exact efforts", async () => {
+    const providerRecord = {
+      id: "provider-gemini",
+      provider: "gemini_api_key",
+      apiKey: "encrypted-key",
+      updatedAt: new Date("2026-02-20T00:00:00.000Z"),
+    };
+    queueSelectResponses({ limit: [providerRecord] }, { limit: [] });
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        models: [{
+          name: "models/gemini-thinking",
+          displayName: "Gemini Thinking",
+          supportedGenerationMethods: ["generateContent"],
+          thinking: true,
+        }],
+      }),
+    });
+
+    const response = await getProviderModels(providerRecord.id);
+    expect(response.models[0]).toMatchObject({
+      supportsReasoning: true,
+      reasoningControl: { kind: "provider_default" },
+    });
+    expect(response.models[0]?.supportedReasoningEfforts).toBeUndefined();
+  });
+
+  it("does not silently replace a configured unavailable model", async () => {
     const defaultProvider = {
       id: "provider-default",
       provider: "openai",
@@ -137,7 +306,8 @@ describe("model catalog", () => {
 
     queueSelectResponses(
       { orderBy: [defaultProvider] },
-      { limit: [defaultProvider] }
+      { limit: [defaultProvider] },
+      { limit: [] }
     );
 
     fetchMock.mockResolvedValue({
@@ -147,14 +317,11 @@ describe("model catalog", () => {
       }),
     });
 
-    const selection = await resolveProviderModelSelection({
-      modelId: "missing-model",
-    });
-
-    expect(selection).toEqual({
-      providerId: "provider-default",
-      provider: "openai",
-      modelId: "gpt-4.1",
+    await expect(
+      resolveProviderModelSelection({ modelId: "missing-model" })
+    ).rejects.toMatchObject({
+      type: "invalid_model",
+      message: expect.stringContaining("missing-model"),
     });
   });
 });

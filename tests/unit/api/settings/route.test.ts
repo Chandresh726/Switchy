@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getSettingsWithDefaults: vi.fn(),
   parseSettingsUpdateBody: vi.fn(),
   upsertSettings: vi.fn(),
+  getCachedProviderModelDefinition: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -29,6 +30,10 @@ vi.mock("@/lib/settings/settings-service", () => ({
   upsertSettings: mocks.upsertSettings,
 }));
 
+vi.mock("@/lib/ai/providers/model-catalog", () => ({
+  getCachedProviderModelDefinition: mocks.getCachedProviderModelDefinition,
+}));
+
 import { GET, POST } from "@/app/api/settings/route";
 
 describe("settings route", () => {
@@ -37,6 +42,7 @@ describe("settings route", () => {
     mocks.getSettingsWithDefaults.mockResolvedValue({
       matcher_model: "gpt-4.1-mini",
       matcher_provider_id: "provider-1",
+      matcher_reasoning_effort: "medium",
     });
     mocks.parseSettingsUpdateBody.mockReturnValue({
       updates: [],
@@ -47,6 +53,13 @@ describe("settings route", () => {
     mocks.upsertSettings.mockResolvedValue(undefined);
     mocks.getSchedulerEnabled.mockResolvedValue(true);
     mocks.restartScheduler.mockResolvedValue(undefined);
+    mocks.getCachedProviderModelDefinition.mockResolvedValue({
+      reasoningControl: {
+        kind: "effort",
+        options: ["low", "medium", "high"].map((value) => ({ value })),
+        defaultValue: "medium",
+      },
+    });
   });
 
   it("returns settings from service", async () => {
@@ -71,6 +84,66 @@ describe("settings route", () => {
 
     expect(response.status).toBe(400);
     expect(body.code).toBe("invalid_request");
+    expect(mocks.parseSettingsUpdateBody).not.toHaveBeenCalled();
+  });
+
+  it("clears a legacy effort when the provider publishes no exact choices", async () => {
+    mocks.getCachedProviderModelDefinition.mockResolvedValue({
+      reasoningControl: { kind: "provider_default" },
+    });
+    const request = new Request("http://localhost/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ matcher_reasoning_effort: "medium" }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(200);
+    expect(mocks.parseSettingsUpdateBody).toHaveBeenCalledWith(
+      expect.objectContaining({ matcher_reasoning_effort: "" })
+    );
+  });
+
+  it("accepts a provider-native value advertised by the selected model", async () => {
+    mocks.getCachedProviderModelDefinition.mockResolvedValue({
+      reasoningControl: {
+        kind: "effort",
+        options: [{ value: "xhigh" }, { value: "max" }],
+        defaultValue: "xhigh",
+      },
+    });
+    const request = new Request("http://localhost/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ matcher_reasoning_effort: "max" }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(200);
+    expect(mocks.parseSettingsUpdateBody).toHaveBeenCalledWith(
+      expect.objectContaining({ matcher_reasoning_effort: "max" })
+    );
+  });
+
+  it("rejects whitespace-normalized reasoning identifiers", async () => {
+    mocks.getCachedProviderModelDefinition.mockResolvedValue({
+      reasoningControl: {
+        kind: "effort",
+        options: [{ value: "xhigh" }, { value: "max" }],
+        defaultValue: "xhigh",
+      },
+    });
+    const request = new Request("http://localhost/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ matcher_reasoning_effort: " max " }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(400);
     expect(mocks.parseSettingsUpdateBody).not.toHaveBeenCalled();
   });
 

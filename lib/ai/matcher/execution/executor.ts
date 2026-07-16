@@ -1,35 +1,49 @@
-import { resolveAIContextFromExplicitConfig } from "@/lib/ai/runtime-context";
+import PQueue from "p-queue";
+
 import {
-  categorizeError,
-  createCircuitBreaker,
-  throwIfAborted,
-} from "../resilience";
-import type {
-  MatcherConfig,
-  CandidateProfile,
-  MatchJob,
-  MatchResultMap,
-  StrategyResultItem,
-  StrategyResultMap,
-} from "../types";
-import { singleStrategy, bulkStrategy, parallelStrategy, selectStrategy, type StrategyProgressCallback } from "../strategies";
+  artifactRepository,
+  buildCandidateEvidence,
+  type MatchEvidence,
+} from "@/lib/ai/artifacts";
+import { createAICapabilityRuntime } from "@/lib/ai/runtime";
+import { AIError } from "@/lib/ai/shared/errors";
+
+import {
+  buildMatchPolicyVersion,
+  buildPersistedMatchArtifacts,
+  evaluateMatchWithAI,
+} from "../evidence/ai-match";
+import { enrichCandidateEvidence } from "../evidence/candidate";
+import {
+  analyzeJobsForMatching,
+  buildJobAnalysisVersion,
+  type MatchingJobAnalysis,
+} from "../evidence/job-analysis";
 import {
   fetchJobsData,
   logMatchFailure,
+  markJobAnalysisReady,
+  markJobAnalysisStarted,
+  markJobMatchStarted,
   persistMatchSuccess,
-  updateJobWithMatchResult,
 } from "../tracking";
-import {
-  applyExperienceScoreGuardrails,
-  calculateTotalExperienceYears,
-  deriveCandidateExperienceYears,
-  estimateRequiredExperienceYears,
-  extractRequirements,
-  htmlToText,
-} from "../utils";
+import type {
+  JobData,
+  MatcherConfig,
+  MatchResult,
+  MatchResultMap,
+  ProfileData,
+  StrategyProgressCallback,
+} from "../types";
+
+const CANDIDATE_SNAPSHOT_VERSION = "candidate-facts-v2";
+
+function throwIfAborted(signal?: AbortSignal): void {
+  signal?.throwIfAborted();
+}
 
 export interface ExecuteMatchOptions {
-  config: MatcherConfig & { providerId?: string };
+  config: MatcherConfig;
   jobIds: number[];
   sessionId?: string;
   onProgress?: StrategyProgressCallback;
@@ -37,310 +51,320 @@ export interface ExecuteMatchOptions {
   signal?: AbortSignal;
 }
 
-export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchResultMap> {
-  const { config, jobIds, sessionId, onProgress, shouldStop, signal } = options;
-
-  throwIfAborted(signal);
-
-  if (jobIds.length === 0) {
-    return new Map();
-  }
-
-  const aiContext = await resolveAIContextFromExplicitConfig({
-    providerId: config.providerId,
-    modelId: config.model,
-    reasoningEffort: config.reasoningEffort,
-  });
-  throwIfAborted(signal);
-  const modelUsed = aiContext.modelId;
-
-  const circuitBreaker = createCircuitBreaker({
-    failureThreshold: config.circuitBreakerThreshold,
-    resetTimeout: config.circuitBreakerResetTimeout,
-  });
-
-  const jobsMap = await fetchJobsData(jobIds);
-  const profileData = await fetchProfileDataForMatch();
-  throwIfAborted(signal);
-
-  if (!profileData) {
-    const results: MatchResultMap = new Map();
-    for (const jobId of jobIds) {
-      const error = new Error("No profile found");
-      results.set(jobId, error);
-    }
-    return results;
-  }
-
-  const candidateProfile: CandidateProfile = {
-    summary: profileData.profile.summary || undefined,
-    skills: profileData.skills.map((s: { name: string; category: string | null }) => ({
-      name: s.name,
-      category: s.category || undefined,
-    })),
-    experience: profileData.experience.map((e: { title: string; company: string; description: string | null; startDate: string; endDate: string | null }) => ({
-      title: e.title,
-      company: e.company,
-      description: e.description || undefined,
-      startDate: e.startDate,
-      endDate: e.endDate || undefined,
-    })),
-    education: profileData.education.map((e: { institution: string; degree: string; field: string | null }) => ({
-      institution: e.institution,
-      degree: e.degree,
-      field: e.field || undefined,
-    })),
+function toPublicMatchResult(score: number, evidence: MatchEvidence): MatchResult {
+  return {
+    score,
+    reasons: evidence.reasoning.map((point) => point.text),
+    matchedSkills: evidence.matchedSkills,
   };
-  candidateProfile.totalExperienceYears = deriveCandidateExperienceYears(
-    calculateTotalExperienceYears(candidateProfile.experience)
-  ) ?? undefined;
-
-  const matchJobs: MatchJob[] = jobIds
-    .map((jobId) => {
-      const job = jobsMap.get(jobId);
-      if (!job) return null;
-      const sourceDescription = job.description || "";
-      return {
-        id: job.id,
-        title: job.title,
-        description: sourceDescription,
-        requirements: extractRequirements(htmlToText(sourceDescription)),
-      };
-    })
-    .filter((j): j is MatchJob => j !== null);
-
-  const missingIds = jobIds.filter((id) => !jobsMap.has(id));
-  if (missingIds.length > 0) {
-    console.warn(`[ExecuteMatch] Missing job IDs: ${missingIds.join(", ")}`);
-  }
-
-  if (matchJobs.length === 0) {
-    const missingResults: StrategyResultMap = new Map(
-      missingIds.map((id) => [
-        id,
-        {
-          error: new Error(`Job with ID ${id} not found`),
-          duration: 0,
-        },
-      ])
-    );
-    const results = await persistResults(
-      missingResults,
-      sessionId,
-      modelUsed,
-      new Set<number>(),
-      signal
-    );
-    return results;
-  }
-
-  const strategyType = selectStrategy(config, matchJobs.length);
-
-  console.log(
-    `[ExecuteMatch] Using ${strategyType} strategy for ${matchJobs.length} jobs (bulkEnabled=${config.bulkEnabled})`
-  );
-
-  const strategyContext = {
-    config,
-    model: aiContext.model,
-    providerOptions: aiContext.providerOptions,
-    circuitBreaker,
-    candidateProfile,
-    signal,
-  };
-
-  const persistedJobIds = new Set<number>();
-
-  const persistRealtimeResult = async (jobId: number, item: StrategyResultItem) => {
-    throwIfAborted(signal);
-    if (persistedJobIds.has(jobId)) return;
-
-    try {
-      await persistJobResult(jobId, item, sessionId, modelUsed);
-      throwIfAborted(signal);
-      persistedJobIds.add(jobId);
-    } catch (error) {
-      throwIfAborted(signal);
-      console.error(`[ExecuteMatch] Failed to persist realtime result for job ${jobId}:`, error);
-    }
-  };
-
-  let strategyResults: StrategyResultMap;
-
-  if (strategyType === "single") {
-    throwIfAborted(signal);
-    if (shouldStop && await shouldStop()) {
-      strategyResults = new Map();
-    } else {
-      const startTime = Date.now();
-      try {
-        const { result, attemptCount } = await singleStrategy({
-          ...strategyContext,
-          job: matchJobs[0],
-        });
-        const item = { result, duration: Date.now() - startTime, attemptCount };
-        strategyResults = new Map([[matchJobs[0].id, item]]);
-        await persistRealtimeResult(matchJobs[0].id, item);
-        onProgress?.(1, 1, 1, 0);
-      } catch (error) {
-        throwIfAborted(signal);
-        const errorObj = error instanceof Error ? error : new Error(String(error));
-        const item = {
-          error: errorObj,
-          duration: Date.now() - startTime,
-          attemptCount: (errorObj as Error & { attemptCount?: number }).attemptCount,
-        };
-        strategyResults = new Map([[matchJobs[0].id, item]]);
-        await persistRealtimeResult(matchJobs[0].id, item);
-        onProgress?.(1, 1, 0, 1);
-      }
-    }
-  } else if (strategyType === "bulk") {
-    strategyResults = await bulkStrategy({
-      ...strategyContext,
-      jobs: matchJobs,
-      onProgress,
-      onResult: persistRealtimeResult,
-      shouldStop,
-    });
-  } else {
-    strategyResults = await parallelStrategy({
-      ...strategyContext,
-      jobs: matchJobs,
-      onProgress,
-      onResult: persistRealtimeResult,
-      shouldStop,
-    });
-  }
-
-  for (const id of missingIds) {
-    throwIfAborted(signal);
-    strategyResults.set(id, {
-      error: new Error(`Job with ID ${id} not found`),
-      duration: 0,
-    });
-  }
-
-  applyExperienceGuardrails(strategyResults, matchJobs, candidateProfile.totalExperienceYears ?? null);
-
-  throwIfAborted(signal);
-  const results = await persistResults(
-    strategyResults,
-    sessionId,
-    modelUsed,
-    persistedJobIds,
-    signal
-  );
-
-  return results;
 }
 
-async function fetchProfileDataForMatch() {
+async function fetchProfileDataForMatch(): Promise<ProfileData | null> {
   const { fetchProfileData } = await import("../tracking");
   return fetchProfileData();
 }
 
-function applyExperienceGuardrails(
-  strategyResults: StrategyResultMap,
-  matchJobs: MatchJob[],
-  candidateYears: number | null
-): void {
-  if (candidateYears === null) return;
-
-  const jobsById = new Map<number, MatchJob>(matchJobs.map((job) => [job.id, job]));
-
-  for (const [jobId, item] of strategyResults.entries()) {
-    if (!item.result) continue;
-
-    const job = jobsById.get(jobId);
-    if (!job) continue;
-
-    const requiredYears = estimateRequiredExperienceYears(job.description, job.requirements);
-    const adjusted = applyExperienceScoreGuardrails(item.result.score, requiredYears, candidateYears);
-
-    if (adjusted.adjustedScore >= item.result.score) {
-      continue;
-    }
-
-    const reasons = adjusted.reason
-      ? [adjusted.reason, ...item.result.reasons]
-      : item.result.reasons;
-
-    strategyResults.set(jobId, {
-      ...item,
-      result: {
-        ...item.result,
-        score: adjusted.adjustedScore,
-        reasons,
-      },
-    });
-  }
+async function persistPublicResult(input: {
+  jobId: number;
+  matchResultId: string;
+  result: MatchResult;
+  sessionId?: string;
+  attemptCount: number;
+  duration: number;
+  modelUsed: string;
+  matchRunId?: string | null;
+  cached?: boolean;
+}): Promise<void> {
+  if (!input.sessionId) return;
+  await persistMatchSuccess(
+    input.sessionId,
+    input.jobId,
+    input.matchResultId,
+    input.result,
+    input.attemptCount,
+    input.duration,
+    input.modelUsed,
+    { matchRunId: input.matchRunId, cached: input.cached }
+  );
 }
 
-async function persistResults(
-  strategyResults: StrategyResultMap,
-  sessionId: string | undefined,
-  modelUsed: string,
-  persistedJobIds: Set<number>,
-  signal?: AbortSignal
-): Promise<MatchResultMap> {
-  const results: MatchResultMap = new Map();
+async function persistFailure(input: {
+  jobId: number;
+  error: Error;
+  sessionId?: string;
+  duration: number;
+  modelUsed: string;
+  attemptCount?: number;
+  stage?: "analysis" | "matching";
+}): Promise<void> {
+  if (!input.sessionId) return;
+  await logMatchFailure(
+    input.sessionId,
+    input.jobId,
+    input.duration,
+    input.error,
+    input.attemptCount
+      ?? (input.error as Error & { attemptCount?: number }).attemptCount
+      ?? 1,
+    input.modelUsed,
+    undefined,
+    input.stage
+  );
+}
 
-  for (const [jobId, item] of strategyResults) {
-    throwIfAborted(signal);
-    if (item.error) {
-      results.set(jobId, item.error);
-    } else if (item.result) {
-      results.set(jobId, item.result);
+export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchResultMap> {
+  const { config, jobIds, sessionId, onProgress, shouldStop, signal } = options;
+  throwIfAborted(signal);
+  if (jobIds.length === 0) return new Map();
+
+  const [jobsMap, profileData] = await Promise.all([
+    fetchJobsData(jobIds),
+    fetchProfileDataForMatch(),
+  ]);
+  throwIfAborted(signal);
+
+  if (!profileData) {
+    const error = new AIError({
+      type: "missing_profile",
+      message: "Create a candidate profile before matching jobs.",
+      retryable: false,
+    });
+    const results: MatchResultMap = new Map();
+    let completed = 0;
+    for (const jobId of jobIds) {
+      results.set(jobId, error);
+      await persistFailure({
+        jobId,
+        error,
+        sessionId,
+        duration: 0,
+        modelUsed: "not_started",
+        attemptCount: 0,
+        stage: "analysis",
+      });
+      completed += 1;
+      onProgress?.(completed, jobIds.length, 0, completed);
     }
-
-    if (persistedJobIds.has(jobId)) {
-      continue;
-    }
-
-    await persistJobResult(jobId, item, sessionId, modelUsed);
-    throwIfAborted(signal);
-    persistedJobIds.add(jobId);
+    return results;
   }
+
+  const candidateEvidence = enrichCandidateEvidence(buildCandidateEvidence(profileData));
+  const candidateArtifact = await artifactRepository.getOrCreateCandidateSnapshot({
+    sourceProfileId: profileData.profile.id,
+    snapshotVersion: CANDIDATE_SNAPSHOT_VERSION,
+    evidence: candidateEvidence,
+  });
+  const availableJobs = jobIds
+    .map((jobId) => jobsMap.get(jobId))
+    .filter((job): job is JobData => job !== undefined);
+  if (shouldStop && await shouldStop()) return new Map();
+
+  const [analysisRuntime, matchRuntime] = await Promise.all([
+    createAICapabilityRuntime({
+      capability: "job_analysis",
+      model: {
+        providerId: config.jobAnalysisProviderId,
+        modelId: config.jobAnalysisModel,
+        reasoningEffort: config.jobAnalysisReasoningEffort,
+      },
+      providerConcurrencyLimit: config.concurrencyLimit,
+    }),
+    createAICapabilityRuntime({
+      capability: "match_evaluation",
+      model: {
+        providerId: config.providerId,
+        modelId: config.model,
+        reasoningEffort: config.reasoningEffort,
+      },
+      providerConcurrencyLimit: config.concurrencyLimit,
+    }),
+  ]);
+  const concreteConfig: MatcherConfig = {
+    ...config,
+    jobAnalysisProviderId: analysisRuntime.snapshot.providerRecordId,
+    jobAnalysisModel: analysisRuntime.snapshot.modelId,
+    jobAnalysisReasoningEffort: analysisRuntime.reasoningEffort,
+    providerId: matchRuntime.snapshot.providerRecordId,
+    model: matchRuntime.snapshot.modelId,
+    reasoningEffort: matchRuntime.reasoningEffort,
+  };
+
+  const analysisVersion = buildJobAnalysisVersion(concreteConfig);
+  const matchPolicyVersion = buildMatchPolicyVersion(concreteConfig, analysisVersion);
+  const results: MatchResultMap = new Map();
+  let completed = 0;
+  let succeeded = 0;
+  let failed = 0;
+  const terminalJobIds = new Set<number>();
+  const scheduledJobIds = new Set<number>();
+  const matchTasks: Array<Promise<void | undefined>> = [];
+  const matchQueue = new PQueue({ concurrency: Math.max(1, config.concurrencyLimit) });
+
+  const reportTerminal = (jobId: number, status: "succeeded" | "failed") => {
+    if (terminalJobIds.has(jobId)) return;
+    terminalJobIds.add(jobId);
+    completed += 1;
+    if (status === "succeeded") succeeded += 1;
+    else failed += 1;
+    onProgress?.(completed, jobIds.length, succeeded, failed);
+  };
+
+  const failAnalysis = async (jobId: number, cause?: unknown) => {
+    if (terminalJobIds.has(jobId) || scheduledJobIds.has(jobId)) return;
+    const error = cause instanceof Error
+      ? cause
+      : new AIError({
+        type: "generation_failed",
+        message: `AI job analysis failed for job ${jobId}`,
+        retryable: true,
+        cause: cause === undefined ? undefined : new Error(String(cause)),
+      });
+    results.set(jobId, error);
+    await persistFailure({
+      jobId,
+      error,
+      sessionId,
+      duration: 0,
+      modelUsed: analysisRuntime.snapshot.modelId,
+      stage: "analysis",
+    });
+    reportTerminal(jobId, "failed");
+  };
+
+  const matchAnalyzedJob = async (analyzed: MatchingJobAnalysis) => {
+    const jobId = analyzed.job.id;
+    throwIfAborted(signal);
+    if (shouldStop && await shouldStop()) return;
+    const startedAt = performance.now();
+    if (sessionId) await markJobMatchStarted(sessionId, jobId);
+
+    try {
+      const cached = await artifactRepository.findFreshMatch(jobId, {
+        candidateFingerprint: candidateArtifact.fingerprint,
+        jobFingerprint: analyzed.jobFingerprint,
+        scoringPolicyVersion: matchPolicyVersion,
+      });
+      if (cached) {
+        const publicResult = toPublicMatchResult(cached.score, cached.evidence);
+        await persistPublicResult({
+          jobId,
+          matchResultId: cached.id,
+          result: publicResult,
+          sessionId,
+          attemptCount: 0,
+          duration: Math.round(performance.now() - startedAt),
+          modelUsed: "cache",
+          matchRunId: cached.matchRunId,
+          cached: true,
+        });
+        results.set(jobId, publicResult);
+        reportTerminal(jobId, "succeeded");
+        return;
+      }
+
+      const evaluation = await evaluateMatchWithAI(
+        matchRuntime,
+        candidateArtifact.evidence,
+        candidateArtifact.fingerprint,
+        analyzed,
+        concreteConfig,
+        signal
+      );
+      const persistedArtifacts = buildPersistedMatchArtifacts(evaluation.outcome);
+      throwIfAborted(signal);
+      const persisted = await artifactRepository.createMatchResult({
+        jobId,
+        candidateSnapshotId: candidateArtifact.id,
+        jobAnalysisId: analyzed.jobAnalysisId,
+        candidateFingerprint: candidateArtifact.fingerprint,
+        jobFingerprint: analyzed.jobFingerprint,
+        scoringPolicyVersion: matchPolicyVersion,
+        matchPolicyVersion,
+        score: evaluation.outcome.score,
+        breakdown: persistedArtifacts.breakdown,
+        evidence: persistedArtifacts.evidence,
+        source: "ai",
+        matchRunId: evaluation.runId,
+        signal,
+      });
+      const publicResult = toPublicMatchResult(persisted.score, persisted.evidence);
+      await persistPublicResult({
+        jobId,
+        matchResultId: persisted.id,
+        result: publicResult,
+        sessionId,
+        attemptCount: evaluation.attempts,
+        duration: Math.round(performance.now() - startedAt),
+        modelUsed: matchRuntime.snapshot.modelId,
+        matchRunId: evaluation.runId,
+      });
+      results.set(jobId, publicResult);
+      reportTerminal(jobId, "succeeded");
+    } catch (error) {
+      throwIfAborted(signal);
+      const normalized = error instanceof Error ? error : new Error(String(error));
+      results.set(jobId, normalized);
+      await persistFailure({
+        jobId,
+        error: normalized,
+        sessionId,
+        duration: Math.round(performance.now() - startedAt),
+        modelUsed: matchRuntime.snapshot.modelId,
+        stage: "matching",
+      });
+      reportTerminal(jobId, "failed");
+    }
+  };
+
+  const scheduleMatch = (analyzed: MatchingJobAnalysis) => {
+    const jobId = analyzed.job.id;
+    if (scheduledJobIds.has(jobId) || terminalJobIds.has(jobId)) return;
+    scheduledJobIds.add(jobId);
+    matchTasks.push(matchQueue.add(() => matchAnalyzedJob(analyzed)));
+  };
+
+  const sameProvider = analysisRuntime.snapshot.providerRecordId ===
+    matchRuntime.snapshot.providerRecordId;
+  const analysisConcurrency = sameProvider
+    ? Math.max(1, Math.floor(config.concurrencyLimit * 0.6))
+    : Math.max(1, config.concurrencyLimit);
+
+  const analyses = await analyzeJobsForMatching(
+    availableJobs,
+    concreteConfig,
+    signal,
+    shouldStop,
+    analysisRuntime,
+    {
+      concurrencyLimit: analysisConcurrency,
+      onStarted: async (startedJobIds) => {
+        if (sessionId) await markJobAnalysisStarted(sessionId, startedJobIds);
+      },
+      onReady: async (analyzed, source) => {
+        if (sessionId) {
+          await markJobAnalysisReady(sessionId, {
+            jobId: analyzed.job.id,
+            jobAnalysisId: analyzed.jobAnalysisId,
+            analysisRunId: analyzed.analysisRunId,
+            cached: source === "cached",
+          });
+        }
+        scheduleMatch(analyzed);
+      },
+      onFailed: async (failedJobIds, error) => {
+        for (const jobId of failedJobIds) await failAnalysis(jobId, error);
+      },
+    }
+  );
+
+  for (const analyzed of analyses.values()) scheduleMatch(analyzed);
+
+  for (const jobId of jobIds) {
+    if (!analyses.has(jobId) && !terminalJobIds.has(jobId) && !scheduledJobIds.has(jobId)) {
+      await failAnalysis(jobId);
+    }
+  }
+  await Promise.all(matchTasks);
 
   return results;
-}
-
-async function persistJobResult(
-  jobId: number,
-  item: StrategyResultItem,
-  sessionId: string | undefined,
-  modelUsed: string
-): Promise<void> {
-  if (item.error) {
-    if (sessionId) {
-      await logMatchFailure(
-        sessionId,
-        jobId,
-        item.duration,
-        categorizeError(item.error),
-        item.error.message,
-        item.attemptCount ?? 1,
-        modelUsed
-      );
-    }
-    return;
-  }
-
-  if (!item.result) {
-    return;
-  }
-
-  if (sessionId) {
-    await persistMatchSuccess(
-      sessionId,
-      jobId,
-      item.result,
-      item.attemptCount ?? 1,
-      item.duration,
-      modelUsed
-    );
-  } else {
-    await updateJobWithMatchResult(jobId, item.result);
-  }
 }

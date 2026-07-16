@@ -3,6 +3,7 @@ import { experience } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { assertAppRequest } from "@/lib/api";
+import { scheduleProfileRematch } from "@/lib/ai/matcher/profile-rematch";
 
 function parseDateValue(date: string | null) {
   if (!date) return Number.POSITIVE_INFINITY;
@@ -79,6 +80,7 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
+    await scheduleProfileRematch();
     return NextResponse.json(newExperience);
   } catch (error) {
     console.error("Failed to create experience:", error);
@@ -102,6 +104,7 @@ export async function DELETE(request: NextRequest) {
 
     await db.delete(experience).where(eq(experience.id, parseInt(id)));
 
+    await scheduleProfileRematch();
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Failed to delete experience:", error);
@@ -140,6 +143,7 @@ export async function PUT(request: NextRequest) {
       .where(eq(experience.id, parseInt(id)))
       .returning();
 
+    await scheduleProfileRematch();
     return NextResponse.json(updated);
   } catch (error) {
     console.error("Failed to update experience:", error);

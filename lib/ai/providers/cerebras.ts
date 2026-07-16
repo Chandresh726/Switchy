@@ -11,25 +11,6 @@ export class CerebrasProvider extends BaseProvider {
   readonly name = "Cerebras";
   readonly requiresApiKey = true;
 
-  /**
-   * Cerebras models that support reasoning effort
-   */
-  supportsReasoningEffort(modelId: string): boolean {
-    const reasoningModels = ["gpt-oss-120b"];
-    return reasoningModels.some((model) => modelId.includes(model));
-  }
-
-  /**
-   * Cerebras supports reasoning effort via providerOptions
-   */
-  getGenerationOptions(
-    config: ModelConfig,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _providerConfig: ProviderConfig
-  ): Record<string, unknown> | undefined {
-    return this.buildProviderReasoningOptions("cerebras", config);
-  }
-
   protected createLanguageModel(
     config: ModelConfig,
     _providerConfig: ProviderConfig

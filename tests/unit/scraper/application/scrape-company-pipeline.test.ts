@@ -18,15 +18,15 @@ const matcherMocks = vi.hoisted(() => ({
 }));
 
 const outboxMocks = vi.hoisted(() => ({
-  dispatchPendingScrapeMatches: vi.fn(),
+  dispatchPendingAIWork: vi.fn(),
 }));
 
 vi.mock("@/lib/ai/matcher", () => ({
   getMatcherConfig: matcherMocks.getMatcherConfig,
 }));
 
-vi.mock("@/lib/scraper/matching/outbox", () => ({
-  dispatchPendingScrapeMatches: outboxMocks.dispatchPendingScrapeMatches,
+vi.mock("@/lib/ai/work-items/dispatcher", () => ({
+  dispatchPendingAIWork: outboxMocks.dispatchPendingAIWork,
 }));
 
 const company: Company = {
@@ -492,7 +492,7 @@ describe("ScrapeCompanyPipeline", () => {
     expect(repository.persistScrapeResult).toHaveBeenCalledWith(
       expect.objectContaining({ enableMatching: true })
     );
-    expect(outboxMocks.dispatchPendingScrapeMatches).not.toHaveBeenCalled();
+    expect(outboxMocks.dispatchPendingAIWork).not.toHaveBeenCalled();
   });
 
   it("only auto-matches inserted jobs that have descriptions", async () => {
@@ -534,7 +534,7 @@ describe("ScrapeCompanyPipeline", () => {
       expect.objectContaining({ enableMatching: true })
     );
 
-    expect(outboxMocks.dispatchPendingScrapeMatches).toHaveBeenCalledOnce();
+    expect(outboxMocks.dispatchPendingAIWork).toHaveBeenCalledOnce();
   });
 
   it("heals duplicate jobs when existing description is empty", async () => {

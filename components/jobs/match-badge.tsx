@@ -8,7 +8,11 @@ interface MatchBadgeProps {
   showLabel?: boolean;
 }
 
-export function MatchBadge({ score, size = "md", showLabel = false }: MatchBadgeProps) {
+export function MatchBadge({
+  score,
+  size = "md",
+  showLabel = false,
+}: MatchBadgeProps) {
   if (score === null || score === undefined) {
     return (
       <span

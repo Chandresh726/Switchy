@@ -11,7 +11,7 @@ import {
   type ScraperResult,
   type ScrapedJob,
 } from "@/lib/scraper/types";
-import { dispatchPendingScrapeMatches } from "@/lib/scraper/matching/outbox";
+import { dispatchPendingAIWork } from "@/lib/ai/work-items/dispatcher";
 import type { ScrapeSettingsProvider } from "@/lib/scraper/settings/provider";
 import { ScraperLogger } from "@/lib/scraper/utils/logger";
 import { getMatcherConfig } from "@/lib/ai/matcher";
@@ -363,6 +363,7 @@ export class ScrapeCompanyPipeline {
         descriptionFormat: job.descriptionFormat ?? "plain",
         salary: job.salary,
         employmentType: job.employmentType,
+        seniorityLevel: job.seniorityLevel,
         postedDate: job.postedDate,
         status: "new" as const,
       })),
@@ -387,7 +388,7 @@ export class ScrapeCompanyPipeline {
 
     logger.added(persistenceResult.jobsAdded, dedupeResult.duplicates.length);
     if (persistenceResult.matchOutboxId) {
-      dispatchPendingScrapeMatches();
+      dispatchPendingAIWork();
     }
 
     return {

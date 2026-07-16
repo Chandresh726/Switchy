@@ -7,11 +7,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MatchBadge } from "@/components/jobs/match-badge";
+import {
+  MatchBreakdown,
+  type MatchBreakdownValue,
+  type MatchReasoningPointValue,
+} from "@/components/jobs/match-breakdown";
 import { ApplyButton } from "@/components/jobs/apply-button";
 import { JobAIActions } from "@/components/jobs/job-ai-actions";
+import { LegacyMatchAlert } from "@/components/jobs/legacy-match-alert";
 import { MarkdownRenderer } from "@/components/jobs/markdown-renderer";
 import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { sanitizeHtmlContent } from "@/lib/jobs/description-processor";
+import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
 import {
   Building2,
   Calendar,
@@ -19,9 +26,6 @@ import {
   Briefcase,
   ArrowLeft,
   Sparkles,
-  Check,
-  AlertCircle,
-  Lightbulb,
   Loader2,
   Star,
   CheckCircle,
@@ -41,10 +45,14 @@ interface Job {
   seniorityLevel: string | null;
   status: string;
   matchScore: number | null;
-  matchReasons: string[];
+  matchResultId: string | null;
+  matchBreakdown: MatchBreakdownValue | null;
+  matchStale: boolean;
+  matchLegacy: boolean;
+  matchSummary: string;
+  matchReasoning: MatchReasoningPointValue[];
+  scoringPolicyVersion: string | null;
   matchedSkills: string[];
-  missingSkills: string[];
-  recommendations: string[];
   postedDate: string | null;
   discoveredAt: string;
   company: {
@@ -80,6 +88,13 @@ export default function JobDetailPage() {
   });
 
   const job = jobData?.jobs?.[0];
+  const {
+    mutation: calculateMatchMutation,
+    isMatching,
+  } = useQueuedJobMatch({
+    jobId,
+    extraInvalidationKeys: [["job", jobId]],
+  });
   const isReadOnlyPostingAction = job?.status === "applied" || job?.status === "archived";
 
   const updateStatusMutation = useMutation({
@@ -96,22 +111,6 @@ export default function JobDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["job", jobId] });
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["stats"] });
-    },
-  });
-
-  const calculateMatchMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/match", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({ jobId }),
-      });
-      if (!res.ok) throw new Error("Failed to calculate match");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["job", jobId] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
   });
 
@@ -235,7 +234,13 @@ export default function JobDetailPage() {
             </div>
           </div>
 
-          <MatchBadge score={job.matchScore} size="lg" showLabel />
+          {job.matchScore !== null ? (
+            <MatchBadge score={job.matchScore} size="lg" showLabel />
+          ) : job.matchStale ? (
+            <Badge variant="outline" className="border-amber-500/40 text-amber-300">
+              Match stale
+            </Badge>
+          ) : null}
         </div>
 
         {/* Action buttons */}
@@ -285,21 +290,25 @@ export default function JobDetailPage() {
           )}
 
           {/* Calculate Match */}
-          {job.matchScore === null && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => calculateMatchMutation.mutate()}
-              disabled={calculateMatchMutation.isPending}
-            >
-              {calculateMatchMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              {calculateMatchMutation.isPending ? "Scoring..." : "Calculate Match"}
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => calculateMatchMutation.mutate()}
+            disabled={isMatching}
+          >
+            {isMatching ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            {isMatching
+              ? "Scoring..."
+              : job.matchLegacy
+                ? "Rematch"
+                : job.matchResultId
+                  ? "Refresh Match"
+                  : "Calculate Match"}
+          </Button>
 
           {/* Status selector */}
           <div className="flex items-center gap-2">
@@ -343,84 +352,21 @@ export default function JobDetailPage() {
       </div>
 
       {/* Match Analysis */}
-      {job.matchScore !== null && (
+      {(job.matchResultId !== null || job.matchLegacy) && (
         <div className="mb-6 rounded-lg border border-border bg-card/70 p-6">
           <h2 className="mb-4 text-lg font-medium text-foreground">Match Analysis</h2>
 
           <div className="space-y-4">
-            {/* Match Reasons */}
-            {job.matchReasons.length > 0 && (
-              <div>
-                <h4 className="mb-2 text-sm font-medium text-foreground">Why this score?</h4>
-                <ul className="space-y-1 text-sm text-muted-foreground">
-                  {job.matchReasons.map((reason, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <span className="text-muted-foreground">•</span>
-                      {reason}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* Matched Skills */}
-            {job.matchedSkills.length > 0 && (
-              <div>
-                <h4 className="mb-2 flex items-center gap-1 text-sm font-medium text-emerald-400">
-                  <Check className="h-4 w-4" />
-                  Matched Skills
-                </h4>
-                <div className="flex flex-wrap gap-1">
-                  {job.matchedSkills.map((skill, i) => (
-                    <Badge
-                      key={i}
-                      variant="outline"
-                      className="border-emerald-500/30 text-emerald-400"
-                    >
-                      {skill}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Missing Skills */}
-            {job.missingSkills.length > 0 && (
-              <div>
-                <h4 className="mb-2 flex items-center gap-1 text-sm font-medium text-orange-400">
-                  <AlertCircle className="h-4 w-4" />
-                  Skills to Develop
-                </h4>
-                <div className="flex flex-wrap gap-1">
-                  {job.missingSkills.map((skill, i) => (
-                    <Badge
-                      key={i}
-                      variant="outline"
-                      className="border-orange-500/30 text-orange-400"
-                    >
-                      {skill}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Recommendations */}
-            {job.recommendations.length > 0 && (
-              <div>
-                <h4 className="mb-2 flex items-center gap-1 text-sm font-medium text-blue-400">
-                  <Lightbulb className="h-4 w-4" />
-                  Recommendations
-                </h4>
-                <ul className="space-y-1 text-sm text-muted-foreground">
-                  {job.recommendations.map((rec, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <span className="text-muted-foreground">•</span>
-                      {rec}
-                    </li>
-                  ))}
-                </ul>
-              </div>
+            {job.matchLegacy ? (
+              <LegacyMatchAlert />
+            ) : (
+                  <MatchBreakdown
+                    breakdown={job.matchBreakdown}
+                    stale={job.matchStale}
+                    summary={job.matchSummary}
+                    reasoning={job.matchReasoning}
+                    matchedSkills={job.matchedSkills}
+                  />
             )}
           </div>
         </div>

@@ -21,10 +21,6 @@ function createProps() {
     onFilterCityChange: vi.fn(),
     filterTitleKeywords: [],
     onFilterTitleKeywordsChange: vi.fn(),
-    onSave: vi.fn(),
-    isSaving: false,
-    hasUnsavedChanges: false,
-    settingsSaved: false,
   };
 }
 
@@ -60,19 +56,12 @@ describe("ScraperSettings", () => {
     expect(props.onMaxParallelScrapesChange.mock.calls).toEqual([[1], [10]]);
   });
 
-  it("only enables saving when local settings have changed", () => {
-    const props = createProps();
-    const { rerender } = render(<ScraperSettings {...props} />);
+  it("uses compact copy and has no save control", () => {
+    render(<ScraperSettings {...createProps()} />);
 
-    expect(
-      (screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled
-    ).toBe(true);
-
-    rerender(<ScraperSettings {...props} hasUnsavedChanges />);
-    const saveButton = screen.getByRole("button", { name: "Save" });
-    expect((saveButton as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(saveButton);
-    expect(props.onSave).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("1–10 concurrent scrapes.")).toBeTruthy();
+    expect(screen.getByText("Logs expire; jobs stay.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /save/i })).toBeNull();
   });
 
   it("explains and toggles macOS idle-sleep prevention", () => {
@@ -80,9 +69,7 @@ describe("ScraperSettings", () => {
     render(<ScraperSettings {...props} />);
 
     expect(screen.getByText("macOS")).toBeTruthy();
-    expect(
-      screen.getByText(/The display and screensaver can still turn on/)
-    ).toBeTruthy();
+    expect(screen.getByText("Only while scrape work is active.")).toBeTruthy();
 
     fireEvent.click(
       screen.getByRole("switch", { name: "Keep Mac awake while scraping" })

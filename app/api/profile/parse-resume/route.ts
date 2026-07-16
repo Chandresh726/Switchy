@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { desc, eq } from "drizzle-orm";
-import { extractText } from "unpdf";
-
 import { assertAppRequest } from "@/lib/api";
-import { parseResume } from "@/lib/ai/resume-parser";
+import { persistResumeVersion } from "@/lib/ai/resume/repository";
+import { extractResumeText } from "@/lib/ai/resume/text-extraction";
+import { parseResumeWithProvenance } from "@/lib/ai/resume-parser";
+import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { MAX_RESUME_FILE_SIZE, MAX_RESUME_TEXT_LENGTH } from "@/lib/constants";
-import { deleteFile, saveFile } from "@/lib/storage/files";
 import { db } from "@/lib/db";
-import { profile, resumes } from "@/lib/db/schema";
+import { profile } from "@/lib/db/schema";
+import { deleteFile, saveFile } from "@/lib/storage/files";
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,30 +41,11 @@ export async function POST(request: NextRequest) {
     let resumeText = "";
 
     if (shouldAutofill) {
-      if (fileName.endsWith(".pdf")) {
-        // Parse PDF using unpdf
-        const arrayBuffer = await file.arrayBuffer();
-        const result = await extractText(arrayBuffer);
-        // unpdf returns { text: string, totalPages: number } or { text: string[] }
-        if (Array.isArray(result.text)) {
-          resumeText = result.text.join("\n\n");
-        } else {
-          resumeText = String(result.text || "");
-        }
-      } else if (fileName.endsWith(".docx")) {
-        // Parse DOCX
-        const arrayBuffer = await file.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-
-        const mammoth = await import("mammoth");
-        const result = await mammoth.extractRawText({ buffer });
-        resumeText = result.value;
-      } else if (fileName.endsWith(".txt") || fileName.endsWith(".md")) {
-        // Plain text
-        resumeText = await file.text();
-      } else {
+      try {
+        resumeText = (await extractResumeText(file)).text;
+      } catch {
         return NextResponse.json(
-          { error: "Autofill supports PDF, DOCX, TXT, or MD files." },
+          { error: "Could not extract resume text." },
           { status: 400 }
         );
       }
@@ -84,7 +65,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const parsedData = shouldAutofill ? await parseResume(resumeText) : null;
+    const parseResult = shouldAutofill
+      ? await parseResumeWithProvenance(resumeText, { signal: request.signal })
+      : null;
+    const parsedData = parseResult?.parsedData ?? null;
 
     // Save file to disk after validation so rejected files are not stored.
     const savedFile = await saveFile(file, "resumes");
@@ -102,44 +86,16 @@ export async function POST(request: NextRequest) {
       currentProfile = newProfile;
     }
 
-    // Atomically determine version, clear isCurrent, and insert new resume
     let resumeRecord;
     try {
-      resumeRecord = db.transaction((tx) => {
-        // Determine version number using core query API
-        const lastResume = tx
-          .select({ version: resumes.version })
-          .from(resumes)
-          .where(eq(resumes.profileId, currentProfile.id))
-          .orderBy(desc(resumes.version))
-          .get();
-
-        const nextVersion = (lastResume?.version || 0) + 1;
-
-        // Mark all previous resumes as not current
-        if (nextVersion > 1) {
-          tx
-            .update(resumes)
-            .set({ isCurrent: false })
-            .where(eq(resumes.profileId, currentProfile.id))
-            .run();
-        }
-
-        // Save resume record
-        const record = tx
-          .insert(resumes)
-          .values({
-            profileId: currentProfile.id,
-            fileName: file.name,
-            filePath: savedFile.path,
-            parsedData: JSON.stringify(parsedData),
-            version: nextVersion,
-            isCurrent: true,
-          })
-          .returning()
-          .get();
-
-        return record;
+      resumeRecord = persistResumeVersion(db, {
+        profileId: currentProfile.id,
+        fileName: file.name,
+        filePath: savedFile.path,
+        parsedData,
+        aiRunId: parseResult?.aiRunId ?? null,
+        parserVersion: parseResult?.parserVersion ?? null,
+        warnings: parseResult?.warnings ?? [],
       });
     } catch (error) {
       await deleteFile(savedFile.path);
@@ -148,12 +104,16 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       parsedData,
-      resumeRecord
+      resumeRecord,
+      aiRunId: parseResult?.aiRunId ?? null,
+      parserVersion: parseResult?.parserVersion ?? null,
+      warnings: parseResult?.warnings ?? [],
     });
   } catch (error) {
-    console.error("Failed to parse resume:", error);
+    const sanitized = sanitizeAIError(error);
+    console.error(`Failed to parse resume: [${sanitized.code}] ${sanitized.message}`);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to parse resume" },
+      { error: sanitized.message, code: sanitized.code },
       { status: 500 }
     );
   }

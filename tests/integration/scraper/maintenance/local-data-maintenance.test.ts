@@ -2,14 +2,18 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  aiWorkItems,
   companies,
   jobs,
+  matchResults,
   matchSessions,
   scrapeMatchOutbox,
   scrapeQueueItems,
   scrapeSessions,
   scrapingLogs,
 } from "@/lib/db/schema";
+import { DEFAULT_SQLITE_PARAMETER_CHUNK_SIZE } from "@/lib/db/sqlite-utils";
+import { createAIWorkRecords } from "@/lib/ai/work-items/contracts";
 import { ScrapeWorkHandler } from "@/lib/scraper/application/scrape-work-handler";
 import type { ScrapeCompanyPipeline } from "@/lib/scraper/application/scrape-company-pipeline";
 import type { ScrapeSessionProjector } from "@/lib/scraper/application/scrape-session-projector";
@@ -190,7 +194,6 @@ describe("LocalDataMaintenanceService", () => {
       workerId: "match-worker",
       leaseExpiresAt: new Date(Date.now() + 60_000),
     }).run();
-
     const deleted = await new LocalDataMaintenanceService(
       database
     ).deleteCompanyJobs([target.id]);
@@ -302,6 +305,7 @@ describe("LocalDataMaintenanceService", () => {
   it("clears match data and all session history in one transaction", async () => {
     const database = createTestDatabase();
     const company = seedCompany(database, "MatchData");
+    const contentUpdatedAt = new Date("2026-01-15T00:00:00.000Z");
     const matchedJob = database
       .insert(jobs)
       .values({
@@ -314,9 +318,23 @@ describe("LocalDataMaintenanceService", () => {
         matchedSkills: '["typescript"]',
         missingSkills: "[]",
         recommendations: '["apply"]',
+        updatedAt: contentUpdatedAt,
       })
       .returning({ id: jobs.id })
       .get();
+    database.insert(matchResults).values({
+      id: "match-result-1",
+      jobId: matchedJob.id,
+      candidateFingerprint: "a".repeat(64),
+      jobFingerprint: "b".repeat(64),
+      scoringPolicyVersion: "legacy-import-v1",
+      score: 94,
+      breakdownJson: '{"legacy":94}',
+      evidenceJson: '{"reasons":["fit"],"matchedSkills":["typescript"],"missingSkills":[],"recommendations":["apply"],"componentEvidence":{}}',
+      confidence: 0,
+      source: "legacy",
+      isStale: true,
+    }).run();
     database.insert(scrapeSessions).values({
       id: "scrape-session",
       triggerSource: "manual",
@@ -389,12 +407,14 @@ describe("LocalDataMaintenanceService", () => {
     expect(jobsCleared).toBe(1);
     expect(database.select().from(matchSessions).all()).toHaveLength(0);
     expect(database.select().from(scrapeMatchOutbox).all()).toHaveLength(0);
+    expect(database.select().from(matchResults).all()).toHaveLength(0);
     expect(database.select().from(jobs).get()).toMatchObject({
-      matchScore: null,
-      matchReasons: null,
-      matchedSkills: null,
-      missingSkills: null,
-      recommendations: null,
+      matchScore: 94,
+      matchReasons: '["fit"]',
+      matchedSkills: '["typescript"]',
+      missingSkills: "[]",
+      recommendations: '["apply"]',
+      updatedAt: contentUpdatedAt,
     });
     expect(database.select().from(scrapingLogs).get()).toMatchObject({
       matcherStatus: null,
@@ -405,7 +425,8 @@ describe("LocalDataMaintenanceService", () => {
 
   it("deletes large company selections in bounded SQLite batches", async () => {
     const database = createTestDatabase();
-    const companyValues = Array.from({ length: 405 }, (_, index) => ({
+    const companyCount = DEFAULT_SQLITE_PARAMETER_CHUNK_SIZE + 5;
+    const companyValues = Array.from({ length: companyCount }, (_, index) => ({
       name: `Company ${index}`,
       careersUrl: `https://example.com/company-${index}`,
     }));
@@ -417,12 +438,35 @@ describe("LocalDataMaintenanceService", () => {
       .from(companies)
       .all()
       .map((company) => company.id);
+    const lastCompanyId = companyIds.at(-1);
+    if (lastCompanyId === undefined) throw new Error("Expected seeded companies");
+    const targetJob = database
+      .insert(jobs)
+      .values({
+        companyId: lastCompanyId,
+        externalId: "large-selection-role",
+        title: "Large selection role",
+        url: "https://example.com/large-selection-role",
+      })
+      .returning({ id: jobs.id })
+      .get();
+    const records = createAIWorkRecords({
+      id: "large-selection-match",
+      jobIds: [targetJob.id],
+      triggerSource: "company_refresh",
+      companyId: lastCompanyId,
+      now: new Date(),
+    });
+    database.insert(matchSessions).values(records.session).run();
+    database.insert(aiWorkItems).values(records.workItem).run();
 
     const result = await new LocalDataMaintenanceService(
       database
     ).deleteCompanies(companyIds);
 
-    expect(result).toEqual({ deletedCompanies: 405, deletedJobs: 0 });
+    expect(result).toEqual({ deletedCompanies: companyCount, deletedJobs: 1 });
     expect(database.select().from(companies).all()).toHaveLength(0);
+    expect(database.select().from(matchSessions).all()).toHaveLength(0);
+    expect(database.select().from(aiWorkItems).all()).toHaveLength(0);
   });
 });

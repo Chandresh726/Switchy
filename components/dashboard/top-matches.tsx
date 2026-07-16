@@ -13,6 +13,7 @@ interface Job {
   location: string | null;
   locationType: string | null;
   matchScore: number | null;
+  matchLegacy?: boolean;
   discoveredAt: string;
   company: {
     id: number;
@@ -25,10 +26,10 @@ export function TopMatches() {
   const { data, isLoading } = useQuery({
     queryKey: ["jobs", "top-matches"],
     queryFn: async () => {
-      // Fetch top 5 unviewed jobs with highest match scores
-      const res = await fetch("/api/jobs?status=new&sortBy=matchScore&sortOrder=desc&limit=5");
+      // Fetch the five unviewed jobs with the highest compatibility scores.
+      const res = await fetch("/api/jobs?matchBands=high,good&status=new&sortBy=matchScore&sortOrder=desc&limit=5");
       if (!res.ok) throw new Error("Failed to fetch jobs");
-      return res.json();
+      return res.json() as Promise<{ jobs: Job[] }>;
     },
   });
 
@@ -51,7 +52,7 @@ export function TopMatches() {
     return (
       <div className="rounded-lg border border-dashed border-border p-8 text-center">
         <p className="text-sm text-muted-foreground">
-          No new jobs with match scores yet. Add companies and refresh to see your top matches.
+          No new jobs with compatibility results yet. Add companies and refresh to see your top matches.
         </p>
       </div>
     );
@@ -99,7 +100,7 @@ export function TopMatches() {
 
       {jobs.length === 5 && (
         <Link
-          href="/jobs?status=new&sortBy=matchScore"
+          href="/jobs?matchBands=high,good&status=new&sortBy=matchScore"
           className="block text-center text-sm text-muted-foreground hover:text-foreground/80"
         >
           View all jobs

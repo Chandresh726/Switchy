@@ -18,7 +18,7 @@ flowchart LR
   HTTP --> P
   Browser --> P
   P --> L[Scrape log]
-  P --> M[Durable match outbox]
+  P --> M[Durable AI match work]
 ```
 
 Manual and scheduled requests use the same in-process supervisor. Each company is represented by a durable queue item with an attempt count, retry time, cancellation flag, worker lease, and serialized result. A process restart recovers expired leases and continues unfinished work.
@@ -31,11 +31,11 @@ Identical company batches are coalesced while they are in flight even when manua
 
 - `application/` owns the one-company pipeline, work handler, session projection, and retention policy.
 - `runtime/` owns transport-independent leased work, heartbeats, bounded retry, single-flight dispatch, shared/exclusive resource coordination, and keyed company locks. Scraping and matching use the same runtime.
-- `queue/`, `matching/`, `history.ts`, and `maintenance.ts` adapt the narrow persistence ports to the existing SQLite schema.
+- `queue/`, `history.ts`, and `maintenance.ts` adapt scraper persistence ports to the existing SQLite schema. `lib/ai/work-items/` owns durable matching work.
 - `platforms/` owns extraction only. Shared listing selection preserves platform object identity while applying early filters and existing-ID exclusion; detail hydration is bounded and cancellation-aware.
 - `settings/` is the typed source for scraper concurrency, filters, and retention defaults.
 
-The durable match handoff is created in the same transaction as committed scrape results. Its handler reports all claim, progress, retry, completion, cancellation, and recovery transitions through `MatchWorkStore`; manual matching keeps its separate session lifecycle.
+The durable match handoff is created in the same transaction as committed scrape results. Post-scrape, manual, company, and unmatched matching all create `aiWorkItems` and use the same durable match-session lifecycle. The local worker reports claim, progress, retry, completion, cancellation, and recovery transitions through the shared leased-work runtime.
 
 ## Extraction strategy
 

@@ -1,15 +1,46 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, isNull, or, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+import {
+  getCurrentMatchContext,
+  getMatchPresentations,
+} from "@/lib/ai/matcher/presentation";
+import { countPromotedMatchRows } from "@/lib/ai/matcher/promotion";
 import { handleApiError } from "@/lib/api";
 import { isCompanyScrapeSupported } from "@/lib/companies/scrape-support";
 import { db } from "@/lib/db";
-import { companies, jobs, people, matchSessions, scrapingLogs } from "@/lib/db/schema";
+import {
+  companies,
+  jobs,
+  matchResults,
+  matchSessions,
+  people,
+  scrapingLogs,
+} from "@/lib/db/schema";
 
 const ParamsSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
+
+const COMPANY_JOB_SELECTION = {
+  id: jobs.id,
+  title: jobs.title,
+  description: jobs.description,
+  url: jobs.url,
+  status: jobs.status,
+  location: jobs.location,
+  locationType: jobs.locationType,
+  seniorityLevel: jobs.seniorityLevel,
+  department: jobs.department,
+  employmentType: jobs.employmentType,
+  salary: jobs.salary,
+  matchScore: jobs.matchScore,
+  matchReasons: jobs.matchReasons,
+  matchedSkills: jobs.matchedSkills,
+  discoveredAt: jobs.discoveredAt,
+  viewedAt: jobs.viewedAt,
+} as const;
 
 export async function GET(
   _request: NextRequest,
@@ -27,6 +58,57 @@ export async function GET(
       return NextResponse.json({ error: "Company not found" }, { status: 404 });
     }
 
+    const currentContext = await getCurrentMatchContext();
+    const currentResultJoin = currentContext
+      ? and(
+          eq(matchResults.jobId, jobs.id),
+          eq(matchResults.candidateFingerprint, currentContext.candidateFingerprint),
+          eq(matchResults.isStale, false)
+        )
+      : null;
+    const jobStatsPromise = db.select({
+      openJobs: count(),
+    }).from(jobs).where(eq(jobs.companyId, parsedParams.id));
+    const promotionRowsPromise = currentContext
+      ? db
+          .select({
+            score: matchResults.score,
+            legacyScore: jobs.matchScore,
+          })
+          .from(jobs)
+          .leftJoin(matchResults, currentResultJoin!)
+          .where(eq(jobs.companyId, parsedParams.id))
+      : db
+          .select({
+            score: sql<number | null>`null`,
+            legacyScore: jobs.matchScore,
+          })
+          .from(jobs)
+          .where(eq(jobs.companyId, parsedParams.id));
+    const topMatchJobsPromise = currentContext
+      ? db
+          .select(COMPANY_JOB_SELECTION)
+          .from(jobs)
+          .leftJoin(matchResults, currentResultJoin!)
+          .where(and(
+            eq(jobs.companyId, parsedParams.id),
+            or(
+              gte(matchResults.score, 70),
+              and(isNull(matchResults.id), gte(jobs.matchScore, 70))
+            )
+          ))
+          .orderBy(
+            desc(sql<number | null>`coalesce(${matchResults.score}, ${jobs.matchScore})`),
+            desc(jobs.discoveredAt)
+          )
+          .limit(3)
+      : db
+          .select(COMPANY_JOB_SELECTION)
+          .from(jobs)
+          .where(and(eq(jobs.companyId, parsedParams.id), gte(jobs.matchScore, 70)))
+          .orderBy(desc(jobs.matchScore), desc(jobs.discoveredAt))
+          .limit(3);
+
     const [
       jobStatsResult,
       peopleStatsResult,
@@ -34,14 +116,10 @@ export async function GET(
       companyPeople,
       recentScrapeLogs,
       recentMatchSessions,
+      promotionRows,
+      topMatchJobs,
     ] = await Promise.all([
-      db
-        .select({
-          openJobs: sql<number>`count(*)`,
-          highMatchJobs: sql<number>`sum(case when ${jobs.matchScore} >= 75 then 1 else 0 end)`,
-        })
-        .from(jobs)
-        .where(eq(jobs.companyId, parsedParams.id)),
+      jobStatsPromise,
       db
         .select({
           mappedPeople: sql<number>`count(*)`,
@@ -55,17 +133,7 @@ export async function GET(
           )
         ),
       db
-        .select({
-          id: jobs.id,
-          title: jobs.title,
-          url: jobs.url,
-          status: jobs.status,
-          matchScore: jobs.matchScore,
-          location: jobs.location,
-          locationType: jobs.locationType,
-          discoveredAt: jobs.discoveredAt,
-          viewedAt: jobs.viewedAt,
-        })
+        .select(COMPANY_JOB_SELECTION)
         .from(jobs)
         .where(eq(jobs.companyId, parsedParams.id))
         .orderBy(desc(jobs.discoveredAt))
@@ -123,11 +191,36 @@ export async function GET(
         .where(eq(matchSessions.companyId, parsedParams.id))
         .orderBy(desc(matchSessions.startedAt))
         .limit(20),
+      promotionRowsPromise,
+      topMatchJobsPromise,
     ]);
 
     const jobStats = jobStatsResult[0];
     const peopleStats = peopleStatsResult[0];
     const canScrapeJobs = isCompanyScrapeSupported(company.careersUrl, company.platform);
+    const [visiblePresentations, topMatchPresentations] = await Promise.all([
+      getMatchPresentations(companyJobs, currentContext),
+      getMatchPresentations(topMatchJobs, currentContext, { includeStale: false }),
+    ]);
+    const presentedCompanyJobs = companyJobs.map((job) => {
+      const presentation = visiblePresentations.get(job.id);
+      if (!presentation) throw new Error(`Missing match presentation for job ${job.id}`);
+      return {
+        ...job,
+        description: undefined,
+        ...presentation,
+      };
+    });
+    const presentedTopMatches = topMatchJobs.map((job) => {
+      const presentation = topMatchPresentations.get(job.id);
+      if (!presentation) throw new Error(`Missing match presentation for job ${job.id}`);
+      return {
+        ...job,
+        description: undefined,
+        ...presentation,
+      };
+    });
+    const highMatchJobs = countPromotedMatchRows(promotionRows);
 
     return NextResponse.json({
       company: {
@@ -135,12 +228,13 @@ export async function GET(
         canScrapeJobs,
       },
       stats: {
-        openJobs: jobStats?.openJobs || 0,
-        highMatchJobs: jobStats?.highMatchJobs || 0,
+        openJobs: jobStats?.openJobs ?? 0,
+        highMatchJobs,
         mappedPeople: peopleStats?.mappedPeople || 0,
         starredPeople: peopleStats?.starredPeople || 0,
       },
-      jobs: companyJobs,
+      jobs: presentedCompanyJobs,
+      topMatches: presentedTopMatches,
       people: companyPeople,
       activity: {
         scrapeLogs: recentScrapeLogs,

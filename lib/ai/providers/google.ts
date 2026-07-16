@@ -11,24 +11,6 @@ export class GoogleProvider extends BaseProvider {
   readonly name = "Google Gemini";
   readonly requiresApiKey = true;
 
-  /**
-   * Gemini 3.x models support reasoning effort
-   */
-  supportsReasoningEffort(modelId: string): boolean {
-    return modelId.includes("gemini-3-");
-  }
-
-  /**
-   * Google supports reasoning effort via providerOptions
-   */
-  getGenerationOptions(
-    config: ModelConfig,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _providerConfig: ProviderConfig
-  ): Record<string, unknown> | undefined {
-    return this.buildProviderReasoningOptions("google", config);
-  }
-
   protected createLanguageModel(
     config: ModelConfig,
     _providerConfig: ProviderConfig

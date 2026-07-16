@@ -5,9 +5,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   assertAppRequest: vi.fn(),
   handleApiError: vi.fn(),
-  matchBulk: vi.fn(),
-  matchSingle: vi.fn(),
-  matchWithTracking: vi.fn(),
+  fetchCompanyJobIds: vi.fn(),
+  completeEmptyMatchSession: vi.fn(),
+  queueMatchWork: vi.fn(),
   select: vi.fn(),
 }));
 
@@ -16,20 +16,13 @@ vi.mock("@/lib/api", () => ({
   handleApiError: mocks.handleApiError,
   ValidationError: class ValidationError extends Error {},
 }));
-
-vi.mock("@/lib/api/ai-error-handler", () => ({
-  handleAIAPIError: vi.fn(),
+vi.mock("@/lib/api/ai-error-handler", () => ({ handleAIAPIError: vi.fn() }));
+vi.mock("@/lib/ai/work-items", () => ({
+  completeEmptyMatchSession: mocks.completeEmptyMatchSession,
+  fetchCompanyJobIds: mocks.fetchCompanyJobIds,
+  queueMatchWork: mocks.queueMatchWork,
 }));
-
-vi.mock("@/lib/ai/matcher", () => ({
-  matchBulk: mocks.matchBulk,
-  matchSingle: mocks.matchSingle,
-  matchWithTracking: mocks.matchWithTracking,
-}));
-
-vi.mock("@/lib/db", () => ({
-  db: { select: mocks.select },
-}));
+vi.mock("@/lib/db", () => ({ db: { select: mocks.select } }));
 
 import { POST as postCompanyMatch } from "@/app/api/companies/[id]/match/route";
 import { POST as postCompaniesMatch } from "@/app/api/companies/match/route";
@@ -45,74 +38,122 @@ function createRequest(path: string, body: Record<string, unknown>): NextRequest
 
 function queueSelectResult(rows: unknown[]): void {
   mocks.select.mockReturnValueOnce({
-    from: () => ({ where: () => Promise.resolve(rows) }),
+    from: () => ({
+      where: () => {
+        const promise = Promise.resolve(rows);
+        return {
+          limit: () => Promise.resolve(rows),
+          then: promise.then.bind(promise),
+        };
+      },
+    }),
   });
 }
 
-describe("synchronous match routes", () => {
+describe("durable match routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.matchWithTracking.mockResolvedValue({
+    mocks.fetchCompanyJobIds.mockResolvedValue([11]);
+    mocks.queueMatchWork.mockReturnValue({
       sessionId: "session-1",
+      status: "queued",
       total: 1,
-      succeeded: 1,
-      failed: 0,
+    });
+    mocks.completeEmptyMatchSession.mockReturnValue({
+      sessionId: "empty-session",
+      status: "completed",
+      total: 0,
     });
   });
 
-  it("forwards bulk-company request cancellation to tracked matching", async () => {
-    queueSelectResult([{ id: 11, companyId: 1 }]);
-    const request = createRequest("/api/companies/match", {
+  it("queues bulk-company matching and returns 202 without request-lifetime execution", async () => {
+    const response = await postCompaniesMatch(createRequest("/api/companies/match", {
       companyIds: [1],
-    });
+    }));
 
-    const response = await postCompaniesMatch(request);
-
-    expect(response.status).toBe(200);
-    expect(mocks.matchWithTracking).toHaveBeenCalledWith([11], {
+    expect(response.status).toBe(202);
+    expect(mocks.fetchCompanyJobIds).toHaveBeenCalledWith([1]);
+    expect(mocks.queueMatchWork).toHaveBeenCalledWith({
+      jobIds: [11],
       triggerSource: "manual",
-      signal: request.signal,
+    });
+    await expect(response.json()).resolves.toEqual({
+      sessionId: "session-1",
+      status: "queued",
+      total: 1,
     });
   });
 
-  it("forwards single-company request cancellation to tracked matching", async () => {
-    queueSelectResult([{ id: 1, name: "Acme" }]);
+  it("queues single-company matching with company provenance", async () => {
+    queueSelectResult([{ id: 1 }]);
     queueSelectResult([{ id: 11 }]);
-    const request = createRequest("/api/companies/1/match", {});
+    const response = await postCompanyMatch(
+      createRequest("/api/companies/1/match", {}),
+      { params: Promise.resolve({ id: "1" }) }
+    );
 
-    const response = await postCompanyMatch(request, {
-      params: Promise.resolve({ id: "1" }),
-    });
-
-    expect(response.status).toBe(200);
-    expect(mocks.matchWithTracking).toHaveBeenCalledWith([11], {
+    expect(response.status).toBe(202);
+    expect(mocks.queueMatchWork).toHaveBeenCalledWith({
+      jobIds: [11],
       triggerSource: "company_refresh",
       companyId: 1,
-      signal: request.signal,
     });
   });
 
-  it("forwards direct single-match request cancellation", async () => {
-    mocks.matchSingle.mockResolvedValue({ score: 90 });
-    const request = createRequest("/api/match", { jobId: 11 });
+  it("creates a pollable completed session for a bulk-company no-op", async () => {
+    mocks.fetchCompanyJobIds.mockResolvedValue([]);
 
-    const response = await postDirectMatch(request);
+    const response = await postCompaniesMatch(createRequest("/api/companies/match", {
+      companyIds: [1],
+    }));
 
-    expect(response.status).toBe(200);
-    expect(mocks.matchSingle).toHaveBeenCalledWith(11, request.signal);
+    expect(response.status).toBe(202);
+    expect(mocks.completeEmptyMatchSession).toHaveBeenCalledWith({
+      triggerSource: "manual",
+    });
+    await expect(response.json()).resolves.toEqual({
+      sessionId: "empty-session",
+      status: "completed",
+      total: 0,
+    });
   });
 
-  it("forwards direct bulk-match request cancellation", async () => {
-    mocks.matchBulk.mockResolvedValue(new Map());
-    const request = createRequest("/api/match", { jobIds: [11, 22] });
+  it("creates a pollable completed session for a single-company no-op", async () => {
+    queueSelectResult([{ id: 1 }]);
+    queueSelectResult([]);
 
-    const response = await postDirectMatch(request);
-
-    expect(response.status).toBe(200);
-    expect(mocks.matchBulk).toHaveBeenCalledWith(
-      [11, 22],
-      undefined,
-      request.signal
+    const response = await postCompanyMatch(
+      createRequest("/api/companies/1/match", {}),
+      { params: Promise.resolve({ id: "1" }) }
     );
+
+    expect(response.status).toBe(202);
+    expect(mocks.completeEmptyMatchSession).toHaveBeenCalledWith({
+      triggerSource: "company_refresh",
+      companyId: 1,
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      sessionId: "empty-session",
+      status: "completed",
+      total: 0,
+    });
+  });
+
+  it("queues a direct single job", async () => {
+    const response = await postDirectMatch(createRequest("/api/match", { jobId: 11 }));
+    expect(response.status).toBe(202);
+    expect(mocks.queueMatchWork).toHaveBeenCalledWith({
+      jobIds: [11],
+      triggerSource: "manual",
+    });
+  });
+
+  it("queues a direct job batch as one durable session", async () => {
+    const response = await postDirectMatch(createRequest("/api/match", { jobIds: [11, 22] }));
+    expect(response.status).toBe(202);
+    expect(mocks.queueMatchWork).toHaveBeenCalledWith({
+      jobIds: [11, 22],
+      triggerSource: "manual",
+    });
   });
 });

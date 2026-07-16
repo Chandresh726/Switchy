@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
 import {
+  aiWorkItems,
   companies,
   matchSessions,
   scrapeMatchOutbox,
@@ -327,13 +328,19 @@ export function deleteScrapeHistory(
       );
       if (sessionIds.length === 0) continue;
 
-      const matchSessionIds = tx
+      const matchSessionIds = Array.from(new Set([...tx
         .select({ id: scrapeMatchOutbox.id })
         .from(scrapeMatchOutbox)
         .innerJoin(scrapingLogs, eq(scrapeMatchOutbox.scrapingLogId, scrapingLogs.id))
         .where(inArray(scrapingLogs.sessionId, sessionIds))
         .all()
-        .map((row) => row.id);
+        .map((row) => row.id), ...tx
+        .select({ id: aiWorkItems.matchSessionId })
+        .from(aiWorkItems)
+        .innerJoin(scrapingLogs, eq(aiWorkItems.scrapingLogId, scrapingLogs.id))
+        .where(inArray(scrapingLogs.sessionId, sessionIds))
+        .all()
+        .flatMap((row) => row.id ? [row.id] : [])]));
       for (const matchBatch of chunkSqliteParameters(
         matchSessionIds,
         HISTORY_DELETE_BATCH_SIZE
@@ -399,7 +406,7 @@ export function pruneScrapeHistory(
           .map((item) => item.sessionId)
       );
       const matchingSessionIds = new Set(
-        tx
+        [...tx
           .selectDistinct({ sessionId: scrapingLogs.sessionId })
           .from(scrapeMatchOutbox)
           .innerJoin(scrapingLogs, eq(scrapingLogs.id, scrapeMatchOutbox.scrapingLogId))
@@ -410,7 +417,16 @@ export function pruneScrapeHistory(
             )
           )
           .all()
-          .flatMap((item) => (item.sessionId ? [item.sessionId] : []))
+          .flatMap((item) => (item.sessionId ? [item.sessionId] : [])), ...tx
+          .selectDistinct({ sessionId: scrapingLogs.sessionId })
+          .from(aiWorkItems)
+          .innerJoin(scrapingLogs, eq(scrapingLogs.id, aiWorkItems.scrapingLogId))
+          .where(and(
+            inArray(scrapingLogs.sessionId, candidateBatch),
+            inArray(aiWorkItems.status, ["queued", "running"])
+          ))
+          .all()
+          .flatMap((item) => (item.sessionId ? [item.sessionId] : []))]
       );
       const sessionIds = candidateBatch.filter(
         (sessionId) =>
@@ -418,13 +434,19 @@ export function pruneScrapeHistory(
       );
       if (sessionIds.length === 0) continue;
 
-      const matchSessionIds = tx
+      const matchSessionIds = Array.from(new Set([...tx
         .select({ id: scrapeMatchOutbox.id })
         .from(scrapeMatchOutbox)
         .innerJoin(scrapingLogs, eq(scrapeMatchOutbox.scrapingLogId, scrapingLogs.id))
         .where(inArray(scrapingLogs.sessionId, sessionIds))
         .all()
-        .map((row) => row.id);
+        .map((row) => row.id), ...tx
+        .select({ id: aiWorkItems.matchSessionId })
+        .from(aiWorkItems)
+        .innerJoin(scrapingLogs, eq(aiWorkItems.scrapingLogId, scrapingLogs.id))
+        .where(inArray(scrapingLogs.sessionId, sessionIds))
+        .all()
+        .flatMap((row) => row.id ? [row.id] : [])]));
       for (const matchBatch of chunkSqliteParameters(
         matchSessionIds,
         HISTORY_DELETE_BATCH_SIZE

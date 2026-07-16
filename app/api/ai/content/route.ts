@@ -39,9 +39,14 @@ export async function POST(request: NextRequest) {
       jobId: body.jobId,
       type: body.type,
       userPrompt: body.userPrompt,
+      parentVariantId: body.parentVariantId,
+      signal: request.signal,
     });
 
-    return NextResponse.json({ content });
+    return NextResponse.json({
+      content,
+      runId: content.history.at(-1)?.aiRunId ?? null,
+    });
   } catch (error) {
     return handleAIAPIError(error, "Failed to generate content", "ai_content_generate_failed");
   }

@@ -12,30 +12,6 @@ export class OpenRouterProvider extends BaseProvider {
   readonly name = "OpenRouter";
   readonly requiresApiKey = true;
 
-  /**
-   * Models that support reasoning effort through OpenRouter
-   */
-  supportsReasoningEffort(modelId: string): boolean {
-    const reasoningModels = [
-      "gpt-oss-120b",
-      "gemini-3-",
-      "gpt-5.2",
-      "gpt-5-mini",
-    ];
-    return reasoningModels.some((model) => modelId.includes(model));
-  }
-
-  /**
-   * OpenRouter supports reasoning effort for specific models
-   */
-  getGenerationOptions(
-    config: ModelConfig,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _providerConfig: ProviderConfig
-  ): Record<string, unknown> | undefined {
-    return this.buildProviderReasoningOptions("openrouter", config);
-  }
-
   protected createLanguageModel(
     config: ModelConfig,
     _providerConfig: ProviderConfig
@@ -44,7 +20,12 @@ export class OpenRouterProvider extends BaseProvider {
       apiKey: _providerConfig.apiKey,
     });
 
-    return openrouter.chat(config.modelId);
+    return openrouter.chat(
+      config.modelId,
+      config.reasoningEffort
+        ? { extraBody: { reasoning: { effort: config.reasoningEffort } } }
+        : undefined
+    );
   }
 }
 

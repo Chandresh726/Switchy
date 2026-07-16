@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { AIUsageOverview } from "@/components/history/ai-usage-overview";
 import type { AIContentType } from "@/lib/ai/contracts";
 import { getContentTypeLabel, getWorkspacePathWithVariant } from "@/lib/ai/writing/workspace/routes";
 import type { ContentResponse } from "@/lib/ai/writing/types";
@@ -93,6 +94,7 @@ interface AIHistoryCardProps {
 function AIHistoryCard({ content, isDeleting, onClick, onDelete }: AIHistoryCardProps) {
   const typeConfig = getTypeConfig(content.type);
   const TypeIcon = typeConfig.icon;
+  const latestRun = content.history.findLast((history) => history.aiRun)?.aiRun;
 
   const handleDelete = (event: React.MouseEvent) => {
     event.preventDefault();
@@ -192,6 +194,11 @@ function AIHistoryCard({ content, isDeleting, onClick, onDelete }: AIHistoryCard
         </span>
 
         <div className="flex shrink-0 items-center gap-3">
+          {latestRun ? (
+            <span title={`Run ${latestRun.id}`}>
+              {latestRun.modelId} · {latestRun.attempts} attempt{latestRun.attempts === 1 ? "" : "s"}
+            </span>
+          ) : null}
           <Badge
             variant="outline"
             className={cn(
@@ -279,37 +286,30 @@ export default function AIHistoryPage() {
     router.push(getWorkspacePathWithVariant(content.jobId, content.type, latestVariantId));
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
-      </div>
-    );
-  }
-
-  if (contents.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center px-4 py-16">
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-card">
-          <Wand2 className="h-8 w-8 text-muted-foreground" />
-        </div>
-        <h3 className="mb-1 text-lg font-medium text-foreground">No AI-generated content yet</h3>
-        <p className="mb-6 max-w-md text-center text-sm text-muted-foreground">
-          Generate referral messages, recruiter follow-ups, and cover letters from job pages to see them here
-        </p>
-        <Link href="/jobs">
-          <Button variant="outline" className="border-border hover:bg-muted">
-            <ExternalLink className="mr-2 h-4 w-4" />
-            Browse Jobs
-          </Button>
-        </Link>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-8">
-      {Object.entries(groupedContents).map(([date, items]) => (
+      <AIUsageOverview />
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
+        </div>
+      ) : contents.length === 0 ? (
+        <div className="flex flex-col items-center justify-center px-4 py-16">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-card">
+            <Wand2 className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <h3 className="mb-1 text-lg font-medium text-foreground">No AI-generated content yet</h3>
+          <p className="mb-6 max-w-md text-center text-sm text-muted-foreground">
+            Generate referral messages, recruiter follow-ups, and cover letters from job pages to see them here
+          </p>
+          <Link href="/jobs">
+            <Button variant="outline" className="border-border hover:bg-muted">
+              <ExternalLink className="mr-2 h-4 w-4" />
+              Browse Jobs
+            </Button>
+          </Link>
+        </div>
+      ) : Object.entries(groupedContents).map(([date, items]) => (
         <div key={date}>
           <h3 className="sticky top-0 z-10 mb-3 bg-background py-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
             {date}

@@ -1,0 +1,90 @@
+import { desc, eq, inArray } from "drizzle-orm";
+
+import { db } from "@/lib/db";
+import { aiGeneratedContent, aiGenerationHistory, companies, jobs } from "@/lib/db/schema";
+import {
+  chunkSqliteParameters,
+  loadSqliteParameterChunks,
+} from "@/lib/db/sqlite-utils";
+
+import { getAIRunSummaries } from "./run-summaries";
+
+export async function getWritingHistoryContents(database: typeof db = db) {
+  const contents = await database
+    .select({
+      id: aiGeneratedContent.id,
+      jobId: aiGeneratedContent.jobId,
+      type: aiGeneratedContent.type,
+      content: aiGeneratedContent.content,
+      settingsSnapshot: aiGeneratedContent.settingsSnapshot,
+      createdAt: aiGeneratedContent.createdAt,
+      updatedAt: aiGeneratedContent.updatedAt,
+      jobTitle: jobs.title,
+      companyName: companies.name,
+      companyLogoUrl: companies.logoUrl,
+    })
+    .from(aiGeneratedContent)
+    .innerJoin(jobs, eq(aiGeneratedContent.jobId, jobs.id))
+    .innerJoin(companies, eq(jobs.companyId, companies.id))
+    .orderBy(desc(aiGeneratedContent.updatedAt));
+
+  if (contents.length === 0) return [];
+
+  const allHistory = await loadSqliteParameterChunks(
+    contents.map((content) => content.id),
+    (contentIdChunk) => database.select().from(aiGenerationHistory)
+      .where(inArray(aiGenerationHistory.contentId, contentIdChunk))
+  );
+  allHistory.sort((left, right) => {
+    const byCreatedAt = (left.createdAt?.getTime() ?? 0) - (right.createdAt?.getTime() ?? 0);
+    return byCreatedAt || left.id - right.id;
+  });
+
+  const historyByContentId = new Map<number, typeof allHistory>();
+  for (const history of allHistory) {
+    const existing = historyByContentId.get(history.contentId) ?? [];
+    existing.push(history);
+    historyByContentId.set(history.contentId, existing);
+  }
+  const runSummaries = await getAIRunSummaries(
+    allHistory.flatMap((history) => history.aiRunId ? [history.aiRunId] : []),
+    database
+  );
+
+  return contents.map((content) => ({
+    ...content,
+    history: (historyByContentId.get(content.id) ?? []).map((history) => ({
+      id: history.id,
+      variant: history.variant,
+      userPrompt: history.userPrompt,
+      parentVariantId: history.parentVariantId,
+      aiRunId: history.aiRunId,
+      aiRun: history.aiRunId ? runSummaries.get(history.aiRunId) ?? null : null,
+      source: history.source,
+      selectedAt: history.selectedAt?.toISOString() ?? null,
+      copiedAt: history.copiedAt?.toISOString() ?? null,
+      discardedAt: history.discardedAt?.toISOString() ?? null,
+      editDistance: history.editDistance,
+      editDistanceRatio: history.editDistanceRatio,
+      createdAt: history.createdAt?.toISOString()
+        ?? content.createdAt?.toISOString()
+        ?? content.updatedAt?.toISOString()
+        ?? null,
+    })),
+  }));
+}
+
+export function clearWritingHistory(database: typeof db = db): void {
+  database.transaction((tx) => {
+    const contentIds = tx.select({ id: aiGeneratedContent.id })
+      .from(aiGeneratedContent)
+      .all()
+      .map((content) => content.id);
+    for (const contentIdChunk of chunkSqliteParameters(contentIds)) {
+      tx.delete(aiGenerationHistory)
+        .where(inArray(aiGenerationHistory.contentId, contentIdChunk))
+        .run();
+    }
+    tx.delete(aiGeneratedContent).run();
+  });
+}

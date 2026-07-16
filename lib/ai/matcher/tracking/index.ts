@@ -1,20 +1,19 @@
 export {
   fetchProfileData,
   fetchJobsData,
-  updateJobWithMatchResult,
   persistMatchSuccess,
   getUnmatchedJobCount,
   getUnmatchedJobIds,
-  createMatchSession,
-  updateMatchSession,
-  updateMatchSessionIfActive,
-  logMatchSuccess,
   logMatchFailure,
-  finalizeMatchSession,
   getMatchSessionStatus,
-  getMatchSessionCheckpoint,
 } from "./session";
 
-export type { MatchSessionCheckpoint } from "./session";
-
-export { createProgressTracker, type ProgressTracker } from "./progress";
+export {
+  getMatchPipelineProgress,
+  markJobAnalysisReady,
+  markJobAnalysisStarted,
+  markJobMatchStarted,
+  type MatchPipelinePhaseProgress,
+  type MatchPipelineProgress,
+  type MatchSessionJobProgress,
+} from "./progress";

@@ -10,19 +10,19 @@ export interface ProviderModelsState {
 }
 
 export interface SettingsRecord {
+  job_analysis_model: string;
+  job_analysis_provider_id: string;
+  job_analysis_reasoning_effort: string;
   matcher_model: string;
   matcher_provider_id: string;
   resume_parser_model: string;
   resume_parser_provider_id: string;
   matcher_reasoning_effort: string;
   resume_parser_reasoning_effort: string;
-  matcher_bulk_enabled: string;
-  matcher_serialize_operations: string;
   matcher_batch_size: string;
   matcher_max_retries: string;
   matcher_concurrency_limit: string;
   matcher_timeout_ms: string;
-  matcher_circuit_breaker_threshold: string;
   matcher_auto_match_after_scrape: string;
   scheduler_enabled: string;
   scheduler_cron: string;
@@ -42,6 +42,8 @@ export interface SettingsRecord {
   ai_writing_model?: string;
   ai_writing_provider_id?: string;
   ai_writing_reasoning_effort?: string;
+  codex_cli_executable?: string;
+  opencode_cli_executable?: string;
 }
 
 export interface ProviderSettingsListItem {
@@ -51,6 +53,12 @@ export interface ProviderSettingsListItem {
   hasApiKey: boolean;
   createdAt: string | Date | null;
   updatedAt: string | Date | null;
+  kind: "api_key" | "local_cli";
+  connectionStatus?: import("@/lib/ai/local-cli/types").LocalCLIConnectionStatus;
+  selectable: boolean;
+  cliVersion?: string;
+  statusMessage?: string;
+  lastCheckedAt?: string;
 }
 
 export type { ReasoningEffort };

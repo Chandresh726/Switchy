@@ -106,6 +106,76 @@
       "when": 1783938907057,
       "tag": "0014_petite_secret_warriors",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1784045381793,
+      "tag": "0015_funny_black_queen",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1784048294779,
+      "tag": "0016_slim_sway",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1784056337574,
+      "tag": "0017_square_gertrude_yorkes",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1784057135438,
+      "tag": "0018_classy_doorman",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1784060239843,
+      "tag": "0019_messy_puma",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1784061806109,
+      "tag": "0020_mighty_sebastian_shaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1784084027112,
+      "tag": "0021_sad_morlocks",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1784183334188,
+      "tag": "0022_common_dreadnoughts",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1784191196028,
+      "tag": "0023_narrow_agent_brand",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1784206059520,
+      "tag": "0024_tearful_ghost_rider",
+      "breakpoints": true
     }
   ]
 }

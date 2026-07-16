@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { jobs, companies } from "@/lib/db/schema";
+
 import { eq } from "drizzle-orm";
-import { matchWithTracking } from "@/lib/ai/matcher";
+
+import { completeEmptyMatchSession, queueMatchWork } from "@/lib/ai/work-items";
 import { assertAppRequest } from "@/lib/api";
+import { db } from "@/lib/db";
+import { companies, jobs } from "@/lib/db/schema";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -12,68 +14,32 @@ interface RouteParams {
 export async function POST(request: Request, { params }: RouteParams) {
   try {
     assertAppRequest(request);
-
-    const { id } = await params;
-    const companyId = parseInt(id, 10);
-
-    if (isNaN(companyId)) {
-      return NextResponse.json(
-        { error: "Invalid company ID" },
-        { status: 400 }
-      );
+    const companyId = Number.parseInt((await params).id, 10);
+    if (!Number.isInteger(companyId)) {
+      return NextResponse.json({ error: "Invalid company ID" }, { status: 400 });
     }
-
-    const [company] = await db
-      .select()
-      .from(companies)
-      .where(eq(companies.id, companyId));
-
-    if (!company) {
-      return NextResponse.json(
-        { error: "Company not found" },
-        { status: 404 }
-      );
-    }
-
-    const companyJobs = await db
-      .select({ id: jobs.id })
-      .from(jobs)
+    const company = await db.select({ id: companies.id }).from(companies)
+      .where(eq(companies.id, companyId)).limit(1).then((rows) => rows[0]);
+    if (!company) return NextResponse.json({ error: "Company not found" }, { status: 404 });
+    const jobIds = await db.select({ id: jobs.id }).from(jobs)
       .where(eq(jobs.companyId, companyId));
-
-    if (companyJobs.length === 0) {
-      return NextResponse.json({
-        success: true,
-        sessionId: "",
-        total: 0,
-        succeeded: 0,
-        failed: 0,
-        message: "No jobs to match for this company",
-      });
+    if (jobIds.length === 0) {
+      return NextResponse.json(
+        completeEmptyMatchSession({
+          triggerSource: "company_refresh",
+          companyId,
+        }),
+        { status: 202 }
+      );
     }
-
-    const jobIds = companyJobs.map((j) => j.id);
-
-    console.log(`[Company Match] Starting match for ${jobIds.length} jobs from company ${company.name}`);
-
-    const result = await matchWithTracking(jobIds, {
+    const queued = queueMatchWork({
+      jobIds: jobIds.map((job) => job.id),
       triggerSource: "company_refresh",
       companyId,
-      signal: request.signal,
     });
-
-    return NextResponse.json({
-      success: true,
-      sessionId: result.sessionId,
-      total: result.total,
-      succeeded: result.succeeded,
-      failed: result.failed,
-      message: `Matched ${result.succeeded} of ${result.total} jobs`,
-    });
+    return NextResponse.json(queued, { status: 202 });
   } catch (error) {
     console.error("[Company Match API] POST error:", error);
-    return NextResponse.json(
-      { error: "Failed to match company jobs" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to queue company jobs" }, { status: 500 });
   }
 }

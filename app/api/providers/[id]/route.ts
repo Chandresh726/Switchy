@@ -54,8 +54,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     assertAppRequest(request);
 
     const parsedParams = ProviderRouteParamsSchema.parse(await params);
-    await deleteProvider(parsedParams.id);
-    return NextResponse.json({ success: true });
+    const deletion = await deleteProvider(parsedParams.id);
+    return NextResponse.json({ success: true, ...deletion });
   } catch (error) {
     return handleAIAPIError(error, "Failed to delete provider", "provider_delete_failed");
   }

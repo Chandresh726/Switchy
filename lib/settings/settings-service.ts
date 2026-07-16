@@ -1,29 +1,31 @@
 import cron from "node-cron";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
 import { APIValidationError } from "@/lib/api/ai-error-handler";
+import { isReasoningEffort } from "@/lib/ai/providers/types";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
+import type * as databaseSchema from "@/lib/db/schema";
 import { SCRAPER_SETTINGS } from "@/lib/scraper/settings/definitions";
 import { safeJsonParse } from "@/lib/utils/safe-json";
 
 export const DEFAULT_SETTINGS = {
+  job_analysis_model: "",
+  job_analysis_provider_id: "",
+  job_analysis_reasoning_effort: "",
   matcher_model: "",
   matcher_provider_id: "",
-  matcher_reasoning_effort: "medium",
+  matcher_reasoning_effort: "",
   resume_parser_model: "",
   resume_parser_provider_id: "",
-  resume_parser_reasoning_effort: "medium",
-  matcher_bulk_enabled: "true",
+  resume_parser_reasoning_effort: "",
   matcher_batch_size: "2",
   matcher_max_retries: "3",
   matcher_concurrency_limit: "3",
-  matcher_serialize_operations: "false",
-  matcher_timeout_ms: "30000",
+  matcher_timeout_ms: "120000",
   matcher_backoff_base_delay: "2000",
   matcher_backoff_max_delay: "32000",
-  matcher_circuit_breaker_threshold: "10",
-  matcher_circuit_breaker_reset_timeout: "60000",
   matcher_auto_match_after_scrape: "true",
   scheduler_enabled: "true",
   scheduler_cron: "0 */6 * * *",
@@ -48,7 +50,9 @@ export const DEFAULT_SETTINGS = {
   cover_letter_focus: "[\"skills\",\"experience\",\"cultural_fit\"]",
   ai_writing_model: "",
   ai_writing_provider_id: "",
-  ai_writing_reasoning_effort: "medium",
+  ai_writing_reasoning_effort: "",
+  codex_cli_executable: "",
+  opencode_cli_executable: "",
 } as const;
 
 export type SettingKey = keyof typeof DEFAULT_SETTINGS;
@@ -95,6 +99,15 @@ function ensureNonEmptyString(key: SettingKey, value: unknown): string {
     throw new APIValidationError(`${key} must be a non-empty string`, "invalid_request");
   }
   return parsed;
+}
+
+function normalizeReasoningSetting(key: SettingKey, value: unknown): string {
+  const parsed = String(value ?? "");
+  if (parsed === "" || isReasoningEffort(parsed)) return parsed;
+  throw new APIValidationError(
+    `${key} must be an effort advertised by the selected provider model`,
+    "invalid_request"
+  );
 }
 
 function ensureEnum<T extends readonly string[]>(
@@ -201,12 +214,6 @@ function parseSettingValue(
       return { value: parseNumberInRange(key, value, 500, 10_000), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     case "matcher_backoff_max_delay":
       return { value: parseNumberInRange(key, value, 5_000, 120_000), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
-    case "matcher_circuit_breaker_threshold":
-      return { value: parseNumberInRange(key, value, 3, 50), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
-    case "matcher_circuit_breaker_reset_timeout":
-      return { value: parseNumberInRange(key, value, 10_000, 300_000), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
-    case "matcher_bulk_enabled":
-    case "matcher_serialize_operations":
     case "matcher_auto_match_after_scrape":
     case "scraper_keep_device_awake":
       return { value: parseBooleanValue(value), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
@@ -227,14 +234,16 @@ function parseSettingValue(
       };
     }
     case "matcher_model":
+    case "job_analysis_model":
     case "resume_parser_model":
     case "ai_writing_model":
       return { value: ensureNonEmptyString(key, value), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     case "matcher_reasoning_effort":
+    case "job_analysis_reasoning_effort":
     case "resume_parser_reasoning_effort":
     case "ai_writing_reasoning_effort":
       return {
-        value: ensureEnum(key, value, ["low", "medium", "high"] as const),
+        value: normalizeReasoningSetting(key, value),
         cronUpdated: false,
         enabledChanged: false,
         newEnabledValue: null,
@@ -279,8 +288,12 @@ function parseSettingValue(
     case "cover_letter_focus":
       return { value: normalizeCoverLetterFocus(value), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     case "matcher_provider_id":
+    case "job_analysis_provider_id":
     case "resume_parser_provider_id":
     case "ai_writing_provider_id":
+      return { value: String(value ?? "").trim(), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
+    case "codex_cli_executable":
+    case "opencode_cli_executable":
       return { value: String(value ?? "").trim(), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     default:
       return { value: String(value ?? ""), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
@@ -332,6 +345,20 @@ export async function upsertSettings(updates: ParsedSettingUpdate[]): Promise<vo
       await db.insert(settings).values({ key, value, updatedAt: new Date() });
     }
   }
+}
+
+const DEPRECATED_MATCHING_PREFERENCE_KEYS = [
+  "matcher_accepted_location_types",
+  "matcher_accepted_employment_types",
+] as const;
+
+export async function removeDeprecatedMatchingPreferenceSettings(
+  database: BetterSQLite3Database<typeof databaseSchema> = db
+): Promise<void> {
+  await database.delete(settings).where(inArray(
+    settings.key,
+    [...DEPRECATED_MATCHING_PREFERENCE_KEYS]
+  ));
 }
 
 export async function getSettingsWithDefaults(): Promise<Record<SettingKey, string>> {

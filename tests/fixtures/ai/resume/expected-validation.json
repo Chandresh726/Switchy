@@ -1,0 +1,57 @@
+{
+  "parsedData": {
+    "name": "Alex Rivera",
+    "portfolioUrl": "http://169.254.169.254/profile",
+    "skills": [
+      { "name": "TypeScript", "category": "language" }
+    ],
+    "experience": [
+      {
+        "company": "Northstar Labs",
+        "title": "Senior Engineer",
+        "startDate": "June 2021",
+        "endDate": "",
+        "highlights": ["Built local-first tools."]
+      }
+    ],
+    "education": [
+      {
+        "institution": "Example University",
+        "degree": "",
+        "endDate": "2018"
+      }
+    ]
+  },
+  "warnings": [
+    {
+      "code": "duplicate_skill",
+      "path": "skills.1.name",
+      "message": "Duplicate skill removed: typescript."
+    },
+    {
+      "code": "empty_required_field",
+      "path": "skills.2.name",
+      "message": "Skill name is empty."
+    },
+    {
+      "code": "malformed_date",
+      "path": "experience.0.startDate",
+      "message": "Date should use YYYY-MM format."
+    },
+    {
+      "code": "empty_required_field",
+      "path": "education.0.degree",
+      "message": "degree is empty."
+    },
+    {
+      "code": "malformed_date",
+      "path": "education.0.endDate",
+      "message": "Date should use YYYY-MM format."
+    },
+    {
+      "code": "suspicious_url",
+      "path": "portfolioUrl",
+      "message": "URL is malformed, private, or does not match the expected service."
+    }
+  ]
+}

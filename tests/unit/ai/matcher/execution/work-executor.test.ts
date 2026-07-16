@@ -5,10 +5,6 @@ import type { MatcherConfig } from "@/lib/ai/matcher/types";
 
 const mocks = vi.hoisted(() => ({
   executeMatch: vi.fn(),
-  withQueue: vi.fn(
-    async (_config: MatcherConfig, operation: () => Promise<unknown>) =>
-      operation()
-  ),
 }));
 
 vi.mock("@/lib/ai/matcher/execution/executor", () => ({
@@ -19,26 +15,17 @@ vi.mock("@/lib/ai/matcher/config", () => ({
   getMatcherConfig: vi.fn(),
 }));
 
-vi.mock("@/lib/ai/matcher/queue", () => ({
-  withQueue: mocks.withQueue,
-}));
-
 import { executeConfiguredMatchWork } from "@/lib/ai/matcher/execution/work-executor";
 
 const config: MatcherConfig = {
   model: "test-model",
   reasoningEffort: "medium",
-  bulkEnabled: false,
   batchSize: 1,
   maxRetries: 1,
   concurrencyLimit: 1,
-  serializeOperations: false,
-  interRequestDelayMs: 0,
   timeoutMs: 1_000,
   backoffBaseDelay: 0,
   backoffMaxDelay: 0,
-  circuitBreakerThreshold: 1,
-  circuitBreakerResetTimeout: 1_000,
   autoMatchAfterScrape: false,
 };
 
@@ -47,7 +34,7 @@ describe("executeConfiguredMatchWork data fencing", () => {
     vi.clearAllMocks();
   });
 
-  it("cancels an untracked direct match before destructive maintenance clears data", async () => {
+  it("cancels durable match execution before destructive maintenance clears data", async () => {
     const matchStarted = Promise.withResolvers<void>();
     const cancellationObserved = Promise.withResolvers<void>();
     mocks.executeMatch.mockImplementation(async (options: { signal: AbortSignal }) => {

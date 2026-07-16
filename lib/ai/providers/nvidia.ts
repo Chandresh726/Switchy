@@ -10,11 +10,6 @@ export class NvidiaProvider extends BaseProvider {
   readonly name = "NVIDIA (NIM)";
   readonly requiresApiKey = true;
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  supportsReasoningEffort(_modelId: string): boolean {
-    return true;
-  }
-
   protected createLanguageModel(
     config: ModelConfig,
     providerConfig: ProviderConfig
@@ -23,6 +18,7 @@ export class NvidiaProvider extends BaseProvider {
       name: "nvidia",
       baseURL: NVIDIA_BASE_URL,
       apiKey: providerConfig.apiKey,
+      supportsStructuredOutputs: true,
     });
 
     return nvidia(config.modelId);

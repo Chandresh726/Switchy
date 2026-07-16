@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { MapPin, CheckCircle, Star, Loader2, CalendarDays } from "lucide-react";
 
 import { NewJobBadge } from "@/components/jobs/new-job-badge";
+import { MatchBadge } from "@/components/jobs/match-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
@@ -34,44 +35,14 @@ const LOCATION_TYPE_LABELS: Record<string, string> = {
   onsite: "On-site",
 };
 
-function getMatchScoreConfig(score: number | null): { label: string; className: string } {
-  if (typeof score !== "number") {
-    return {
-      label: "No score",
-      className: "border-border bg-muted/40 text-muted-foreground",
-    };
-  }
-
-  if (score >= 85) {
-    return {
-      label: `${score.toFixed(0)}%`,
-      className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
-    };
-  }
-
-  if (score >= 70) {
-    return {
-      label: `${score.toFixed(0)}%`,
-      className: "border-blue-500/30 bg-blue-500/10 text-blue-400",
-    };
-  }
-
-  return {
-    label: `${score.toFixed(0)}%`,
-    className: "border-amber-500/30 bg-amber-500/10 text-amber-400",
-  };
-}
-
 export function CompanyJobCard({ job, currentTime }: CompanyJobCardProps) {
   const queryClient = useQueryClient();
-  const matchConfig = getMatchScoreConfig(job.matchScore);
   const shouldShowNewTag = isNewJob({
     discoveredAt: job.discoveredAt,
     viewedAt: job.viewedAt,
     status: job.status,
     currentTime,
   });
-
   const updateStatusMutation = useMutation({
     mutationFn: async (newStatus: string) => {
       const res = await fetch("/api/jobs", {
@@ -131,14 +102,7 @@ export function CompanyJobCard({ job, currentTime }: CompanyJobCardProps) {
         </div>
 
         <div className="flex flex-col items-end gap-2">
-          <span
-            className={cn(
-              "inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium",
-              matchConfig.className
-            )}
-          >
-            {matchConfig.label}
-          </span>
+          <MatchBadge score={job.matchScore} size="sm" showLabel />
 
           <div className="flex items-center gap-1" onClick={(e) => e.preventDefault()}>
             {job.status === "interested" ? (

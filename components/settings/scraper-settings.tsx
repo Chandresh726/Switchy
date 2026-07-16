@@ -1,20 +1,23 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+
+import { Timer, X } from "lucide-react";
+
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Timer, Save, Loader2, X } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+
 import { ScrapeCountdown } from "./scrape-countdown";
 
 const CRON_PRESETS = [
@@ -43,10 +46,6 @@ interface ScraperSettingsProps {
   onFilterCityChange: (value: string) => void;
   filterTitleKeywords: string[];
   onFilterTitleKeywordsChange: (value: string[]) => void;
-  onSave: () => void;
-  isSaving: boolean;
-  hasUnsavedChanges: boolean;
-  settingsSaved: boolean;
 }
 
 export function ScraperSettings({
@@ -66,10 +65,6 @@ export function ScraperSettings({
   onFilterCityChange,
   filterTitleKeywords,
   onFilterTitleKeywordsChange,
-  onSave,
-  isSaving,
-  hasUnsavedChanges,
-  settingsSaved,
 }: ScraperSettingsProps) {
   const [keywordInput, setKeywordInput] = useState("");
   const [isCustomSelected, setIsCustomSelected] = useState<boolean>(() =>
@@ -133,11 +128,13 @@ export function ScraperSettings({
                 <SelectValue placeholder="Select schedule" />
               </SelectTrigger>
               <SelectContent>
-                {CRON_PRESETS.map((preset) => (
-                  <SelectItem key={preset.value} value={preset.value}>
-                    {preset.label}
-                  </SelectItem>
-                ))}
+                <SelectGroup>
+                  {CRON_PRESETS.map((preset) => (
+                    <SelectItem key={preset.value} value={preset.value}>
+                      {preset.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
             {showCustom && (
@@ -158,7 +155,7 @@ export function ScraperSettings({
           <div className="space-y-1">
             <Label htmlFor="max-parallel-scrapes">Max Parallel Scrapes</Label>
             <p className="text-xs text-muted-foreground">
-              Max concurrent API and standard browser scrapes (Workday/Eightfold run serially).
+              1–10 concurrent scrapes.
             </p>
           </div>
           <Input
@@ -184,9 +181,7 @@ export function ScraperSettings({
               <Badge variant="secondary">macOS</Badge>
             </div>
             <p className="text-xs text-muted-foreground">
-              Prevents idle system sleep while scrape work is active. The display and
-              screensaver can still turn on. Closing the lid may still put the Mac to
-              sleep. This setting has no effect on other operating systems.
+              Only while scrape work is active.
             </p>
           </div>
           <Switch
@@ -202,7 +197,7 @@ export function ScraperSettings({
           <div className="space-y-1">
             <Label htmlFor="scrape-history-retention">History Retention</Label>
             <p className="text-xs text-muted-foreground">
-              Remove completed scrape sessions and logs after this many days. Jobs are never removed.
+              Logs expire; jobs stay.
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -226,7 +221,7 @@ export function ScraperSettings({
 
         <div className="space-y-4 pt-4 border-t border-border">
           <Label>Location Filter</Label>
-          <p className="text-xs text-muted-foreground -mt-2">Only matching jobs are added. Remote jobs always included.</p>
+          <p className="text-xs text-muted-foreground -mt-2">Remote jobs are always included.</p>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
@@ -293,32 +288,6 @@ export function ScraperSettings({
           )}
         </div>
       </CardContent>
-      <CardFooter className="flex items-center justify-between border-t border-border bg-card/70 px-6 py-4 rounded-b-xl">
-        <p className="text-xs text-muted-foreground">
-          {settingsSaved ? (
-            <span className="flex items-center text-emerald-400 gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              Saved
-            </span>
-          ) : hasUnsavedChanges ? (
-            <span className="text-yellow-400">Unsaved changes</span>
-          ) : (
-            "Up to date"
-          )}
-        </p>
-        <Button
-          onClick={onSave}
-          disabled={isSaving || !hasUnsavedChanges}
-          className="bg-emerald-600 hover:bg-emerald-500 text-foreground min-w-[100px]"
-        >
-          {isSaving ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="mr-2 h-4 w-4" />
-          )}
-          {isSaving ? "Saving..." : "Save"}
-        </Button>
-      </CardFooter>
     </Card>
   );
 }

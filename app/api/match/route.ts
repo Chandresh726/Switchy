@@ -1,40 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { MatchRouteBodySchema } from "@/lib/ai/contracts";
-import { matchBulk, matchSingle } from "@/lib/ai/matcher";
+import { queueMatchWork } from "@/lib/ai/work-items";
 import { assertAppRequest } from "@/lib/api";
 import { handleAIAPIError } from "@/lib/api/ai-error-handler";
 
 export async function POST(request: NextRequest) {
   try {
     assertAppRequest(request);
-
     const body = MatchRouteBodySchema.parse(await request.json());
-
-    if ("jobId" in body) {
-      const result = await matchSingle(body.jobId, request.signal);
-      return NextResponse.json(result);
-    }
-
-    const results = await matchBulk(body.jobIds, undefined, request.signal);
-    const response: Record<string, unknown> = {};
-
-    for (const [id, result] of results) {
-      if (result instanceof Error) {
-        response[id] = { error: result.message };
-      } else {
-        response[id] = result;
-      }
-    }
-
-    return NextResponse.json({
-      results: response,
-      summary: {
-        total: body.jobIds.length,
-        successful: Array.from(results.values()).filter((item) => !(item instanceof Error)).length,
-      },
-    });
+    const jobIds = "jobId" in body ? [body.jobId] : body.jobIds;
+    const queued = queueMatchWork({ jobIds, triggerSource: "manual" });
+    return NextResponse.json(queued, { status: 202 });
   } catch (error) {
-    return handleAIAPIError(error, "Failed to calculate match", "match_failed");
+    return handleAIAPIError(error, "Failed to queue match", "match_failed");
   }
 }

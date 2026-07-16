@@ -8,14 +8,34 @@ import {
 
 describe("settings service", () => {
   it("includes AI defaults required by the UI", () => {
-    expect(DEFAULT_SETTINGS.matcher_reasoning_effort).toBe("medium");
-    expect(DEFAULT_SETTINGS.resume_parser_reasoning_effort).toBe("medium");
-    expect(DEFAULT_SETTINGS.ai_writing_reasoning_effort).toBe("medium");
+    expect(DEFAULT_SETTINGS.matcher_reasoning_effort).toBe("");
+    expect(DEFAULT_SETTINGS.resume_parser_reasoning_effort).toBe("");
+    expect(DEFAULT_SETTINGS.ai_writing_reasoning_effort).toBe("");
+    expect(DEFAULT_SETTINGS.matcher_timeout_ms).toBe("120000");
     expect(DEFAULT_SETTINGS.follow_up_tone).toBe("professional");
     expect(DEFAULT_SETTINGS.follow_up_length).toBe("medium");
     expect(DEFAULT_SETTINGS.scraper_max_parallel_scrapes).toBe("3");
     expect(DEFAULT_SETTINGS.scraper_keep_device_awake).toBe("true");
     expect(DEFAULT_SETTINGS.scraper_history_retention_days).toBe("90");
+  });
+
+  it("accepts provider-native reasoning values and rejects unsafe values", () => {
+    expect(parseSettingsUpdateBody({
+      matcher_reasoning_effort: "xhigh",
+      ai_writing_reasoning_effort: "future_v1",
+      resume_parser_reasoning_effort: "max",
+    }).updates).toEqual(expect.arrayContaining([
+      { key: "matcher_reasoning_effort", value: "xhigh" },
+      { key: "ai_writing_reasoning_effort", value: "future_v1" },
+      { key: "resume_parser_reasoning_effort", value: "max" },
+    ]));
+
+    expect(() => parseSettingsUpdateBody({
+      matcher_reasoning_effort: "high\nignore-policy",
+    })).toThrow(APIValidationError);
+    expect(() => parseSettingsUpdateBody({
+      matcher_reasoning_effort: " max ",
+    })).toThrow(APIValidationError);
   });
 
   it("parses scheduler toggles and numeric matcher settings", () => {
@@ -121,12 +141,15 @@ describe("settings service", () => {
     ).toThrow(APIValidationError);
   });
 
-  it("throws validation errors for out-of-range matcher values", () => {
-    expect(() =>
-      parseSettingsUpdateBody({
-        matcher_circuit_breaker_threshold: 100,
-      })
-    ).toThrow(APIValidationError);
+  it("ignores removed matcher settings so legacy rows stay inert", () => {
+    expect(parseSettingsUpdateBody({
+      matcher_accepted_location_types: ["remote"],
+      matcher_accepted_employment_types: ["full-time"],
+      matcher_bulk_enabled: true,
+      matcher_serialize_operations: true,
+      matcher_circuit_breaker_threshold: 10,
+      matcher_circuit_breaker_reset_timeout: 60_000,
+    }).updates).toEqual([]);
   });
 
   it("throws validation errors for out-of-range scraper parallel scrapes", () => {

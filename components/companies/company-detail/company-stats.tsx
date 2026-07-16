@@ -41,7 +41,7 @@ export function CompanyStats({ stats }: CompanyStatsProps) {
         iconClassName="text-blue-400"
       />
       <StatCard
-        label="High Matches"
+        label="Good+ Matches"
         value={stats.highMatchJobs}
         icon={Sparkles}
         iconClassName="text-emerald-400"

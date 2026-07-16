@@ -34,6 +34,9 @@ importers:
       '@base-ui/react':
         specifier: ^1.6.0
         version: 1.6.0(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@opencode-ai/sdk':
+        specifier: ^1.17.20
+        version: 1.17.20
       '@openrouter/ai-sdk-provider':
         specifier: ^3.0.0
         version: 3.0.0(ai@7.0.22(zod@4.4.3))(zod@4.4.3)
@@ -1036,6 +1039,9 @@ packages:
 
   '@open-draft/until@2.1.0':
     resolution: {integrity: sha512-U69T3ItWHvLwGg5eJ0n3I62nWuE6ilHlmz7zM0npLBRvPRd7e6NYmg54vvRtP5mZG7kZqZCFVdsTWo7BPtBujg==}
+
+  '@opencode-ai/sdk@1.17.20':
+    resolution: {integrity: sha512-Urb7Tp4mvJmyckNI/N79uEpWzZOyn4lE5LVPDVidXZ8BIlw6kxx2ctTPRYPJDF8HLPWGCZ7pCpHcmWgQCYyiNQ==}
 
   '@openrouter/ai-sdk-provider@3.0.0':
     resolution: {integrity: sha512-m9XTSWoODH2RM5OsZpaGiN7QRR8cdP5paBWq699Tu3JVmGPBKT8xF8XwV0ZBVVsjikD/JgWfak4VSsTR4wAVbg==}
@@ -5564,6 +5570,10 @@ snapshots:
 
   '@open-draft/until@2.1.0':
     optional: true
+
+  '@opencode-ai/sdk@1.17.20':
+    dependencies:
+      cross-spawn: 7.0.6
 
   '@openrouter/ai-sdk-provider@3.0.0(ai@7.0.22(zod@4.4.3))(zod@4.4.3)':
     dependencies:

@@ -7,8 +7,8 @@ export default defineConfig({
   test: {
     coverage: {
       provider: "v8",
-      include: ["lib/scraper/**/*.ts"],
-      exclude: ["lib/scraper/**/index.ts"],
+      include: ["lib/ai/**/*.ts", "lib/scraper/**/*.ts"],
+      exclude: ["lib/ai/**/index.ts", "lib/scraper/**/index.ts"],
       reporter: ["text", "html"],
       reportsDirectory: "coverage",
     },
@@ -38,6 +38,15 @@ export default defineConfig({
           environment: "jsdom",
           include: ["tests/ui/**/*.test.tsx"],
           setupFiles: ["tests/setup/ui.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "eval",
+          environment: "node",
+          include: ["tests/evals/**/*.test.ts"],
+          setupFiles: ["tests/setup/node.ts"],
         },
       },
     ],

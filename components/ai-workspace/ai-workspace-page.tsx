@@ -14,6 +14,7 @@ import {
   Pencil,
   Save,
   Star,
+  Trash2,
   UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -117,12 +118,15 @@ export function AIWorkspacePage({
     currentContent,
     currentVariantIndex,
     currentVariantPrompt,
+    discardCurrentVariant,
     hasChanges,
     isContentLoading,
+    isDiscarding,
     isSaving,
     isSending,
     modificationPrompt,
     navigateVariant,
+    recordCurrentVariantCopied,
     resetChanges,
     saveEdit,
     sendModification,
@@ -167,12 +171,15 @@ export function AIWorkspacePage({
     return [...rows].sort(byRecruiterThenStarred);
   }, [peopleData]);
 
-  const isBusy = isContentLoading || isSaving || isSending;
+  const isBusy = isContentLoading || isDiscarding || isSaving || isSending;
 
   const handleCopyCurrent = async () => {
     if (!currentContent.trim()) return;
     try {
       await copyMarkdownToClipboard(currentContent);
+      void recordCurrentVariantCopied().catch((error) => {
+        console.error("Failed to record copied variant:", error);
+      });
       setCopied(true);
       toast.success("Copied to clipboard");
       window.setTimeout(() => setCopied(false), 2000);
@@ -185,6 +192,9 @@ export function AIWorkspacePage({
   const handleCopyForPerson = async (template: string, personName: string) => {
     try {
       await copyMarkdownToClipboard(template);
+      void recordCurrentVariantCopied().catch((error) => {
+        console.error("Failed to record copied variant:", error);
+      });
       toast.success(`Copied message for ${personName}`);
     } catch (error) {
       console.error("Copy for person failed:", error);
@@ -284,7 +294,7 @@ export function AIWorkspacePage({
               onClick={() => {
                 void handleCopyCurrent();
               }}
-              disabled={!currentContent.trim()}
+              disabled={!currentContent.trim() || hasChanges || isBusy}
             >
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               Copy Template
@@ -305,7 +315,7 @@ export function AIWorkspacePage({
                 <Button
                   size="sm"
                   onClick={() => setIsPreviewMode(true)}
-                  disabled={!currentContent.trim() || isBusy}
+                  disabled={!currentContent.trim() || isBusy || hasChanges}
                 >
                   <LinkedinIcon className="h-4 w-4" />
                   {peoplePanelToggleLabel || "Ask People"}
@@ -323,7 +333,7 @@ export function AIWorkspacePage({
                 size="icon"
                 className="h-7 w-7"
                 onClick={() => navigateVariant("prev")}
-                disabled={isPreviewMode}
+                disabled={isBusy || isPreviewMode || hasChanges}
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -335,7 +345,7 @@ export function AIWorkspacePage({
                 size="icon"
                 className="h-7 w-7"
                 onClick={() => navigateVariant("next")}
-                disabled={isPreviewMode}
+                disabled={isBusy || isPreviewMode || hasChanges}
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
@@ -348,6 +358,19 @@ export function AIWorkspacePage({
                   : `Request: ${currentVariantPrompt}`}
               </div>
             ) : null}
+
+            <Button
+              variant="ghost"
+              size="xs"
+              className="ml-auto text-muted-foreground hover:text-destructive"
+              onClick={() => {
+                void discardCurrentVariant();
+              }}
+              disabled={isBusy || hasChanges}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Discard
+            </Button>
           </div>
         ) : null}
 
@@ -411,14 +434,14 @@ export function AIWorkspacePage({
                   }
                 }}
                 placeholder="Ask for changes (e.g., 'Make it shorter', 'Use a friendlier tone')."
-                disabled={isBusy}
+                disabled={isBusy || hasChanges}
                 className="min-h-[64px] resize-none border-border bg-transparent text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
               />
               <Button
                 onClick={() => {
                   void handleSendModification();
                 }}
-                disabled={!modificationPrompt.trim() || isBusy}
+                disabled={!modificationPrompt.trim() || isBusy || hasChanges}
                 className="h-[64px] w-[64px] shrink-0 bg-emerald-600 text-white hover:bg-emerald-500"
               >
                 {isSending ? (
@@ -429,7 +452,9 @@ export function AIWorkspacePage({
               </Button>
             </div>
             <p className="mt-2 text-[11px] text-muted-foreground">
-              Press Enter to send, Shift+Enter for new line.
+              {hasChanges
+                ? "Save or cancel manual edits before asking AI for changes."
+                : "Press Enter to send, Shift+Enter for new line."}
             </p>
           </div>
         ) : null}
@@ -503,6 +528,7 @@ export function AIWorkspacePage({
                       <Button
                         variant="outline"
                         size="xs"
+                        disabled={isBusy || hasChanges || !personalizedMessage.trim()}
                         onClick={() => {
                           void handleCopyForPerson(personalizedMessage, person.fullName);
                         }}

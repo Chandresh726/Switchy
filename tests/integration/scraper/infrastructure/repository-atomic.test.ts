@@ -2,10 +2,14 @@ import { asc, eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildJobFingerprintFromRecord,
+} from "@/lib/ai/artifacts/fingerprints";
+import { parseMatchWorkPayload } from "@/lib/ai/work-items/contracts";
+import {
   companies,
   jobs,
   matchSessions,
-  scrapeMatchOutbox,
+  aiWorkItems,
   scrapeSessions,
   scrapingLogs,
 } from "@/lib/db/schema";
@@ -67,6 +71,9 @@ describe("DrizzleScraperRepository atomic persistence", () => {
         url: "https://example.com/hydrate-me",
         status: "new",
         description: null,
+        location: "Bengaluru",
+        locationType: "onsite",
+        employmentType: "full-time",
       },
     ]).run();
     const hydrationJob = database
@@ -127,7 +134,7 @@ describe("DrizzleScraperRepository atomic persistence", () => {
     const storedJobs = database.select().from(jobs).orderBy(asc(jobs.id)).all();
     const storedCompany = database.select().from(companies).get();
     const storedLog = database.select().from(scrapingLogs).get();
-    const storedOutbox = database.select().from(scrapeMatchOutbox).get();
+    const storedOutbox = database.select().from(aiWorkItems).get();
     const storedMatchSession = database.select().from(matchSessions).get();
     if (!storedCompany || !storedLog || !storedOutbox || !storedMatchSession) {
       throw new Error("Atomic persistence did not commit.");
@@ -152,9 +159,24 @@ describe("DrizzleScraperRepository atomic persistence", () => {
     });
     expect(storedJobs.find((job) => job.externalId === "user-applied")?.status).toBe("applied");
     expect(storedJobs.find((job) => job.externalId === "hydrate-me")).toMatchObject({
-      title: "Hydrated role",
-      description: "Hydrated description",
+        title: "Hydrated role",
+        description: "Hydrated description",
+        location: "Bengaluru",
+        locationType: "onsite",
+        employmentType: "full-time",
+        aiFingerprint: buildJobFingerprintFromRecord({
+          title: "Hydrated role",
+          description: "Hydrated description",
+          location: "Bengaluru",
+          locationType: "onsite",
+        seniorityLevel: null,
+        department: null,
+          employmentType: "full-time",
+        salary: null,
+      }),
     });
+    expect(storedJobs.find((job) => job.externalId === "new-role")?.aiFingerprint)
+      .toMatch(/^[a-f0-9]{64}$/);
     expect(storedCompany).toMatchObject({
       boardToken: "detected-board",
     });
@@ -168,10 +190,16 @@ describe("DrizzleScraperRepository atomic persistence", () => {
     });
     expect(storedLog.duration).toBeGreaterThanOrEqual(200);
     expect(storedOutbox).toMatchObject({
-      scrapingLogId: storedLog.id,
+      workType: "match_jobs",
+      matchSessionId: storedOutbox.id,
+      status: "queued",
+    });
+    expect(parseMatchWorkPayload(storedOutbox.payloadJson)).toEqual({
+      jobIds: result.matchableJobIds,
+      triggerSource: "auto_match",
       companyId: company.id,
-      status: "pending",
-      jobIdsJson: JSON.stringify(result.matchableJobIds),
+      scrapingLogId: storedLog.id,
+      legacyOutboxId: null,
     });
     expect(storedMatchSession).toMatchObject({
       id: storedOutbox.id,
@@ -275,7 +303,7 @@ describe("DrizzleScraperRepository atomic persistence", () => {
 
     expect(database.select().from(jobs).all()).toHaveLength(0);
     expect(database.select().from(scrapingLogs).all()).toHaveLength(0);
-    expect(database.select().from(scrapeMatchOutbox).all()).toHaveLength(0);
+    expect(database.select().from(aiWorkItems).all()).toHaveLength(0);
     expect(database.select().from(companies).get()).toMatchObject({
       boardToken: null,
       lastScrapedAt: null,

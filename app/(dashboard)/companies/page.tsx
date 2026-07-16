@@ -14,6 +14,7 @@ import { CompanyList, type Company } from "@/components/companies/company-list";
 import { JsonEditor } from "@/components/companies/json-editor";
 import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { CUSTOM_SCRAPER_PLATFORMS } from "@/lib/constants";
+import { useMatchSession } from "@/lib/hooks/use-match-session";
 
 const CUSTOM_PLATFORM_SET = new Set<string>(["custom", ...CUSTOM_SCRAPER_PLATFORMS]);
 
@@ -67,8 +68,10 @@ function CompaniesPageContent() {
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [matchSessionId, setMatchSessionId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+  useMatchSession(matchSessionId, { onSettled: () => setMatchSessionId(null) });
 
   useEffect(() => {
     if (searchParams.toString() === "") {
@@ -270,11 +273,9 @@ function CompaniesPageContent() {
       if (!res.ok) throw new Error("Failed to match jobs");
       return res.json();
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["match-history"] });
-      toast.success(data.message || "Matches refreshed successfully");
+    onSuccess: (data: { sessionId: string; total: number }) => {
+      setMatchSessionId(data.sessionId || null);
+      toast.success(`Queued ${data.total} jobs for matching`);
     },
     onError: () => {
       toast.error("Failed to refresh matches");
@@ -471,7 +472,7 @@ function CompaniesPageContent() {
           }}
           onAddCompany={openAddCompanyPanel}
           isRefreshing={bulkRefreshMutation.isPending}
-          isMatching={bulkMatchMutation.isPending}
+          isMatching={bulkMatchMutation.isPending || Boolean(matchSessionId)}
           isDeletingJobs={bulkDeleteJobsMutation.isPending}
           isDeletingCompanies={bulkDeleteCompaniesMutation.isPending}
           isTogglingActive={bulkToggleActiveMutation.isPending}
@@ -539,7 +540,7 @@ function CompaniesPageContent() {
           onRefreshJobs={(companyId) => bulkRefreshMutation.mutate([companyId])}
           onRefreshMatches={(companyId) => bulkMatchMutation.mutate([companyId])}
           isRefreshing={bulkRefreshMutation.isPending}
-          isMatching={bulkMatchMutation.isPending}
+          isMatching={bulkMatchMutation.isPending || Boolean(matchSessionId)}
         />
       ) : (
         <div className="flex h-[calc(100vh-9rem)] flex-col overflow-hidden rounded-xl border border-border bg-background">

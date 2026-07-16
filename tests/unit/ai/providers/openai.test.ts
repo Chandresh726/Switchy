@@ -5,23 +5,16 @@ import { OpenAIProvider } from "@/lib/ai/providers/openai";
 describe("OpenAIProvider", () => {
   const provider = new OpenAIProvider();
 
-  it("disables reasoning summaries when reasoning effort is enabled", () => {
+  it("does not guess reasoning options when the model catalog has no effort list", () => {
     expect(
       provider.getGenerationOptions(
         { modelId: "gpt-5.2", reasoningEffort: "high" },
         {}
       )
-    ).toEqual({
-      providerOptions: {
-        openai: {
-          reasoningEffort: "high",
-          reasoningSummary: null,
-        },
-      },
-    });
+    ).toBeUndefined();
   });
 
-  it("omits reasoning options for unsupported models", () => {
+  it("omits reasoning options for every direct OpenAI model", () => {
     expect(
       provider.getGenerationOptions(
         { modelId: "gpt-4.1", reasoningEffort: "high" },

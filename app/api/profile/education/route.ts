@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { assertAppRequest } from "@/lib/api";
+import { scheduleProfileRematch } from "@/lib/ai/matcher/profile-rematch";
 import { db } from "@/lib/db";
 import { education } from "@/lib/db/schema";
 
@@ -80,6 +81,7 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
+    await scheduleProfileRematch();
     return NextResponse.json(newEducation);
   } catch (error) {
     console.error("Failed to create education:", error);
@@ -103,6 +105,7 @@ export async function DELETE(request: NextRequest) {
 
     await db.delete(education).where(eq(education.id, parseInt(id)));
 
+    await scheduleProfileRematch();
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Failed to delete education:", error);
@@ -141,6 +144,7 @@ export async function PUT(request: NextRequest) {
       .where(eq(education.id, parseInt(id)))
       .returning();
 
+    await scheduleProfileRematch();
     return NextResponse.json(updated);
   } catch (error) {
     console.error("Failed to update education:", error);

@@ -8,7 +8,11 @@ import {
   listProviders,
   toProviderPublic,
 } from "@/lib/ai/providers/provider-service";
-import { isAIProvider } from "@/lib/ai/providers/types";
+import { isAIProvider, isLocalCLIProvider } from "@/lib/ai/providers/types";
+import {
+  getCachedLocalCLIStatus,
+  getLocalCLIStatus,
+} from "@/lib/ai/local-cli/service";
 import { assertAppRequest } from "@/lib/api";
 import { APIValidationError, handleAIAPIError } from "@/lib/api/ai-error-handler";
 import { upsertSettings } from "@/lib/settings/settings-service";
@@ -21,7 +25,20 @@ const CreateProviderBodySchema = z.object({
 export async function GET() {
   try {
     const providers = await listProviders();
-    return NextResponse.json(providers.map(toProviderPublic));
+    return NextResponse.json(await Promise.all(providers.map(async (provider) => {
+      const publicProvider = toProviderPublic(provider);
+      if (!isLocalCLIProvider(provider.provider)) return publicProvider;
+      const connection = getCachedLocalCLIStatus(provider.provider) ??
+        await getLocalCLIStatus(provider.provider);
+      return {
+        ...publicProvider,
+        connectionStatus: connection.status,
+        selectable: connection.selectable,
+        cliVersion: connection.cliVersion,
+        statusMessage: connection.statusMessage,
+        lastCheckedAt: connection.lastCheckedAt,
+      };
+    })));
   } catch (error) {
     return handleAIAPIError(error, "Failed to fetch providers", "providers_fetch_failed");
   }
@@ -65,9 +82,11 @@ export async function POST(request: NextRequest) {
           autoConfiguredWarning = "Provider added, but no text/chat model was available for auto-configuration.";
         } else {
           await upsertSettings([
+            { key: "job_analysis_provider_id", value: created.id },
             { key: "matcher_provider_id", value: created.id },
             { key: "resume_parser_provider_id", value: created.id },
             { key: "ai_writing_provider_id", value: created.id },
+            { key: "job_analysis_model", value: firstModelId },
             { key: "matcher_model", value: firstModelId },
             { key: "resume_parser_model", value: firstModelId },
             { key: "ai_writing_model", value: firstModelId },

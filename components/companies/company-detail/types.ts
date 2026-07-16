@@ -25,6 +25,7 @@ export interface CompanyJob {
   url: string;
   status: string;
   matchScore: number | null;
+  matchLegacy?: boolean;
   location: string | null;
   locationType: string | null;
   discoveredAt: string | null;
@@ -76,6 +77,7 @@ export interface CompanyOverviewResponse {
   company: CompanyOverview;
   stats: CompanyStats;
   jobs: CompanyJob[];
+  topMatches: CompanyJob[];
   people: CompanyPerson[];
   activity: CompanyActivity;
 }

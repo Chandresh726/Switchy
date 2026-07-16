@@ -29,6 +29,13 @@ export const SESSION_STATUS_CONFIG: Record<string, StatusConfig> = {
     bgColor: "bg-red-500/10",
     borderColor: "border-red-500/20",
   },
+  cancelled: {
+    icon: XCircle,
+    label: "Cancelled",
+    color: "text-zinc-400",
+    bgColor: "bg-zinc-500/10",
+    borderColor: "border-zinc-500/20",
+  },
   in_progress: {
     icon: Clock,
     label: "In Progress",

@@ -1,14 +1,27 @@
 import "server-only";
 
 import { and, asc, eq } from "drizzle-orm";
+import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { aiProviders } from "@/lib/db/schema";
+import { aiProviders, settings } from "@/lib/db/schema";
 import { decryptApiKey } from "@/lib/encryption";
 import { AIError } from "@/lib/ai/shared/errors";
+import { getLocalCLIModels } from "@/lib/ai/local-cli/service";
 
-import { providerRegistry } from "./index";
-import { isAIProvider, type AIProvider } from "./types";
+import {
+  isAIProvider,
+  isLocalCLIProvider,
+  isReasoningEffort,
+  type AIProvider,
+} from "./types";
+import {
+  createEffortReasoningControl,
+  withReasoningControl,
+  type ProviderReasoningControl,
+} from "./reasoning-controls";
+
+export type { ProviderReasoningControl, ProviderReasoningOption } from "./reasoning-controls";
 
 const MODEL_CACHE_TTL_MS = 15 * 60 * 1000;
 
@@ -35,12 +48,14 @@ const NON_TEXT_MODEL_PATTERNS = [
   "vision-preview",
 ];
 
-interface ProviderRecord {
+export interface ResolvedProviderCatalogRecord {
   id: string;
   provider: AIProvider;
   apiKey?: string;
   updatedAt: Date | null;
 }
+
+type ProviderRecord = ResolvedProviderCatalogRecord;
 
 interface CachedProviderModels {
   providerUpdatedAtMs: number;
@@ -70,6 +85,7 @@ interface GeminiModelsResponse {
     displayName?: string;
     description?: string;
     supportedGenerationMethods?: string[];
+    thinking?: boolean;
   }>;
 }
 
@@ -83,6 +99,13 @@ interface OpenRouterModelsResponse {
       input_modalities?: string[];
       output_modalities?: string[];
     };
+    supported_parameters?: string[];
+    reasoning?: {
+      supported_efforts?: string[] | null;
+      default_effort?: string | null;
+      default_enabled?: boolean;
+      mandatory?: boolean;
+    };
   }>;
 }
 
@@ -93,6 +116,12 @@ export interface ProviderModelDefinition {
   label: string;
   description: string;
   supportsReasoning: boolean;
+  reasoningControl: ProviderReasoningControl;
+  group?: string;
+  upstreamProvider?: string;
+  supportedReasoningEfforts?: string[];
+  defaultReasoningEffort?: string;
+  isDefault?: boolean;
 }
 
 export interface ProviderModelsResponse {
@@ -116,6 +145,74 @@ export interface ResolvedProviderModelSelection {
 }
 
 const providerModelCache = new Map<string, CachedProviderModels>();
+const boundedDisplayText = (maxLength: number) =>
+  z.string().transform((value) => value.slice(0, maxLength));
+const ReasoningOptionSchema = z.object({
+  value: z.string().refine(isReasoningEffort, "Invalid provider reasoning value"),
+  label: boundedDisplayText(120).optional(),
+  description: boundedDisplayText(500).optional(),
+}).strict();
+const ReasoningControlSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("effort"),
+    options: z.array(ReasoningOptionSchema).min(1).max(100),
+    defaultValue: z.string().refine(isReasoningEffort).optional(),
+  }).strict(),
+  z.object({ kind: z.literal("provider_default") }).strict(),
+]).superRefine((control, context) => {
+  if (control.kind === "effort" && control.defaultValue &&
+      !control.options.some(({ value }) => value === control.defaultValue)) {
+    context.addIssue({
+      code: "custom",
+      message: "The advertised reasoning default must be one of the options",
+      path: ["defaultValue"],
+    });
+  }
+});
+const ProviderModelDefinitionSchema = z.object({
+  modelId: z.string().min(1).max(240),
+  label: boundedDisplayText(240),
+  description: boundedDisplayText(2_000),
+  supportsReasoning: z.boolean(),
+  reasoningControl: ReasoningControlSchema,
+  group: boundedDisplayText(240).optional(),
+  upstreamProvider: boundedDisplayText(120).optional(),
+  supportedReasoningEfforts: z.array(
+    z.string().refine(isReasoningEffort)
+  ).max(100).optional(),
+  defaultReasoningEffort: z.string().refine(isReasoningEffort).optional(),
+  isDefault: z.boolean().optional(),
+}).strict().superRefine((model, context) => {
+  const expectedEfforts = model.reasoningControl.kind === "effort"
+    ? model.reasoningControl.options.map(({ value }) => value)
+    : [];
+  if ((model.supportedReasoningEfforts ?? []).join("\0") !== expectedEfforts.join("\0")) {
+    context.addIssue({
+      code: "custom",
+      message: "Compatibility efforts must match the provider-native control",
+      path: ["supportedReasoningEfforts"],
+    });
+  }
+  const expectedDefault = model.reasoningControl.kind === "effort"
+    ? model.reasoningControl.defaultValue
+    : undefined;
+  if (model.defaultReasoningEffort !== expectedDefault) {
+    context.addIssue({
+      code: "custom",
+      message: "Compatibility default must match the provider-native control",
+      path: ["defaultReasoningEffort"],
+    });
+  }
+});
+const StoredProviderCatalogSchema = z.object({
+  providerUpdatedAtMs: z.number().int().nonnegative(),
+  fetchedAt: z.string().datetime(),
+  models: z.array(ProviderModelDefinitionSchema).max(1_000),
+}).strict();
+
+function catalogSettingKey(providerId: string): string {
+  return `provider_model_catalog:${providerId}`;
+}
 
 function isLikelyTextModel(modelId: string, label?: string, description?: string): boolean {
   const haystack = `${modelId} ${label ?? ""} ${description ?? ""}`.toLowerCase();
@@ -123,19 +220,16 @@ function isLikelyTextModel(modelId: string, label?: string, description?: string
 }
 
 function buildModelDefinition(
-  providerType: AIProvider,
   modelId: string,
   label?: string,
-  description?: string
+  description?: string,
+  supportsReasoning = false
 ): ProviderModelDefinition {
-  const provider = providerRegistry.get(providerType);
-
-  return {
+  return withReasoningControl({
     modelId,
     label: label?.trim() || modelId,
     description: description?.trim() || "",
-    supportsReasoning: provider ? provider.supportsReasoningEffort(modelId) : false,
-  };
+  }, { kind: "provider_default" }, supportsReasoning);
 }
 
 function dedupeModels(models: ProviderModelDefinition[]): ProviderModelDefinition[] {
@@ -249,8 +343,13 @@ async function getFallbackProviderRecord(): Promise<ProviderRecord | null> {
     return null;
   }
 
-  const defaultProvider = providers.find((provider) => provider.isDefault);
-  const candidate = defaultProvider ?? providers[0];
+  const apiProviders = providers.filter(
+    (provider) => !isLocalCLIProvider(provider.provider)
+  );
+  const defaultProvider = apiProviders.find((provider) => provider.isDefault);
+  const candidate = defaultProvider ?? apiProviders[0];
+
+  if (!candidate) return null;
 
   if (!isAIProvider(candidate.provider)) {
     throw new AIError({
@@ -315,7 +414,7 @@ async function fetchOpenAICompatibleModels(
         return null;
       }
 
-      return buildModelDefinition(providerType, modelId, modelId, `${model.owned_by ?? ""} model`.trim());
+      return buildModelDefinition(modelId, modelId, `${model.owned_by ?? ""} model`.trim());
     })
     .filter((model): model is ProviderModelDefinition => model !== null);
 
@@ -347,7 +446,6 @@ async function fetchAnthropicModels(
       }
 
       return buildModelDefinition(
-        providerType,
         modelId,
         model.display_name ?? modelId,
         model.type ? `${model.type} model` : ""
@@ -386,7 +484,12 @@ async function fetchGeminiModels(
         return null;
       }
 
-      return buildModelDefinition(providerType, modelId, model.displayName ?? modelId, model.description ?? "");
+      return buildModelDefinition(
+        modelId,
+        model.displayName ?? modelId,
+        model.description ?? "",
+        model.thinking === true
+      );
     })
     .filter((model): model is ProviderModelDefinition => model !== null);
 
@@ -432,20 +535,32 @@ async function fetchOpenRouterModels(
         return null;
       }
 
-      return buildModelDefinition(
-        providerType,
-        modelId,
-        model.name ?? modelId,
-        model.description ?? ""
+      const reasoningControl = createEffortReasoningControl(
+        (model.reasoning?.supported_efforts ?? []).map((value) => ({ value })),
+        model.reasoning?.default_effort ?? undefined
       );
+      const supportsReasoning = reasoningControl.kind === "effort" ||
+        model.supported_parameters?.includes("reasoning") === true;
+
+      return withReasoningControl({
+        modelId,
+        label: model.name?.trim() || modelId,
+        description: model.description?.trim() || "",
+      }, reasoningControl, supportsReasoning);
     })
     .filter((model): model is ProviderModelDefinition => model !== null);
 
   return dedupeModels(normalized);
 }
 
-async function fetchProviderModels(provider: ProviderRecord): Promise<ProviderModelDefinition[]> {
+async function fetchProviderModels(
+  provider: ProviderRecord,
+  forceRefresh = false
+): Promise<ProviderModelDefinition[]> {
   const providerType = provider.provider;
+  if (isLocalCLIProvider(providerType)) {
+    return getLocalCLIModels(providerType, { forceRefresh });
+  }
   const apiKey = ensureApiKey(provider);
 
   switch (providerType) {
@@ -471,7 +586,7 @@ async function fetchProviderModels(provider: ProviderRecord): Promise<ProviderMo
   }
 }
 
-function getProviderUpdatedAtMs(provider: ProviderRecord): number {
+function getProviderUpdatedAtMs(provider: { updatedAt: Date | null }): number {
   return provider.updatedAt?.getTime() ?? 0;
 }
 
@@ -487,6 +602,49 @@ function getCacheEntry(provider: ProviderRecord): CachedProviderModels | null {
   }
 
   return entry;
+}
+
+async function loadStoredCacheEntry(
+  provider: Pick<ProviderRecord, "id" | "updatedAt">
+): Promise<CachedProviderModels | null> {
+  const row = await db.select({ value: settings.value })
+    .from(settings)
+    .where(eq(settings.key, catalogSettingKey(provider.id)))
+    .limit(1);
+  if (!row[0]?.value) return null;
+
+  try {
+    const stored = StoredProviderCatalogSchema.parse(JSON.parse(row[0].value));
+    if (stored.providerUpdatedAtMs !== getProviderUpdatedAtMs(provider)) {
+      return null;
+    }
+    const fetchedAtMs = Date.parse(stored.fetchedAt);
+    return {
+      ...stored,
+      expiresAt: fetchedAtMs + MODEL_CACHE_TTL_MS,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function saveStoredCacheEntry(
+  provider: ProviderRecord,
+  entry: CachedProviderModels
+): Promise<void> {
+  const value = JSON.stringify(StoredProviderCatalogSchema.parse({
+    providerUpdatedAtMs: entry.providerUpdatedAtMs,
+    fetchedAt: entry.fetchedAt,
+    models: entry.models,
+  }));
+  await db.insert(settings).values({
+    key: catalogSettingKey(provider.id),
+    value,
+    updatedAt: new Date(),
+  }).onConflictDoUpdate({
+    target: settings.key,
+    set: { value, updatedAt: new Date() },
+  });
 }
 
 function buildResponse(
@@ -512,15 +670,27 @@ export async function getProviderModels(
   options: GetProviderModelsOptions = {}
 ): Promise<ProviderModelsResponse> {
   const provider = await getProviderRecord(providerId);
+  return getProviderModelsForResolvedProvider(provider, options);
+}
+
+export async function getProviderModelsForResolvedProvider(
+  provider: ResolvedProviderCatalogRecord,
+  options: GetProviderModelsOptions = {}
+): Promise<ProviderModelsResponse> {
   const now = Date.now();
-  const cacheEntry = getCacheEntry(provider);
+  let cacheEntry = getCacheEntry(provider);
+  if (!cacheEntry) {
+    cacheEntry = await loadStoredCacheEntry(provider);
+    if (cacheEntry) providerModelCache.set(provider.id, cacheEntry);
+  }
 
   if (!options.forceRefresh && cacheEntry && cacheEntry.expiresAt > now) {
     return buildResponse(provider, cacheEntry, "cache", false);
   }
 
   try {
-    const models = await fetchProviderModels(provider);
+    const discoveredModels = await fetchProviderModels(provider, options.forceRefresh);
+    const models = z.array(ProviderModelDefinitionSchema).max(1_000).parse(discoveredModels);
     if (models.length === 0) {
       throw new AIError({
         type: "invalid_model",
@@ -536,6 +706,7 @@ export async function getProviderModels(
     };
 
     providerModelCache.set(provider.id, freshEntry);
+    await saveStoredCacheEntry(provider, freshEntry);
 
     return buildResponse(provider, freshEntry, "live", false);
   } catch (error) {
@@ -548,6 +719,37 @@ export async function getProviderModels(
   }
 }
 
+export async function getCachedProviderModelDefinition(
+  providerId: string,
+  modelId: string
+): Promise<ProviderModelDefinition | null> {
+  const row = await db.select({
+    id: aiProviders.id,
+    updatedAt: aiProviders.updatedAt,
+  }).from(aiProviders).where(and(
+    eq(aiProviders.id, providerId),
+    eq(aiProviders.isActive, true)
+  )).limit(1);
+  const provider = row[0];
+  if (!provider) return null;
+
+  let entry = providerModelCache.get(provider.id) ?? null;
+  if (entry?.providerUpdatedAtMs !== getProviderUpdatedAtMs(provider)) {
+    entry = null;
+  }
+  if (!entry) {
+    entry = await loadStoredCacheEntry(provider);
+    if (entry) providerModelCache.set(provider.id, entry);
+  }
+
+  return entry?.models.find((model) => model.modelId === modelId) ?? null;
+}
+
+export async function deleteStoredProviderModelsCache(providerId: string): Promise<void> {
+  providerModelCache.delete(providerId);
+  await db.delete(settings).where(eq(settings.key, catalogSettingKey(providerId)));
+}
+
 export async function resolveProviderModelSelection(options: {
   providerId?: string;
   modelId?: string;
@@ -555,11 +757,7 @@ export async function resolveProviderModelSelection(options: {
   let provider: ProviderRecord | null = null;
 
   if (options.providerId) {
-    try {
-      provider = await getProviderRecord(options.providerId);
-    } catch {
-      provider = null;
-    }
+    provider = await getProviderRecord(options.providerId);
   }
 
   if (!provider) {
@@ -585,11 +783,18 @@ export async function resolveProviderModelSelection(options: {
   }
 
   const availableModels = providerModels?.models ?? [];
-  const resolvedModelId = requestedModelId && availableModels.some((model) => model.modelId === requestedModelId)
-    ? requestedModelId
-    : requestedModelId && availableModels.length === 0
-      ? requestedModelId
-      : availableModels[0]?.modelId ?? requestedModelId;
+  if (
+    requestedModelId &&
+    availableModels.length > 0 &&
+    !availableModels.some((model) => model.modelId === requestedModelId)
+  ) {
+    throw new AIError({
+      type: "invalid_model",
+      message: `Configured model "${requestedModelId}" is unavailable for provider "${provider.provider}"`,
+    });
+  }
+
+  const resolvedModelId = requestedModelId ?? availableModels[0]?.modelId;
 
   if (!resolvedModelId) {
     throw new AIError({

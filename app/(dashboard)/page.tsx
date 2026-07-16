@@ -68,6 +68,7 @@ interface Job {
   location: string | null;
   locationType: string | null;
   matchScore: number | null;
+  matchLegacy?: boolean;
   status: string;
   discoveredAt: string;
   viewedAt: string | null;
@@ -152,7 +153,6 @@ function JobRow({
     status: job.status,
     currentTime,
   });
-
   return (
     <Link
       href={`/jobs/${job.id}`}
@@ -190,7 +190,9 @@ function JobRow({
       </div>
 
       <div className="flex flex-col items-end gap-1.5 shrink-0">
-        {job.matchScore !== null && <MatchBadge score={job.matchScore} size="sm" />}
+        {job.matchScore !== null && (
+          <MatchBadge score={job.matchScore} size="sm" />
+        )}
         <span className="text-[10px] text-muted-foreground font-medium">
           {type === "applied" && job.appliedAt
             ? `Applied ${formatRelativeTime(new Date(job.appliedAt))}`
@@ -225,13 +227,13 @@ export default function DashboardPage() {
 
   const isInitialLoading = isProfileLoading || isStatsLoading;
 
-  // Top 5 high-match jobs (75%+)
+  // Top five roles in the good-or-better compatibility bands.
   const { data: highMatchData } = useQuery({
     queryKey: ["jobs", "high-match"],
     queryFn: async () => {
-      const res = await fetch(`/api/jobs?minScore=75&excludeStatus=applied,archived&sortBy=matchScore&sortOrder=desc&limit=${DASHBOARD_LIST_MAX_ITEMS}`);
+      const res = await fetch(`/api/jobs?matchBands=high,good&excludeStatus=applied,archived&sortBy=matchScore&sortOrder=desc&limit=${DASHBOARD_LIST_MAX_ITEMS}`);
       if (!res.ok) throw new Error("Failed to fetch jobs");
-      return res.json();
+      return res.json() as Promise<{ jobs: Job[] }>;
     },
   });
 
@@ -354,11 +356,11 @@ export default function DashboardPage() {
               subtitle="this week"
             />
             <StatCard
-              title="High Match"
+              title="Good+ Matches"
               value={stats?.highMatchJobs ?? 0}
               icon={Star}
               color="text-amber-500"
-              subtitle="75%+ score"
+              subtitle="good match or better"
             />
             <StatCard
               title="Applied"
@@ -475,10 +477,10 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <h2 className="text-base font-medium text-foreground">Top Matches</h2>
-                  <p className="text-xs text-muted-foreground">Jobs with 75%+ match score</p>
+                  <p className="text-xs text-muted-foreground">Good or high compatibility</p>
                 </div>
               </div>
-              <Link href="/jobs?minScore=75&sortBy=matchScore&sortOrder=desc">
+              <Link href="/jobs?matchBands=high,good&sortBy=matchScore&sortOrder=desc">
                 <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground h-8">
                   View All
                 </Button>

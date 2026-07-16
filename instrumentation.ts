@@ -1,5 +1,22 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    try {
+      const { ensureBuiltinLocalCLIProviders } = await import(
+        "@/lib/ai/providers/provider-service"
+      );
+      await ensureBuiltinLocalCLIProviders();
+      const { removeDeprecatedMatchingPreferenceSettings } = await import(
+        "@/lib/settings/settings-service"
+      );
+      await removeDeprecatedMatchingPreferenceSettings();
+      const { warmLocalCLIStatuses } = await import("@/lib/ai/local-cli/service");
+      void warmLocalCLIStatuses().catch((error) => {
+        console.error("[Instrumentation] Failed to check local CLI providers:", error);
+      });
+    } catch (error) {
+      console.error("[Instrumentation] Failed to initialize local CLI providers:", error);
+    }
+
     const { startScheduler } = await import("@/lib/jobs/scheduler");
     try {
       await startScheduler();
@@ -23,12 +40,24 @@ export async function register() {
     }
 
     try {
-      const { dispatchPendingScrapeMatches } = await import(
-        "@/lib/scraper/matching/outbox"
+      const { dispatchPendingAIWork, importLegacyMatchWork } = await import(
+        "@/lib/ai/work-items"
       );
-      dispatchPendingScrapeMatches();
+      try {
+        const imported = importLegacyMatchWork();
+        if (imported > 0) {
+          console.log(`[Instrumentation] Imported ${imported} legacy matcher work items`);
+        }
+      } catch (error) {
+        console.error("[Instrumentation] Failed to import legacy matcher outbox:", error);
+      }
+      try {
+        dispatchPendingAIWork();
+      } catch (error) {
+        console.error("[Instrumentation] Failed to recover matcher outbox:", error);
+      }
     } catch (error) {
-      console.error("[Instrumentation] Failed to recover matcher outbox:", error);
+      console.error("[Instrumentation] Failed to load matcher recovery:", error);
     }
   }
 }

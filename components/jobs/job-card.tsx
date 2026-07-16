@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MatchBadge } from "./match-badge";
 import { ApplyButton } from "./apply-button";
+import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
 import {
   Building2,
   Calendar,
@@ -71,6 +72,10 @@ const SENIORITY_LABELS: Record<string, string> = {
 
 export function JobCard({ job }: JobCardProps) {
   const queryClient = useQueryClient();
+  const {
+    mutation: calculateMatchMutation,
+    isMatching,
+  } = useQueuedJobMatch({ jobId: job.id });
   const isReadOnlyPostingAction = job.status === "applied" || job.status === "archived";
 
   const updateStatusMutation = useMutation({
@@ -86,21 +91,6 @@ export function JobCard({ job }: JobCardProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["stats"] });
-    },
-  });
-
-  const calculateMatchMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/match", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({ jobId: job.id }),
-      });
-      if (!res.ok) throw new Error("Failed to calculate match");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
   });
 
@@ -246,10 +236,10 @@ export function JobCard({ job }: JobCardProps) {
               variant="ghost"
               size="xs"
               onClick={() => calculateMatchMutation.mutate()}
-              disabled={calculateMatchMutation.isPending}
+              disabled={isMatching}
             >
               <Sparkles className="h-3.5 w-3.5" />
-              {calculateMatchMutation.isPending ? "Scoring..." : "Score"}
+              {isMatching ? "Scoring..." : "Score"}
             </Button>
           )}
         </div>

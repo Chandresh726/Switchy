@@ -1,4 +1,12 @@
-import { sqliteTable, text, integer, real, unique, index } from "drizzle-orm/sqlite-core";
+import {
+  sqliteTable,
+  text,
+  integer,
+  real,
+  unique,
+  index,
+  primaryKey,
+} from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
 
 // Profile - Single user profile
@@ -26,6 +34,9 @@ export const resumes = sqliteTable("resumes", {
   fileName: text("file_name").notNull(),
   filePath: text("file_path").notNull(),
   parsedData: text("parsed_data").notNull(), // JSON string
+  aiRunId: text("ai_run_id").references(() => aiRuns.id),
+  parserVersion: text("parser_version"),
+  validationWarnings: text("validation_warnings"), // JSON array validated by resume repository
   version: integer("version").notNull(),
   isCurrent: integer("is_current", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
@@ -97,6 +108,7 @@ export const jobs = sqliteTable("jobs", {
   department: text("department"),
   employmentType: text("employment_type"), // "full-time", "part-time", "contract"
   seniorityLevel: text("seniority_level"), // "entry", "mid", "senior", "lead", "manager"
+  aiFingerprint: text("ai_fingerprint"), // Derived from AI-relevant job content; maintained without touching updatedAt
   status: text("status").notNull().default("new"), // "new", "viewed", "interested", "applied", "rejected", "archived"
   matchScore: real("match_score"), // 0-100
   matchReasons: text("match_reasons"), // JSON array
@@ -114,6 +126,7 @@ export const jobs = sqliteTable("jobs", {
   companyIdIdx: index("jobs_company_id_idx").on(table.companyId),
   statusIdx: index("jobs_status_idx").on(table.status),
   matchScoreIdx: index("jobs_match_score_idx").on(table.matchScore),
+  aiFingerprintIdx: index("jobs_ai_fingerprint_idx").on(table.aiFingerprint),
   companyExternalIdUnique: unique("jobs_company_external_id_unique").on(table.companyId, table.externalId),
   companyUrlUnique: unique("jobs_company_url_unique").on(table.companyId, table.url),
 }));
@@ -237,6 +250,54 @@ export const scrapeMatchOutbox = sqliteTable("scrape_match_outbox", {
   leaseIdx: index("scrape_match_outbox_lease_idx").on(table.status, table.leaseExpiresAt),
 }));
 
+// Generic durable local AI work. Payload/result JSON is validated by the work repository.
+export const aiWorkItems = sqliteTable("ai_work_items", {
+  id: text("id").primaryKey(),
+  workType: text("work_type").notNull(),
+  matchSessionId: text("match_session_id")
+    .references(() => matchSessions.id, { onDelete: "cascade" }),
+  scrapingLogId: integer("scraping_log_id")
+    .references(() => scrapingLogs.id, { onDelete: "restrict" }),
+  companyId: integer("company_id")
+    .references(() => companies.id, { onDelete: "restrict" }),
+  payloadJson: text("payload_json").notNull(),
+  status: text("status").notNull().default("queued"),
+  priority: integer("priority").notNull().default(100),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  availableAt: integer("available_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  workerId: text("worker_id"),
+  lockedAt: integer("locked_at", { mode: "timestamp" }),
+  leaseExpiresAt: integer("lease_expires_at", { mode: "timestamp" }),
+  cancelRequested: integer("cancel_requested", { mode: "boolean" }).notNull().default(false),
+  resultJson: text("result_json"),
+  lastErrorCode: text("last_error_code"),
+  lastError: text("last_error"),
+  startedAt: integer("started_at", { mode: "timestamp" }),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  sessionWorkUnique: unique("ai_work_items_session_work_unique").on(
+    table.matchSessionId,
+    table.workType
+  ),
+  claimIdx: index("ai_work_items_claim_idx").on(
+    table.workType,
+    table.status,
+    table.availableAt,
+    table.priority,
+    table.createdAt
+  ),
+  sessionStatusIdx: index("ai_work_items_session_status_idx").on(
+    table.matchSessionId,
+    table.status
+  ),
+  scrapingLogIdx: index("ai_work_items_scraping_log_idx").on(table.scrapingLogId),
+  companyStatusIdx: index("ai_work_items_company_status_idx").on(table.companyId, table.status),
+  leaseIdx: index("ai_work_items_lease_idx").on(table.status, table.leaseExpiresAt),
+}));
+
 // Match Sessions - Track batch match operations
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
@@ -254,6 +315,116 @@ export const aiProviders = sqliteTable("aiProviders", {
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
+
+// AI Runs - Sanitized provenance and telemetry for every logical AI execution
+export const aiRuns = sqliteTable("ai_runs", {
+  id: text("id").primaryKey(),
+  capability: text("capability").notNull(),
+  subjectType: text("subject_type"),
+  subjectId: text("subject_id"),
+  providerRecordId: text("provider_record_id").notNull(),
+  provider: text("provider").notNull(),
+  modelId: text("model_id").notNull(),
+  promptVersion: text("prompt_version").notNull(),
+  schemaVersion: text("schema_version").notNull(),
+  policyVersion: text("policy_version").notNull(),
+  inputFingerprint: text("input_fingerprint").notNull(),
+  status: text("status").notNull().default("running"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+  totalTokens: integer("total_tokens"),
+  durationMs: integer("duration_ms"),
+  finishReason: text("finish_reason"),
+  cacheStatus: text("cache_status").notNull().default("miss"),
+  qualityResult: text("quality_result").notNull().default("not_checked"),
+  warningsJson: text("warnings_json"),
+  metadataJson: text("metadata_json"),
+  errorCode: text("error_code"),
+  errorMessage: text("error_message"),
+  startedAt: integer("started_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  capabilityCreatedIdx: index("ai_runs_capability_created_idx").on(
+    table.capability,
+    table.createdAt
+  ),
+  subjectIdx: index("ai_runs_subject_idx").on(table.subjectType, table.subjectId),
+  statusCreatedIdx: index("ai_runs_status_created_idx").on(table.status, table.createdAt),
+  createdAtIdx: index("ai_runs_created_at_idx").on(table.createdAt),
+}));
+
+// Immutable normalized candidate evidence used by versioned matching.
+export const candidateSnapshots = sqliteTable("candidate_snapshots", {
+  id: text("id").primaryKey(),
+  sourceProfileId: integer("source_profile_id"),
+  fingerprint: text("fingerprint").notNull(),
+  snapshotVersion: text("snapshot_version").notNull(),
+  evidenceJson: text("evidence_json").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  fingerprintVersionUnique: unique("candidate_snapshots_fingerprint_version_unique").on(
+    table.fingerprint,
+    table.snapshotVersion
+  ),
+  sourceProfileIdx: index("candidate_snapshots_source_profile_idx").on(
+    table.sourceProfileId,
+    table.createdAt
+  ),
+}));
+
+// Immutable structured job evidence, reusable across matching runs.
+export const jobAnalyses = sqliteTable("job_analyses", {
+  id: text("id").primaryKey(),
+  jobFingerprint: text("job_fingerprint").notNull(),
+  extractorVersion: text("extractor_version").notNull(),
+  evidenceJson: text("evidence_json").notNull(),
+  aiRunId: text("ai_run_id").references(() => aiRuns.id, { onDelete: "set null" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  fingerprintExtractorUnique: unique("job_analyses_fingerprint_extractor_unique").on(
+    table.jobFingerprint,
+    table.extractorVersion
+  ),
+  createdAtIdx: index("job_analyses_created_at_idx").on(table.createdAt),
+}));
+
+// Immutable versioned match outcomes. Deprecated job columns are cleared during startup cleanup.
+export const matchResults = sqliteTable("match_results", {
+  id: text("id").primaryKey(),
+  jobId: integer("job_id").references(() => jobs.id, { onDelete: "cascade" }).notNull(),
+  candidateSnapshotId: text("candidate_snapshot_id").references(() => candidateSnapshots.id, { onDelete: "restrict" }),
+  jobAnalysisId: text("job_analysis_id").references(() => jobAnalyses.id, { onDelete: "restrict" }),
+  candidateFingerprint: text("candidate_fingerprint").notNull(),
+  jobFingerprint: text("job_fingerprint").notNull(),
+  scoringPolicyVersion: text("scoring_policy_version").notNull(),
+  matchPolicyVersion: text("match_policy_version"),
+  score: real("score").notNull(),
+  breakdownJson: text("breakdown_json").notNull(),
+  evidenceJson: text("evidence_json").notNull(),
+  confidence: real("confidence").notNull(), // Deprecated compatibility column; active AI matching stores 0.
+  source: text("source").notNull(),
+  adjudicationRunId: text("adjudication_run_id").references(() => aiRuns.id, { onDelete: "set null" }),
+  matchRunId: text("match_run_id").references(() => aiRuns.id, { onDelete: "set null" }),
+  isStale: integer("is_stale", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  artifactUnique: unique("match_results_artifact_unique").on(
+    table.jobId,
+    table.candidateFingerprint,
+    table.jobFingerprint,
+    table.scoringPolicyVersion
+  ),
+  jobCreatedIdx: index("match_results_job_created_idx").on(table.jobId, table.createdAt),
+  freshnessIdx: index("match_results_freshness_idx").on(
+    table.jobId,
+    table.candidateFingerprint,
+    table.jobFingerprint,
+    table.scoringPolicyVersion,
+    table.isStale
+  ),
+}));
 
 // Match Sessions - Track batch match operations
 export const matchSessions = sqliteTable("match_sessions", {
@@ -277,6 +448,7 @@ export const matchLogs = sqliteTable("match_logs", {
   jobId: integer("job_id").references(() => jobs.id, { onDelete: "cascade" }),
   status: text("status").notNull(), // "success" | "failed"
   score: real("score"), // Match score if successful
+  matchResultId: text("match_result_id").references(() => matchResults.id),
   attemptCount: integer("attempt_count").default(1),
   errorType: text("error_type"),
   errorMessage: text("error_message"),
@@ -285,6 +457,51 @@ export const matchLogs = sqliteTable("match_logs", {
   completedAt: integer("completed_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 }, (table) => ({
   sessionIdIdx: index("match_logs_session_id_idx").on(table.sessionId),
+  modelCompletedIdx: index("match_logs_model_completed_idx").on(
+    table.modelUsed,
+    table.completedAt
+  ),
+}));
+
+// Durable per-job pipeline state for live analysis and matching progress.
+export const matchSessionJobs = sqliteTable("match_session_jobs", {
+  sessionId: text("session_id")
+    .references(() => matchSessions.id, { onDelete: "cascade" })
+    .notNull(),
+  jobId: integer("job_id")
+    .references(() => jobs.id, { onDelete: "cascade" })
+    .notNull(),
+  analysisStatus: text("analysis_status", {
+    enum: ["queued", "analyzing", "ready", "cached", "failed"],
+  }).notNull().default("queued"),
+  matchStatus: text("match_status", {
+    enum: ["blocked", "queued", "matching", "completed", "cached", "failed"],
+  }).notNull().default("blocked"),
+  jobAnalysisId: text("job_analysis_id")
+    .references(() => jobAnalyses.id, { onDelete: "set null" }),
+  analysisRunId: text("analysis_run_id")
+    .references(() => aiRuns.id, { onDelete: "set null" }),
+  matchRunId: text("match_run_id")
+    .references(() => aiRuns.id, { onDelete: "set null" }),
+  matchResultId: text("match_result_id")
+    .references(() => matchResults.id, { onDelete: "set null" }),
+  errorStage: text("error_stage", { enum: ["analysis", "matching"] }),
+  errorCode: text("error_code"),
+  errorMessage: text("error_message"),
+  analysisStartedAt: integer("analysis_started_at", { mode: "timestamp" }),
+  analysisCompletedAt: integer("analysis_completed_at", { mode: "timestamp" }),
+  matchStartedAt: integer("match_started_at", { mode: "timestamp" }),
+  matchCompletedAt: integer("match_completed_at", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.sessionId, table.jobId] }),
+  sessionPipelineIdx: index("match_session_jobs_session_pipeline_idx").on(
+    table.sessionId,
+    table.analysisStatus,
+    table.matchStatus
+  ),
+  jobIdx: index("match_session_jobs_job_idx").on(table.jobId),
 }));
 
 export const aiGeneratedContent = sqliteTable("aiGeneratedContent", {
@@ -307,6 +524,13 @@ export const aiGenerationHistory = sqliteTable("aiGenerationHistory", {
   variant: text("variant").notNull(),
   userPrompt: text("user_prompt"), // If user asked for modifications
   parentVariantId: integer("parent_variant_id").references(aiGenHistParentVariantRef, { onDelete: "cascade" }), // If derived from another variant
+  aiRunId: text("ai_run_id").references(() => aiRuns.id, { onDelete: "set null" }),
+  source: text("source").notNull().default("generated"), // "generated" | "manual_edit"
+  selectedAt: integer("selected_at", { mode: "timestamp" }),
+  copiedAt: integer("copied_at", { mode: "timestamp" }),
+  discardedAt: integer("discarded_at", { mode: "timestamp" }),
+  editDistance: integer("edit_distance"),
+  editDistanceRatio: real("edit_distance_ratio"),
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
 
@@ -489,6 +713,7 @@ export const matchSessionsRelations = relations(matchSessions, ({ one, many }) =
     references: [companies.id],
   }),
   logs: many(matchLogs),
+  jobs: many(matchSessionJobs),
   scrapeMatchOutbox: one(scrapeMatchOutbox),
 }));
 
@@ -500,6 +725,37 @@ export const matchLogsRelations = relations(matchLogs, ({ one }) => ({
   job: one(jobs, {
     fields: [matchLogs.jobId],
     references: [jobs.id],
+  }),
+  matchResult: one(matchResults, {
+    fields: [matchLogs.matchResultId],
+    references: [matchResults.id],
+  }),
+}));
+
+export const matchSessionJobsRelations = relations(matchSessionJobs, ({ one }) => ({
+  session: one(matchSessions, {
+    fields: [matchSessionJobs.sessionId],
+    references: [matchSessions.id],
+  }),
+  job: one(jobs, {
+    fields: [matchSessionJobs.jobId],
+    references: [jobs.id],
+  }),
+  jobAnalysis: one(jobAnalyses, {
+    fields: [matchSessionJobs.jobAnalysisId],
+    references: [jobAnalyses.id],
+  }),
+  analysisRun: one(aiRuns, {
+    fields: [matchSessionJobs.analysisRunId],
+    references: [aiRuns.id],
+  }),
+  matchRun: one(aiRuns, {
+    fields: [matchSessionJobs.matchRunId],
+    references: [aiRuns.id],
+  }),
+  matchResult: one(matchResults, {
+    fields: [matchSessionJobs.matchResultId],
+    references: [matchResults.id],
   }),
 }));
 
@@ -556,14 +812,26 @@ export type MatchSession = typeof matchSessions.$inferSelect;
 export type NewMatchSession = typeof matchSessions.$inferInsert;
 export type MatchLog = typeof matchLogs.$inferSelect;
 export type NewMatchLog = typeof matchLogs.$inferInsert;
+export type MatchSessionJob = typeof matchSessionJobs.$inferSelect;
+export type NewMatchSessionJob = typeof matchSessionJobs.$inferInsert;
 export type Resume = typeof resumes.$inferSelect;
 export type NewResume = typeof resumes.$inferInsert;
+export type AIWorkItem = typeof aiWorkItems.$inferSelect;
+export type NewAIWorkItem = typeof aiWorkItems.$inferInsert;
 export type AIGeneratedContent = typeof aiGeneratedContent.$inferSelect;
 export type NewAIGeneratedContent = typeof aiGeneratedContent.$inferInsert;
 export type AIGenerationHistory = typeof aiGenerationHistory.$inferSelect;
 export type NewAIGenerationHistory = typeof aiGenerationHistory.$inferInsert;
 export type AIProviderRecord = typeof aiProviders.$inferSelect;
 export type NewAIProviderRecord = typeof aiProviders.$inferInsert;
+export type CandidateSnapshot = typeof candidateSnapshots.$inferSelect;
+export type NewCandidateSnapshot = typeof candidateSnapshots.$inferInsert;
+export type JobAnalysis = typeof jobAnalyses.$inferSelect;
+export type NewJobAnalysis = typeof jobAnalyses.$inferInsert;
+export type PersistedMatchResult = typeof matchResults.$inferSelect;
+export type NewPersistedMatchResult = typeof matchResults.$inferInsert;
+export type AIRun = typeof aiRuns.$inferSelect;
+export type NewAIRun = typeof aiRuns.$inferInsert;
 export type Person = typeof people.$inferSelect;
 export type NewPerson = typeof people.$inferInsert;
 export type PeopleImportSession = typeof peopleImportSessions.$inferSelect;
