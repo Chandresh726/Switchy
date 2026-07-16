@@ -4,14 +4,16 @@ export const MatchResultSchema = z.object({
   score: z.number().min(0).max(100),
   reasons: z.array(z.string()),
   matchedSkills: z.array(z.string()),
-  missingSkills: z.array(z.string()),
-  recommendations: z.array(z.string()),
 });
 
 export type MatchResult = z.infer<typeof MatchResultSchema>;
 
 export interface MatcherConfig {
+  jobAnalysisModel?: string;
+  jobAnalysisProviderId?: string;
+  jobAnalysisReasoningEffort?: string;
   model: string;
+  providerId?: string;
   reasoningEffort?: string;
   batchSize: number;
   maxRetries: number;
@@ -23,12 +25,14 @@ export interface MatcherConfig {
 }
 
 export const DEFAULT_MATCHER_CONFIG: MatcherConfig = {
+  jobAnalysisModel: "",
+  jobAnalysisReasoningEffort: "",
   model: "",
   reasoningEffort: "",
   batchSize: 2,
   maxRetries: 3,
   concurrencyLimit: 3,
-  timeoutMs: 30000,
+  timeoutMs: 120000,
   backoffBaseDelay: 2000,
   backoffMaxDelay: 32000,
   autoMatchAfterScrape: true,

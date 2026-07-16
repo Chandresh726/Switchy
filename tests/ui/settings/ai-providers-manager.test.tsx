@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { AIProvidersManager } from "@/components/settings/ai-providers-manager";
@@ -36,12 +36,6 @@ function props() {
     onDeleteProvider: vi.fn(),
     onUpdateProviderApiKey: vi.fn(),
     onRefreshProviderModels: vi.fn(),
-    onCheckLocalProvider: vi.fn().mockResolvedValue({
-      status: "ready",
-      selectable: true,
-      statusMessage: "Ready",
-      lastCheckedAt: "2026-07-15T00:00:00.000Z",
-    }),
     codexExecutablePath: "",
     openCodeExecutablePath: "",
     onSaveExecutablePaths: vi.fn().mockResolvedValue(undefined),
@@ -49,7 +43,7 @@ function props() {
 }
 
 describe("AIProvidersManager local CLI providers", () => {
-  it("shows CLI providers in the unified list with the same management actions", () => {
+  it("shows permanent CLI providers without add or delete actions", () => {
     render(<AIProvidersManager {...props()} />);
 
     expect(screen.getByText("Manage API-key and local CLI providers in one place.")).toBeTruthy();
@@ -57,8 +51,9 @@ describe("AIProvidersManager local CLI providers", () => {
     expect(screen.getByText("OpenCode")).toBeTruthy();
     expect(screen.getByText("v1.2.3")).toBeTruthy();
     expect(screen.queryByText("Local CLI")).toBeNull();
-    expect(screen.getAllByRole("button", { name: "Delete provider" })).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Delete provider" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /test ai features/i })).toBeNull();
     expect(screen.getAllByRole("button", { name: "Refresh models" })).toHaveLength(2);
   });
 
@@ -106,40 +101,15 @@ describe("AIProvidersManager local CLI providers", () => {
     vi.useRealTimers();
   });
 
-  it("checks a local CLI as soon as it is selected for addition", async () => {
+  it("does not offer permanent CLI providers in the add-provider menu", async () => {
     Element.prototype.scrollIntoView = vi.fn();
     const input = props();
-    input.providers = [];
     render(<AIProvidersManager {...input} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Add Provider" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add Another Provider" }));
     fireEvent.click(screen.getByLabelText("Provider"));
-    fireEvent.click(screen.getByRole("option", { name: "Codex CLI · Local CLI" }));
-
-    await waitFor(() => {
-      expect(input.onCheckLocalProvider).toHaveBeenCalledWith("codex_cli");
-    });
-    expect(screen.getByText("Ready")).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "Codex CLI · Local CLI" })).toBeNull();
+    expect(screen.queryByRole("option", { name: "OpenCode · Local CLI" })).toBeNull();
   });
 
-  it("does not add a selected CLI when automatic verification fails", async () => {
-    Element.prototype.scrollIntoView = vi.fn();
-    const input = props();
-    input.providers = [];
-    input.onCheckLocalProvider.mockResolvedValue({
-      status: "not_installed",
-      selectable: false,
-      statusMessage: "Codex CLI is not installed.",
-      lastCheckedAt: "2026-07-15T00:00:00.000Z",
-    });
-    render(<AIProvidersManager {...input} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Add Provider" }));
-    fireEvent.click(screen.getByLabelText("Provider"));
-    fireEvent.click(screen.getByRole("option", { name: "Codex CLI · Local CLI" }));
-
-    await screen.findByText("Codex CLI is not installed.");
-    const addButtons = screen.getAllByRole("button", { name: "Add Provider" });
-    expect((addButtons.at(-1) as HTMLButtonElement).disabled).toBe(true);
-  });
 });

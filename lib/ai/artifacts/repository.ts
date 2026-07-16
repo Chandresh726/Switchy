@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { z } from "zod";
 
@@ -9,14 +9,10 @@ import {
   aiRuns,
   candidateSnapshots,
   jobAnalyses,
-  jobs,
   matchResults,
 } from "@/lib/db/schema";
-import { fingerprintAIInput } from "@/lib/ai/runtime/fingerprint";
-
 import {
   buildCandidateFingerprint,
-  buildJobEvidenceInput,
   buildJobFingerprint,
   canonicalizeCandidateEvidence,
   canonicalizeJobEvidenceInput,
@@ -37,41 +33,8 @@ import {
 
 type ArtifactDatabase = BetterSQLite3Database<typeof databaseSchema>;
 
-const LEGACY_CANDIDATE_FINGERPRINT = fingerprintAIInput({ source: "legacy-match-columns" });
-const LegacyStringArraySchema = z.array(z.string()).max(10_000);
-const LEGACY_IMPORT_BATCH_SIZE = 500;
-
 function parseJson<T>(value: string, schema: z.ZodType<T>): T {
   return schema.parse(JSON.parse(value));
-}
-
-function parseLegacyStringArray(value: string | null, maxChars: number): string[] {
-  if (!value) return [];
-  try {
-    return LegacyStringArraySchema.parse(JSON.parse(value))
-      .slice(0, 500)
-      .map((item) => item.slice(0, maxChars));
-  } catch {
-    return [];
-  }
-}
-
-function buildLegacyJobFingerprint(job: typeof jobs.$inferSelect): string {
-  try {
-    return buildJobFingerprint(buildJobEvidenceInput(job));
-  } catch {
-    return fingerprintAIInput({
-      legacyJobId: job.id,
-      title: job.title,
-      description: job.description,
-      location: job.location,
-      locationType: job.locationType,
-      seniorityLevel: job.seniorityLevel,
-      department: job.department,
-      employmentType: job.employmentType,
-      salary: job.salary,
-    });
-  }
 }
 
 export interface CreateCandidateSnapshotInput {
@@ -97,9 +60,11 @@ export interface CreateMatchResultInput {
   score: number;
   breakdown: MatchBreakdown;
   evidence: z.input<typeof MatchEvidenceSchema>;
-  confidence: number;
-  source: "legacy" | "deterministic" | "adjudicated";
+  confidence?: number | null;
+  source: "legacy" | "deterministic" | "adjudicated" | "ai";
   adjudicationRunId?: string;
+  matchRunId?: string;
+  matchPolicyVersion?: string;
   isStale?: boolean;
   signal?: AbortSignal;
 }
@@ -128,7 +93,7 @@ export function isMatchResultFresh(
 export function createArtifactRepository(database: ArtifactDatabase) {
   async function requireSuccessfulRun(
     runId: string,
-    capability: "job_analysis" | "match_adjudication"
+    capability: "job_analysis" | "match_adjudication" | "match_evaluation"
   ): Promise<void> {
     const runs = await database.select({
       capability: aiRuns.capability,
@@ -206,7 +171,9 @@ export function createArtifactRepository(database: ArtifactDatabase) {
       const jobFingerprint = ArtifactFingerprintSchema.parse(input.jobFingerprint);
       const scoringPolicyVersion = ArtifactVersionSchema.parse(input.scoringPolicyVersion);
       const score = z.number().min(0).max(100).parse(input.score);
-      const confidence = z.number().min(0).max(1).parse(input.confidence);
+      const confidence = input.confidence == null
+        ? 0
+        : z.number().min(0).max(1).parse(input.confidence);
       const source = MatchSourceSchema.parse(input.source);
       const breakdown = MatchBreakdownSchema.parse(input.breakdown);
       const evidence = MatchEvidenceSchema.parse(input.evidence);
@@ -214,7 +181,7 @@ export function createArtifactRepository(database: ArtifactDatabase) {
         throw new Error("Versioned match results require candidate and job artifacts");
       }
       if (source === "legacy" && (
-        input.candidateSnapshotId || input.jobAnalysisId || input.adjudicationRunId
+        input.candidateSnapshotId || input.jobAnalysisId || input.adjudicationRunId || input.matchRunId
       )) {
         throw new Error("Legacy results cannot reference versioned AI artifacts");
       }
@@ -226,6 +193,16 @@ export function createArtifactRepository(database: ArtifactDatabase) {
       }
       if (source === "adjudicated") {
         await requireSuccessfulRun(input.adjudicationRunId!, "match_adjudication");
+        input.signal?.throwIfAborted();
+      }
+      if (source === "ai" && !input.matchRunId) {
+        throw new Error("AI match results require a match evaluation run");
+      }
+      if (source !== "ai" && input.matchRunId) {
+        throw new Error("Only AI match results may reference a match evaluation run");
+      }
+      if (source === "ai") {
+        await requireSuccessfulRun(input.matchRunId!, "match_evaluation");
         input.signal?.throwIfAborted();
       }
       if (source !== "legacy") {
@@ -256,12 +233,14 @@ export function createArtifactRepository(database: ArtifactDatabase) {
         candidateFingerprint,
         jobFingerprint,
         scoringPolicyVersion,
+        matchPolicyVersion: input.matchPolicyVersion ?? (source === "ai" ? scoringPolicyVersion : null),
         score,
         breakdownJson: JSON.stringify(breakdown),
         evidenceJson: JSON.stringify(evidence),
         confidence,
         source,
         adjudicationRunId: input.adjudicationRunId,
+        matchRunId: input.matchRunId,
         isStale: source === "legacy" ? true : (input.isStale ?? false),
       }).onConflictDoNothing();
 
@@ -273,8 +252,22 @@ export function createArtifactRepository(database: ArtifactDatabase) {
       )).limit(1);
       const row = rows[0];
       if (!row) throw new Error("Failed to create match result");
+      const resultIsStale = source === "legacy" ? true : (input.isStale ?? false);
+      if (!resultIsStale) {
+        await database.update(matchResults).set({ isStale: true }).where(and(
+          eq(matchResults.jobId, input.jobId),
+          eq(matchResults.candidateFingerprint, candidateFingerprint),
+          ne(matchResults.id, row.id),
+          eq(matchResults.isStale, false)
+        ));
+      }
+      if (row.isStale !== resultIsStale) {
+        await database.update(matchResults).set({ isStale: resultIsStale })
+          .where(eq(matchResults.id, row.id));
+      }
       return {
         ...row,
+        isStale: resultIsStale,
         breakdown: parseJson(row.breakdownJson, MatchBreakdownSchema),
         evidence: parseJson(row.evidenceJson, MatchEvidenceSchema),
       };
@@ -298,52 +291,6 @@ export function createArtifactRepository(database: ArtifactDatabase) {
         breakdown: parseJson(row.breakdownJson, MatchBreakdownSchema),
         evidence: parseJson(row.evidenceJson, MatchEvidenceSchema),
       };
-    },
-
-    async importLegacyMatchResults(): Promise<number> {
-      return database.transaction((tx) => {
-        const legacyJobs = tx.select().from(jobs).where(isNotNull(jobs.matchScore)).all();
-        if (legacyJobs.length === 0) return 0;
-        const importedJobIds = new Set(
-          tx.select({ jobId: matchResults.jobId }).from(matchResults)
-            .where(eq(matchResults.source, "legacy")).all()
-            .map((row) => row.jobId)
-        );
-        const pendingJobs = legacyJobs.filter((job) => !importedJobIds.has(job.id));
-        let insertedCount = 0;
-
-        for (let offset = 0; offset < pendingJobs.length; offset += LEGACY_IMPORT_BATCH_SIZE) {
-          const batch = pendingJobs.slice(offset, offset + LEGACY_IMPORT_BATCH_SIZE);
-          const inserted = tx.insert(matchResults).values(batch.map((job) => {
-            const rawScore = job.matchScore ?? 0;
-            const score = Number.isFinite(rawScore)
-              ? Math.min(100, Math.max(0, rawScore))
-              : 0;
-            return {
-              id: randomUUID(),
-              jobId: job.id,
-              candidateFingerprint: LEGACY_CANDIDATE_FINGERPRINT,
-              jobFingerprint: buildLegacyJobFingerprint(job),
-              scoringPolicyVersion: "legacy-import-v1",
-              score,
-              breakdownJson: JSON.stringify(MatchBreakdownSchema.parse({ legacy: score })),
-              evidenceJson: JSON.stringify(MatchEvidenceSchema.parse({
-                reasons: parseLegacyStringArray(job.matchReasons, 2_000),
-                matchedSkills: parseLegacyStringArray(job.matchedSkills, 200),
-                missingSkills: parseLegacyStringArray(job.missingSkills, 200),
-                recommendations: parseLegacyStringArray(job.recommendations, 2_000),
-                componentEvidence: {},
-              })),
-              confidence: 0,
-              source: "legacy",
-              isStale: true,
-            };
-          })).onConflictDoNothing().run();
-          insertedCount += inserted.changes;
-        }
-
-        return insertedCount;
-      }, { behavior: "immediate" });
     },
   };
 }

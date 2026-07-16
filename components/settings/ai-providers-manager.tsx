@@ -57,9 +57,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { LocalCLIStatus } from "@/lib/ai/local-cli/types";
 import { getAllProviderMetadata, type ProviderMetadata } from "@/lib/ai/providers/metadata";
-import { isLocalCLIProvider, type LocalCLIProvider } from "@/lib/ai/providers/types";
+import { isLocalCLIProvider } from "@/lib/ai/providers/types";
 import type { ProviderSettingsListItem } from "@/lib/settings/types";
 import { cn } from "@/lib/utils";
 
@@ -69,7 +68,6 @@ interface AIProvidersManagerProps {
   onDeleteProvider: (id: string) => Promise<void>;
   onUpdateProviderApiKey: (id: string, apiKey?: string) => Promise<void>;
   onRefreshProviderModels: (id: string) => Promise<void>;
-  onCheckLocalProvider: (provider: LocalCLIProvider) => Promise<LocalCLIStatus>;
   codexExecutablePath: string;
   openCodeExecutablePath: string;
   onSaveExecutablePaths: (paths: { codex: string; opencode: string }) => Promise<void>;
@@ -115,9 +113,9 @@ function providerStatus(provider: ProviderSettingsListItem): {
 } {
   if (provider.kind === "local_cli") {
     return {
-      label: (provider.connectionStatus ?? "not_checked").replaceAll("_", " "),
+      label: provider.connectionStatus?.replaceAll("_", " ") ?? "checking",
       ready: provider.connectionStatus === "ready",
-      message: provider.statusMessage ?? "Check this CLI connection before using it.",
+      message: provider.statusMessage ?? "Switchy is checking this CLI automatically.",
     };
   }
 
@@ -132,7 +130,6 @@ export function AIProvidersManager({
   onDeleteProvider,
   onUpdateProviderApiKey,
   onRefreshProviderModels,
-  onCheckLocalProvider,
   codexExecutablePath,
   openCodeExecutablePath,
   onSaveExecutablePaths,
@@ -143,8 +140,6 @@ export function AIProvidersManager({
   const [apiKey, setApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [checkingSelection, setCheckingSelection] = useState(false);
-  const [selectionStatus, setSelectionStatus] = useState<LocalCLIStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
@@ -158,10 +153,9 @@ export function AIProvidersManager({
   const [savingPaths, setSavingPaths] = useState(false);
 
   const selectedMetadata = metadata.find((item) => item.id === selectedProviderType);
-  const selectedProviderIsLocal = isLocalCLIProvider(selectedProviderType);
-  const selectionCanBeAdded = !selectedProviderIsLocal || selectionStatus?.selectable === true;
   const availableProviders = metadata.filter(
-    (item) => !providers.some((provider) => provider.provider === item.id)
+    (item) => !isLocalCLIProvider(item.id) &&
+      !providers.some((provider) => provider.provider === item.id)
   );
 
   useEffect(() => {
@@ -194,25 +188,13 @@ export function AIProvidersManager({
     setSelectedProviderType("");
     setApiKey("");
     setShowApiKey(false);
-    setSelectionStatus(null);
     setError(null);
   };
 
-  const handleProviderSelection = async (provider: string) => {
+  const handleProviderSelection = (provider: string) => {
     setSelectedProviderType(provider);
     setApiKey("");
-    setSelectionStatus(null);
     setError(null);
-    if (!isLocalCLIProvider(provider)) return;
-
-    setCheckingSelection(true);
-    try {
-      setSelectionStatus(await onCheckLocalProvider(provider));
-    } catch (checkError) {
-      setError(checkError instanceof Error ? checkError.message : "Failed to check CLI connection");
-    } finally {
-      setCheckingSelection(false);
-    }
   };
 
   const handleAddProvider = async () => {
@@ -337,27 +319,29 @@ export function AIProvidersManager({
                       >
                         <Pencil />
                       </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon" aria-label="Delete provider" title="Delete provider">
-                            <Trash2 className="text-muted-foreground hover:text-red-400" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete {providerMetadata?.displayName ?? "provider"}?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Its connection and cached model list will be removed. This cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction variant="destructive" onClick={() => onDeleteProvider(provider.id)}>
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                      {!isCLI ? (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon" aria-label="Delete provider" title="Delete provider">
+                              <Trash2 className="text-muted-foreground hover:text-red-400" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete {providerMetadata?.displayName ?? "provider"}?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Its connection and cached model list will be removed. This cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction variant="destructive" onClick={() => onDeleteProvider(provider.id)}>
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      ) : null}
                     </div>
                   </div>
 
@@ -432,31 +416,12 @@ export function AIProvidersManager({
                   <SelectGroup>
                     {availableProviders.map((provider) => (
                       <SelectItem key={provider.id} value={provider.id}>
-                        {provider.displayName} · {provider.kind === "local_cli" ? "Local CLI" : "API key"}
+                        {provider.displayName} · API key
                       </SelectItem>
                     ))}
                   </SelectGroup>
                 </SelectContent>
               </Select>
-              {checkingSelection ? (
-                <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="size-3.5 animate-spin" /> Checking local CLI…
-                </p>
-              ) : selectionStatus ? (
-                <p
-                  className={cn(
-                    "flex items-center gap-2 text-xs",
-                    selectionStatus.selectable
-                      ? "text-green-400"
-                      : ["not_installed", "incompatible", "error"].includes(selectionStatus.status)
-                        ? "text-red-400"
-                        : "text-amber-400"
-                  )}
-                >
-                  {selectionStatus.selectable ? <Check className="size-3.5" /> : <X className="size-3.5" />}
-                  {selectionStatus.statusMessage}
-                </p>
-              ) : null}
             </div>
 
             {selectedMetadata?.requiresApiKey ? (
@@ -497,7 +462,7 @@ export function AIProvidersManager({
               </Button>
               <Button
                 onClick={handleAddProvider}
-                disabled={adding || checkingSelection || !selectedProviderType || !selectionCanBeAdded}
+                disabled={adding || !selectedProviderType}
                 className="flex-1 bg-emerald-600 text-foreground hover:bg-emerald-500"
               >
                 {adding ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}

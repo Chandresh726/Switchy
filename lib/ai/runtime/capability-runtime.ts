@@ -14,6 +14,10 @@ import {
 import { adaptiveProviderLimiter } from "./adaptive-provider-limiter";
 import { aiRunRepository } from "./default-run-repository";
 import { fingerprintAIInput } from "./fingerprint";
+import {
+  buildPortableStructuredInstructions,
+  parsePortableJson,
+} from "./portable-json";
 import type { createAIRunRepository } from "./run-repository";
 import type {
   AICapability,
@@ -116,6 +120,13 @@ function secureInstructions(instructions: string): string {
   return `${instructions}\n\nSECURITY BOUNDARY:\n${UNTRUSTED_INPUT_INSTRUCTION}`;
 }
 
+function usesStructuredOutput(capability: AICapability): boolean {
+  return capability === "job_analysis" ||
+    capability === "match_adjudication" ||
+    capability === "match_evaluation" ||
+    capability === "resume_parse";
+}
+
 export interface AICapabilityRuntime {
   capability: AICapability;
   snapshot: ResolvedModelSnapshot;
@@ -170,15 +181,19 @@ function resolvePrompt(
   return typeof prompt === "function" ? prompt(attempt) : prompt;
 }
 
-function composeAbortSignal(signal: AbortSignal | undefined, timeoutMs: number): {
+function composeAbortSignal(
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+  useHardTimeout: boolean
+): {
   signal: AbortSignal;
   dispose: () => void;
 } {
   const lifecycleController = new AbortController();
-  const timeoutSignal = AbortSignal.timeout(timeoutMs);
-  const composed = signal
-    ? AbortSignal.any([signal, timeoutSignal, lifecycleController.signal])
-    : AbortSignal.any([timeoutSignal, lifecycleController.signal]);
+  const signals = [lifecycleController.signal];
+  if (signal) signals.push(signal);
+  if (useHardTimeout) signals.push(AbortSignal.timeout(timeoutMs));
+  const composed = AbortSignal.any(signals);
 
   return {
     signal: composed,
@@ -230,6 +245,15 @@ async function executeWithLedger<T>(input: {
         ? { upstreamProvider: input.snapshot.upstreamProvider }
         : {}),
       reasoningEffort: input.resolvedReasoningEffort ?? "provider_default",
+      ...(usesStructuredOutput(input.capability)
+        ? {
+            structuredGenerationStrategy:
+              input.snapshot.structuredGenerationStrategy ?? "portable_json",
+          }
+        : {}),
+      timeoutMode: input.snapshot.backendKind === "ai_sdk"
+        ? "hard_deadline"
+        : "completion_wait",
     },
   });
   const startedAt = performance.now();
@@ -255,11 +279,14 @@ async function executeWithLedger<T>(input: {
       input.execution.signal?.throwIfAborted();
       const composed = composeAbortSignal(
         input.execution.signal,
-        input.execution.policy.timeoutMs
+        input.execution.policy.timeoutMs,
+        input.snapshot.backendKind === "ai_sdk"
       );
       const useAdaptiveLimiter =
         input.providerConcurrencyLimit !== undefined &&
-        (input.capability === "job_analysis" || input.capability === "match_adjudication");
+        (input.capability === "job_analysis" ||
+          input.capability === "match_adjudication" ||
+          input.capability === "match_evaluation");
       let permit: Awaited<ReturnType<typeof adaptiveProviderLimiter.acquire>> | undefined;
       const recordTelemetry = (telemetry: AttemptTelemetry) => {
         accumulatedUsage = mergeUsage(accumulatedUsage, telemetry.usage);
@@ -425,6 +452,7 @@ export async function createAICapabilityRuntime(
     backendKind: context.backendKind ?? "ai_sdk",
     cliVersion: context.cliVersion,
     upstreamProvider: context.upstreamProvider,
+    structuredGenerationStrategy: "portable_json",
   };
 
   return {
@@ -508,16 +536,18 @@ export async function createAICapabilityRuntime(
           const jsonSchema = await converted.jsonSchema as Record<string, unknown>;
           let result;
           try {
-            result = await backend.generateStructured({
-              instructions: secureInstructions(input.instructions),
+            result = await backend.generateText({
+              instructions: secureInstructions(buildPortableStructuredInstructions(
+                input.instructions,
+                jsonSchema,
+                attempt
+              )),
               prompt: resolvePrompt(input.prompt, attempt),
               modelId: snapshot.modelId,
               reasoningEffort: context.reasoningEffort,
               signal: abortSignal,
               timeoutMs: input.policy.timeoutMs,
               maxOutputTokens: input.policy.maxOutputTokens,
-              jsonSchema,
-              validate: (value) => input.schema.parse(value),
             });
           } catch (error) {
             recordTelemetryFromError(error, recordTelemetry);
@@ -525,15 +555,21 @@ export async function createAICapabilityRuntime(
           }
           recordTelemetry(result);
 
-          if (result.output === undefined || result.output === null) {
+          let output: z.infer<T>;
+          try {
+            output = input.schema.parse(parsePortableJson(result.output));
+          } catch (error) {
+            if (error instanceof AIError) throw error;
             throw new AIError({
-              type: "no_object",
-              message: "Model did not produce structured output",
+              type: "generation_failed",
+              message: "The AI provider returned structured data that did not match the required schema",
+              cause: error instanceof Error ? error : undefined,
+              retryable: true,
             });
           }
 
           return {
-            output: result.output,
+            output,
           };
         },
       });

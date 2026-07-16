@@ -25,6 +25,11 @@ describe("match session API", () => {
       jobsFailed: 0,
       startedAt: new Date("2026-01-01T00:00:00Z"),
       completedAt: null,
+      pipeline: {
+        analysis: { total: 4, completed: 3, active: 1, queued: 0, cached: 1, failed: 0 },
+        matching: { total: 4, completed: 2, active: 1, queued: 1, cached: 0, failed: 0 },
+        jobs: [],
+      },
     });
     const response = await GET(new Request("http://localhost"), {
       params: Promise.resolve({ id: "session-1" }),
@@ -38,6 +43,8 @@ describe("match session API", () => {
       completed: 2,
       succeeded: 2,
       failed: 0,
+      analysis: expect.objectContaining({ completed: 3, active: 1 }),
+      matching: expect.objectContaining({ completed: 2, active: 1 }),
     });
   });
 

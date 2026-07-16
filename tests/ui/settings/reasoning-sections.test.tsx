@@ -77,7 +77,6 @@ describe("dynamic reasoning placement", () => {
         aiWritingReasoningEffort: "xhigh",
       }}
       onAIWritingSettingsChange={vi.fn()}
-      isSaving={false}
     />);
 
     expect(screen.getByRole("combobox", { name: "Reasoning effort" })).toBeTruthy();
@@ -124,7 +123,6 @@ describe("dynamic reasoning placement", () => {
         aiWritingReasoningEffort: "max",
       }}
       onAIWritingSettingsChange={vi.fn()}
-      isSaving={false}
     />);
 
     expect(screen.getByText("Configured: openai/retired-model")).toBeTruthy();

@@ -6,12 +6,25 @@ import {
   type MatchEvidence,
 } from "@/lib/ai/artifacts";
 import { createAICapabilityRuntime } from "@/lib/ai/runtime";
-import { AIError, sanitizeAIError } from "@/lib/ai/shared/errors";
+import { AIError } from "@/lib/ai/shared/errors";
 
 import {
+  buildMatchPolicyVersion,
+  buildPersistedMatchArtifacts,
+  evaluateMatchWithAI,
+} from "../evidence/ai-match";
+import { enrichCandidateEvidence } from "../evidence/candidate";
+import {
+  analyzeJobsForMatching,
+  buildJobAnalysisVersion,
+  type MatchingJobAnalysis,
+} from "../evidence/job-analysis";
+import {
   fetchJobsData,
-  fetchMatchingPreferences,
   logMatchFailure,
+  markJobAnalysisReady,
+  markJobAnalysisStarted,
+  markJobMatchStarted,
   persistMatchSuccess,
 } from "../tracking";
 import type {
@@ -22,26 +35,15 @@ import type {
   ProfileData,
   StrategyProgressCallback,
 } from "../types";
-import {
-  adjudicateMatch,
-  buildScoringPolicyVersion,
-  shouldAdjudicate,
-} from "../evidence/adjudication";
-import {
-  buildScoringCandidate,
-  enrichCandidateEvidence,
-} from "../evidence/candidate";
-import { analyzeJobsForMatching } from "../evidence/job-analysis";
-import { scoreDeterministically } from "../evidence/scoring";
 
-const CANDIDATE_SNAPSHOT_VERSION = "candidate-evidence-v2";
+const CANDIDATE_SNAPSHOT_VERSION = "candidate-facts-v2";
 
 function throwIfAborted(signal?: AbortSignal): void {
   signal?.throwIfAborted();
 }
 
 export interface ExecuteMatchOptions {
-  config: MatcherConfig & { providerId?: string };
+  config: MatcherConfig;
   jobIds: number[];
   sessionId?: string;
   onProgress?: StrategyProgressCallback;
@@ -52,10 +54,8 @@ export interface ExecuteMatchOptions {
 function toPublicMatchResult(score: number, evidence: MatchEvidence): MatchResult {
   return {
     score,
-    reasons: evidence.reasons,
+    reasons: evidence.reasoning.map((point) => point.text),
     matchedSkills: evidence.matchedSkills,
-    missingSkills: evidence.missingSkills,
-    recommendations: evidence.recommendations,
   };
 }
 
@@ -72,18 +72,20 @@ async function persistPublicResult(input: {
   attemptCount: number;
   duration: number;
   modelUsed: string;
+  matchRunId?: string | null;
+  cached?: boolean;
 }): Promise<void> {
-  if (input.sessionId) {
-    await persistMatchSuccess(
-      input.sessionId,
-      input.jobId,
-      input.matchResultId,
-      input.result,
-      input.attemptCount,
-      input.duration,
-      input.modelUsed
-    );
-  }
+  if (!input.sessionId) return;
+  await persistMatchSuccess(
+    input.sessionId,
+    input.jobId,
+    input.matchResultId,
+    input.result,
+    input.attemptCount,
+    input.duration,
+    input.modelUsed,
+    { matchRunId: input.matchRunId, cached: input.cached }
+  );
 }
 
 async function persistFailure(input: {
@@ -93,6 +95,7 @@ async function persistFailure(input: {
   duration: number;
   modelUsed: string;
   attemptCount?: number;
+  stage?: "analysis" | "matching";
 }): Promise<void> {
   if (!input.sessionId) return;
   await logMatchFailure(
@@ -103,13 +106,10 @@ async function persistFailure(input: {
     input.attemptCount
       ?? (input.error as Error & { attemptCount?: number }).attemptCount
       ?? 1,
-    input.modelUsed
+    input.modelUsed,
+    undefined,
+    input.stage
   );
-}
-
-function warnWithSanitizedError(message: string, error: unknown): void {
-  const sanitized = sanitizeAIError(error);
-  console.warn(`${message} [${sanitized.code}] ${sanitized.message}`);
 }
 
 export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchResultMap> {
@@ -117,139 +117,135 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
   throwIfAborted(signal);
   if (jobIds.length === 0) return new Map();
 
-  const [jobsMap, profileData, preferences] = await Promise.all([
+  const [jobsMap, profileData] = await Promise.all([
     fetchJobsData(jobIds),
     fetchProfileDataForMatch(),
-    fetchMatchingPreferences(),
   ]);
   throwIfAborted(signal);
 
   if (!profileData) {
-    const missingProfileError = new AIError({
+    const error = new AIError({
       type: "missing_profile",
       message: "Create a candidate profile before matching jobs.",
       retryable: false,
     });
-    const missingProfileResults: MatchResultMap = new Map();
+    const results: MatchResultMap = new Map();
     let completed = 0;
     for (const jobId of jobIds) {
-      throwIfAborted(signal);
-      missingProfileResults.set(jobId, missingProfileError);
+      results.set(jobId, error);
       await persistFailure({
         jobId,
-        error: missingProfileError,
+        error,
         sessionId,
         duration: 0,
-        modelUsed: "deterministic",
+        modelUsed: "not_started",
         attemptCount: 0,
+        stage: "analysis",
       });
       completed += 1;
       onProgress?.(completed, jobIds.length, 0, completed);
     }
-    return missingProfileResults;
+    return results;
   }
 
-  const candidateEvidence = enrichCandidateEvidence(buildCandidateEvidence({
-    ...profileData,
-    preferences,
-  }));
+  const candidateEvidence = enrichCandidateEvidence(buildCandidateEvidence(profileData));
   const candidateArtifact = await artifactRepository.getOrCreateCandidateSnapshot({
     sourceProfileId: profileData.profile.id,
     snapshotVersion: CANDIDATE_SNAPSHOT_VERSION,
     evidence: candidateEvidence,
   });
-  const candidate = buildScoringCandidate(candidateArtifact.evidence);
   const availableJobs = jobIds
     .map((jobId) => jobsMap.get(jobId))
     .filter((job): job is JobData => job !== undefined);
   if (shouldStop && await shouldStop()) return new Map();
-  let modelRuntime: Awaited<ReturnType<typeof createAICapabilityRuntime>> | null = null;
-  try {
-    modelRuntime = await createAICapabilityRuntime({
+
+  const [analysisRuntime, matchRuntime] = await Promise.all([
+    createAICapabilityRuntime({
       capability: "job_analysis",
+      model: {
+        providerId: config.jobAnalysisProviderId,
+        modelId: config.jobAnalysisModel,
+        reasoningEffort: config.jobAnalysisReasoningEffort,
+      },
+      providerConcurrencyLimit: config.concurrencyLimit,
+    }),
+    createAICapabilityRuntime({
+      capability: "match_evaluation",
       model: {
         providerId: config.providerId,
         modelId: config.model,
         reasoningEffort: config.reasoningEffort,
       },
       providerConcurrencyLimit: config.concurrencyLimit,
-    });
-  } catch (error) {
-    if (error instanceof AIError && !error.retryable) {
-      throw error;
-    }
-    warnWithSanitizedError(
-      "[EvidenceMatcher] Model policy unavailable; using retryable deterministic results.",
-      error
-    );
-  }
-  const concreteConfig = modelRuntime
-    ? {
-        ...config,
-        providerId: modelRuntime.snapshot.providerRecordId,
-        model: modelRuntime.snapshot.modelId,
-        reasoningEffort: modelRuntime.reasoningEffort,
-      }
-    : config;
-  const analyses = await analyzeJobsForMatching(
-    availableJobs,
-    concreteConfig,
-    signal,
-    shouldStop,
-    modelRuntime
-  );
-  const scoringPolicyVersion = buildScoringPolicyVersion(concreteConfig);
-  const modelPolicyResolved = modelRuntime !== null;
+    }),
+  ]);
+  const concreteConfig: MatcherConfig = {
+    ...config,
+    jobAnalysisProviderId: analysisRuntime.snapshot.providerRecordId,
+    jobAnalysisModel: analysisRuntime.snapshot.modelId,
+    jobAnalysisReasoningEffort: analysisRuntime.reasoningEffort,
+    providerId: matchRuntime.snapshot.providerRecordId,
+    model: matchRuntime.snapshot.modelId,
+    reasoningEffort: matchRuntime.reasoningEffort,
+  };
+
+  const analysisVersion = buildJobAnalysisVersion(concreteConfig);
+  const matchPolicyVersion = buildMatchPolicyVersion(concreteConfig, analysisVersion);
   const results: MatchResultMap = new Map();
   let completed = 0;
   let succeeded = 0;
   let failed = 0;
-  type CapabilityRuntime = Awaited<ReturnType<typeof createAICapabilityRuntime>>;
-  let adjudicationRuntimePromise: Promise<CapabilityRuntime | null> | null = null;
-  let adjudicationUnavailable = !modelPolicyResolved;
-
-  const resolveAdjudicationRuntime = (): Promise<CapabilityRuntime | null> => {
-    if (adjudicationUnavailable) return Promise.resolve(null);
-    adjudicationRuntimePromise ??= createAICapabilityRuntime({
-      capability: "match_adjudication",
-      resolved: {
-        snapshot: modelRuntime!.snapshot,
-        backend: modelRuntime!.backend,
-        reasoningEffort: modelRuntime!.reasoningEffort,
-      },
-      providerConcurrencyLimit: config.concurrencyLimit,
-    }).catch((error) => {
-      adjudicationUnavailable = true;
-      warnWithSanitizedError(
-        "[EvidenceMatcher] Adjudication unavailable; using deterministic score.",
-        error
-      );
-      return null;
-    });
-    return adjudicationRuntimePromise;
-  };
+  const terminalJobIds = new Set<number>();
+  const scheduledJobIds = new Set<number>();
+  const matchTasks: Array<Promise<void | undefined>> = [];
   const matchQueue = new PQueue({ concurrency: Math.max(1, config.concurrencyLimit) });
 
-  await Promise.all(jobIds.map((jobId) => matchQueue.add(async () => {
+  const reportTerminal = (jobId: number, status: "succeeded" | "failed") => {
+    if (terminalJobIds.has(jobId)) return;
+    terminalJobIds.add(jobId);
+    completed += 1;
+    if (status === "succeeded") succeeded += 1;
+    else failed += 1;
+    onProgress?.(completed, jobIds.length, succeeded, failed);
+  };
+
+  const failAnalysis = async (jobId: number, cause?: unknown) => {
+    if (terminalJobIds.has(jobId) || scheduledJobIds.has(jobId)) return;
+    const error = cause instanceof Error
+      ? cause
+      : new AIError({
+        type: "generation_failed",
+        message: `AI job analysis failed for job ${jobId}`,
+        retryable: true,
+        cause: cause === undefined ? undefined : new Error(String(cause)),
+      });
+    results.set(jobId, error);
+    await persistFailure({
+      jobId,
+      error,
+      sessionId,
+      duration: 0,
+      modelUsed: analysisRuntime.snapshot.modelId,
+      stage: "analysis",
+    });
+    reportTerminal(jobId, "failed");
+  };
+
+  const matchAnalyzedJob = async (analyzed: MatchingJobAnalysis) => {
+    const jobId = analyzed.job.id;
     throwIfAborted(signal);
     if (shouldStop && await shouldStop()) return;
     const startedAt = performance.now();
-    const analyzed = analyses.get(jobId);
-    let adjudicationRuntime: CapabilityRuntime | null = null;
+    if (sessionId) await markJobMatchStarted(sessionId, jobId);
 
     try {
-      if (!analyzed) throw new Error(`Job with ID ${jobId} not found`);
-
-      const cached = modelPolicyResolved
-        ? await artifactRepository.findFreshMatch(jobId, {
-            candidateFingerprint: candidateArtifact.fingerprint,
-            jobFingerprint: analyzed.jobFingerprint,
-            scoringPolicyVersion,
-          })
-        : null;
+      const cached = await artifactRepository.findFreshMatch(jobId, {
+        candidateFingerprint: candidateArtifact.fingerprint,
+        jobFingerprint: analyzed.jobFingerprint,
+        scoringPolicyVersion: matchPolicyVersion,
+      });
       if (cached) {
         const publicResult = toPublicMatchResult(cached.score, cached.evidence);
-        throwIfAborted(signal);
         await persistPublicResult({
           jobId,
           matchResultId: cached.id,
@@ -258,79 +254,23 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
           attemptCount: 0,
           duration: Math.round(performance.now() - startedAt),
           modelUsed: "cache",
+          matchRunId: cached.matchRunId,
+          cached: true,
         });
         results.set(jobId, publicResult);
-        succeeded++;
+        reportTerminal(jobId, "succeeded");
         return;
       }
 
-      const deterministic = scoreDeterministically(
-        candidate,
-        analyzed.jobEvidence,
-        analyzed.analysis
+      const evaluation = await evaluateMatchWithAI(
+        matchRuntime,
+        candidateArtifact.evidence,
+        candidateArtifact.fingerprint,
+        analyzed,
+        concreteConfig,
+        signal
       );
-      let scored = deterministic;
-      let source: "deterministic" | "adjudicated" = "deterministic";
-      let adjudicationRunId: string | undefined;
-      let attempts = 0;
-      const adjudicationRequired = shouldAdjudicate(
-        deterministic
-      );
-
-      if (adjudicationRequired && !adjudicationUnavailable) {
-        adjudicationRuntime = await resolveAdjudicationRuntime();
-        if (adjudicationRuntime) {
-          try {
-            const adjudicated = await adjudicateMatch(
-              adjudicationRuntime,
-              candidate,
-              analyzed,
-              deterministic,
-              concreteConfig,
-              signal
-            );
-            scored = scoreDeterministically(
-              candidate,
-              analyzed.jobEvidence,
-              analyzed.analysis,
-              adjudicated.assessments,
-              adjudicated.summary
-            );
-            source = "adjudicated";
-            adjudicationRunId = adjudicated.runId;
-            attempts = adjudicated.attempts;
-          } catch (error) {
-            throwIfAborted(signal);
-            warnWithSanitizedError(
-              `[EvidenceMatcher] Adjudication failed for job ${jobId}; using deterministic score.`,
-              error
-            );
-          }
-        }
-      }
-
-      const resultPolicyVersion = !modelPolicyResolved
-        ? `${scoringPolicyVersion}-model-resolution-pending`
-        : analyzed.analysisSource === "fallback"
-          ? `${scoringPolicyVersion}-analysis-pending`
-        : adjudicationRequired && source !== "adjudicated"
-          ? `${scoringPolicyVersion}-adjudication-pending`
-          : scoringPolicyVersion;
-      const evidence: MatchEvidence = structuredClone(scored.evidence);
-      if (!modelPolicyResolved) {
-        evidence.reasons.push(
-          "Deterministic fallback shown; concrete model resolution will be retried"
-        );
-      } else if (analyzed.analysisSource === "fallback") {
-        evidence.reasons.push(
-          "Deterministic job analysis shown; structured extraction will be retried"
-        );
-      } else if (resultPolicyVersion !== scoringPolicyVersion) {
-        evidence.reasons.push(
-          "Deterministic fallback shown; configured adjudication will be retried"
-        );
-      }
-
+      const persistedArtifacts = buildPersistedMatchArtifacts(evaluation.outcome);
       throwIfAborted(signal);
       const persisted = await artifactRepository.createMatchResult({
         jobId,
@@ -338,45 +278,93 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
         jobAnalysisId: analyzed.jobAnalysisId,
         candidateFingerprint: candidateArtifact.fingerprint,
         jobFingerprint: analyzed.jobFingerprint,
-        scoringPolicyVersion: resultPolicyVersion,
-        score: scored.score,
-        breakdown: scored.breakdown,
-        evidence,
-        confidence: scored.confidence,
-        source,
-        adjudicationRunId,
+        scoringPolicyVersion: matchPolicyVersion,
+        matchPolicyVersion,
+        score: evaluation.outcome.score,
+        breakdown: persistedArtifacts.breakdown,
+        evidence: persistedArtifacts.evidence,
+        source: "ai",
+        matchRunId: evaluation.runId,
         signal,
       });
       const publicResult = toPublicMatchResult(persisted.score, persisted.evidence);
-      throwIfAborted(signal);
       await persistPublicResult({
         jobId,
         matchResultId: persisted.id,
         result: publicResult,
         sessionId,
-        attemptCount: attempts,
+        attemptCount: evaluation.attempts,
         duration: Math.round(performance.now() - startedAt),
-        modelUsed: adjudicationRuntime?.snapshot.modelId ?? "deterministic",
+        modelUsed: matchRuntime.snapshot.modelId,
+        matchRunId: evaluation.runId,
       });
       results.set(jobId, publicResult);
-      succeeded++;
+      reportTerminal(jobId, "succeeded");
     } catch (error) {
       throwIfAborted(signal);
       const normalized = error instanceof Error ? error : new Error(String(error));
       results.set(jobId, normalized);
-      failed++;
       await persistFailure({
         jobId,
         error: normalized,
         sessionId,
         duration: Math.round(performance.now() - startedAt),
-        modelUsed: adjudicationRuntime?.snapshot.modelId ?? "deterministic",
+        modelUsed: matchRuntime.snapshot.modelId,
+        stage: "matching",
       });
-    } finally {
-      completed++;
-      onProgress?.(completed, jobIds.length, succeeded, failed);
+      reportTerminal(jobId, "failed");
     }
-  })));
+  };
+
+  const scheduleMatch = (analyzed: MatchingJobAnalysis) => {
+    const jobId = analyzed.job.id;
+    if (scheduledJobIds.has(jobId) || terminalJobIds.has(jobId)) return;
+    scheduledJobIds.add(jobId);
+    matchTasks.push(matchQueue.add(() => matchAnalyzedJob(analyzed)));
+  };
+
+  const sameProvider = analysisRuntime.snapshot.providerRecordId ===
+    matchRuntime.snapshot.providerRecordId;
+  const analysisConcurrency = sameProvider
+    ? Math.max(1, Math.floor(config.concurrencyLimit * 0.6))
+    : Math.max(1, config.concurrencyLimit);
+
+  const analyses = await analyzeJobsForMatching(
+    availableJobs,
+    concreteConfig,
+    signal,
+    shouldStop,
+    analysisRuntime,
+    {
+      concurrencyLimit: analysisConcurrency,
+      onStarted: async (startedJobIds) => {
+        if (sessionId) await markJobAnalysisStarted(sessionId, startedJobIds);
+      },
+      onReady: async (analyzed, source) => {
+        if (sessionId) {
+          await markJobAnalysisReady(sessionId, {
+            jobId: analyzed.job.id,
+            jobAnalysisId: analyzed.jobAnalysisId,
+            analysisRunId: analyzed.analysisRunId,
+            cached: source === "cached",
+          });
+        }
+        scheduleMatch(analyzed);
+      },
+      onFailed: async (failedJobIds, error) => {
+        for (const jobId of failedJobIds) await failAnalysis(jobId, error);
+      },
+    }
+  );
+
+  for (const analyzed of analyses.values()) scheduleMatch(analyzed);
+
+  for (const jobId of jobIds) {
+    if (!analyses.has(jobId) && !terminalJobIds.has(jobId) && !scheduledJobIds.has(jobId)) {
+      await failAnalysis(jobId);
+    }
+  }
+  await Promise.all(matchTasks);
 
   return results;
 }

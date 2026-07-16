@@ -3,6 +3,7 @@ import { skills } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { assertAppRequest } from "@/lib/api";
+import { scheduleProfileRematch } from "@/lib/ai/matcher/profile-rematch";
 
 export async function GET(request: NextRequest) {
   try {
@@ -54,6 +55,7 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
+    await scheduleProfileRematch();
     return NextResponse.json(newSkill);
   } catch (error) {
     console.error("Failed to create skill:", error);
@@ -77,6 +79,7 @@ export async function DELETE(request: NextRequest) {
 
     await db.delete(skills).where(eq(skills.id, parseInt(id)));
 
+    await scheduleProfileRematch();
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Failed to delete skill:", error);

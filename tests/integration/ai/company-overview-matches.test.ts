@@ -25,24 +25,12 @@ describe("company overview match projections", () => {
         matchScore: job.matchScore,
         matchReasons: [],
         matchedSkills: [],
-        missingSkills: [],
-        recommendations: [],
         matchResultId: null,
-        matchConfidence: null,
         matchBreakdown: null,
         matchStale: false,
         matchLegacy: job.matchScore !== null,
         matchSummary: "",
-        matchBand: job.matchScore !== null && job.matchScore >= 85
-          ? "high"
-          : job.matchScore !== null && job.matchScore >= 70
-            ? "good"
-            : null,
-        matchRoleFitScore: job.matchScore,
-        matchEvidenceCoverage: null,
-        matchExtractionConfidence: null,
-        matchConstraints: [],
-        matchRequirementAssessments: [],
+        matchReasoning: [],
         scoringPolicyVersion: job.matchScore === null ? null : "legacy",
       }]))),
     }));

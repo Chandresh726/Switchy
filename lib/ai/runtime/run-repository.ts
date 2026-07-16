@@ -23,6 +23,7 @@ import type {
 const AICapabilitySchema = z.enum([
   "job_analysis",
   "match_adjudication",
+  "match_evaluation",
   "writing_cover_letter",
   "writing_referral",
   "writing_recruiter_follow_up",
@@ -37,6 +38,8 @@ const RuntimeMetadataSchema = z.object({
     z.literal("provider_default"),
     z.string().refine(isReasoningEffort),
   ]).optional(),
+  structuredGenerationStrategy: z.enum(["native", "portable_json"]).optional(),
+  timeoutMode: z.enum(["hard_deadline", "completion_wait"]).optional(),
 });
 
 const CAPABILITY_METADATA_SCHEMAS: Record<
@@ -52,6 +55,10 @@ const CAPABILITY_METADATA_SCHEMAS: Record<
     batchSize: z.number().int().min(1).max(100).optional(),
     jobCount: z.number().int().min(1).max(10_000).optional(),
     preset: z.enum(["economy", "balanced", "quality"]).optional(),
+  }).strict(),
+  match_evaluation: RuntimeMetadataSchema.extend({
+    batchSize: z.number().int().min(1).max(100).optional(),
+    jobCount: z.number().int().min(1).max(10_000).optional(),
   }).strict(),
   writing_cover_letter: RuntimeMetadataSchema.extend({
     streamed: z.boolean().optional(),
@@ -89,6 +96,7 @@ const JOB_BATCH_SUBJECT_SCHEMA = z.object({
 const SUBJECT_SCHEMAS: Record<AICapability, z.ZodType<AIExecutionSubject>> = {
   job_analysis: z.union([JOB_SUBJECT_SCHEMA, JOB_BATCH_SUBJECT_SCHEMA]),
   match_adjudication: z.union([JOB_SUBJECT_SCHEMA, JOB_BATCH_SUBJECT_SCHEMA]),
+  match_evaluation: z.union([JOB_SUBJECT_SCHEMA, JOB_BATCH_SUBJECT_SCHEMA]),
   writing_cover_letter: JOB_SUBJECT_SCHEMA,
   writing_referral: JOB_SUBJECT_SCHEMA,
   writing_recruiter_follow_up: JOB_SUBJECT_SCHEMA,

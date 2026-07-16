@@ -1,6 +1,9 @@
 import { eq } from "drizzle-orm";
 
-import { getMatchSessionStatus } from "@/lib/ai/matcher/tracking";
+import {
+  getMatchPipelineProgress,
+  getMatchSessionStatus,
+} from "@/lib/ai/matcher/tracking";
 import { db } from "@/lib/db";
 import { matchSessions } from "@/lib/db/schema";
 import {
@@ -12,6 +15,7 @@ import type { MatchWorkPayload } from "./contracts";
 import { dispatchPendingAIWork } from "./dispatcher";
 import {
   DrizzleAIWorkStore,
+  enqueueCoalescedProfileMatchWork,
   enqueueMatchWork,
   insertCompletedEmptyMatchSession,
   type StopMatchSessionResult,
@@ -34,6 +38,16 @@ export function queueMatchWork(input: QueueMatchInput): {
   return queued;
 }
 
+export function queueProfileRematchWork(jobIds: number[]): {
+  sessionId: string;
+  status: "queued";
+  total: number;
+} {
+  const queued = enqueueCoalescedProfileMatchWork(db, jobIds);
+  dispatchPendingAIWork();
+  return queued;
+}
+
 export function completeEmptyMatchSession(
   input: Omit<QueueMatchInput, "jobIds">
 ): { sessionId: string; status: "completed"; total: 0 } {
@@ -50,7 +64,11 @@ export async function stopAIWorkSession(
 }
 
 export async function getAIWorkSession(sessionId: string) {
-  return getMatchSessionStatus(sessionId);
+  const [session, pipeline] = await Promise.all([
+    getMatchSessionStatus(sessionId),
+    getMatchPipelineProgress(sessionId),
+  ]);
+  return session ? { ...session, pipeline } : null;
 }
 
 export async function hasMatchSession(sessionId: string): Promise<boolean> {

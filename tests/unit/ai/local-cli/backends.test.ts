@@ -73,6 +73,13 @@ describe("Codex CLI backend", () => {
       .not.toHaveProperty("defaultReasoningEffort");
   });
 
+  it("accepts an account-less Codex mode when app-server says OpenAI auth is not required", async () => {
+    vi.stubEnv("SWITCHY_FAKE_CODEX_AUTH_NOT_REQUIRED", "1");
+    const backend = new CodexCLIBackend(codexExecutable);
+
+    await expect(backend.readAccount()).resolves.toEqual({ authenticated: true });
+  });
+
   it("streams deltas and validates structured output with usage", async () => {
     const backend = new CodexCLIBackend(codexExecutable);
     const deltas: string[] = [];
@@ -179,6 +186,24 @@ describe("Codex CLI backend", () => {
     await expect(backend.readAccount()).rejects.toMatchObject({
       type: "validation",
       message: "Codex CLI protocol is incompatible",
+    });
+  });
+
+  it("reports stable-protocol parameter errors and turn authentication failures safely", async () => {
+    vi.stubEnv("SWITCHY_FAKE_CODEX_INVALID_PARAMS", "1");
+    await expect(new CodexCLIBackend(codexExecutable).generateText(baseInput()))
+      .rejects.toMatchObject({
+        type: "validation",
+        message: "Codex CLI request parameters are incompatible",
+      });
+    vi.unstubAllEnvs();
+
+    await expect(new CodexCLIBackend(codexExecutable).generateText({
+      ...baseInput(),
+      prompt: "turn-auth-failure",
+    })).rejects.toMatchObject({
+      type: "missing_api_key",
+      message: "Codex CLI authentication is unavailable",
     });
   });
 

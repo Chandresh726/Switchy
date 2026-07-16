@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   select: vi.fn(),
   getMatchPresentations: vi.fn(),
   getAIRunSummaries: vi.fn(),
+  getMatchPipelineProgress: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -18,6 +19,10 @@ vi.mock("@/lib/ai/matcher/presentation", () => ({
 
 vi.mock("@/lib/ai/observability", () => ({
   getAIRunSummaries: mocks.getAIRunSummaries,
+}));
+
+vi.mock("@/lib/ai/matcher/tracking", () => ({
+  getMatchPipelineProgress: mocks.getMatchPipelineProgress,
 }));
 
 vi.mock("@/lib/scraper/maintenance", () => ({
@@ -79,6 +84,11 @@ describe("match history detail", () => {
         attempts: 1,
       }],
     ]));
+    mocks.getMatchPipelineProgress.mockResolvedValue({
+      analysis: { total: 0, completed: 0, active: 0, queued: 0, cached: 0, failed: 0 },
+      matching: { total: 0, completed: 0, active: 0, queued: 0, cached: 0, failed: 0 },
+      jobs: [],
+    });
   });
 
   it("uses the exact immutable result linked by a successful log", async () => {
@@ -104,27 +114,17 @@ describe("match history detail", () => {
       jobId: 42,
       score: 88,
       evidenceJson: JSON.stringify({
-        reasons: ["Exact result"],
-        matchedSkills: ["typescript"],
-        missingSkills: [],
-        recommendations: [],
-        componentEvidence: {},
         summary: "Strong role fit with relevant service experience.",
-        matchBand: "high",
-        roleFitScore: 88,
-        evidenceCoverage: 0.8,
-        extractionConfidence: 0.9,
-        constraints: [],
-        requirementAssessments: [{
-          requirementId: "requirement:1",
-          status: "equivalent_match",
-          confidence: 0.85,
-          evidenceReferences: ["experience:0"],
-          rationale: "Related backend work supports the same competency.",
+        reasoning: [{
+          type: "match",
+          text: "Exact result",
+          candidateEvidenceReferences: ["experience:0"],
+          jobRequirementReferences: ["requirement:1"],
         }],
+        matchedSkills: ["typescript"],
       }),
-      breakdownJson: JSON.stringify({ mustHaveSkills: 100 }),
-      confidence: 0.9,
+      breakdownJson: JSON.stringify({ skillsAndTechnologies: 100 }),
+      confidence: null,
       scoringPolicyVersion: "policy-v1",
       jobAnalysisId: "analysis-1",
       adjudicationRunId: "adjudication-run",
@@ -163,13 +163,9 @@ describe("match history detail", () => {
       reasons: ["Exact result"],
       matchStale: false,
       matchSummary: "Strong role fit with relevant service experience.",
-      matchBand: "high",
-      matchRoleFitScore: 88,
-      matchEvidenceCoverage: 0.8,
-      matchExtractionConfidence: 0.9,
-      matchRequirementAssessments: [{
-        requirementId: "requirement:1",
-        status: "equivalent_match",
+      matchReasoning: [{
+        type: "match",
+        text: "Exact result",
       }],
       analysisRunId: "analysis-run",
       analysisRun: {
@@ -234,11 +230,9 @@ describe("match history detail", () => {
       jobId: log.jobId,
       score: 70,
       evidenceJson: JSON.stringify({
-        reasons: [],
+        summary: "",
+        reasoning: [],
         matchedSkills: [],
-        missingSkills: [],
-        recommendations: [],
-        componentEvidence: {},
       }),
       breakdownJson: JSON.stringify({}),
       confidence: 0.7,

@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 describe("score-aware jobs pagination", () => {
-  it("sorts and filters with an exact current-result join before pagination", async () => {
+  it("sorts and filters current-candidate results before pagination", async () => {
     const { database } = harness.createDatabase();
     const context = {
       candidateFingerprint: "a".repeat(64),
@@ -27,13 +27,16 @@ describe("score-aware jobs pagination", () => {
       getMatchPresentations: vi.fn().mockImplementation(async (
         jobRows: Array<{ id: number; matchScore: number | null }>
       ) => new Map(jobRows.map((job) => [job.id, {
-        matchScore: job.id === 1 ? 80 : job.id === 5 ? 99 : job.matchScore,
+        matchScore: job.id === 1 ? 80 : job.id === 2 ? 97 : job.id === 5 ? 99 : job.matchScore,
         matchReasons: [],
         matchedSkills: [],
-        missingSkills: [],
-        recommendations: [],
-        matchResultId: job.id === 1 ? "fresh-result" : null,
-        matchConfidence: job.id === 1 ? 0.8 : null,
+        matchResultId: job.id === 1
+          ? "fresh-result"
+          : job.id === 2
+            ? "changed-job-result"
+            : job.id === 5
+              ? "insufficient-result"
+              : null,
         matchBreakdown: null,
         matchStale: false,
         matchLegacy: job.matchScore !== null,
@@ -105,7 +108,7 @@ describe("score-aware jobs pagination", () => {
         scoringPolicyVersion: context.scoringPolicyVersion,
         score: 80,
         breakdownJson: "{}",
-        evidenceJson: JSON.stringify({ matchBand: "good" }),
+        evidenceJson: JSON.stringify({ summary: "Good fit", reasoning: [], matchedSkills: [] }),
         confidence: 0.8,
         source: "deterministic",
       },
@@ -117,7 +120,7 @@ describe("score-aware jobs pagination", () => {
         scoringPolicyVersion: context.scoringPolicyVersion,
         score: 99,
         breakdownJson: "{}",
-        evidenceJson: JSON.stringify({ matchBand: "insufficient_evidence" }),
+        evidenceJson: JSON.stringify({ summary: "Strong numeric fit", reasoning: [], matchedSkills: [] }),
         confidence: 0.2,
         source: "deterministic",
       },
@@ -127,7 +130,7 @@ describe("score-aware jobs pagination", () => {
         candidateFingerprint: context.candidateFingerprint,
         jobFingerprint: "b".repeat(64),
         scoringPolicyVersion: context.scoringPolicyVersion,
-        score: 99,
+        score: 97,
         breakdownJson: "{}",
         evidenceJson: "{}",
         confidence: 0.9,
@@ -150,10 +153,11 @@ describe("score-aware jobs pagination", () => {
     expect(await filtered.json()).toMatchObject({
       jobs: [
         { id: 5, matchScore: 99 },
+        { id: 2, matchScore: 97 },
         { id: 4, matchScore: 91 },
         { id: 1, matchScore: 80 },
       ],
-      totalCount: 3,
+      totalCount: 4,
       hasMore: false,
     });
 
@@ -162,10 +166,12 @@ describe("score-aware jobs pagination", () => {
     ) as NextRequest);
     expect(await promoted.json()).toMatchObject({
       jobs: [
+        { id: 5, matchScore: 99 },
+        { id: 2, matchScore: 97 },
         { id: 4, matchScore: 91 },
         { id: 1, matchScore: 80 },
       ],
-      totalCount: 2,
+      totalCount: 4,
       hasMore: false,
     });
 
@@ -173,8 +179,12 @@ describe("score-aware jobs pagination", () => {
       "http://localhost/api/jobs?matchBands=high&sortBy=matchScore&limit=10"
     ) as NextRequest);
     expect(await highOnly.json()).toMatchObject({
-      jobs: [{ id: 4, matchScore: 91 }],
-      totalCount: 1,
+      jobs: [
+        { id: 5, matchScore: 99 },
+        { id: 2, matchScore: 97 },
+        { id: 4, matchScore: 91 },
+      ],
+      totalCount: 3,
     });
 
     const goodOnly = await GET(new Request(
@@ -197,10 +207,7 @@ describe("score-aware jobs pagination", () => {
         matchScore: job.matchScore,
         matchReasons: [],
         matchedSkills: [],
-        missingSkills: [],
-        recommendations: [],
         matchResultId: null,
-        matchConfidence: null,
         matchBreakdown: null,
         matchStale: false,
         matchLegacy: job.matchScore !== null,

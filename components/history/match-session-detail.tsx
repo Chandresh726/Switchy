@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { MatchPipelineProgress } from "@/components/matching/match-pipeline-progress";
 import {
   CheckCircle,
   XCircle,
@@ -23,6 +24,10 @@ import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
 import { toast } from "sonner";
 import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import type { AIRunSummary } from "@/lib/ai/observability";
+import type {
+  MatchJobProgress,
+  MatchPhaseProgress,
+} from "@/lib/hooks/use-match-session";
 import { formatDurationMs, formatDurationFromDates, formatDateTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
 
@@ -59,11 +64,18 @@ interface MatchLog {
   analysisRun?: AIRunSummary | null;
   adjudicationRunId?: string | null;
   adjudicationRun?: AIRunSummary | null;
+  matchRunId?: string | null;
+  matchRun?: AIRunSummary | null;
 }
 
 interface SessionDetailResponse {
   session: MatchSession;
   logs: MatchLog[];
+  pipeline: {
+    analysis: MatchPhaseProgress;
+    matching: MatchPhaseProgress;
+    jobs: MatchJobProgress[];
+  };
 }
 
 interface MatchSessionDetailProps {
@@ -91,6 +103,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
           ...log,
           completedAt: log.completedAt ? new Date(log.completedAt) : null,
         })),
+        pipeline: json.pipeline,
       };
     },
     refetchInterval: (query) => {
@@ -159,7 +172,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
     );
   }
 
-  const { session, logs } = data;
+  const { session, logs, pipeline } = data;
   const statusConfig = getSessionStatusConfig(session.status);
   const StatusIcon = statusConfig.icon;
   const progress = session.jobsTotal
@@ -251,8 +264,16 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
           </Badge>
         </div>
 
-        {/* Progress Bar */}
-        {session.status === "in_progress" && (
+        {/* Live pipeline progress */}
+        {pipeline.jobs.length > 0 ? (
+          <div className="mb-6">
+            <MatchPipelineProgress
+              analysis={pipeline.analysis}
+              matching={pipeline.matching}
+              jobs={pipeline.jobs}
+            />
+          </div>
+        ) : session.status === "in_progress" ? (
           <div className="mb-6">
             <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
               <span>Matching Jobs...</span>
@@ -265,7 +286,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
               />
             </div>
           </div>
-        )}
+        ) : null}
 
         {/* Summary Stats Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -417,14 +438,18 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
                         Model: {log.modelUsed}
                       </div>
                     )}
-                    {(log.analysisRun || log.adjudicationRun) && (
+                    {(log.analysisRun || log.matchRun || log.adjudicationRun) && (
                       <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
                         {log.analysisRun ? (
                           <p title={`Run ${log.analysisRun.id}`}>
                             Analysis: {log.analysisRun.modelId} · {log.analysisRun.status}
                           </p>
                         ) : null}
-                        {log.adjudicationRun ? (
+                        {log.matchRun ? (
+                          <p title={`Run ${log.matchRun.id}`}>
+                            Match: {log.matchRun.modelId} · {log.matchRun.attempts} attempt{log.matchRun.attempts === 1 ? "" : "s"}
+                          </p>
+                        ) : log.adjudicationRun ? (
                           <p title={`Run ${log.adjudicationRun.id}`}>
                             Adjudication: {log.adjudicationRun.modelId} · {log.adjudicationRun.attempts} attempt{log.adjudicationRun.attempts === 1 ? "" : "s"}
                           </p>

@@ -1,51 +1,3 @@
-export function extractRequirements(description: string | null): string[] {
-  if (!description) return [];
-
-  try {
-    const lines = description.split(/\r?\n/);
-    const reqs = lines
-      .map((l) => l.trim())
-      .map((l) => {
-        const m = l.match(/^(?:[-*•]|\d+[.)])\s+(.+?)\s*$/);
-        return m?.[1]?.trim() ?? "";
-      })
-      .filter(Boolean);
-
-    if (reqs.length > 0) {
-      const seen = new Set<string>();
-      return reqs.filter((r) => {
-        const key = r.toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-    }
-
-    const keywordRequirements = lines
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .filter((line) =>
-        /(requirements?|qualifications?|must\s+have|required|experience\s+with|proficient\s+in)/i.test(line)
-      )
-      .map((line) => line.replace(/^[•\-*]\s*/, ""))
-      .slice(0, 20);
-
-    if (keywordRequirements.length > 0) {
-      const seen = new Set<string>();
-      return keywordRequirements.filter((req) => {
-        const normalized = req.toLowerCase();
-        if (seen.has(normalized)) return false;
-        seen.add(normalized);
-        return true;
-      });
-    }
-  } catch {
-    // Ignore parsing errors
-  }
-
-  return [];
-}
-
 interface ExperienceEntry {
   startDate?: string | null;
   endDate?: string | null;
@@ -57,6 +9,7 @@ function toTimestamp(value: string | null | undefined): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
+/** Calculate a factual non-overlapping employment duration for provenance. */
 export function calculateTotalExperienceYears(
   experience: ExperienceEntry[],
   referenceTime = Date.now()
@@ -64,190 +17,30 @@ export function calculateTotalExperienceYears(
   if (experience.length === 0) return null;
 
   const intervals: Array<[number, number]> = [];
-
   for (const item of experience) {
     const start = toTimestamp(item.startDate);
     if (start === null) continue;
-
     const parsedEnd = toTimestamp(item.endDate);
     if (item.endDate && parsedEnd === null) continue;
     const end = Math.min(parsedEnd ?? referenceTime, referenceTime);
-    if (end <= start) continue;
-
-    intervals.push([start, end]);
+    if (end > start) intervals.push([start, end]);
   }
-
   if (intervals.length === 0) return null;
 
-  intervals.sort((a, b) => a[0] - b[0]);
-
+  intervals.sort((left, right) => left[0] - right[0]);
   const merged: Array<[number, number]> = [];
   for (const [start, end] of intervals) {
-    const last = merged[merged.length - 1];
-    if (!last || start > last[1]) {
+    const previous = merged[merged.length - 1];
+    if (!previous || start > previous[1]) {
       merged.push([start, end]);
-      continue;
+    } else {
+      previous[1] = Math.max(previous[1], end);
     }
-    last[1] = Math.max(last[1], end);
   }
 
-  const totalMs = merged.reduce((sum, [start, end]) => sum + (end - start), 0);
+  const totalMs = merged.reduce((sum, [start, end]) => sum + end - start, 0);
   const totalYears = totalMs / (365.25 * 24 * 60 * 60 * 1000);
-  if (totalYears <= 0) return null;
-
-  return Math.round(totalYears * 10) / 10;
-}
-
-export function deriveCandidateExperienceYears(
-  roleYears: number | null
-): number | null {
-  if (typeof roleYears === "number" && !Number.isNaN(roleYears) && roleYears >= 0) {
-    return roleYears;
-  }
-
-  return null;
-}
-
-function collectNumbers(regex: RegExp, text: string, mapper: (match: RegExpExecArray) => number | null): number[] {
-  const values: number[] = [];
-  let match: RegExpExecArray | null = null;
-
-  while ((match = regex.exec(text)) !== null) {
-    const value = mapper(match);
-    if (value !== null && Number.isFinite(value) && value > 0 && value <= 50) {
-      values.push(value);
-    }
-  }
-
-  return values;
-}
-
-const SMALL_NUMBER_WORDS = [
-  "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
-  "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
-  "seventeen", "eighteen", "nineteen",
-] as const;
-const TENS_NUMBER_WORDS: Record<number, string> = {
-  20: "twenty",
-  30: "thirty",
-  40: "forty",
-  50: "fifty",
-};
-
-function numberWord(value: number): string | null {
-  if (value < SMALL_NUMBER_WORDS.length) return SMALL_NUMBER_WORDS[value] ?? null;
-  const tens = Math.floor(value / 10) * 10;
-  const ones = value % 10;
-  const tensWord = TENS_NUMBER_WORDS[tens];
-  if (!tensWord) return null;
-  return ones === 0 ? tensWord : `${tensWord} ${SMALL_NUMBER_WORDS[ones]}`;
-}
-
-export function normalizeExperienceNumberWords(value: string): string {
-  let normalized = value;
-  const replacements = Array.from({ length: 50 }, (_, index) => index + 1)
-    .flatMap((number) => {
-      const word = numberWord(number);
-      return word ? [{ number, word }] : [];
-    })
-    .sort((left, right) => right.word.length - left.word.length);
-  for (const replacement of replacements) {
-    const pattern = replacement.word.split(" ").map((part) =>
-      part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-    ).join("[-\\s]+");
-    normalized = normalized.replace(
-      new RegExp(`\\b${pattern}\\b`, "giu"),
-      String(replacement.number)
-    );
-  }
-  return normalized;
-}
-
-export function estimateRequiredExperienceYears(
-  description: string | null,
-  requirements: string[]
-): number | null {
-  const fullText = normalizeExperienceNumberWords(
-    [description ?? "", ...requirements].join("\n").toLowerCase()
-  );
-  const experienceRangePattern = /(\d+)\s*(?:-|–|to)\s*(\d+)\s*(?:\+)?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:experience|exp)\b/gi;
-
-  const rangeYears = collectNumbers(
-    experienceRangePattern,
-    fullText,
-    (match) => {
-      const min = parseInt(match[1] ?? "", 10);
-      const max = parseInt(match[2] ?? "", 10);
-      if (Number.isNaN(min) || Number.isNaN(max)) return null;
-      return Math.min(min, max);
-    }
-  );
-  const textWithoutRanges = fullText.replace(experienceRangePattern, " ");
-
-  const explicitYears = collectNumbers(
-    /(\d+)\s*(?:\+|plus)?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:experience|exp)\b/gi,
-    textWithoutRanges,
-    (match) => {
-      const years = parseInt(match[1] ?? "", 10);
-      return Number.isNaN(years) ? null : years;
-    }
-  );
-
-  const minimumYears = collectNumbers(
-    /(?:minimum|min|at\s+least)\s+(\d+)\s*(?:\+|plus)?\s*(?:years?|yrs?)\b/gi,
-    textWithoutRanges,
-    (match) => {
-      const years = parseInt(match[1] ?? "", 10);
-      return Number.isNaN(years) ? null : years;
-    }
-  );
-
-  const allYears = [...rangeYears, ...explicitYears, ...minimumYears];
-  if (allYears.length === 0) return null;
-
-  return Math.max(...allYears);
-}
-
-export function applyExperienceScoreGuardrails(
-  score: number,
-  requiredYears: number | null,
-  candidateYears: number | null
-): { adjustedScore: number; reason?: string } {
-  if (requiredYears === null || candidateYears === null) {
-    return { adjustedScore: score };
-  }
-
-  const gap = requiredYears - candidateYears;
-  if (gap <= 0) {
-    return { adjustedScore: score };
-  }
-
-  let adjusted = score;
-
-  if (gap >= 3) {
-    adjusted = Math.min(adjusted, score - 25, 50);
-  } else {
-    adjusted = Math.min(adjusted, score - 15, 75);
-  }
-
-  if (requiredYears >= 5 && candidateYears <= 2) {
-    adjusted = Math.min(adjusted, 60);
-  }
-
-  if (requiredYears >= 5 && candidateYears < 1) {
-    adjusted = Math.min(adjusted, 35);
-  }
-
-  const normalizedScore = Math.max(0, Math.round(adjusted));
-  if (normalizedScore >= score) {
-    return { adjustedScore: score };
-  }
-
-  const reason = `Adjusted for experience gap: role asks ~${requiredYears} years, profile indicates ~${candidateYears.toFixed(1)} years.`;
-  return {
-    adjustedScore: normalizedScore,
-    reason,
-  };
+  return totalYears > 0 ? Math.round(totalYears * 10) / 10 : null;
 }
 
 export function htmlToText(html: string): string {
@@ -275,8 +68,8 @@ export function htmlToText(html: string): string {
 
 export function chunkArray<T>(array: T[], size: number): T[][] {
   const chunks: T[][] = [];
-  for (let i = 0; i < array.length; i += size) {
-    chunks.push(array.slice(i, i + size));
+  for (let index = 0; index < array.length; index += size) {
+    chunks.push(array.slice(index, index + size));
   }
   return chunks;
 }

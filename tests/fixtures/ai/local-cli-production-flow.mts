@@ -24,18 +24,18 @@ migrationConnection.close();
 const { db } = await import("../../../lib/db/index");
 const { saveStoredLocalCLICatalog } = await import("../../../lib/ai/local-cli/catalog-cache");
 const { resetLocalCLIProvider } = await import("../../../lib/ai/local-cli/service");
-const { createProvider } = await import("../../../lib/ai/providers/provider-service");
+const {
+  ensureBuiltinLocalCLIProviders,
+  getProviderById,
+} = await import("../../../lib/ai/providers/provider-service");
 const { enqueueMatchWork } = await import("../../../lib/ai/work-items/repository");
 const { AIWorkDispatcher } = await import("../../../lib/ai/work-items/dispatcher");
 const { parseResumeWithProvenance } = await import("../../../lib/ai/resume-parser");
 const { POST: streamWriting } = await import("../../../app/api/ai/content/stream/route");
 
-const existingCodexProviders = await db
-  .select()
-  .from(schema.aiProviders)
-  .where(eq(schema.aiProviders.provider, "codex_cli"))
-  .limit(1);
-const codexProvider = existingCodexProviders[0] ?? await createProvider({ provider: "codex_cli" });
+await ensureBuiltinLocalCLIProviders();
+const codexProvider = await getProviderById("builtin:codex-cli");
+assert(codexProvider, "Built-in Codex provider was not initialized");
 
 const settingValues: Record<string, string> = {
   codex_cli_executable: codexExecutable,

@@ -8,6 +8,7 @@ import {
   aiWorkItems,
   companies,
   jobs,
+  matchSessionJobs,
   matchSessions,
   scrapeSessions,
   scrapingLogs,
@@ -291,6 +292,12 @@ export class DrizzleScraperRepository implements IScraperRepository {
         });
         tx.insert(matchSessions).values(matchWork.session).run();
         tx.insert(aiWorkItems).values(matchWork.workItem).run();
+        tx.insert(matchSessionJobs).values(matchableJobIds.map((jobId) => ({
+          sessionId: matchOutboxId,
+          jobId,
+          createdAt: completedAt,
+          updatedAt: completedAt,
+        }))).run();
       }
 
       return {

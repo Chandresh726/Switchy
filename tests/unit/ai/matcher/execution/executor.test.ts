@@ -1,7 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AIError } from "@/lib/ai/shared/errors";
-
 const mocks = vi.hoisted(() => ({
   buildCandidateEvidence: vi.fn(),
   getOrCreateCandidateSnapshot: vi.fn(),
@@ -10,16 +8,17 @@ const mocks = vi.hoisted(() => ({
   createAICapabilityRuntime: vi.fn(),
   fetchJobsData: vi.fn(),
   fetchProfileData: vi.fn(),
-  fetchMatchingPreferences: vi.fn(),
   logMatchFailure: vi.fn(),
   persistMatchSuccess: vi.fn(),
+  markJobAnalysisReady: vi.fn(),
+  markJobAnalysisStarted: vi.fn(),
+  markJobMatchStarted: vi.fn(),
   analyzeJobsForMatching: vi.fn(),
+  buildJobAnalysisVersion: vi.fn(),
   enrichCandidateEvidence: vi.fn(),
-  buildScoringCandidate: vi.fn(),
-  scoreDeterministically: vi.fn(),
-  shouldAdjudicate: vi.fn(),
-  buildScoringPolicyVersion: vi.fn(),
-  adjudicateMatch: vi.fn(),
+  buildMatchPolicyVersion: vi.fn(),
+  evaluateMatchWithAI: vi.fn(),
+  buildPersistedMatchArtifacts: vi.fn(),
 }));
 
 vi.mock("@/lib/ai/artifacts", () => ({
@@ -38,34 +37,37 @@ vi.mock("@/lib/ai/runtime", () => ({
 vi.mock("@/lib/ai/matcher/tracking", () => ({
   fetchJobsData: mocks.fetchJobsData,
   fetchProfileData: mocks.fetchProfileData,
-  fetchMatchingPreferences: mocks.fetchMatchingPreferences,
   logMatchFailure: mocks.logMatchFailure,
   persistMatchSuccess: mocks.persistMatchSuccess,
+  markJobAnalysisReady: mocks.markJobAnalysisReady,
+  markJobAnalysisStarted: mocks.markJobAnalysisStarted,
+  markJobMatchStarted: mocks.markJobMatchStarted,
 }));
 
 vi.mock("@/lib/ai/matcher/evidence/job-analysis", () => ({
   analyzeJobsForMatching: mocks.analyzeJobsForMatching,
+  buildJobAnalysisVersion: mocks.buildJobAnalysisVersion,
 }));
 
 vi.mock("@/lib/ai/matcher/evidence/candidate", () => ({
-  buildScoringCandidate: mocks.buildScoringCandidate,
   enrichCandidateEvidence: mocks.enrichCandidateEvidence,
 }));
 
-vi.mock("@/lib/ai/matcher/evidence/scoring", () => ({
-  scoreDeterministically: mocks.scoreDeterministically,
-}));
-
-vi.mock("@/lib/ai/matcher/evidence/adjudication", () => ({
-  adjudicateMatch: mocks.adjudicateMatch,
-  buildScoringPolicyVersion: mocks.buildScoringPolicyVersion,
-  shouldAdjudicate: mocks.shouldAdjudicate,
+vi.mock("@/lib/ai/matcher/evidence/ai-match", () => ({
+  buildMatchPolicyVersion: mocks.buildMatchPolicyVersion,
+  evaluateMatchWithAI: mocks.evaluateMatchWithAI,
+  buildPersistedMatchArtifacts: mocks.buildPersistedMatchArtifacts,
 }));
 
 import { executeMatch } from "@/lib/ai/matcher/execution/executor";
+import type { MatcherConfig } from "@/lib/ai/matcher/types";
 
-const config = {
-  model: "configured-model",
+const config: MatcherConfig = {
+  jobAnalysisProviderId: "analysis-provider",
+  jobAnalysisModel: "analysis-model",
+  jobAnalysisReasoningEffort: "high",
+  providerId: "match-provider",
+  model: "match-model",
   reasoningEffort: "medium",
   batchSize: 4,
   maxRetries: 2,
@@ -78,21 +80,24 @@ const config = {
 
 const candidateEvidence = {
   summary: "Backend engineer",
-  skills: [{ name: "typescript", category: "backend" }],
+  skills: [{ name: "TypeScript", category: "backend" }],
   experience: [],
   education: [],
   preferences: {
     preferredCountry: null,
     preferredCity: null,
-    acceptedLocationTypes: [],
-    acceptedEmploymentTypes: [],
   },
+  totalExperienceYears: 4,
+  experienceAsOfMonth: "2026-07",
+  seniorityLevel: null,
+  managementExperience: false,
+  domainKeywords: [],
 };
 
 const job = {
   id: 101,
   title: "Backend Engineer",
-  description: "TypeScript services",
+  description: "Build TypeScript services",
   location: null,
   locationType: "remote",
   salary: null,
@@ -115,441 +120,140 @@ const analysis = {
   },
   jobFingerprint: "b".repeat(64),
   jobAnalysisId: "analysis-1",
-  analysisSource: "ai",
   analysis: {
-    mustHaveSkills: ["typescript"],
-    preferredSkills: [],
-    minimumExperienceYears: null,
-    seniorityLevel: "mid",
-    managementTrack: null,
-    educationRequirements: [],
-    locationConstraints: ["remote"],
-    employmentType: "full-time",
-    compensationText: null,
-    domainKeywords: [],
-    extractionConfidence: 0.9,
-    ambiguities: [],
+    summary: "Backend role building TypeScript services.",
+    requirements: [],
   },
 };
 
-const deterministic = {
-  score: 88,
-  breakdown: { mustHaveSkills: 100 },
-  evidence: {
-    reasons: ["1/1 must-have skills matched"],
-    matchedSkills: ["typescript"],
-    missingSkills: [],
-    recommendations: [],
-    componentEvidence: { mustHaveSkills: ["Matched: typescript"] },
-  },
-  confidence: 0.9,
-  hardCap: null,
-  availableWeight: 35,
+const evidence = {
+  summary: "Strong fit",
+  reasoning: [{
+    type: "match" as const,
+    text: "Strong responsibilities match",
+    candidateEvidenceReferences: ["summary:1"],
+    jobRequirementReferences: [],
+  }],
+  matchedSkills: ["TypeScript"],
 };
 
-describe("evidence matcher executor", () => {
+describe("AI-only matcher executor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.fetchMatchingPreferences.mockResolvedValue({
-      acceptedLocationTypes: [],
-      acceptedEmploymentTypes: [],
+    mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
+    mocks.fetchProfileData.mockResolvedValue({
+      profile: { id: 1, summary: "Backend engineer", preferredCountry: null, preferredCity: null },
+      skills: [],
+      experience: [],
+      education: [],
     });
     mocks.buildCandidateEvidence.mockReturnValue(candidateEvidence);
-    mocks.enrichCandidateEvidence.mockImplementation((evidence) => evidence);
+    mocks.enrichCandidateEvidence.mockReturnValue(candidateEvidence);
     mocks.getOrCreateCandidateSnapshot.mockResolvedValue({
       id: "candidate-1",
       fingerprint: "a".repeat(64),
       evidence: candidateEvidence,
     });
-    mocks.buildScoringCandidate.mockReturnValue({ evidence: candidateEvidence });
-    mocks.createAICapabilityRuntime.mockResolvedValue({
+    mocks.createAICapabilityRuntime.mockImplementation(async ({ capability }) => ({
+      capability,
       snapshot: {
-        providerRecordId: "provider-1",
+        providerRecordId: capability === "job_analysis" ? "analysis-provider" : "match-provider",
         provider: "openai",
-        modelId: "resolved-model",
-        model: {},
+        modelId: capability === "job_analysis" ? "analysis-model" : "match-model",
+        backendKind: "ai_sdk",
       },
-      reasoningEffort: "medium",
-    });
+      reasoningEffort: capability === "job_analysis" ? "high" : "medium",
+    }));
     mocks.analyzeJobsForMatching.mockResolvedValue(new Map([[101, analysis]]));
-    mocks.buildScoringPolicyVersion.mockReturnValue("evidence-score-v1-fixture");
+    mocks.buildJobAnalysisVersion.mockReturnValue("analysis-policy-v1");
+    mocks.buildMatchPolicyVersion.mockReturnValue("ai-match-policy-v1-fixture");
     mocks.findFreshMatch.mockResolvedValue(null);
-    mocks.scoreDeterministically.mockReturnValue(deterministic);
-    mocks.shouldAdjudicate.mockReturnValue(false);
+    mocks.evaluateMatchWithAI.mockResolvedValue({
+      outcome: { score: 90 },
+      runId: "match-run-1",
+      attempts: 1,
+    });
+    mocks.buildPersistedMatchArtifacts.mockReturnValue({
+      breakdown: { responsibilities: 90 },
+      evidence: structuredClone(evidence),
+    });
     mocks.createMatchResult.mockImplementation(async (input) => ({
       id: "result-1",
       ...input,
     }));
-    mocks.persistMatchSuccess.mockResolvedValue(undefined);
-    mocks.logMatchFailure.mockResolvedValue(undefined);
   });
 
-  it("returns deterministic failures when profile data is missing", async () => {
-    mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
+  it("does not resolve a model when the profile is missing", async () => {
     mocks.fetchProfileData.mockResolvedValue(null);
-    const progress = vi.fn();
+    const results = await executeMatch({ config, jobIds: [101], sessionId: "session-1" });
 
-    const results = await executeMatch({
-      config,
-      jobIds: [101],
-      sessionId: "session-1",
-      onProgress: progress,
-    });
-
-    expect(results.get(101)).toMatchObject({
-      type: "missing_profile",
-      retryable: false,
-    });
-    expect(mocks.logMatchFailure).toHaveBeenCalledWith(
-      "session-1",
-      101,
-      0,
-      expect.objectContaining({ type: "missing_profile" }),
-      0,
-      "deterministic"
-    );
-    expect(progress).toHaveBeenLastCalledWith(1, 1, 0, 1);
-    expect(mocks.analyzeJobsForMatching).not.toHaveBeenCalled();
+    expect(results.get(101)).toMatchObject({ type: "missing_profile" });
     expect(mocks.createAICapabilityRuntime).not.toHaveBeenCalled();
-  });
-
-  it("persists the immutable evidence result and links the session log once", async () => {
-    mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
-    mocks.fetchProfileData.mockResolvedValue({
-      profile: { id: 1, summary: "Backend engineer", preferredCountry: null, preferredCity: null },
-      skills: [],
-      experience: [],
-      education: [],
-    });
-    const progress = vi.fn();
-
-    const results = await executeMatch({
-      config,
-      jobIds: [101],
-      sessionId: "session-1",
-      onProgress: progress,
-    });
-
-    expect(results.get(101)).toEqual({
-      score: 88,
-      reasons: deterministic.evidence.reasons,
-      matchedSkills: ["typescript"],
-      missingSkills: [],
-      recommendations: [],
-    });
-    expect(mocks.createMatchResult).toHaveBeenCalledWith(expect.objectContaining({
-      candidateSnapshotId: "candidate-1",
-      jobAnalysisId: "analysis-1",
-      score: 88,
-      source: "deterministic",
-    }));
-    expect(mocks.buildScoringPolicyVersion).toHaveBeenCalledWith(expect.objectContaining({
-      providerId: "provider-1",
-      model: "resolved-model",
-    }));
-    expect(mocks.persistMatchSuccess).toHaveBeenCalledWith(
-      "session-1",
-      101,
-      "result-1",
-      expect.objectContaining({ score: 88 }),
-      0,
-      expect.any(Number),
-      "deterministic"
-    );
-    expect(progress).toHaveBeenLastCalledWith(1, 1, 1, 0);
-  });
-
-  it("reuses a fresh immutable result without rescoring or calling a provider", async () => {
-    mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
-    mocks.fetchProfileData.mockResolvedValue({
-      profile: { id: 1, summary: "Backend engineer", preferredCountry: null, preferredCity: null },
-      skills: [],
-      experience: [],
-      education: [],
-    });
-    mocks.findFreshMatch.mockResolvedValue({
-      id: "cached-result-1",
-      score: 92,
-      evidence: deterministic.evidence,
-    });
-
-    const results = await executeMatch({
-      config,
-      jobIds: [101],
-      sessionId: "session-1",
-    });
-
-    expect(results.get(101)).toMatchObject({ score: 92 });
-    expect(mocks.scoreDeterministically).not.toHaveBeenCalled();
     expect(mocks.createMatchResult).not.toHaveBeenCalled();
-    expect(mocks.createAICapabilityRuntime).toHaveBeenCalledTimes(1);
-    expect(mocks.persistMatchSuccess).toHaveBeenCalledWith(
-      "session-1",
-      101,
-      "cached-result-1",
-      expect.objectContaining({ score: 92 }),
-      0,
-      expect.any(Number),
-      "cache"
-    );
   });
 
-  it("does not persist a cached success when cancellation wins the lookup race", async () => {
-    const cacheLookup = Promise.withResolvers<{
-      id: string;
-      score: number;
-      evidence: typeof deterministic.evidence;
-    }>();
-    const controller = new AbortController();
-    mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
-    mocks.fetchProfileData.mockResolvedValue({
-      profile: { id: 1, summary: "Backend engineer", preferredCountry: null, preferredCity: null },
-      skills: [],
-      experience: [],
-      education: [],
-    });
-    mocks.findFreshMatch.mockReturnValue(cacheLookup.promise);
+  it("uses separate analysis and match runtimes and persists only the AI score", async () => {
+    const results = await executeMatch({ config, jobIds: [101], sessionId: "session-1" });
 
-    const pending = executeMatch({
-      config,
-      jobIds: [101],
-      sessionId: "session-1",
-      signal: controller.signal,
-    });
-    await vi.waitFor(() => expect(mocks.findFreshMatch).toHaveBeenCalledOnce());
-    controller.abort(new DOMException("Cancelled", "AbortError"));
-    cacheLookup.resolve({
-      id: "cached-result-1",
-      score: 92,
-      evidence: deterministic.evidence,
-    });
-
-    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
-    expect(mocks.persistMatchSuccess).not.toHaveBeenCalled();
-    expect(mocks.createMatchResult).not.toHaveBeenCalled();
-    expect(mocks.logMatchFailure).not.toHaveBeenCalled();
-  });
-
-  it("does not persist a new result when cancellation occurs before the write", async () => {
-    const controller = new AbortController();
-    mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
-    mocks.fetchProfileData.mockResolvedValue({
-      profile: { id: 1, summary: "Backend engineer", preferredCountry: null, preferredCity: null },
-      skills: [],
-      experience: [],
-      education: [],
-    });
-    mocks.scoreDeterministically.mockImplementation(() => {
-      controller.abort(new DOMException("Cancelled", "AbortError"));
-      return deterministic;
-    });
-
-    await expect(executeMatch({
-      config,
-      jobIds: [101],
-      sessionId: "session-1",
-      signal: controller.signal,
-    })).rejects.toMatchObject({ name: "AbortError" });
-
-    expect(mocks.createMatchResult).not.toHaveBeenCalled();
-    expect(mocks.persistMatchSuccess).not.toHaveBeenCalled();
-    expect(mocks.logMatchFailure).not.toHaveBeenCalled();
-  });
-
-  it("does not begin job analysis after session cancellation", async () => {
-    mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
-    mocks.fetchProfileData.mockResolvedValue({
-      profile: { id: 1, summary: "Backend engineer", preferredCountry: null, preferredCity: null },
-      skills: [],
-      experience: [],
-      education: [],
-    });
-
-    const results = await executeMatch({
-      config,
-      jobIds: [101],
-      shouldStop: vi.fn().mockResolvedValue(true),
-    });
-
-    expect(results.size).toBe(0);
-    expect(mocks.analyzeJobsForMatching).not.toHaveBeenCalled();
-  });
-
-  it("marks a deterministic adjudication fallback as pending so it is retried", async () => {
-    mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
-    mocks.fetchProfileData.mockResolvedValue({
-      profile: { id: 1, summary: "Backend engineer", preferredCountry: null, preferredCity: null },
-      skills: [],
-      experience: [],
-      education: [],
-    });
-    mocks.shouldAdjudicate.mockReturnValue(true);
-    mocks.createAICapabilityRuntime.mockResolvedValue({
-      snapshot: {
-        providerRecordId: "provider-1",
-        provider: "openai",
-        modelId: "configured-model",
-        model: {},
-      },
-      reasoningEffort: "medium",
-    });
-    mocks.adjudicateMatch.mockRejectedValue(new Error("temporary provider failure"));
-
-    await executeMatch({ config, jobIds: [101] });
-
-    expect(mocks.createMatchResult).toHaveBeenCalledWith(expect.objectContaining({
-      scoringPolicyVersion: "evidence-score-v1-fixture-adjudication-pending",
-      source: "deterministic",
-      adjudicationRunId: undefined,
-    }));
-    expect(mocks.createMatchResult.mock.calls[0]?.[0].evidence.reasons).toContain(
-      "Deterministic fallback shown; configured adjudication will be retried"
+    expect(mocks.createAICapabilityRuntime).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ capability: "job_analysis" })
     );
     expect(mocks.createAICapabilityRuntime).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({
-        capability: "match_adjudication",
-        resolved: expect.objectContaining({
-          snapshot: expect.objectContaining({ modelId: "configured-model" }),
-        }),
-      })
+      expect.objectContaining({ capability: "match_evaluation" })
     );
-    expect(mocks.adjudicateMatch).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-      expect.objectContaining({
-        providerId: "provider-1",
-        model: "configured-model",
-      }),
-      undefined
-    );
-  });
-
-  it("marks a deterministic job-analysis fallback as pending so extraction is retried", async () => {
-    mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
-    mocks.fetchProfileData.mockResolvedValue({
-      profile: { id: 1, summary: "Backend engineer", preferredCountry: null, preferredCity: null },
-      skills: [],
-      experience: [],
-      education: [],
-    });
-    mocks.analyzeJobsForMatching.mockResolvedValue(new Map([[101, {
-      ...analysis,
-      analysisSource: "fallback",
-    }]]));
-
-    await executeMatch({ config, jobIds: [101] });
-
     expect(mocks.createMatchResult).toHaveBeenCalledWith(expect.objectContaining({
-      scoringPolicyVersion: "evidence-score-v1-fixture-analysis-pending",
+      source: "ai",
+      score: 90,
+      matchRunId: "match-run-1",
+      matchPolicyVersion: "ai-match-policy-v1-fixture",
     }));
-    expect(mocks.createMatchResult.mock.calls[0]?.[0].evidence.reasons).toContain(
-      "Deterministic job analysis shown; structured extraction will be retried"
-    );
+    expect(results.get(101)).toMatchObject({ score: 90 });
   });
 
-  it("runs adjudications concurrently up to the configured provider ceiling", async () => {
-    const secondJob = { ...job, id: 102, title: "Platform Engineer" };
-    const secondAnalysis = {
-      ...analysis,
-      job: secondJob,
-      jobEvidence: { ...analysis.jobEvidence, title: secondJob.title },
-      jobFingerprint: "c".repeat(64),
-      jobAnalysisId: "analysis-2",
-    };
-    mocks.fetchJobsData.mockResolvedValue(new Map([
-      [101, job],
-      [102, secondJob],
-    ]));
-    mocks.fetchProfileData.mockResolvedValue({
-      profile: { id: 1, summary: "Backend engineer", preferredCountry: null, preferredCity: null },
-      skills: [],
-      experience: [],
-      education: [],
-    });
-    mocks.analyzeJobsForMatching.mockResolvedValue(new Map([
-      [101, analysis],
-      [102, secondAnalysis],
-    ]));
-    mocks.shouldAdjudicate.mockReturnValue(true);
-    const release = Promise.withResolvers<void>();
-    let active = 0;
-    let maxActive = 0;
-    mocks.adjudicateMatch.mockImplementation(async () => {
-      active += 1;
-      maxActive = Math.max(maxActive, active);
-      await release.promise;
-      active -= 1;
-      return {
-        runId: "adjudication-run",
-        attempts: 1,
-        summary: "Synthetic semantic assessment",
-        assessments: [],
-      };
-    });
+  it("reuses a fresh AI result without another final match call", async () => {
+    mocks.findFreshMatch.mockResolvedValue({ id: "cached", score: 86, evidence });
 
-    const pending = executeMatch({ config, jobIds: [101, 102] });
-    await vi.waitFor(() => expect(mocks.adjudicateMatch).toHaveBeenCalledTimes(2));
-    expect(maxActive).toBe(2);
-    expect(mocks.createAICapabilityRuntime).toHaveBeenCalledTimes(2);
+    const results = await executeMatch({ config, jobIds: [101], sessionId: "session-1" });
 
-    release.resolve();
-    const results = await pending;
-
-    expect(results.size).toBe(2);
-    expect(Array.from(results.values())).toEqual([
-      expect.objectContaining({ score: 88 }),
-      expect.objectContaining({ score: 88 }),
-    ]);
-  });
-
-  it("does not reuse an authoritative cache entry when concrete model resolution fails", async () => {
-    mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
-    mocks.fetchProfileData.mockResolvedValue({
-      profile: { id: 1, summary: "Backend engineer", preferredCountry: null, preferredCity: null },
-      skills: [],
-      experience: [],
-      education: [],
-    });
-    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    mocks.createAICapabilityRuntime.mockRejectedValue(
-      new Error("provider exposed SENTINEL_CANDIDATE_DATA")
-    );
-
-    await executeMatch({ config: { ...config, model: "" }, jobIds: [101] });
-
-    expect(mocks.findFreshMatch).not.toHaveBeenCalled();
-    expect(mocks.createMatchResult).toHaveBeenCalledWith(expect.objectContaining({
-      scoringPolicyVersion: "evidence-score-v1-fixture-model-resolution-pending",
-      source: "deterministic",
-    }));
-    expect(mocks.createMatchResult.mock.calls[0]?.[0].evidence.reasons).toContain(
-      "Deterministic fallback shown; concrete model resolution will be retried"
-    );
-    expect(JSON.stringify(warning.mock.calls)).not.toContain("SENTINEL_CANDIDATE_DATA");
-    warning.mockRestore();
-  });
-
-  it("blocks matching when the configured reasoning effort is stale", async () => {
-    mocks.fetchJobsData.mockResolvedValue(new Map([[101, job]]));
-    mocks.fetchProfileData.mockResolvedValue({
-      profile: { id: 1, summary: "Backend engineer", preferredCountry: null, preferredCity: null },
-      skills: [],
-      experience: [],
-      education: [],
-    });
-    const configurationError = new AIError({
-      type: "reasoning_not_supported",
-      message: "Refresh models and choose an advertised value",
-      retryable: false,
-    });
-    mocks.createAICapabilityRuntime.mockRejectedValue(configurationError);
-
-    await expect(executeMatch({ config, jobIds: [101] })).rejects.toBe(configurationError);
-
-    expect(mocks.analyzeJobsForMatching).not.toHaveBeenCalled();
+    expect(results.get(101)).toMatchObject({ score: 86 });
+    expect(mocks.evaluateMatchWithAI).not.toHaveBeenCalled();
     expect(mocks.createMatchResult).not.toHaveBeenCalled();
+  });
+
+  it("creates no match result when job analysis fails", async () => {
+    mocks.analyzeJobsForMatching.mockResolvedValue(new Map());
+
+    const results = await executeMatch({ config, jobIds: [101], sessionId: "session-1" });
+
+    expect(results.get(101)).toBeInstanceOf(Error);
+    expect(mocks.evaluateMatchWithAI).not.toHaveBeenCalled();
+    expect(mocks.createMatchResult).not.toHaveBeenCalled();
+    expect(mocks.logMatchFailure).toHaveBeenCalled();
+  });
+
+  it("starts final matching as soon as an analysis becomes ready", async () => {
+    let releaseAnalysis!: () => void;
+    const analysisBlocked = new Promise<void>((resolve) => {
+      releaseAnalysis = resolve;
+    });
+    mocks.analyzeJobsForMatching.mockImplementation(async (
+      _jobs,
+      _config,
+      _signal,
+      _shouldStop,
+      _runtime,
+      callbacks
+    ) => {
+      await callbacks.onReady(analysis, "generated");
+      await analysisBlocked;
+      return new Map([[101, analysis]]);
+    });
+
+    const execution = executeMatch({ config, jobIds: [101], sessionId: "session-1" });
+    await vi.waitFor(() => expect(mocks.evaluateMatchWithAI).toHaveBeenCalledOnce());
+    releaseAnalysis();
+    await execution;
   });
 });

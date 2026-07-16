@@ -4,8 +4,13 @@ import { asc, desc, eq, inArray } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
 import { AIError } from "@/lib/ai/shared/errors";
+import { BUILTIN_CLI_PROVIDER_IDS } from "@/lib/ai/local-cli/constants";
 import { db } from "@/lib/db";
-import { aiProviders, settings } from "@/lib/db/schema";
+import {
+  aiProviders,
+  aiRuns,
+  settings,
+} from "@/lib/db/schema";
 import type * as databaseSchema from "@/lib/db/schema";
 import { decryptApiKey, encryptApiKey } from "@/lib/encryption";
 
@@ -62,7 +67,54 @@ export function toProviderPublic(record: ProviderRecord): ProviderPublic {
 export async function listProviders(
   database: BetterSQLite3Database<typeof databaseSchema> = db
 ): Promise<ProviderRecord[]> {
+  await ensureBuiltinLocalCLIProviders(database);
   return database.select().from(aiProviders).orderBy(aiProviders.createdAt);
+}
+
+export async function ensureBuiltinLocalCLIProviders(
+  database: BetterSQLite3Database<typeof databaseSchema> = db
+): Promise<void> {
+  database.transaction((tx) => {
+    for (const provider of ["codex_cli", "opencode_cli"] as const) {
+      const builtinId = BUILTIN_CLI_PROVIDER_IDS[provider];
+      const existing = tx.select().from(aiProviders)
+        .where(eq(aiProviders.provider, provider)).all();
+      let builtin = existing.find(({ id }) => id === builtinId);
+      if (!builtin) {
+        builtin = tx.insert(aiProviders).values({
+          id: builtinId,
+          provider,
+          apiKey: null,
+          isActive: true,
+          isDefault: false,
+          updatedAt: new Date(),
+        }).returning().get();
+      }
+
+      for (const legacy of existing.filter(({ id }) => id !== builtinId)) {
+        tx.update(settings).set({ value: builtinId })
+          .where(eq(settings.value, legacy.id)).run();
+        tx.delete(settings)
+          .where(eq(settings.key, `provider_model_catalog:${legacy.id}`)).run();
+        tx.update(aiRuns).set({ providerRecordId: builtinId })
+          .where(eq(aiRuns.providerRecordId, legacy.id)).run();
+        tx.delete(aiProviders).where(eq(aiProviders.id, legacy.id)).run();
+      }
+
+      if (
+        builtin.apiKey !== null ||
+        builtin.isActive !== true ||
+        builtin.isDefault !== false
+      ) {
+        tx.update(aiProviders).set({
+          apiKey: null,
+          isActive: true,
+          isDefault: false,
+          updatedAt: new Date(),
+        }).where(eq(aiProviders.id, builtinId)).run();
+      }
+    }
+  }, { behavior: "immediate" });
 }
 
 export async function getProviderById(
@@ -78,6 +130,11 @@ export async function getProviderById(
 }
 
 const FEATURE_PROVIDER_SETTINGS = [
+  {
+    provider: "job_analysis_provider_id",
+    model: "job_analysis_model",
+    effort: "job_analysis_reasoning_effort",
+  },
   {
     provider: "matcher_provider_id",
     model: "matcher_model",
@@ -144,6 +201,13 @@ export async function createProvider(options: {
   provider: AIProvider;
   apiKey?: string;
 }, database: BetterSQLite3Database<typeof databaseSchema> = db): Promise<ProviderRecord> {
+  if (isLocalCLIProvider(options.provider)) {
+    throw new AIError({
+      type: "validation",
+      message: "Local CLI providers are built in and cannot be created",
+      retryable: false,
+    });
+  }
   const existing = await database
     .select({ id: aiProviders.id })
     .from(aiProviders)
@@ -157,8 +221,10 @@ export async function createProvider(options: {
   }
 
   const allProviders = await database.select().from(aiProviders);
-  const isFirstProvider = allProviders.length === 0;
-  const encryptedApiKey = !isLocalCLIProvider(options.provider) && options.apiKey?.trim()
+  const isFirstAPIProvider = allProviders.every((provider) =>
+    isLocalCLIProvider(provider.provider)
+  );
+  const encryptedApiKey = options.apiKey?.trim()
     ? encryptApiKey(options.apiKey.trim())
     : undefined;
 
@@ -169,7 +235,7 @@ export async function createProvider(options: {
       provider: options.provider,
       apiKey: encryptedApiKey,
       isActive: true,
-      isDefault: isFirstProvider,
+      isDefault: isFirstAPIProvider,
       updatedAt: new Date(),
     })
     .returning();
@@ -210,6 +276,13 @@ export async function deleteProvider(
   const resolveModels = options.resolveModels ?? getProviderModels;
   const deleteModelsCache = options.deleteModelsCache ?? deleteStoredProviderModelsCache;
   const provider = await requireProviderById(providerId, database);
+  if (isLocalCLIProvider(provider.provider)) {
+    throw new AIError({
+      type: "validation",
+      message: "Built-in local CLI providers cannot be deleted",
+      retryable: false,
+    });
+  }
   const providerSettingKeys = FEATURE_PROVIDER_SETTINGS.map(({ provider: key }) => key);
   const storedProviderSelections = await database
     .select({ key: settings.key, value: settings.value })
@@ -227,6 +300,9 @@ export async function deleteProvider(
     .where(eq(aiProviders.isActive, true))
     .orderBy(desc(aiProviders.isDefault), asc(aiProviders.createdAt));
   const candidates = remaining.filter(({ id }) => id !== providerId);
+  const apiCandidates = candidates.filter(({ provider: candidateProvider }) =>
+    !isLocalCLIProvider(candidateProvider)
+  );
 
   let fallback: {
     providerId: string;
@@ -234,7 +310,7 @@ export async function deleteProvider(
     reasoningEffort: string;
   } | null = null;
   if (impactedFeatures.length > 0) {
-    for (const candidate of candidates) {
+    for (const candidate of apiCandidates) {
       try {
         const { models } = await resolveModels(candidate.id);
         const model = models.find(({ isDefault }) => isDefault) ?? models[0];
@@ -264,8 +340,8 @@ export async function deleteProvider(
     }
   }
 
-  if (provider.isDefault && candidates.length > 0) {
-    const defaultProviderId = fallback?.providerId ?? candidates[0].id;
+  if (provider.isDefault && apiCandidates.length > 0) {
+    const defaultProviderId = fallback?.providerId ?? apiCandidates[0]!.id;
     await database
       .update(aiProviders)
       .set({ isDefault: false, updatedAt: new Date() })

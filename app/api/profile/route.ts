@@ -3,6 +3,7 @@ import { profile, skills, experience, education, resumes } from "@/lib/db/schema
 import { eq, desc } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { assertAppRequest } from "@/lib/api";
+import { scheduleProfileRematch } from "@/lib/ai/matcher/profile-rematch";
 
 export async function GET() {
   try {
@@ -60,6 +61,11 @@ export async function POST(request: NextRequest) {
     const existingProfiles = await db.select().from(profile).limit(1);
 
     if (existingProfiles.length > 0) {
+      const existingProfile = existingProfiles[0];
+      const matchingFactsChanged =
+        existingProfile.summary !== (summary ?? null) ||
+        existingProfile.preferredCountry !== (preferredCountry ?? null) ||
+        existingProfile.preferredCity !== (preferredCity ?? null);
       // Update existing profile
       const [updated] = await db
         .update(profile)
@@ -77,9 +83,10 @@ export async function POST(request: NextRequest) {
           summary,
           updatedAt: new Date(),
         })
-        .where(eq(profile.id, existingProfiles[0].id))
+        .where(eq(profile.id, existingProfile.id))
         .returning();
 
+      if (matchingFactsChanged) await scheduleProfileRematch();
       return NextResponse.json(updated);
     } else {
       // Create new profile
@@ -100,6 +107,7 @@ export async function POST(request: NextRequest) {
         })
         .returning();
 
+      await scheduleProfileRematch();
       return NextResponse.json(newProfile);
     }
   } catch (error) {

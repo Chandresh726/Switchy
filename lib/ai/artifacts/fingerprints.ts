@@ -74,10 +74,6 @@ export interface CandidateFingerprintInput {
     gpa: string | null;
     honors: string | null;
   }>;
-  preferences?: {
-    acceptedLocationTypes?: string[];
-    acceptedEmploymentTypes?: string[];
-  };
 }
 
 export function buildCandidateEvidence(input: CandidateFingerprintInput): CandidateEvidence {
@@ -133,12 +129,6 @@ export function buildCandidateEvidence(input: CandidateFingerprintInput): Candid
     preferences: {
       preferredCountry: normalizeIdentifier(input.profile.preferredCountry),
       preferredCity: normalizeIdentifier(input.profile.preferredCity),
-      acceptedLocationTypes: normalizeStringArray(
-        input.preferences?.acceptedLocationTypes ?? []
-      ),
-      acceptedEmploymentTypes: normalizeStringArray(
-        input.preferences?.acceptedEmploymentTypes ?? []
-      ),
     },
   }));
 }
@@ -178,10 +168,6 @@ export function canonicalizeCandidateEvidence(input: CandidateEvidence): Candida
     preferences: {
       preferredCountry: normalizeIdentifier(evidence.preferences.preferredCountry),
       preferredCity: normalizeIdentifier(evidence.preferences.preferredCity),
-      acceptedLocationTypes: normalizeStringArray(evidence.preferences.acceptedLocationTypes),
-      acceptedEmploymentTypes: normalizeStringArray(
-        evidence.preferences.acceptedEmploymentTypes
-      ),
     },
     totalExperienceYears: evidence.totalExperienceYears,
     experienceAsOfMonth: evidence.experienceAsOfMonth,

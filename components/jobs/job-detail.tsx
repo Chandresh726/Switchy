@@ -6,7 +6,11 @@ import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MatchBadge } from "./match-badge";
-import { MatchBreakdown, type MatchBreakdownValue } from "./match-breakdown";
+import {
+  MatchBreakdown,
+  type MatchBreakdownValue,
+  type MatchReasoningPointValue,
+} from "./match-breakdown";
 import { LegacyMatchAlert } from "./legacy-match-alert";
 import { ApplyButton } from "./apply-button";
 import { MarkdownRenderer } from "./markdown-renderer";
@@ -19,9 +23,6 @@ import {
   Briefcase,
   X,
   Sparkles,
-  Check,
-  AlertCircle,
-  Lightbulb,
   Loader2,
 } from "lucide-react";
 
@@ -39,36 +40,13 @@ interface Job {
   status: string;
   matchScore: number | null;
   matchResultId: string | null;
-  matchConfidence: number | null;
   matchBreakdown: MatchBreakdownValue | null;
   matchStale: boolean;
   matchLegacy: boolean;
   matchSummary: string;
-  matchBand: "high" | "good" | "possible" | "stretch" | "low" | "insufficient_evidence" | null;
-  matchRoleFitScore: number | null;
-  matchEvidenceCoverage: number | null;
-  matchExtractionConfidence: number | null;
-  matchConstraints: Array<{
-    type: "location" | "authorization" | "license" | "employment" | "management";
-    status: "satisfied" | "conflict" | "unknown";
-    severity: "blocking" | "preference" | "informational";
-    message: string;
-  }>;
-  matchRequirementAssessments: Array<{
-    requirementId: string;
-    status: "direct_match" | "equivalent_match" | "transferable_match" | "partial_match" | "missing" | "unknown" | "not_applicable";
-    confidence: number;
-    evidenceReferences: string[];
-    rationale: string;
-    requirementType?: string;
-    requirementImportance?: "critical" | "important" | "preferred" | "contextual";
-    requirementText?: string;
-  }>;
+  matchReasoning: MatchReasoningPointValue[];
   scoringPolicyVersion: string | null;
-  matchReasons: string[];
   matchedSkills: string[];
-  missingSkills: string[];
-  recommendations: string[];
   postedDate: string | null;
   discoveredAt: string;
   company: {
@@ -208,7 +186,7 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {job.matchScore !== null ? (
-                  <MatchBadge score={job.matchScore} size="lg" showLabel band={job.matchBand} />
+                  <MatchBadge score={job.matchScore} size="lg" showLabel />
                 ) : job.matchStale ? (
                   <Badge variant="outline" className="border-amber-500/40 text-amber-300">
                     Match stale
@@ -243,89 +221,11 @@ export function JobDetail({ job, onClose }: JobDetailProps) {
                 ) : (
                   <MatchBreakdown
                     breakdown={job.matchBreakdown}
-                    confidence={job.matchConfidence}
                     stale={job.matchStale}
                     summary={job.matchSummary}
-                    band={job.matchBand}
-                    evidenceCoverage={job.matchEvidenceCoverage}
-                    extractionConfidence={job.matchExtractionConfidence}
-                    constraints={job.matchConstraints}
-                    requirementAssessments={job.matchRequirementAssessments}
+                    reasoning={job.matchReasoning}
+                    matchedSkills={job.matchedSkills}
                   />
-                )}
-                {/* Match Reasons */}
-                {job.matchReasons.length > 0 && (
-                  <div>
-                    <h4 className="mb-2 text-sm font-medium text-foreground">Why this score?</h4>
-                    <ul className="space-y-1 text-sm text-muted-foreground">
-                      {job.matchReasons.map((reason, i) => (
-                        <li key={i} className="flex items-start gap-2">
-                          <span className="text-muted-foreground">•</span>
-                          {reason}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {/* Matched Skills */}
-                {job.matchedSkills.length > 0 && (
-                  <div>
-                    <h4 className="mb-2 flex items-center gap-1 text-sm font-medium text-emerald-400">
-                      <Check className="h-4 w-4" />
-                      Matched Skills
-                    </h4>
-                    <div className="flex flex-wrap gap-1">
-                      {job.matchedSkills.map((skill, i) => (
-                        <Badge
-                          key={i}
-                          variant="outline"
-                          className="border-emerald-500/30 text-emerald-400"
-                        >
-                          {skill}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Missing Skills */}
-                {job.missingSkills.length > 0 && (
-                  <div>
-                    <h4 className="mb-2 flex items-center gap-1 text-sm font-medium text-orange-400">
-                      <AlertCircle className="h-4 w-4" />
-                      Skills to Develop
-                    </h4>
-                    <div className="flex flex-wrap gap-1">
-                      {job.missingSkills.map((skill, i) => (
-                        <Badge
-                          key={i}
-                          variant="outline"
-                          className="border-orange-500/30 text-orange-400"
-                        >
-                          {skill}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Recommendations */}
-                {job.recommendations.length > 0 && (
-                  <div>
-                    <h4 className="mb-2 flex items-center gap-1 text-sm font-medium text-blue-400">
-                      <Lightbulb className="h-4 w-4" />
-                      Recommendations
-                    </h4>
-                    <ul className="space-y-1 text-sm text-muted-foreground">
-                      {job.recommendations.map((rec, i) => (
-                        <li key={i} className="flex items-start gap-2">
-                          <span className="text-muted-foreground">•</span>
-                          {rec}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
                 )}
               </div>
             )}

@@ -17,6 +17,11 @@ export const MatchRouteBodySchema = z.union([
 
 export const MatchUnmatchedQuerySchema = z.object({
   sessionId: z.string().trim().min(1).optional(),
+  days: z.coerce.number().int().min(1).max(365).default(5),
+});
+
+export const MatchUnmatchedBodySchema = z.object({
+  days: z.coerce.number().int().min(1).max(365),
 });
 
 export const AIContentQuerySchema = z.object({
@@ -51,15 +56,12 @@ const ReasoningEffortSchema = z.union([
 ]);
 
 export const AISettingsUpdateSchema = z.object({
+  job_analysis_model: z.string().trim().min(1).optional(),
+  job_analysis_provider_id: z.string().trim().optional(),
+  job_analysis_reasoning_effort: ReasoningEffortSchema.optional(),
   matcher_model: z.string().trim().min(1).optional(),
   matcher_provider_id: z.string().trim().optional(),
   matcher_reasoning_effort: ReasoningEffortSchema.optional(),
-  matcher_accepted_location_types: z.array(
-    z.enum(["remote", "hybrid", "onsite"])
-  ).optional(),
-  matcher_accepted_employment_types: z.array(
-    z.enum(["full-time", "part-time", "contract", "intern", "temporary"])
-  ).optional(),
   resume_parser_model: z.string().trim().min(1).optional(),
   resume_parser_provider_id: z.string().trim().optional(),
   resume_parser_reasoning_effort: ReasoningEffortSchema.optional(),
@@ -83,6 +85,7 @@ export const AISettingsUpdateSchema = z.object({
 
 export type MatchRouteBody = z.infer<typeof MatchRouteBodySchema>;
 export type MatchUnmatchedQuery = z.infer<typeof MatchUnmatchedQuerySchema>;
+export type MatchUnmatchedBody = z.infer<typeof MatchUnmatchedBodySchema>;
 export type AIContentPostBody = z.infer<typeof AIContentPostBodySchema>;
 export type AIContentPatchBody = z.infer<typeof AIContentPatchBodySchema>;
 export type AISettingsUpdate = z.infer<typeof AISettingsUpdateSchema>;

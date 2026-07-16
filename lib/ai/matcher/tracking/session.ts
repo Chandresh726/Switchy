@@ -1,11 +1,12 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { fetchCandidateProfileSnapshot } from "@/lib/ai/profile/profile-snapshot";
 import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { db } from "@/lib/db";
-import { jobs, matchSessions, matchLogs, settings } from "@/lib/db/schema";
+import { jobs, matchLogs, matchSessionJobs, matchSessions } from "@/lib/db/schema";
 import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
 
+import type { UnmatchedJobFilter } from "../presentation";
 import type { ProfileData, JobData } from "../types";
 
 export async function fetchProfileData(): Promise<ProfileData | null> {
@@ -37,37 +38,6 @@ export async function fetchJobsData(
   return new Map(allJobs.map((j) => [j.id, j]));
 }
 
-function parsePreferenceList(value: string | null | undefined): string[] {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) return [];
-    return Array.from(new Set(parsed
-      .filter((item): item is string => typeof item === "string")
-      .map((item) => item.trim().toLocaleLowerCase("en-US"))
-      .filter(Boolean)))
-      .sort();
-  } catch {
-    return [];
-  }
-}
-
-export async function fetchMatchingPreferences(): Promise<{
-  acceptedLocationTypes: string[];
-  acceptedEmploymentTypes: string[];
-}> {
-  const keys = [
-    "matcher_accepted_location_types",
-    "matcher_accepted_employment_types",
-  ];
-  const rows = await db.select().from(settings).where(inArray(settings.key, keys));
-  const values = new Map(rows.map((row) => [row.key, row.value]));
-  return {
-    acceptedLocationTypes: parsePreferenceList(values.get(keys[0])),
-    acceptedEmploymentTypes: parsePreferenceList(values.get(keys[1])),
-  };
-}
-
 export async function persistMatchSuccess(
   sessionId: string,
   jobId: number,
@@ -76,33 +46,54 @@ export async function persistMatchSuccess(
     score: number;
     reasons: string[];
     matchedSkills: string[];
-    missingSkills: string[];
-    recommendations: string[];
   },
   attemptCount: number,
   duration: number,
-  modelUsed: string
+  modelUsed: string,
+  input: { matchRunId?: string | null; cached?: boolean } = {},
+  database: typeof db = db
 ): Promise<void> {
-  await db.insert(matchLogs).values({
-    sessionId,
-    jobId,
-    matchResultId,
-    status: "success",
-    score: result.score,
-    attemptCount,
-    duration,
-    modelUsed,
-  });
+  const now = new Date();
+  database.transaction((tx) => {
+    tx.insert(matchLogs).values({
+      sessionId,
+      jobId,
+      matchResultId,
+      status: "success",
+      score: result.score,
+      attemptCount,
+      duration,
+      modelUsed,
+      completedAt: now,
+    }).run();
+    tx.update(matchSessionJobs).set({
+      matchStatus: input.cached ? "cached" : "completed",
+      matchResultId,
+      matchRunId: input.matchRunId ?? null,
+      matchCompletedAt: now,
+      errorStage: null,
+      errorCode: null,
+      errorMessage: null,
+      updatedAt: now,
+    }).where(and(
+      eq(matchSessionJobs.sessionId, sessionId),
+      eq(matchSessionJobs.jobId, jobId)
+    )).run();
+  }, { behavior: "immediate" });
 }
 
-export async function getUnmatchedJobIds(): Promise<number[]> {
+export async function getUnmatchedJobIds(
+  filter: UnmatchedJobFilter = {}
+): Promise<number[]> {
   const { getFreshUnmatchedJobIds } = await import("../presentation");
-  return getFreshUnmatchedJobIds();
+  return getFreshUnmatchedJobIds(undefined, filter);
 }
 
-export async function getUnmatchedJobCount(): Promise<number> {
+export async function getUnmatchedJobCount(
+  filter: UnmatchedJobFilter = {}
+): Promise<number> {
   const { getFreshUnmatchedJobCount } = await import("../presentation");
-  return getFreshUnmatchedJobCount();
+  return getFreshUnmatchedJobCount(undefined, filter);
 }
 
 export async function logMatchFailure(
@@ -112,19 +103,39 @@ export async function logMatchFailure(
   error: unknown,
   attemptCount: number,
   modelUsed: string,
-  database: typeof db = db
+  database: typeof db = db,
+  stage: "analysis" | "matching" = "matching"
 ): Promise<void> {
   const sanitized = sanitizeAIError(error);
-  await database.insert(matchLogs).values({
-    sessionId,
-    jobId,
-    status: "failed",
-    errorType: sanitized.code,
-    errorMessage: sanitized.message,
-    attemptCount,
-    duration,
-    modelUsed,
-  });
+  const now = new Date();
+  database.transaction((tx) => {
+    tx.insert(matchLogs).values({
+      sessionId,
+      jobId,
+      status: "failed",
+      errorType: sanitized.code,
+      errorMessage: sanitized.message,
+      attemptCount,
+      duration,
+      modelUsed,
+      completedAt: now,
+    }).run();
+    tx.update(matchSessionJobs).set({
+      ...(stage === "analysis" ? {
+        analysisStatus: "failed" as const,
+        analysisCompletedAt: now,
+      } : {}),
+      matchStatus: "failed",
+      matchCompletedAt: now,
+      errorStage: stage,
+      errorCode: sanitized.code,
+      errorMessage: sanitized.message,
+      updatedAt: now,
+    }).where(and(
+      eq(matchSessionJobs.sessionId, sessionId),
+      eq(matchSessionJobs.jobId, jobId)
+    )).run();
+  }, { behavior: "immediate" });
 }
 
 export async function getMatchSessionStatus(sessionId: string) {

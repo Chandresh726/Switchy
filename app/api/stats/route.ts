@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 
 import { and, count, desc, eq, sql } from "drizzle-orm";
 
-import { ensureJobFingerprintProjection } from "@/lib/ai/artifacts/job-fingerprint-projection";
 import { getCurrentMatchContext } from "@/lib/ai/matcher/presentation";
 import { countPromotedMatchRows } from "@/lib/ai/matcher/promotion";
 import { db } from "@/lib/db";
@@ -11,21 +10,18 @@ import { getUnmatchedCompaniesSummary } from "@/lib/people/sync/unmatched";
 
 export async function GET() {
   try {
-    ensureJobFingerprintProjection();
     const currentContext = await getCurrentMatchContext();
     const matchStatsPromise = currentContext
       ? db.select({
-          evidenceJson: matchResults.evidenceJson,
+          score: matchResults.score,
           legacyScore: jobs.matchScore,
         }).from(jobs).leftJoin(matchResults, and(
           eq(matchResults.jobId, jobs.id),
           eq(matchResults.candidateFingerprint, currentContext.candidateFingerprint),
-          eq(matchResults.jobFingerprint, jobs.aiFingerprint),
-          eq(matchResults.scoringPolicyVersion, currentContext.scoringPolicyVersion),
           eq(matchResults.isStale, false)
         ))
       : db.select({
-          evidenceJson: sql<string | null>`null`,
+          score: sql<number | null>`null`,
           legacyScore: jobs.matchScore,
         }).from(jobs);
     const [
@@ -66,7 +62,7 @@ export async function GET() {
     const peopleStats = peopleStatsResult[0];
     const highMatchJobs = countPromotedMatchRows(matchStatsResult);
     const jobsWithScore = matchStatsResult.filter((row) =>
-      row.evidenceJson !== null || row.legacyScore !== null
+      row.score !== null || row.legacyScore !== null
     ).length;
 
     const unmatchedSummary = (peopleStats?.totalPeople ?? 0) > 0

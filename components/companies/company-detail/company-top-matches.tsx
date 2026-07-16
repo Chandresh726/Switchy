@@ -45,9 +45,6 @@ export function CompanyTopMatches({ jobs }: CompanyTopMatchesProps) {
       <div className="grid grid-cols-3 gap-3">
         {topJobs.map((job) => {
           const postedDate = parseDate(job.discoveredAt);
-          const hasBlockingConstraint = job.matchConstraints?.some((constraint) =>
-            constraint.status === "conflict" && constraint.severity === "blocking"
-          ) ?? false;
 
           return (
             <Link
@@ -75,14 +72,7 @@ export function CompanyTopMatches({ jobs }: CompanyTopMatchesProps) {
               </div>
 
               <div className="mt-auto flex items-center justify-between pt-2">
-                <div className="flex flex-col items-start gap-1">
-                  <MatchBadge score={job.matchScore} band={job.matchBand} size="sm" showLabel />
-                  {hasBlockingConstraint && (
-                    <span className="text-[10px] font-medium text-destructive">
-                      Eligibility constraint
-                    </span>
-                  )}
-                </div>
+                <MatchBadge score={job.matchScore} size="sm" showLabel />
                 {postedDate && (
                   <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                     <CalendarDays className="h-3 w-3" />

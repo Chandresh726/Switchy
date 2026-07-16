@@ -27,6 +27,69 @@ let deletedSessions = 0;
 let sessionExists = false;
 let pendingMessageResponse;
 
+function resolveSchema(schema, root) {
+  if (!schema?.$ref) return schema ?? {};
+  const segments = schema.$ref.replace(/^#\//, "").split("/");
+  return segments.reduce((value, segment) => value?.[segment.replace(/~1/g, "/").replace(/~0/g, "~")], root) ?? {};
+}
+
+function synthesizeSchema(schema, root, key, prompt) {
+  const resolved = resolveSchema(schema, root);
+  if (resolved.const !== undefined) return resolved.const;
+  if (Array.isArray(resolved.enum) && resolved.enum.length > 0) return resolved.enum[0];
+  const alternatives = resolved.anyOf ?? resolved.oneOf;
+  if (Array.isArray(alternatives)) {
+    const nullable = alternatives.find((item) => resolveSchema(item, root).type === "null");
+    if (nullable) return null;
+    return synthesizeSchema(alternatives[0], root, key, prompt);
+  }
+  const type = Array.isArray(resolved.type)
+    ? resolved.type.find((item) => item !== "null")
+    : resolved.type;
+  if (type === "object" || resolved.properties) {
+    const required = new Set(resolved.required ?? []);
+    return Object.fromEntries(Object.entries(resolved.properties ?? {}).flatMap(([property, definition]) =>
+      required.has(property)
+        ? [[property, synthesizeSchema(definition, root, property, prompt)]]
+        : []
+    ));
+  }
+  if (type === "array") {
+    if (key === "candidateEvidenceReferences") {
+      const evidenceId = prompt.match(/"evidence":\[\{"id":"([^"]+)"/)?.[1];
+      return evidenceId ? [evidenceId] : [];
+    }
+    return key === "" || (resolved.minItems ?? 0) > 0
+      ? [synthesizeSchema(resolved.items, root, "item", prompt)]
+      : [];
+  }
+  if (type === "number" || type === "integer") {
+    if (key === "jobId") return Number(prompt.match(/"jobId"\s*:\s*(\d+)/)?.[1] ?? 1);
+    if (key === "score") return 88;
+    return key.toLowerCase().includes("confidence") ? 0.95 : Math.max(1, resolved.minimum ?? 1);
+  }
+  if (type === "boolean") return false;
+  if (type === "null") return null;
+  if (key === "status") return "ready";
+  if (key === "value") return "structured";
+  if (key === "name") return "Alex Candidate";
+  if (key === "startDate" || key === "endDate") return "2025-01";
+  return "Synthetic evidence";
+}
+
+function portableSchema(system) {
+  const schemaText = system
+    ?.split("JSON SCHEMA:\n")[1]
+    ?.split("\n\nSECURITY BOUNDARY:")[0]
+    ?.trim();
+  if (!schemaText) return undefined;
+  try {
+    return JSON.parse(schemaText);
+  } catch {
+    return undefined;
+  }
+}
+
 function json(response, value, status = 200) {
   response.writeHead(status, { "content-type": "application/json" });
   response.end(JSON.stringify(value));
@@ -183,6 +246,10 @@ const server = http.createServer((request, response) => {
         return;
       }
       const structured = parsed.format?.type === "json_schema";
+      const textSchema = portableSchema(parsed.system);
+      const textOutput = textSchema
+        ? JSON.stringify(synthesizeSchema(textSchema, textSchema, "", prompt))
+        : "hello";
       const embeddedError = prompt.includes("embedded-auth-error")
         ? { name: "ProviderAuthError", data: { providerID: "openai", message: "synthetic secret" } }
         : prompt.includes("embedded-rate-limit")
@@ -195,7 +262,7 @@ const server = http.createServer((request, response) => {
                 ? { name: "StructuredOutputError", data: { message: "synthetic invalid JSON", retries: 0 } }
                 : undefined;
       for (const stream of streams) {
-        stream.write(`data: ${JSON.stringify({ type: "message.part.delta", properties: { sessionID: "session-1", field: "text", delta: "hello" } })}\n\n`);
+        stream.write(`data: ${JSON.stringify({ type: "message.part.delta", properties: { sessionID: "session-1", field: "text", delta: textOutput } })}\n\n`);
         if (prompt.includes("close-event-stream")) {
           stream.end();
         } else {
@@ -210,7 +277,7 @@ const server = http.createServer((request, response) => {
           path: { cwd: "", root: "" }, tokens: { total: 9, input: 6, output: 3, reasoning: 0, cache: { read: 0, write: 0 } },
           structured: structured ? { value: "structured" } : undefined, finish: "stop", error: embeddedError,
         },
-        parts: structured ? [] : [{ id: "part-1", sessionID: "session-1", messageID: "assistant-1", type: "text", text: "hello" }],
+        parts: structured ? [] : [{ id: "part-1", sessionID: "session-1", messageID: "assistant-1", type: "text", text: textOutput }],
       });
       if (prompt.includes("slow")) {
         pendingMessageResponse = complete;

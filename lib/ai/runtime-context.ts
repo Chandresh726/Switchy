@@ -23,7 +23,7 @@ import { db } from "@/lib/db";
 import { aiProviders, settings } from "@/lib/db/schema";
 import { decryptApiKey } from "@/lib/encryption";
 
-export type AIFeature = "matcher" | "writing" | "resume_parser";
+export type AIFeature = "job_analysis" | "matcher" | "writing" | "resume_parser";
 
 export interface AIContextOverrides {
   modelId?: string;
@@ -48,6 +48,11 @@ const FEATURE_SETTING_KEYS: Record<
   AIFeature,
   { model: string; provider: string; reasoning: string }
 > = {
+  job_analysis: {
+    model: "job_analysis_model",
+    provider: "job_analysis_provider_id",
+    reasoning: "job_analysis_reasoning_effort",
+  },
   matcher: {
     model: "matcher_model",
     provider: "matcher_provider_id",
@@ -66,8 +71,9 @@ const FEATURE_SETTING_KEYS: Record<
 };
 
 const CAPABILITY_FEATURES: Record<AICapability, AIFeature> = {
-  job_analysis: "matcher",
+  job_analysis: "job_analysis",
   match_adjudication: "matcher",
+  match_evaluation: "matcher",
   writing_cover_letter: "writing",
   writing_referral: "writing",
   writing_recruiter_follow_up: "writing",
@@ -99,17 +105,36 @@ async function getFeatureSettings(feature: AIFeature): Promise<{
   reasoningEffort?: string;
 }> {
   const keys = FEATURE_SETTING_KEYS[feature];
+  const requestedKeys = [keys.model, keys.provider, keys.reasoning];
+  if (feature === "job_analysis") {
+    requestedKeys.push(
+      FEATURE_SETTING_KEYS.matcher.model,
+      FEATURE_SETTING_KEYS.matcher.provider,
+      FEATURE_SETTING_KEYS.matcher.reasoning
+    );
+  }
   const selected = await db
     .select()
     .from(settings)
-    .where(inArray(settings.key, [keys.model, keys.provider, keys.reasoning]));
+    .where(inArray(settings.key, requestedKeys));
 
   const map = new Map(selected.map((row) => [row.key, row.value]));
 
   return {
-    modelId: normalizeOptional(map.get(keys.model)),
-    providerId: normalizeOptional(map.get(keys.provider)),
-    reasoningEffort: parseReasoningEffort(map.get(keys.reasoning)),
+    modelId: normalizeOptional(map.get(keys.model)) ??
+      (feature === "job_analysis"
+        ? normalizeOptional(map.get(FEATURE_SETTING_KEYS.matcher.model))
+        : undefined),
+    providerId: normalizeOptional(map.get(keys.provider)) ??
+      (feature === "job_analysis"
+        ? normalizeOptional(map.get(FEATURE_SETTING_KEYS.matcher.provider))
+        : undefined),
+    reasoningEffort: parseReasoningEffort(
+      map.get(keys.reasoning) ??
+      (feature === "job_analysis"
+        ? map.get(FEATURE_SETTING_KEYS.matcher.reasoning)
+        : undefined)
+    ),
   };
 }
 

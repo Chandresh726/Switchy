@@ -111,8 +111,6 @@ describe("local CLI capability integration", () => {
         score: 82,
         reasons: ["Synthetic evidence matched"],
         matchedSkills: ["TypeScript"],
-        missingSkills: [],
-        recommendations: [],
       }]));
     });
     await dispatcher.runAvailable();
@@ -180,6 +178,46 @@ describe("local CLI capability integration", () => {
     expect(resume.output).toEqual({ value: "structured" });
 
     const openCode = new OpenCodeCLIBackend(openCodeExecutable, async () => openCodeSDK);
+    const openCodeRuntimeFor = (capability: AICapability) => createAICapabilityRuntime({
+      capability,
+      runRepository,
+      resolved: {
+        snapshot: {
+          providerRecordId: "builtin:opencode-cli",
+          provider: "opencode_cli",
+          modelId: "openai/text",
+          backendKind: "opencode_cli",
+          cliVersion: "8.8.8",
+          upstreamProvider: "openai",
+        },
+        backend: openCode,
+        reasoningEffort: "medium",
+      },
+    });
+    const openCodeMatchRuntime = await openCodeRuntimeFor("match_evaluation");
+    const openCodeMatch = await openCodeMatchRuntime.executeStructured({
+      instructions: "Return a synthetic match evaluation.",
+      prompt: `${PRIVATE_PROMPT}: synthetic OpenCode match input`,
+      schema: z.object({ value: z.string() }),
+      policy: { maxAttempts: 1, timeoutMs: 2_000, reasoningEffort: "medium" },
+      subject: { type: "job", id: String(job.id) },
+      versions: versions("opencode-match"),
+      inputFingerprint: "5".repeat(64),
+    });
+    expect(openCodeMatch.output).toEqual({ value: "structured" });
+
+    const openCodeResumeRuntime = await openCodeRuntimeFor("resume_parse");
+    const openCodeResume = await openCodeResumeRuntime.executeStructured({
+      instructions: "Return a synthetic normalized resume.",
+      prompt: `${PRIVATE_PROMPT}: synthetic OpenCode resume input`,
+      schema: z.object({ value: z.string() }),
+      policy: { maxAttempts: 1, timeoutMs: 2_000, reasoningEffort: "medium" },
+      subject: { type: "resume", id: "b".repeat(24) },
+      versions: versions("opencode-resume"),
+      inputFingerprint: "6".repeat(64),
+    });
+    expect(openCodeResume.output).toEqual({ value: "structured" });
+
     const failingRuntime = await createAICapabilityRuntime({
       capability: "resume_parse",
       runRepository,
@@ -200,9 +238,9 @@ describe("local CLI capability integration", () => {
       instructions: "Do not expose synthetic credentials.",
       prompt: `${PRIVATE_PROMPT}: embedded-auth-error`,
       policy: { maxAttempts: 1, timeoutMs: 2_000, reasoningEffort: "medium" },
-      subject: { type: "resume", id: "b".repeat(24) },
+      subject: { type: "resume", id: "c".repeat(24) },
       versions: versions("safe-error"),
-      inputFingerprint: "5".repeat(64),
+      inputFingerprint: "7".repeat(64),
     });
     await expect(failed).rejects.toMatchObject({
       type: "missing_api_key",
@@ -212,6 +250,7 @@ describe("local CLI capability integration", () => {
     const runs = database.select().from(aiRuns).all();
     expect(runs.map((run) => run.capability)).toEqual(expect.arrayContaining([
       "job_analysis",
+      "match_evaluation",
       "writing_cover_letter",
       "resume_parse",
     ]));

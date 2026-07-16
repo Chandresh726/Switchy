@@ -9,9 +9,9 @@ import {
 describe("settings service", () => {
   it("includes AI defaults required by the UI", () => {
     expect(DEFAULT_SETTINGS.matcher_reasoning_effort).toBe("");
-    expect(DEFAULT_SETTINGS.matcher_accepted_location_types).toBe("[]");
     expect(DEFAULT_SETTINGS.resume_parser_reasoning_effort).toBe("");
     expect(DEFAULT_SETTINGS.ai_writing_reasoning_effort).toBe("");
+    expect(DEFAULT_SETTINGS.matcher_timeout_ms).toBe("120000");
     expect(DEFAULT_SETTINGS.follow_up_tone).toBe("professional");
     expect(DEFAULT_SETTINGS.follow_up_length).toBe("medium");
     expect(DEFAULT_SETTINGS.scraper_max_parallel_scrapes).toBe("3");
@@ -35,27 +35,6 @@ describe("settings service", () => {
     })).toThrow(APIValidationError);
     expect(() => parseSettingsUpdateBody({
       matcher_reasoning_effort: " max ",
-    })).toThrow(APIValidationError);
-  });
-
-  it("normalizes matching preference lists", () => {
-    const parsed = parseSettingsUpdateBody({
-      matcher_accepted_location_types: ["remote", "remote", "onsite"],
-      matcher_accepted_employment_types: ["contract", "full-time", "intern"],
-    });
-
-    expect(parsed.updates).toEqual(expect.arrayContaining([
-      {
-        key: "matcher_accepted_location_types",
-        value: JSON.stringify(["onsite", "remote"]),
-      },
-      {
-        key: "matcher_accepted_employment_types",
-        value: JSON.stringify(["contract", "full-time", "intern"]),
-      },
-    ]));
-    expect(() => parseSettingsUpdateBody({
-      matcher_accepted_location_types: ["anywhere"],
     })).toThrow(APIValidationError);
   });
 
@@ -164,6 +143,8 @@ describe("settings service", () => {
 
   it("ignores removed matcher settings so legacy rows stay inert", () => {
     expect(parseSettingsUpdateBody({
+      matcher_accepted_location_types: ["remote"],
+      matcher_accepted_employment_types: ["full-time"],
       matcher_bulk_enabled: true,
       matcher_serialize_operations: true,
       matcher_circuit_breaker_threshold: 10,

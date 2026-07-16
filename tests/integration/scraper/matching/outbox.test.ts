@@ -185,8 +185,6 @@ describe("AIWorkDispatcher", () => {
         score: 90,
         reasons: [],
         matchedSkills: [],
-        missingSkills: [],
-        recommendations: [],
       }]));
     });
     const dispatcher = new AIWorkDispatcher(database, executeMatch);
@@ -267,8 +265,6 @@ describe("AIWorkDispatcher", () => {
         score: 90,
         reasons: [],
         matchedSkills: [],
-        missingSkills: [],
-        recommendations: [],
       }]));
     });
     const dispatcher = new AIWorkDispatcher(database, executeMatch);
@@ -324,8 +320,6 @@ describe("AIWorkDispatcher", () => {
             score: 90,
             reasons: [],
             matchedSkills: [],
-            missingSkills: [],
-            recommendations: [],
           },
         ])
       )
@@ -768,8 +762,6 @@ describe("AIWorkDispatcher", () => {
             score: 90,
             reasons: [],
             matchedSkills: [],
-            missingSkills: [],
-            recommendations: [],
           },
         ],
       ])

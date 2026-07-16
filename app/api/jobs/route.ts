@@ -16,12 +16,10 @@ import {
   sql,
 } from "drizzle-orm";
 
-import { MatchBandSchema, type MatchBand } from "@/lib/ai/artifacts";
 import {
   getCurrentMatchContext,
   getMatchPresentations,
 } from "@/lib/ai/matcher/presentation";
-import { ensureJobFingerprintProjection } from "@/lib/ai/artifacts/job-fingerprint-projection";
 import { assertAppRequest } from "@/lib/api";
 import { db } from "@/lib/db";
 import { companies, jobs, matchResults } from "@/lib/db/schema";
@@ -53,8 +51,6 @@ const JOB_LIST_SELECTION = {
     matchScore: jobs.matchScore,
     matchReasons: jobs.matchReasons,
     matchedSkills: jobs.matchedSkills,
-    missingSkills: jobs.missingSkills,
-    recommendations: jobs.recommendations,
   },
   company: {
     id: companies.id,
@@ -63,6 +59,8 @@ const JOB_LIST_SELECTION = {
     platform: companies.platform,
   },
 } as const;
+
+type MatchBand = "high" | "good";
 
 function legacyBandCondition(requestedMatchBands: MatchBand[]) {
   const includesHigh = requestedMatchBands.includes("high");
@@ -85,12 +83,9 @@ export async function GET(request: NextRequest) {
     const excludeStatus = searchParams.get("excludeStatus");
     const minScore = searchParams.get("minScore");
     const maxScore = searchParams.get("maxScore");
-    const requestedMatchBands: MatchBand[] = (searchParams.get("matchBands") ?? "")
+    const requestedMatchBands = (searchParams.get("matchBands") ?? "")
       .split(",")
-      .flatMap((value) => {
-        const parsed = MatchBandSchema.safeParse(value);
-        return parsed.success ? [parsed.data] : [];
-      });
+      .filter((value): value is MatchBand => value === "high" || value === "good");
     const locationType = searchParams.get("locationType");
     const search = searchParams.get("search");
     const department = searchParams.get("department");
@@ -259,7 +254,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    ensureJobFingerprintProjection();
     const currentContext = await getCurrentMatchContext();
     const parsedMinScore = minScore === null ? null : Number.parseFloat(minScore);
     const parsedMaxScore = maxScore === null ? null : Number.parseFloat(maxScore);
@@ -315,19 +309,20 @@ export async function GET(request: NextRequest) {
       const currentResultJoin = and(
         eq(matchResults.jobId, jobs.id),
         eq(matchResults.candidateFingerprint, currentContext.candidateFingerprint),
-        eq(matchResults.jobFingerprint, jobs.aiFingerprint),
-        eq(matchResults.scoringPolicyVersion, currentContext.scoringPolicyVersion),
         eq(matchResults.isStale, false)
       );
       const effectiveMatchScore = sql<number | null>`coalesce(${matchResults.score}, ${jobs.matchScore})`;
-      const effectiveMatchBand = sql<string | null>`json_extract(${matchResults.evidenceJson}, '$.matchBand')`;
       const scoreConditions = [...conditions];
       if (hasMinScore) scoreConditions.push(gte(effectiveMatchScore, parsedMinScore!));
       if (hasMaxScore) scoreConditions.push(lte(effectiveMatchScore, parsedMaxScore!));
       if (requestedMatchBands.length > 0) {
-        const currentBandCondition = or(
-          ...requestedMatchBands.map((band) => eq(effectiveMatchBand, band))
-        );
+        const includesHigh = requestedMatchBands.includes("high");
+        const includesGood = requestedMatchBands.includes("good");
+        const currentBandCondition = includesHigh && includesGood
+          ? gte(effectiveMatchScore, 70)
+          : includesHigh
+            ? gte(effectiveMatchScore, 85)
+            : and(gte(effectiveMatchScore, 70), lt(effectiveMatchScore, 85));
         const bandCondition = or(
           currentBandCondition,
           and(isNull(matchResults.id), legacyBandCondition(requestedMatchBands))

@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ModelCombobox } from "@/components/settings/model-combobox";
@@ -9,7 +9,7 @@ import {
   ReasoningEffortControl,
 } from "@/components/settings/reasoning-effort-control";
 import { Separator } from "@/components/ui/separator";
-import { AlertTriangle, FileText, Loader2, MessageCircle, Send, Wand2 } from "lucide-react";
+import { AlertTriangle, FileText, MessageCircle, Send, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReasoningEffort } from "@/lib/settings/types";
 import type { Provider, ProviderModelOption } from "@/lib/types";
@@ -38,7 +38,6 @@ interface AIWritingSectionProps {
   onAIWritingProviderIdChange: (value: string) => void;
   aiWritingSettings: AIWritingSettings;
   onAIWritingSettingsChange: (settings: Partial<AIWritingSettings>) => void;
-  isSaving: boolean;
 }
 
 const REFERRAL_TONE_OPTIONS = [
@@ -89,7 +88,6 @@ export function AIWritingSection({
   onAIWritingProviderIdChange,
   aiWritingSettings,
   onAIWritingSettingsChange,
-  isSaving,
 }: AIWritingSectionProps) {
   const currentModel = aiWritingSettings.aiWritingModel;
   const selectedModel = models.find((model) => model.modelId === currentModel);
@@ -391,12 +389,6 @@ export function AIWritingSection({
           </div>
         )}
       </CardContent>
-      <CardFooter className="rounded-b-xl border-t border-border bg-card/70 px-6 py-4">
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          {isSaving ? <Loader2 className="animate-spin" /> : null}
-          {isSaving ? "Saving changes…" : "Changes save automatically"}
-        </p>
-      </CardFooter>
     </Card>
   );
 }

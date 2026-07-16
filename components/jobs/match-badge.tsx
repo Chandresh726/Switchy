@@ -2,26 +2,16 @@
 
 import { cn } from "@/lib/utils";
 
-export type MatchBand =
-  | "high"
-  | "good"
-  | "possible"
-  | "stretch"
-  | "low"
-  | "insufficient_evidence";
-
 interface MatchBadgeProps {
   score: number | null;
   size?: "sm" | "md" | "lg";
   showLabel?: boolean;
-  band?: MatchBand | null;
 }
 
 export function MatchBadge({
   score,
   size = "md",
   showLabel = false,
-  band = null,
 }: MatchBadgeProps) {
   if (score === null || score === undefined) {
     return (
@@ -39,9 +29,6 @@ export function MatchBadge({
   }
 
   const getScoreColor = (score: number) => {
-    if (band === "insufficient_evidence") {
-      return "border-border bg-muted text-muted-foreground";
-    }
     if (score >= 75) return "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
     if (score >= 60) return "bg-green-500/10 text-green-400 border-green-500/30";
     if (score >= 45) return "bg-yellow-500/10 text-yellow-400 border-yellow-500/30";
@@ -50,7 +37,6 @@ export function MatchBadge({
   };
 
   const getScoreLabel = (score: number) => {
-    if (band === "insufficient_evidence") return "More evidence needed";
     if (score >= 75) return "Strong";
     if (score >= 60) return "Good";
     if (score >= 45) return "Moderate";

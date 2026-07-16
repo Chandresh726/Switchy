@@ -11,6 +11,9 @@ const MATCHER_SETTING_KEYS = [
   "matcher_model",
   "matcher_provider_id",
   "matcher_reasoning_effort",
+  "job_analysis_model",
+  "job_analysis_provider_id",
+  "job_analysis_reasoning_effort",
   "matcher_batch_size",
   "matcher_max_retries",
   "matcher_concurrency_limit",
@@ -31,7 +34,7 @@ function parseNumber(value: string | null | undefined, defaultValue: number): nu
   return isNaN(parsed) ? defaultValue : parsed;
 }
 
-export async function getMatcherConfig(): Promise<MatcherConfig & { providerId?: string }> {
+export async function getMatcherConfig(): Promise<MatcherConfig> {
   const dbSettings = await db
     .select()
     .from(settings)
@@ -48,6 +51,14 @@ export async function getMatcherConfig(): Promise<MatcherConfig & { providerId?:
     reasoningEffort:
       settingsMap.get("matcher_reasoning_effort") ||
       DEFAULT_MATCHER_CONFIG.reasoningEffort,
+    jobAnalysisProviderId:
+      settingsMap.get("job_analysis_provider_id") || storedProviderId,
+    jobAnalysisModel:
+      settingsMap.get("job_analysis_model") || storedModelId || "",
+    jobAnalysisReasoningEffort:
+      settingsMap.get("job_analysis_reasoning_effort") ||
+      settingsMap.get("matcher_reasoning_effort") ||
+      DEFAULT_MATCHER_CONFIG.jobAnalysisReasoningEffort,
     batchSize: parseNumber(
       settingsMap.get("matcher_batch_size"),
       DEFAULT_MATCHER_CONFIG.batchSize

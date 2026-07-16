@@ -6,19 +6,41 @@ import { AlertTriangle, Cpu, Loader2, Settings2, Sparkles } from "lucide-react";
 
 import { ModelCombobox } from "@/components/settings/model-combobox";
 import { ReasoningEffortControl } from "@/components/settings/reasoning-effort-control";
+import { MatchPipelineProgress } from "@/components/matching/match-pipeline-progress";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import type { ReasoningEffort } from "@/lib/settings/types";
+import type { MatchSessionProgress } from "@/lib/hooks/use-match-session";
 import type { Provider, ProviderModelOption } from "@/lib/types";
 
 export interface MatcherSectionProps {
   availableProviders: Provider[];
   hasProviders: boolean;
+  jobAnalysisModels: ProviderModelOption[];
+  jobAnalysisModelsLoading: boolean;
+  jobAnalysisModelsError?: string;
+  jobAnalysisModelsStale: boolean;
+  jobAnalysisProviderId: string;
+  onJobAnalysisProviderIdChange: (value: string) => void;
+  jobAnalysisModel: string;
+  onJobAnalysisModelChange: (value: string) => void;
+  jobAnalysisReasoningEffort: ReasoningEffort;
+  onJobAnalysisReasoningEffortChange: (value: ReasoningEffort) => void;
   models: ProviderModelOption[];
   modelsLoading: boolean;
   modelsError?: string;
@@ -29,10 +51,6 @@ export interface MatcherSectionProps {
   onMatcherModelChange: (value: string) => void;
   matcherReasoningEffort: ReasoningEffort;
   onMatcherReasoningEffortChange: (value: ReasoningEffort) => void;
-  acceptedLocationTypes: string[];
-  onAcceptedLocationTypesChange: (value: string[]) => void;
-  acceptedEmploymentTypes: string[];
-  onAcceptedEmploymentTypesChange: (value: string[]) => void;
   autoMatchAfterScrape: boolean;
   onAutoMatchAfterScrapeChange: (value: boolean) => void;
   batchSize: number;
@@ -43,16 +61,29 @@ export interface MatcherSectionProps {
   onConcurrencyLimitChange: (value: number) => void;
   timeoutMs: number;
   onTimeoutMsChange: (value: number) => void;
-  isSaving: boolean;
-  onMatchUnmatched: () => void;
+  onMatchUnmatched: (days: number) => void;
   isMatching: boolean;
-  matchProgress?: { completed: number; total: number; succeeded: number; failed: number };
+  matchProgress?: MatchSessionProgress;
+  unmatchedWindowDays: number;
+  onUnmatchedWindowDaysChange: (days: number) => void;
+  onUnmatchedWindowOpen: () => void;
   unmatchedCount: number;
+  unmatchedCountLoading: boolean;
 }
 
 export function MatcherSection({
   availableProviders,
   hasProviders,
+  jobAnalysisModels,
+  jobAnalysisModelsLoading,
+  jobAnalysisModelsError,
+  jobAnalysisModelsStale,
+  jobAnalysisProviderId,
+  onJobAnalysisProviderIdChange,
+  jobAnalysisModel,
+  onJobAnalysisModelChange,
+  jobAnalysisReasoningEffort,
+  onJobAnalysisReasoningEffortChange,
   models,
   modelsLoading,
   modelsError,
@@ -63,10 +94,6 @@ export function MatcherSection({
   onMatcherModelChange,
   matcherReasoningEffort,
   onMatcherReasoningEffortChange,
-  acceptedLocationTypes,
-  onAcceptedLocationTypesChange,
-  acceptedEmploymentTypes,
-  onAcceptedEmploymentTypesChange,
   autoMatchAfterScrape,
   onAutoMatchAfterScrapeChange,
   batchSize,
@@ -77,22 +104,45 @@ export function MatcherSection({
   onConcurrencyLimitChange,
   timeoutMs,
   onTimeoutMsChange,
-  isSaving,
   onMatchUnmatched,
   isMatching,
   matchProgress,
+  unmatchedWindowDays,
+  onUnmatchedWindowDaysChange,
+  onUnmatchedWindowOpen,
   unmatchedCount,
+  unmatchedCountLoading,
 }: MatcherSectionProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [matchDialogOpen, setMatchDialogOpen] = useState(false);
+  const [daysInput, setDaysInput] = useState(String(unmatchedWindowDays));
+  const parsedDays = Number(daysInput);
+  const validDays = Number.isInteger(parsedDays) && parsedDays >= 1 && parsedDays <= 365;
+  const selectedAnalysisModel = jobAnalysisModels.find(
+    (model) => model.modelId === jobAnalysisModel
+  );
+  const configuredAnalysisModelUnavailable = Boolean(jobAnalysisModel) && !selectedAnalysisModel;
   const selectedModel = models.find((model) => model.modelId === matcherModel);
   const configuredModelUnavailable = Boolean(matcherModel) && !selectedModel;
-  const toggleValue = (
-    current: string[],
-    value: string,
-    onChange: (next: string[]) => void
-  ) => onChange(current.includes(value)
-    ? current.filter((item) => item !== value)
-    : [...current, value]);
+  const handleMatchDialogOpenChange = (open: boolean) => {
+    setMatchDialogOpen(open);
+    if (open) {
+      setDaysInput(String(unmatchedWindowDays));
+      onUnmatchedWindowOpen();
+    }
+  };
+  const handleDaysInputChange = (value: string) => {
+    setDaysInput(value);
+    const days = Number(value);
+    if (Number.isInteger(days) && days >= 1 && days <= 365) {
+      onUnmatchedWindowDaysChange(days);
+    }
+  };
+  const handleMatchConfirmation = () => {
+    if (!validDays || unmatchedCountLoading || unmatchedCount === 0) return;
+    onMatchUnmatched(parsedDays);
+    setMatchDialogOpen(false);
+  };
 
   return (
     <Card className="border-border bg-card/70 rounded-xl">
@@ -104,48 +154,153 @@ export function MatcherSection({
               <CardTitle>Matching Engine</CardTitle>
             </div>
             <CardDescription>
-              One scoring policy using the provider and job preferences below.
+              A local candidate snapshot, reusable AI job analysis, and an AI-decided final match.
             </CardDescription>
           </div>
           <Button
             variant="outline"
             size="sm"
-            className={cn(
-              "border-border hover:bg-muted hover:text-foreground",
-              unmatchedCount > 0 && !hasProviders && "border-purple-500/30 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10"
-            )}
-            onClick={onMatchUnmatched}
-            disabled={isMatching || unmatchedCount === 0 || !hasProviders}
+            className="border-border hover:bg-muted hover:text-foreground"
+            onClick={() => handleMatchDialogOpenChange(true)}
+            disabled={isMatching || !hasProviders}
           >
-            <Sparkles className={cn("mr-2 h-4 w-4", isMatching && "animate-pulse")} />
-            {isMatching 
-              ? matchProgress 
-                ? `${matchProgress.completed}/${matchProgress.total} matched` 
+            <Sparkles data-icon="inline-start" className={cn(isMatching && "animate-pulse")} />
+            {isMatching
+              ? matchProgress
+                ? `${matchProgress.completed}/${matchProgress.total} matched`
                 : "Matching..."
-              : "Match Unmatched"
-            }
-            {!isMatching && unmatchedCount > 0 && (
-              <span className="ml-2 bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded text-xs">
-                {unmatchedCount}
-              </span>
-            )}
-            {isMatching && matchProgress && (
-              <span className="ml-2 bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded text-xs">
+              : "Match recent jobs"}
+            {isMatching && matchProgress ? (
+              <span className="text-xs text-muted-foreground">
                 {matchProgress.succeeded}✓ {matchProgress.failed}✕
               </span>
-            )}
+            ) : null}
           </Button>
         </div>
       </CardHeader>
+      <Dialog open={matchDialogOpen} onOpenChange={handleMatchDialogOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Match recent unmatched jobs</DialogTitle>
+            <DialogDescription>
+              Choose how recently jobs were found. Only unmatched jobs inside this window will be queued.
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field data-invalid={!validDays}>
+              <FieldLabel htmlFor="unmatched-window-days">Jobs found within</FieldLabel>
+              <Input
+                id="unmatched-window-days"
+                type="number"
+                min={1}
+                max={365}
+                inputMode="numeric"
+                value={daysInput}
+                onChange={(event) => handleDaysInputChange(event.target.value)}
+                aria-invalid={!validDays}
+              />
+              <FieldDescription>Enter a value from 1 to 365 days.</FieldDescription>
+            </Field>
+          </FieldGroup>
+          <div aria-live="polite" className="flex min-h-10 items-center justify-between border-y border-border py-3">
+            <span className="text-sm text-muted-foreground">Unmatched jobs found</span>
+            {unmatchedCountLoading || (validDays && parsedDays !== unmatchedWindowDays) ? (
+              <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="animate-spin" />
+                Checking
+              </span>
+            ) : (
+              <span className="text-lg font-semibold tabular-nums">{validDays ? unmatchedCount : "—"}</span>
+            )}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button
+              onClick={handleMatchConfirmation}
+              disabled={
+                !validDays ||
+                unmatchedCountLoading ||
+                parsedDays !== unmatchedWindowDays ||
+                unmatchedCount === 0
+              }
+            >
+              <Sparkles data-icon="inline-start" />
+              {unmatchedCount === 1 ? "Match 1 job" : `Match ${unmatchedCount} jobs`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <CardContent className="space-y-6">
+        {isMatching && matchProgress ? (
+          <MatchPipelineProgress
+            analysis={matchProgress.analysis}
+            matching={matchProgress.matching}
+            jobs={matchProgress.jobs}
+            compact
+          />
+        ) : null}
         {hasProviders ? (
           <>
-            {/* Primary Settings */}
             <div className="grid gap-6">
-              {/* Provider and Model */}
-              <div className="space-y-3">
-                <Label>AI Provider & Model</Label>
-                <div className="flex gap-2">
+              <div className="space-y-3 rounded-lg border border-border bg-background/30 p-4">
+                <div>
+                  <Label>Job Analysis</Label>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Creates a concise role summary and reusable, source-grounded requirements.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Select value={jobAnalysisProviderId} onValueChange={onJobAnalysisProviderIdChange}>
+                    <SelectTrigger className="w-[180px] bg-background/60 border-border">
+                      <SelectValue placeholder="Select provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {availableProviders.map((provider) => (
+                          <SelectItem key={provider.id} value={provider.id}>
+                            {provider.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <ModelCombobox
+                    models={jobAnalysisModels}
+                    value={jobAnalysisModel}
+                    onValueChange={onJobAnalysisModelChange}
+                    disabled={jobAnalysisModelsLoading || jobAnalysisModels.length === 0}
+                    loading={jobAnalysisModelsLoading}
+                    error={jobAnalysisModelsError}
+                    placeholder="Select analysis model"
+                  />
+                  <ReasoningEffortControl
+                    model={selectedAnalysisModel}
+                    value={jobAnalysisReasoningEffort}
+                    onValueChange={onJobAnalysisReasoningEffortChange}
+                    ariaLabel="Job analysis reasoning effort"
+                  />
+                </div>
+                {(jobAnalysisModelsError || configuredAnalysisModelUnavailable ||
+                  (jobAnalysisModelsStale && !jobAnalysisModelsError)) && (
+                  <p className="flex items-center gap-2 text-xs text-amber-400">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    {jobAnalysisModelsError ?? (configuredAnalysisModelUnavailable
+                      ? "The configured analysis model is unavailable. Choose an available model or refresh the catalog."
+                      : "Showing cached analysis models (latest refresh failed)")}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-3 rounded-lg border border-border bg-background/30 p-4">
+                <div>
+                  <Label>Final Match</Label>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Compares the facts snapshot with the job analysis and decides the score, confidence, and evidence-linked explanation.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
                   <Select value={matcherProviderId} onValueChange={onMatcherProviderIdChange}>
                     <SelectTrigger className="w-[180px] bg-background/60 border-border">
                       <SelectValue placeholder="Select provider" />
@@ -173,6 +328,7 @@ export function MatcherSection({
                     model={selectedModel}
                     value={matcherReasoningEffort}
                     onValueChange={onMatcherReasoningEffortChange}
+                    ariaLabel="Final match reasoning effort"
                   />
                 </div>
                 {modelsError && (
@@ -195,75 +351,21 @@ export function MatcherSection({
                 )}
               </div>
 
-              <p className="text-xs text-muted-foreground">
-                Selected preferences add score when a job states them.
-              </p>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="flex items-start gap-3 rounded-lg border border-border bg-background/30 p-4">
-                  <input
-                    type="checkbox"
-                    id="auto-match"
-                    checked={autoMatchAfterScrape}
-                    onChange={(e) => onAutoMatchAfterScrapeChange(e.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-border bg-muted text-emerald-500 focus:ring-emerald-500 focus:ring-offset-background"
-                  />
-                  <div>
-                    <Label htmlFor="auto-match" className="cursor-pointer font-medium">
-                      Auto-match after scrape
-                    </Label>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Automatically match new jobs after each scrape.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-border bg-background/30 p-4">
-                  <Label>Accepted work arrangements</Label>
-                  <div className="mt-3 flex flex-wrap gap-3">
-                    {["remote", "hybrid", "onsite"].map((value) => (
-                      <label key={value} className="flex items-center gap-2 text-sm capitalize text-muted-foreground">
-                        <input
-                          type="checkbox"
-                          checked={acceptedLocationTypes.includes(value)}
-                          onChange={() => toggleValue(
-                            acceptedLocationTypes,
-                            value,
-                            onAcceptedLocationTypesChange
-                          )}
-                          className="h-4 w-4 rounded border-border bg-muted text-emerald-500"
-                        />
-                        {value}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-border bg-background/30 p-4">
-                <Label>Accepted employment types</Label>
-                <div className="mt-3 flex flex-wrap gap-3">
-                  {[
-                    ["full-time", "Full time"],
-                    ["part-time", "Part time"],
-                    ["contract", "Contract"],
-                    ["intern", "Internship"],
-                    ["temporary", "Temporary"],
-                  ].map(([value, label]) => (
-                    <label key={value} className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        checked={acceptedEmploymentTypes.includes(value)}
-                        onChange={() => toggleValue(
-                          acceptedEmploymentTypes,
-                          value,
-                          onAcceptedEmploymentTypesChange
-                        )}
-                        className="h-4 w-4 rounded border-border bg-muted text-emerald-500"
-                      />
-                      {label}
-                    </label>
-                  ))}
+              <div className="flex items-start gap-3 rounded-lg border border-border bg-background/30 p-4">
+                <input
+                  type="checkbox"
+                  id="auto-match"
+                  checked={autoMatchAfterScrape}
+                  onChange={(e) => onAutoMatchAfterScrapeChange(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-border bg-muted text-emerald-500 focus:ring-emerald-500 focus:ring-offset-background"
+                />
+                <div>
+                  <Label htmlFor="auto-match" className="cursor-pointer font-medium">
+                    Auto-match after scrape
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Automatically match new jobs after each scrape.
+                  </p>
                 </div>
               </div>
             </div>
@@ -352,12 +454,6 @@ export function MatcherSection({
           </div>
         )}
       </CardContent>
-      <CardFooter className="rounded-b-xl border-t border-border bg-card/70 px-6 py-4">
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          {isSaving ? <Loader2 className="animate-spin" /> : null}
-          {isSaving ? "Saving changes…" : "Changes save automatically"}
-        </p>
-      </CardFooter>
     </Card>
   );
 }

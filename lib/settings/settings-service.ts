@@ -1,26 +1,29 @@
 import cron from "node-cron";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
 import { APIValidationError } from "@/lib/api/ai-error-handler";
 import { isReasoningEffort } from "@/lib/ai/providers/types";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
+import type * as databaseSchema from "@/lib/db/schema";
 import { SCRAPER_SETTINGS } from "@/lib/scraper/settings/definitions";
 import { safeJsonParse } from "@/lib/utils/safe-json";
 
 export const DEFAULT_SETTINGS = {
+  job_analysis_model: "",
+  job_analysis_provider_id: "",
+  job_analysis_reasoning_effort: "",
   matcher_model: "",
   matcher_provider_id: "",
   matcher_reasoning_effort: "",
-  matcher_accepted_location_types: "[]",
-  matcher_accepted_employment_types: "[]",
   resume_parser_model: "",
   resume_parser_provider_id: "",
   resume_parser_reasoning_effort: "",
   matcher_batch_size: "2",
   matcher_max_retries: "3",
   matcher_concurrency_limit: "3",
-  matcher_timeout_ms: "30000",
+  matcher_timeout_ms: "120000",
   matcher_backoff_base_delay: "2000",
   matcher_backoff_max_delay: "32000",
   matcher_auto_match_after_scrape: "true",
@@ -155,31 +158,6 @@ function normalizeTitleKeywords(value: unknown): string {
   );
 }
 
-function normalizeEnumList(
-  key: SettingKey,
-  value: unknown,
-  allowed: readonly string[]
-): string {
-  const parsed = Array.isArray(value)
-    ? value
-    : typeof value === "string"
-      ? safeJsonParse<unknown>(value, null)
-      : null;
-  if (!Array.isArray(parsed)) {
-    throw new APIValidationError(`${key} must be an array`, "invalid_request");
-  }
-  const normalized = Array.from(new Set(parsed.map((item) =>
-    typeof item === "string" ? item.trim().toLocaleLowerCase("en-US") : ""
-  ).filter(Boolean)));
-  if (normalized.some((item) => !allowed.includes(item))) {
-    throw new APIValidationError(
-      `${key} contains an unsupported value`,
-      "invalid_request"
-    );
-  }
-  return JSON.stringify(normalized.sort());
-}
-
 function normalizeCoverLetterFocus(value: unknown): string {
   const allowed = ["skills", "experience", "cultural_fit", "all"] as const;
 
@@ -256,30 +234,16 @@ function parseSettingValue(
       };
     }
     case "matcher_model":
+    case "job_analysis_model":
     case "resume_parser_model":
     case "ai_writing_model":
       return { value: ensureNonEmptyString(key, value), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     case "matcher_reasoning_effort":
+    case "job_analysis_reasoning_effort":
     case "resume_parser_reasoning_effort":
     case "ai_writing_reasoning_effort":
       return {
         value: normalizeReasoningSetting(key, value),
-        cronUpdated: false,
-        enabledChanged: false,
-        newEnabledValue: null,
-      };
-    case "matcher_accepted_location_types":
-      return {
-        value: normalizeEnumList(key, value, ["remote", "hybrid", "onsite"]),
-        cronUpdated: false,
-        enabledChanged: false,
-        newEnabledValue: null,
-      };
-    case "matcher_accepted_employment_types":
-      return {
-        value: normalizeEnumList(key, value, [
-          "full-time", "part-time", "contract", "intern", "temporary",
-        ]),
         cronUpdated: false,
         enabledChanged: false,
         newEnabledValue: null,
@@ -324,6 +288,7 @@ function parseSettingValue(
     case "cover_letter_focus":
       return { value: normalizeCoverLetterFocus(value), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     case "matcher_provider_id":
+    case "job_analysis_provider_id":
     case "resume_parser_provider_id":
     case "ai_writing_provider_id":
       return { value: String(value ?? "").trim(), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
@@ -380,6 +345,20 @@ export async function upsertSettings(updates: ParsedSettingUpdate[]): Promise<vo
       await db.insert(settings).values({ key, value, updatedAt: new Date() });
     }
   }
+}
+
+const DEPRECATED_MATCHING_PREFERENCE_KEYS = [
+  "matcher_accepted_location_types",
+  "matcher_accepted_employment_types",
+] as const;
+
+export async function removeDeprecatedMatchingPreferenceSettings(
+  database: BetterSQLite3Database<typeof databaseSchema> = db
+): Promise<void> {
+  await database.delete(settings).where(inArray(
+    settings.key,
+    [...DEPRECATED_MATCHING_PREFERENCE_KEYS]
+  ));
 }
 
 export async function getSettingsWithDefaults(): Promise<Record<SettingKey, string>> {

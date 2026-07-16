@@ -8,7 +8,13 @@ export type AIWorkType = z.infer<typeof AIWorkTypeSchema>;
 export const MatchWorkPayloadSchema = z.object({
   jobIds: z.array(z.number().int().positive()).min(1).max(100_000)
     .transform((values) => Array.from(new Set(values))),
-  triggerSource: z.enum(["manual", "auto_match", "company_refresh", "match_unmatched"]),
+  triggerSource: z.enum([
+    "manual",
+    "auto_match",
+    "company_refresh",
+    "match_unmatched",
+    "profile_update",
+  ]),
   companyId: z.number().int().positive().nullable().optional(),
   scrapingLogId: z.number().int().positive().nullable().optional(),
   legacyOutboxId: z.string().min(1).nullable().optional(),

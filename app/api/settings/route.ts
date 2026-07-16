@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
 
 import { AISettingsUpdateSchema } from "@/lib/ai/contracts";
 import { assertAppRequest } from "@/lib/api";
 import { APIValidationError, handleAIAPIError } from "@/lib/api/ai-error-handler";
 import { getCachedProviderModelDefinition } from "@/lib/ai/providers/model-catalog";
-import { eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { aiProviders } from "@/lib/db/schema";
@@ -23,11 +23,12 @@ import {
 } from "@/lib/settings/settings-service";
 
 const AI_SETTING_KEYS: ReadonlySet<SettingKey> = new Set([
+  "job_analysis_model",
+  "job_analysis_provider_id",
+  "job_analysis_reasoning_effort",
   "matcher_model",
   "matcher_provider_id",
   "matcher_reasoning_effort",
-  "matcher_accepted_location_types",
-  "matcher_accepted_employment_types",
   "resume_parser_model",
   "resume_parser_provider_id",
   "resume_parser_reasoning_effort",
@@ -59,6 +60,11 @@ function pickAISettings(body: Record<string, unknown>): Record<string, unknown> 
 
 const LEGACY_REASONING_VALUES = new Set(["low", "medium", "high"]);
 const REASONING_FEATURE_SETTINGS = [
+  {
+    provider: "job_analysis_provider_id",
+    model: "job_analysis_model",
+    effort: "job_analysis_reasoning_effort",
+  },
   {
     provider: "matcher_provider_id",
     model: "matcher_model",
@@ -169,7 +175,9 @@ export async function POST(request: Request) {
             : []
       );
       if (updatedCLIProviders.length > 0) {
-        const { resetLocalCLIProvider } = await import("@/lib/ai/local-cli/service");
+        const { getLocalCLIStatus, resetLocalCLIProvider } = await import(
+          "@/lib/ai/local-cli/service"
+        );
         const { deleteStoredProviderModelsCache } = await import("@/lib/ai/providers/model-catalog");
         await Promise.all(updatedCLIProviders.map(async (provider) => {
           const records = await db
@@ -178,6 +186,7 @@ export async function POST(request: Request) {
             .where(eq(aiProviders.provider, provider));
           await resetLocalCLIProvider(provider);
           await Promise.all(records.map(({ id }) => deleteStoredProviderModelsCache(id)));
+          await getLocalCLIStatus(provider, { forceRefresh: true });
         }));
       }
     }

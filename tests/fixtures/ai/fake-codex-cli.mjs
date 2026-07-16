@@ -43,6 +43,7 @@ if (process.env.SWITCHY_FAKE_CODEX_STARTUP_CRASH === "1") {
 
 const lines = readline.createInterface({ input: process.stdin });
 let initialized = false;
+const portableSchemas = new Map();
 
 function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -76,13 +77,20 @@ function synthesizeSchema(schema, root, key, prompt) {
     ));
   }
   if (type === "array") {
-    return key === "" ? [synthesizeSchema(resolved.items, root, "item", prompt)] : [];
+    if (key === "candidateEvidenceReferences") {
+      const evidenceId = prompt.match(/"evidence":\[\{"id":"([^"]+)"/)?.[1];
+      return evidenceId ? [evidenceId] : [];
+    }
+    return key === "" || (resolved.minItems ?? 0) > 0
+      ? [synthesizeSchema(resolved.items, root, "item", prompt)]
+      : [];
   }
   if (type === "number" || type === "integer") {
     if (key === "jobId") {
       const match = prompt.match(/"jobId"\s*:\s*(\d+)/);
       return Number(match?.[1] ?? 1);
     }
+    if (key === "score") return 88;
     return key.toLowerCase().includes("confidence") ? 0.95 : Math.max(1, resolved.minimum ?? 1);
   }
   if (type === "boolean") return false;
@@ -117,7 +125,12 @@ lines.on("line", (line) => {
     return;
   }
   if (method === "account/read") {
-    send({ id, result: { account: { type: "chatgpt" } } });
+    send({
+      id,
+      result: process.env.SWITCHY_FAKE_CODEX_AUTH_NOT_REQUIRED === "1"
+        ? { account: null, requiresOpenaiAuth: false }
+        : { account: { type: "chatgpt" }, requiresOpenaiAuth: true },
+    });
     return;
   }
   if (method === "model/list") {
@@ -194,6 +207,21 @@ lines.on("line", (line) => {
     return;
   }
   if (method === "thread/start") {
+    const unsupportedThreadFields = [
+      "allowProviderModelFallback",
+      "dynamicTools",
+      "environments",
+      "runtimeWorkspaceRoots",
+      "selectedCapabilityRoots",
+    ];
+    if (unsupportedThreadFields.some((field) => Object.hasOwn(params, field))) {
+      send({ id, error: { code: -32602, message: "invalid params: unsupported thread field" } });
+      return;
+    }
+    if (process.env.SWITCHY_FAKE_CODEX_INVALID_PARAMS === "1") {
+      send({ id, error: { code: -32602, message: "invalid params" } });
+      return;
+    }
     if (params.developerInstructions?.includes("require late interrupt") &&
         !globalThis.lateTurnInterrupted) {
       send({ id, error: { code: -32002, message: "late turn was not interrupted" } });
@@ -205,24 +233,31 @@ lines.on("line", (line) => {
       return;
     }
     const config = params.config ?? {};
-    const profile = config.permissions?.["switchy-isolated"];
     const isolated = processIsolationValid &&
-      params.permissions === "switchy-isolated" &&
-      Array.isArray(params.selectedCapabilityRoots) && params.selectedCapabilityRoots.length === 0 &&
-      Array.isArray(params.runtimeWorkspaceRoots) && params.runtimeWorkspaceRoots.length === 0 &&
-      Array.isArray(params.dynamicTools) && params.dynamicTools.length === 0 &&
+      params.sandbox === "read-only" &&
+      params.approvalPolicy === "never" &&
       config.web_search === "disabled" &&
       config.features?.shell_tool === false &&
       config.features?.unified_exec === false &&
       config.features?.multi_agent === false &&
-      Object.keys(config.mcp_servers ?? {}).length === 0 &&
-      profile?.filesystem?.[":root"] === "deny" &&
-      profile?.network?.enabled === false;
+      Object.keys(config.mcp_servers ?? {}).length === 0;
     if (!isolated) {
       send({ id, error: { code: -32001, message: "isolation missing" } });
       return;
     }
-    const respond = () => send({ id, result: { thread: { id: `thread-${id}` } } });
+    const threadId = `thread-${id}`;
+    const schemaText = params.developerInstructions
+      ?.split("JSON SCHEMA:\n")[1]
+      ?.split("\n\nSECURITY BOUNDARY:")[0]
+      ?.trim();
+    if (schemaText) {
+      try {
+        portableSchemas.set(threadId, JSON.parse(schemaText));
+      } catch {
+        // Malformed schemas are handled as ordinary text in this fake.
+      }
+    }
+    const respond = () => send({ id, result: { thread: { id: threadId } } });
     if (params.developerInstructions?.includes("delay setup")) {
       setTimeout(respond, 500);
     } else {
@@ -231,6 +266,10 @@ lines.on("line", (line) => {
     return;
   }
   if (method === "turn/start") {
+    if (Object.hasOwn(params, "environments") || Object.hasOwn(params, "runtimeWorkspaceRoots")) {
+      send({ id, error: { code: -32602, message: "invalid params: unsupported turn field" } });
+      return;
+    }
     const turnPrompt = params.input?.map((item) => item.text ?? "").join("") ?? "";
     if (turnPrompt.includes("require-max-effort") && params.effort !== "max") {
       send({ id, error: { code: -32602, message: "provider-native effort was not preserved" } });
@@ -239,14 +278,23 @@ lines.on("line", (line) => {
     globalThis.hadTurn = true;
     const turnId = `turn-${id}`;
     const prompt = params.input?.[0]?.text ?? "";
+    if (prompt.includes("turn-auth-failure")) {
+      send({ id, result: { turn: { id: turnId } } });
+      send({ method: "turn/completed", params: {
+        threadId: params.threadId,
+        turn: { id: turnId, status: "failed", error: { codexErrorInfo: "unauthorized" } },
+      } });
+      return;
+    }
     if (prompt.includes("crash")) {
       setTimeout(() => process.exit(2), 5);
       return;
     }
-    const output = params.outputSchema
+    const requestedSchema = params.outputSchema ?? portableSchemas.get(params.threadId);
+    const output = requestedSchema
       ? prompt.includes("malformed")
         ? "not json"
-        : JSON.stringify(synthesizeSchema(params.outputSchema, params.outputSchema, "", prompt))
+        : JSON.stringify(synthesizeSchema(requestedSchema, requestedSchema, "", prompt))
       : prompt.includes("complete cover letter body")
         ? coverLetter
         : "streamed text";

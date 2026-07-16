@@ -26,6 +26,9 @@ export async function GET(_request: Request, { params }: RouteParams) {
       failed: session.jobsFailed ?? 0,
       startedAt: session.startedAt,
       completedAt: session.completedAt,
+      analysis: session.pipeline.analysis,
+      matching: session.pipeline.matching,
+      jobs: session.pipeline.jobs,
     }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     console.error("Failed to read AI work session:", error);

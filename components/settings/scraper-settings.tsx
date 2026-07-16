@@ -2,10 +2,10 @@
 
 import { useMemo, useState } from "react";
 
-import { Loader2, Timer, X } from "lucide-react";
+import { Timer, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -46,7 +46,6 @@ interface ScraperSettingsProps {
   onFilterCityChange: (value: string) => void;
   filterTitleKeywords: string[];
   onFilterTitleKeywordsChange: (value: string[]) => void;
-  isSaving: boolean;
 }
 
 export function ScraperSettings({
@@ -66,7 +65,6 @@ export function ScraperSettings({
   onFilterCityChange,
   filterTitleKeywords,
   onFilterTitleKeywordsChange,
-  isSaving,
 }: ScraperSettingsProps) {
   const [keywordInput, setKeywordInput] = useState("");
   const [isCustomSelected, setIsCustomSelected] = useState<boolean>(() =>
@@ -290,12 +288,6 @@ export function ScraperSettings({
           )}
         </div>
       </CardContent>
-      <CardFooter className="rounded-b-xl border-t border-border bg-card/70 px-6 py-4">
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          {isSaving ? <Loader2 className="animate-spin" /> : null}
-          {isSaving ? "Saving changes…" : "Changes save automatically"}
-        </p>
-      </CardFooter>
     </Card>
   );
 }

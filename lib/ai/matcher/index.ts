@@ -10,7 +10,7 @@ export {
   getMatchSessionStatus,
 } from "./tracking";
 
-export { extractRequirements, htmlToText, chunkArray } from "./utils";
+export { htmlToText, chunkArray } from "./utils";
 
 export {
   getCurrentMatchContext,

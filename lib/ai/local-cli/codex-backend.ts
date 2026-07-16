@@ -42,6 +42,68 @@ interface CodexTurnResult {
   finishReason?: string;
 }
 
+function codexErrorKey(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object") return undefined;
+  return Object.keys(value as Record<string, unknown>)[0];
+}
+
+function codexErrorStatus(value: unknown): number | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  for (const nested of Object.values(value as Record<string, unknown>)) {
+    if (!nested || typeof nested !== "object") continue;
+    const status = (nested as Record<string, unknown>).httpStatusCode;
+    if (typeof status === "number") return status;
+  }
+  return undefined;
+}
+
+function codexTurnError(errorInfo: unknown, interrupted: boolean): AIError {
+  if (interrupted) {
+    return new AIError({
+      type: "timeout",
+      message: "Codex CLI generation was interrupted",
+    });
+  }
+
+  const key = codexErrorKey(errorInfo);
+  const status = codexErrorStatus(errorInfo);
+  if (key === "unauthorized" || status === 401 || status === 403) {
+    return new AIError({
+      type: "missing_api_key",
+      message: "Codex CLI authentication is unavailable",
+      retryable: false,
+    });
+  }
+  if (key === "usageLimitExceeded" || key === "serverOverloaded" || status === 429) {
+    return new AIError({
+      type: "rate_limit",
+      message: "Codex CLI quota or capacity is temporarily unavailable",
+    });
+  }
+  if (key === "badRequest") {
+    return new AIError({
+      type: "invalid_model",
+      message: "Codex CLI rejected the configured model or request",
+      retryable: false,
+    });
+  }
+  if (
+    key === "httpConnectionFailed" ||
+    key === "responseStreamConnectionFailed" ||
+    key === "responseStreamDisconnected"
+  ) {
+    return new AIError({
+      type: "network",
+      message: "Codex CLI could not maintain the provider connection",
+    });
+  }
+  return new AIError({
+    type: "generation_failed",
+    message: "Codex CLI generation failed",
+  });
+}
+
 const CODEX_BASE_INSTRUCTIONS =
   "You are the isolated text-generation backend for Switchy. Follow only Switchy instructions. Do not use tools, inspect files, access the network, or attempt to change the environment.";
 
@@ -71,19 +133,6 @@ const CODEX_ISOLATED_CONFIG = {
   shell_environment_policy: {
     inherit: "none",
     include_only: [],
-  },
-  permissions: {
-    "switchy-isolated": {
-      description: "Deny local filesystem and network access for Switchy generation",
-      filesystem: {
-        ":root": "deny",
-        ":minimal": "deny",
-        ":tmpdir": "deny",
-        ":slash_tmp": "deny",
-        ":workspace_roots": { ".": "deny" },
-      },
-      network: { enabled: false, domains: {} },
-    },
   },
 };
 
@@ -118,8 +167,15 @@ export class CodexCLIBackend implements AIGenerationBackend {
   async readAccount(): Promise<{ authenticated: boolean }> {
     this.beginOperation();
     try {
-      const response = await this.client.request<{ account?: unknown }>("account/read", {});
-      return { authenticated: response.account !== null && response.account !== undefined };
+      const response = await this.client.request<{
+        account?: unknown;
+        requiresOpenaiAuth?: boolean;
+      }>("account/read", {});
+      return {
+        authenticated:
+          (response.account !== null && response.account !== undefined) ||
+          response.requiresOpenaiAuth === false,
+      };
     } finally {
       this.endOperation();
     }
@@ -260,19 +316,14 @@ export class CodexCLIBackend implements AIGenerationBackend {
 
     try {
       const thread = await this.client.request<{ thread: { id: string } }>("thread/start", {
-        allowProviderModelFallback: false,
         approvalPolicy: "never",
         baseInstructions: CODEX_BASE_INSTRUCTIONS,
         config: CODEX_ISOLATED_CONFIG,
         developerInstructions: input.instructions,
         cwd,
-        dynamicTools: [],
-        environments: [],
         ephemeral: true,
         model: input.modelId,
-        permissions: "switchy-isolated",
-        runtimeWorkspaceRoots: [],
-        selectedCapabilityRoots: [],
+        sandbox: "read-only",
       }, { signal: input.signal });
       threadId = thread.thread.id;
 
@@ -341,23 +392,7 @@ export class CodexCLIBackend implements AIGenerationBackend {
             const status = turn?.status;
             if (status === "failed" || status === "interrupted") {
               const turnError = turn?.error as Record<string, unknown> | undefined;
-              const errorInfo = turnError?.codexErrorInfo;
-              const errorCode = typeof errorInfo === "string" ? errorInfo : "";
-              const type = errorCode === "usageLimitExceeded" || errorCode === "serverOverloaded"
-                ? "rate_limit" as const
-                : errorCode === "unauthorized"
-                  ? "missing_api_key" as const
-                  : errorCode === "badRequest"
-                    ? "invalid_model" as const
-                    : status === "interrupted"
-                      ? "timeout" as const
-                      : "generation_failed" as const;
-              reject(new AIError({
-                type,
-                message: status === "interrupted"
-                  ? "Codex CLI generation was interrupted"
-                  : "Codex CLI generation failed",
-              }));
+              reject(codexTurnError(turnError?.codexErrorInfo, status === "interrupted"));
               return;
             }
             finishReason = typeof status === "string" ? status : "stop";
@@ -386,9 +421,6 @@ export class CodexCLIBackend implements AIGenerationBackend {
         effort: input.reasoningEffort && knownReasoningEfforts?.includes(input.reasoningEffort)
           ? input.reasoningEffort
           : undefined,
-        environments: [],
-        permissions: "switchy-isolated",
-        runtimeWorkspaceRoots: [],
         ...(outputSchema ? { outputSchema } : {}),
       }, {
         signal: input.signal,

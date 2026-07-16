@@ -46,10 +46,19 @@ const modelCache = new Map<LocalCLIProvider, ModelEntry>();
 const modelFlights = new Map<LocalCLIProvider, Promise<ProviderModelDefinition[]>>();
 const openCodeConnectionCache = new Map<LocalCLIProvider, ConnectedProviderEntry>();
 
+export async function warmLocalCLIStatuses(): Promise<void> {
+  await Promise.allSettled(
+    (["codex_cli", "opencode_cli"] as const).map((provider) =>
+      getLocalCLIStatus(provider, { forceRefresh: true })
+    )
+  );
+}
+
 export function getCachedLocalCLIStatus(
   provider: LocalCLIProvider
 ): LocalCLIStatus | undefined {
-  return statusCache.get(provider)?.value;
+  const cached = statusCache.get(provider);
+  return cached && cached.expiresAt > Date.now() ? cached.value : undefined;
 }
 
 function filterConnectedOpenCodeModels(

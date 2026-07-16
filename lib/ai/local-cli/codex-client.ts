@@ -23,6 +23,52 @@ interface CodexRequestOptions {
   onLateResultExpired?: () => void;
 }
 
+function classifyRPCError(rpcError: Record<string, unknown>): AIError {
+  const code = typeof rpcError.code === "number" ? rpcError.code : undefined;
+  const message = typeof rpcError.message === "string"
+    ? rpcError.message.toLocaleLowerCase("en-US")
+    : "";
+
+  if (code === -32601 || message.includes("method not found")) {
+    return new AIError({
+      type: "validation",
+      message: "Codex CLI protocol is incompatible",
+      retryable: false,
+    });
+  }
+  if (code === -32602 || message.includes("invalid params")) {
+    return new AIError({
+      type: "validation",
+      message: "Codex CLI request parameters are incompatible",
+      retryable: false,
+    });
+  }
+  if (code === -32001 || message.includes("overloaded") || message.includes("rate limit")) {
+    return new AIError({
+      type: "rate_limit",
+      message: "Codex CLI is temporarily rate limited or overloaded",
+    });
+  }
+  if (message.includes("unauthorized") || message.includes("authentication")) {
+    return new AIError({
+      type: "missing_api_key",
+      message: "Codex CLI authentication is unavailable",
+      retryable: false,
+    });
+  }
+  if (message.includes("model") && (message.includes("invalid") || message.includes("not found"))) {
+    return new AIError({
+      type: "invalid_model",
+      message: "The configured Codex CLI model is unavailable",
+      retryable: false,
+    });
+  }
+  return new AIError({
+    type: "generation_failed",
+    message: "Codex CLI request failed",
+  });
+}
+
 async function waitForStart(
   promise: Promise<void>,
   signal: AbortSignal | undefined
@@ -270,16 +316,7 @@ export class CodexAppServerClient {
       }
       if (message.error) {
         const rpcError = message.error as Record<string, unknown>;
-        const incompatible = rpcError.code === -32601;
-        pending.reject(
-          new AIError({
-            type: incompatible ? "validation" : "generation_failed",
-            message: incompatible
-              ? "Codex CLI protocol is incompatible"
-              : "Codex CLI request failed",
-            retryable: false,
-          })
-        );
+        pending.reject(classifyRPCError(rpcError));
       } else {
         pending.resolve(message.result);
       }

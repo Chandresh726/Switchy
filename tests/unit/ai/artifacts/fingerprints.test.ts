@@ -39,10 +39,6 @@ function candidateInput() {
       gpa: "8.5",
       honors: "Dean's list",
     }],
-    preferences: {
-      acceptedLocationTypes: ["Remote", "hybrid", "remote"],
-      acceptedEmploymentTypes: ["Full-Time"],
-    },
   };
 }
 
@@ -66,7 +62,6 @@ describe("artifact fingerprints", () => {
     const first = candidateInput();
     const second = candidateInput();
     second.skills.reverse();
-    second.preferences.acceptedLocationTypes.reverse();
     second.profile.summary = "Backend engineer building distributed systems.";
 
     const firstEvidence = buildCandidateEvidence(first);
@@ -119,8 +114,8 @@ describe("artifact fingerprints", () => {
     const baseFingerprint = buildCandidateFingerprint(buildCandidateEvidence(base));
     const summaryChanged = candidateInput();
     summaryChanged.profile.summary = "Security-focused backend engineer.";
-    const preferenceChanged = candidateInput();
-    preferenceChanged.preferences.acceptedEmploymentTypes = ["contract"];
+    const locationChanged = candidateInput();
+    locationChanged.profile.preferredCity = "Pune";
     const educationChanged = candidateInput();
     educationChanged.education[0].honors = "Graduated with distinction";
     const nonMatchingFieldChanged = {
@@ -136,7 +131,7 @@ describe("artifact fingerprints", () => {
     expect(buildCandidateFingerprint(buildCandidateEvidence(summaryChanged))).not.toBe(
       baseFingerprint
     );
-    expect(buildCandidateFingerprint(buildCandidateEvidence(preferenceChanged))).not.toBe(
+    expect(buildCandidateFingerprint(buildCandidateEvidence(locationChanged))).not.toBe(
       baseFingerprint
     );
     expect(buildCandidateFingerprint(buildCandidateEvidence(educationChanged))).not.toBe(

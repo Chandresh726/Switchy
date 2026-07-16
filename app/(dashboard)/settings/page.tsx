@@ -20,9 +20,9 @@ import {
 } from "@/components/settings/reasoning-effort-control";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getProviderMetadata } from "@/lib/ai/providers/metadata";
-import type { LocalCLIStatus } from "@/lib/ai/local-cli/types";
-import type { AIProvider, LocalCLIProvider } from "@/lib/ai/providers/types";
+import type { AIProvider } from "@/lib/ai/providers/types";
 import { APP_VERSION, DB_PATH } from "@/lib/constants";
+import { useDebounce } from "@/lib/hooks/use-debounce";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
 import type { ProviderModelsResponse } from "@/lib/types";
 import type {
@@ -55,11 +55,12 @@ function clearSavedEdits<T extends object>(current: T, saved: T): T {
 }
 
 interface MatcherLocalEdits {
+  jobAnalysisModel?: string;
+  jobAnalysisProviderId?: string;
+  jobAnalysisReasoningEffort?: ReasoningEffort;
   matcherModel?: string;
   matcherProviderId?: string;
   matcherReasoningEffort?: ReasoningEffort;
-  acceptedLocationTypes?: string[];
-  acceptedEmploymentTypes?: string[];
   batchSize?: number;
   maxRetries?: number;
   concurrencyLimit?: number;
@@ -209,6 +210,8 @@ function SettingsContent() {
   const [resumeParserLocalEdits, setResumeParserLocalEdits] = useState<ResumeParserLocalEdits>({});
   const [scraperLocalEdits, setScraperLocalEdits] = useState<ScraperLocalEdits>({});
   const [aiWritingLocalEdits, setAIWritingLocalEdits] = useState<AIWritingLocalEdits>({});
+  const [unmatchedWindowDays, setUnmatchedWindowDays] = useState(5);
+  const debouncedUnmatchedWindowDays = useDebounce(unmatchedWindowDays, 250);
   const lastModelReconciliationRef = useRef<string | null>(null);
   const matcherAutosaveAttemptRef = useRef<string | null>(null);
   const scraperAutosaveAttemptRef = useRef<string | null>(null);
@@ -279,13 +282,6 @@ function SettingsContent() {
       toast.error(error instanceof Error ? error.message : "Failed to refresh model list");
     }
   };
-
-  const checkLocalProvider = async (
-    provider: LocalCLIProvider
-  ): Promise<LocalCLIStatus> => apiGet<LocalCLIStatus>(
-    `/api/providers/local-cli/status?provider=${encodeURIComponent(provider)}`,
-    "Failed to check local CLI"
-  );
 
   const saveCLIExecutablePaths = useCallback(async (paths: { codex: string; opencode: string }) => {
     await apiPost<SettingsRecord>(
@@ -359,6 +355,7 @@ function SettingsContent() {
 
   const derivedValues = useMemo(() => {
     const savedProviderIds = new Set([
+      settings?.job_analysis_provider_id,
       settings?.matcher_provider_id,
       settings?.resume_parser_provider_id,
       settings?.ai_writing_provider_id,
@@ -386,6 +383,10 @@ function SettingsContent() {
       return candidateProviders.some((provider) => provider.id === candidateId) ? candidateId : firstProviderId;
     };
 
+    const resolvedJobAnalysisProviderId = resolveProviderId(
+      matcherLocalEdits.jobAnalysisProviderId,
+      settings?.job_analysis_provider_id || settings?.matcher_provider_id
+    );
     const resolvedMatcherProviderId = resolveProviderId(
       matcherLocalEdits.matcherProviderId,
       settings?.matcher_provider_id
@@ -418,6 +419,12 @@ function SettingsContent() {
       return hasProviders ? getDefaultForProvider(providerId) : "";
     };
 
+    const resolvedJobAnalysisModel = getValidModelOrDefault(
+      matcherLocalEdits.jobAnalysisModel,
+      settings?.job_analysis_model || settings?.matcher_model,
+      resolvedJobAnalysisProviderId,
+      settings?.job_analysis_provider_id || settings?.matcher_provider_id
+    );
     const resolvedMatcherModel = getValidModelOrDefault(
       matcherLocalEdits.matcherModel,
       settings?.matcher_model,
@@ -465,6 +472,15 @@ function SettingsContent() {
     };
 
     return {
+      jobAnalysisModel: resolvedJobAnalysisModel,
+      jobAnalysisProviderId: resolvedJobAnalysisProviderId,
+      jobAnalysisReasoningEffort: resolveReasoningEffort({
+        localValue: matcherLocalEdits.jobAnalysisReasoningEffort,
+        savedValue: settings?.job_analysis_reasoning_effort || settings?.matcher_reasoning_effort,
+        providerId: resolvedJobAnalysisProviderId,
+        modelId: resolvedJobAnalysisModel,
+        providerWasEdited: matcherLocalEdits.jobAnalysisProviderId !== undefined,
+      }),
       matcherModel: resolvedMatcherModel,
       matcherProviderId: resolvedMatcherProviderId,
       resumeParserModel: resolvedResumeParserModel,
@@ -476,22 +492,6 @@ function SettingsContent() {
         modelId: resolvedMatcherModel,
         providerWasEdited: matcherLocalEdits.matcherProviderId !== undefined,
       }),
-      acceptedLocationTypes: matcherLocalEdits.acceptedLocationTypes ?? (() => {
-        try {
-          const parsed = JSON.parse(settings?.matcher_accepted_location_types || "[]");
-          return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
-        } catch {
-          return [];
-        }
-      })(),
-      acceptedEmploymentTypes: matcherLocalEdits.acceptedEmploymentTypes ?? (() => {
-        try {
-          const parsed = JSON.parse(settings?.matcher_accepted_employment_types || "[]");
-          return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
-        } catch {
-          return [];
-        }
-      })(),
       resumeParserReasoningEffort: resolveReasoningEffort({
         localValue: resumeParserLocalEdits.resumeParserReasoningEffort,
         savedValue: settings?.resume_parser_reasoning_effort,
@@ -504,7 +504,7 @@ function SettingsContent() {
       concurrencyLimit: matcherLocalEdits.concurrencyLimit ?? parseInt(settings?.matcher_concurrency_limit || "3", 10),
       timeoutMs:
         matcherLocalEdits.timeoutMs ??
-        parseInt(settings?.matcher_timeout_ms || "30000", 10),
+        parseInt(settings?.matcher_timeout_ms || "120000", 10),
       autoMatchAfterScrape:
         matcherLocalEdits.autoMatchAfterScrape ??
         (settings?.matcher_auto_match_after_scrape !== "false"),
@@ -578,7 +578,8 @@ function SettingsContent() {
   }, [settings, matcherLocalEdits, resumeParserLocalEdits, scraperLocalEdits, aiWritingLocalEdits, providers, providerModelsById]);
 
   const {
-    matcherModel, matcherProviderId, resumeParserModel, resumeParserProviderId, matcherReasoningEffort, acceptedLocationTypes, acceptedEmploymentTypes, resumeParserReasoningEffort, batchSize, maxRetries, concurrencyLimit, timeoutMs,
+    jobAnalysisModel, jobAnalysisProviderId, jobAnalysisReasoningEffort,
+    matcherModel, matcherProviderId, resumeParserModel, resumeParserProviderId, matcherReasoningEffort, resumeParserReasoningEffort, batchSize, maxRetries, concurrencyLimit, timeoutMs,
     autoMatchAfterScrape, schedulerEnabled, schedulerCron, maxParallelScrapes, keepDeviceAwake, historyRetentionDays, filterCountry, filterCity, filterTitleKeywords,
     aiWritingModel, aiWritingProviderId, aiWritingReasoningEffort, referralTone, referralLength,
     followUpTone, followUpLength, coverLetterTone, coverLetterLength, coverLetterFocus
@@ -586,6 +587,7 @@ function SettingsContent() {
 
   const providerOptions = useMemo(() => {
     const configuredProviderIds = new Set([
+      settings?.job_analysis_provider_id,
       settings?.matcher_provider_id,
       settings?.resume_parser_provider_id,
       settings?.ai_writing_provider_id,
@@ -612,6 +614,7 @@ function SettingsContent() {
     };
   };
 
+  const jobAnalysisModelsState = getProviderModelsState(jobAnalysisProviderId);
   const matcherModelsState = getProviderModelsState(matcherProviderId);
   const resumeParserModelsState = getProviderModelsState(resumeParserProviderId);
   const aiWritingModelsState = getProviderModelsState(aiWritingProviderId);
@@ -686,6 +689,20 @@ function SettingsContent() {
       }
     };
 
+    if (!jobAnalysisModelsState.loading && jobAnalysisModelsState.models.length > 0) {
+      queueFeatureUpdate({
+        featureLabel: "Job Analysis",
+        providerSettingKey: "job_analysis_provider_id",
+        modelSettingKey: "job_analysis_model",
+        savedProviderId: settings.job_analysis_provider_id,
+        savedModelId: settings.job_analysis_model,
+        resolvedProviderId: jobAnalysisProviderId,
+        resolvedModelId: jobAnalysisModel,
+        localProviderEdited: matcherLocalEdits.jobAnalysisProviderId !== undefined,
+        localModelEdited: matcherLocalEdits.jobAnalysisModel !== undefined,
+      });
+    }
+
     if (!matcherModelsState.loading && matcherModelsState.models.length > 0) {
       queueFeatureUpdate({
         featureLabel: "Matcher",
@@ -743,6 +760,12 @@ function SettingsContent() {
   }, [
     settings,
     providers,
+    jobAnalysisModelsState.loading,
+    jobAnalysisModelsState.models.length,
+    jobAnalysisProviderId,
+    jobAnalysisModel,
+    matcherLocalEdits.jobAnalysisProviderId,
+    matcherLocalEdits.jobAnalysisModel,
     matcherModelsState.loading,
     matcherModelsState.models.length,
     matcherProviderId,
@@ -773,11 +796,12 @@ function SettingsContent() {
     scraperLocalEdits.filterCity !== undefined ||
     scraperLocalEdits.filterTitleKeywords !== undefined;
   const matcherHasUnsavedChanges =
+    matcherLocalEdits.jobAnalysisModel !== undefined ||
+    matcherLocalEdits.jobAnalysisProviderId !== undefined ||
+    matcherLocalEdits.jobAnalysisReasoningEffort !== undefined ||
     matcherLocalEdits.matcherModel !== undefined ||
     matcherLocalEdits.matcherProviderId !== undefined ||
     matcherLocalEdits.matcherReasoningEffort !== undefined ||
-    matcherLocalEdits.acceptedLocationTypes !== undefined ||
-    matcherLocalEdits.acceptedEmploymentTypes !== undefined ||
     matcherLocalEdits.batchSize !== undefined ||
     matcherLocalEdits.maxRetries !== undefined ||
     matcherLocalEdits.concurrencyLimit !== undefined ||
@@ -797,6 +821,22 @@ function SettingsContent() {
     aiWritingLocalEdits.aiWritingReasoningEffort !== undefined;
 
   // Setters for Matcher settings
+  const setJobAnalysisModel = (value: string) => {
+    const defaultReasoningEffort = resolveReasoningSelection({
+      providerWasEdited: true,
+      model: jobAnalysisModelsState.models.find((model) => model.modelId === value),
+    });
+    setMatcherLocalEdits((previous) => ({
+      ...previous,
+      jobAnalysisModel: value,
+      jobAnalysisReasoningEffort: defaultReasoningEffort,
+    }));
+  };
+  const setJobAnalysisReasoningEffort = (value: ReasoningEffort) =>
+    setMatcherLocalEdits((previous) => ({
+      ...previous,
+      jobAnalysisReasoningEffort: value,
+    }));
   const setMatcherModel = (value: string) => {
     const defaultReasoningEffort = resolveReasoningSelection({
       providerWasEdited: true,
@@ -1054,8 +1094,13 @@ function SettingsContent() {
     if (!matcherHasUnsavedChanges || matcherSettingsSaving || providerOptions.length === 0) return;
     const signature = JSON.stringify(matcherLocalEdits);
     if (matcherAutosaveAttemptRef.current === signature) return;
+    const selectedAnalysisModel = jobAnalysisModelsState.models.find(
+      (model) => model.modelId === jobAnalysisModel
+    );
     const selectedModel = matcherModelsState.models.find((model) => model.modelId === matcherModel);
     if (
+      !selectedAnalysisModel ||
+      hasInvalidReasoningSelection(selectedAnalysisModel, jobAnalysisReasoningEffort) ||
       !selectedModel ||
       hasInvalidReasoningSelection(selectedModel, matcherReasoningEffort)
     ) {
@@ -1067,11 +1112,12 @@ function SettingsContent() {
       saveMatcherSettings({
         snapshot: matcherLocalEdits,
         updates: {
+          job_analysis_model: jobAnalysisModel,
+          job_analysis_provider_id: jobAnalysisProviderId,
+          job_analysis_reasoning_effort: jobAnalysisReasoningEffort,
           matcher_model: matcherModel,
           matcher_provider_id: matcherProviderId,
           matcher_reasoning_effort: matcherReasoningEffort,
-          matcher_accepted_location_types: acceptedLocationTypes,
-          matcher_accepted_employment_types: acceptedEmploymentTypes,
           matcher_batch_size: batchSize,
           matcher_max_retries: maxRetries,
           matcher_concurrency_limit: concurrencyLimit,
@@ -1082,11 +1128,13 @@ function SettingsContent() {
     }, 400);
     return () => clearTimeout(timer);
   }, [
-    acceptedEmploymentTypes,
-    acceptedLocationTypes,
     autoMatchAfterScrape,
     batchSize,
     concurrencyLimit,
+    jobAnalysisModel,
+    jobAnalysisModelsState.models,
+    jobAnalysisProviderId,
+    jobAnalysisReasoningEffort,
     matcherHasUnsavedChanges,
     matcherLocalEdits,
     matcherModel,
@@ -1188,11 +1236,18 @@ function SettingsContent() {
   ]);
 
   // Query for unmatched jobs count
-  const { data: unmatchedData } = useQuery<{ count: number }>({
-    queryKey: ["unmatched-jobs-count"],
+  const {
+    data: unmatchedData,
+    isFetching: unmatchedCountLoading,
+    refetch: refetchUnmatchedCount,
+  } = useQuery<{
+    count: number;
+    days: number;
+  }>({
+    queryKey: ["unmatched-jobs-count", debouncedUnmatchedWindowDays],
     queryFn: () =>
-      apiGet<{ count: number }>(
-        "/api/jobs/match-unmatched",
+      apiGet<{ count: number; days: number }>(
+        `/api/jobs/match-unmatched?days=${debouncedUnmatchedWindowDays}`,
         "Failed to fetch unmatched count"
       ),
   });
@@ -1201,14 +1256,20 @@ function SettingsContent() {
     total: number;
     status: "queued" | "completed";
     sessionId: string;
-  }>({
-    mutationFn: () =>
+  }, Error, number>({
+    mutationFn: (days: number) =>
       apiPost<{ total: number; status: "queued" | "completed"; sessionId: string }>(
         "/api/jobs/match-unmatched",
-        {},
+        { days },
         "Failed to match jobs"
       ),
     onSuccess: (data) => {
+      toast.success(`${data.total} ${data.total === 1 ? "job" : "jobs"} queued for matching`, {
+        action: {
+          label: "Details",
+          onClick: () => router.push("/history/match"),
+        },
+      });
       if (data.sessionId) {
         setMatchSessionId(data.sessionId);
       }
@@ -1220,6 +1281,7 @@ function SettingsContent() {
   const { data: matchProgress } = useMatchSession(matchSessionId, {
     onSettled: () => {
       setMatchSessionId(null);
+      void queryClient.invalidateQueries({ queryKey: ["unmatched-jobs-count"] });
     },
   });
 
@@ -1251,7 +1313,6 @@ function SettingsContent() {
               await updateProviderApiKeyMutation.mutateAsync({ id, apiKey });
             }}
             onRefreshProviderModels={refreshProviderModels}
-            onCheckLocalProvider={checkLocalProvider}
             codexExecutablePath={settings?.codex_cli_executable ?? ""}
             openCodeExecutablePath={settings?.opencode_cli_executable ?? ""}
             onSaveExecutablePaths={saveCLIExecutablePaths}
@@ -1260,6 +1321,23 @@ function SettingsContent() {
           <MatcherSection
             availableProviders={providerOptions}
             hasProviders={providerOptions.length > 0}
+            jobAnalysisModels={jobAnalysisModelsState.models}
+            jobAnalysisModelsLoading={jobAnalysisModelsState.loading}
+            jobAnalysisModelsError={jobAnalysisModelsState.error}
+            jobAnalysisModelsStale={jobAnalysisModelsState.isStale}
+            jobAnalysisProviderId={jobAnalysisProviderId}
+            onJobAnalysisProviderIdChange={(id) => {
+              setMatcherLocalEdits((previous) => ({
+                ...previous,
+                jobAnalysisProviderId: id,
+                jobAnalysisModel: undefined,
+                jobAnalysisReasoningEffort: undefined,
+              }));
+            }}
+            jobAnalysisModel={jobAnalysisModel}
+            onJobAnalysisModelChange={setJobAnalysisModel}
+            jobAnalysisReasoningEffort={jobAnalysisReasoningEffort}
+            onJobAnalysisReasoningEffortChange={setJobAnalysisReasoningEffort}
             models={matcherModelsState.models}
             modelsLoading={matcherModelsState.loading}
             modelsError={matcherModelsState.error}
@@ -1277,14 +1355,6 @@ function SettingsContent() {
             onMatcherModelChange={setMatcherModel}
             matcherReasoningEffort={matcherReasoningEffort}
             onMatcherReasoningEffortChange={setMatcherReasoningEffort}
-            acceptedLocationTypes={acceptedLocationTypes}
-            onAcceptedLocationTypesChange={(value) => setMatcherLocalEdits(
-              (prev) => ({ ...prev, acceptedLocationTypes: value })
-            )}
-            acceptedEmploymentTypes={acceptedEmploymentTypes}
-            onAcceptedEmploymentTypesChange={(value) => setMatcherLocalEdits(
-              (prev) => ({ ...prev, acceptedEmploymentTypes: value })
-            )}
             autoMatchAfterScrape={autoMatchAfterScrape}
             onAutoMatchAfterScrapeChange={setAutoMatchAfterScrape}
             batchSize={batchSize}
@@ -1295,24 +1365,18 @@ function SettingsContent() {
             onConcurrencyLimitChange={setConcurrencyLimit}
             timeoutMs={timeoutMs}
             onTimeoutMsChange={setTimeoutMs}
-            isSaving={matcherSettingsMutation.isPending}
-            onMatchUnmatched={() => {
-              toast.success("Match triggered", {
-                action: {
-                  label: "Details",
-                  onClick: () => router.push("/history/match")
-                }
-              });
-              matchUnmatchedMutation.mutate();
+            onMatchUnmatched={(days) => matchUnmatchedMutation.mutate(days)}
+            isMatching={matchUnmatchedMutation.isPending || matchSessionId !== null}
+            matchProgress={matchProgress ?? undefined}
+            unmatchedWindowDays={unmatchedWindowDays}
+            onUnmatchedWindowDaysChange={setUnmatchedWindowDays}
+            onUnmatchedWindowOpen={() => {
+              void refetchUnmatchedCount();
             }}
-            isMatching={matchUnmatchedMutation.isPending}
-            matchProgress={matchProgress ? {
-              completed: matchProgress.completed,
-              total: matchProgress.total,
-              succeeded: matchProgress.succeeded,
-              failed: matchProgress.failed,
-            } : undefined}
             unmatchedCount={unmatchedData?.count ?? 0}
+            unmatchedCountLoading={
+              unmatchedCountLoading || debouncedUnmatchedWindowDays !== unmatchedWindowDays
+            }
           />
 
           <AIWritingSection
@@ -1344,7 +1408,6 @@ function SettingsContent() {
               aiWritingReasoningEffort,
             }}
             onAIWritingSettingsChange={handleAIWritingSettingsChange}
-            isSaving={aiWritingMutation.isPending}
           />
 
           <DangerZone
@@ -1381,7 +1444,6 @@ function SettingsContent() {
             onFilterCityChange={setFilterCity}
             filterTitleKeywords={filterTitleKeywords}
             onFilterTitleKeywordsChange={setFilterTitleKeywords}
-            isSaving={scraperSettingsMutation.isPending}
           />
 
           <ResumeParserSection

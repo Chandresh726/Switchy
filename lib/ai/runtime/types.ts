@@ -3,6 +3,7 @@ import type { AIProvider } from "@/lib/ai/providers/types";
 export type AICapability =
   | "job_analysis"
   | "match_adjudication"
+  | "match_evaluation"
   | "writing_cover_letter"
   | "writing_referral"
   | "writing_recruiter_follow_up"
@@ -22,6 +23,7 @@ export interface ResolvedModelSnapshot {
   backendKind: "ai_sdk" | "codex_cli" | "opencode_cli";
   cliVersion?: string;
   upstreamProvider?: string;
+  structuredGenerationStrategy?: "native" | "portable_json";
 }
 
 export interface AIExecutionUsage {

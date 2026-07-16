@@ -67,10 +67,6 @@ function createMigrationsFolderThrough(maxIndex: number): string {
   return destination;
 }
 
-function createPreArtifactMigrationsFolder(): string {
-  return createMigrationsFolderThrough(15);
-}
-
 function candidateEvidence() {
   return buildCandidateEvidence({
     profile: {
@@ -116,25 +112,28 @@ function jobEvidence() {
 
 function analysisEvidence() {
   return {
-    mustHaveSkills: ["typescript"],
-    preferredSkills: [],
-    minimumExperienceYears: 2,
-    seniorityLevel: "mid",
-    managementTrack: false,
-    educationRequirements: [],
-    locationConstraints: ["remote"],
-    employmentType: "full-time",
-    compensationText: null,
-    domainKeywords: ["services"],
-    extractionConfidence: 0.9,
-    ambiguities: [],
-    requirements: [],
+    summary: "Backend engineering role building TypeScript services.",
+    requirements: [{
+      id: "requirement:1",
+      type: "technology" as const,
+      text: "Build TypeScript services",
+      importance: "important" as const,
+      sourceEvidence: "TypeScript services",
+    }],
+  };
+}
+
+function matchEvidence(summary = "Good fit") {
+  return {
+    summary,
+    reasoning: [],
+    matchedSkills: ["TypeScript"],
   };
 }
 
 function insertAIRun(
   database: ReturnType<typeof harness.createDatabase>["database"],
-  capability: "job_analysis" | "match_adjudication" | "resume_parse",
+  capability: "job_analysis" | "match_adjudication" | "match_evaluation" | "resume_parse",
   status: "succeeded" | "failed" = "succeeded"
 ): string {
   const id = crypto.randomUUID();
@@ -284,12 +283,33 @@ describe("versioned AI artifact repository", () => {
       jobFingerprint: jobArtifact.jobFingerprint,
       scoringPolicyVersion: "scoring-v1",
       score: 80,
-      breakdown: { experience: 80 },
-      evidence: { reasons: [] },
+      breakdown: { experienceAndSeniority: 80 },
+      evidence: matchEvidence(),
       confidence: 0.8,
       source: "adjudicated",
       adjudicationRunId: wrongAdjudicationRunId,
     })).rejects.toThrow("successful match_adjudication");
+
+    const matchRunId = insertAIRun(database, "match_evaluation");
+    const aiResult = await repository.createMatchResult({
+      jobId: persistedJob.id,
+      candidateSnapshotId: candidateArtifact.id,
+      jobAnalysisId: jobArtifact.id,
+      candidateFingerprint: candidateArtifact.fingerprint,
+      jobFingerprint: jobArtifact.jobFingerprint,
+      scoringPolicyVersion: "ai-match-v1",
+      matchPolicyVersion: "ai-match-v1",
+      score: 84,
+      breakdown: { responsibilities: 84 },
+      evidence: matchEvidence("AI-evaluated fit"),
+      source: "ai",
+      matchRunId,
+    });
+    expect(aiResult).toMatchObject({
+      source: "ai",
+      matchRunId,
+      matchPolicyVersion: "ai-match-v1",
+    });
   });
 
   it("uses exact fingerprints and policy versions for freshness", async () => {
@@ -317,8 +337,8 @@ describe("versioned AI artifact repository", () => {
       jobFingerprint,
       scoringPolicyVersion: "scoring-v1",
       score: 82,
-      breakdown: { mustHaveSkills: 90, experience: 75 },
-      evidence: { reasons: ["Good fit"] },
+      breakdown: { skillsAndTechnologies: 90, experienceAndSeniority: 75 },
+      evidence: matchEvidence(),
       confidence: 0.85,
       source: "deterministic",
     });
@@ -342,6 +362,27 @@ describe("versioned AI artifact repository", () => {
       candidateFingerprint,
       jobFingerprint,
       scoringPolicyVersion: "scoring-v2",
+    })).toBeNull();
+
+    const replacement = await repository.createMatchResult({
+      jobId: persistedJob.id,
+      candidateSnapshotId: candidateArtifact.id,
+      jobAnalysisId: jobArtifact.id,
+      candidateFingerprint,
+      jobFingerprint,
+      scoringPolicyVersion: "scoring-v2",
+      score: 87,
+      breakdown: { skillsAndTechnologies: 92, experienceAndSeniority: 82 },
+      evidence: matchEvidence("Updated evaluation"),
+      source: "deterministic",
+    });
+    expect(replacement.isStale).toBe(false);
+    expect(database.select().from(matchResults).where(eq(matchResults.id, created.id)).get())
+      .toMatchObject({ isStale: true });
+    expect(await repository.findFreshMatch(persistedJob.id, {
+      candidateFingerprint,
+      jobFingerprint,
+      scoringPolicyVersion: "scoring-v1",
     })).toBeNull();
   });
 
@@ -368,8 +409,8 @@ describe("versioned AI artifact repository", () => {
       jobFingerprint: jobArtifact.jobFingerprint,
       scoringPolicyVersion: "scoring-v1",
       score: 80,
-      breakdown: { experience: 80 },
-      evidence: { reasons: [] },
+      breakdown: { experienceAndSeniority: 80 },
+      evidence: matchEvidence(),
       confidence: 0.8,
       source: "deterministic",
     })).rejects.toThrow("Candidate snapshot does not match");
@@ -400,8 +441,8 @@ describe("versioned AI artifact repository", () => {
       jobFingerprint: jobArtifact.jobFingerprint,
       scoringPolicyVersion: "scoring-v1",
       score: 80,
-      breakdown: { experience: 80 },
-      evidence: { reasons: [] },
+      breakdown: { experienceAndSeniority: 80 },
+      evidence: matchEvidence(),
       confidence: 0.8,
       source: "deterministic",
       signal: controller.signal,
@@ -420,8 +461,7 @@ describe("versioned AI artifact repository", () => {
       scoringPolicyVersion: "legacy-import-v1",
       score: 70,
       breakdown: { legacy: 70 },
-      evidence: { reasons: [] },
-      confidence: 0,
+      evidence: matchEvidence(),
       source: "legacy",
       isStale: false,
     });
@@ -432,96 +472,6 @@ describe("versioned AI artifact repository", () => {
       jobFingerprint: "b".repeat(64),
       scoringPolicyVersion: "legacy-import-v1",
     })).toBeNull();
-  });
-
-  it("imports legacy job columns once as explicitly stale history", async () => {
-    const { database } = harness.createDatabase();
-    const repository = createArtifactRepository(database);
-    const persistedJob = insertJob(database, 77);
-
-    expect(await repository.importLegacyMatchResults()).toBe(1);
-    expect(await repository.importLegacyMatchResults()).toBe(0);
-
-    const imported = database.select().from(matchResults)
-      .where(eq(matchResults.jobId, persistedJob.id)).all();
-    expect(imported).toHaveLength(1);
-    expect(imported[0]).toMatchObject({
-      score: 77,
-      source: "legacy",
-      isStale: true,
-      confidence: 0,
-      scoringPolicyVersion: "legacy-import-v1",
-    });
-    expect(JSON.parse(imported[0].evidenceJson)).toMatchObject({
-      reasons: ["Strong skill fit"],
-      matchedSkills: ["TypeScript"],
-      recommendations: ["Apply"],
-    });
-    expect(database.select().from(jobs).where(eq(jobs.id, persistedJob.id)).get())
-      .toMatchObject({ matchScore: 77, matchReasons: '["Strong skill fit"]' });
-  });
-
-  it("does not import a second legacy result after matched job content changes", async () => {
-    const { database } = harness.createDatabase();
-    const repository = createArtifactRepository(database);
-    const persistedJob = insertJob(database, 77);
-
-    expect(await repository.importLegacyMatchResults()).toBe(1);
-    database.update(jobs).set({ description: "Changed legacy description" })
-      .where(eq(jobs.id, persistedJob.id)).run();
-    const laterJob = insertJob(database, 68);
-    expect(await repository.importLegacyMatchResults()).toBe(1);
-    expect(database.select().from(matchResults)
-      .where(eq(matchResults.jobId, persistedJob.id)).all()).toHaveLength(1);
-    expect(database.select().from(matchResults)
-      .where(eq(matchResults.jobId, laterJob.id)).all()).toHaveLength(1);
-  });
-
-  it("imports legacy results in batches below SQLite's variable limit", async () => {
-    const { database } = harness.createDatabase();
-    const repository = createArtifactRepository(database);
-    const company = database.insert(companies).values({
-      name: "Scale fixture",
-      careersUrl: "https://scale.example.com/careers",
-    }).returning().get();
-    const total = 3_100;
-    const rows = Array.from({ length: total }, (_, index) => ({
-      companyId: company.id,
-      title: `Backend Engineer ${index}`,
-      description: "TypeScript services",
-      url: `https://scale.example.com/jobs/${index}`,
-      matchScore: 75,
-    }));
-    for (let offset = 0; offset < rows.length; offset += 400) {
-      database.insert(jobs).values(rows.slice(offset, offset + 400)).run();
-    }
-
-    expect(await repository.importLegacyMatchResults()).toBe(total);
-    expect(database.select().from(matchResults).all()).toHaveLength(total);
-  });
-
-  it("upgrades a populated pre-artifact database and preserves legacy matches", async () => {
-    const { database } = harness.createDatabase({ migrate: false });
-    const legacyMigrations = createPreArtifactMigrationsFolder();
-    try {
-      migrate(database, { migrationsFolder: legacyMigrations });
-      const persistedJob = insertPreProjectionJob(database, 91);
-
-      migrate(database, { migrationsFolder: join(process.cwd(), "drizzle") });
-      const repository = createArtifactRepository(database);
-      expect(await repository.importLegacyMatchResults()).toBe(1);
-
-      expect(database.select().from(matchResults)
-        .where(eq(matchResults.jobId, persistedJob.id)).get()).toMatchObject({
-        score: 91,
-        source: "legacy",
-        isStale: true,
-      });
-      expect(database.select().from(jobs).where(eq(jobs.id, persistedJob.id)).get())
-        .toMatchObject({ matchScore: 91 });
-    } finally {
-      rmSync(legacyMigrations, { recursive: true, force: true });
-    }
   });
 
   it("upgrades existing match logs and supports exact immutable result links", () => {
@@ -612,8 +562,8 @@ describe("versioned AI artifact repository", () => {
       jobFingerprint,
       scoringPolicyVersion: "scoring-v1",
       score: 80,
-      breakdown: { experience: 80 },
-      evidence: { reasons: [] },
+      breakdown: { experienceAndSeniority: 80 },
+      evidence: matchEvidence(),
       confidence: 0.8,
       source: "deterministic",
     });

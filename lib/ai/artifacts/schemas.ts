@@ -30,8 +30,6 @@ export const CandidateEvidenceSchema = z.object({
   preferences: z.object({
     preferredCountry: z.string().max(200).nullable(),
     preferredCity: z.string().max(200).nullable(),
-    acceptedLocationTypes: z.array(z.string().min(1).max(100)).max(20),
-    acceptedEmploymentTypes: z.array(z.string().min(1).max(100)).max(20),
   }).strict(),
   totalExperienceYears: z.number().min(0).max(100).nullable().default(null),
   experienceAsOfMonth: z.string().regex(/^\d{4}-\d{2}$/).nullable().default(null),
@@ -78,127 +76,69 @@ export const JobRequirementImportanceSchema = z.enum([
   "contextual",
 ]);
 
-export const JobRequirementExplicitnessSchema = z.enum([
-  "explicit",
-  "implied",
-  "ambiguous",
-]);
-
 export const JobRequirementEvidenceSchema = z.object({
   id: z.string().min(1).max(100),
   type: JobRequirementTypeSchema,
   text: z.string().min(1).max(1_000),
-  terms: z.array(z.string().min(1).max(200)).max(20),
-  alternatives: z.array(z.string().min(1).max(200)).max(20),
   importance: JobRequirementImportanceSchema,
-  explicitness: JobRequirementExplicitnessSchema,
-  experienceYears: z.number().min(0).max(100).nullable(),
-  experienceScope: z.string().min(1).max(300).nullable(),
   sourceEvidence: z.string().min(1).max(1_000),
-  confidence: z.number().min(0).max(1),
 }).strict();
 
 export type JobRequirementEvidence = z.infer<typeof JobRequirementEvidenceSchema>;
 
 export const JobAnalysisEvidenceSchema = z.object({
-  mustHaveSkills: z.array(z.string().min(1).max(200)).max(500),
-  preferredSkills: z.array(z.string().min(1).max(200)).max(500),
-  minimumExperienceYears: z.number().min(0).max(100).nullable(),
-  seniorityLevel: z.string().max(100).nullable(),
-  managementTrack: z.boolean().nullable(),
-  educationRequirements: z.array(z.string().min(1).max(500)).max(100),
-  locationConstraints: z.array(z.string().min(1).max(500)).max(100),
-  employmentType: z.string().max(100).nullable(),
-  compensationText: z.string().max(2_000).nullable(),
-  domainKeywords: z.array(z.string().min(1).max(200)).max(500),
-  extractionConfidence: z.number().min(0).max(1),
-  ambiguities: z.array(z.string().min(1).max(1_000)).max(100),
-  requirements: z.array(JobRequirementEvidenceSchema).max(200).default([]),
+  summary: z.string().min(1).max(1_500),
+  requirements: z.array(JobRequirementEvidenceSchema).max(20),
 }).strict();
 
-type ParsedJobAnalysisEvidence = z.infer<typeof JobAnalysisEvidenceSchema>;
-export type JobAnalysisEvidence = Omit<ParsedJobAnalysisEvidence, "requirements"> & {
-  requirements?: ParsedJobAnalysisEvidence["requirements"];
-};
+export type JobAnalysisEvidence = z.infer<typeof JobAnalysisEvidenceSchema>;
 
 export const MatchBreakdownSchema = z.object({
-  roleFit: z.number().min(0).max(100).nullable().optional(),
-  requirementFit: z.number().min(0).max(100).nullable().optional(),
-  preferenceFit: z.number().min(0).max(100).nullable().optional(),
-  mustHaveSkills: z.number().min(0).max(100).nullable().optional(),
-  preferredSkills: z.number().min(0).max(100).nullable().optional(),
-  experience: z.number().min(0).max(100).nullable().optional(),
-  seniority: z.number().min(0).max(100).nullable().optional(),
-  location: z.number().min(0).max(100).nullable().optional(),
-  employmentType: z.number().min(0).max(100).nullable().optional(),
+  responsibilities: z.number().min(0).max(100).nullable().optional(),
+  skillsAndTechnologies: z.number().min(0).max(100).nullable().optional(),
+  experienceAndSeniority: z.number().min(0).max(100).nullable().optional(),
+  domainFit: z.number().min(0).max(100).nullable().optional(),
   legacy: z.number().min(0).max(100).optional(),
 }).strict();
 
 export type MatchBreakdown = z.infer<typeof MatchBreakdownSchema>;
 
-export const MatchBandSchema = z.enum([
-  "high",
-  "good",
-  "possible",
-  "stretch",
-  "low",
-  "insufficient_evidence",
-]);
-
-export type MatchBand = z.infer<typeof MatchBandSchema>;
-
-export const RequirementMatchStatusSchema = z.enum([
-  "direct_match",
-  "equivalent_match",
-  "transferable_match",
-  "partial_match",
-  "missing",
-  "unknown",
-  "not_applicable",
-]);
-
-export const RequirementAssessmentSchema = z.object({
-  requirementId: z.string().min(1).max(100),
-  status: RequirementMatchStatusSchema,
-  confidence: z.number().min(0).max(1),
-  evidenceReferences: z.array(z.string().min(1).max(100)).max(20),
-  rationale: z.string().min(1).max(1_000),
-  requirementType: JobRequirementTypeSchema.optional(),
-  requirementImportance: JobRequirementImportanceSchema.optional(),
-  requirementText: z.string().min(1).max(1_000).optional(),
+export const MatchCategoryScoresSchema = z.object({
+  responsibilities: z.number().min(0).max(100).nullable(),
+  skillsAndTechnologies: z.number().min(0).max(100).nullable(),
+  experienceAndSeniority: z.number().min(0).max(100).nullable(),
+  domainFit: z.number().min(0).max(100).nullable(),
 }).strict();
 
-export type RequirementAssessment = z.infer<typeof RequirementAssessmentSchema>;
+export type MatchCategoryScores = z.infer<typeof MatchCategoryScoresSchema>;
 
-export const MatchConstraintSchema = z.object({
-  type: z.enum(["location", "authorization", "license", "employment", "management"]),
-  status: z.enum(["satisfied", "conflict", "unknown"]),
-  severity: z.enum(["blocking", "preference", "informational"]),
-  message: z.string().min(1).max(1_000),
+export const MatchReasoningPointSchema = z.object({
+  type: z.enum(["match", "gap", "context"]),
+  text: z.string().min(1).max(700),
+  candidateEvidenceReferences: z.array(z.string().min(1).max(100)).max(12),
+  jobRequirementReferences: z.array(z.string().min(1).max(100)).max(12),
 }).strict();
 
-export type MatchConstraint = z.infer<typeof MatchConstraintSchema>;
+export type MatchReasoningPoint = z.infer<typeof MatchReasoningPointSchema>;
+
+export const AIMatchOutcomeSchema = z.object({
+  score: z.number().min(0).max(100),
+  summary: z.string().min(1).max(1_200),
+  categoryScores: MatchCategoryScoresSchema,
+  reasoning: z.array(MatchReasoningPointSchema).min(1).max(6),
+  matchedSkills: z.array(z.string().min(1).max(200)).max(30),
+}).strict();
+
+export type AIMatchOutcome = z.infer<typeof AIMatchOutcomeSchema>;
 
 export const MatchEvidenceSchema = z.object({
-  reasons: z.array(z.string().max(2_000)).max(500).default([]),
-  matchedSkills: z.array(z.string().max(200)).max(500).default([]),
-  missingSkills: z.array(z.string().max(200)).max(500).default([]),
-  recommendations: z.array(z.string().max(2_000)).max(500).default([]),
-  componentEvidence: z.record(
-    z.string().min(1).max(100),
-    z.array(z.string().max(2_000)).max(100)
-  ).default({}),
   summary: z.string().max(2_000).default(""),
-  matchBand: MatchBandSchema.nullable().default(null),
-  roleFitScore: z.number().min(0).max(100).nullable().default(null),
-  evidenceCoverage: z.number().min(0).max(1).nullable().default(null),
-  extractionConfidence: z.number().min(0).max(1).nullable().default(null),
-  constraints: z.array(MatchConstraintSchema).max(50).default([]),
-  requirementAssessments: z.array(RequirementAssessmentSchema).max(200).default([]),
-}).strict();
+  reasoning: z.array(MatchReasoningPointSchema).max(6).default([]),
+  matchedSkills: z.array(z.string().max(200)).max(30).default([]),
+});
 
 export type MatchEvidence = z.infer<typeof MatchEvidenceSchema>;
 
 export const ArtifactFingerprintSchema = z.string().regex(/^[a-f0-9]{64}$/);
 export const ArtifactVersionSchema = z.string().min(1).max(100).regex(/^[a-zA-Z0-9._:-]+$/);
-export const MatchSourceSchema = z.enum(["legacy", "deterministic", "adjudicated"]);
+export const MatchSourceSchema = z.enum(["legacy", "deterministic", "adjudicated", "ai"]);

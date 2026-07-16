@@ -3,7 +3,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { JobCard } from "./job-card";
 import { JobFilters } from "./job-filters";
-import type { MatchBand } from "./match-badge";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Briefcase, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -137,7 +136,6 @@ interface Job {
   seniorityLevel: string | null;
   status: string;
   matchScore: number | null;
-  matchBand?: MatchBand | null;
   postedDate: string | null;
   discoveredAt: string;
   company: {

@@ -6,7 +6,13 @@ import {
   parseMatchWorkPayload,
 } from "@/lib/ai/work-items";
 import {
+  getMatchPipelineProgress,
+  markJobAnalysisStarted,
+} from "@/lib/ai/matcher/tracking";
+import { logMatchFailure } from "@/lib/ai/matcher/tracking/session";
+import {
   DrizzleAIWorkStore,
+  enqueueCoalescedProfileMatchWork,
   enqueueMatchWork,
   insertCompletedEmptyMatchSession,
 } from "@/lib/ai/work-items/repository";
@@ -15,6 +21,7 @@ import {
   companies,
   jobs,
   matchLogs,
+  matchSessionJobs,
   matchSessions,
   scrapeMatchOutbox,
   scrapingLogs,
@@ -57,6 +64,73 @@ describe("generic local AI work repository", () => {
       status: "queued",
     });
     expect(parseMatchWorkPayload(work!.payloadJson)).toMatchObject({ jobIds: [3, 7] });
+  });
+
+  it("persists pollable per-job pipeline progress", async () => {
+    const { database } = harness.createDatabase();
+    const company = insertCompany(database);
+    const jobRows = database.insert(jobs).values([
+      { companyId: company.id, title: "First role", url: "https://example.test/first" },
+      { companyId: company.id, title: "Second role", url: "https://example.test/second" },
+    ]).returning({ id: jobs.id }).all();
+    const queued = enqueueMatchWork(database, {
+      jobIds: jobRows.map((row) => row.id),
+      triggerSource: "manual",
+    });
+
+    expect(database.select().from(matchSessionJobs).all()).toHaveLength(2);
+    await markJobAnalysisStarted(queued.sessionId, [jobRows[0]!.id], database);
+    await logMatchFailure(
+      queued.sessionId,
+      jobRows[1]!.id,
+      25,
+      new Error("provider response was invalid"),
+      1,
+      "analysis-model",
+      database,
+      "analysis"
+    );
+
+    const progress = await getMatchPipelineProgress(queued.sessionId, database);
+    expect(progress.analysis).toMatchObject({
+      total: 2,
+      completed: 1,
+      active: 1,
+      failed: 1,
+    });
+    expect(progress.matching).toMatchObject({ total: 2, completed: 1, failed: 1 });
+    expect(progress.jobs.map((row) => row.jobTitle)).toEqual([
+      "First role",
+      "Second role",
+    ]);
+  });
+
+  it("durably coalesces queued profile-update work", () => {
+    const { database } = harness.createDatabase();
+
+    const first = enqueueCoalescedProfileMatchWork(
+      database,
+      [1, 2],
+      new Date(1)
+    );
+    const second = enqueueCoalescedProfileMatchWork(
+      database,
+      [2, 3],
+      new Date(2)
+    );
+
+    expect(second.sessionId).toBe(first.sessionId);
+    expect(second.total).toBe(3);
+    expect(database.select().from(matchSessions).all()).toEqual([
+      expect.objectContaining({
+        id: first.sessionId,
+        triggerSource: "profile_update",
+        status: "queued",
+        jobsTotal: 3,
+      }),
+    ]);
+    const work = database.select().from(aiWorkItems).get();
+    expect(parseMatchWorkPayload(work!.payloadJson).jobIds).toEqual([1, 2, 3]);
   });
 
   it("persists a pollable terminal session when there is no work", () => {

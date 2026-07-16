@@ -43,10 +43,6 @@ export function CompanyJobCard({ job, currentTime }: CompanyJobCardProps) {
     status: job.status,
     currentTime,
   });
-  const hasBlockingConstraint = job.matchConstraints?.some((constraint) =>
-    constraint.status === "conflict" && constraint.severity === "blocking"
-  ) ?? false;
-
   const updateStatusMutation = useMutation({
     mutationFn: async (newStatus: string) => {
       const res = await fetch("/api/jobs", {
@@ -106,14 +102,7 @@ export function CompanyJobCard({ job, currentTime }: CompanyJobCardProps) {
         </div>
 
         <div className="flex flex-col items-end gap-2">
-          <div className="flex flex-col items-end gap-1">
-            <MatchBadge score={job.matchScore} band={job.matchBand} size="sm" showLabel />
-            {hasBlockingConstraint && (
-              <span className="text-[10px] font-medium text-destructive">
-                Eligibility constraint
-              </span>
-            )}
-          </div>
+          <MatchBadge score={job.matchScore} size="sm" showLabel />
 
           <div className="flex items-center gap-1" onClick={(e) => e.preventDefault()}>
             {job.status === "interested" ? (

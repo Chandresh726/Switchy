@@ -2,7 +2,6 @@ import { and, count, desc, eq, gte, isNull, or, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { ensureJobFingerprintProjection } from "@/lib/ai/artifacts/job-fingerprint-projection";
 import {
   getCurrentMatchContext,
   getMatchPresentations,
@@ -39,8 +38,6 @@ const COMPANY_JOB_SELECTION = {
   matchScore: jobs.matchScore,
   matchReasons: jobs.matchReasons,
   matchedSkills: jobs.matchedSkills,
-  missingSkills: jobs.missingSkills,
-  recommendations: jobs.recommendations,
   discoveredAt: jobs.discoveredAt,
   viewedAt: jobs.viewedAt,
 } as const;
@@ -61,14 +58,11 @@ export async function GET(
       return NextResponse.json({ error: "Company not found" }, { status: 404 });
     }
 
-    ensureJobFingerprintProjection();
     const currentContext = await getCurrentMatchContext();
     const currentResultJoin = currentContext
       ? and(
           eq(matchResults.jobId, jobs.id),
           eq(matchResults.candidateFingerprint, currentContext.candidateFingerprint),
-          eq(matchResults.jobFingerprint, jobs.aiFingerprint),
-          eq(matchResults.scoringPolicyVersion, currentContext.scoringPolicyVersion),
           eq(matchResults.isStale, false)
         )
       : null;
@@ -78,7 +72,7 @@ export async function GET(
     const promotionRowsPromise = currentContext
       ? db
           .select({
-            evidenceJson: matchResults.evidenceJson,
+            score: matchResults.score,
             legacyScore: jobs.matchScore,
           })
           .from(jobs)
@@ -86,7 +80,7 @@ export async function GET(
           .where(eq(jobs.companyId, parsedParams.id))
       : db
           .select({
-            evidenceJson: sql<string | null>`null`,
+            score: sql<number | null>`null`,
             legacyScore: jobs.matchScore,
           })
           .from(jobs)
@@ -99,8 +93,7 @@ export async function GET(
           .where(and(
             eq(jobs.companyId, parsedParams.id),
             or(
-              eq(sql<string | null>`json_extract(${matchResults.evidenceJson}, '$.matchBand')`, "high"),
-              eq(sql<string | null>`json_extract(${matchResults.evidenceJson}, '$.matchBand')`, "good"),
+              gte(matchResults.score, 70),
               and(isNull(matchResults.id), gte(jobs.matchScore, 70))
             )
           ))

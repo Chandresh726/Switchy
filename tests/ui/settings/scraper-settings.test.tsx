@@ -21,7 +21,6 @@ function createProps() {
     onFilterCityChange: vi.fn(),
     filterTitleKeywords: [],
     onFilterTitleKeywordsChange: vi.fn(),
-    isSaving: false,
   };
 }
 

@@ -1,4 +1,12 @@
-import { sqliteTable, text, integer, real, unique, index } from "drizzle-orm/sqlite-core";
+import {
+  sqliteTable,
+  text,
+  integer,
+  real,
+  unique,
+  index,
+  primaryKey,
+} from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
 
 // Profile - Single user profile
@@ -382,7 +390,7 @@ export const jobAnalyses = sqliteTable("job_analyses", {
   createdAtIdx: index("job_analyses_created_at_idx").on(table.createdAt),
 }));
 
-// Immutable versioned match outcomes. Legacy job columns remain only for rollback.
+// Immutable versioned match outcomes. Deprecated job columns are cleared during startup cleanup.
 export const matchResults = sqliteTable("match_results", {
   id: text("id").primaryKey(),
   jobId: integer("job_id").references(() => jobs.id, { onDelete: "cascade" }).notNull(),
@@ -391,12 +399,14 @@ export const matchResults = sqliteTable("match_results", {
   candidateFingerprint: text("candidate_fingerprint").notNull(),
   jobFingerprint: text("job_fingerprint").notNull(),
   scoringPolicyVersion: text("scoring_policy_version").notNull(),
+  matchPolicyVersion: text("match_policy_version"),
   score: real("score").notNull(),
   breakdownJson: text("breakdown_json").notNull(),
   evidenceJson: text("evidence_json").notNull(),
-  confidence: real("confidence").notNull(),
+  confidence: real("confidence").notNull(), // Deprecated compatibility column; active AI matching stores 0.
   source: text("source").notNull(),
   adjudicationRunId: text("adjudication_run_id").references(() => aiRuns.id, { onDelete: "set null" }),
+  matchRunId: text("match_run_id").references(() => aiRuns.id, { onDelete: "set null" }),
   isStale: integer("is_stale", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
@@ -451,6 +461,47 @@ export const matchLogs = sqliteTable("match_logs", {
     table.modelUsed,
     table.completedAt
   ),
+}));
+
+// Durable per-job pipeline state for live analysis and matching progress.
+export const matchSessionJobs = sqliteTable("match_session_jobs", {
+  sessionId: text("session_id")
+    .references(() => matchSessions.id, { onDelete: "cascade" })
+    .notNull(),
+  jobId: integer("job_id")
+    .references(() => jobs.id, { onDelete: "cascade" })
+    .notNull(),
+  analysisStatus: text("analysis_status", {
+    enum: ["queued", "analyzing", "ready", "cached", "failed"],
+  }).notNull().default("queued"),
+  matchStatus: text("match_status", {
+    enum: ["blocked", "queued", "matching", "completed", "cached", "failed"],
+  }).notNull().default("blocked"),
+  jobAnalysisId: text("job_analysis_id")
+    .references(() => jobAnalyses.id, { onDelete: "set null" }),
+  analysisRunId: text("analysis_run_id")
+    .references(() => aiRuns.id, { onDelete: "set null" }),
+  matchRunId: text("match_run_id")
+    .references(() => aiRuns.id, { onDelete: "set null" }),
+  matchResultId: text("match_result_id")
+    .references(() => matchResults.id, { onDelete: "set null" }),
+  errorStage: text("error_stage", { enum: ["analysis", "matching"] }),
+  errorCode: text("error_code"),
+  errorMessage: text("error_message"),
+  analysisStartedAt: integer("analysis_started_at", { mode: "timestamp" }),
+  analysisCompletedAt: integer("analysis_completed_at", { mode: "timestamp" }),
+  matchStartedAt: integer("match_started_at", { mode: "timestamp" }),
+  matchCompletedAt: integer("match_completed_at", { mode: "timestamp" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.sessionId, table.jobId] }),
+  sessionPipelineIdx: index("match_session_jobs_session_pipeline_idx").on(
+    table.sessionId,
+    table.analysisStatus,
+    table.matchStatus
+  ),
+  jobIdx: index("match_session_jobs_job_idx").on(table.jobId),
 }));
 
 export const aiGeneratedContent = sqliteTable("aiGeneratedContent", {
@@ -662,6 +713,7 @@ export const matchSessionsRelations = relations(matchSessions, ({ one, many }) =
     references: [companies.id],
   }),
   logs: many(matchLogs),
+  jobs: many(matchSessionJobs),
   scrapeMatchOutbox: one(scrapeMatchOutbox),
 }));
 
@@ -676,6 +728,33 @@ export const matchLogsRelations = relations(matchLogs, ({ one }) => ({
   }),
   matchResult: one(matchResults, {
     fields: [matchLogs.matchResultId],
+    references: [matchResults.id],
+  }),
+}));
+
+export const matchSessionJobsRelations = relations(matchSessionJobs, ({ one }) => ({
+  session: one(matchSessions, {
+    fields: [matchSessionJobs.sessionId],
+    references: [matchSessions.id],
+  }),
+  job: one(jobs, {
+    fields: [matchSessionJobs.jobId],
+    references: [jobs.id],
+  }),
+  jobAnalysis: one(jobAnalyses, {
+    fields: [matchSessionJobs.jobAnalysisId],
+    references: [jobAnalyses.id],
+  }),
+  analysisRun: one(aiRuns, {
+    fields: [matchSessionJobs.analysisRunId],
+    references: [aiRuns.id],
+  }),
+  matchRun: one(aiRuns, {
+    fields: [matchSessionJobs.matchRunId],
+    references: [aiRuns.id],
+  }),
+  matchResult: one(matchResults, {
+    fields: [matchSessionJobs.matchResultId],
     references: [matchResults.id],
   }),
 }));
@@ -733,6 +812,8 @@ export type MatchSession = typeof matchSessions.$inferSelect;
 export type NewMatchSession = typeof matchSessions.$inferInsert;
 export type MatchLog = typeof matchLogs.$inferSelect;
 export type NewMatchLog = typeof matchLogs.$inferInsert;
+export type MatchSessionJob = typeof matchSessionJobs.$inferSelect;
+export type NewMatchSessionJob = typeof matchSessionJobs.$inferInsert;
 export type Resume = typeof resumes.$inferSelect;
 export type NewResume = typeof resumes.$inferInsert;
 export type AIWorkItem = typeof aiWorkItems.$inferSelect;

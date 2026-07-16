@@ -5,36 +5,32 @@ import {
   desc,
   eq,
   getTableColumns,
+  gte,
   inArray,
   isNull,
-  or,
   sql,
 } from "drizzle-orm";
 
 import {
   buildCandidateEvidence,
   buildCandidateFingerprint,
-  buildJobEvidenceInput,
-  buildJobFingerprint,
   MatchBreakdownSchema,
   MatchEvidenceSchema,
-  type MatchBand,
   type MatchBreakdown,
-  type MatchConstraint,
   type MatchEvidence,
-  type RequirementAssessment,
+  type MatchReasoningPoint,
 } from "@/lib/ai/artifacts";
-import { ensureJobFingerprintProjection } from "@/lib/ai/artifacts/job-fingerprint-projection";
+import { isLocalCLIProvider } from "@/lib/ai/providers/types";
 import { db } from "@/lib/db";
 import { aiProviders, jobs, matchResults } from "@/lib/db/schema";
 
 import { getMatcherConfig } from "./config";
-import { buildScoringPolicyVersion } from "./evidence/adjudication";
+import { buildMatchPolicyVersion } from "./evidence/ai-match";
 import { enrichCandidateEvidence } from "./evidence/candidate";
-import { fetchMatchingPreferences, fetchProfileData } from "./tracking";
+import { buildJobAnalysisVersion } from "./evidence/job-analysis";
+import { fetchProfileData } from "./tracking";
 
 const MATCH_RESULT_QUERY_BATCH_SIZE = 400;
-const EXACT_MATCH_QUERY_BATCH_SIZE = 200;
 
 type MatchableJob = Pick<
   typeof jobs.$inferSelect,
@@ -50,8 +46,6 @@ type MatchableJob = Pick<
   | "matchScore"
   | "matchReasons"
   | "matchedSkills"
-  | "missingSkills"
-  | "recommendations"
 >;
 
 type PresentationMatchRow = Pick<
@@ -64,35 +58,35 @@ type PresentationMatchRow = Pick<
   | "score"
   | "breakdownJson"
   | "evidenceJson"
-  | "confidence"
   | "source"
   | "isStale"
   | "createdAt"
->;
+> & {
+  matchPolicyVersion?: string | null;
+  matchRunId?: string | null;
+};
 
 export interface CurrentMatchContext {
   candidateFingerprint: string;
   scoringPolicyVersion: string;
 }
 
+export interface UnmatchedJobFilter {
+  discoveredSince?: Date;
+}
+
 export interface MatchPresentation {
   matchScore: number | null;
   matchReasons: string[];
   matchedSkills: string[];
-  missingSkills: string[];
-  recommendations: string[];
   matchResultId: string | null;
-  matchConfidence: number | null;
   matchBreakdown: MatchBreakdown | null;
   matchStale: boolean;
   matchLegacy: boolean;
   matchSummary: string;
-  matchBand: MatchBand | null;
-  matchRoleFitScore: number | null;
-  matchEvidenceCoverage: number | null;
-  matchExtractionConfidence: number | null;
-  matchConstraints: MatchConstraint[];
-  matchRequirementAssessments: RequirementAssessment[];
+  matchReasoning: MatchReasoningPoint[];
+  matchRunId: string | null;
+  matchPolicyVersion: string | null;
   scoringPolicyVersion: string | null;
 }
 
@@ -104,20 +98,14 @@ const EMPTY_MATCH_PRESENTATION: MatchPresentation = {
   matchScore: null,
   matchReasons: [],
   matchedSkills: [],
-  missingSkills: [],
-  recommendations: [],
   matchResultId: null,
-  matchConfidence: null,
   matchBreakdown: null,
   matchStale: false,
   matchLegacy: false,
   matchSummary: "",
-  matchBand: null,
-  matchRoleFitScore: null,
-  matchEvidenceCoverage: null,
-  matchExtractionConfidence: null,
-  matchConstraints: [],
-  matchRequirementAssessments: [],
+  matchReasoning: [],
+  matchRunId: null,
+  matchPolicyVersion: null,
   scoringPolicyVersion: null,
 };
 
@@ -139,59 +127,55 @@ function buildLegacyPresentation(job: MatchableJob): MatchPresentation | null {
     matchScore: job.matchScore,
     matchReasons: parseLegacyStringArray(job.matchReasons),
     matchedSkills: parseLegacyStringArray(job.matchedSkills),
-    missingSkills: parseLegacyStringArray(job.missingSkills),
-    recommendations: parseLegacyStringArray(job.recommendations),
     matchResultId: null,
-    matchConfidence: null,
     matchBreakdown: null,
     matchStale: false,
     matchLegacy: true,
     matchSummary: "",
-    matchBand: null,
-    matchRoleFitScore: null,
-    matchEvidenceCoverage: null,
-    matchExtractionConfidence: null,
-    matchConstraints: [],
-    matchRequirementAssessments: [],
+    matchReasoning: [],
+    matchRunId: null,
+    matchPolicyVersion: null,
     scoringPolicyVersion: "legacy",
   };
 }
 
 async function resolveActiveProviderId(configuredProviderId?: string): Promise<string | null> {
-  const rows = configuredProviderId
-    ? await db.select({ id: aiProviders.id }).from(aiProviders).where(and(
-        eq(aiProviders.id, configuredProviderId),
-        eq(aiProviders.isActive, true)
-      )).limit(1)
-    : await db.select({ id: aiProviders.id }).from(aiProviders)
-        .where(eq(aiProviders.isActive, true))
-        .orderBy(desc(aiProviders.isDefault), asc(aiProviders.createdAt))
-        .limit(1);
-  return rows[0]?.id ?? null;
+  if (configuredProviderId) {
+    const rows = await db.select({ id: aiProviders.id }).from(aiProviders).where(and(
+      eq(aiProviders.id, configuredProviderId),
+      eq(aiProviders.isActive, true)
+    )).limit(1);
+    return rows[0]?.id ?? null;
+  }
+  const rows = await db.select({ id: aiProviders.id, provider: aiProviders.provider })
+    .from(aiProviders)
+    .where(eq(aiProviders.isActive, true))
+    .orderBy(desc(aiProviders.isDefault), asc(aiProviders.createdAt))
+    .limit(100);
+  return rows.find((row) => !isLocalCLIProvider(row.provider))?.id ?? null;
 }
 
 export async function getCurrentMatchContext(): Promise<CurrentMatchContext | null> {
-  const [config, profileData, preferences] = await Promise.all([
+  const [config, profileData] = await Promise.all([
     getMatcherConfig(),
     fetchProfileData(),
-    fetchMatchingPreferences(),
   ]);
-  if (!profileData || !config.model) return null;
+  if (!profileData || !config.model || !config.jobAnalysisModel) return null;
 
-  const providerId = await resolveActiveProviderId(config.providerId);
-  if (!providerId) return null;
+  const [providerId, jobAnalysisProviderId] = await Promise.all([
+    resolveActiveProviderId(config.providerId),
+    resolveActiveProviderId(config.jobAnalysisProviderId),
+  ]);
+  if (!providerId || !jobAnalysisProviderId) return null;
 
-  const candidateEvidence = enrichCandidateEvidence(buildCandidateEvidence({
-    ...profileData,
-    preferences,
-  }));
+  const candidateEvidence = enrichCandidateEvidence(buildCandidateEvidence(profileData));
 
   return {
     candidateFingerprint: buildCandidateFingerprint(candidateEvidence),
-    scoringPolicyVersion: buildScoringPolicyVersion({
-      ...config,
-      providerId,
-    }),
+    scoringPolicyVersion: buildMatchPolicyVersion(
+      { ...config, providerId },
+      buildJobAnalysisVersion({ ...config, jobAnalysisProviderId })
+    ),
   };
 }
 
@@ -206,22 +190,16 @@ function parseMatchRow(row: PresentationMatchRow): {
   return {
     presentation: {
       matchScore: row.score,
-      matchReasons: evidence.reasons,
+      matchReasons: evidence.reasoning.map((point) => point.text),
       matchedSkills: evidence.matchedSkills,
-      missingSkills: evidence.missingSkills,
-      recommendations: evidence.recommendations,
       matchResultId: row.id,
-      matchConfidence: row.confidence,
       matchBreakdown: breakdown,
       matchStale: false,
       matchLegacy: row.source === "legacy",
       matchSummary: evidence.summary,
-      matchBand: evidence.matchBand,
-      matchRoleFitScore: evidence.roleFitScore,
-      matchEvidenceCoverage: evidence.evidenceCoverage,
-      matchExtractionConfidence: evidence.extractionConfidence,
-      matchConstraints: evidence.constraints,
-      matchRequirementAssessments: evidence.requirementAssessments,
+      matchReasoning: evidence.reasoning,
+      matchRunId: row.matchRunId ?? null,
+      matchPolicyVersion: row.matchPolicyVersion ?? row.scoringPolicyVersion,
       scoringPolicyVersion: row.scoringPolicyVersion,
     },
     candidateFingerprint: row.candidateFingerprint,
@@ -233,22 +211,16 @@ function parseMatchRow(row: PresentationMatchRow): {
 export function selectMatchPresentation(
   job: MatchableJob,
   rowsInput: PresentationMatchRow[],
-  context: CurrentMatchContext | null,
-  jobFingerprintInput?: string | null
+  context: CurrentMatchContext | null
 ): MatchPresentation {
   const rows = [...rowsInput].sort(
     (left, right) => right.createdAt.getTime() - left.createdAt.getTime()
   );
   const latest = rows[0] ? parseMatchRow(rows[0]) : null;
-  const jobFingerprint = jobFingerprintInput === undefined
-    ? getJobFingerprint(job)
-    : jobFingerprintInput;
-  const freshRow = context && jobFingerprint
+  const freshRow = context
     ? rows.find((row) =>
         !row.isStale &&
-        row.candidateFingerprint === context.candidateFingerprint &&
-        row.jobFingerprint === jobFingerprint &&
-        row.scoringPolicyVersion === context.scoringPolicyVersion
+        row.candidateFingerprint === context.candidateFingerprint
       )
     : undefined;
 
@@ -256,7 +228,6 @@ export function selectMatchPresentation(
   if (latest?.presentation.matchLegacy) {
     return {
       ...latest.presentation,
-      matchConfidence: null,
       matchBreakdown: null,
       matchStale: false,
     };
@@ -276,41 +247,18 @@ export function selectMatchPresentation(
   };
 }
 
-function getJobFingerprint(job: MatchableJob): string | null {
-  try {
-    return buildJobFingerprint(buildJobEvidenceInput(job));
-  } catch {
-    // Invalid legacy job content cannot produce a current versioned result.
-    return null;
-  }
-}
-
-async function findExactCurrentRows(
-  jobRows: MatchableJob[],
-  fingerprints: Map<number, string | null>,
+async function findCurrentCandidateRows(
+  jobIds: number[],
   context: CurrentMatchContext
 ): Promise<PresentationMatchRow[]> {
   const resultRows: PresentationMatchRow[] = [];
 
-  for (let offset = 0; offset < jobRows.length; offset += EXACT_MATCH_QUERY_BATCH_SIZE) {
-    const batch = jobRows.slice(offset, offset + EXACT_MATCH_QUERY_BATCH_SIZE);
-    const exactConditions = batch.flatMap((job) => {
-      const fingerprint = fingerprints.get(job.id);
-      return fingerprint
-        ? [and(
-            eq(matchResults.jobId, job.id),
-            eq(matchResults.jobFingerprint, fingerprint)
-          )]
-        : [];
-    });
-    const exactJobs = or(...exactConditions);
-    if (!exactJobs) continue;
-
+  for (let offset = 0; offset < jobIds.length; offset += MATCH_RESULT_QUERY_BATCH_SIZE) {
+    const batch = jobIds.slice(offset, offset + MATCH_RESULT_QUERY_BATCH_SIZE);
     resultRows.push(...await db.select().from(matchResults).where(and(
+      inArray(matchResults.jobId, batch),
       eq(matchResults.candidateFingerprint, context.candidateFingerprint),
-      eq(matchResults.scoringPolicyVersion, context.scoringPolicyVersion),
-      eq(matchResults.isStale, false),
-      exactJobs
+      eq(matchResults.isStale, false)
     )));
   }
 
@@ -340,8 +288,9 @@ async function findLatestRows(jobIds: number[]): Promise<PresentationMatchRow[]>
       score: ranked.score,
       breakdownJson: ranked.breakdownJson,
       evidenceJson: ranked.evidenceJson,
-      confidence: ranked.confidence,
       source: ranked.source,
+      matchPolicyVersion: ranked.matchPolicyVersion,
+      matchRunId: ranked.matchRunId,
       isStale: ranked.isStale,
       createdAt: ranked.createdAt,
     }).from(ranked).where(eq(ranked.rowNumber, 1));
@@ -360,9 +309,8 @@ export async function getMatchPresentations(
   const context = contextInput === undefined
     ? await getCurrentMatchContext()
     : contextInput;
-  const fingerprints = new Map(jobRows.map((job) => [job.id, getJobFingerprint(job)]));
   const resultRows = context
-    ? await findExactCurrentRows(jobRows, fingerprints, context)
+    ? await findCurrentCandidateRows(jobRows.map((job) => job.id), context)
     : [];
 
   const rowsByJobId = new Map<number, PresentationMatchRow[]>();
@@ -386,33 +334,37 @@ export async function getMatchPresentations(
     selectMatchPresentation(
       job,
       rowsByJobId.get(job.id) ?? [],
-      context,
-      fingerprints.get(job.id)
+      context
     ),
   ]));
 }
 
 export async function getFreshUnmatchedJobIds(
-  contextInput?: CurrentMatchContext | null
+  contextInput?: CurrentMatchContext | null,
+  filter: UnmatchedJobFilter = {}
 ): Promise<number[]> {
   const context = contextInput === undefined
     ? await getCurrentMatchContext()
     : contextInput;
   if (!context) {
     return (await db.select({ id: jobs.id }).from(jobs)
-      .where(isNull(jobs.matchScore))).map((job) => job.id);
+      .where(and(
+        isNull(jobs.matchScore),
+        filter.discoveredSince ? gte(jobs.discoveredAt, filter.discoveredSince) : undefined
+      ))).map((job) => job.id);
   }
-  ensureJobFingerprintProjection();
   const currentResultJoin = and(
     eq(matchResults.jobId, jobs.id),
     eq(matchResults.candidateFingerprint, context.candidateFingerprint),
-    eq(matchResults.jobFingerprint, jobs.aiFingerprint),
-    eq(matchResults.scoringPolicyVersion, context.scoringPolicyVersion),
     eq(matchResults.isStale, false)
   );
   const rows = await db.select({ id: jobs.id }).from(jobs)
     .leftJoin(matchResults, currentResultJoin)
-    .where(and(isNull(matchResults.id), isNull(jobs.matchScore)));
+    .where(and(
+      isNull(matchResults.id),
+      isNull(jobs.matchScore),
+      filter.discoveredSince ? gte(jobs.discoveredAt, filter.discoveredSince) : undefined
+    ));
   return rows.map((job) => job.id);
 }
 
@@ -438,8 +390,6 @@ async function getMatchableJobsByIds(jobIds?: number[]): Promise<MatchableJob[]>
     matchScore: jobs.matchScore,
     matchReasons: jobs.matchReasons,
     matchedSkills: jobs.matchedSkills,
-    missingSkills: jobs.missingSkills,
-    recommendations: jobs.recommendations,
   }).from(jobs);
   return jobIds
     ? query.where(inArray(jobs.id, jobIds))
@@ -447,26 +397,31 @@ async function getMatchableJobsByIds(jobIds?: number[]): Promise<MatchableJob[]>
 }
 
 export async function getFreshUnmatchedJobCount(
-  contextInput?: CurrentMatchContext | null
+  contextInput?: CurrentMatchContext | null,
+  filter: UnmatchedJobFilter = {}
 ): Promise<number> {
   const context = contextInput === undefined
     ? await getCurrentMatchContext()
     : contextInput;
   if (!context) {
     const [result] = await db.select({ value: count() }).from(jobs)
-      .where(isNull(jobs.matchScore));
+      .where(and(
+        isNull(jobs.matchScore),
+        filter.discoveredSince ? gte(jobs.discoveredAt, filter.discoveredSince) : undefined
+      ));
     return result?.value ?? 0;
   }
-  ensureJobFingerprintProjection();
   const currentResultJoin = and(
     eq(matchResults.jobId, jobs.id),
     eq(matchResults.candidateFingerprint, context.candidateFingerprint),
-    eq(matchResults.jobFingerprint, jobs.aiFingerprint),
-    eq(matchResults.scoringPolicyVersion, context.scoringPolicyVersion),
     eq(matchResults.isStale, false)
   );
   const [result] = await db.select({ value: count() }).from(jobs)
     .leftJoin(matchResults, currentResultJoin)
-    .where(and(isNull(matchResults.id), isNull(jobs.matchScore)));
+    .where(and(
+      isNull(matchResults.id),
+      isNull(jobs.matchScore),
+      filter.discoveredSince ? gte(jobs.discoveredAt, filter.discoveredSince) : undefined
+    ));
   return result?.value ?? 0;
 }

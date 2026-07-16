@@ -1,115 +1,102 @@
 # AI Architecture
 
-Switchy's AI subsystem is local-first. SQLite stores all durable state, provider API keys remain encrypted on the user's machine, and local workers execute restart-sensitive matching work. The design deliberately excludes hosted infrastructure, accounts, billing, a general agent loop, and embeddings.
+Switchy's AI subsystem is local-first. SQLite stores durable artifacts and telemetry, API keys remain encrypted on the user's machine, and restart-sensitive matching runs through the local leased-work queue. The system does not use a general agent loop, embeddings, hosted infrastructure, or Switchy-managed CLI credentials.
 
 ## Capability runtime
 
-Every provider call belongs to one named capability:
+Every provider call belongs to a named capability:
 
-- `job_analysis` extracts structured evidence from untrusted job text.
-- `match_adjudication` performs structured semantic comparison when requirement evidence is ambiguous or potentially transferable.
+- `job_analysis` extracts reusable structured evidence from untrusted job text.
+- `match_evaluation` produces the complete candidate-to-job evaluation and final score.
 - `writing_cover_letter`, `writing_referral`, and `writing_recruiter_follow_up` produce grounded drafts.
 - `resume_parse` normalizes deterministically extracted resume text.
 
-The shared runtime resolves and decrypts the configured provider once for a logical execution, applies the capability policy, disables AI SDK retries, composes cancellation and timeout signals, validates structured output, and records the result in `aiRuns`. Application retries therefore remain the only retry owner, while still honoring the AI SDK provider error's retryability signal and retry delay. A configured model that is unavailable fails explicitly; model discovery happens only in provider settings, except for the one-time initialization of installations that have no concrete default model.
+The shared runtime resolves one concrete provider/model snapshot per logical execution, owns retries and timeout policy, composes cancellation signals, validates output, and writes a sanitized `aiRuns` ledger entry. API-provider attempts use the configured hard deadline. Local CLI turns wait for provider completion and use the signal only for explicit cancellation, so a healthy long-running CLI turn is not interrupted merely because the API timeout elapsed. AI SDK retries are disabled. A configured unavailable model fails clearly and is never silently replaced.
 
-Reasoning controls are discovery-only and model-specific. Switchy never owns a fallback list such as low, medium, or high and never infers support from a model name. Codex exposes its advertised efforts, OpenCode exposes installed model variants, and OpenRouter exposes `supported_efforts`; their values, ordering, descriptions, and defaults are retained as provider-native data. When a provider catalog exposes only a reasoning boolean or no exact choices, the UI shows `Provider default` and execution omits the reasoning option. Cached catalogs are validated and retained locally so runtime validation does not trigger model discovery. A saved value that disappears from an exact catalog fails clearly until the user selects an advertised replacement; it is never remapped silently.
+Structured capabilities use portable JSON generation: Switchy gives the provider the JSON Schema through ordinary text generation, accepts only one JSON value (optionally in one JSON code fence), and validates it again with the original Zod schema. This path is shared by API providers, Codex CLI, and OpenCode CLI and avoids depending on inconsistent provider-native schema modes.
 
-`aiRuns` records provider and model identifiers, capability and subject, prompt/schema/policy versions, input fingerprint, attempts, usage, timing, finish reason, cache status, quality result, and sanitized failures. It never stores raw prompts, resumes, API keys, or full job descriptions. Resume and job inputs are marked as untrusted data in prompts so instructions embedded in source text are not followed.
+`aiRuns` records capability, safe subject, provider/model/backend, prompt/schema/policy versions, input fingerprint, attempts, token usage, latency, finish reason, quality result, and sanitized failure information. It never records raw prompts, job descriptions, resumes, account details, API keys, CLI transcripts, or raw provider errors.
 
-## Versioned evidence and freshness
+## Provider-native controls
 
-Matching uses immutable artifacts rather than mutable score columns:
+Reasoning controls are discovery-only and model-specific. Switchy has no fallback list of effort names and does not infer support from model IDs. Provider-advertised values, order, descriptions, and defaults are preserved. When a catalog does not enumerate exact choices, the UI displays that reasoning is provider-managed and execution omits an effort value.
+
+Local CLI installation, authentication, version, and model discovery are probed automatically at startup and after executable-path changes. These bounded probes never generate content or consume model quota. Normal execution still fails explicitly when a selected provider/model cannot perform the requested capability; no cached test result can block or certify a model.
+
+## Matching artifacts and execution
 
 ```mermaid
 flowchart LR
-  P["Profile and matching preferences"] --> C["Candidate snapshot"]
-  J["Job fields"] --> A["Job analysis"]
-  C --> M["Deterministic match result"]
+  P["Profile facts"] --> C["Candidate facts snapshot"]
+  J["Scraped job fields"] --> A["AI job analysis"]
+  C --> M["AI match evaluation"]
   A --> M
-  M -->|"when requirement evidence needs reasoning"| D["Semantic requirement assessment"]
-  D --> M
+  M --> R["Immutable match result and AI run"]
 ```
 
-Canonical JSON is hashed with SHA-256. Candidate fingerprints include the summary, normalized skills, non-overlapping experience, education, and matching preferences. Job fingerprints include title, description, location and location type, seniority, department, employment type, and compensation text. Ordering and optional values are normalized before hashing.
+### Candidate snapshot
 
-A match is fresh only when its candidate fingerprint, job fingerprint, and scoring-policy version exactly match the current inputs. Status, saved, and application changes do not change these fingerprints. A profile-only change creates a candidate snapshot while reusing unchanged job analyses. Legacy job match columns are retained for data preservation and may still be presented as explicitly labeled legacy results, but the current engine never updates them or treats them as fresh evidence artifacts.
+The candidate snapshot is local and deterministic because its purpose is provenance, not interpretation. It contains the user's supplied summary, skills, experience entries, education, preferred country/city, and calculated non-overlapping total experience. It does not infer seniority, management scope, domains, or match scores, and therefore has no model setting.
 
-JSON text columns are accessed through repository methods that validate their contents with Zod. Corrupt or incompatible data fails at the repository boundary instead of propagating unchecked objects.
+Canonical candidate inputs are SHA-256 fingerprinted. A relevant profile change creates a new immutable snapshot. When automatic matching is enabled, profile changes coalesce into a durable `profile_update` session for jobs with previous matches; unchanged job analyses are reused.
 
-## Evidence-based scoring
+### Job analysis
 
-Job analysis v5 extracts typed requirement atoms rather than treating every technology name as mandatory. Each atom records its type, exact source evidence, terms and alternatives, importance (`critical`, `important`, `preferred`, or `contextual`), explicitness, scoped experience, and confidence. Source excerpts are normalized and checked against the supplied job before an atom can be persisted. Technology names that merely describe the employer's stack are contextual and do not lower the match. Changed jobs remain cached and batched by both job count and prompt characters. A failed extraction produces conservative, low-confidence evidence under a separate fallback extractor version, so a later provider recovery retries structured extraction instead of treating fallback evidence as permanent.
+Job analysis has its own provider, model, and provider-native reasoning setting. It returns only a short role summary and at most 20 material, source-grounded requirements. Each requirement retains an internal ID, type, importance, concise text, and source excerpt. Closely related requirements and technology alternatives are combined instead of repeated across separate skill, experience, education, constraint, ambiguity, or confidence fields.
 
-Candidate evidence includes explicit skills plus bounded references to the summary, role descriptions, highlights, and education. Evidence items are bounded before concatenation, and the complete semantic prompt has a hard serialized-size budget. Deterministic comparison recognizes exact evidence and conservative technology families. When more reasoning is needed, the model returns one evidence-cited assessment per requirement: direct, equivalent, transferable, partial, missing, unknown, or not applicable. Scoped experience and management assessments feed the calibrated components instead of being reduced to total years or a binary title heuristic. Low-confidence semantic labels remain unresolved or are weighted toward the neutral prior; they cannot receive full status credit. The model does not invent the final score.
+Analyses are keyed by the job content fingerprint plus an extractor version that includes the analysis provider/model policy. Jobs are batched within both count and character limits. Only validated AI output is persisted. A failed or timed-out analysis creates no fallback artifact and the job's match fails clearly, so a later run can retry it.
 
-The calibrated role-fit score uses these base component weights:
+### Final AI match
 
-| Component | Weight |
-| --- | ---: |
-| Requirement fit | 50 |
-| Relevant experience | 35 |
-| Seniority and management | 15 |
+Final matching has a separate provider, model, and reasoning setting. The model receives the candidate facts snapshot as bounded evidence items and the saved job analysis—not the raw full job description. It returns only:
 
-Requirements are weighted by importance rather than counted equally. Unknown evidence lowers coverage instead of becoming a failure. The score is shrunk toward a neutral prior when the job exposes fewer score-bearing components, so one known component cannot become a misleading `100`; evidence coverage instead reports how much of the available job evidence could be resolved. An experience difference of six months or less receives full credit; larger gaps use a gradual curve without arbitrary hard caps. Significant experience gaps and multi-level seniority differences also apply gradual whole-role calibration so strong keyword overlap cannot misleadingly produce a top-band result. Scoped duration claims require dated experience entries that both cover the requested duration and support the requested scope. Location, authorization, license, and employment constraints are presented separately so a strong role fit can still explain why a job is unavailable or outside the user's preferences.
+- one overall score and a short summary;
+- category scores for responsibilities, skills and technologies, experience and seniority, and domain fit;
+- four to six concise reasoning points;
+- a compact matched-skills list.
 
-Scores are ordinal compatibility values, not probabilities. The primary interpretation is High, Good, Possible, Stretch, Low, or More evidence needed. The UI separately reports score confidence, extraction confidence, evidence coverage, and the type and importance of each requirement. Dashboard and company promotion views query the authoritative semantic High/Good bands on the server rather than scanning numeric thresholds in the browser; blocking eligibility constraints remain visible on promoted roles.
+There is no active deterministic scorer, keyword formula, fixed weight, deduction, bonus, hard cap, or LLM adjustment layered on top. The prompt tells the evaluator to recognize equivalent and transferable evidence, treat contextual technologies differently from genuine requirements, keep preferred qualifications modest, accept an overall experience difference of six months or less, reason holistically about larger differences, and treat missing data as unknown rather than a mismatch. Candidate and job evidence references remain internal for grounding and validation; the product presents only the concise reasoning. Every reasoning point must cite supplied evidence before persistence.
 
-Economy requests semantic comparison only for unresolved critical requirements. Balanced reviews unresolved critical and important requirements, including possible transferable matches. Quality reviews all meaningful requirements. These rules are based on evidence state rather than an arbitrary numeric score window.
+Presentation freshness depends only on the candidate fingerprint: a result becomes stale when the profile changes, not when the selected model, reasoning setting, job-analysis policy, or job content changes. Explicit rematching can still replace a result for the same candidate. Execution-cache reuse remains stricter and requires exact candidate fingerprint, job fingerprint, job-analysis version, and match-policy version equality. The startup migration pipeline removes pre-v3 match artifacts and clears deprecated job-level match payloads; active execution only writes `source: ai` results linked to a successful `match_evaluation` run.
 
-The committed synthetic corpus covers score bands, six-month experience tolerance, contextual stack mentions, transferable technologies, missing information, separated constraints, and pairwise rankings without personal data. A scoring-policy cutover requires deterministic checks and at least 85 percent pairwise ranking accuracy.
+The default API-provider per-attempt matching timeout is 120 seconds. User-configured values remain explicit settings and are never changed silently during execution. Local CLI providers keep separate bounded protocol timeouts for startup and JSON-RPC acknowledgements, but generation turns wait for completion or explicit cancellation rather than inheriting the API request deadline.
 
 ## Durable matching queue
 
-Manual, company, unmatched, and post-scrape matching all create a match session and `aiWorkItems` transactionally. API callers receive `202` and poll the common session endpoint; cancellation is a durable request rather than a process-local flag. When an entry point has zero jobs, it records an immediately completed, pollable session without creating an empty work item.
+Manual, company, unmatched, post-scrape, and profile-update matching all use durable match sessions and leased `aiWorkItems`. Work is pipelined per job: a cached analysis queues its final match immediately, and each newly persisted analysis does the same without waiting for the remaining analysis batches. When both phases share a provider, analysis uses a bounded share of the configured concurrency so ready matches can run alongside later analyses. A failed multi-job analysis response is split into smaller batches until the failing job is isolated.
 
-Workers claim leased items, heartbeat while running, renew ownership, checkpoint progress, schedule retries, and fence data operations. Expired leases are recoverable after restart. Startup conversion imports nonterminal legacy scrape-match outbox work idempotently while leaving completed legacy rows as history. The legacy unmatched-session response delegates to the current session implementation during compatibility migration.
+`matchSessionJobs` stores each job's analysis and matching stage, artifact/run references, safe error, and phase timestamps. The match-session API returns independent analysis and matching counters plus these per-job rows. Settings and match history poll that durable snapshot once per second, so progress survives navigation and process recovery without an in-memory event dependency. Sessions also preserve cancellation, retry scheduling, leases, heartbeat, checkpoint recovery, and startup recovery. A provider/model resolution failure, invalid structured response, or timeout is recorded as a safe failure instead of being converted into a deterministic score.
 
-An in-memory limiter is shared per provider process. Rate-limit responses reduce concurrency by one and honor provider retry delay when supplied. Twenty consecutive successes increase concurrency by one, never above the configured per-provider concurrency limit. This adaptive state does not mutate user settings.
+An in-memory adaptive limiter is scoped per provider process. Rate-limit responses reduce concurrency and honor retry delay; sustained success restores concurrency up to the configured preset. Persisted user settings are never mutated automatically.
 
 ## Writing
 
-Writing uses one evidence packet containing the candidate snapshot, job analysis, match evidence, allowed links, and content-specific settings. Modification requests include the selected parent draft, and persisted variants retain their ancestry and associated AI run.
-
-Streaming emits text deltas, followed by a complete event containing the atomically persisted content response and run ID. Aborted or invalid streams produce failed runs and no content variant. The compatibility synchronous endpoint calls the same service. Selected, copied, discarded, and manual-edit signals remain local; edit distance is computed server-side. Historical drafts are not sent with unrelated requests.
+Writing uses its independently configured provider/model through the same runtime. Its evidence packet contains candidate facts, the available job analysis, current match evidence, allowed links, content-specific settings, and—when modifying—a selected parent draft. Streaming emits deltas, then atomically persists a complete validated variant and its run. Aborted or invalid streams create no successful content. Variant ancestry, copied/selected/discarded signals, and server-computed edit distance remain local.
 
 ## Resume parsing
 
-File handling and AI normalization are separate stages. PDF, DOCX, and text extractors produce plain untrusted text; the capability runtime then normalizes it using versioned prompts and schemas. Validation reports malformed dates, missing required values, duplicate skills, and suspicious URLs. The resume stores the parse run and parser version, while profile replacement remains an explicit user action.
+Resume file text extraction is deterministic and separate from AI normalization. The configured resume provider/model receives bounded untrusted extracted text and returns the versioned structured profile shape through portable JSON validation. Field-level validation reports malformed dates, missing required values, duplicate skills, and suspicious URLs. The resume stores its parse run and parser version. An existing profile is never destructively replaced without explicit user action.
 
-## Observability and privacy
-
-The AI history screen summarizes calls, success rate, tokens, latency, full match-result cache reuse, and sanitized failures over 7 or 30 days. Job-analysis reuse remains implicit in immutable artifact lookup rather than being counted as a provider call or full-result hit. Writing variants and match results link to safe run summaries. Switchy does not estimate currency because direct-provider pricing is not reliably available.
-
-Sensitive source data stays in purpose-specific local tables and is sent only for the requested capability. Logs, API failures, match history, and run records use fingerprints, safe subjects, bounded metadata, and sanitized error codes/messages. Raw AI SDK provider errors are sanitized before crossing those boundaries because they may contain request values or response bodies. Never add raw provider payloads, prompts, keys, resumes, or full job descriptions to telemetry.
-
-## Evaluation and version maintenance
-
-Run deterministic AI evaluations with:
-
-```bash
-pnpm ai:eval
-```
-
-The suite covers matcher scoring and ranking, writing validators, and resume normalization. Live-provider evaluation is opt-in and remains outside `pnpm verify`.
-
-When changing a prompt, schema, scoring rule, or execution behavior:
-
-1. Increment the corresponding prompt, schema, semantic-assessment, scoring-policy, extractor, parser, or execution-policy version.
-2. Add or update synthetic fixtures that demonstrate the intended behavior and failure cases.
-3. Run `pnpm ai:eval` and the focused unit/integration tests.
-4. Confirm existing fingerprints remain stable unless their canonical inputs intentionally changed.
-5. Document any compatibility or artifact-freshness consequence.
-
-Database migrations must be produced with `pnpm db:generate`; do not hand-write SQL. Migration tests set a temporary `HOME` and exercise both a fresh database and an upgrade fixture. Never point migration tests at the user's real `~/.switchy` state.
 ## Local CLI providers
 
-Switchy can execute every text AI capability through the user's existing Codex CLI or OpenCode setup. These are permanent local provider records and never contain API keys. Executables are resolved from an Advanced settings override, the provider-specific `SWITCHY_*_CLI_PATH` environment variable, and then `PATH`.
+Codex CLI and OpenCode CLI are permanent keyless provider records. Switchy reuses the user's installed and authenticated CLI without reading or storing credentials.
 
-Codex integration uses `codex app-server` over JSON-RPC on stdio. Each execution receives an ephemeral thread in an empty temporary directory with read-only sandboxing, approvals disabled, no workspace roots, tools, skills, environments, or MCP servers. Structured capabilities use the app-server output schema, while writing consumes agent-message delta notifications.
+Codex uses `codex app-server` v2 over stdio. Each execution uses an ephemeral thread in an empty temporary directory with read-only sandboxing, approvals disabled, no workspace roots, tools, skills, environments, or MCP servers. Switchy waits for the terminal turn notification even when generation exceeds the API-provider timeout. Explicit cancellation interrupts the turn and retires the process if acknowledgement is not received safely.
 
-OpenCode integration starts the installed `opencode serve --pure` process on a random loopback port protected by an ephemeral Basic Auth password. The SDK is only an HTTP client for this installed server. Switchy-created sessions deny tools and permissions, use JSON Schema with provider retries disabled, and are aborted and deleted after every outcome.
+OpenCode starts the installed `opencode serve --pure` on a protected random loopback port. Switchy uses the SDK only as a client, creates isolated sessions with tools denied, listens to events, aborts through the session API, and deletes every created session. Portable structured generation intentionally avoids OpenCode's provider-dependent native `json_schema` behavior.
 
-Both adapters implement the shared generation backend used by the capability runtime. The runtime remains responsible for attempt counts, timeout and cancellation signals, Zod validation, quality gates, safe telemetry, and the AI run ledger. CLI prompts, stdout/stderr transcripts, account details, resumes, job descriptions, and credentials are never persisted.
+Both adapters reuse one supervised process while active and shut it down after five idle minutes. Model catalogs and connection status are cached, but normal execution never refreshes them. Provider APIs perform a cached-or-live non-generative probe if startup warming has not completed, so settings never needs a manual connectivity button.
 
-Connection checks do not generate model output. Status probes are cached for 30 seconds and model catalogs for 15 minutes. Run `pnpm ai:cli:smoke` explicitly to inspect the real local CLI connection and advertised model IDs; it is intentionally excluded from normal verification.
+## Evaluation and maintenance
+
+Run synthetic evaluations with `pnpm ai:eval`. Normal verification uses fake providers and CLIs and never accesses real credentials or quota. Maintainers may run isolated live verification against synthetic data outside the product UI; unconfigured providers must be reported as blocked rather than certified.
+
+When changing a prompt, schema, extractor, or match policy:
+
+1. Increment the corresponding version.
+2. Update synthetic fixtures for success, malformed output, retries, timeouts, and evidence grounding.
+3. Run focused tests, `pnpm ai:eval`, and the full verification suite.
+4. Confirm the intended artifact-freshness impact.
+5. Keep telemetry sanitized and source text out of logs.
+
+Database migrations must be generated with `pnpm db:generate`. Migration tests must use a temporary `HOME`, never the user's real Switchy database.

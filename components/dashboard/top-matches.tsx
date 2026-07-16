@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { MatchBadge, type MatchBand } from "@/components/jobs/match-badge";
+import { MatchBadge } from "@/components/jobs/match-badge";
 import { Building2, MapPin, Clock, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { formatRelativeTime } from "@/lib/utils/format";
@@ -13,7 +13,6 @@ interface Job {
   location: string | null;
   locationType: string | null;
   matchScore: number | null;
-  matchBand?: MatchBand | null;
   matchLegacy?: boolean;
   discoveredAt: string;
   company: {
@@ -74,7 +73,7 @@ export function TopMatches() {
                   {job.title}
                 </h3>
                 {job.matchScore !== null && (
-                  <MatchBadge score={job.matchScore} band={job.matchBand} size="sm" />
+                  <MatchBadge score={job.matchScore} size="sm" />
                 )}
               </div>
               <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">

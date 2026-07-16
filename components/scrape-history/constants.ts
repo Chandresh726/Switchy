@@ -6,4 +6,5 @@ export const TRIGGER_LABELS: Record<string, string> = {
   api: "API",
   auto_match: "Auto-Match",
   match_unmatched: "Match-Unmatched",
+  profile_update: "Profile Update",
 };

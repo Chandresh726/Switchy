@@ -23,8 +23,6 @@ const job = {
   matchScore: null,
   matchReasons: null,
   matchedSkills: null,
-  missingSkills: null,
-  recommendations: null,
 };
 
 const jobFingerprint = buildJobFingerprint(buildJobEvidenceInput(job));
@@ -39,81 +37,55 @@ const row = {
   jobFingerprint,
   scoringPolicyVersion: context.scoringPolicyVersion,
   score: 88,
-  breakdownJson: JSON.stringify({ mustHaveSkills: 100, experience: 75 }),
-  evidenceJson: JSON.stringify({
-    reasons: ["Strong required-skill coverage"],
-    matchedSkills: ["typescript"],
-    missingSkills: [],
-    recommendations: [],
-    componentEvidence: {},
-    summary: "Strong backend alignment with one preference to confirm.",
-    matchBand: "high",
-    roleFitScore: 88,
-    evidenceCoverage: 0.76,
-    extractionConfidence: 0.91,
-    constraints: [{
-      type: "location",
-      status: "unknown",
-      severity: "preference",
-      message: "Confirm the expected office cadence.",
-    }],
-    requirementAssessments: [{
-      requirementId: "requirement:1",
-      status: "equivalent_match",
-      confidence: 0.86,
-      evidenceReferences: ["experience:0"],
-      rationale: "Related backend service work demonstrates the same competency.",
-      requirementType: "competency",
-      requirementImportance: "important",
-      requirementText: "Build reliable backend services",
-    }],
+  breakdownJson: JSON.stringify({
+    responsibilities: 90,
+    skillsAndTechnologies: 88,
+    experienceAndSeniority: 84,
+    domainFit: 76,
   }),
-  confidence: 0.84,
-  source: "deterministic",
+  evidenceJson: JSON.stringify({
+    summary: "Strong backend alignment with one preference to confirm.",
+    reasoning: [{
+      type: "match",
+      text: "Related backend service work demonstrates the same competency.",
+      candidateEvidenceReferences: ["experience:0"],
+      jobRequirementReferences: ["requirement:1"],
+    }],
+    matchedSkills: ["typescript"],
+  }),
+  source: "ai",
   isStale: false,
   createdAt: new Date("2026-07-14T00:00:00.000Z"),
 };
 
 describe("authoritative match presentation", () => {
-  it("presents only an exact artifact and policy match as fresh", () => {
+  it("presents a result for the current candidate as fresh", () => {
     expect(selectMatchPresentation(job, [row], context)).toMatchObject({
       matchScore: 88,
       matchResultId: "result-1",
-      matchConfidence: 0.84,
       matchStale: false,
       matchSummary: "Strong backend alignment with one preference to confirm.",
-      matchBand: "high",
-      matchRoleFitScore: 88,
-      matchEvidenceCoverage: 0.76,
-      matchExtractionConfidence: 0.91,
-      matchConstraints: [{
-        type: "location",
-        status: "unknown",
-        severity: "preference",
+      matchReasoning: [{
+        type: "match",
+        text: "Related backend service work demonstrates the same competency.",
       }],
-      matchRequirementAssessments: [{
-        requirementId: "requirement:1",
-        status: "equivalent_match",
-        requirementType: "competency",
-        requirementImportance: "important",
-        requirementText: "Build reliable backend services",
-      }],
+      matchedSkills: ["typescript"],
     });
   });
 
-  it("marks relevant job-content mutations stale", () => {
+  it("does not mark job-content mutations stale", () => {
     expect(selectMatchPresentation(
       { ...job, description: "Changed requirements" },
       [row],
       context
     )).toMatchObject({
-      matchScore: null,
+      matchScore: 88,
       matchResultId: "result-1",
-      matchStale: true,
+      matchStale: false,
     });
   });
 
-  it("marks candidate and scoring-policy changes stale", () => {
+  it("marks only candidate changes stale", () => {
     expect(selectMatchPresentation(job, [row], {
       ...context,
       candidateFingerprint: "b".repeat(64),
@@ -121,7 +93,7 @@ describe("authoritative match presentation", () => {
     expect(selectMatchPresentation(job, [row], {
       ...context,
       scoringPolicyVersion: "evidence-score-v2",
-    }).matchStale).toBe(true);
+    }).matchStale).toBe(false);
   });
 
   it("ignores status-only mutations when determining freshness", () => {
@@ -138,14 +110,10 @@ describe("authoritative match presentation", () => {
       matchScore: 77,
       matchReasons: '["Strong skill fit"]',
       matchedSkills: '["TypeScript"]',
-      missingSkills: "malformed",
-      recommendations: '["Apply"]',
     }, [], context)).toMatchObject({
       matchScore: 77,
       matchReasons: ["Strong skill fit"],
       matchedSkills: ["TypeScript"],
-      missingSkills: [],
-      recommendations: ["Apply"],
       matchResultId: null,
       matchStale: false,
       matchLegacy: true,
@@ -166,7 +134,6 @@ describe("authoritative match presentation", () => {
     }], context)).toMatchObject({
       matchScore: 72,
       matchResultId: "result-1",
-      matchConfidence: null,
       matchBreakdown: null,
       matchStale: false,
       matchLegacy: true,

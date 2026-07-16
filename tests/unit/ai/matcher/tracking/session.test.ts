@@ -2,11 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   insert: vi.fn(),
+  update: vi.fn(),
+  transaction: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
   db: {
     insert: mocks.insert,
+    update: mocks.update,
+    transaction: mocks.transaction,
   },
 }));
 
@@ -16,17 +20,26 @@ const result = {
   score: 84,
   reasons: ["Strong fit"],
   matchedSkills: ["TypeScript"],
-  missingSkills: [],
-  recommendations: ["Apply"],
 };
 
 describe("match session logging", () => {
   const values = vi.fn();
+  const set = vi.fn();
+  const where = vi.fn();
+  const run = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
-    values.mockResolvedValue(undefined);
+    run.mockReturnValue(undefined);
+    values.mockReturnValue({ run });
+    where.mockReturnValue({ run });
+    set.mockReturnValue({ where });
     mocks.insert.mockReturnValue({ values });
+    mocks.update.mockReturnValue({ set });
+    mocks.transaction.mockImplementation((callback) => callback({
+      insert: mocks.insert,
+      update: mocks.update,
+    }));
   });
 
   it("records session progress without writing legacy job match columns", async () => {

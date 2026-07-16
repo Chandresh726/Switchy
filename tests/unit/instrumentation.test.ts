@@ -5,6 +5,21 @@ const mocks = vi.hoisted(() => ({
   importLegacyMatchWork: vi.fn(),
   recoverPending: vi.fn(),
   startScheduler: vi.fn(),
+  ensureBuiltinLocalCLIProviders: vi.fn(),
+  removeDeprecatedMatchingPreferenceSettings: vi.fn(),
+  warmLocalCLIStatuses: vi.fn(),
+}));
+
+vi.mock("@/lib/ai/providers/provider-service", () => ({
+  ensureBuiltinLocalCLIProviders: mocks.ensureBuiltinLocalCLIProviders,
+}));
+
+vi.mock("@/lib/settings/settings-service", () => ({
+  removeDeprecatedMatchingPreferenceSettings: mocks.removeDeprecatedMatchingPreferenceSettings,
+}));
+
+vi.mock("@/lib/ai/local-cli/service", () => ({
+  warmLocalCLIStatuses: mocks.warmLocalCLIStatuses,
 }));
 
 vi.mock("@/lib/jobs/scheduler", () => ({
@@ -40,6 +55,9 @@ describe("server startup instrumentation", () => {
     });
     mocks.dispatchPendingAIWork.mockReturnValue(undefined);
     mocks.importLegacyMatchWork.mockReturnValue(0);
+    mocks.ensureBuiltinLocalCLIProviders.mockResolvedValue(undefined);
+    mocks.removeDeprecatedMatchingPreferenceSettings.mockResolvedValue(undefined);
+    mocks.warmLocalCLIStatuses.mockResolvedValue(undefined);
   });
 
   it("does nothing outside the Node.js runtime", async () => {
@@ -48,6 +66,7 @@ describe("server startup instrumentation", () => {
     await register();
 
     expect(mocks.startScheduler).not.toHaveBeenCalled();
+    expect(mocks.warmLocalCLIStatuses).not.toHaveBeenCalled();
     expect(mocks.recoverPending).not.toHaveBeenCalled();
     expect(mocks.dispatchPendingAIWork).not.toHaveBeenCalled();
   });
@@ -62,6 +81,9 @@ describe("server startup instrumentation", () => {
     expect(mocks.recoverPending).toHaveBeenCalledTimes(1);
     expect(mocks.importLegacyMatchWork).toHaveBeenCalledTimes(1);
     expect(mocks.dispatchPendingAIWork).toHaveBeenCalledTimes(1);
+    expect(mocks.ensureBuiltinLocalCLIProviders).toHaveBeenCalledTimes(1);
+    expect(mocks.removeDeprecatedMatchingPreferenceSettings).toHaveBeenCalledTimes(1);
+    expect(mocks.warmLocalCLIStatuses).toHaveBeenCalledTimes(1);
   });
 
   it("isolates failures so every startup recovery path is still attempted", async () => {
@@ -82,6 +104,7 @@ describe("server startup instrumentation", () => {
     expect(mocks.startScheduler).toHaveBeenCalledTimes(1);
     expect(mocks.recoverPending).toHaveBeenCalledTimes(1);
     expect(mocks.dispatchPendingAIWork).toHaveBeenCalledTimes(1);
+    expect(mocks.warmLocalCLIStatuses).toHaveBeenCalledTimes(1);
     expect(consoleError).toHaveBeenCalledWith(
       "[Instrumentation] Failed to start scheduler:",
       schedulerError
@@ -94,6 +117,19 @@ describe("server startup instrumentation", () => {
       "[Instrumentation] Failed to recover matcher outbox:",
       matcherError
     );
+  });
+
+  it("does not delay other startup services while CLI warming is pending", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "nodejs");
+    mocks.warmLocalCLIStatuses.mockReturnValue(new Promise(() => undefined));
+
+    await register();
+    await flushPromises();
+
+    expect(mocks.warmLocalCLIStatuses).toHaveBeenCalledTimes(1);
+    expect(mocks.startScheduler).toHaveBeenCalledTimes(1);
+    expect(mocks.recoverPending).toHaveBeenCalledTimes(1);
+    expect(mocks.dispatchPendingAIWork).toHaveBeenCalledTimes(1);
   });
 
   it("dispatches current AI work even when legacy import fails", async () => {

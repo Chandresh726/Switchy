@@ -38,11 +38,9 @@ describe("authoritative match presentation queries", () => {
     }).returning().get();
     const jobFingerprint = buildJobFingerprint(buildJobEvidenceInput(job));
     const evidenceJson = JSON.stringify({
-      reasons: [],
+      summary: "Concise match summary",
+      reasoning: [],
       matchedSkills: [],
-      missingSkills: [],
-      recommendations: [],
-      componentEvidence: {},
     });
     database.insert(matchResults).values([
       {
@@ -52,7 +50,7 @@ describe("authoritative match presentation queries", () => {
         jobFingerprint,
         scoringPolicyVersion: "policy-current",
         score: 86,
-        breakdownJson: JSON.stringify({ mustHaveSkills: 90 }),
+        breakdownJson: JSON.stringify({ skillsAndTechnologies: 90 }),
         evidenceJson,
         confidence: 0.85,
         source: "deterministic",
@@ -65,7 +63,7 @@ describe("authoritative match presentation queries", () => {
         jobFingerprint,
         scoringPolicyVersion: "policy-old",
         score: 70,
-        breakdownJson: JSON.stringify({ mustHaveSkills: 70 }),
+        breakdownJson: JSON.stringify({ skillsAndTechnologies: 70 }),
         evidenceJson,
         confidence: 0.7,
         source: "deterministic",
@@ -78,7 +76,7 @@ describe("authoritative match presentation queries", () => {
         jobFingerprint,
         scoringPolicyVersion: "policy-latest",
         score: 74,
-        breakdownJson: JSON.stringify({ mustHaveSkills: 75 }),
+        breakdownJson: JSON.stringify({ skillsAndTechnologies: 75 }),
         evidenceJson,
         confidence: 0.72,
         source: "deterministic",
@@ -91,6 +89,16 @@ describe("authoritative match presentation queries", () => {
       scoringPolicyVersion: "policy-current",
     });
     expect(current.get(job.id)).toMatchObject({
+      matchResultId: "current-result",
+      matchScore: 86,
+      matchStale: false,
+    });
+
+    const changedPolicy = await getMatchPresentations([job], {
+      candidateFingerprint: "a".repeat(64),
+      scoringPolicyVersion: "policy-changed-after-match",
+    });
+    expect(changedPolicy.get(job.id)).toMatchObject({
       matchResultId: "current-result",
       matchScore: 86,
       matchStale: false,
@@ -133,7 +141,7 @@ describe("authoritative match presentation queries", () => {
       name: "Legacy presentation fixture",
       careersUrl: "https://example.com/legacy-careers",
     }).returning().get();
-    const [legacyJob, unmatchedJob] = database.insert(jobs).values([
+    const [legacyJob, unmatchedJob, olderUnmatchedJob] = database.insert(jobs).values([
       {
         companyId: company.id,
         title: "Legacy matched role",
@@ -148,6 +156,14 @@ describe("authoritative match presentation queries", () => {
         title: "Unmatched role",
         description: "No matcher result",
         url: "https://example.com/jobs/unmatched-role",
+        discoveredAt: new Date("2026-07-15T00:00:00.000Z"),
+      },
+      {
+        companyId: company.id,
+        title: "Older unmatched role",
+        description: "Outside the selected discovery window",
+        url: "https://example.com/jobs/older-unmatched-role",
+        discoveredAt: new Date("2026-06-01T00:00:00.000Z"),
       },
     ]).returning().all();
     const context = {
@@ -170,7 +186,13 @@ describe("authoritative match presentation queries", () => {
       matchScore: null,
       matchLegacy: false,
     });
-    expect(await getFreshUnmatchedJobIds(context)).toEqual([unmatchedJob.id]);
-    expect(await getFreshUnmatchedJobCount(context)).toBe(1);
+    expect(await getFreshUnmatchedJobIds(context)).toEqual([
+      unmatchedJob.id,
+      olderUnmatchedJob.id,
+    ]);
+    expect(await getFreshUnmatchedJobCount(context)).toBe(2);
+    const recentFilter = { discoveredSince: new Date("2026-07-10T00:00:00.000Z") };
+    expect(await getFreshUnmatchedJobIds(context, recentFilter)).toEqual([unmatchedJob.id]);
+    expect(await getFreshUnmatchedJobCount(context, recentFilter)).toBe(1);
   });
 });

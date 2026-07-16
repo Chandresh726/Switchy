@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { NewJobBadge } from "@/components/jobs/new-job-badge";
-import { MatchBadge, type MatchBand } from "@/components/jobs/match-badge";
+import { MatchBadge } from "@/components/jobs/match-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isNewJob } from "@/lib/jobs/is-new-job";
@@ -68,13 +68,7 @@ interface Job {
   location: string | null;
   locationType: string | null;
   matchScore: number | null;
-  matchBand?: MatchBand | null;
   matchLegacy?: boolean;
-  matchConstraints?: Array<{
-    status: "satisfied" | "conflict" | "unknown";
-    severity: "blocking" | "preference" | "informational";
-    message: string;
-  }>;
   status: string;
   discoveredAt: string;
   viewedAt: string | null;
@@ -159,10 +153,6 @@ function JobRow({
     status: job.status,
     currentTime,
   });
-  const hasBlockingConstraint = job.matchConstraints?.some((constraint) =>
-    constraint.status === "conflict" && constraint.severity === "blocking"
-  ) ?? false;
-
   return (
     <Link
       href={`/jobs/${job.id}`}
@@ -186,12 +176,6 @@ function JobRow({
               {job.title}
             </h3>
             {shouldShowNewTag && <NewJobBadge />}
-            {hasBlockingConstraint && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-destructive">
-                <AlertCircle className="h-3 w-3" />
-                Eligibility constraint
-              </span>
-            )}
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
             <span>{job.company.name}</span>
@@ -207,7 +191,7 @@ function JobRow({
 
       <div className="flex flex-col items-end gap-1.5 shrink-0">
         {job.matchScore !== null && (
-          <MatchBadge score={job.matchScore} band={job.matchBand} size="sm" />
+          <MatchBadge score={job.matchScore} size="sm" />
         )}
         <span className="text-[10px] text-muted-foreground font-medium">
           {type === "applied" && job.appliedAt

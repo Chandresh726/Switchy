@@ -10,13 +10,14 @@ export interface ProviderModelsState {
 }
 
 export interface SettingsRecord {
+  job_analysis_model: string;
+  job_analysis_provider_id: string;
+  job_analysis_reasoning_effort: string;
   matcher_model: string;
   matcher_provider_id: string;
   resume_parser_model: string;
   resume_parser_provider_id: string;
   matcher_reasoning_effort: string;
-  matcher_accepted_location_types: string;
-  matcher_accepted_employment_types: string;
   resume_parser_reasoning_effort: string;
   matcher_batch_size: string;
   matcher_max_retries: string;

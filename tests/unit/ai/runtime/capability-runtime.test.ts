@@ -498,6 +498,60 @@ describe("AI capability runtime", () => {
     );
   });
 
+  it("uses portable text JSON and retries a schema mismatch without native structured mode", async () => {
+    const backend = {
+      generateText: vi.fn()
+        .mockResolvedValueOnce({
+          output: '{"name":42}',
+          usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
+          finishReason: "stop",
+          warningCodes: [],
+        })
+        .mockResolvedValueOnce({
+          output: '{"name":"Ada"}',
+          usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6 },
+          finishReason: "stop",
+          warningCodes: [],
+        }),
+      streamText: vi.fn(),
+      generateStructured: vi.fn(),
+    };
+    const runtime = await createAICapabilityRuntime({
+      capability: "resume_parse",
+      resolved: {
+        snapshot: {
+          providerRecordId: "builtin:opencode-cli",
+          provider: "opencode_cli",
+          modelId: "provider/model",
+          backendKind: "opencode_cli",
+        },
+        backend,
+        reasoningEffort: "medium",
+      },
+    });
+
+    const result = await runtime.executeStructured({
+      ...executionInput({ maxAttempts: 2 }),
+      retry: { baseDelayMs: 0, maxDelayMs: 0 },
+      schema: z.object({ name: z.string() }),
+    });
+
+    expect(result.output).toEqual({ name: "Ada" });
+    expect(result.attempts).toBe(2);
+    expect(backend.generateText).toHaveBeenCalledTimes(2);
+    expect(backend.generateStructured).not.toHaveBeenCalled();
+    expect(backend.generateText.mock.calls[1]?.[0].instructions).toContain(
+      "previous response was invalid"
+    );
+    expect(mocks.completeSuccess).toHaveBeenCalledWith(
+      "run-1",
+      expect.objectContaining({
+        attempts: 2,
+        usage: { inputTokens: 7, outputTokens: 4, totalTokens: 11 },
+      })
+    );
+  });
+
   it("uses the AI SDK native timeout to abort the provider request", async () => {
     let providerAborted = false;
     const model = new MockLanguageModelV4({
@@ -703,15 +757,17 @@ describe("AI capability runtime", () => {
     );
   });
 
-  it("composes the per-attempt timeout into a local CLI backend signal", async () => {
-    let backendSignal: AbortSignal | undefined;
+  it("allows a local CLI turn to outlive the configured API timeout", async () => {
     const backend = {
       generateText: vi.fn(async (input: { signal: AbortSignal }) => {
-        backendSignal = input.signal;
-        await new Promise<void>((_resolve, reject) => {
-          input.signal.addEventListener("abort", () => reject(input.signal.reason), { once: true });
-        });
-        throw new Error("unreachable");
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        expect(input.signal.aborted).toBe(false);
+        return {
+          output: "completed after the API deadline",
+          usage: {},
+          finishReason: "completed",
+          warningCodes: [],
+        };
       }),
       streamText: vi.fn(),
       generateStructured: vi.fn(),
@@ -730,12 +786,58 @@ describe("AI capability runtime", () => {
       },
     });
 
-    await expect(runtime.executeText(executionInput({ timeoutMs: 15 })))
-      .rejects.toMatchObject({ name: "TimeoutError" });
-    expect(backendSignal?.aborted).toBe(true);
+    await expect(runtime.executeText(executionInput({ timeoutMs: 10 })))
+      .resolves.toMatchObject({ output: "completed after the API deadline" });
     expect(backend.generateText).toHaveBeenCalledTimes(1);
     expect(mocks.createRun).toHaveBeenCalledWith(expect.objectContaining({
-      metadata: expect.objectContaining({ backendKind: "codex_cli" }),
+      metadata: expect.objectContaining({
+        backendKind: "codex_cli",
+        timeoutMode: "completion_wait",
+      }),
     }));
+  });
+
+  it("still propagates explicit cancellation to a long-running local CLI turn", async () => {
+    const started = Promise.withResolvers<void>();
+    const backend = {
+      generateText: vi.fn(async (input: { signal: AbortSignal }) => {
+        started.resolve();
+        return await new Promise<never>((_resolve, reject) => {
+          input.signal.addEventListener(
+            "abort",
+            () => reject(input.signal.reason),
+            { once: true }
+          );
+        });
+      }),
+      streamText: vi.fn(),
+      generateStructured: vi.fn(),
+    };
+    const runtime = await createAICapabilityRuntime({
+      capability: "job_analysis",
+      resolved: {
+        snapshot: {
+          providerRecordId: "builtin:codex-cli",
+          provider: "codex_cli",
+          modelId: "gpt-test",
+          backendKind: "codex_cli",
+        },
+        backend,
+        reasoningEffort: "medium",
+      },
+    });
+    const controller = new AbortController();
+    const reason = new DOMException("cancel local CLI turn", "AbortError");
+    const pending = runtime.executeText(executionInput({
+      timeoutMs: 10,
+      signal: controller.signal,
+    }));
+
+    await started.promise;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    controller.abort(reason);
+
+    await expect(pending).rejects.toBe(reason);
+    expect(backend.generateText).toHaveBeenCalledTimes(1);
   });
 });

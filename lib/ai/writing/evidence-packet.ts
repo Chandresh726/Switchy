@@ -7,19 +7,20 @@ import {
   type JobAnalysisEvidence,
 } from "@/lib/ai/artifacts";
 import { enrichCandidateEvidence } from "@/lib/ai/matcher/evidence/candidate";
+import { getMatcherConfig } from "@/lib/ai/matcher/config";
 import {
-  buildDeterministicJobAnalysis,
-  JOB_ANALYSIS_EXTRACTOR_VERSION,
+  analyzeJobsForMatching,
+  buildJobAnalysisVersion,
 } from "@/lib/ai/matcher/evidence/job-analysis";
 import { getMatchPresentationsForJobIds, type MatchPresentation } from "@/lib/ai/matcher/presentation";
-import { fetchJobsData, fetchMatchingPreferences, fetchProfileData } from "@/lib/ai/matcher/tracking";
+import { fetchJobsData, fetchProfileData } from "@/lib/ai/matcher/tracking";
 import { fetchCandidateProfileSnapshot } from "@/lib/ai/profile/profile-snapshot";
 
 import { fetchJobWithCompany } from "./utils";
 
 const MAX_EVIDENCE_TEXT_CHARS = 2_000;
 const MAX_EVIDENCE_ITEMS = 20;
-const CANDIDATE_SNAPSHOT_VERSION = "candidate-evidence-v1";
+const CANDIDATE_SNAPSHOT_VERSION = "candidate-facts-v2";
 
 function bounded(value: string | null | undefined, maxChars = MAX_EVIDENCE_TEXT_CHARS) {
   return value ? value.slice(0, maxChars) : null;
@@ -49,25 +50,13 @@ function compactCandidate(evidence: CandidateEvidence) {
     })),
     education: evidence.education.slice(0, 5),
     totalExperienceYears: evidence.totalExperienceYears,
-    seniorityLevel: evidence.seniorityLevel,
-    managementExperience: evidence.managementExperience,
-    domainKeywords: evidence.domainKeywords.slice(0, MAX_EVIDENCE_ITEMS),
   };
 }
 
 function compactJobAnalysis(evidence: JobAnalysisEvidence) {
   return {
-    mustHaveSkills: evidence.mustHaveSkills.slice(0, MAX_EVIDENCE_ITEMS),
-    preferredSkills: evidence.preferredSkills.slice(0, MAX_EVIDENCE_ITEMS),
-    minimumExperienceYears: evidence.minimumExperienceYears,
-    seniorityLevel: evidence.seniorityLevel,
-    managementTrack: evidence.managementTrack,
-    educationRequirements: evidence.educationRequirements.slice(0, 10),
-    locationConstraints: evidence.locationConstraints.slice(0, 10),
-    employmentType: evidence.employmentType,
-    domainKeywords: evidence.domainKeywords.slice(0, MAX_EVIDENCE_ITEMS),
-    extractionConfidence: evidence.extractionConfidence,
-    ambiguities: evidence.ambiguities.slice(0, 10),
+    summary: bounded(evidence.summary, 1_000),
+    requirements: evidence.requirements.slice(0, 20),
   };
 }
 
@@ -75,12 +64,9 @@ function compactMatch(match: MatchPresentation) {
   if (!match.matchResultId || match.matchStale) return null;
   return {
     score: match.matchScore,
-    confidence: match.matchConfidence,
     breakdown: match.matchBreakdown,
     reasons: match.matchReasons.slice(0, 10).map((value) => bounded(value, 500)),
     matchedSkills: match.matchedSkills.slice(0, MAX_EVIDENCE_ITEMS),
-    missingSkills: match.missingSkills.slice(0, MAX_EVIDENCE_ITEMS),
-    recommendations: match.recommendations.slice(0, 10).map((value) => bounded(value, 500)),
   };
 }
 
@@ -93,13 +79,20 @@ export interface WritingEvidencePacket {
 }
 
 export async function buildWritingEvidencePacket(jobId: number): Promise<WritingEvidencePacket> {
-  const [jobWithCompany, profileData, profileSnapshot, preferences, jobsMap, matchMap] = await Promise.all([
+  const [
+    jobWithCompany,
+    profileData,
+    profileSnapshot,
+    jobsMap,
+    matchMap,
+    matcherConfig,
+  ] = await Promise.all([
     fetchJobWithCompany(jobId),
     fetchProfileData(),
     fetchCandidateProfileSnapshot(),
-    fetchMatchingPreferences(),
     fetchJobsData([jobId]),
     getMatchPresentationsForJobIds([jobId]),
+    getMatcherConfig(),
   ]);
   const job = jobsMap.get(jobId);
   if (!jobWithCompany || !job) throw new Error("Job not found");
@@ -107,10 +100,7 @@ export async function buildWritingEvidencePacket(jobId: number): Promise<Writing
     throw new Error("Profile not found. Please set up your profile first.");
   }
 
-  const candidateEvidence = enrichCandidateEvidence(buildCandidateEvidence({
-    ...profileData,
-    preferences,
-  }));
+  const candidateEvidence = enrichCandidateEvidence(buildCandidateEvidence(profileData));
   const candidateArtifact = await artifactRepository.getOrCreateCandidateSnapshot({
     sourceProfileId: profileData.profile.id,
     snapshotVersion: CANDIDATE_SNAPSHOT_VERSION,
@@ -120,9 +110,18 @@ export async function buildWritingEvidencePacket(jobId: number): Promise<Writing
   const jobFingerprint = buildJobFingerprint(jobEvidence);
   const cachedAnalysis = await artifactRepository.findJobAnalysis(
     jobFingerprint,
-    JOB_ANALYSIS_EXTRACTOR_VERSION
+    buildJobAnalysisVersion(matcherConfig)
   );
-  const jobAnalysis = cachedAnalysis?.evidence ?? buildDeterministicJobAnalysis(job);
+  let jobAnalysis: JobAnalysisEvidence | undefined = cachedAnalysis?.evidence;
+  if (!jobAnalysis) {
+    const analyzed = await analyzeJobsForMatching([job], matcherConfig);
+    jobAnalysis = analyzed.get(jobId)?.analysis;
+  }
+  if (!jobAnalysis) {
+    throw new Error(
+      "AI job analysis is required before generating grounded writing. Check the Job Analysis provider and try again."
+    );
+  }
   const match = matchMap.get(jobId);
   const links = [
     allowedUrl(jobWithCompany.url),

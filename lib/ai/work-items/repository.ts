@@ -6,7 +6,9 @@ import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { db } from "@/lib/db";
 import {
   aiWorkItems,
+  jobs,
   matchLogs,
+  matchSessionJobs,
   matchSessions,
   scrapingLogs,
   type AIWorkItem,
@@ -104,6 +106,26 @@ function projectScrapingLog(
   }
 }
 
+function insertPipelineJobs(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  sessionId: string,
+  jobIds: number[],
+  now: Date
+): void {
+  const existingJobIds: number[] = [];
+  for (const chunk of chunkSqliteParameters(Array.from(new Set(jobIds)))) {
+    existingJobIds.push(...tx.select({ id: jobs.id }).from(jobs)
+      .where(inArray(jobs.id, chunk)).all().map((row) => row.id));
+  }
+  if (existingJobIds.length === 0) return;
+  tx.insert(matchSessionJobs).values(existingJobIds.map((jobId) => ({
+    sessionId,
+    jobId,
+    createdAt: now,
+    updatedAt: now,
+  }))).onConflictDoNothing().run();
+}
+
 export function enqueueMatchWork(
   database: typeof db,
   input: Omit<CreateAIWorkRecordsInput, "id" | "now"> & {
@@ -117,11 +139,79 @@ export function enqueueMatchWork(
     id,
     now: input.now ?? new Date(),
   });
+  const now = input.now ?? new Date();
   database.transaction((tx) => {
     tx.insert(matchSessions).values(records.session).run();
     tx.insert(aiWorkItems).values(records.workItem).run();
+    insertPipelineJobs(tx, id, input.jobIds, now);
   }, { behavior: "immediate" });
   return { sessionId: id, status: "queued", total: records.session.jobsTotal ?? 0 };
+}
+
+export function enqueueCoalescedProfileMatchWork(
+  database: typeof db,
+  jobIds: number[],
+  now = new Date()
+): { sessionId: string; status: "queued"; total: number } {
+  return database.transaction((tx) => {
+    const queued = tx.select({
+      id: aiWorkItems.id,
+      payloadJson: aiWorkItems.payloadJson,
+    }).from(aiWorkItems)
+      .innerJoin(matchSessions, eq(matchSessions.id, aiWorkItems.matchSessionId))
+      .where(and(
+        eq(aiWorkItems.workType, "match_jobs"),
+        eq(aiWorkItems.status, "queued"),
+        eq(aiWorkItems.cancelRequested, false),
+        eq(matchSessions.status, "queued"),
+        eq(matchSessions.triggerSource, "profile_update")
+      ))
+      .orderBy(asc(aiWorkItems.createdAt))
+      .limit(1)
+      .get();
+
+    if (queued) {
+      const payload = parseMatchWorkPayload(queued.payloadJson);
+      const mergedJobIds = Array.from(new Set([...payload.jobIds, ...jobIds]));
+      const mergedPayload = parseMatchWorkPayload(JSON.stringify({
+        ...payload,
+        jobIds: mergedJobIds,
+      }));
+      tx.update(aiWorkItems).set({
+        payloadJson: JSON.stringify(mergedPayload),
+        updatedAt: now,
+      }).where(eq(aiWorkItems.id, queued.id)).run();
+      tx.update(matchSessions).set({
+        jobsTotal: mergedPayload.jobIds.length,
+      }).where(eq(matchSessions.id, queued.id)).run();
+      const existingIds = new Set(payload.jobIds);
+      const addedJobIds = mergedPayload.jobIds.filter((jobId) => !existingIds.has(jobId));
+      if (addedJobIds.length > 0) {
+        insertPipelineJobs(tx, queued.id, addedJobIds, now);
+      }
+      return {
+        sessionId: queued.id,
+        status: "queued" as const,
+        total: mergedPayload.jobIds.length,
+      };
+    }
+
+    const id = randomUUID();
+    const records = createAIWorkRecords({
+      id,
+      jobIds,
+      triggerSource: "profile_update",
+      now,
+    });
+    tx.insert(matchSessions).values(records.session).run();
+    tx.insert(aiWorkItems).values(records.workItem).run();
+    insertPipelineJobs(tx, id, jobIds, now);
+    return {
+      sessionId: id,
+      status: "queued" as const,
+      total: records.session.jobsTotal ?? 0,
+    };
+  }, { behavior: "immediate" });
 }
 
 export function insertCompletedEmptyMatchSession(
@@ -207,6 +297,12 @@ export class DrizzleAIWorkStore implements AIWorkStore {
   }
 
   async getExecutionState(sessionId: string, jobIds: number[]) {
+    if (jobIds.length > 0) {
+      const now = new Date();
+      await this.database.transaction((tx) => {
+        insertPipelineJobs(tx, sessionId, jobIds, now);
+      }, { behavior: "immediate" });
+    }
     const session = await this.database.select().from(matchSessions)
       .where(eq(matchSessions.id, sessionId)).limit(1).then((rows) => rows[0]);
     if (!session) throw new Error(`Match session ${sessionId} does not exist.`);

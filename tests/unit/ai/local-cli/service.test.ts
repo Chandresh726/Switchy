@@ -54,11 +54,13 @@ vi.mock("@/lib/ai/local-cli/opencode-backend", () => ({
 
 import {
   clearLocalCLICaches,
+  getCachedLocalCLIStatus,
   getLocalCLIModels,
   getLocalCLIExecutionTarget,
   getLocalCLIStatus,
   resetLocalCLIProvider,
   shutdownLocalCLIBackends,
+  warmLocalCLIStatuses,
 } from "@/lib/ai/local-cli/service";
 
 describe("local CLI connection status", () => {
@@ -115,6 +117,30 @@ describe("local CLI connection status", () => {
     await getLocalCLIStatus("codex_cli", { forceRefresh: true });
     expect(mocks.codexVersion).toHaveBeenCalledTimes(2);
     expect(mocks.listCodexModels).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not expose an expired startup status as current", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-07-16T00:00:00.000Z"));
+      await getLocalCLIStatus("codex_cli");
+      expect(getCachedLocalCLIStatus("codex_cli")?.status).toBe("ready");
+
+      vi.setSystemTime(new Date("2026-07-16T00:00:31.000Z"));
+      expect(getCachedLocalCLIStatus("codex_cli")).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("warms both CLI statuses independently", async () => {
+    mocks.readAccount.mockRejectedValueOnce(new Error("Codex CLI protocol is incompatible"));
+
+    await expect(warmLocalCLIStatuses()).resolves.toBeUndefined();
+
+    expect(mocks.codexVersion).toHaveBeenCalled();
+    expect(mocks.openCodeVersion).toHaveBeenCalled();
+    expect(mocks.listOpenCodeModels).toHaveBeenCalled();
   });
 
   it("reports required-protocol failures as incompatible", async () => {

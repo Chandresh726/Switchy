@@ -3,6 +3,7 @@ import { count, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { MatchBreakdownSchema, MatchEvidenceSchema } from "@/lib/ai/artifacts";
 import { getMatchPresentations } from "@/lib/ai/matcher/presentation";
+import { getMatchPipelineProgress } from "@/lib/ai/matcher/tracking";
 import { getAIRunSummaries } from "@/lib/ai/observability";
 import { assertAppRequest } from "@/lib/api";
 import { db } from "@/lib/db";
@@ -111,7 +112,7 @@ export async function GET(request: NextRequest) {
         const analysisRunId = result.jobAnalysisId
           ? analysisById.get(result.jobAnalysisId)?.aiRunId
           : null;
-        return [result.adjudicationRunId, analysisRunId]
+        return [result.matchRunId, result.adjudicationRunId, analysisRunId]
           .filter((runId): runId is string => runId !== null && runId !== undefined);
       }));
       const currentJobs = await loadSqliteParameterChunks(loggedJobIds, (jobIdChunk) =>
@@ -128,8 +129,6 @@ export async function GET(request: NextRequest) {
             matchScore: jobs.matchScore,
             matchReasons: jobs.matchReasons,
             matchedSkills: jobs.matchedSkills,
-            missingSkills: jobs.missingSkills,
-            recommendations: jobs.recommendations,
           }).from(jobs).where(inArray(jobs.id, jobIdChunk))
       );
       const currentPresentations = await getMatchPresentations(
@@ -146,21 +145,18 @@ export async function GET(request: NextRequest) {
           return {
             ...log,
             matchResultId: null,
-            matchConfidence: null,
             matchBreakdown: null,
             matchStale: log.score !== null,
             matchSummary: "",
-            matchBand: null,
-            matchRoleFitScore: null,
-            matchEvidenceCoverage: null,
-            matchExtractionConfidence: null,
-            matchConstraints: [],
-            matchRequirementAssessments: [],
+            matchReasoning: [],
+            matchedSkills: [],
             scoringPolicyVersion: null,
             analysisRunId: null,
             analysisRun: null,
             adjudicationRunId: null,
             adjudicationRun: null,
+            matchRunId: null,
+            matchRun: null,
           };
         }
         const evidence = MatchEvidenceSchema.parse(JSON.parse(result.evidenceJson));
@@ -171,21 +167,13 @@ export async function GET(request: NextRequest) {
         return {
           ...log,
           score: result.score,
-          reasons: evidence.reasons,
+          reasons: evidence.reasoning.map((point) => point.text),
           matchedSkills: evidence.matchedSkills,
-          missingSkills: evidence.missingSkills,
-          recommendations: evidence.recommendations,
           matchResultId: result.id,
-          matchConfidence: result.confidence,
           matchBreakdown: MatchBreakdownSchema.parse(JSON.parse(result.breakdownJson)),
           matchStale: !current || current.matchResultId !== result.id || current.matchStale,
           matchSummary: evidence.summary,
-          matchBand: evidence.matchBand,
-          matchRoleFitScore: evidence.roleFitScore,
-          matchEvidenceCoverage: evidence.evidenceCoverage,
-          matchExtractionConfidence: evidence.extractionConfidence,
-          matchConstraints: evidence.constraints,
-          matchRequirementAssessments: evidence.requirementAssessments,
+          matchReasoning: evidence.reasoning,
           scoringPolicyVersion: result.scoringPolicyVersion,
           analysisRunId,
           analysisRun: analysisRunId ? runSummaries.get(analysisRunId) ?? null : null,
@@ -193,12 +181,19 @@ export async function GET(request: NextRequest) {
           adjudicationRun: result.adjudicationRunId
             ? runSummaries.get(result.adjudicationRunId) ?? null
             : null,
+          matchRunId: result.matchRunId,
+          matchRun: result.matchRunId
+            ? runSummaries.get(result.matchRunId) ?? null
+            : null,
+          matchPolicyVersion: result.matchPolicyVersion ?? result.scoringPolicyVersion,
         };
       });
 
+      const pipeline = await getMatchPipelineProgress(sessionId);
       return NextResponse.json({
         session,
         logs: presentedLogs,
+        pipeline,
       }, { headers: NO_STORE_HEADERS });
     }
 
