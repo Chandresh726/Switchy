@@ -56,7 +56,11 @@ function selectLogs(result: unknown[]) {
   const chain = {
     leftJoin: () => chain,
     where: () => ({
-      orderBy: vi.fn().mockResolvedValue(result),
+      orderBy: () => ({
+        limit: () => ({
+          offset: vi.fn().mockResolvedValue(result),
+        }),
+      }),
     }),
   };
   return { from: () => chain };
@@ -95,6 +99,7 @@ describe("match history detail", () => {
       analysis: { total: 0, completed: 0, active: 0, queued: 0, cached: 0, failed: 0 },
       matching: { total: 0, completed: 0, active: 0, queued: 0, cached: 0, failed: 0 },
       jobs: [],
+      jobPagination: { total: 0, limit: 50, offset: 0, hasMore: false },
     });
   });
 
@@ -149,6 +154,7 @@ describe("match history detail", () => {
     };
     mocks.select
       .mockImplementationOnce(() => selectSession([session]))
+      .mockImplementationOnce(() => selectWhere([{ value: logs.length }]))
       .mockImplementationOnce(() => selectLogs(logs))
       .mockImplementationOnce(() => selectWhere([result]))
       .mockImplementationOnce(() => selectWhere([{ id: "analysis-1", aiRunId: "analysis-run" }]))
@@ -201,6 +207,7 @@ describe("match history detail", () => {
     }];
     mocks.select
       .mockImplementationOnce(() => selectSession([{ id: "session-1" }]))
+      .mockImplementationOnce(() => selectWhere([{ value: logs.length }]))
       .mockImplementationOnce(() => selectLogs(logs))
       .mockImplementationOnce(() => selectWhere([{ id: "result-from-another-attempt" }]))
       .mockImplementationOnce(() => selectWhere([]));
@@ -217,8 +224,8 @@ describe("match history detail", () => {
     });
   });
 
-  it("chunks large history provenance lookups below SQLite parameter limits", async () => {
-    const count = 401;
+  it("bounds history provenance work to the requested log page", async () => {
+    const count = 50;
     const logs = Array.from({ length: count }, (_, index) => ({
       id: index + 1,
       sessionId: "session-large",
@@ -260,13 +267,11 @@ describe("match history detail", () => {
     }));
     mocks.select
       .mockImplementationOnce(() => selectSession([{ id: "session-large" }]))
+      .mockImplementationOnce(() => selectWhere([{ value: 401 }]))
       .mockImplementationOnce(() => selectLogs(logs))
-      .mockImplementationOnce(() => selectWhere(results.slice(0, 400)))
-      .mockImplementationOnce(() => selectWhere(results.slice(400)))
-      .mockImplementationOnce(() => selectWhere(analyses.slice(0, 400)))
-      .mockImplementationOnce(() => selectWhere(analyses.slice(400)))
-      .mockImplementationOnce(() => selectWhere(jobRows.slice(0, 400)))
-      .mockImplementationOnce(() => selectWhere(jobRows.slice(400)));
+      .mockImplementationOnce(() => selectWhere(results))
+      .mockImplementationOnce(() => selectWhere(analyses))
+      .mockImplementationOnce(() => selectWhere(jobRows));
     mocks.getMatchPresentations.mockResolvedValue(new Map(results.map((result) => [
       result.jobId,
       { matchResultId: result.id, matchStale: false },
@@ -289,7 +294,8 @@ describe("match history detail", () => {
 
     expect(response.status).toBe(200);
     expect(body.logs).toHaveLength(count);
-    expect(mocks.select).toHaveBeenCalledTimes(8);
+    expect(body.logPagination).toEqual({ total: 401, limit: 50, offset: 0, hasMore: true });
+    expect(mocks.select).toHaveBeenCalledTimes(6);
     expect(mocks.getAIRunSummaries).toHaveBeenCalledWith(
       Array.from({ length: count }, (_, index) => [
         `adjudication-run-${index + 1}`,

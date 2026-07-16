@@ -58,4 +58,10 @@ export const matchSessionProgressResponseSchema = z.object({
   analysis: matchPhaseProgressSchema,
   matching: matchPhaseProgressSchema,
   jobs: z.array(matchJobProgressSchema),
+  jobPagination: z.object({
+    total: z.number().int().nonnegative(),
+    limit: z.number().int().positive(),
+    offset: z.number().int().nonnegative(),
+    hasMore: z.boolean(),
+  }),
 });

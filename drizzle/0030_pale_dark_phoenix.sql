@@ -1,0 +1,2 @@
+CREATE INDEX `match_session_jobs_session_updated_job_idx` ON `match_session_jobs` (`session_id`,`updated_at`,`job_id`);--> statement-breakpoint
+CREATE INDEX `scrape_queue_session_created_id_idx` ON `scrape_queue_items` (`session_id`,`created_at`,`id`);

@@ -141,6 +141,9 @@ export const jobs = sqliteTable("jobs", {
 }, (table) => ({
   companyIdIdx: index("jobs_company_id_idx").on(table.companyId),
   statusIdx: index("jobs_status_idx").on(table.status),
+  statusDiscoveredIdIdx: index("jobs_status_discovered_id_idx").on(table.status, table.discoveredAt, table.id),
+  companyDiscoveredIdIdx: index("jobs_company_discovered_id_idx").on(table.companyId, table.discoveredAt, table.id),
+  discoveredIdIdx: index("jobs_discovered_id_idx").on(table.discoveredAt, table.id),
   matchScoreIdx: index("jobs_match_score_idx").on(table.matchScore),
   aiFingerprintIdx: index("jobs_ai_fingerprint_idx").on(table.aiFingerprint),
   companyExternalIdUnique: unique("jobs_company_external_id_unique").on(table.companyId, table.externalId),
@@ -165,6 +168,7 @@ export const scrapeSessions = sqliteTable("scrape_sessions", {
   startedAt: integer("started_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   completedAt: integer("completed_at", { mode: "timestamp" }),
 }, (table) => ({
+  startedIdIdx: index("scrape_sessions_started_id_idx").on(table.startedAt, table.id),
   companiesTotalCheck: check("scrape_sessions_companies_total_check", sql`${table.companiesTotal} is null or ${table.companiesTotal} >= 0`),
   companiesCompletedCheck: check("scrape_sessions_companies_completed_check", sql`${table.companiesCompleted} is null or ${table.companiesCompleted} >= 0`),
   totalJobsFoundCheck: check("scrape_sessions_jobs_found_check", sql`${table.totalJobsFound} is null or ${table.totalJobsFound} >= 0`),
@@ -212,6 +216,11 @@ export const scrapeQueueItems = sqliteTable("scrape_queue_items", {
     table.sessionId,
     table.status
   ),
+  sessionCreatedIdIdx: index("scrape_queue_session_created_id_idx").on(
+    table.sessionId,
+    table.createdAt,
+    table.id
+  ),
   leaseIdx: index("scrape_queue_lease_idx").on(table.status, table.leaseExpiresAt),
   attemptCountCheck: check("scrape_queue_attempt_count_check", sql`${table.attemptCount} >= 0`),
   maxAttemptsCheck: check("scrape_queue_max_attempts_check", sql`${table.maxAttempts} > 0`),
@@ -243,6 +252,8 @@ export const scrapingLogs = sqliteTable("scraping_logs", {
 }, (table) => ({
   sessionIdIdx: index("scraping_logs_session_id_idx").on(table.sessionId),
   companyIdIdx: index("scraping_logs_company_id_idx").on(table.companyId),
+  sessionStartedIdIdx: index("scraping_logs_session_started_id_idx").on(table.sessionId, table.startedAt, table.id),
+  companyStartedIdIdx: index("scraping_logs_company_started_id_idx").on(table.companyId, table.startedAt, table.id),
   jobsFoundCheck: check("scraping_logs_jobs_found_check", sql`${table.jobsFound} is null or ${table.jobsFound} >= 0`),
   jobsAddedCheck: check("scraping_logs_jobs_added_check", sql`${table.jobsAdded} is null or ${table.jobsAdded} >= 0`),
   jobsUpdatedCheck: check("scraping_logs_jobs_updated_check", sql`${table.jobsUpdated} is null or ${table.jobsUpdated} >= 0`),
@@ -478,7 +489,10 @@ export const matchSessions = sqliteTable("match_sessions", {
   errorCount: integer("error_count").default(0),
   startedAt: integer("started_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   completedAt: integer("completed_at", { mode: "timestamp" }),
-});
+}, (table) => ({
+  startedIdIdx: index("match_sessions_started_id_idx").on(table.startedAt, table.id),
+  companyStartedIdIdx: index("match_sessions_company_started_id_idx").on(table.companyId, table.startedAt, table.id),
+}));
 
 // Match Logs - Per-job match results with history
 export const matchLogs = sqliteTable("match_logs", {
@@ -496,6 +510,7 @@ export const matchLogs = sqliteTable("match_logs", {
   completedAt: integer("completed_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 }, (table) => ({
   sessionIdIdx: index("match_logs_session_id_idx").on(table.sessionId),
+  sessionCompletedIdIdx: index("match_logs_session_completed_id_idx").on(table.sessionId, table.completedAt, table.id),
   modelCompletedIdx: index("match_logs_model_completed_idx").on(
     table.modelUsed,
     table.completedAt
@@ -539,6 +554,11 @@ export const matchSessionJobs = sqliteTable("match_session_jobs", {
     table.sessionId,
     table.analysisStatus,
     table.matchStatus
+  ),
+  sessionUpdatedJobIdx: index("match_session_jobs_session_updated_job_idx").on(
+    table.sessionId,
+    table.updatedAt,
+    table.jobId
   ),
   jobIdx: index("match_session_jobs_job_idx").on(table.jobId),
 }));
@@ -600,6 +620,7 @@ export const people = sqliteTable("linkedin_connections", {
 }, (table) => ({
   mappedCompanyIdIdx: index("linkedin_connections_mapped_company_idx").on(table.mappedCompanyId),
   isActiveIdx: index("linkedin_connections_active_idx").on(table.isActive),
+  activeLastSeenIdIdx: index("linkedin_connections_active_last_seen_id_idx").on(table.isActive, table.lastSeenAt, table.id),
   isStarredIdx: index("linkedin_connections_star_idx").on(table.isStarred),
   companyNormalizedIdx: index("linkedin_connections_company_norm_idx").on(table.companyNormalized),
   unmatchedLookupIdx: index("linkedin_connections_unmatched_lookup_idx").on(
@@ -633,6 +654,7 @@ export const peopleImportSessions = sqliteTable("connection_import_sessions", {
   status: text("status").notNull().default("in_progress"),
   errorMessage: text("error_message"),
 }, (table) => ({
+  startedIdIdx: index("people_import_sessions_started_id_idx").on(table.startedAt, table.id),
   totalRowsCheck: check("people_import_total_rows_check", sql`${table.totalRows} >= 0`),
   insertedRowsCheck: check("people_import_inserted_rows_check", sql`${table.insertedRows} >= 0`),
   updatedRowsCheck: check("people_import_updated_rows_check", sql`${table.updatedRows} >= 0`),

@@ -1,0 +1,2 @@
+CREATE INDEX `jobs_discovered_id_idx` ON `jobs` (`discovered_at`,`id`);--> statement-breakpoint
+CREATE INDEX `linkedin_connections_active_last_seen_id_idx` ON `linkedin_connections` (`is_active`,`last_seen_at`,`id`);

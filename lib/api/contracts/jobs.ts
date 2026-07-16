@@ -68,12 +68,11 @@ export const jobResourceUpdateBodySchema = z
     { message: "At least one job field must be updated" }
   );
 
-export const jobSchema = z.object({
+export const jobSummarySchema = z.object({
   id: z.number().int().positive(),
   companyId: z.number().int().positive(),
   externalId: z.string().nullable(),
   title: z.string(),
-  description: z.string().nullable(),
   descriptionFormat: z.enum(["markdown", "plain", "html"]),
   url: z.string(),
   location: z.string().nullable(),
@@ -108,8 +107,12 @@ export const jobSchema = z.object({
   }),
 }).passthrough();
 
+export const jobSchema = jobSummarySchema.extend({
+  description: z.string().nullable(),
+});
+
 export const jobsResponseSchema = z.object({
-  jobs: z.array(jobSchema),
+  jobs: z.array(jobSummarySchema),
   totalCount: z.number().int().nonnegative(),
   hasMore: z.boolean(),
 });

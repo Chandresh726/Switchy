@@ -14,12 +14,14 @@ import {
 } from "@/lib/api/contracts/companies";
 import {
   historyIdParamsSchema,
+  historyDetailQuerySchema,
   historyQuerySchema,
   matchHistoryDetailResponseSchema,
 } from "@/lib/api/contracts/history";
 import { matchCompanyIdsBodySchema } from "@/lib/api/contracts/matching";
 import {
   peopleListQuerySchema,
+  peopleImportSessionsQuerySchema,
   personIdParamsSchema,
   unmatchedCompanyPatchBodySchema,
 } from "@/lib/api/contracts/people";
@@ -82,6 +84,10 @@ describe("shared API contracts", () => {
     expect(historyQuerySchema.safeParse({ offset: "not-a-number" }).success).toBe(false);
     expect(peopleListQuerySchema.safeParse({ limit: "201" }).success).toBe(false);
     expect(peopleListQuerySchema.safeParse({ offset: "-1" }).success).toBe(false);
+    expect(historyDetailQuerySchema.safeParse({ logLimit: "101" }).success).toBe(false);
+    expect(historyDetailQuerySchema.safeParse({ logOffset: "-1" }).success).toBe(false);
+    expect(peopleImportSessionsQuerySchema.safeParse({ limit: "51" }).success).toBe(false);
+    expect(peopleImportSessionsQuerySchema.safeParse({ offset: "-1" }).success).toBe(false);
   });
 
   it("validates company and matching commands before execution", () => {

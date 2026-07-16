@@ -28,6 +28,7 @@ export async function GET(request: Request, { params }: RouteParams) {
       analysis: session.pipeline.analysis,
       matching: session.pipeline.matching,
       jobs: session.pipeline.jobs,
+      jobPagination: session.pipeline.jobPagination,
     }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     return handleApiError(error, { request, fallbackMessage: "Failed to read match session", fallbackCode: "match_session_read_failed", headers: NO_STORE_HEADERS });

@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import {
@@ -38,6 +38,12 @@ export interface MatchPipelineProgress {
   analysis: MatchPipelinePhaseProgress;
   matching: MatchPipelinePhaseProgress;
   jobs: MatchSessionJobProgress[];
+  jobPagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
 }
 
 function sessionJobsWhere(sessionId: string, jobIds: number[]) {
@@ -108,41 +114,24 @@ export async function markJobMatchStarted(
   }).where(sessionJobsWhere(sessionId, [jobId]));
 }
 
-function summarizeAnalysis(rows: MatchSessionJobProgress[]): MatchPipelinePhaseProgress {
-  return {
-    total: rows.length,
-    completed: rows.filter((row) => ["ready", "cached", "failed"].includes(row.analysisStatus)).length,
-    active: rows.filter((row) => row.analysisStatus === "analyzing").length,
-    queued: rows.filter((row) => row.analysisStatus === "queued").length,
-    cached: rows.filter((row) => row.analysisStatus === "cached").length,
-    failed: rows.filter((row) => row.analysisStatus === "failed").length,
-  };
-}
-
-function summarizeMatching(rows: MatchSessionJobProgress[]): MatchPipelinePhaseProgress {
-  return {
-    total: rows.length,
-    completed: rows.filter((row) => ["completed", "cached", "failed"].includes(row.matchStatus)).length,
-    active: rows.filter((row) => row.matchStatus === "matching").length,
-    queued: rows.filter((row) => ["blocked", "queued"].includes(row.matchStatus)).length,
-    cached: rows.filter((row) => row.matchStatus === "cached").length,
-    failed: rows.filter((row) => row.matchStatus === "failed").length,
-  };
-}
-
-const STATUS_PRIORITY: Record<MatchSessionJob["matchStatus"], number> = {
-  matching: 0,
-  queued: 1,
-  blocked: 2,
-  failed: 3,
-  completed: 4,
-  cached: 5,
-};
-
 export async function getMatchPipelineProgress(
   sessionId: string,
-  database: typeof db = db
+  database: typeof db = db,
+  page: { limit: number; offset: number } = { limit: 100, offset: 0 }
 ): Promise<MatchPipelineProgress> {
+  const [summary] = await database.select({
+    total: sql<number>`count(*)`,
+    analysisCompleted: sql<number>`sum(case when ${matchSessionJobs.analysisStatus} in ('ready', 'cached', 'failed') then 1 else 0 end)`,
+    analysisActive: sql<number>`sum(case when ${matchSessionJobs.analysisStatus} = 'analyzing' then 1 else 0 end)`,
+    analysisQueued: sql<number>`sum(case when ${matchSessionJobs.analysisStatus} = 'queued' then 1 else 0 end)`,
+    analysisCached: sql<number>`sum(case when ${matchSessionJobs.analysisStatus} = 'cached' then 1 else 0 end)`,
+    analysisFailed: sql<number>`sum(case when ${matchSessionJobs.analysisStatus} = 'failed' then 1 else 0 end)`,
+    matchingCompleted: sql<number>`sum(case when ${matchSessionJobs.matchStatus} in ('completed', 'cached', 'failed') then 1 else 0 end)`,
+    matchingActive: sql<number>`sum(case when ${matchSessionJobs.matchStatus} = 'matching' then 1 else 0 end)`,
+    matchingQueued: sql<number>`sum(case when ${matchSessionJobs.matchStatus} in ('blocked', 'queued') then 1 else 0 end)`,
+    matchingCached: sql<number>`sum(case when ${matchSessionJobs.matchStatus} = 'cached' then 1 else 0 end)`,
+    matchingFailed: sql<number>`sum(case when ${matchSessionJobs.matchStatus} = 'failed' then 1 else 0 end)`,
+  }).from(matchSessionJobs).where(eq(matchSessionJobs.sessionId, sessionId));
   const rows = await database.select({
     jobId: matchSessionJobs.jobId,
     jobTitle: jobs.title,
@@ -160,15 +149,37 @@ export async function getMatchPipelineProgress(
   }).from(matchSessionJobs)
     .innerJoin(jobs, eq(matchSessionJobs.jobId, jobs.id))
     .leftJoin(companies, eq(jobs.companyId, companies.id))
-    .where(eq(matchSessionJobs.sessionId, sessionId));
-  const sorted = rows.sort((left, right) =>
-    STATUS_PRIORITY[left.matchStatus] - STATUS_PRIORITY[right.matchStatus] ||
-    right.updatedAt.getTime() - left.updatedAt.getTime() ||
-    left.jobId - right.jobId
-  );
+    .where(eq(matchSessionJobs.sessionId, sessionId))
+    .orderBy(
+      desc(matchSessionJobs.updatedAt),
+      desc(matchSessionJobs.jobId)
+    )
+    .limit(page.limit)
+    .offset(page.offset);
+  const total = Number(summary?.total ?? 0);
   return {
-    analysis: summarizeAnalysis(sorted),
-    matching: summarizeMatching(sorted),
-    jobs: sorted,
+    analysis: {
+      total,
+      completed: Number(summary?.analysisCompleted ?? 0),
+      active: Number(summary?.analysisActive ?? 0),
+      queued: Number(summary?.analysisQueued ?? 0),
+      cached: Number(summary?.analysisCached ?? 0),
+      failed: Number(summary?.analysisFailed ?? 0),
+    },
+    matching: {
+      total,
+      completed: Number(summary?.matchingCompleted ?? 0),
+      active: Number(summary?.matchingActive ?? 0),
+      queued: Number(summary?.matchingQueued ?? 0),
+      cached: Number(summary?.matchingCached ?? 0),
+      failed: Number(summary?.matchingFailed ?? 0),
+    },
+    jobs: rows,
+    jobPagination: {
+      total,
+      limit: page.limit,
+      offset: page.offset,
+      hasMore: page.offset + rows.length < total,
+    },
   };
 }

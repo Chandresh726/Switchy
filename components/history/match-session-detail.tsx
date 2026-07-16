@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -35,12 +37,16 @@ interface MatchSessionDetailProps {
 }
 
 export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
+  const [logOffset, setLogOffset] = useState(0);
+  const logLimit = 50;
+  const [workOffset, setWorkOffset] = useState(0);
+  const workLimit = 50;
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
-    queryKey: ["match-history", sessionId],
+    queryKey: ["match-history", sessionId, logOffset, workOffset],
     queryFn: async () => {
-      return getMatchHistoryDetail(sessionId);
+      return getMatchHistoryDetail(sessionId, logOffset, logLimit, workOffset, workLimit);
     },
     refetchInterval: (query) => {
       const session = query.state.data?.session;
@@ -95,7 +101,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
     );
   }
 
-  const { session, logs, pipeline } = data;
+  const { session, logs, logPagination, pipeline } = data;
   const statusConfig = getSessionStatusConfig(session.status);
   const StatusIcon = statusConfig.icon;
   const progress = session.jobsTotal
@@ -194,7 +200,14 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
               analysis={pipeline.analysis}
               matching={pipeline.matching}
               jobs={pipeline.jobs}
+              totalJobs={pipeline.jobPagination.total}
             />
+            {pipeline.jobPagination.total > workLimit && (
+              <div className="mt-2 flex items-center justify-end gap-2">
+                <Button variant="outline" size="sm" disabled={workOffset === 0} onClick={() => setWorkOffset(Math.max(0, workOffset - workLimit))}>Previous jobs</Button>
+                <Button variant="outline" size="sm" disabled={!pipeline.jobPagination.hasMore} onClick={() => setWorkOffset(workOffset + workLimit)}>Next jobs</Button>
+              </div>
+            )}
           </div>
         ) : session.status === "in_progress" ? (
           <div className="mb-6">
@@ -419,6 +432,21 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
           <p className="text-sm text-muted-foreground text-center py-8">
             No job logs available for this session
           </p>
+        )}
+        {logPagination.total > logLimit && (
+          <div className="mt-4 flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
+              Showing {logPagination.offset + 1}-{Math.min(logPagination.offset + logs.length, logPagination.total)} of {logPagination.total}
+            </span>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" disabled={logOffset === 0} onClick={() => setLogOffset(Math.max(0, logOffset - logLimit))}>
+                Previous
+              </Button>
+              <Button variant="outline" size="sm" disabled={!logPagination.hasMore} onClick={() => setLogOffset(logOffset + logLimit)}>
+                Next
+              </Button>
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -44,6 +44,7 @@ describe("useMatchSession", () => {
           failed: 0,
         },
         jobs: [],
+        jobPagination: { total: 1, limit: 100, offset: 0, hasMore: false },
       });
     }));
     const wrapper = ({ children }: PropsWithChildren) => (

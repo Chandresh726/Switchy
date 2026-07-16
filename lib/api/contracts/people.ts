@@ -60,6 +60,7 @@ export const manualPersonBodySchema = z.object({
 
 export const peopleImportSessionsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(50).default(10),
+  offset: z.coerce.number().int().nonnegative().max(1_000_000).default(0),
 });
 
 export const apolloMappingSchema = z.record(z.string(), z.string().max(500));
@@ -120,12 +121,20 @@ export const peopleImportResponseSchema = z.object({
   unmatchedCompanyRows: z.number().int().nonnegative(),
   errors: z.array(z.object({ rowNumber: z.number().int().positive(), reason: z.string() })),
 });
-export const peopleImportSessionsResponseSchema = z.array(z.object({
-  id: z.string(),
-  source: z.enum(["linkedin", "apollo", "manual"]),
-  fileName: z.string(),
-  startedAt: z.string(),
-}).passthrough());
+export const peopleImportSessionsResponseSchema = z.object({
+  sessions: z.array(z.object({
+    id: z.string(),
+    source: z.enum(["linkedin", "apollo", "manual"]),
+    fileName: z.string(),
+    startedAt: z.string(),
+  }).passthrough()),
+  pagination: z.object({
+    total: z.number().int().nonnegative(),
+    limit: z.number().int().positive(),
+    offset: z.number().int().nonnegative(),
+    hasMore: z.boolean(),
+  }),
+});
 const unmatchedSummarySchema = z.object({
   unmatchedCompanyCount: z.number().int().nonnegative(),
   unmatchedPeopleCount: z.number().int().nonnegative(),

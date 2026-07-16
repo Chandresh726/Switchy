@@ -100,9 +100,23 @@ describe("generic local AI work repository", () => {
     });
     expect(progress.matching).toMatchObject({ total: 2, completed: 1, failed: 1 });
     expect(progress.jobs.map((row) => row.jobTitle)).toEqual([
-      "First role",
       "Second role",
+      "First role",
     ]);
+    const secondPage = await getMatchPipelineProgress(
+      queued.sessionId,
+      database,
+      { limit: 1, offset: 1 }
+    );
+    expect(secondPage.jobs).toHaveLength(1);
+    expect(secondPage.jobPagination).toEqual({
+      total: 2,
+      limit: 1,
+      offset: 1,
+      hasMore: false,
+    });
+    expect(secondPage.analysis).toEqual(progress.analysis);
+    expect(secondPage.matching).toEqual(progress.matching);
   });
 
   it("durably coalesces queued profile-update work", () => {

@@ -189,7 +189,7 @@ export default function PeoplePage() {
   const { data: sessions = [] } = useQuery<PeopleImportSession[]>({
     queryKey: peopleKeys.importSessions(),
     queryFn: async () => {
-      return getPeopleImportSessions(5);
+      return (await getPeopleImportSessions(5)).sessions;
     },
   });
 

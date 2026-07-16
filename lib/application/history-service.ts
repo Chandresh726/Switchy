@@ -36,7 +36,7 @@ export async function listMatchHistory(limit: number, offset: number) {
     completedAt: matchSessions.completedAt,
   }).from(matchSessions)
     .leftJoin(companies, eq(matchSessions.companyId, companies.id))
-    .orderBy(desc(matchSessions.startedAt))
+    .orderBy(desc(matchSessions.startedAt), desc(matchSessions.id))
     .limit(limit)
     .offset(offset);
   const [{ value: total }] = await db.select({ value: count() }).from(matchSessions);
@@ -63,7 +63,13 @@ export function listScrapeHistory(limit: number, offset: number) {
   return getScrapeHistoryStore().list({ limit, offset });
 }
 
-export async function getMatchHistoryDetail(sessionId: string) {
+export async function getMatchHistoryDetail(
+  sessionId: string,
+  logLimit: number,
+  logOffset: number,
+  workLimit: number,
+  workOffset: number
+) {
   const [session] = await db.select({
     id: matchSessions.id,
     triggerSource: matchSessions.triggerSource,
@@ -81,6 +87,9 @@ export async function getMatchHistoryDetail(sessionId: string) {
     .leftJoin(companies, eq(matchSessions.companyId, companies.id))
     .where(eq(matchSessions.id, sessionId));
   if (!session) throw new NotFoundError("Session not found", "match_session_not_found");
+
+  const [{ value: totalLogs }] = await db.select({ value: count() }).from(matchLogs)
+    .where(eq(matchLogs.sessionId, sessionId));
 
   const logs = await db.select({
     id: matchLogs.id,
@@ -101,7 +110,9 @@ export async function getMatchHistoryDetail(sessionId: string) {
     .leftJoin(jobs, eq(matchLogs.jobId, jobs.id))
     .leftJoin(companies, eq(jobs.companyId, companies.id))
     .where(eq(matchLogs.sessionId, sessionId))
-    .orderBy(desc(matchLogs.completedAt));
+    .orderBy(desc(matchLogs.completedAt), desc(matchLogs.id))
+    .limit(logLimit)
+    .offset(logOffset);
 
   const jobIds = Array.from(new Set(logs.flatMap((log) => log.jobId === null ? [] : [log.jobId])));
   const resultIds = Array.from(new Set(logs.flatMap((log) => log.matchResultId === null ? [] : [log.matchResultId])));
@@ -185,7 +196,17 @@ export async function getMatchHistoryDetail(sessionId: string) {
     };
   });
 
-  return { session, logs: presentedLogs, pipeline: await getMatchPipelineProgress(sessionId) };
+  return {
+    session,
+    logs: presentedLogs,
+    logPagination: {
+      total: totalLogs,
+      limit: logLimit,
+      offset: logOffset,
+      hasMore: logOffset + logs.length < totalLogs,
+    },
+    pipeline: await getMatchPipelineProgress(sessionId, db, { limit: workLimit, offset: workOffset }),
+  };
 }
 
 export async function deleteMatchHistorySession(sessionId: string) {
@@ -201,8 +222,18 @@ export async function cancelMatchHistorySession(sessionId: string) {
   return { success: true as const, stopped: false as const, status: result.status };
 }
 
-export function getScrapeHistoryDetail(sessionId: string) {
-  const detail = getScrapeHistoryStore().getDetail(sessionId);
+export function getScrapeHistoryDetail(
+  sessionId: string,
+  logLimit: number,
+  logOffset: number,
+  workLimit: number,
+  workOffset: number
+) {
+  const detail = getScrapeHistoryStore().getDetail(
+    sessionId,
+    { limit: logLimit, offset: logOffset },
+    { limit: workLimit, offset: workOffset }
+  );
   if (!detail) throw new NotFoundError("Session not found", "scrape_session_not_found");
   return detail;
 }

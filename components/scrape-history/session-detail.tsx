@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Clock,
@@ -35,21 +37,21 @@ interface SessionDetailProps {
 }
 
 export function SessionDetail({ sessionId }: SessionDetailProps) {
+  const [logOffset, setLogOffset] = useState(0);
+  const logLimit = 50;
+  const [workOffset, setWorkOffset] = useState(0);
+  const workLimit = 50;
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
-    queryKey: ["scrape-history", sessionId],
+    queryKey: ["scrape-history", sessionId, logOffset, workOffset],
     queryFn: async () => {
-      return getScrapeHistoryDetail(sessionId);
+      return getScrapeHistoryDetail(sessionId, logOffset, logLimit, workOffset, workLimit);
     },
     refetchInterval: (query) => {
       const session = query.state.data?.session;
-      const queueItems = query.state.data?.queueItems ?? [];
       if (!session) return 1000;
-      const hasActiveQueueWork = queueItems.some(
-        (item) => item.status === "queued" || item.status === "running"
-      );
-      return session.status === "in_progress" || hasActiveQueueWork ? 1000 : false;
+      return session.status === "in_progress" || query.state.data?.hasActiveWork ? 1000 : false;
     },
     refetchIntervalInBackground: true,
   });
@@ -99,16 +101,14 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
     );
   }
 
-  const { session, logs, queueItems } = data;
+  const { session, logs, logPagination, workPagination, hasActiveWork, queueItems } = data;
   const sessionStatusConfig = getSessionStatusConfig(session.status);
   const SessionStatusIcon = sessionStatusConfig.icon;
   const sessionDisplayTime = session.scheduledForAt ? new Date(session.scheduledForAt) : session.startedAt;
   const progress = session.companiesTotal
     ? Math.round(((session.companiesCompleted || 0) / session.companiesTotal) * 100)
     : 0;
-  const hasActiveQueueWork = queueItems.some(
-    (item) => item.status === "queued" || item.status === "running"
-  );
+  const hasActiveQueueWork = hasActiveWork;
 
   return (
     <div className="space-y-6">
@@ -258,6 +258,27 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
       </div>
 
       <CompanyProgressList queueItems={queueItems} logs={logs} />
+      {workPagination.total > workLimit && (
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="outline" size="sm" disabled={workOffset === 0} onClick={() => setWorkOffset(Math.max(0, workOffset - workLimit))}>Previous companies</Button>
+          <Button variant="outline" size="sm" disabled={!workPagination.hasMore} onClick={() => setWorkOffset(workOffset + workLimit)}>Next companies</Button>
+        </div>
+      )}
+      {logPagination.total > logLimit && (
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">
+            Showing {logPagination.offset + 1}-{Math.min(logPagination.offset + logs.length, logPagination.total)} of {logPagination.total} log entries
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={logOffset === 0} onClick={() => setLogOffset(Math.max(0, logOffset - logLimit))}>
+              Previous
+            </Button>
+            <Button variant="outline" size="sm" disabled={!logPagination.hasMore} onClick={() => setLogOffset(logOffset + logLimit)}>
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

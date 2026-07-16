@@ -13,6 +13,12 @@ export const historyIdParamsSchema = z.object({
 export const scrapeHistoryQuerySchema = historyQuerySchema.extend({
   limit: historyQuerySchema.shape.limit.default(20),
 });
+export const historyDetailQuerySchema = z.object({
+  logLimit: z.coerce.number().int().positive().max(100).default(50),
+  logOffset: z.coerce.number().int().nonnegative().max(1_000_000).default(0),
+  workLimit: z.coerce.number().int().positive().max(100).default(50),
+  workOffset: z.coerce.number().int().nonnegative().max(1_000_000).default(0),
+});
 
 const paginationResponseSchema = z.object({
   total: z.number().int().nonnegative(),
@@ -103,6 +109,9 @@ export const scrapeHistoryDetailResponseSchema = z.object({
     attemptsTotal: z.number().int().positive(),
     isFinalAttempt: z.boolean(),
   })),
+  logPagination: paginationResponseSchema,
+  workPagination: paginationResponseSchema,
+  hasActiveWork: z.boolean(),
   queueItems: z.array(z.object({
     id: z.string(),
     companyId: z.number().int().positive(),
@@ -147,10 +156,12 @@ export const matchHistoryDetailResponseSchema = z.object({
     matchRunId: z.string().nullable().optional(),
     matchRun: aiRunSummarySchema.nullable().optional(),
   }).passthrough()),
+  logPagination: paginationResponseSchema,
   pipeline: z.object({
     analysis: matchPhaseProgressSchema,
     matching: matchPhaseProgressSchema,
     jobs: z.array(matchJobProgressSchema),
+    jobPagination: paginationResponseSchema,
   }),
 });
 export const historyMutationResponseSchema = z.object({ success: z.boolean() }).passthrough();

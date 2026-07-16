@@ -16,7 +16,6 @@ import type {
 } from "@/lib/api/contracts/companies";
 import { companyPlatformSchema } from "@/lib/api/contracts/companies";
 import { getCurrentMatchContext, getMatchPresentations } from "@/lib/ai/matcher/presentation";
-import { countPromotedMatchRows } from "@/lib/ai/matcher/promotion";
 import { isCompanyScrapeSupported } from "@/lib/companies/scrape-support";
 import { normalizeCareersUrl } from "@/lib/companies/normalization";
 import { db } from "@/lib/db";
@@ -36,7 +35,7 @@ type PreparedCompany = CompanyInput & { careersUrl: string; normalizedCareersUrl
 
 const MANUAL_BOARD_TOKEN_REQUIRED = new Set(["greenhouse", "lever", "ashby"]);
 const COMPANY_JOB_SELECTION = {
-  id: jobs.id, title: jobs.title, description: jobs.description, url: jobs.url,
+  id: jobs.id, title: jobs.title, url: jobs.url,
   status: jobs.status, location: jobs.location, locationType: jobs.locationType,
   seniorityLevel: jobs.seniorityLevel, department: jobs.department,
   employmentType: jobs.employmentType, salary: jobs.salary, matchScore: jobs.matchScore,
@@ -311,58 +310,63 @@ export async function getCompanyOverview(id: number) {
     eq(matchResults.candidateFingerprint, currentContext.candidateFingerprint),
     eq(matchResults.isStale, false)
   ) : null;
-  const promotionRowsPromise = currentContext
-    ? db.select({ score: matchResults.score, legacyScore: jobs.matchScore }).from(jobs)
-      .leftJoin(matchResults, currentResultJoin!).where(eq(jobs.companyId, id))
-    : db.select({ score: sql<number | null>`null`, legacyScore: jobs.matchScore }).from(jobs).where(eq(jobs.companyId, id));
+  const effectiveScore = currentContext
+    ? sql<number | null>`coalesce(${matchResults.score}, ${jobs.matchScore})`
+    : jobs.matchScore;
+  const promotionCountQuery = db.select({
+    value: sql<number>`coalesce(sum(case when ${effectiveScore} >= 70 then 1 else 0 end), 0)`,
+  }).from(jobs);
+  const promotionCountPromise = currentResultJoin
+    ? promotionCountQuery.leftJoin(matchResults, currentResultJoin).where(eq(jobs.companyId, id))
+    : promotionCountQuery.where(eq(jobs.companyId, id));
   const topMatchJobsPromise = currentContext
     ? db.select(COMPANY_JOB_SELECTION).from(jobs).leftJoin(matchResults, currentResultJoin!)
       .where(and(eq(jobs.companyId, id), or(gte(matchResults.score, 70), and(isNull(matchResults.id), gte(jobs.matchScore, 70)))))
-      .orderBy(desc(sql<number | null>`coalesce(${matchResults.score}, ${jobs.matchScore})`), desc(jobs.discoveredAt)).limit(3)
+      .orderBy(desc(sql<number | null>`coalesce(${matchResults.score}, ${jobs.matchScore})`), desc(jobs.discoveredAt), desc(jobs.id)).limit(3)
     : db.select(COMPANY_JOB_SELECTION).from(jobs).where(and(eq(jobs.companyId, id), gte(jobs.matchScore, 70)))
-      .orderBy(desc(jobs.matchScore), desc(jobs.discoveredAt)).limit(3);
-  const [jobStatsRows, peopleStatsRows, companyJobs, companyPeople, scrapeLogs, matchSessionRows, promotionRows, topMatchJobs] = await Promise.all([
+      .orderBy(desc(jobs.matchScore), desc(jobs.discoveredAt), desc(jobs.id)).limit(3);
+  const [jobStatsRows, peopleStatsRows, companyJobs, companyPeople, scrapeLogs, matchSessionRows, promotionCountRows, topMatchJobs] = await Promise.all([
     db.select({ openJobs: count() }).from(jobs).where(eq(jobs.companyId, id)),
     db.select({
       mappedPeople: sql<number>`count(*)`,
       starredPeople: sql<number>`sum(case when ${people.isStarred} = 1 then 1 else 0 end)`,
     }).from(people).where(and(eq(people.mappedCompanyId, id), eq(people.isActive, true))),
-    db.select(COMPANY_JOB_SELECTION).from(jobs).where(eq(jobs.companyId, id)).orderBy(desc(jobs.discoveredAt)).limit(50),
+    db.select(COMPANY_JOB_SELECTION).from(jobs).where(eq(jobs.companyId, id)).orderBy(desc(jobs.discoveredAt), desc(jobs.id)).limit(50),
     db.select({
       id: people.id, fullName: people.fullName, firstName: people.firstName,
       lastName: people.lastName, profileUrl: people.profileUrl, email: people.email,
       position: people.position, source: people.source, connectedOn: people.connectedOn,
       isStarred: people.isStarred, notes: people.notes,
     }).from(people).where(and(eq(people.mappedCompanyId, id), eq(people.isActive, true)))
-      .orderBy(desc(people.isStarred), people.fullName).limit(200),
+      .orderBy(desc(people.isStarred), people.fullName, desc(people.id)).limit(200),
     db.select({
       id: scrapingLogs.id, status: scrapingLogs.status, triggerSource: scrapingLogs.triggerSource,
       jobsFound: scrapingLogs.jobsFound, jobsAdded: scrapingLogs.jobsAdded,
       startedAt: scrapingLogs.startedAt, completedAt: scrapingLogs.completedAt,
-    }).from(scrapingLogs).where(eq(scrapingLogs.companyId, id)).orderBy(desc(scrapingLogs.startedAt)).limit(20),
+    }).from(scrapingLogs).where(eq(scrapingLogs.companyId, id)).orderBy(desc(scrapingLogs.startedAt), desc(scrapingLogs.id)).limit(20),
     db.select({
       id: matchSessions.id, status: matchSessions.status, triggerSource: matchSessions.triggerSource,
       jobsTotal: matchSessions.jobsTotal, jobsCompleted: matchSessions.jobsCompleted,
       jobsSucceeded: matchSessions.jobsSucceeded, jobsFailed: matchSessions.jobsFailed,
       startedAt: matchSessions.startedAt, completedAt: matchSessions.completedAt,
-    }).from(matchSessions).where(eq(matchSessions.companyId, id)).orderBy(desc(matchSessions.startedAt)).limit(20),
-    promotionRowsPromise,
+    }).from(matchSessions).where(eq(matchSessions.companyId, id)).orderBy(desc(matchSessions.startedAt), desc(matchSessions.id)).limit(20),
+    promotionCountPromise,
     topMatchJobsPromise,
   ]);
   const [presentations, topPresentations] = await Promise.all([
-    getMatchPresentations(companyJobs, currentContext),
-    getMatchPresentations(topMatchJobs, currentContext, { includeStale: false }),
+    getMatchPresentations(companyJobs.map((job) => ({ ...job, description: null })), currentContext),
+    getMatchPresentations(topMatchJobs.map((job) => ({ ...job, description: null })), currentContext, { includeStale: false }),
   ]);
   const present = (rows: typeof companyJobs, values: Awaited<ReturnType<typeof getMatchPresentations>>) => rows.map((job) => {
     const presentation = values.get(job.id);
     if (!presentation) throw new Error(`Missing match presentation for job ${job.id}`);
-    return { ...job, description: undefined, ...presentation };
+    return { ...job, ...presentation };
   });
   return {
     company: { ...company, canScrapeJobs: isCompanyScrapeSupported(company.careersUrl, company.platform) },
     stats: {
       openJobs: jobStatsRows[0]?.openJobs ?? 0,
-      highMatchJobs: countPromotedMatchRows(promotionRows),
+      highMatchJobs: Number(promotionCountRows[0]?.value ?? 0),
       mappedPeople: peopleStatsRows[0]?.mappedPeople || 0,
       starredPeople: peopleStatsRows[0]?.starredPeople || 0,
     },

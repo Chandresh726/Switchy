@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { companies, jobs, people, profile } from "@/lib/db/schema";
+import { jobsQuerySchema } from "@/lib/api/contracts/jobs";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-application-services-");
@@ -43,6 +44,60 @@ describe("backend application services", () => {
     await expect(updateJob(999_999, { status: "viewed" })).rejects.toMatchObject({ code: "job_not_found" });
     await expect(deleteJob(job.id)).resolves.toEqual({ success: true });
     await expect(deleteJob(job.id)).rejects.toMatchObject({ code: "job_not_found" });
+  });
+
+  it("keeps 5,000-job list reads bounded, stable, and free of descriptions", async () => {
+    const { database } = harness.createDatabase();
+    vi.doMock("@/lib/db", () => ({ db: database }));
+    vi.doMock("@/lib/ai/matcher/presentation", () => ({
+      getCurrentMatchContext: vi.fn().mockResolvedValue(null),
+      getMatchPresentations: vi.fn().mockImplementation(async (rows: Array<{ id: number; matchScore: number | null }>) =>
+        new Map(rows.map((row) => [row.id, {
+          matchScore: row.matchScore, matchReasons: [], matchedSkills: [], matchResultId: null,
+          matchBreakdown: null, matchStale: false, matchLegacy: false,
+          matchSummary: "", matchReasoning: [], scoringPolicyVersion: null,
+        }]))
+      ),
+    }));
+    const company = database.insert(companies).values({
+      name: "Scale Co",
+      careersUrl: "https://example.com/scale",
+    }).returning().get();
+    const discoveredAt = new Date("2026-07-16T00:00:00.000Z");
+    database.transaction((tx) => {
+      for (let index = 1; index <= 5_000; index += 1) {
+        tx.insert(jobs).values({
+          companyId: company.id,
+          externalId: `scale-${index}`,
+          title: "Backend Engineer",
+          description: `private payload ${index}`,
+          url: `https://example.com/scale/${index}`,
+          discoveredAt,
+        }).run();
+      }
+    });
+    const { listJobs } = await import("@/lib/application/jobs-service");
+    const firstPage = await listJobs(jobsQuerySchema.parse({
+      sortBy: "discoveredAt",
+      sortOrder: "desc",
+      limit: 100,
+      offset: 0,
+    }));
+    const secondPage = await listJobs(jobsQuerySchema.parse({
+      sortBy: "discoveredAt",
+      sortOrder: "desc",
+      limit: 100,
+      offset: 100,
+    }));
+
+    expect(firstPage).toMatchObject({ totalCount: 5_000, hasMore: true });
+    expect(firstPage.jobs).toHaveLength(100);
+    expect(secondPage.jobs).toHaveLength(100);
+    expect(firstPage.jobs.every((job) => !("description" in job))).toBe(true);
+    expect(firstPage.jobs.map((job) => job.id)).toEqual(
+      [...firstPage.jobs.map((job) => job.id)].sort((left, right) => right - left)
+    );
+    expect(new Set([...firstPage.jobs, ...secondPage.jobs].map((job) => job.id)).size).toBe(200);
   });
 
   it("owns company import, read, update, and delete semantics", async () => {

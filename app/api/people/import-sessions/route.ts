@@ -7,8 +7,8 @@ import { listPeopleImportSessions } from "@/lib/application/people-service";
 
 export async function GET(request: NextRequest) {
   try {
-    const { limit } = peopleImportSessionsQuerySchema.parse(Object.fromEntries(request.nextUrl.searchParams));
-    return NextResponse.json(await listPeopleImportSessions(limit));
+    const { limit, offset } = peopleImportSessionsQuerySchema.parse(Object.fromEntries(request.nextUrl.searchParams));
+    return NextResponse.json(await listPeopleImportSessions(limit, offset));
   } catch (error) {
     return handleApiError(error, { request, fallbackMessage: "Failed to fetch import sessions", fallbackCode: "people_import_sessions_fetch_failed" });
   }

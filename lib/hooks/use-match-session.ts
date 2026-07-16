@@ -17,6 +17,12 @@ export interface MatchSessionProgress {
   analysis: MatchPhaseProgress;
   matching: MatchPhaseProgress;
   jobs: MatchJobProgress[];
+  jobPagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
 }
 
 export interface MatchPhaseProgress {

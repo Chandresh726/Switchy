@@ -28,7 +28,10 @@ const SESSION_ID = "session/with spaces";
 function sessionResponse(
   status: string,
   queueItems: Array<Record<string, unknown>> = [],
-  logs: Array<Record<string, unknown>> = []
+  logs: Array<Record<string, unknown>> = [],
+  hasActiveWork = queueItems.some((item) =>
+    item.status === "queued" || item.status === "running"
+  )
 ) {
   return {
     session: {
@@ -46,6 +49,19 @@ function sessionResponse(
         status === "in_progress" ? null : "2026-07-13T10:01:00.000Z",
     },
     logs,
+    logPagination: {
+      total: logs.length,
+      limit: 50,
+      offset: 0,
+      hasMore: false,
+    },
+    workPagination: {
+      total: queueItems.length,
+      limit: 50,
+      offset: 0,
+      hasMore: false,
+    },
+    hasActiveWork,
     queueItems,
   };
 }
@@ -208,6 +224,20 @@ describe("SessionDetail", () => {
       )
     );
     expect(mocks.toastSuccess).toHaveBeenCalledWith("Stopping scrape session");
+  });
+
+  it("keeps deletion disabled when active work exists outside the current page", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(sessionResponse(
+      "failed",
+      [queueItem({ status: "completed", completedAt: "2026-07-13T10:01:00.000Z" })],
+      [],
+      true
+    ))));
+
+    renderWithQueryClient(<SessionDetail sessionId={SESSION_ID} />);
+
+    const deleteButton = await screen.findByRole("button", { name: "Delete Session" });
+    expect((deleteButton as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("deletes a terminal idle session and navigates back to scrape history", async () => {

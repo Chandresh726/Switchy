@@ -61,6 +61,12 @@ Database migrations run automatically before `pnpm dev` and `pnpm start`.
 Production mode is also bound to `127.0.0.1`; use it only from the device where
 Switchy is running.
 
+Job and people search intentionally use bounded SQLite substring queries. This
+keeps the local installation and generated migration chain simple. Revisit an
+FTS index only if a representative local database of at least 50,000 jobs has a
+repeatable search latency above 250 ms on supported hardware; until then,
+bounded query text and paginated responses are the preferred tradeoff.
+
 ## Data Storage
 
 - Development state: `~/.switchy/dev/`

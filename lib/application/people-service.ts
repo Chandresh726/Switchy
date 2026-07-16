@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { count, desc, eq } from "drizzle-orm";
 import type { z } from "zod";
 
 import { NotFoundError, ValidationError } from "@/lib/api";
@@ -81,8 +81,19 @@ export async function updatePerson(id: number, input: PersonPatchInput) {
   return updated;
 }
 
-export const listPeopleImportSessions = (limit: number) => db.select().from(peopleImportSessions)
-  .orderBy(desc(peopleImportSessions.startedAt)).limit(limit);
+export async function listPeopleImportSessions(limit: number, offset: number) {
+  const [sessions, [{ value: total }]] = await Promise.all([
+    db.select().from(peopleImportSessions)
+      .orderBy(desc(peopleImportSessions.startedAt), desc(peopleImportSessions.id))
+      .limit(limit)
+      .offset(offset),
+    db.select({ value: count() }).from(peopleImportSessions),
+  ]);
+  return {
+    sessions,
+    pagination: { total, limit, offset, hasMore: offset + sessions.length < total },
+  };
+}
 
 export function listIgnoredUnmatchedCompanies(query: UnmatchedCompaniesQuery) {
   return getIgnoredUnmatchedCompaniesList({ search: query.search, limit: query.limit, offset: query.offset });

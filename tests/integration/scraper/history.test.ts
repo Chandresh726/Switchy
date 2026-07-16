@@ -239,6 +239,14 @@ describe("DrizzleScrapeHistoryStore", () => {
           isFinalAttempt: true,
         },
       ]);
+
+    expect(new DrizzleScrapeHistoryStore(database).getDetail(
+      "retry-session",
+      { limit: 1, offset: 1 }
+    )).toMatchObject({
+      logs: [{ attemptNumber: 2, attemptsTotal: 2, isFinalAttempt: true }],
+      logPagination: { total: 2, limit: 1, offset: 1, hasMore: false },
+    });
   });
 
   it("does not invent a second log attempt after committed-result recovery", () => {

@@ -30,10 +30,10 @@ type JobsQuery = z.infer<typeof jobsQuerySchema>;
 type MatchBand = "high" | "good";
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
-const JOB_LIST_SELECTION = {
+const JOB_SUMMARY_SELECTION = {
   job: {
     id: jobs.id, companyId: jobs.companyId, externalId: jobs.externalId,
-    title: jobs.title, description: jobs.description, descriptionFormat: jobs.descriptionFormat,
+    title: jobs.title, descriptionFormat: jobs.descriptionFormat,
     url: jobs.url, location: jobs.location, locationType: jobs.locationType,
     salary: jobs.salary, department: jobs.department, employmentType: jobs.employmentType,
     seniorityLevel: jobs.seniorityLevel, status: jobs.status, postedDate: jobs.postedDate,
@@ -42,6 +42,11 @@ const JOB_LIST_SELECTION = {
     matchScore: jobs.matchScore, matchReasons: jobs.matchReasons, matchedSkills: jobs.matchedSkills,
   },
   company: { id: companies.id, name: companies.name, logoUrl: companies.logoUrl, platform: companies.platform },
+} as const;
+
+const JOB_DETAIL_SELECTION = {
+  ...JOB_SUMMARY_SELECTION.job,
+  description: jobs.description,
 } as const;
 
 function legacyBandCondition(bands: MatchBand[]) {
@@ -79,18 +84,19 @@ function orderByFor(query: JobsQuery, scoreExpression: typeof jobs.matchScore | 
   switch (query.sortBy) {
     case "postedDate": return [sql`CASE WHEN ${jobs.postedDate} IS NULL THEN 1 ELSE 0 END`, direction(jobs.postedDate), desc(jobs.id)] as const;
     case "discoveredAt": return [direction(jobs.discoveredAt), desc(jobs.id)] as const;
-    case "companyName": return [direction(companies.name), desc(jobs.discoveredAt)] as const;
-    case "title": return [direction(jobs.title), desc(jobs.discoveredAt)] as const;
-    default: return [sql`CASE WHEN ${scoreExpression} IS NULL THEN 1 ELSE 0 END`, direction(scoreExpression), desc(jobs.discoveredAt)] as const;
+    case "companyName": return [direction(companies.name), desc(jobs.discoveredAt), desc(jobs.id)] as const;
+    case "title": return [direction(jobs.title), desc(jobs.discoveredAt), desc(jobs.id)] as const;
+    default: return [sql`CASE WHEN ${scoreExpression} IS NULL THEN 1 ELSE 0 END`, direction(scoreExpression), desc(jobs.discoveredAt), desc(jobs.id)] as const;
   }
 }
 
-async function presentRows(rows: Array<{ job: Parameters<typeof getMatchPresentations>[0][number]; company: { id: number; name: string; logoUrl: string | null; platform: string | null } }>, context?: Awaited<ReturnType<typeof getCurrentMatchContext>>) {
-  const presentations = await getMatchPresentations(rows.map(({ job }) => job), context);
+async function presentRows(rows: Array<{ job: Omit<Parameters<typeof getMatchPresentations>[0][number], "description"> & Record<string, unknown>; company: { id: number; name: string; logoUrl: string | null; platform: string | null } }>, context?: Awaited<ReturnType<typeof getCurrentMatchContext>>) {
+  const matchableJobs = rows.map(({ job }) => ({ ...job, description: null }));
+  const presentations = await getMatchPresentations(matchableJobs, context);
   return rows.map(({ job, company }) => {
     const presentation = presentations.get(job.id);
     if (!presentation) throw new Error(`Missing match presentation for job ${job.id}`);
-    return { ...job, description: null, company, ...presentation };
+    return { ...job, company, ...presentation };
   });
 }
 
@@ -102,16 +108,16 @@ export async function listJobs(query: JobsQuery) {
   const baseWhere = conditions.length > 0 ? and(...conditions) : undefined;
   if (!scoreAware) {
     const direction = query.sortOrder === "asc" ? asc : desc;
-    const select = db.select(JOB_LIST_SELECTION).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id)).where(baseWhere);
+    const select = db.select(JOB_SUMMARY_SELECTION).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id)).where(baseWhere);
     let rows;
     switch (query.sortBy) {
       case "postedDate": rows = await select.orderBy(sql`CASE WHEN ${jobs.postedDate} IS NULL THEN 1 ELSE 0 END`, direction(jobs.postedDate), desc(jobs.id)).limit(query.limit).offset(query.offset); break;
       case "discoveredAt": rows = await select.orderBy(direction(jobs.discoveredAt), desc(jobs.id)).limit(query.limit).offset(query.offset); break;
-      case "companyName": rows = await select.orderBy(direction(companies.name), desc(jobs.discoveredAt)).limit(query.limit).offset(query.offset); break;
-      case "title": rows = await select.orderBy(direction(jobs.title), desc(jobs.discoveredAt)).limit(query.limit).offset(query.offset); break;
+      case "companyName": rows = await select.orderBy(direction(companies.name), desc(jobs.discoveredAt), desc(jobs.id)).limit(query.limit).offset(query.offset); break;
+      case "title": rows = await select.orderBy(direction(jobs.title), desc(jobs.discoveredAt), desc(jobs.id)).limit(query.limit).offset(query.offset); break;
       default: rows = await select.orderBy(desc(jobs.discoveredAt), desc(jobs.id)).limit(query.limit).offset(query.offset);
     }
-    const [{ value: totalCount }] = await db.select({ value: count() }).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id)).where(baseWhere);
+    const [{ value: totalCount }] = await db.select({ value: count() }).from(jobs).where(baseWhere);
     return { jobs: await presentRows(rows), totalCount, hasMore: query.offset + query.limit < totalCount };
   }
 
@@ -124,9 +130,9 @@ export async function listJobs(query: JobsQuery) {
     if (query.maxScore !== undefined) scoreConditions.push(lte(jobs.matchScore, query.maxScore));
     if (requestedBands.length > 0) scoreConditions.push(legacyBandCondition(requestedBands));
     const where = scoreConditions.length > 0 ? and(...scoreConditions) : undefined;
-    rows = await db.select(JOB_LIST_SELECTION).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id))
+    rows = await db.select(JOB_SUMMARY_SELECTION).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id))
       .where(where).orderBy(...orderByFor(query)).limit(query.limit).offset(query.offset);
-    const [total] = await db.select({ value: count() }).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id)).where(where);
+    const [total] = await db.select({ value: count() }).from(jobs).where(where);
     totalCount = total.value;
   } else {
     const join = and(eq(matchResults.jobId, jobs.id), eq(matchResults.candidateFingerprint, currentContext.candidateFingerprint), eq(matchResults.isStale, false));
@@ -141,9 +147,9 @@ export async function listJobs(query: JobsQuery) {
       if (band) scoreConditions.push(band);
     }
     const where = scoreConditions.length > 0 ? and(...scoreConditions) : undefined;
-    rows = await db.select(JOB_LIST_SELECTION).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id))
+    rows = await db.select(JOB_SUMMARY_SELECTION).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id))
       .leftJoin(matchResults, join).where(where).orderBy(...orderByFor(query, effectiveScore)).limit(query.limit).offset(query.offset);
-    const [total] = await db.select({ value: count() }).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id)).leftJoin(matchResults, join).where(where);
+    const [total] = await db.select({ value: count() }).from(jobs).leftJoin(matchResults, join).where(where);
     totalCount = total.value;
   }
   return { jobs: await presentRows(rows, currentContext), totalCount, hasMore: query.offset + query.limit < totalCount };
@@ -151,7 +157,7 @@ export async function listJobs(query: JobsQuery) {
 
 export async function getJob(id: number) {
   const [row] = await db
-    .select({ job: JOB_LIST_SELECTION.job, company: {
+    .select({ job: JOB_DETAIL_SELECTION, company: {
       id: companies.id,
       name: companies.name,
       logoUrl: companies.logoUrl,
