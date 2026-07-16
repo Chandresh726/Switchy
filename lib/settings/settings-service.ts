@@ -371,7 +371,3 @@ export async function getSettingsWithDefaults(): Promise<Record<SettingKey, stri
 
   return result;
 }
-
-export async function upsertSetting(key: SettingKey, value: string): Promise<void> {
-  await upsertSettings([{ key, value }]);
-}

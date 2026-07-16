@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { companies, jobs, people, profile } from "@/lib/db/schema";
+import { companies, education, jobs, people, profile } from "@/lib/db/schema";
 import { jobsQuerySchema } from "@/lib/api/contracts/jobs";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
@@ -186,6 +186,26 @@ describe("backend application services", () => {
     await expect(service.deleteSkill(skill.id)).resolves.toEqual({ success: true });
     await expect(service.deleteSkill(skill.id)).rejects.toMatchObject({ code: "skill_not_found" });
     expect(scheduleProfileRematch).toHaveBeenCalledTimes(3);
+  });
+
+  it("persists parsed education without dates atomically", async () => {
+    const { database } = harness.createDatabase();
+    const scheduleProfileRematch = vi.fn();
+    vi.doMock("@/lib/db", () => ({ db: database }));
+    vi.doMock("@/lib/ai/matcher/profile-rematch", () => ({ scheduleProfileRematch }));
+    const localProfile = database.insert(profile).values({ name: "Local user" }).returning().get();
+    const service = await import("@/lib/application/profile-service");
+
+    await expect(service.createEducation([
+      { profileId: localProfile.id, institution: "Example University", degree: "BS" },
+      { profileId: 999_999, institution: "Invalid University", degree: "MS" },
+    ])).rejects.toThrow();
+    expect(database.select().from(education).all()).toEqual([]);
+
+    await expect(service.createEducation([
+      { profileId: localProfile.id, institution: "Example University", degree: "BS" },
+    ])).resolves.toMatchObject([{ startDate: null }]);
+    expect(scheduleProfileRematch).toHaveBeenCalledTimes(1);
   });
 
   it("converges concurrent initial profile saves on the local singleton", async () => {

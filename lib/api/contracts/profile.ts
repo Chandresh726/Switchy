@@ -59,12 +59,13 @@ export const educationWriteBodySchema = z.object({
   institution: z.string().trim().min(1).max(300),
   degree: z.string().trim().min(1).max(300),
   field: z.string().max(300).nullable().optional(),
-  startDate: z.string().trim().min(1).max(100),
+  startDate: z.string().trim().min(1).max(100).nullable().optional(),
   endDate: z.string().max(100).nullable().optional(),
   gpa: z.string().max(100).nullable().optional(),
   honors: z.string().max(2_000).nullable().optional(),
 });
 
+export const educationCreateBodySchema = z.array(educationWriteBodySchema).min(1).max(100);
 export const educationUpdateBodySchema = educationWriteBodySchema.omit({ profileId: true });
 
 export const skillSchema = z.object({
@@ -95,7 +96,7 @@ export const educationSchema = z.object({
   gpa: z.string().nullable(),
   honors: z.string().nullable(),
 });
-export const resumeResponseSchema = z.object({
+const resumeResponseSchema = z.object({
   id: z.number().int().positive(),
   profileId: z.number().int().positive(),
   fileName: z.string(),
@@ -138,7 +139,6 @@ export const profileResponseSchema = z.union([
   }),
   z.null(),
 ]);
-export const resumesResponseSchema = z.array(resumeResponseSchema);
 export const skillsResponseSchema = z.array(skillSchema);
 export const experienceResponseSchema = z.array(experienceSchema);
 export const educationResponseSchema = z.array(educationSchema);

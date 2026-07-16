@@ -100,7 +100,7 @@ export const settingsResponseSchema = z.object({
   opencode_cli_executable: z.string(),
 });
 
-export const providerSettingsListItemSchema = z.object({
+const providerSettingsListItemSchema = z.object({
   id: z.string().min(1),
   provider: z.string().min(1),
   isActive: z.boolean(),

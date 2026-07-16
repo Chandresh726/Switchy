@@ -14,7 +14,7 @@ import {
 
 export {
   BrowserSessionBootstrapError,
-  type BrowserSessionBootstrapStage,
+
 } from "./browser-session-error";
 
 export interface BrowserSessionConfig {
@@ -40,7 +40,7 @@ export interface IBrowserClient {
   close(): Promise<void>;
 }
 
-export const DEFAULT_BROWSER_CONFIG: BrowserSessionConfig = {
+const DEFAULT_BROWSER_CONFIG: BrowserSessionConfig = {
   headless: true,
   timeout: 30000,
   userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -53,7 +53,7 @@ interface BrowserResources {
   page: Page;
 }
 
-export abstract class PlaywrightBrowserClient implements IBrowserClient {
+abstract class PlaywrightBrowserClient implements IBrowserClient {
   protected readonly config: BrowserSessionConfig;
   private readonly activeResources = new Set<BrowserResources>();
 

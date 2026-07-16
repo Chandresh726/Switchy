@@ -65,7 +65,7 @@ export const peopleImportSessionsQuerySchema = z.object({
 
 export const apolloMappingSchema = z.record(z.string(), z.string().max(500));
 
-export const personSchema = z.object({
+export const personResponseSchema = z.object({
   id: z.number().int().positive(),
   source: z.enum(["linkedin", "apollo", "manual"]),
   sourceRecordKey: z.string().nullable(),
@@ -83,11 +83,10 @@ export const personSchema = z.object({
 }).passthrough();
 
 export const peopleListResponseSchema = z.object({
-  people: z.array(personSchema),
+  people: z.array(personResponseSchema),
   totalCount: z.number().int().nonnegative(),
   hasMore: z.boolean(),
 });
-export const personResponseSchema = personSchema;
 export const peopleOperationResponseSchema = z.object({
   success: z.boolean().optional(),
   updatedCount: z.number().int().nonnegative().optional(),

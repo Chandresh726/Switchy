@@ -24,7 +24,7 @@ export interface PersistResumeInput {
   isCurrent: boolean;
 }
 
-export function serializeResumeArtifacts(input: Pick<
+function serializeResumeArtifacts(input: Pick<
   PersistResumeInput,
   "parsedData" | "warnings"
 >): { parsedData: string; validationWarnings: string } {

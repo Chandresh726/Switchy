@@ -100,7 +100,7 @@ export type WorkdayConfig = BrowserScraperConfig & {
   requestDelayJitterMs: number;
 };
 
-export const DEFAULT_WORKDAY_CONFIG: WorkdayConfig = {
+const DEFAULT_WORKDAY_CONFIG: WorkdayConfig = {
   ...DEFAULT_BROWSER_CONFIG,
   parallelListFetches: 2,
   detailBatchSize: 5,

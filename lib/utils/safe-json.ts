@@ -12,17 +12,3 @@ export function safeJsonParse<T>(
     return fallback;
   }
 }
-
-export function safeJsonStringArray(
-  value: string | null | undefined
-): string[] {
-  const parsed = safeJsonParse<unknown>(value, []);
-  if (!Array.isArray(parsed)) {
-    return [];
-  }
-
-  return parsed
-    .filter((item): item is string => typeof item === "string")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}

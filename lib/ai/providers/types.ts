@@ -3,7 +3,7 @@ import type { LanguageModel } from "ai";
 /**
  * Supported AI providers
  */
-export const AI_PROVIDER_IDS = [
+const AI_PROVIDER_IDS = [
   "anthropic",
   "openai",
   "gemini_api_key",
@@ -17,7 +17,7 @@ export const AI_PROVIDER_IDS = [
 
 export type AIProvider = (typeof AI_PROVIDER_IDS)[number];
 
-export const LOCAL_CLI_PROVIDER_IDS = ["codex_cli", "opencode_cli"] as const;
+const LOCAL_CLI_PROVIDER_IDS = ["codex_cli", "opencode_cli"] as const;
 export type LocalCLIProvider = (typeof LOCAL_CLI_PROVIDER_IDS)[number];
 
 export function isLocalCLIProvider(value: string): value is LocalCLIProvider {
@@ -31,7 +31,7 @@ export function isAIProvider(value: string): value is AIProvider {
 /** Provider-native reasoning option. Values are discovered from model catalogs. */
 export type ReasoningEffort = string;
 
-export const MAX_REASONING_EFFORT_LENGTH = 64;
+const MAX_REASONING_EFFORT_LENGTH = 64;
 const REASONING_EFFORT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
 
 export function isReasoningEffort(value: unknown): value is ReasoningEffort {
@@ -92,36 +92,6 @@ export interface AIProviderInterface {
   ): Record<string, unknown> | undefined;
 }
 
-/**
- * Registry of all available providers
- */
-export interface ProviderRegistry {
-  get(providerId: AIProvider): AIProviderInterface | undefined;
-  register(provider: AIProviderInterface): void;
-  getAll(): AIProviderInterface[];
-}
-
 export {
   AIError,
-  AIProviderError,
-  AITimeoutError,
-  AIRateLimitError,
-  AIValidationError,
-  AINetworkError,
 } from "../shared/errors";
-
-export type { AIErrorType } from "../shared/errors";
-
-/**
- * Settings required for AI client initialization
- */
-export interface AIClientSettings {
-  aiProvider: AIProvider;
-  anthropicApiKey?: string;
-  googleApiKey?: string;
-  openrouterApiKey?: string;
-  cerebrasApiKey?: string;
-  openaiApiKey?: string;
-  groqApiKey?: string;
-  nvidiaApiKey?: string;
-}

@@ -60,7 +60,7 @@ const GreenhouseResponseSchema = z
 
 export type GreenhouseConfig = ApiScraperConfig;
 
-export const DEFAULT_GREENHOUSE_CONFIG: GreenhouseConfig = {
+const DEFAULT_GREENHOUSE_CONFIG: GreenhouseConfig = {
   ...DEFAULT_API_CONFIG,
   baseUrl: "https://boards-api.greenhouse.io",
 };

@@ -12,7 +12,3 @@ export const providerCreateBodySchema = z.object({
   provider: z.string().trim().min(1).max(100),
   apiKey: z.string().max(10_000).optional(),
 });
-export const providerValidationResponseSchema = z.object({
-  valid: z.literal(true),
-  provider: z.string(),
-}).passthrough();

@@ -20,11 +20,4 @@ export const apiErrorEnvelopeSchema = z.object({
 
 export const positiveIntegerIdSchema = z.coerce.number().int().positive();
 
-export const paginationSchema = z.object({
-  limit: z.coerce.number().int().positive().max(100).default(20),
-  offset: z.coerce.number().int().nonnegative().default(0),
-});
-
 export const successSchema = z.object({ success: z.boolean() });
-
-export const stringRecordSchema = z.record(z.string(), z.string());

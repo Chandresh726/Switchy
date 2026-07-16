@@ -21,8 +21,6 @@ interface SqliteDatabaseOptions extends SqliteConnectionOptions {
 const createDrizzleDatabase = (connection: Database.Database) =>
   drizzle(connection, { schema });
 
-export type SqliteTestDatabase = ReturnType<typeof createDrizzleDatabase>;
-
 export function createSqliteTestHarness(prefix: string) {
   const connections: Database.Database[] = [];
   const directories: string[] = [];

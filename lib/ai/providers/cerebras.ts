@@ -6,7 +6,7 @@ import type { AIProvider, ModelConfig, ProviderConfig } from "./types";
 /**
  * Cerebras provider implementation
  */
-export class CerebrasProvider extends BaseProvider {
+class CerebrasProvider extends BaseProvider {
   readonly id: AIProvider = "cerebras";
   readonly name = "Cerebras";
   readonly requiresApiKey = true;

@@ -138,14 +138,13 @@ function EducationForm({
 
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-2">
-            <Label htmlFor="startDate">Start Date *</Label>
+            <Label htmlFor="startDate">Start Date</Label>
             <Input
               id="startDate"
               value={formData.startDate}
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, startDate: e.target.value }))
               }
-              required
               placeholder="Sep 2018"
             />
           </div>
@@ -240,13 +239,14 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
   const addMutation = useMutation({
     mutationFn: async (edu: EducationFormData) => {
       try {
-        return createEducation({
+        return createEducation([{
             ...edu,
             profileId,
+            startDate: edu.startDate || null,
             endDate: edu.endDate || null,
             gpa: edu.gpa || null,
             honors: edu.honors || null,
-        });
+        }]);
       } catch (error) {
         console.error("add education:", error);
         throw error;
@@ -264,6 +264,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
       try {
         return updateEducation(id, {
             ...edu,
+            startDate: edu.startDate || null,
             endDate: edu.endDate || null,
             gpa: edu.gpa || null,
             honors: edu.honors || null,
@@ -283,18 +284,16 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
   const bulkAddMutation = useMutation({
     mutationFn: async (educationToAdd: InitialEducation[]) => {
       try {
-        for (const edu of educationToAdd) {
-          await createEducation({
-              institution: edu.institution,
-              degree: edu.degree,
-              field: edu.field || null,
-              startDate: edu.startDate,
-              endDate: edu.endDate || null,
-              gpa: edu.gpa || null,
-              honors: edu.honors || null,
-              profileId,
-          });
-        }
+        await createEducation(educationToAdd.map((edu) => ({
+          institution: edu.institution,
+          degree: edu.degree,
+          field: edu.field || null,
+          startDate: edu.startDate || null,
+          endDate: edu.endDate || null,
+          gpa: edu.gpa || null,
+          honors: edu.honors || null,
+          profileId,
+        })));
       } catch (error) {
         console.error("bulk add education:", error);
         throw error;

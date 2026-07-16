@@ -206,6 +206,108 @@ describe("verified local state backup and restore", () => {
     expect(existsSync(join(snapshotDirectory, "switchy.db-shm"))).toBe(false);
   });
 
+  it("rejects a concurrent resume upload that would orphan a copied file", async () => {
+    const root = temporaryDirectory();
+    const statePaths = createState(join(root, "current"), "before");
+    const snapshotDirectory = join(root, "snapshot");
+
+    await expect(createStateSnapshot(
+      { statePaths, outputDirectory: snapshotDirectory },
+      {
+        afterDatabaseSnapshot() {
+          writeFileSync(
+            join(statePaths.uploadsDirectory, "resumes", "concurrent.pdf"),
+            "concurrent resume"
+          );
+          const connection = new Database(statePaths.databasePath);
+          const database = drizzle(connection, { schema });
+          const localProfile = database.insert(schema.profile)
+            .values({ name: "Concurrent Upload User" }).returning().get();
+          database.insert(schema.resumes).values({
+            profileId: localProfile.id,
+            fileName: "concurrent.pdf",
+            filePath: "resumes/concurrent.pdf",
+            parsedData: "null",
+            version: 1,
+            isCurrent: true,
+            storageState: "ready",
+          }).run();
+          connection.close();
+        },
+      }
+    )).rejects.toThrow("state changed while uploads were being copied");
+    expect(existsSync(snapshotDirectory)).toBe(false);
+  });
+
+  it("rejects a concurrent resume deletion that would leave a stale database reference", async () => {
+    const root = temporaryDirectory();
+    const statePaths = createState(join(root, "current"), "before");
+    const connection = new Database(statePaths.databasePath);
+    const database = drizzle(connection, { schema });
+    const localProfile = database.insert(schema.profile)
+      .values({ name: "Concurrent Delete User" }).returning().get();
+    const resume = database.insert(schema.resumes).values({
+      profileId: localProfile.id,
+      fileName: "resume.txt",
+      filePath: "resumes/resume.txt",
+      parsedData: "null",
+      version: 1,
+      isCurrent: true,
+      storageState: "ready",
+    }).returning().get();
+    connection.close();
+    const snapshotDirectory = join(root, "snapshot");
+
+    await expect(createStateSnapshot(
+      { statePaths, outputDirectory: snapshotDirectory },
+      {
+        afterDatabaseSnapshot() {
+          const concurrentConnection = new Database(statePaths.databasePath);
+          drizzle(concurrentConnection, { schema }).delete(schema.resumes)
+            .where(eq(schema.resumes.id, resume.id)).run();
+          concurrentConnection.close();
+          unlinkSync(join(statePaths.uploadsDirectory, "resumes", "resume.txt"));
+        },
+      }
+    )).rejects.toThrow("state changed while uploads were being copied");
+    expect(existsSync(snapshotDirectory)).toBe(false);
+  });
+
+  it("rejects a checksummed snapshot that omits a database-referenced ready resume", async () => {
+    const root = temporaryDirectory();
+    const statePaths = createState(join(root, "current"), "before");
+    const connection = new Database(statePaths.databasePath);
+    const database = drizzle(connection, { schema });
+    const localProfile = database.insert(schema.profile).values({ name: "Backup User" })
+      .returning().get();
+    database.insert(schema.resumes).values({
+      profileId: localProfile.id,
+      fileName: "resume.txt",
+      filePath: "resumes/resume.txt",
+      parsedData: "null",
+      version: 1,
+      isCurrent: true,
+      storageState: "ready",
+    }).run();
+    connection.close();
+    const snapshotDirectory = join(root, "snapshot");
+
+    await createStateSnapshot({ statePaths, outputDirectory: snapshotDirectory });
+    unlinkSync(join(snapshotDirectory, "uploads", "resumes", "resume.txt"));
+    const manifestPath = join(snapshotDirectory, "manifest.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      artifacts: Array<{ path: string }>;
+    };
+    manifest.artifacts = manifest.artifacts.filter(
+      (artifact) => artifact.path !== "uploads/resumes/resume.txt"
+    );
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+
+    await expect(verifyStateSnapshot(snapshotDirectory)).rejects.toThrow(
+      "database-referenced resume upload"
+    );
+  });
+
   it("rejects path traversal metadata and symbolic links", async () => {
     const root = temporaryDirectory();
     const statePaths = createState(join(root, "current"), "before");

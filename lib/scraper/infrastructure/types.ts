@@ -46,7 +46,7 @@ export interface ScrapingLogCreate {
   matcherJobsCompleted?: number;
 }
 
-export type ScrapeResultLogCreate = Omit<
+type ScrapeResultLogCreate = Omit<
   ScrapingLogCreate,
   | "companyId"
   | "jobsAdded"
@@ -95,7 +95,7 @@ export interface ScrapeSettingsSource {
   getSetting(key: string): Promise<string | null>;
 }
 
-export interface ScrapeResultUnitOfWork {
+interface ScrapeResultUnitOfWork {
   persistScrapeResult(input: PersistScrapeResultInput): Promise<PersistScrapeResultOutput>;
   createScrapingLog(log: ScrapingLogCreate): Promise<number>;
 }

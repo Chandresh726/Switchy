@@ -9,7 +9,7 @@ import {
 } from "@/lib/db/schema";
 import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
 
-export interface MatchPipelinePhaseProgress {
+interface MatchPipelinePhaseProgress {
   total: number;
   completed: number;
   active: number;
@@ -18,7 +18,7 @@ export interface MatchPipelinePhaseProgress {
   failed: number;
 }
 
-export interface MatchSessionJobProgress {
+interface MatchSessionJobProgress {
   jobId: number;
   jobTitle: string;
   companyName: string | null;

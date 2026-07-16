@@ -88,6 +88,18 @@ Scraping is API-first with direct HTTP and browser fallbacks where a platform re
 
 AI execution, evidence-based matching, grounded writing, resume parsing, privacy boundaries, and queue recovery are described in [AI Architecture](docs/ai-architecture.md).
 
+## Backend Internals
+
+The local API, request contracts, application-service boundaries, SQLite
+transactions, automatic migrations, filesystem ownership, health reporting, and
+recovery procedures are described in [Backend Architecture](docs/backend-architecture.md).
+
+Every JSON endpoint validates path, query, request, and client-consumed response
+data with shared Zod contracts. Failures use a stable envelope containing
+`error`, `code`, optional `details`, and `requestId`; the same request ID is
+returned in the `x-request-id` header. Mutation requests additionally require
+same-origin local request validation and the `x-switchy-request` marker.
+
 ## Useful Commands
 
 | Command | Description |
@@ -97,6 +109,7 @@ AI execution, evidence-based matching, grounded writing, resume parsing, privacy
 | `pnpm start` | Start production server |
 | `pnpm lint` | Run ESLint |
 | `pnpm typecheck` | Run TypeScript without emitting files |
+| `pnpm deadcode` | Reject unused root-app files, exports, and dependencies |
 | `pnpm test:run` | Run tests once |
 | `pnpm audit` | Check dependencies for known vulnerabilities |
 | `pnpm verify` | Run lint, typecheck, tests, audit, and production build |
@@ -122,9 +135,11 @@ Back up this file with the matching database. Losing it means stored provider AP
 
 Store snapshots outside the Switchy repository and outside `~/.switchy`. The
 backup command uses SQLite's online backup API, so the database copy remains
-consistent while Switchy is running. It copies the uploads tree and the matching
+consistent while Switchy is running. It then copies the uploads tree and the matching
 encryption secret when that file exists, then verifies checksums and SQLite
-integrity before reporting success.
+integrity before reporting success. If any application database write occurs while
+files are being copied, backup aborts without publishing a snapshot. Retry when
+local write activity is idle, or stop Switchy first to guarantee a quiet backup.
 
 ```bash
 pnpm state:backup -- --environment production --output ~/switchy-backups/production-2026-07-16
@@ -150,3 +165,21 @@ profile, resumes, uploads, companies, and job history are present. If restore is
 interrupted before activation or staged validation fails, the current state is
 left unchanged. Production restore preserves the separate development state in
 `~/.switchy/dev`.
+
+## Local Health and Recovery
+
+The health endpoints are local diagnostics and do not expose secrets or raw
+error messages:
+
+- `GET /api/health/live` confirms that the Next.js process can answer requests.
+- `GET /api/health/ready` returns `200` only when SQLite, scheduler startup, and
+  durable scrape/match recovery are ready; otherwise it returns `503`.
+- `GET /api/health/runtime` reports sanitized queue age, expired lease count,
+  recovery/dispatch timestamps, and the latest subsystem error code.
+
+If readiness fails, stop the app before changing local state. Verify the latest
+snapshot, restore it with `--replace` when database integrity or migrations are
+the cause, then restart Switchy and recheck readiness. Provider availability is
+nonessential and does not make the web application unready. See the
+[Backend Architecture recovery runbook](docs/backend-architecture.md#recovery-runbook)
+for the complete sequence.

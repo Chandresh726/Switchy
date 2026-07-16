@@ -79,7 +79,7 @@ export function sanitizeHtmlContent(html: string): string {
 /**
  * Converts sanitized HTML to Markdown
  */
-export function htmlToMarkdown(html: string): string {
+function htmlToMarkdown(html: string): string {
   const sanitized = sanitizeHtmlContent(html);
   return turndownService.turndown(sanitized);
 }

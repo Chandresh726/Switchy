@@ -16,9 +16,11 @@ import {
 import path from "node:path";
 
 import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
 import { z } from "zod";
 
 import packageJson from "@/package.json";
+import { resumes } from "@/lib/db/schema";
 
 import type { StatePaths } from "./environment-paths";
 
@@ -46,7 +48,7 @@ const artifactSchema = z.object({
   sha256: z.string().regex(/^[a-f0-9]{64}$/u),
 });
 
-export const stateSnapshotManifestSchema = z
+const stateSnapshotManifestSchema = z
   .object({
     formatVersion: z.literal(1),
     applicationVersion: z.string().min(1),
@@ -126,6 +128,10 @@ interface CreateStateSnapshotOptions {
   statePaths: StatePaths;
   outputDirectory: string;
   applicationVersion?: string;
+}
+
+interface CreateStateSnapshotOperations {
+  afterDatabaseSnapshot?: () => Promise<void> | void;
 }
 
 export interface VerifiedStateSnapshot {
@@ -219,7 +225,7 @@ async function copyUploads(
   return artifacts;
 }
 
-export async function validateStateDatabase(databasePath: string): Promise<void> {
+async function validateStateDatabase(databasePath: string): Promise<void> {
   await assertRegularFile(databasePath, "Snapshot database");
   const connection = new Database(databasePath, { readonly: true, fileMustExist: true });
   try {
@@ -235,6 +241,58 @@ export async function validateStateDatabase(databasePath: string): Promise<void>
     const foreignKeyFailures = connection.pragma("foreign_key_check") as unknown[];
     if (foreignKeyFailures.length > 0) {
       throw new Error("Snapshot database failed foreign-key validation");
+    }
+  } finally {
+    connection.close();
+  }
+}
+
+function snapshotUploadPath(relativePath: string, label: string): string {
+  if (
+    path.isAbsolute(relativePath)
+    || path.win32.isAbsolute(relativePath)
+    || relativePath.includes("\0")
+  ) {
+    throw new Error(`${label} is not a safe relative upload path`);
+  }
+  const normalized = relativePath.replaceAll("\\", "/");
+  if (
+    normalized.length === 0
+    || normalized.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
+  ) {
+    throw new Error(`${label} is not a safe relative upload path`);
+  }
+  return path.posix.join(UPLOADS_DIRECTORY, normalized);
+}
+
+function validateResumeUploadReferences(
+  databasePath: string,
+  uploadArtifacts: ReadonlySet<string>
+): void {
+  const connection = new Database(databasePath, { readonly: true, fileMustExist: true });
+  try {
+    const database = drizzle(connection);
+    const rows = database.select({
+      filePath: resumes.filePath,
+      stagingPath: resumes.stagingPath,
+      storageState: resumes.storageState,
+    }).from(resumes).all();
+
+    for (const row of rows) {
+      if (row.storageState === "missing" || row.storageState === "deleting") continue;
+      const finalPath = snapshotUploadPath(row.filePath, "Resume file path");
+      if (row.storageState === "ready") {
+        if (!uploadArtifacts.has(finalPath)) {
+          throw new Error(`Snapshot is missing database-referenced resume upload: ${finalPath}`);
+        }
+        continue;
+      }
+      const stagingPath = row.stagingPath
+        ? snapshotUploadPath(row.stagingPath, "Resume staging path")
+        : null;
+      if (!uploadArtifacts.has(finalPath) && (!stagingPath || !uploadArtifacts.has(stagingPath))) {
+        throw new Error("Snapshot is missing both staged and finalized data for a staging resume");
+      }
     }
   } finally {
     connection.close();
@@ -283,7 +341,9 @@ export async function createStateSnapshot({
   statePaths,
   outputDirectory,
   applicationVersion = packageJson.version,
-}: CreateStateSnapshotOptions): Promise<VerifiedStateSnapshot> {
+}: CreateStateSnapshotOptions,
+operations: CreateStateSnapshotOperations = {}
+): Promise<VerifiedStateSnapshot> {
   const output = path.resolve(outputDirectory);
   const repository = path.resolve(process.cwd());
   if (isWithin(repository, output)) {
@@ -314,18 +374,18 @@ export async function createStateSnapshot({
     `.${path.basename(output)}.staging-${randomUUID()}`
   );
   await mkdir(stagingDirectory, { mode: DIRECTORY_MODE });
+  let activated = false;
+  let sourceDatabase: Database.Database | null = null;
 
   try {
     const databaseDestination = path.join(stagingDirectory, DATABASE_FILE);
-    const sourceDatabase = new Database(statePaths.databasePath, {
+    sourceDatabase = new Database(statePaths.databasePath, {
       readonly: true,
       fileMustExist: true,
     });
-    try {
-      await sourceDatabase.backup(databaseDestination);
-    } finally {
-      sourceDatabase.close();
-    }
+    await sourceDatabase.backup(databaseDestination);
+    const databaseVersion = Number(sourceDatabase.pragma("data_version", { simple: true }));
+    await operations.afterDatabaseSnapshot?.();
     const snapshotDatabase = new Database(databaseDestination);
     try {
       snapshotDatabase.pragma("journal_mode = DELETE");
@@ -357,6 +417,12 @@ export async function createStateSnapshot({
         )
       );
     }
+    const finalDatabaseVersion = Number(sourceDatabase.pragma("data_version", { simple: true }));
+    if (finalDatabaseVersion !== databaseVersion) {
+      throw new Error("Application state changed while uploads were being copied; retry backup");
+    }
+    sourceDatabase.close();
+    sourceDatabase = null;
 
     const manifest: StateSnapshotManifest = {
       formatVersion: 1,
@@ -377,10 +443,14 @@ export async function createStateSnapshot({
       { mode: FILE_MODE }
     );
     await chmod(stagingDirectory, DIRECTORY_MODE);
+    await verifyStateSnapshot(stagingDirectory);
     await rename(stagingDirectory, realOutput);
+    activated = true;
     return verifyStateSnapshot(realOutput);
   } catch (error) {
+    sourceDatabase?.close();
     await rm(stagingDirectory, { recursive: true, force: true });
+    if (activated) await rm(realOutput, { recursive: true, force: true });
     throw error;
   }
 }
@@ -423,7 +493,16 @@ export async function verifyStateSnapshot(
     }
   }
 
-  await validateStateDatabase(resolveSnapshotPath(snapshot, manifest.paths.database));
+  const databasePath = resolveSnapshotPath(snapshot, manifest.paths.database);
+  await validateStateDatabase(databasePath);
+  validateResumeUploadReferences(
+    databasePath,
+    new Set(
+      manifest.artifacts
+        .filter((artifact) => artifact.kind === "upload")
+        .map((artifact) => artifact.path)
+    )
+  );
 
   const expectedFiles = [MANIFEST_FILE, ...manifest.artifacts.map((artifact) => artifact.path)].sort();
   const actualFiles = await listSnapshotFiles(snapshot);
@@ -483,5 +562,14 @@ export async function verifyMaterializedState(
     throw new Error("Restored encryption-secret state is inconsistent");
   }
 
-  await validateStateDatabase(path.join(stateDirectory, DATABASE_FILE));
+  const databasePath = path.join(stateDirectory, DATABASE_FILE);
+  await validateStateDatabase(databasePath);
+  validateResumeUploadReferences(
+    databasePath,
+    new Set(
+      manifest.artifacts
+        .filter((artifact) => artifact.kind === "upload")
+        .map((artifact) => artifact.path)
+    )
+  );
 }

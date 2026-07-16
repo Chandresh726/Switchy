@@ -14,7 +14,7 @@ export interface StatusConfig {
   borderColor?: string;
 }
 
-export const SESSION_STATUS_CONFIG: Record<string, StatusConfig> = {
+const SESSION_STATUS_CONFIG: Record<string, StatusConfig> = {
   completed: {
     icon: CheckCircle,
     label: "Completed",
@@ -66,21 +66,6 @@ export const SESSION_STATUS_CONFIG: Record<string, StatusConfig> = {
   },
 };
 
-export const LOG_STATUS_CONFIG: Record<string, { icon: LucideIcon; color: string }> = {
-  success: {
-    icon: CheckCircle,
-    color: "text-emerald-400",
-  },
-  error: {
-    icon: XCircle,
-    color: "text-red-400",
-  },
-  partial: {
-    icon: AlertCircle,
-    color: "text-yellow-400",
-  },
-};
-
 export const MATCHER_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   pending: { label: "Pending", color: "text-zinc-400" },
   in_progress: { label: "In Progress", color: "text-blue-400" },
@@ -93,14 +78,4 @@ export function getSessionStatusConfig(status: string): StatusConfig {
   if (normalized === "success") normalized = "completed";
   if (normalized === "error") normalized = "failed";
   return SESSION_STATUS_CONFIG[normalized] || SESSION_STATUS_CONFIG.in_progress;
-}
-
-export function getLogStatusConfig(status: string): { icon: LucideIcon; color: string } {
-  return LOG_STATUS_CONFIG[status] || LOG_STATUS_CONFIG.partial;
-}
-
-export function getMatcherStatusConfig(
-  status: string
-): { label: string; color: string } {
-  return MATCHER_STATUS_CONFIG[status] || MATCHER_STATUS_CONFIG.pending;
 }

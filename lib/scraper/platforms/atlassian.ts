@@ -84,7 +84,7 @@ export type AtlassianConfig = ApiScraperConfig & {
   detailDelayMs: number;
 };
 
-export const DEFAULT_ATLASSIAN_CONFIG: AtlassianConfig = {
+const DEFAULT_ATLASSIAN_CONFIG: AtlassianConfig = {
   ...DEFAULT_API_CONFIG,
   baseUrl: "https://www.atlassian.com",
   detailBatchSize: 4,

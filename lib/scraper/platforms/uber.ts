@@ -105,7 +105,7 @@ interface NormalizedUberJob {
 
 export type UberConfig = ApiScraperConfig;
 
-export const DEFAULT_UBER_CONFIG: UberConfig = {
+const DEFAULT_UBER_CONFIG: UberConfig = {
   ...DEFAULT_API_CONFIG,
   baseUrl: "https://www.uber.com",
 };

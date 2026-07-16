@@ -6,7 +6,7 @@ import type { AIProvider, ModelConfig, ProviderConfig } from "./types";
 /**
  * Google Gemini provider using API Key
  */
-export class GoogleProvider extends BaseProvider {
+class GoogleProvider extends BaseProvider {
   readonly id: AIProvider = "gemini_api_key";
   readonly name = "Google Gemini";
   readonly requiresApiKey = true;

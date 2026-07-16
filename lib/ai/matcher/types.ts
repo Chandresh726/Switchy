@@ -1,12 +1,8 @@
-import { z } from "zod";
-
-export const MatchResultSchema = z.object({
-  score: z.number().min(0).max(100),
-  reasons: z.array(z.string()),
-  matchedSkills: z.array(z.string()),
-});
-
-export type MatchResult = z.infer<typeof MatchResultSchema>;
+export interface MatchResult {
+  score: number;
+  reasons: string[];
+  matchedSkills: string[];
+}
 
 export interface MatcherConfig {
   jobAnalysisModel?: string;

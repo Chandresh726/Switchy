@@ -12,23 +12,6 @@ export interface CandidateEvidenceItem {
   endDate?: string | null;
 }
 
-const SKILL_ALIASES: ReadonlyArray<ReadonlyArray<string>> = [
-  ["javascript", "js"],
-  ["typescript", "ts"],
-  ["node.js", "nodejs", "node"],
-  ["react", "reactjs", "react.js"],
-  ["next.js", "nextjs", "next"],
-  ["postgresql", "postgres"],
-  ["amazon web services", "aws"],
-  ["google cloud platform", "google cloud", "gcp"],
-  ["kubernetes", "k8s"],
-  ["continuous integration", "ci/cd", "cicd"],
-];
-
-const ALIAS_LOOKUP = new Map<string, string>(
-  SKILL_ALIASES.flatMap((group) => group.map((alias) => [alias, group[0]] as const))
-);
-
 const MAX_EVIDENCE_ITEM_CHARS = 2_000;
 
 function boundedEvidenceText(values: Array<string | null | undefined>): string {
@@ -46,12 +29,6 @@ function boundedEvidenceText(values: Array<string | null | undefined>): string {
     remaining -= bounded.length + separatorLength;
   }
   return parts.join("\n");
-}
-
-export function normalizeSkill(value: string): string {
-  const normalized = value.normalize("NFC").trim().toLocaleLowerCase("en-US")
-    .replace(/\s+/g, " ");
-  return ALIAS_LOOKUP.get(normalized) ?? normalized;
 }
 
 export function enrichCandidateEvidence(

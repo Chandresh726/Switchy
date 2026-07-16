@@ -3,7 +3,7 @@ import { z } from "zod";
 import { MatchBreakdownSchema, MatchReasoningPointSchema } from "@/lib/ai/artifacts/schemas";
 import { JOB_STATUSES } from "@/lib/jobs/status";
 
-export const jobStatusSchema = z.enum(JOB_STATUSES);
+const jobStatusSchema = z.enum(JOB_STATUSES);
 
 const commaSeparated = <T extends z.ZodTypeAny>(item: T, maximum: number) =>
   z.preprocess(
@@ -68,7 +68,7 @@ export const jobResourceUpdateBodySchema = z
     { message: "At least one job field must be updated" }
   );
 
-export const jobSummarySchema = z.object({
+const jobSummarySchema = z.object({
   id: z.number().int().positive(),
   companyId: z.number().int().positive(),
   externalId: z.string().nullable(),

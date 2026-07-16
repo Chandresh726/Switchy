@@ -30,7 +30,7 @@ export const deleteSkill = (id: number) => apiRequest(`/api/profile/skills/${id}
 export const createExperience = (body: Record<string, unknown>) => apiRequest("/api/profile/experience", jsonMutation("POST", body), experienceSchema, "Failed to create experience");
 export const updateExperience = (id: number, body: Record<string, unknown>) => apiRequest(`/api/profile/experience/${id}`, jsonMutation("PATCH", body), experienceSchema, "Failed to update experience");
 export const deleteExperience = (id: number) => apiRequest(`/api/profile/experience/${id}`, jsonMutation("DELETE"), successSchema, "Failed to delete experience");
-export const createEducation = (body: Record<string, unknown>) => apiRequest("/api/profile/education", jsonMutation("POST", body), educationSchema, "Failed to create education");
+export const createEducation = (body: Array<Record<string, unknown>>) => apiRequest("/api/profile/education", jsonMutation("POST", body), educationResponseSchema, "Failed to create education");
 export const updateEducation = (id: number, body: Record<string, unknown>) => apiRequest(`/api/profile/education/${id}`, jsonMutation("PATCH", body), educationSchema, "Failed to update education");
 export const deleteEducation = (id: number) => apiRequest(`/api/profile/education/${id}`, jsonMutation("DELETE"), successSchema, "Failed to delete education");
 export const deleteResume = (id: number) => apiRequest(`/api/profile/resumes/${id}`, jsonMutation("DELETE"), successSchema, "Failed to delete resume");

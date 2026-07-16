@@ -9,7 +9,7 @@ import type {
 } from "./contracts/common";
 import { createApiRequestContext, withRequestIdHeader } from "./request-context";
 
-export class AppError extends Error {
+class AppError extends Error {
   constructor(
     public readonly code: string,
     message: string,

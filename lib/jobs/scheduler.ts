@@ -513,7 +513,7 @@ async function runSchedulerBatch(
   return "started";
 }
 
-export async function runScheduledRefresh(): Promise<void> {
+async function runScheduledRefresh(): Promise<void> {
   await runSchedulerBatch("scheduler");
 }
 

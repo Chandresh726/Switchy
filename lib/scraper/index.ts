@@ -80,7 +80,7 @@ function createScrapingModule(config: ScrapingModuleConfig = {}): ScrapingModule
 
 let defaultQueueService: LocalScrapeQueueService | null = null;
 
-export function createLocalScrapeQueueService(
+function createLocalScrapeQueueService(
   config: ScrapingModuleConfig = {},
   runnerConfig: Partial<LocalLeasedWorkRunnerConfig> = {}
 ): LocalScrapeQueueService {

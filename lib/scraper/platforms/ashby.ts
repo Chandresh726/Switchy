@@ -58,7 +58,7 @@ const AshbyResponseSchema = z
 
 export type AshbyConfig = ApiScraperConfig;
 
-export const DEFAULT_ASHBY_CONFIG: AshbyConfig = {
+const DEFAULT_ASHBY_CONFIG: AshbyConfig = {
   ...DEFAULT_API_CONFIG,
   baseUrl: "https://api.ashbyhq.com",
 };

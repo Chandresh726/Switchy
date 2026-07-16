@@ -25,7 +25,7 @@ export const aiRunSummarySchema = z.object({
   completedAt: z.string().nullable(),
 });
 
-export const aiHistoryVariantSchema = z.object({
+const aiHistoryVariantSchema = z.object({
   id: z.number().int().positive(),
   variant: z.string(),
   userPrompt: z.string().nullable(),
@@ -41,7 +41,7 @@ export const aiHistoryVariantSchema = z.object({
   createdAt: z.string().nullable(),
 });
 
-export const generatedContentSchema = z.object({
+const generatedContentSchema = z.object({
   id: z.number().int().positive(),
   jobId: z.number().int().positive(),
   type: AIContentTypeSchema,

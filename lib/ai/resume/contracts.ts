@@ -35,7 +35,7 @@ export const ResumeDataSchema = z.object({
   })).max(100).optional(),
 });
 
-export const ResumeValidationWarningSchema = z.object({
+const ResumeValidationWarningSchema = z.object({
   code: z.enum([
     "duplicate_skill",
     "empty_required_field",

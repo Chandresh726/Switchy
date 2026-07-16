@@ -30,15 +30,6 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#039;");
 }
 
-function normalizeUrl(url: string): string {
-  const trimmed = url.trim();
-  if (!trimmed) return "";
-  if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed;
-  }
-  return `https://${trimmed}`;
-}
-
 function renderInlineMarkdown(markdownText: string): string {
   const escaped = escapeHtml(markdownText);
 
@@ -78,7 +69,7 @@ export function markdownToRichHtml(markdown: string): string {
   return sanitizeRichHtml(html);
 }
 
-export function sanitizeRichHtml(value: string): string {
+function sanitizeRichHtml(value: string): string {
   return sanitizeHtml(value, {
     allowedAttributes: ALLOWED_HTML_ATTRIBUTES,
     allowedSchemes: ["http", "https", "mailto"],
@@ -99,7 +90,7 @@ export function canonicalizeMarkdown(markdown: string): string {
   return richHtmlToMarkdown(markdownToRichHtml(markdown));
 }
 
-export function markdownToPlainText(markdown: string): string {
+function markdownToPlainText(markdown: string): string {
   const html = markdownToRichHtml(markdown);
   if (typeof window === "undefined") {
     return markdown
@@ -127,15 +118,4 @@ export async function copyMarkdownToClipboard(markdown: string): Promise<void> {
   }
 
   await navigator.clipboard.writeText(plainText);
-}
-
-export function markdownSupportsRichFormatting(markdown: string): boolean {
-  return /\*\*[^*]+\*\*/.test(markdown) || /\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/.test(markdown);
-}
-
-export function toMarkdownLink(label: string, url?: string | null): string | null {
-  if (!url) return null;
-  const normalizedUrl = normalizeUrl(url);
-  if (!normalizedUrl) return null;
-  return `[${label}](${normalizedUrl})`;
 }

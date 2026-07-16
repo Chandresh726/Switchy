@@ -10,11 +10,11 @@ export {
   mapUnmatchedCompanyGroup,
   refreshUnmatchedCompanyMappings,
   setUnmatchedCompanyIgnored,
-  type ImportPeopleCsvInput,
-  type ManualPersonInput,
-  type PeopleListFilters,
-  type UnmatchedCompanyPerson,
-  type UnmatchedCompanyGroup,
-  type UnmatchedCompaniesResponse,
-  type UnmatchedCompaniesSummary,
+
+
+
+
+
+
+
 } from "./sync/index";

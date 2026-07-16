@@ -241,19 +241,6 @@ export async function getLocalCLIModels(
   }
 }
 
-export async function getLocalCLIBackend(
-  provider: LocalCLIProvider
-): Promise<AIGenerationBackend> {
-  const entry = await getBackendEntry(provider);
-  if (!entry) {
-    throw new AIError({
-      type: "provider_not_found",
-      message: "The configured local CLI executable is unavailable",
-    });
-  }
-  return entry.backend;
-}
-
 export async function getLocalCLIExecutionTarget(
   provider: LocalCLIProvider,
   modelId: string

@@ -9,7 +9,7 @@ export interface FilterResult {
   breakdown: FilterBreakdown;
 }
 
-export interface FilterBreakdown {
+interface FilterBreakdown {
   total: number;
   passedCountry: number;
   failedCountry: number;
@@ -25,7 +25,7 @@ export interface IFilterService {
   matchesFilters(job: ScrapedJob, filters: JobFilters): boolean;
 }
 
-export function escapeRegExp(str: string): string {
+function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 

@@ -180,7 +180,7 @@ export async function requireProviderById(
   return provider;
 }
 
-export function decryptProviderApiKey(provider: ProviderRecord): string | undefined {
+function decryptProviderApiKey(provider: ProviderRecord): string | undefined {
   if (!provider.apiKey) {
     return undefined;
   }

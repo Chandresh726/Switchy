@@ -3,7 +3,7 @@ import type { ParsedPeopleImport, PersonImportRow } from "@/lib/people/types";
 
 import { getCell, normalizeHeader, parseCsv } from "./csv-utils";
 
-export const APOLLO_FIELD_ALIASES: Record<string, string[]> = {
+const APOLLO_FIELD_ALIASES: Record<string, string[]> = {
   firstName: ["first name", "firstname"],
   lastName: ["last name", "lastname"],
   fullName: ["name", "full name", "contact name", "person name"],

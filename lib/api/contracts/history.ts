@@ -27,7 +27,7 @@ const paginationResponseSchema = z.object({
   hasMore: z.boolean(),
 });
 
-export const scrapeSessionSchema = z.object({
+const scrapeSessionSchema = z.object({
   id: z.string(),
   triggerSource: z.string(),
   status: z.string(),
@@ -43,7 +43,7 @@ export const scrapeSessionSchema = z.object({
   completedAt: z.coerce.date().nullable(),
 }).passthrough();
 
-export const matchSessionSchema = z.object({
+const matchSessionSchema = z.object({
   id: z.string(),
   triggerSource: z.string(),
   companyId: z.number().int().positive().nullable(),

@@ -55,7 +55,7 @@ export const companyBulkActiveBodySchema = companyIdsBodySchema.extend({ isActiv
 
 const dateValueSchema = z.string().nullable();
 
-export const companySchema = z.object({
+export const companyWriteResponseSchema = z.object({
   id: z.number().int().positive(),
   name: z.string(),
   careersUrl: z.string(),
@@ -69,10 +69,12 @@ export const companySchema = z.object({
   updatedAt: dateValueSchema,
 });
 
-export const companiesResponseSchema = z.array(companySchema);
+export const companiesResponseSchema = z.array(companyWriteResponseSchema);
 
-export const companyWriteResponseSchema = companySchema;
-export const companyImportResponseSchema = z.union([companySchema, z.array(companySchema)]);
+export const companyImportResponseSchema = z.union([
+  companyWriteResponseSchema,
+  z.array(companyWriteResponseSchema),
+]);
 
 export const companyDeleteResponseSchema = z.object({
   success: z.boolean(),

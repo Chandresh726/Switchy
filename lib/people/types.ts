@@ -1,7 +1,7 @@
 export type PersonSource = "linkedin" | "apollo" | "manual";
 export type ImportMode = "merge" | "replace";
 
-export interface ParseRowError {
+interface ParseRowError {
   rowNumber: number;
   reason: string;
 }
@@ -43,12 +43,12 @@ export interface PersonImportSummary {
   errors: ParseRowError[];
 }
 
-export interface PersonCompany {
+interface PersonCompany {
   id: number;
   name: string;
 }
 
-export interface Person {
+interface Person {
   id: number;
   source: PersonSource;
   sourceRecordKey: string | null;
@@ -98,12 +98,3 @@ export interface ImportSummary {
   unmatchedCompanyRows: number;
   errors: Array<{ rowNumber: number; reason: string }>;
 }
-
-// Temporary compatibility aliases while call-sites migrate.
-export type ParsedConnectionRow = PersonImportRow;
-export type ParsedConnectionsCsv = ParsedPeopleImport;
-export type ConnectionImportSummary = PersonImportSummary;
-export type ConnectionCompany = PersonCompany;
-export type Connection = Person;
-export type ConnectionQueryResponse = PersonQueryResponse;
-export type ImportSession = PeopleImportSession;

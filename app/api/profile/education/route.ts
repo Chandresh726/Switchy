@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { assertAppRequest, handleApiError } from "@/lib/api";
-import { educationWriteBodySchema, profileIdQuerySchema } from "@/lib/api/contracts/profile";
+import { educationCreateBodySchema, profileIdQuerySchema } from "@/lib/api/contracts/profile";
 import { createEducation, listEducation } from "@/lib/application/profile-service";
 
 export async function GET(request: NextRequest) {
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     assertAppRequest(request);
-    const input = educationWriteBodySchema.parse(await request.json());
+    const input = educationCreateBodySchema.parse(await request.json());
     return NextResponse.json(await createEducation(input));
   } catch (error) {
     return handleApiError(error, { request, fallbackMessage: "Failed to create education", fallbackCode: "education_create_failed" });

@@ -100,7 +100,7 @@ export function createFailureFromUnknown(error: unknown): ScraperErrorResult {
   );
 }
 
-export function classifyHttpStatus(status: number): ScraperErrorCode {
+function classifyHttpStatus(status: number): ScraperErrorCode {
   if (status === 429) return "rate_limited";
   if (status === 408) return "timeout";
   if (status === 401 || status === 403) return "auth_required";

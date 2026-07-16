@@ -135,8 +135,11 @@ export async function listEducation(profileId: number) {
   return (await db.select().from(education).where(eq(education.profileId, profileId))).sort(sortByMostRecent);
 }
 
-export async function createEducation(input: EducationCreateInput) {
-  const [created] = await db.insert(education).values(input).returning();
+export async function createEducation(input: EducationCreateInput[]) {
+  const created = db.transaction(
+    (tx) => tx.insert(education).values(input).returning().all(),
+    { behavior: "immediate" }
+  );
   await scheduleProfileRematch();
   return created;
 }

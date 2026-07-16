@@ -26,7 +26,7 @@ export interface BrowserScraperConfig extends ScraperConfig {
   sessionTimeout: number;
 }
 
-export const DEFAULT_SCRAPER_CONFIG: Omit<ScraperConfig, never> = {
+const DEFAULT_SCRAPER_CONFIG: Omit<ScraperConfig, never> = {
   timeout: 30000,
   retries: 3,
   baseDelay: 1000,

@@ -10,7 +10,7 @@ export interface FilterableItem {
   location?: string;
 }
 
-export interface EarlyFilterBreakdown {
+interface EarlyFilterBreakdown {
   country: number;
   city: number;
   title: number;

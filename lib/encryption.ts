@@ -78,7 +78,7 @@ export function encryptApiKey(apiKey: string): string {
   return `${salt.toString("base64")}:${iv.toString("base64")}:${tag.toString("base64")}:${encrypted.toString("base64")}`;
 }
 
-export class DecryptionError extends Error {
+class DecryptionError extends Error {
   constructor(message: string, public readonly cause?: Error) {
     super(message);
     this.name = "DecryptionError";

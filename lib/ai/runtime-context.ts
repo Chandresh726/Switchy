@@ -23,7 +23,7 @@ import { db } from "@/lib/db";
 import { aiProviders, settings } from "@/lib/db/schema";
 import { decryptApiKey } from "@/lib/encryption";
 
-export type AIFeature = "job_analysis" | "matcher" | "writing" | "resume_parser";
+type AIFeature = "job_analysis" | "matcher" | "writing" | "resume_parser";
 
 export interface AIContextOverrides {
   modelId?: string;
@@ -88,7 +88,7 @@ function normalizeOptional(value?: string | null): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-export function parseReasoningEffort(value?: string | null): string | undefined {
+function parseReasoningEffort(value?: string | null): string | undefined {
   if (value === undefined || value === null || value.length === 0) return undefined;
   if (isReasoningEffort(value)) return value;
 

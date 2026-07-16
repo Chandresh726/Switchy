@@ -76,19 +76,7 @@ export class AIError extends Error {
   }
 }
 
-export class AIProviderError extends AIError {
-  constructor(message: string, options?: { cause?: Error; retryable?: boolean }) {
-    super({
-      type: "generation_failed",
-      message,
-      cause: options?.cause,
-      retryable: options?.retryable ?? true,
-    });
-    this.name = "AIProviderError";
-  }
-}
-
-export class AITimeoutError extends AIError {
+class AITimeoutError extends AIError {
   constructor(message: string, cause?: Error) {
     super({
       type: "timeout",
@@ -113,7 +101,7 @@ export class AIRateLimitError extends AIError {
   }
 }
 
-export class AIValidationError extends AIError {
+class AIValidationError extends AIError {
   constructor(message: string, cause?: Error) {
     super({
       type: "validation",
@@ -125,7 +113,7 @@ export class AIValidationError extends AIError {
   }
 }
 
-export class AINetworkError extends AIError {
+class AINetworkError extends AIError {
   constructor(message: string, cause?: Error) {
     super({
       type: "network",
@@ -197,7 +185,7 @@ export function getRetryAfterMs(error: unknown): number | undefined {
   return undefined;
 }
 
-export function isServerError(error: Error): boolean {
+function isServerError(error: Error): boolean {
   const message = error.message.toLowerCase();
   const statusMatch = message.match(/(?:status|http|error)[:\s]*(\d{3})/i);
   if (statusMatch && SERVER_ERROR_CODES.includes(statusMatch[1])) {
@@ -353,24 +341,4 @@ export function sanitizeAIError(error: unknown): SanitizedAIError {
     code,
     message: messages[code] ?? messages.unknown,
   };
-}
-
-export function createAIError(
-  type: AIErrorType,
-  message: string,
-  cause?: Error,
-  context?: Record<string, unknown>
-): AIError {
-  switch (type) {
-    case "validation":
-      return new AIValidationError(message, cause);
-    case "timeout":
-      return new AITimeoutError(message, cause);
-    case "rate_limit":
-      return new AIRateLimitError(message, cause, getRetryAfterMs(cause));
-    case "network":
-      return new AINetworkError(message, cause);
-    default:
-      return new AIError({ type, message, cause, context });
-  }
 }

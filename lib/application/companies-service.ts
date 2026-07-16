@@ -267,14 +267,6 @@ export async function setCompaniesActive(companyIds: number[], isActive: boolean
   return { success: true as const, updated: updated.length, message: `Updated ${updated.length} companies to ${isActive ? "active" : "paused"}` };
 }
 
-export async function queueCompanyMatch(companyId: number) {
-  await getCompany(companyId);
-  const rows = await db.select({ id: jobs.id }).from(jobs).where(eq(jobs.companyId, companyId));
-  return rows.length === 0
-    ? completeEmptyMatchSession({ triggerSource: "company_refresh", companyId })
-    : queueMatchWork({ jobIds: rows.map(({ id }) => id), triggerSource: "company_refresh", companyId });
-}
-
 export async function queueCompaniesMatch(companyIds: number[]) {
   const jobIds = await fetchCompanyJobIds(companyIds);
   return jobIds.length === 0

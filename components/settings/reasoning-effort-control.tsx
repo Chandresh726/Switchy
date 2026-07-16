@@ -39,7 +39,7 @@ export function hasInvalidReasoningSelection(
   return !model.reasoningControl.options.some((option) => option.value === value);
 }
 
-export function getModelReasoningDefault(model?: ProviderModelOption): string {
+function getModelReasoningDefault(model?: ProviderModelOption): string {
   if (!model || model.reasoningControl.kind === "provider_default") return "";
   return model.reasoningControl.defaultValue ??
     model.reasoningControl.options[0]?.value ??

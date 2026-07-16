@@ -1,5 +1,3 @@
-export type Tab = "jobs" | "people" | "activity" | "notes";
-
 export interface CompanyOverview {
   id: number;
   name: string;
@@ -80,14 +78,4 @@ export interface CompanyOverviewResponse {
   topMatches: CompanyJob[];
   people: CompanyPerson[];
   activity: CompanyActivity;
-}
-
-export interface ActivityItem {
-  id: string;
-  type: "scrape" | "match";
-  status: string;
-  triggerSource: string | null;
-  startedAt: string | null;
-  completedAt: string | null;
-  summary: string;
 }

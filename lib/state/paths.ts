@@ -20,13 +20,6 @@ const uploadsDirectory = path.join(stateDirectory, "uploads");
 const databasePath = path.join(stateDirectory, "switchy.db");
 const encryptionSecretPath = path.join(stateDirectory, "encryption.secret");
 
-/**
- * Get the base state directory (~/.switchy)
- */
-export function getStateDir(): string {
-  return stateDirectory;
-}
-
 export function getStateCoordinationDir(): string {
   return coordinationDirectory;
 }
@@ -36,21 +29,6 @@ export function getStateCoordinationDir(): string {
  */
 export function getDbPath(): string {
   return databasePath;
-}
-
-/**
- * Get the database path for display (with ~ instead of home directory)
- */
-export function getDbPathDisplay(): string {
-  const home = os.homedir();
-  return databasePath.replace(home, "~");
-}
-
-/**
- * Get the uploads directory path
- */
-export function getUploadsDir(): string {
-  return uploadsDirectory;
 }
 
 /**
@@ -99,11 +77,4 @@ export function getUploadTypeDir(type: string): string {
     fs.mkdirSync(typeDir, { recursive: true, mode: 0o700 });
   }
   return typeDir;
-}
-
-/**
- * Check if running in development mode
- */
-export function isDevelopment(): boolean {
-  return isDev;
 }

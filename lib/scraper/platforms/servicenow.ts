@@ -44,7 +44,7 @@ export type ServiceNowConfig = BrowserScraperConfig & {
   maxPages: number;
 };
 
-export const DEFAULT_SERVICENOW_CONFIG: ServiceNowConfig = {
+const DEFAULT_SERVICENOW_CONFIG: ServiceNowConfig = {
   ...DEFAULT_BROWSER_CONFIG,
   requestDelayMs: 200,
   maxPages: 100,
