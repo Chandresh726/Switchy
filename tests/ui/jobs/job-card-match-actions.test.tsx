@@ -58,7 +58,7 @@ describe("JobCard match actions", () => {
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "Mark Applied" }));
-    await waitFor(() => expect(requests).toContainEqual({ method: "PATCH", url: "/api/jobs" }));
+    await waitFor(() => expect(requests).toContainEqual({ method: "PATCH", url: "/api/jobs/42" }));
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["stats"] });
 

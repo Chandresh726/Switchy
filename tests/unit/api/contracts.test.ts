@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   jobSchema,
-  jobUpdateBodySchema,
+  jobResourceUpdateBodySchema,
   jobsQuerySchema,
 } from "@/lib/api/contracts/jobs";
 import { positiveIntegerIdSchema } from "@/lib/api/contracts/common";
@@ -13,7 +13,7 @@ import {
   companyIdsBodySchema,
 } from "@/lib/api/contracts/companies";
 import {
-  historyOptionalSessionQuerySchema,
+  historyIdParamsSchema,
   historyQuerySchema,
   matchHistoryDetailResponseSchema,
 } from "@/lib/api/contracts/history";
@@ -24,7 +24,7 @@ import {
   unmatchedCompanyPatchBodySchema,
 } from "@/lib/api/contracts/people";
 import {
-  childIdQuerySchema,
+  childIdParamsSchema,
   profileWriteBodySchema,
 } from "@/lib/api/contracts/profile";
 import {
@@ -61,10 +61,10 @@ describe("shared API contracts", () => {
 
   it("rejects invalid mutation dates and statuses", () => {
     expect(
-      jobUpdateBodySchema.safeParse({ id: 1, status: "unknown" }).success
+      jobResourceUpdateBodySchema.safeParse({ status: "unknown" }).success
     ).toBe(false);
     expect(
-      jobUpdateBodySchema.safeParse({ id: 1, appliedAt: "not-a-date" }).success
+      jobResourceUpdateBodySchema.safeParse({ appliedAt: "not-a-date" }).success
     ).toBe(false);
   });
 
@@ -72,7 +72,7 @@ describe("shared API contracts", () => {
     for (const value of ["1junk", "0", "-2", "1.5"]) {
       expect(companyIdParamsSchema.safeParse({ id: value }).success).toBe(false);
       expect(personIdParamsSchema.safeParse({ id: value }).success).toBe(false);
-      expect(childIdQuerySchema.safeParse({ id: value }).success).toBe(false);
+      expect(childIdParamsSchema.safeParse({ id: value }).success).toBe(false);
     }
   });
 
@@ -109,7 +109,7 @@ describe("shared API contracts", () => {
     expect(localCLIStatusQuerySchema.safeParse({ provider: "openai" }).success).toBe(false);
     expect(aiUsageQuerySchema.safeParse({ days: "365" }).success).toBe(false);
     expect(aiUsageQuerySchema.parse({})).toEqual({ days: 7 });
-    expect(historyOptionalSessionQuerySchema.safeParse({ sessionId: "" }).success).toBe(false);
+    expect(historyIdParamsSchema.safeParse({ id: "" }).success).toBe(false);
   });
 
   it("accepts real nullable job persistence and complete runtime responses", () => {

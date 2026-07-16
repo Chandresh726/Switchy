@@ -16,7 +16,7 @@ import { ApplyButton } from "@/components/jobs/apply-button";
 import { JobAIActions } from "@/components/jobs/job-ai-actions";
 import { LegacyMatchAlert } from "@/components/jobs/legacy-match-alert";
 import { MarkdownRenderer } from "@/components/jobs/markdown-renderer";
-import { getJobs, updateJob } from "@/lib/api/clients/jobs";
+import { getJob, updateJob } from "@/lib/api/clients/jobs";
 import { sanitizeHtmlContent } from "@/lib/jobs/description-processor";
 import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
 import {
@@ -81,7 +81,7 @@ export default function JobDetailPage() {
   const { data: jobData, isLoading } = useQuery({
     queryKey: ["job", jobId],
     queryFn: async () => {
-      return getJobs(`id=${jobId}`);
+      return { jobs: [await getJob(jobId)] };
     },
   });
 
@@ -97,7 +97,7 @@ export default function JobDetailPage() {
 
   const updateStatusMutation = useMutation({
     mutationFn: async (newStatus: string) => {
-      return updateJob({ id: jobId, status: newStatus });
+      return updateJob(jobId, { status: newStatus });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["job", jobId] });

@@ -24,7 +24,8 @@ import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
 import { toast } from "sonner";
 import {
   getMatchHistoryDetail,
-  mutateMatchHistory,
+  cancelMatchHistorySession,
+  deleteMatchHistorySession,
 } from "@/lib/api/clients/history";
 import { formatDurationMs, formatDurationFromDates, formatDateTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
@@ -51,7 +52,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
 
   const stopMutation = useMutation({
     mutationFn: async () => {
-      return mutateMatchHistory("PATCH", sessionId);
+      return cancelMatchHistorySession(sessionId);
     },
     onSuccess: () => {
       toast.success("Stopping match session");
@@ -65,7 +66,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      return mutateMatchHistory("DELETE", sessionId);
+      return deleteMatchHistorySession(sessionId);
     },
     onSuccess: () => {
       router.push("/history/match");

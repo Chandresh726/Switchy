@@ -28,7 +28,10 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { mutateMatchHistory } from "@/lib/api/clients/history";
+import {
+  cancelMatchHistorySession,
+  deleteMatchHistorySession,
+} from "@/lib/api/clients/history";
 import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
 import {
   formatDurationFromDates,
@@ -73,7 +76,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
-      await mutateMatchHistory("DELETE", session.id);
+      await deleteMatchHistorySession(session.id);
 
       queryClient.invalidateQueries({ queryKey: ["match-history"] });
       toast.success("Match session deleted successfully");
@@ -123,7 +126,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
     markSessionStoppedInCache();
 
     try {
-      await mutateMatchHistory("PATCH", session.id);
+      await cancelMatchHistorySession(session.id);
 
       toast.success("Stopping match session");
       queryClient.invalidateQueries({ queryKey: ["match-history"] });

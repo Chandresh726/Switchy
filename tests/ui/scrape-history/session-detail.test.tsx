@@ -179,9 +179,9 @@ describe("SessionDetail", () => {
     expect(screen.getByText("one detail request failed")).toBeTruthy();
   });
 
-  it("stops an active session through the authenticated PATCH contract", async () => {
+  it("stops an active session through the local command contract", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.method === "PATCH") {
+      if (init?.method === "POST") {
         return jsonResponse({ success: true, stopped: true });
       }
       return jsonResponse(sessionResponse("in_progress", [queueItem()]));
@@ -200,9 +200,9 @@ describe("SessionDetail", () => {
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
-        `/api/scrape-history?sessionId=${encodeURIComponent(SESSION_ID)}`,
+        `/api/scrape-history/${encodeURIComponent(SESSION_ID)}/cancel`,
         expect.objectContaining({
-          method: "PATCH",
+          method: "POST",
           headers: expect.objectContaining({ "x-switchy-request": "true" }),
         })
       )
@@ -230,7 +230,7 @@ describe("SessionDetail", () => {
 
     await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/history/scrape"));
     expect(fetchMock).toHaveBeenCalledWith(
-      `/api/scrape-history?sessionId=${encodeURIComponent(SESSION_ID)}`,
+      `/api/scrape-history/${encodeURIComponent(SESSION_ID)}`,
       expect.objectContaining({
         method: "DELETE",
         headers: expect.objectContaining({ "x-switchy-request": "true" }),

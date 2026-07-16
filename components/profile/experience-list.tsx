@@ -236,8 +236,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, exp }: { id: number; exp: ExperienceFormData }) => {
-      return updateExperience({
-          id,
+      return updateExperience(id, {
           ...exp,
           endDate: exp.endDate || null,
       });

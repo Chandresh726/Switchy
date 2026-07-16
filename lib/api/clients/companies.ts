@@ -23,8 +23,8 @@ const jsonMutation = (method: "POST" | "PUT" | "PATCH" | "DELETE", body: unknown
 });
 
 export const getCompanies = () => apiGet("/api/companies", companiesResponseSchema, "Failed to fetch companies");
-export const createCompanies = (body: unknown) => apiRequest("/api/companies", jsonMutation("POST", body), companyImportResponseSchema, "Failed to create companies");
-export const syncCompanies = (body: unknown) => apiRequest("/api/companies", jsonMutation("PUT", body), successSchema, "Failed to sync companies");
+export const createCompanies = (body: unknown) => apiRequest("/api/companies/import", jsonMutation("POST", body), companyImportResponseSchema, "Failed to create companies");
+export const syncCompanies = (body: unknown) => apiRequest("/api/companies/sync", jsonMutation("PUT", body), successSchema, "Failed to sync companies");
 export const updateCompany = (id: number, body: unknown) => apiRequest(`/api/companies/${id}`, jsonMutation("PUT", body), companyWriteResponseSchema, "Failed to update company");
 export const patchCompany = (id: number, body: unknown) => apiRequest(`/api/companies/${id}`, jsonMutation("PATCH", body), companyWriteResponseSchema, "Failed to update company");
 export const deleteCompany = (id: number) => apiDelete(`/api/companies/${id}`, companyDeleteResponseSchema, "Failed to delete company");

@@ -5,7 +5,7 @@ import { ResumeDataSchema, ResumeValidationWarningsSchema } from "@/lib/ai/resum
 import { positiveIntegerIdSchema } from "./common";
 
 export const profileIdQuerySchema = z.object({ profileId: positiveIntegerIdSchema });
-export const childIdQuerySchema = z.object({ id: positiveIntegerIdSchema });
+export const childIdParamsSchema = z.object({ id: positiveIntegerIdSchema });
 export const resumeUploadFormSchema = z.object({
   file: z.custom<File>(
     (value) => typeof File !== "undefined" && value instanceof File,
@@ -20,6 +20,11 @@ export const skillCreateBodySchema = z.object({
   name: z.string().trim().min(1).max(200),
   category: z.string().trim().max(200).nullable().optional(),
 });
+
+export const skillUpdateBodySchema = skillCreateBodySchema
+  .omit({ profileId: true })
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, "At least one field is required");
 
 export const profileWriteBodySchema = z.object({
   name: z.string().trim().min(1).max(300),
@@ -37,8 +42,7 @@ export const profileWriteBodySchema = z.object({
 
 const highlightsSchema = z.array(z.string().max(2_000)).max(200).optional().nullable();
 export const experienceWriteBodySchema = z.object({
-  id: positiveIntegerIdSchema.optional(),
-  profileId: positiveIntegerIdSchema.optional(),
+  profileId: positiveIntegerIdSchema,
   company: z.string().trim().min(1).max(300),
   title: z.string().trim().min(1).max(300),
   location: z.string().max(500).nullable().optional(),
@@ -48,9 +52,10 @@ export const experienceWriteBodySchema = z.object({
   highlights: highlightsSchema,
 });
 
+export const experienceUpdateBodySchema = experienceWriteBodySchema.omit({ profileId: true });
+
 export const educationWriteBodySchema = z.object({
-  id: positiveIntegerIdSchema.optional(),
-  profileId: positiveIntegerIdSchema.optional(),
+  profileId: positiveIntegerIdSchema,
   institution: z.string().trim().min(1).max(300),
   degree: z.string().trim().min(1).max(300),
   field: z.string().max(300).nullable().optional(),
@@ -59,6 +64,8 @@ export const educationWriteBodySchema = z.object({
   gpa: z.string().max(100).nullable().optional(),
   honors: z.string().max(2_000).nullable().optional(),
 });
+
+export const educationUpdateBodySchema = educationWriteBodySchema.omit({ profileId: true });
 
 export const skillSchema = z.object({
   id: z.number().int().positive(),

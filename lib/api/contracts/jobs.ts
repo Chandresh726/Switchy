@@ -20,7 +20,6 @@ const commaSeparated = <T extends z.ZodTypeAny>(item: T, maximum: number) =>
 
 export const jobsQuerySchema = z
   .object({
-    id: z.coerce.number().int().positive().optional(),
     companyId: z.coerce.number().int().positive().optional(),
     companyIds: commaSeparated(z.coerce.number().int().positive(), 100).optional(),
     status: jobStatusSchema.optional(),
@@ -61,9 +60,10 @@ export const jobsQuerySchema = z
     }
   );
 
-export const jobUpdateBodySchema = z
+export const jobIdParamsSchema = z.object({ id: z.coerce.number().int().positive() });
+
+export const jobResourceUpdateBodySchema = z
   .object({
-    id: z.coerce.number().int().positive(),
     status: jobStatusSchema.optional(),
     viewedAt: z.coerce.date().optional(),
     appliedAt: z.coerce.date().optional(),

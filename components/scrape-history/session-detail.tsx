@@ -21,7 +21,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   getScrapeHistoryDetail,
-  mutateScrapeHistory,
+  cancelScrapeHistorySession,
+  deleteScrapeHistorySession,
 } from "@/lib/api/clients/history";
 import { formatDateTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
@@ -55,7 +56,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
 
   const stopMutation = useMutation({
     mutationFn: async () => {
-      return mutateScrapeHistory("PATCH", sessionId);
+      return cancelScrapeHistorySession(sessionId);
     },
     onSuccess: () => {
       toast.success("Stopping scrape session");
@@ -69,7 +70,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      return mutateScrapeHistory("DELETE", sessionId);
+      return deleteScrapeHistorySession(sessionId);
     },
     onSuccess: () => {
       router.push("/history/scrape");

@@ -33,7 +33,7 @@ describe("platform detection", () => {
 
   it("is shared by API and UI callers", () => {
     const routeFile = fs.readFileSync(
-      path.join(process.cwd(), "app/api/companies/route.ts"),
+      path.join(process.cwd(), "lib/application/companies-service.ts"),
       "utf8"
     );
     const formFile = fs.readFileSync(

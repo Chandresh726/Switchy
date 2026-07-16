@@ -4,15 +4,12 @@ import { aiRunSummarySchema } from "./ai";
 import { matchJobProgressSchema, matchPhaseProgressSchema } from "./runtime";
 
 export const historyQuerySchema = z.object({
-  sessionId: z.string().trim().min(1).max(200).optional(),
   limit: z.coerce.number().int().positive().max(100).default(50),
   offset: z.coerce.number().int().nonnegative().max(1_000_000).default(0),
 });
-
-export const historySessionQuerySchema = z.object({
-  sessionId: z.string().trim().min(1).max(200),
+export const historyIdParamsSchema = z.object({
+  id: z.string().trim().min(1).max(200),
 });
-export const historyOptionalSessionQuerySchema = historySessionQuerySchema.partial();
 export const scrapeHistoryQuerySchema = historyQuerySchema.extend({
   limit: historyQuerySchema.shape.limit.default(20),
 });

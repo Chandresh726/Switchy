@@ -28,7 +28,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { copyMarkdownToClipboard } from "@/lib/ai/writing/rich-text";
 import { useAIContentWorkspace } from "@/lib/ai/writing/workspace/use-ai-content-workspace";
 import type { AIContentType } from "@/lib/ai/contracts";
-import { getJobs } from "@/lib/api/clients/jobs";
+import { getJob } from "@/lib/api/clients/jobs";
 import { getPeople, patchPerson } from "@/lib/api/clients/people";
 import { canOpenLinkedInProfile } from "@/lib/people/message";
 import { isRecruiterPosition } from "@/lib/people/position";
@@ -83,7 +83,7 @@ export function AIWorkspacePage({
     enabled: Number.isFinite(jobId),
     queryKey: ["job", jobId],
     queryFn: async () => {
-      return getJobs(`id=${jobId}`);
+      return { jobs: [await getJob(jobId)] };
     },
   });
 

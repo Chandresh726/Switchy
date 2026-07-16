@@ -30,7 +30,10 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { TRIGGER_LABELS } from "./constants";
-import { mutateScrapeHistory } from "@/lib/api/clients/history";
+import {
+  cancelScrapeHistorySession,
+  deleteScrapeHistorySession,
+} from "@/lib/api/clients/history";
 import {
   formatDurationFromDates,
   formatTime,
@@ -73,7 +76,7 @@ export function SessionCard({ session }: SessionCardProps) {
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
-      await mutateScrapeHistory("DELETE", session.id);
+      await deleteScrapeHistorySession(session.id);
 
       queryClient.invalidateQueries({ queryKey: ["scrape-history"] });
       toast.success("Session deleted successfully");
@@ -123,7 +126,7 @@ export function SessionCard({ session }: SessionCardProps) {
     markSessionStoppedInCache();
 
     try {
-      await mutateScrapeHistory("PATCH", session.id);
+      await cancelScrapeHistorySession(session.id);
 
       toast.success("Stopping scrape session");
       queryClient.invalidateQueries({ queryKey: ["scrape-history"] });

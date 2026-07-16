@@ -35,7 +35,7 @@ vi.mock("@/lib/ai/providers/model-catalog", () => ({
   getCachedProviderModelDefinition: mocks.getCachedProviderModelDefinition,
 }));
 
-import { GET, POST } from "@/app/api/settings/route";
+import { GET, PATCH } from "@/app/api/settings/route";
 
 describe("settings route", () => {
   beforeEach(() => {
@@ -80,7 +80,7 @@ describe("settings route", () => {
       }),
     });
 
-    const response = await POST(request);
+    const response = await PATCH(request);
     const body = await response.json();
 
     expect(response.status).toBe(400);
@@ -95,7 +95,7 @@ describe("settings route", () => {
       body: JSON.stringify({ theme: "dark" }),
     });
 
-    const response = await POST(request);
+    const response = await PATCH(request);
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
@@ -115,7 +115,7 @@ describe("settings route", () => {
       body: JSON.stringify({ matcher_reasoning_effort: "medium" }),
     });
 
-    const response = await POST(request);
+    const response = await PATCH(request);
 
     expect(response.status).toBe(200);
     expect(mocks.parseSettingsUpdateBody).toHaveBeenCalledWith(
@@ -137,7 +137,7 @@ describe("settings route", () => {
       body: JSON.stringify({ matcher_reasoning_effort: "max" }),
     });
 
-    const response = await POST(request);
+    const response = await PATCH(request);
 
     expect(response.status).toBe(200);
     expect(mocks.parseSettingsUpdateBody).toHaveBeenCalledWith(
@@ -159,7 +159,7 @@ describe("settings route", () => {
       body: JSON.stringify({ matcher_reasoning_effort: " max " }),
     });
 
-    const response = await POST(request);
+    const response = await PATCH(request);
 
     expect(response.status).toBe(400);
     expect(mocks.parseSettingsUpdateBody).not.toHaveBeenCalled();
@@ -181,7 +181,7 @@ describe("settings route", () => {
       }),
     });
 
-    const response = await POST(request);
+    const response = await PATCH(request);
 
     expect(response.status).toBe(200);
     expect(mocks.parseSettingsUpdateBody).toHaveBeenCalledTimes(1);
@@ -210,7 +210,7 @@ describe("settings route", () => {
       }),
     });
 
-    const response = await POST(request);
+    const response = await PATCH(request);
 
     expect(response.status).toBe(200);
     expect(mocks.parseSettingsUpdateBody).toHaveBeenCalledTimes(1);
@@ -234,7 +234,7 @@ describe("settings route", () => {
       body: JSON.stringify({ scheduler_enabled: false }),
     });
 
-    const response = await POST(request);
+    const response = await PATCH(request);
 
     expect(response.status).toBe(200);
     expect(mocks.upsertSettings).toHaveBeenCalledWith([
@@ -260,7 +260,7 @@ describe("settings route", () => {
       body: JSON.stringify({ scheduler_cron: "*/5 * * * *" }),
     });
 
-    const response = await POST(request);
+    const response = await PATCH(request);
 
     expect(response.status).toBe(200);
     expect(mocks.clearSchedulerEnabledCache).toHaveBeenCalledTimes(1);

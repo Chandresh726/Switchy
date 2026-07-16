@@ -33,7 +33,14 @@ vi.mock("@/lib/scraper/matching/lifecycle", () => ({
   stopMatchSession: vi.fn(),
 }));
 
-import { GET } from "@/app/api/match-history/route";
+import { GET } from "@/app/api/match-history/[id]/route";
+
+function getDetail(sessionId: string) {
+  return GET(
+    new NextRequest(`http://localhost/api/match-history/${sessionId}`),
+    { params: Promise.resolve({ id: sessionId }) }
+  );
+}
 
 function selectSession(result: unknown[]) {
   return {
@@ -151,9 +158,7 @@ describe("match history detail", () => {
       matchStale: false,
     }]]));
 
-    const response = await GET(new NextRequest(
-      "http://localhost/api/match-history?sessionId=session-1"
-    ));
+    const response = await getDetail("session-1");
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -201,9 +206,7 @@ describe("match history detail", () => {
       .mockImplementationOnce(() => selectWhere([]));
     mocks.getMatchPresentations.mockResolvedValue(new Map());
 
-    const response = await GET(new NextRequest(
-      "http://localhost/api/match-history?sessionId=session-1"
-    ));
+    const response = await getDetail("session-1");
     const body = await response.json();
 
     expect(body.logs[0]).toMatchObject({
@@ -281,9 +284,7 @@ describe("match history detail", () => {
       }],
     ]))));
 
-    const response = await GET(new NextRequest(
-      "http://localhost/api/match-history?sessionId=session-large"
-    ));
+    const response = await getDetail("session-large");
     const body = await response.json();
 
     expect(response.status).toBe(200);

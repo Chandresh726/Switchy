@@ -26,7 +26,8 @@ vi.mock("@/lib/scraper/maintenance", () => ({
   }),
 }));
 
-import { DELETE, PATCH } from "@/app/api/jobs/route";
+import { PATCH } from "@/app/api/jobs/[id]/route";
+import { POST as clearJobs } from "@/app/api/maintenance/jobs/clear/route";
 
 describe("jobs route mutations", () => {
   beforeEach(() => {
@@ -42,13 +43,13 @@ describe("jobs route mutations", () => {
     });
     mocks.update.mockReturnValue({ set });
 
-    const request = new Request("http://localhost/api/jobs", {
+    const request = new Request("http://localhost/api/jobs/42", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: 42, status: "archived" }),
+      body: JSON.stringify({ status: "archived" }),
     });
 
-    const response = await PATCH(request as NextRequest);
+    const response = await PATCH(request as NextRequest, { params: Promise.resolve({ id: "42" }) });
     const body = await response.json();
     expect(set).toHaveBeenCalledTimes(1);
     const updateData = set.mock.calls[0][0] as Record<string, unknown>;
@@ -70,13 +71,13 @@ describe("jobs route mutations", () => {
     });
     mocks.update.mockReturnValue({ set });
 
-    const request = new Request("http://localhost/api/jobs", {
+    const request = new Request("http://localhost/api/jobs/42", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: 42, status: "viewed" }),
+      body: JSON.stringify({ status: "viewed" }),
     });
 
-    const response = await PATCH(request as NextRequest);
+    const response = await PATCH(request as NextRequest, { params: Promise.resolve({ id: "42" }) });
     expect(set).toHaveBeenCalledTimes(1);
     const updateData = set.mock.calls[0][0] as Record<string, unknown>;
 
@@ -87,11 +88,11 @@ describe("jobs route mutations", () => {
   });
 
   it("deletes all jobs", async () => {
-    const request = new Request("http://localhost/api/jobs", {
-      method: "DELETE",
+    const request = new Request("http://localhost/api/maintenance/jobs/clear", {
+      method: "POST",
     });
 
-    const response = await DELETE(request as NextRequest);
+    const response = await clearJobs(request as NextRequest);
     const body = await response.json();
 
     expect(response.status).toBe(200);

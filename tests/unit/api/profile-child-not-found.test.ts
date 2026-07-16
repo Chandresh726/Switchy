@@ -27,11 +27,11 @@ vi.mock("@/lib/ai/matcher/profile-rematch", () => ({
   scheduleProfileRematch: mocks.scheduleProfileRematch,
 }));
 
-import { DELETE as deleteEducation, PUT as updateEducation } from "@/app/api/profile/education/route";
-import { DELETE as deleteExperience, PUT as updateExperience } from "@/app/api/profile/experience/route";
-import { DELETE as deleteSkill } from "@/app/api/profile/skills/route";
+import { DELETE as deleteEducation, PATCH as updateEducation } from "@/app/api/profile/education/[id]/route";
+import { DELETE as deleteExperience, PATCH as updateExperience } from "@/app/api/profile/experience/[id]/route";
+import { DELETE as deleteSkill } from "@/app/api/profile/skills/[id]/route";
 
-function mutationRequest(url: string, method: "DELETE" | "PUT", body?: unknown): NextRequest {
+function mutationRequest(url: string, method: "DELETE" | "PATCH", body?: unknown): NextRequest {
   return new NextRequest(url, {
     method,
     headers: {
@@ -60,39 +60,37 @@ describe("profile child missing-resource mutations", () => {
 
   it("returns 404 when deleting a missing skill", async () => {
     await expectNotFound(
-      await deleteSkill(mutationRequest("http://localhost/api/profile/skills?id=99", "DELETE")),
+      await deleteSkill(mutationRequest("http://localhost/api/profile/skills/99", "DELETE"), { params: Promise.resolve({ id: "99" }) }),
       "skill_not_found"
     );
   });
 
   it("returns 404 when deleting or updating missing experience", async () => {
     await expectNotFound(
-      await deleteExperience(mutationRequest("http://localhost/api/profile/experience?id=99", "DELETE")),
+      await deleteExperience(mutationRequest("http://localhost/api/profile/experience/99", "DELETE"), { params: Promise.resolve({ id: "99" }) }),
       "experience_not_found"
     );
     await expectNotFound(
-      await updateExperience(mutationRequest("http://localhost/api/profile/experience", "PUT", {
-        id: 99,
+      await updateExperience(mutationRequest("http://localhost/api/profile/experience/99", "PATCH", {
         company: "Example",
         title: "Engineer",
         startDate: "2024-01",
-      })),
+      }), { params: Promise.resolve({ id: "99" }) }),
       "experience_not_found"
     );
   });
 
   it("returns 404 when deleting or updating missing education", async () => {
     await expectNotFound(
-      await deleteEducation(mutationRequest("http://localhost/api/profile/education?id=99", "DELETE")),
+      await deleteEducation(mutationRequest("http://localhost/api/profile/education/99", "DELETE"), { params: Promise.resolve({ id: "99" }) }),
       "education_not_found"
     );
     await expectNotFound(
-      await updateEducation(mutationRequest("http://localhost/api/profile/education", "PUT", {
-        id: 99,
+      await updateEducation(mutationRequest("http://localhost/api/profile/education/99", "PATCH", {
         institution: "Example University",
         degree: "BS",
         startDate: "2020-01",
-      })),
+      }), { params: Promise.resolve({ id: "99" }) }),
       "education_not_found"
     );
   });

@@ -23,7 +23,7 @@ const jsonMutation = (method: "POST" | "PATCH" | "DELETE", body?: unknown): Requ
 export const getPeople = (query = "") => apiGet(`/api/people${query ? `?${query.replace(/^\?/, "")}` : ""}`, peopleListResponseSchema, "Failed to fetch people");
 export const createPerson = (body: Record<string, unknown>) => apiRequest("/api/people", jsonMutation("POST", body), personResponseSchema, "Failed to create person");
 export const patchPerson = (id: number, body: Record<string, unknown>) => apiRequest(`/api/people/${id}`, jsonMutation("PATCH", body), personResponseSchema, "Failed to update person");
-export const clearPeople = () => apiRequest("/api/people", jsonMutation("DELETE"), peopleClearResponseSchema, "Failed to clear people");
+export const clearPeople = () => apiRequest("/api/maintenance/people/clear", jsonMutation("POST"), peopleClearResponseSchema, "Failed to clear people");
 export const getPeopleImportSessions = (limit: number) => apiGet(`/api/people/import-sessions?limit=${limit}`, peopleImportSessionsResponseSchema, "Failed to fetch import sessions");
 export const getUnmatchedCompanies = (query: string, ignored = false) => apiGet(`/api/people/${ignored ? "ignored-" : ""}unmatched-companies?${query}`, unmatchedCompaniesResponseSchema, "Failed to load unmatched companies");
 export const getUnmatchedCompanyPeople = (query: string) => apiGet(`/api/people/unmatched-company-people?${query}`, unmatchedCompanyPeopleResponseSchema, "Failed to load unmatched people");

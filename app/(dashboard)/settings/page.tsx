@@ -7,7 +7,9 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api/client";
-import { successSchema, stringRecordSchema } from "@/lib/api/contracts/common";
+import { clearJobs } from "@/lib/api/clients/jobs";
+import { getSettings, patchSettings } from "@/lib/api/clients/settings";
+import { successSchema } from "@/lib/api/contracts/common";
 import {
   clearAiContentResponseSchema,
   clearMatchDataResponseSchema,
@@ -15,7 +17,6 @@ import {
   providerModelsResponseSchema,
   providerSettingsListSchema,
   queuedMatchResponseSchema,
-  settingsResponseSchema,
   unmatchedJobsCountResponseSchema,
 } from "@/lib/api/contracts/settings";
 import { MatcherSection } from "@/components/settings/matcher-section";
@@ -230,7 +231,7 @@ function SettingsContent() {
 
   const { data: settings, isLoading: isSettingsLoading } = useQuery<SettingsRecord>({
     queryKey: ["settings"],
-    queryFn: () => apiGet("/api/settings", settingsResponseSchema, "Failed to fetch settings"),
+    queryFn: getSettings,
   });
 
   const fetchProviderModels = async (
@@ -296,15 +297,10 @@ function SettingsContent() {
   };
 
   const saveCLIExecutablePaths = useCallback(async (paths: { codex: string; opencode: string }) => {
-    await apiPost(
-      "/api/settings",
-      {
+    await patchSettings({
         codex_cli_executable: paths.codex,
         opencode_cli_executable: paths.opencode,
-      },
-      settingsResponseSchema,
-      "Failed to save CLI executable paths"
-    );
+      });
     await queryClient.invalidateQueries({ queryKey: ["settings"] });
     await queryClient.invalidateQueries({ queryKey: ["providers"] });
     await queryClient.invalidateQueries({ queryKey: ["provider-models"] });
@@ -636,12 +632,7 @@ function SettingsContent() {
 
   const reconcileModelsMutation = useMutation({
     mutationFn: ({ updates }: { updates: Record<string, string>; features: string[] }) =>
-      apiPost(
-        "/api/settings",
-        updates,
-        stringRecordSchema,
-        "Failed to reconcile invalid model settings"
-      ),
+      patchSettings(updates),
     onSuccess: (_data, variables) => {
       const updatedFeatures = Array.from(new Set(variables.features));
       if (updatedFeatures.length > 0) {
@@ -911,7 +902,7 @@ function SettingsContent() {
   };
 
   const clearJobsMutation = useMutation({
-    mutationFn: () => apiDelete("/api/jobs", successSchema, "Failed to clear jobs"),
+    mutationFn: () => clearJobs(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["companies"] });
@@ -954,12 +945,7 @@ function SettingsContent() {
 
   const resumeParserMutation = useMutation({
     mutationFn: (updates: { resume_parser_model?: string; resume_parser_provider_id?: string; resume_parser_reasoning_effort?: ReasoningEffort }) =>
-      apiPost(
-        "/api/settings",
-        updates,
-        stringRecordSchema,
-        "Failed to save resume parser settings"
-      ),
+      patchSettings(updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
       setResumeParserLocalEdits({});
@@ -969,12 +955,7 @@ function SettingsContent() {
 
   const schedulerEnabledMutation = useMutation<SettingsRecord, Error, boolean, { previousEnabled: boolean }>({
     mutationFn: (enabled: boolean) =>
-      apiPost(
-        "/api/settings",
-        { scheduler_enabled: enabled },
-        settingsResponseSchema,
-        "Failed to save scheduler enabled setting"
-      ),
+      patchSettings({ scheduler_enabled: enabled }),
     onMutate: (enabled: boolean) => {
       const previousEnabled = schedulerEnabled;
       setScraperLocalEdits((prev) => ({ ...prev, schedulerEnabled: enabled }));
@@ -1043,12 +1024,7 @@ function SettingsContent() {
 
   const matcherSettingsMutation = useMutation({
     mutationFn: ({ updates }: { updates: Record<string, unknown>; snapshot: MatcherLocalEdits }) =>
-      apiPost(
-        "/api/settings",
-        updates,
-        stringRecordSchema,
-        "Failed to save matcher settings"
-      ),
+      patchSettings(updates),
     onSuccess: (data, variables) => {
       matcherAutosaveAttemptRef.current = null;
       queryClient.setQueryData(["settings"], data);
@@ -1063,12 +1039,7 @@ function SettingsContent() {
     { updates: Record<string, unknown>; snapshot: ScraperLocalEdits }
   >({
     mutationFn: ({ updates }) =>
-      apiPost(
-        "/api/settings",
-        updates,
-        stringRecordSchema,
-        "Failed to save scraper settings"
-      ),
+      patchSettings(updates),
     onSuccess: (data, variables) => {
       scraperAutosaveAttemptRef.current = null;
       queryClient.setQueryData(["settings"], data);
@@ -1083,9 +1054,7 @@ function SettingsContent() {
       updates: Partial<AIWritingSettings>;
       snapshot: AIWritingLocalEdits;
     }) =>
-      apiPost(
-        "/api/settings",
-        {
+      patchSettings({
           referral_tone: updates.referralTone,
           referral_length: updates.referralLength,
           follow_up_tone: updates.followUpTone,
@@ -1096,10 +1065,7 @@ function SettingsContent() {
           ai_writing_model: updates.aiWritingModel,
           ai_writing_provider_id: updates.aiWritingProviderId,
           ai_writing_reasoning_effort: updates.aiWritingReasoningEffort,
-        },
-        stringRecordSchema,
-        "Failed to save AI writing settings"
-      ),
+        }),
     onSuccess: (data, variables) => {
       aiWritingAutosaveAttemptRef.current = null;
       queryClient.setQueryData(["settings"], data);

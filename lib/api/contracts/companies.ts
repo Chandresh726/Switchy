@@ -35,6 +35,14 @@ export const companyCreateBodySchema = z.object({
   platform: optionalPlatformSchema,
   boardToken: z.string().trim().max(1_000).nullable().optional().or(z.literal("")),
 });
+const companyBulkInputSchema = z.array(z.unknown()).max(500).transform((items) =>
+  items.flatMap((item) => {
+    const parsed = companyCreateBodySchema.safeParse(item);
+    return parsed.success ? [parsed.data] : [];
+  })
+);
+export const companyImportBodySchema = z.union([companyCreateBodySchema, companyBulkInputSchema]);
+export const companySyncBodySchema = companyBulkInputSchema;
 
 export const companyReplaceBodySchema = companyCreateBodySchema.extend({
   isActive: z.boolean().optional(),

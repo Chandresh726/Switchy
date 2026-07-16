@@ -262,8 +262,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
   const updateMutation = useMutation({
     mutationFn: async ({ id, edu }: { id: number; edu: EducationFormData }) => {
       try {
-        return updateEducation({
-            id,
+        return updateEducation(id, {
             ...edu,
             endDate: edu.endDate || null,
             gpa: edu.gpa || null,

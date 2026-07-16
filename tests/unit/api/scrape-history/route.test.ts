@@ -34,10 +34,13 @@ vi.mock("@/lib/scraper/history", () => ({
   }),
 }));
 
-import { DELETE, GET, PATCH } from "@/app/api/scrape-history/route";
+import { DELETE, GET as getDetail } from "@/app/api/scrape-history/[id]/route";
+import { POST as cancel } from "@/app/api/scrape-history/[id]/cancel/route";
+import { POST as clear } from "@/app/api/maintenance/scrape-history/clear/route";
+import { GET } from "@/app/api/scrape-history/route";
 
-function createRequest(method: "GET" | "PATCH" | "DELETE", query = ""): NextRequest {
-  return new NextRequest(`http://localhost/api/scrape-history${query}`, {
+function createRequest(method: "GET" | "POST" | "DELETE", path = ""): NextRequest {
+  return new NextRequest(`http://localhost/api/scrape-history${path}`, {
     method,
   });
 }
@@ -90,7 +93,7 @@ describe("scrape history route", () => {
     };
     store.getDetail.mockReturnValue({ session, logs: [log], queueItems: [queueItem] });
 
-    const response = await GET(createRequest("GET", "?sessionId=session-1"));
+    const response = await getDetail(createRequest("GET", "/session-1"), { params: Promise.resolve({ id: "session-1" }) });
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
@@ -107,7 +110,7 @@ describe("scrape history route", () => {
   });
 
   it("returns 404 when a requested session does not exist", async () => {
-    const response = await GET(createRequest("GET", "?sessionId=missing"));
+    const response = await getDetail(createRequest("GET", "/missing"), { params: Promise.resolve({ id: "missing" }) });
 
     expect(response.status).toBe(404);
     await expect(response.json()).resolves.toMatchObject({
@@ -120,7 +123,8 @@ describe("scrape history route", () => {
     store.deleteHistory.mockReturnValue({ active: true, deleted: 0 });
 
     const response = await DELETE(
-      createRequest("DELETE", "?sessionId=session-1")
+      createRequest("DELETE", "/session-1"),
+      { params: Promise.resolve({ id: "session-1" }) }
     );
 
     expect(store.assertAppRequest).toHaveBeenCalledTimes(1);
@@ -135,9 +139,9 @@ describe("scrape history route", () => {
   it("deletes terminal history and reports the retained contract", async () => {
     store.deleteHistory.mockReturnValue({ active: false, deleted: 4 });
 
-    const response = await DELETE(createRequest("DELETE"));
+    const response = await clear(createRequest("POST", "/../maintenance/scrape-history/clear"));
 
-    expect(store.deleteHistory).toHaveBeenCalledWith(undefined);
+    expect(store.deleteHistory).toHaveBeenCalledWith();
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ success: true, deleted: 4 });
   });
@@ -146,9 +150,10 @@ describe("scrape history route", () => {
     store.deleteHistory.mockReturnValue({ active: false, deleted: 0 });
 
     const targeted = await DELETE(
-      createRequest("DELETE", "?sessionId=missing")
+      createRequest("DELETE", "/missing"),
+      { params: Promise.resolve({ id: "missing" }) }
     );
-    const collection = await DELETE(createRequest("DELETE"));
+    const collection = await clear(createRequest("POST", "/../maintenance/scrape-history/clear"));
 
     expect(targeted.status).toBe(404);
     await expect(targeted.json()).resolves.toMatchObject({
@@ -159,7 +164,7 @@ describe("scrape history route", () => {
   });
 
   it("requires a session ID before requesting cancellation", async () => {
-    const response = await PATCH(createRequest("PATCH"));
+    const response = await cancel(createRequest("POST"), { params: Promise.resolve({ id: "" }) });
 
     expect(response.status).toBe(400);
     expect(store.cancelSession).not.toHaveBeenCalled();
@@ -172,8 +177,9 @@ describe("scrape history route", () => {
       sessionStopped: true,
     });
 
-    const response = await PATCH(
-      createRequest("PATCH", "?sessionId=session-1")
+    const response = await cancel(
+      createRequest("POST", "/session-1/cancel"),
+      { params: Promise.resolve({ id: "session-1" }) }
     );
 
     expect(store.cancelSession).toHaveBeenCalledWith("session-1");
@@ -185,8 +191,9 @@ describe("scrape history route", () => {
   it("reports the current terminal status when no active work was stopped", async () => {
     store.getSessionStatus.mockReturnValue({ id: "session-1", status: "completed" });
 
-    const response = await PATCH(
-      createRequest("PATCH", "?sessionId=session-1")
+    const response = await cancel(
+      createRequest("POST", "/session-1/cancel"),
+      { params: Promise.resolve({ id: "session-1" }) }
     );
 
     expect(response.status).toBe(200);
@@ -198,8 +205,9 @@ describe("scrape history route", () => {
   });
 
   it("returns 404 when cancellation targets an unknown session", async () => {
-    const response = await PATCH(
-      createRequest("PATCH", "?sessionId=missing")
+    const response = await cancel(
+      createRequest("POST", "/missing/cancel"),
+      { params: Promise.resolve({ id: "missing" }) }
     );
 
     expect(response.status).toBe(404);

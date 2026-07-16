@@ -19,7 +19,10 @@ import { toast } from "sonner";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { clearAIHistory } from "@/lib/api/clients/ai";
-import { mutateMatchHistory, mutateScrapeHistory } from "@/lib/api/clients/history";
+import {
+  clearMatchHistory,
+  clearScrapeHistory,
+} from "@/lib/api/clients/history";
 
 interface HistoryLayoutClientProps {
   children: React.ReactNode;
@@ -61,11 +64,11 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
 
       switch (activeTab) {
         case "scrape":
-          clearRequest = mutateScrapeHistory("DELETE");
+          clearRequest = clearScrapeHistory();
           queryKey = "scrape-history";
           break;
         case "match":
-          clearRequest = mutateMatchHistory("DELETE");
+          clearRequest = clearMatchHistory();
           queryKey = "match-history";
           break;
         case "ai":
@@ -73,7 +76,7 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
           queryKey = "ai-history-all";
           break;
         default:
-          clearRequest = mutateScrapeHistory("DELETE");
+          clearRequest = clearScrapeHistory();
           queryKey = "scrape-history";
       }
 

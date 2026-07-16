@@ -80,7 +80,7 @@ export function JobCard({ job }: JobCardProps) {
 
   const updateStatusMutation = useMutation({
     mutationFn: async (newStatus: string) => {
-      return updateJob({ id: job.id, status: newStatus });
+      return updateJob(job.id, { status: newStatus });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
