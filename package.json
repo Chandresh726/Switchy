@@ -35,7 +35,10 @@
     "db:migrate": "drizzle-kit migrate --config=drizzle.config.ts && tsx scripts/backfill-job-fingerprints.ts && tsx scripts/remove-obsolete-match-data.ts",
     "db:studio": "drizzle-kit studio --config=drizzle.config.ts",
     "db:cleanup-job-duplicates": "tsx scripts/cleanup-job-duplicates.ts",
-    "ai:cli:smoke": "tsx scripts/ai-cli-smoke.mts"
+    "ai:cli:smoke": "tsx scripts/ai-cli-smoke.mts",
+    "state:backup": "tsx scripts/state-backup.ts",
+    "state:backup:verify": "tsx scripts/state-backup-verify.ts",
+    "state:restore": "tsx scripts/state-restore.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.12",

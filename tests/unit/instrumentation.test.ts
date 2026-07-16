@@ -8,6 +8,11 @@ const mocks = vi.hoisted(() => ({
   ensureBuiltinLocalCLIProviders: vi.fn(),
   removeDeprecatedMatchingPreferenceSettings: vi.fn(),
   warmLocalCLIStatuses: vi.fn(),
+  registerRuntimeLock: vi.fn(),
+}));
+
+vi.mock("@/lib/state/runtime-lock", () => ({
+  registerRuntimeLock: mocks.registerRuntimeLock,
 }));
 
 vi.mock("@/lib/ai/providers/provider-service", () => ({
@@ -65,6 +70,7 @@ describe("server startup instrumentation", () => {
 
     await register();
 
+    expect(mocks.registerRuntimeLock).not.toHaveBeenCalled();
     expect(mocks.startScheduler).not.toHaveBeenCalled();
     expect(mocks.warmLocalCLIStatuses).not.toHaveBeenCalled();
     expect(mocks.recoverPending).not.toHaveBeenCalled();
@@ -78,6 +84,7 @@ describe("server startup instrumentation", () => {
     await flushPromises();
 
     expect(mocks.startScheduler).toHaveBeenCalledTimes(1);
+    expect(mocks.registerRuntimeLock).toHaveBeenCalledTimes(1);
     expect(mocks.recoverPending).toHaveBeenCalledTimes(1);
     expect(mocks.importLegacyMatchWork).toHaveBeenCalledTimes(1);
     expect(mocks.dispatchPendingAIWork).toHaveBeenCalledTimes(1);

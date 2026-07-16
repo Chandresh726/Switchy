@@ -99,6 +99,9 @@ AI execution, evidence-based matching, grounded writing, resume parsing, privacy
 | `pnpm db:generate` | Generate Drizzle migrations from schema changes |
 | `pnpm db:migrate` | Apply Drizzle migrations |
 | `pnpm db:studio` | Open Drizzle Studio |
+| `pnpm state:backup -- --environment production\|development --output <directory>` | Create and verify a local-state snapshot |
+| `pnpm state:backup:verify -- --from <snapshot-directory>` | Verify an existing snapshot without restoring it |
+| `pnpm state:restore -- --environment production\|development --from <snapshot-directory> --replace` | Replace stopped local state from a verified snapshot |
 
 ## Encryption Secret
 
@@ -108,3 +111,36 @@ Switchy stores the API-key encryption secret in the local state directory, not i
 - Production: `~/.switchy/encryption.secret`
 
 Back up this file with the matching database. Losing it means stored provider API keys cannot be decrypted and must be re-entered.
+
+## Local Backup and Recovery
+
+Store snapshots outside the Switchy repository and outside `~/.switchy`. The
+backup command uses SQLite's online backup API, so the database copy remains
+consistent while Switchy is running. It copies the uploads tree and the matching
+encryption secret when that file exists, then verifies checksums and SQLite
+integrity before reporting success.
+
+```bash
+pnpm state:backup -- --environment production --output ~/switchy-backups/production-2026-07-16
+pnpm state:backup:verify -- --from ~/switchy-backups/production-2026-07-16
+```
+
+Use `development` for `~/.switchy/dev`. A snapshot without an encryption secret
+is valid only when the source state did not have one; stored encrypted provider
+keys require the secret from the same snapshot.
+
+Stop `pnpm dev` or `pnpm start` before restoring. Restore validates the source
+before changing current state, builds and validates a sibling staging directory,
+and requires `--replace` to make the destructive choice explicit:
+
+```bash
+pnpm state:restore -- --environment production --from ~/switchy-backups/production-2026-07-16 --replace
+```
+
+Before switching directories, restore creates a verified automatic rollback
+snapshot beside the top-level `~/.switchy` state root and prints its location. Keep that
+snapshot until the restored application starts successfully and the expected
+profile, resumes, uploads, companies, and job history are present. If restore is
+interrupted before activation or staged validation fails, the current state is
+left unchanged. Production restore preserves the separate development state in
+`~/.switchy/dev`.

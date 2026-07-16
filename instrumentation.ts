@@ -1,5 +1,8 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { registerRuntimeLock } = await import("@/lib/state/runtime-lock");
+    registerRuntimeLock();
+
     try {
       const { ensureBuiltinLocalCLIProviders } = await import(
         "@/lib/ai/providers/provider-service"
