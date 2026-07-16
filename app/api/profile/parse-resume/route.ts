@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { assertAppRequest, handleApiError } from "@/lib/api";
-import { resumeUploadFormSchema } from "@/lib/api/contracts/profile";
+import { resumeUploadFormSchema, resumeUploadResponseSchema } from "@/lib/api/contracts/profile";
 import { uploadResume } from "@/lib/application/profile-resume-service";
 
 export async function POST(request: NextRequest) {
@@ -12,7 +12,8 @@ export async function POST(request: NextRequest) {
     const { file, autofill } = resumeUploadFormSchema.parse({
       file: formData.get("file"), autofill: formData.get("autofill") ?? undefined,
     });
-    return NextResponse.json(await uploadResume(file, autofill, request.signal));
+    const response = await uploadResume(file, autofill, request.signal);
+    return NextResponse.json(resumeUploadResponseSchema.parse(response));
   } catch (error) {
     return handleApiError(error, { request, fallbackMessage: "Failed to parse resume", fallbackCode: "resume_parse_failed" });
   }

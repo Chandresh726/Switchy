@@ -9,10 +9,15 @@ const mocks = vi.hoisted(() => ({
   removeDeprecatedMatchingPreferenceSettings: vi.fn(),
   warmLocalCLIStatuses: vi.fn(),
   registerRuntimeLock: vi.fn(),
+  reconcileResumeStorage: vi.fn(),
 }));
 
 vi.mock("@/lib/state/runtime-lock", () => ({
   registerRuntimeLock: mocks.registerRuntimeLock,
+}));
+
+vi.mock("@/lib/application/profile-resume-service", () => ({
+  reconcileResumeStorage: mocks.reconcileResumeStorage,
 }));
 
 vi.mock("@/lib/ai/providers/provider-service", () => ({
@@ -63,6 +68,13 @@ describe("server startup instrumentation", () => {
     mocks.ensureBuiltinLocalCLIProviders.mockResolvedValue(undefined);
     mocks.removeDeprecatedMatchingPreferenceSettings.mockResolvedValue(undefined);
     mocks.warmLocalCLIStatuses.mockResolvedValue(undefined);
+    mocks.reconcileResumeStorage.mockResolvedValue({
+      ready: 0,
+      deleted: 0,
+      missing: 0,
+      orphanedDeleted: 0,
+      failed: 0,
+    });
   });
 
   it("does nothing outside the Node.js runtime", async () => {
@@ -71,6 +83,7 @@ describe("server startup instrumentation", () => {
     await register();
 
     expect(mocks.registerRuntimeLock).not.toHaveBeenCalled();
+    expect(mocks.reconcileResumeStorage).not.toHaveBeenCalled();
     expect(mocks.startScheduler).not.toHaveBeenCalled();
     expect(mocks.warmLocalCLIStatuses).not.toHaveBeenCalled();
     expect(mocks.recoverPending).not.toHaveBeenCalled();
@@ -85,6 +98,7 @@ describe("server startup instrumentation", () => {
 
     expect(mocks.startScheduler).toHaveBeenCalledTimes(1);
     expect(mocks.registerRuntimeLock).toHaveBeenCalledTimes(1);
+    expect(mocks.reconcileResumeStorage).toHaveBeenCalledTimes(1);
     expect(mocks.recoverPending).toHaveBeenCalledTimes(1);
     expect(mocks.importLegacyMatchWork).toHaveBeenCalledTimes(1);
     expect(mocks.dispatchPendingAIWork).toHaveBeenCalledTimes(1);

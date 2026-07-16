@@ -23,6 +23,7 @@ const store = vi.hoisted(() => ({
   releaseSchedulerLock: vi.fn(),
   scrapeAllCompanies: vi.fn(),
   validate: vi.fn(),
+  failSettingKey: null as string | null,
 }));
 
 vi.mock("drizzle-orm", () => ({
@@ -35,10 +36,11 @@ vi.mock("@/lib/db/schema", () => ({
 }));
 
 vi.mock("@/lib/db", () => ({
-  db: {
-    select: () => ({
+  db: (() => {
+    const select = () => ({
       from: (table: { __table?: string }) => ({
         where: (value: string) => ({
+          get: () => table.__table === "settings" ? store.settings.get(value) : undefined,
           limit: async () => {
             if (table.__table === "settings") {
               const row = store.settings.get(value);
@@ -48,26 +50,59 @@ vi.mock("@/lib/db", () => ({
           },
         }),
       }),
-    }),
-    insert: (table: { __table?: string }) => ({
+    });
+    const insert = (table: { __table?: string }) => ({
       values: (value: Record<string, unknown>) => {
+        let executed = false;
+        const executeSession = () => {
+          if (!executed && table.__table === "scrape_sessions") store.sessions.push(value);
+          executed = true;
+        };
         if (table.__table === "scrape_sessions") {
-          store.sessions.push(value);
-          return Promise.resolve();
+          return {
+            run: executeSession,
+            then: (resolve: (value?: unknown) => void) => { executeSession(); resolve(); },
+          };
         }
-
-        return {
-          onConflictDoUpdate: async ({ set }: { set: { value: string | null; updatedAt: Date } }) => {
+        const upsert = ({ set }: { set: { value: string | null; updatedAt: Date } }) => {
+          const executeSetting = () => {
+            if (executed) return;
+            if (store.failSettingKey === String(value.key)) {
+              throw new Error("injected scheduler persistence failure");
+            }
             store.settings.set(String(value.key), {
               key: String(value.key),
               value: set.value,
               updatedAt: set.updatedAt,
             });
-          },
+            executed = true;
+          };
+          return {
+            run: executeSetting,
+            then: (resolve: (value?: unknown) => void) => { executeSetting(); resolve(); },
+          };
         };
+        return { onConflictDoUpdate: upsert };
       },
-    }),
-  },
+    });
+    const database = {
+      select,
+      insert,
+      transaction: (operation: (tx: { select: typeof select; insert: typeof insert }) => unknown) => {
+        const settingsBefore = new Map(store.settings);
+        const sessionsBefore = [...store.sessions];
+        try {
+          return operation({ select, insert });
+        } catch (error) {
+          store.settings.clear();
+          for (const [key, value] of settingsBefore) store.settings.set(key, value);
+          store.sessions.splice(0, store.sessions.length, ...sessionsBefore);
+          throw error;
+        }
+      },
+    };
+    return database;
+  })(),
 }));
 
 vi.mock("node-cron", () => {
@@ -121,6 +156,7 @@ describe("scheduler recovery", () => {
     store.settings.clear();
     store.sessions.length = 0;
     store.task = null;
+    store.failSettingKey = null;
     store.validate.mockReturnValue(true);
     store.acquireSchedulerLock.mockResolvedValue("lock-token");
     store.refreshSchedulerLock.mockResolvedValue("lock-token");
@@ -151,6 +187,24 @@ describe("scheduler recovery", () => {
     expect((store.sessions[0]?.startedAt as Date)?.toISOString()).toBe("2026-04-05T00:30:00.000Z");
     expect(status.pendingMissedCount).toBe(1);
     expect(status.oldestMissedRun?.toISOString()).toBe("2026-04-05T00:30:00.000Z");
+  });
+
+  it("rolls back scheduler recovery state and session metadata on an injected write failure", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    store.failSettingKey = "scheduler.missedCount";
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    await scheduler.startScheduler();
+    await store.task?.listeners.get("execution:missed")?.({
+      date: new Date("2026-04-05T06:30:00.000Z"),
+    });
+
+    expect(store.settings.has("scheduler.pendingRecovery")).toBe(false);
+    expect(store.sessions).toEqual([]);
+    expect(consoleError).toHaveBeenCalledWith(
+      "[Scheduler] Failed to persist missed execution:",
+      expect.objectContaining({ message: "injected scheduler persistence failure" })
+    );
   });
 
   it("coalesces multiple missed executions into one recovery batch and clears pending state", async () => {

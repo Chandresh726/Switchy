@@ -16,8 +16,6 @@ export type Platform =
 
 export type TriggerSource = "manual" | "scheduler" | "scheduler_recovery" | "company_refresh";
 
-export type JobStatus = "new" | "viewed" | "interested" | "applied" | "rejected" | "archived";
-
 export type LocationType = "remote" | "hybrid" | "onsite";
 
 export type DescriptionFormat = "markdown" | "plain" | "html";
@@ -58,15 +56,6 @@ export const TRIGGER_SOURCES: readonly TriggerSource[] = [
   "company_refresh",
 ] as const;
 
-export const JOB_STATUSES: readonly JobStatus[] = [
-  "new",
-  "viewed",
-  "interested",
-  "applied",
-  "rejected",
-  "archived",
-] as const;
-
 export const LOCATION_TYPES: readonly LocationType[] = [
   "remote",
   "hybrid",
@@ -101,10 +90,6 @@ export function isPlatform(value: string): value is Platform {
 
 export function isTriggerSource(value: string): value is TriggerSource {
   return TRIGGER_SOURCES.includes(value as TriggerSource);
-}
-
-export function isJobStatus(value: string): value is JobStatus {
-  return JOB_STATUSES.includes(value as JobStatus);
 }
 
 export function isLocationType(value: string): value is LocationType {

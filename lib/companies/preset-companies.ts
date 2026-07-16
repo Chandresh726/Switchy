@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { normalizeCareersUrl } from "./normalization";
+
 const PLATFORM_VALUES = [
   "greenhouse",
   "lever",
@@ -59,32 +61,6 @@ function normalizePlatform(
 ): (typeof PLATFORM_VALUES)[number] | undefined {
   if (!value) return undefined;
   return value;
-}
-
-export function normalizeCareersUrl(url: string): string {
-  const trimmed = url.trim();
-  if (trimmed.length === 0) return "";
-
-  try {
-    const parsed = new URL(trimmed);
-    const hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
-    let pathname = parsed.pathname.replace(/\/+$/g, "");
-    if (pathname.length === 0) {
-      pathname = "/";
-    }
-
-    return `${hostname}${pathname}`;
-  } catch {
-    const normalized = trimmed
-      .toLowerCase()
-      .replace(/^https?:\/\//, "")
-      .replace(/^www\./, "")
-      .split(/[?#]/)[0];
-
-    if (!normalized) return "";
-    const withoutTrailingSlash = normalized.replace(/\/+$/g, "");
-    return withoutTrailingSlash.length > 0 ? withoutTrailingSlash : "/";
-  }
 }
 
 export function parsePresetCompanies(raw: unknown): PresetCompany[] {

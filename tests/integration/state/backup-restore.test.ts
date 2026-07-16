@@ -17,10 +17,10 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as schema from "@/lib/db/schema";
+import { migrateLocalDatabase } from "@/lib/db/migrations";
 import {
   createStateSnapshot,
   verifyStateSnapshot,
@@ -59,7 +59,7 @@ function createState(
   connection.pragma("journal_mode = WAL");
   connection.pragma("foreign_keys = ON");
   const database = drizzle(connection, { schema });
-  migrate(database, { migrationsFolder: join(process.cwd(), "drizzle") });
+  migrateLocalDatabase(database, join(process.cwd(), "drizzle"));
   database.insert(schema.settings).values({ key: "backup-test", value }).run();
   connection.close();
   return paths;

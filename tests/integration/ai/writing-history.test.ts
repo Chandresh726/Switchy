@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { eq } from "drizzle-orm";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -19,6 +18,7 @@ import {
   companies,
   jobs,
 } from "@/lib/db/schema";
+import { migrateLocalDatabase } from "@/lib/db/migrations";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-writing-history-");
@@ -131,7 +131,7 @@ describe("AI writing history persistence", () => {
 
   it("upgrades existing writing history with safe defaults and preserved content", async () => {
     const { database } = harness.createDatabase({ migrate: false });
-    migrate(database, { migrationsFolder: migrationsThrough(17) });
+    migrateLocalDatabase(database, migrationsThrough(17));
     const job = insertJob(database);
     const content = database.insert(aiGeneratedContent).values({
       jobId: job.id,
@@ -143,7 +143,7 @@ describe("AI writing history persistence", () => {
       variant: "Existing local draft",
     }).run();
 
-    migrate(database, { migrationsFolder: join(process.cwd(), "drizzle") });
+    migrateLocalDatabase(database, join(process.cwd(), "drizzle"));
 
     const upgraded = database.select().from(aiGenerationHistory).get();
     expect(upgraded).toMatchObject({

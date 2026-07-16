@@ -1,4 +1,5 @@
 import type { Company, NewJob } from "@/lib/db/schema";
+import type { JobStatus } from "@/lib/jobs/status";
 import type {
   Platform,
   TriggerSource,
@@ -62,7 +63,7 @@ export interface PersistScrapeResultInput {
   companyId: number;
   openExternalIds: string[];
   archiveMissing: boolean;
-  statusesToArchive: string[];
+  statusesToArchive: readonly JobStatus[];
   jobsToInsert: Omit<
     NewJob,
     "id" | "companyId" | "discoveredAt" | "updatedAt"

@@ -24,7 +24,11 @@ vi.mock("@/lib/db", () => ({ db: {} }));
 vi.mock("@/lib/db/schema", () => ({ profile: {} }));
 vi.mock("@/lib/storage/files", () => ({
   deleteResumeFile: vi.fn(),
-  saveResumeFile: vi.fn(),
+  finalizeResumeFile: vi.fn(),
+  getResumeFilePath: vi.fn(),
+  listResumeStagingFiles: vi.fn(() => []),
+  resumeFileExists: vi.fn(),
+  stageResumeFile: vi.fn(),
 }));
 
 import { POST } from "@/app/api/profile/parse-resume/route";

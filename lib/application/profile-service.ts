@@ -48,22 +48,39 @@ export async function getProfile() {
     db.select().from(education).where(eq(education.profileId, profileData.id)),
     db.select().from(resumes).where(eq(resumes.profileId, profileData.id)).orderBy(desc(resumes.version)),
   ]);
-  return { ...profileData, skills: skillRows, experience: experienceRows, education: educationRows, resumes: resumeRows };
+  return {
+    ...profileData,
+    skills: skillRows,
+    experience: experienceRows,
+    education: educationRows,
+    resumes: resumeRows.map(({ stagingPath, ...resume }) => {
+      void stagingPath;
+      return resume;
+    }),
+  };
 }
 
 export async function saveProfile(input: ProfileWriteInput) {
-  const [existing] = await db.select().from(profile).limit(1);
-  if (!existing) {
-    const [created] = await db.insert(profile).values(input).returning();
-    await scheduleProfileRematch();
-    return created;
-  }
-  const matchingFactsChanged = existing.summary !== (input.summary ?? null)
-    || existing.preferredCountry !== (input.preferredCountry ?? null)
-    || existing.preferredCity !== (input.preferredCity ?? null);
-  const [updated] = await db.update(profile).set({ ...input, updatedAt: new Date() }).where(eq(profile.id, existing.id)).returning();
+  const { saved, matchingFactsChanged } = db.transaction((tx) => {
+    const existing = tx.select().from(profile)
+      .where(eq(profile.singletonKey, "local")).get();
+    if (!existing) {
+      const created = tx.insert(profile).values({ ...input, singletonKey: "local" })
+        .onConflictDoNothing({ target: profile.singletonKey }).returning().get();
+      const saved = created ?? tx.select().from(profile)
+        .where(eq(profile.singletonKey, "local")).get();
+      if (!saved) throw new Error("Local profile could not be initialized");
+      return { saved, matchingFactsChanged: true };
+    }
+    const matchingFactsChanged = existing.summary !== (input.summary ?? null)
+      || existing.preferredCountry !== (input.preferredCountry ?? null)
+      || existing.preferredCity !== (input.preferredCity ?? null);
+    const saved = tx.update(profile).set({ ...input, updatedAt: new Date() })
+      .where(eq(profile.id, existing.id)).returning().get();
+    return { saved, matchingFactsChanged };
+  }, { behavior: "immediate" });
   if (matchingFactsChanged) await scheduleProfileRematch();
-  return updated;
+  return saved;
 }
 
 export const listSkills = (profileId: number) => db.select().from(skills).where(eq(skills.profileId, profileId));

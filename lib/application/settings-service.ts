@@ -7,7 +7,6 @@ import type { settingsUpdateBodySchema } from "@/lib/api/contracts/settings";
 import { db } from "@/lib/db";
 import { aiProviders } from "@/lib/db/schema";
 import {
-  clearSchedulerEnabledCache,
   getSchedulerEnabled,
   restartScheduler,
   stopScheduler,
@@ -105,11 +104,9 @@ export async function updateSettings(input: SettingsUpdateInput, context: ApiReq
   let shouldRestart = false;
   let shouldStop = false;
   if (enabledChanged) {
-    clearSchedulerEnabledCache();
     shouldRestart = newEnabledValue === true;
     shouldStop = !shouldRestart;
   } else if (cronUpdated) {
-    clearSchedulerEnabledCache();
     shouldRestart = await getSchedulerEnabled();
   }
   if (shouldStop) {

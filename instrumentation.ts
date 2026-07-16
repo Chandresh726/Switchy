@@ -4,6 +4,18 @@ export async function register() {
     registerRuntimeLock();
 
     try {
+      const { reconcileResumeStorage } = await import(
+        "@/lib/application/profile-resume-service"
+      );
+      const result = await reconcileResumeStorage();
+      if (result.ready + result.deleted + result.missing + result.orphanedDeleted > 0) {
+        console.log("[Instrumentation] Reconciled interrupted resume storage operations");
+      }
+    } catch (error) {
+      console.error("[Instrumentation] Failed to reconcile resume storage:", error);
+    }
+
+    try {
       const { ensureBuiltinLocalCLIProviders } = await import(
         "@/lib/ai/providers/provider-service"
       );

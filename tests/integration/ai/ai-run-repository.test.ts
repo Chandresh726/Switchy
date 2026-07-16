@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createAIRunRepository } from "@/lib/ai/runtime/run-repository";
 import { aiRuns, aiWorkItems, settings } from "@/lib/db/schema";
+import { migrateLocalDatabase } from "@/lib/db/migrations";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-ai-runs-");
@@ -239,10 +239,10 @@ describe("AI run migration and repository", () => {
 
   it("upgrades a populated pre-ledger database without losing existing data", () => {
     const { connection, database } = harness.createDatabase({ migrate: false });
-    migrate(database, { migrationsFolder: createLegacyMigrationsFolder() });
+    migrateLocalDatabase(database, createLegacyMigrationsFolder());
     database.insert(settings).values({ key: "fixture", value: "preserved" }).run();
 
-    migrate(database, { migrationsFolder: join(process.cwd(), "drizzle") });
+    migrateLocalDatabase(database, join(process.cwd(), "drizzle"));
 
     const preserved = database.select().from(settings).all();
     const runs = database.select().from(aiRuns).all();

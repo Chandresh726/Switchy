@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertAppRequest: vi.fn(),
-  clearSchedulerEnabledCache: vi.fn(),
   getSchedulerEnabled: vi.fn(),
   restartScheduler: vi.fn(),
   stopScheduler: vi.fn(),
@@ -18,7 +17,6 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 }));
 
 vi.mock("@/lib/jobs/scheduler", () => ({
-  clearSchedulerEnabledCache: mocks.clearSchedulerEnabledCache,
   getSchedulerEnabled: mocks.getSchedulerEnabled,
   restartScheduler: mocks.restartScheduler,
   stopScheduler: mocks.stopScheduler,
@@ -240,7 +238,6 @@ describe("settings route", () => {
     expect(mocks.upsertSettings).toHaveBeenCalledWith([
       { key: "scheduler_enabled", value: "false" },
     ]);
-    expect(mocks.clearSchedulerEnabledCache).toHaveBeenCalledTimes(1);
     expect(mocks.stopScheduler).toHaveBeenCalledTimes(1);
     expect(mocks.restartScheduler).not.toHaveBeenCalled();
   });
@@ -263,7 +260,6 @@ describe("settings route", () => {
     const response = await PATCH(request);
 
     expect(response.status).toBe(200);
-    expect(mocks.clearSchedulerEnabledCache).toHaveBeenCalledTimes(1);
     expect(mocks.getSchedulerEnabled).toHaveBeenCalledTimes(1);
     expect(mocks.restartScheduler).toHaveBeenCalledTimes(1);
     expect(mocks.stopScheduler).not.toHaveBeenCalled();

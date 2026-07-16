@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
 import { ValidationError } from "@/lib/api";
@@ -333,18 +333,16 @@ export function parseSettingsUpdateBody(body: unknown): ParsedSettingsUpdateResu
 }
 
 export async function upsertSettings(updates: ParsedSettingUpdate[]): Promise<void> {
-  for (const { key, value } of updates) {
-    const existing = await db.select().from(settings).where(eq(settings.key, key)).limit(1);
-
-    if (existing.length > 0) {
-      await db
-        .update(settings)
-        .set({ value, updatedAt: new Date() })
-        .where(eq(settings.key, key));
-    } else {
-      await db.insert(settings).values({ key, value, updatedAt: new Date() });
+  if (updates.length === 0) return;
+  const updatedAt = new Date();
+  db.transaction((tx) => {
+    for (const { key, value } of updates) {
+      tx.insert(settings).values({ key, value, updatedAt }).onConflictDoUpdate({
+        target: settings.key,
+        set: { value, updatedAt },
+      }).run();
     }
-  }
+  }, { behavior: "immediate" });
 }
 
 const DEPRECATED_MATCHING_PREFERENCE_KEYS = [

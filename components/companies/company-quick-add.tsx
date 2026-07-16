@@ -10,11 +10,11 @@ import { Input } from "@/components/ui/input";
 import { createCompanies } from "@/lib/api/clients/companies";
 import {
   excludeExistingPresetCompanies,
-  normalizeCareersUrl,
   parsePresetCompanies,
   searchPresetCompanies,
   type PresetCompany,
 } from "@/lib/companies/preset-companies";
+import { normalizeCareersUrl } from "@/lib/companies/normalization";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 
 interface ExistingCompany {

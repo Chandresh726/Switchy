@@ -65,6 +65,59 @@ describe("backend application services", () => {
     expect(deleteCompanies).toHaveBeenCalledWith([created.id]);
   });
 
+  it("normalizes retried company imports and rejects duplicate syncs without partial writes", async () => {
+    const { database } = harness.createDatabase();
+    vi.doMock("@/lib/db", () => ({ db: database }));
+    vi.doMock("@/lib/people/sync", () => ({ refreshUnmatchedCompanyMappings: vi.fn() }));
+    const service = await import("@/lib/application/companies-service");
+    const context = { requestId: "company-atomic-test" };
+    const [first, retried] = await Promise.all([
+      service.importCompanies({
+        name: "Acme",
+        careersUrl: "https://www.example.com/careers/",
+        platform: undefined,
+      }, context),
+      service.importCompanies({
+        name: "Acme updated",
+        careersUrl: "https://example.com/careers",
+        platform: undefined,
+      }, context),
+    ]);
+    expect(Array.isArray(first) || Array.isArray(retried)).toBe(false);
+    expect(database.select().from(companies).all()).toHaveLength(1);
+    expect(database.select().from(companies).get()).toMatchObject({ name: "Acme updated" });
+
+    await expect(service.syncCompanies([
+      { name: "One", careersUrl: "https://example.com/one", platform: undefined },
+      { name: "Duplicate", careersUrl: "https://www.example.com/one/", platform: undefined },
+    ], context)).rejects.toMatchObject({ code: "duplicate_company_url" });
+    expect(database.select().from(companies).all()).toHaveLength(1);
+    expect(database.select().from(companies).get()).toMatchObject({ isActive: true });
+  });
+
+  it("rolls back company synchronization when a database conflict occurs", async () => {
+    const { database } = harness.createDatabase();
+    database.insert(companies).values([
+      { name: "First", careersUrl: "https://example.com/careers" },
+      { name: "Second", careersUrl: "https://example.com/careers/" },
+    ]).run();
+    vi.doMock("@/lib/db", () => ({ db: database }));
+    vi.doMock("@/lib/people/sync", () => ({ refreshUnmatchedCompanyMappings: vi.fn() }));
+    const service = await import("@/lib/application/companies-service");
+
+    await expect(service.syncCompanies([{
+      name: "Changed",
+      careersUrl: "https://example.com/careers/",
+      platform: undefined,
+    }], { requestId: "company-conflict-test" })).rejects.toMatchObject({
+      code: "duplicate_company_url",
+    });
+    expect(database.select().from(companies).orderBy(companies.id).all()).toMatchObject([
+      { name: "First", careersUrl: "https://example.com/careers", isActive: true },
+      { name: "Second", careersUrl: "https://example.com/careers/", isActive: true },
+    ]);
+  });
+
   it("owns profile child persistence and rematch scheduling", async () => {
     const { database } = harness.createDatabase();
     const scheduleProfileRematch = vi.fn();
@@ -78,6 +131,27 @@ describe("backend application services", () => {
     await expect(service.deleteSkill(skill.id)).resolves.toEqual({ success: true });
     await expect(service.deleteSkill(skill.id)).rejects.toMatchObject({ code: "skill_not_found" });
     expect(scheduleProfileRematch).toHaveBeenCalledTimes(3);
+  });
+
+  it("converges concurrent initial profile saves on the local singleton", async () => {
+    const { database } = harness.createDatabase();
+    const scheduleProfileRematch = vi.fn().mockResolvedValue(undefined);
+    vi.doMock("@/lib/db", () => ({ db: database }));
+    vi.doMock("@/lib/ai/matcher/profile-rematch", () => ({ scheduleProfileRematch }));
+    const service = await import("@/lib/application/profile-service");
+
+    const saved = await Promise.all([
+      service.saveProfile({ name: "Local user", summary: "First profile state" }),
+      service.saveProfile({ name: "Local user", summary: "Second profile state" }),
+    ]);
+
+    expect(saved).toHaveLength(2);
+    expect(database.select().from(profile).all()).toHaveLength(1);
+    expect(database.select().from(profile).get()).toMatchObject({
+      singletonKey: "local",
+      summary: "Second profile state",
+    });
+    expect(scheduleProfileRematch).toHaveBeenCalledTimes(2);
   });
 
   it("validates mapped companies and owns person mutations", async () => {

@@ -69,13 +69,13 @@ export const educationUpdateBodySchema = educationWriteBodySchema.omit({ profile
 
 export const skillSchema = z.object({
   id: z.number().int().positive(),
-  profileId: z.number().int().positive().nullable(),
+  profileId: z.number().int().positive(),
   name: z.string(),
   category: z.string().nullable(),
 });
 export const experienceSchema = z.object({
   id: z.number().int().positive(),
-  profileId: z.number().int().positive().nullable(),
+  profileId: z.number().int().positive(),
   company: z.string(),
   title: z.string(),
   location: z.string().nullable(),
@@ -86,7 +86,7 @@ export const experienceSchema = z.object({
 });
 export const educationSchema = z.object({
   id: z.number().int().positive(),
-  profileId: z.number().int().positive().nullable(),
+  profileId: z.number().int().positive(),
   institution: z.string(),
   degree: z.string(),
   field: z.string().nullable(),
@@ -97,7 +97,7 @@ export const educationSchema = z.object({
 });
 export const resumeResponseSchema = z.object({
   id: z.number().int().positive(),
-  profileId: z.number().int().positive().nullable(),
+  profileId: z.number().int().positive(),
   fileName: z.string(),
   filePath: z.string(),
   parsedData: z.string(),
@@ -106,7 +106,12 @@ export const resumeResponseSchema = z.object({
   validationWarnings: z.string().nullable(),
   version: z.number().int().positive(),
   isCurrent: z.boolean(),
-  createdAt: z.string().nullable().transform((value) => value ?? ""),
+  storageState: z.enum(["staging", "ready", "deleting", "missing"]),
+  createdAt: z.union([
+    z.string(),
+    z.date().transform((value) => value.toISOString()),
+    z.null(),
+  ]).transform((value) => value ?? ""),
 });
 export const profileSchema = z.object({
   id: z.number().int().positive(),

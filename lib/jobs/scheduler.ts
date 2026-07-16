@@ -30,6 +30,21 @@ interface SchedulerRecoveryState {
   latestMissedRun: Date | null;
 }
 
+function parseRecoveryState(values: Record<string, string | null>): SchedulerRecoveryState {
+  const pendingValue = values[SCHEDULER_PENDING_RECOVERY_KEY];
+  const missedCountValue = values[SCHEDULER_MISSED_COUNT_KEY];
+  const oldestValue = values[SCHEDULER_OLDEST_MISSED_RUN_KEY];
+  const latestValue = values[SCHEDULER_LATEST_MISSED_RUN_KEY];
+  const pendingMissedCount = pendingValue === "true"
+    ? Math.max(1, parseInt(missedCountValue ?? "1", 10) || 1)
+    : Math.max(0, parseInt(missedCountValue ?? "0", 10) || 0);
+  return {
+    pendingMissedCount,
+    oldestMissedRun: oldestValue ? new Date(oldestValue) : null,
+    latestMissedRun: latestValue ? new Date(latestValue) : null,
+  };
+}
+
 export interface SchedulerStatus extends SchedulerRecoveryState {
   isActive: boolean;
   isRunning: boolean;
@@ -58,23 +73,6 @@ async function getSettingValue(key: string): Promise<string | null> {
   }
 }
 
-async function setSettingValue(key: string, value: string | null, updatedAt = new Date()): Promise<void> {
-  await db
-    .insert(settings)
-    .values({
-      key,
-      value,
-      updatedAt,
-    })
-    .onConflictDoUpdate({
-      target: settings.key,
-      set: {
-        value,
-        updatedAt,
-      },
-    });
-}
-
 async function getCronFromDB(): Promise<string> {
   const value = await getSettingValue("scheduler_cron");
   if (value) {
@@ -99,38 +97,30 @@ async function getRecoveryState(): Promise<SchedulerRecoveryState> {
     getSettingValue(SCHEDULER_LATEST_MISSED_RUN_KEY),
   ]);
 
-  const pendingMissedCount = pendingValue === "true"
-    ? Math.max(1, parseInt(missedCountValue ?? "1", 10) || 1)
-    : Math.max(0, parseInt(missedCountValue ?? "0", 10) || 0);
-
-  return {
-    pendingMissedCount,
-    oldestMissedRun: oldestValue ? new Date(oldestValue) : null,
-    latestMissedRun: latestValue ? new Date(latestValue) : null,
-  };
+  return parseRecoveryState({
+    [SCHEDULER_PENDING_RECOVERY_KEY]: pendingValue,
+    [SCHEDULER_MISSED_COUNT_KEY]: missedCountValue,
+    [SCHEDULER_OLDEST_MISSED_RUN_KEY]: oldestValue,
+    [SCHEDULER_LATEST_MISSED_RUN_KEY]: latestValue,
+  });
 }
 
 async function saveRecoveryState(state: SchedulerRecoveryState): Promise<void> {
   const updatedAt = new Date();
-
-  await Promise.all([
-    setSettingValue(
-      SCHEDULER_PENDING_RECOVERY_KEY,
-      state.pendingMissedCount > 0 ? "true" : "false",
-      updatedAt
-    ),
-    setSettingValue(SCHEDULER_MISSED_COUNT_KEY, String(state.pendingMissedCount), updatedAt),
-    setSettingValue(
-      SCHEDULER_OLDEST_MISSED_RUN_KEY,
-      state.oldestMissedRun?.toISOString() ?? null,
-      updatedAt
-    ),
-    setSettingValue(
-      SCHEDULER_LATEST_MISSED_RUN_KEY,
-      state.latestMissedRun?.toISOString() ?? null,
-      updatedAt
-    ),
-  ]);
+  const values = [
+    [SCHEDULER_PENDING_RECOVERY_KEY, state.pendingMissedCount > 0 ? "true" : "false"],
+    [SCHEDULER_MISSED_COUNT_KEY, String(state.pendingMissedCount)],
+    [SCHEDULER_OLDEST_MISSED_RUN_KEY, state.oldestMissedRun?.toISOString() ?? null],
+    [SCHEDULER_LATEST_MISSED_RUN_KEY, state.latestMissedRun?.toISOString() ?? null],
+  ] as const;
+  db.transaction((tx) => {
+    for (const [key, value] of values) {
+      tx.insert(settings).values({ key, value, updatedAt }).onConflictDoUpdate({
+        target: settings.key,
+        set: { value, updatedAt },
+      }).run();
+    }
+  }, { behavior: "immediate" });
 }
 
 async function clearRecoveryState(): Promise<void> {
@@ -155,46 +145,61 @@ function inferMissedExecutionTime(context: TaskContext): Date {
 }
 
 async function recordMissedExecution(scheduledFor: Date): Promise<void> {
-  const recoveryState = await getRecoveryState();
-  const nextState: SchedulerRecoveryState = {
-    pendingMissedCount: recoveryState.pendingMissedCount + 1,
-    oldestMissedRun:
-      !recoveryState.oldestMissedRun || scheduledFor < recoveryState.oldestMissedRun
+  db.transaction((tx) => {
+    const keys = [
+      SCHEDULER_PENDING_RECOVERY_KEY,
+      SCHEDULER_MISSED_COUNT_KEY,
+      SCHEDULER_OLDEST_MISSED_RUN_KEY,
+      SCHEDULER_LATEST_MISSED_RUN_KEY,
+    ];
+    const persisted = Object.fromEntries(keys.map((key) => [
+      key,
+      tx.select({ value: settings.value }).from(settings).where(eq(settings.key, key)).get()?.value ?? null,
+    ]));
+    const recoveryState = parseRecoveryState(persisted);
+    const nextState: SchedulerRecoveryState = {
+      pendingMissedCount: recoveryState.pendingMissedCount + 1,
+      oldestMissedRun: !recoveryState.oldestMissedRun || scheduledFor < recoveryState.oldestMissedRun
         ? scheduledFor
         : recoveryState.oldestMissedRun,
-    latestMissedRun:
-      !recoveryState.latestMissedRun || scheduledFor > recoveryState.latestMissedRun
+      latestMissedRun: !recoveryState.latestMissedRun || scheduledFor > recoveryState.latestMissedRun
         ? scheduledFor
         : recoveryState.latestMissedRun,
-  };
-
-  await saveRecoveryState(nextState);
-
-  const sessionId = crypto.randomUUID();
-  await db.insert(scrapeSessions).values({
-    id: sessionId,
-    triggerSource: "scheduler",
-    status: "skipped",
-    companiesTotal: 0,
-    companiesCompleted: 0,
-    totalJobsFound: 0,
-    totalJobsAdded: 0,
-    totalJobsFiltered: 0,
-    totalJobsArchived: 0,
-    skipReason: MISSED_RUN_REASON,
-    scheduledForAt: scheduledFor,
-    startedAt: scheduledFor,
-    completedAt: scheduledFor,
-  });
+    };
+    const updatedAt = new Date();
+    const values = [
+      [SCHEDULER_PENDING_RECOVERY_KEY, "true"],
+      [SCHEDULER_MISSED_COUNT_KEY, String(nextState.pendingMissedCount)],
+      [SCHEDULER_OLDEST_MISSED_RUN_KEY, nextState.oldestMissedRun?.toISOString() ?? null],
+      [SCHEDULER_LATEST_MISSED_RUN_KEY, nextState.latestMissedRun?.toISOString() ?? null],
+    ] as const;
+    for (const [key, value] of values) {
+      tx.insert(settings).values({ key, value, updatedAt }).onConflictDoUpdate({
+        target: settings.key,
+        set: { value, updatedAt },
+      }).run();
+    }
+    tx.insert(scrapeSessions).values({
+      id: crypto.randomUUID(),
+      triggerSource: "scheduler",
+      status: "skipped",
+      companiesTotal: 0,
+      companiesCompleted: 0,
+      totalJobsFound: 0,
+      totalJobsAdded: 0,
+      totalJobsFiltered: 0,
+      totalJobsArchived: 0,
+      skipReason: MISSED_RUN_REASON,
+      scheduledForAt: scheduledFor,
+      startedAt: scheduledFor,
+      completedAt: scheduledFor,
+    }).run();
+  }, { behavior: "immediate" });
 }
 
 export async function getSchedulerEnabled(): Promise<boolean> {
   const value = await getSettingValue(SCHEDULER_ENABLED_KEY);
   return value ? value === "true" : true;
-}
-
-export function clearSchedulerEnabledCache(): void {
-  // No-op: keep function for compatibility with existing callers.
 }
 
 function calculateNextRun(cronExpr: string): Date | null {
@@ -294,7 +299,14 @@ export async function restartScheduler(): Promise<void> {
 
 async function saveLastRun(time: Date): Promise<void> {
   try {
-    await setSettingValue(SCHEDULER_LAST_RUN_KEY, time.toISOString(), time);
+    await db.insert(settings).values({
+      key: SCHEDULER_LAST_RUN_KEY,
+      value: time.toISOString(),
+      updatedAt: time,
+    }).onConflictDoUpdate({
+      target: settings.key,
+      set: { value: time.toISOString(), updatedAt: time },
+    });
   } catch (error) {
     console.error("[Scheduler] Error saving lastRun:", error);
   }

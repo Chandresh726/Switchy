@@ -1,7 +1,6 @@
 export type {
   Platform,
   TriggerSource,
-  JobStatus,
   LocationType,
   DescriptionFormat,
   EmploymentType,
@@ -15,14 +14,12 @@ export type {
 export {
   PLATFORMS,
   TRIGGER_SOURCES,
-  JOB_STATUSES,
   LOCATION_TYPES,
   DESCRIPTION_FORMATS,
   EMPLOYMENT_TYPES,
   SENIORITY_LEVELS,
   isPlatform,
   isTriggerSource,
-  isJobStatus,
   isLocationType,
   isDescriptionFormat,
   isEmploymentType,

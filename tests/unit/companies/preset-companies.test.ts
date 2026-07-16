@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   excludeExistingPresetCompanies,
-  normalizeCareersUrl,
   parsePresetCompanies,
   searchPresetCompanies,
 } from "@/lib/companies/preset-companies";
+import { normalizeCareersUrl } from "@/lib/companies/normalization";
 
 describe("preset companies utils", () => {
   it("normalizes careers URLs for dedupe matching", () => {

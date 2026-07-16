@@ -4,14 +4,19 @@ import {
   integer,
   real,
   unique,
+  uniqueIndex,
   index,
+  check,
   primaryKey,
 } from "drizzle-orm/sqlite-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
+
+import type { JobStatus } from "@/lib/jobs/status";
 
 // Profile - Single user profile
 export const profile = sqliteTable("profile", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  singletonKey: text("singleton_key").notNull().default("local"),
   name: text("name").notNull(),
   email: text("email"),
   phone: text("phone"),
@@ -25,12 +30,15 @@ export const profile = sqliteTable("profile", {
   summary: text("summary"),
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
-});
+}, (table) => ({
+  singletonKeyUnique: uniqueIndex("profile_singleton_key_unique").on(table.singletonKey),
+  singletonKeyCheck: check("profile_singleton_key_check", sql`${table.singletonKey} = 'local'`),
+}));
 
 // Resumes - Uploaded resumes and their parsed data
 export const resumes = sqliteTable("resumes", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  profileId: integer("profile_id").references(() => profile.id, { onDelete: "cascade" }),
+  profileId: integer("profile_id").references(() => profile.id, { onDelete: "cascade" }).notNull(),
   fileName: text("file_name").notNull(),
   filePath: text("file_path").notNull(),
   parsedData: text("parsed_data").notNull(), // JSON string
@@ -39,21 +47,29 @@ export const resumes = sqliteTable("resumes", {
   validationWarnings: text("validation_warnings"), // JSON array validated by resume repository
   version: integer("version").notNull(),
   isCurrent: integer("is_current", { mode: "boolean" }).notNull().default(false),
+  storageState: text("storage_state").notNull().default("ready"),
+  stagingPath: text("staging_path"),
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
-});
+}, (table) => ({
+  profileVersionUnique: uniqueIndex("resumes_profile_version_unique").on(table.profileId, table.version),
+  oneCurrentPerProfile: uniqueIndex("resumes_one_current_per_profile_unique")
+    .on(table.profileId)
+    .where(sql`${table.isCurrent} = 1`),
+  storageStateCheck: check("resumes_storage_state_check", sql`${table.storageState} in ('staging', 'ready', 'deleting', 'missing')`),
+}));
 
 // Skills - User skills
 export const skills = sqliteTable("skills", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  profileId: integer("profile_id").references(() => profile.id, { onDelete: "cascade" }),
+  profileId: integer("profile_id").references(() => profile.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   category: text("category"), // e.g., "frontend", "backend", "devops", "soft skills"
-});
+}, (table) => ({ profileIdIdx: index("skills_profile_id_idx").on(table.profileId) }));
 
 // Experience - Work history
 export const experience = sqliteTable("experience", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  profileId: integer("profile_id").references(() => profile.id, { onDelete: "cascade" }),
+  profileId: integer("profile_id").references(() => profile.id, { onDelete: "cascade" }).notNull(),
   company: text("company").notNull(),
   title: text("title").notNull(),
   location: text("location"),
@@ -61,12 +77,12 @@ export const experience = sqliteTable("experience", {
   endDate: text("end_date"), // null = current
   description: text("description"),
   highlights: text("highlights"), // JSON array stored as text
-});
+}, (table) => ({ profileIdIdx: index("experience_profile_id_idx").on(table.profileId) }));
 
 // Education - Education history
 export const education = sqliteTable("education", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  profileId: integer("profile_id").references(() => profile.id, { onDelete: "cascade" }),
+  profileId: integer("profile_id").references(() => profile.id, { onDelete: "cascade" }).notNull(),
   institution: text("institution").notNull(),
   degree: text("degree").notNull(),
   field: text("field"),
@@ -74,7 +90,7 @@ export const education = sqliteTable("education", {
   endDate: text("end_date"),
   gpa: text("gpa"),
   honors: text("honors"),
-});
+}, (table) => ({ profileIdIdx: index("education_profile_id_idx").on(table.profileId) }));
 
 // Companies - Tracked companies with careers page URLs
 export const companies = sqliteTable("companies", {
@@ -90,7 +106,7 @@ export const companies = sqliteTable("companies", {
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 }, (table) => ({
-  careersUrlIdx: index("companies_careers_url_idx").on(table.careersUrl),
+  careersUrlUnique: uniqueIndex("companies_careers_url_unique").on(table.careersUrl),
 }));
 
 // Jobs - Job postings with match scores
@@ -109,7 +125,7 @@ export const jobs = sqliteTable("jobs", {
   employmentType: text("employment_type"), // "full-time", "part-time", "contract"
   seniorityLevel: text("seniority_level"), // "entry", "mid", "senior", "lead", "manager"
   aiFingerprint: text("ai_fingerprint"), // Derived from AI-relevant job content; maintained without touching updatedAt
-  status: text("status").notNull().default("new"), // "new", "viewed", "interested", "applied", "rejected", "archived"
+  status: text("status").$type<JobStatus>().notNull().default("new"),
   matchScore: real("match_score"), // 0-100
   matchReasons: text("match_reasons"), // JSON array
   matchedSkills: text("matched_skills"), // JSON array
@@ -129,6 +145,8 @@ export const jobs = sqliteTable("jobs", {
   aiFingerprintIdx: index("jobs_ai_fingerprint_idx").on(table.aiFingerprint),
   companyExternalIdUnique: unique("jobs_company_external_id_unique").on(table.companyId, table.externalId),
   companyUrlUnique: unique("jobs_company_url_unique").on(table.companyId, table.url),
+  statusCheck: check("jobs_status_check", sql`${table.status} in ('new', 'viewed', 'interested', 'applied', 'rejected', 'archived')`),
+  matchScoreCheck: check("jobs_match_score_check", sql`${table.matchScore} is null or (${table.matchScore} >= 0 and ${table.matchScore} <= 100)`),
 }));
 
 // Scrape Sessions - Track batch scrape operations
@@ -146,7 +164,14 @@ export const scrapeSessions = sqliteTable("scrape_sessions", {
   scheduledForAt: integer("scheduled_for_at", { mode: "timestamp" }),
   startedAt: integer("started_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   completedAt: integer("completed_at", { mode: "timestamp" }),
-});
+}, (table) => ({
+  companiesTotalCheck: check("scrape_sessions_companies_total_check", sql`${table.companiesTotal} is null or ${table.companiesTotal} >= 0`),
+  companiesCompletedCheck: check("scrape_sessions_companies_completed_check", sql`${table.companiesCompleted} is null or ${table.companiesCompleted} >= 0`),
+  totalJobsFoundCheck: check("scrape_sessions_jobs_found_check", sql`${table.totalJobsFound} is null or ${table.totalJobsFound} >= 0`),
+  totalJobsAddedCheck: check("scrape_sessions_jobs_added_check", sql`${table.totalJobsAdded} is null or ${table.totalJobsAdded} >= 0`),
+  totalJobsFilteredCheck: check("scrape_sessions_jobs_filtered_check", sql`${table.totalJobsFiltered} is null or ${table.totalJobsFiltered} >= 0`),
+  totalJobsArchivedCheck: check("scrape_sessions_jobs_archived_check", sql`${table.totalJobsArchived} is null or ${table.totalJobsArchived} >= 0`),
+}));
 
 // Scrape Queue Items - Durable local work with leases for crash recovery
 export const scrapeQueueItems = sqliteTable("scrape_queue_items", {
@@ -188,6 +213,8 @@ export const scrapeQueueItems = sqliteTable("scrape_queue_items", {
     table.status
   ),
   leaseIdx: index("scrape_queue_lease_idx").on(table.status, table.leaseExpiresAt),
+  attemptCountCheck: check("scrape_queue_attempt_count_check", sql`${table.attemptCount} >= 0`),
+  maxAttemptsCheck: check("scrape_queue_max_attempts_check", sql`${table.maxAttempts} > 0`),
 }));
 
 // Scraping Logs - Audit trail for scraping operations
@@ -216,6 +243,16 @@ export const scrapingLogs = sqliteTable("scraping_logs", {
 }, (table) => ({
   sessionIdIdx: index("scraping_logs_session_id_idx").on(table.sessionId),
   companyIdIdx: index("scraping_logs_company_id_idx").on(table.companyId),
+  jobsFoundCheck: check("scraping_logs_jobs_found_check", sql`${table.jobsFound} is null or ${table.jobsFound} >= 0`),
+  jobsAddedCheck: check("scraping_logs_jobs_added_check", sql`${table.jobsAdded} is null or ${table.jobsAdded} >= 0`),
+  jobsUpdatedCheck: check("scraping_logs_jobs_updated_check", sql`${table.jobsUpdated} is null or ${table.jobsUpdated} >= 0`),
+  jobsFilteredCheck: check("scraping_logs_jobs_filtered_check", sql`${table.jobsFiltered} is null or ${table.jobsFiltered} >= 0`),
+  jobsArchivedCheck: check("scraping_logs_jobs_archived_check", sql`${table.jobsArchived} is null or ${table.jobsArchived} >= 0`),
+  durationCheck: check("scraping_logs_duration_check", sql`${table.duration} is null or ${table.duration} >= 0`),
+  matcherJobsTotalCheck: check("scraping_logs_matcher_jobs_total_check", sql`${table.matcherJobsTotal} is null or ${table.matcherJobsTotal} >= 0`),
+  matcherJobsCompletedCheck: check("scraping_logs_matcher_jobs_completed_check", sql`${table.matcherJobsCompleted} is null or ${table.matcherJobsCompleted} >= 0`),
+  matcherDurationCheck: check("scraping_logs_matcher_duration_check", sql`${table.matcherDuration} is null or ${table.matcherDuration} >= 0`),
+  matcherErrorCountCheck: check("scraping_logs_matcher_error_count_check", sql`${table.matcherErrorCount} is null or ${table.matcherErrorCount} >= 0`),
 }));
 
 // Scrape Match Outbox - Durable handoff from committed jobs to background AI matching
@@ -248,6 +285,8 @@ export const scrapeMatchOutbox = sqliteTable("scrape_match_outbox", {
     table.createdAt
   ),
   leaseIdx: index("scrape_match_outbox_lease_idx").on(table.status, table.leaseExpiresAt),
+  attemptCountCheck: check("scrape_match_outbox_attempt_count_check", sql`${table.attemptCount} >= 0`),
+  maxAttemptsCheck: check("scrape_match_outbox_max_attempts_check", sql`${table.maxAttempts} > 0`),
 }));
 
 // Generic durable local AI work. Payload/result JSON is validated by the work repository.
@@ -593,7 +632,14 @@ export const peopleImportSessions = sqliteTable("connection_import_sessions", {
   completedAt: integer("completed_at", { mode: "timestamp" }),
   status: text("status").notNull().default("in_progress"),
   errorMessage: text("error_message"),
-});
+}, (table) => ({
+  totalRowsCheck: check("people_import_total_rows_check", sql`${table.totalRows} >= 0`),
+  insertedRowsCheck: check("people_import_inserted_rows_check", sql`${table.insertedRows} >= 0`),
+  updatedRowsCheck: check("people_import_updated_rows_check", sql`${table.updatedRows} >= 0`),
+  deactivatedRowsCheck: check("people_import_deactivated_rows_check", sql`${table.deactivatedRows} >= 0`),
+  invalidRowsCheck: check("people_import_invalid_rows_check", sql`${table.invalidRows} >= 0`),
+  unmatchedCompanyRowsCheck: check("people_import_unmatched_rows_check", sql`${table.unmatchedCompanyRows} >= 0`),
+}));
 
 export const companyAliases = sqliteTable("company_aliases", {
   id: integer("id").primaryKey({ autoIncrement: true }),
