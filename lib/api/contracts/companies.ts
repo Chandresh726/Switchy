@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { positiveIntegerIdSchema } from "./common";
+import { jobStatusSchema } from "./jobs";
 
 export const companyPlatformSchema = z.enum([
   "greenhouse",
@@ -105,7 +106,7 @@ const companyJobSchema = z.object({
   id: z.number().int().positive(),
   title: z.string(),
   url: z.string(),
-  status: z.string(),
+  status: jobStatusSchema,
   matchScore: z.number().nullable(),
   matchLegacy: z.boolean().optional(),
   location: z.string().nullable(),

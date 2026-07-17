@@ -9,6 +9,7 @@ import Editor from "react-simple-code-editor";
 import { highlight, languages } from "prismjs";
 import "prismjs/components/prism-json";
 import { getCompanies, syncCompanies } from "@/lib/api/clients/companies";
+import { companySyncBodySchema } from "@/lib/api/contracts/companies";
 
 interface Company {
   name: string;
@@ -62,7 +63,7 @@ function JsonEditorContent({ companies, onSuccess }: { companies: Company[]; onS
   const hasChanges = jsonValue !== originalValue;
 
   const saveMutation = useMutation({
-    mutationFn: async (data: Company[]) => {
+    mutationFn: async (data: ReturnType<typeof companySyncBodySchema.parse>) => {
       return syncCompanies(data);
     },
     onSuccess: () => {
@@ -85,15 +86,7 @@ function JsonEditorContent({ companies, onSuccess }: { companies: Company[]; onS
         throw new Error("Root element must be an array");
       }
 
-      // Basic validation
-      for (let i = 0; i < parsed.length; i++) {
-        const item = parsed[i];
-        if (!item.name || !item.careersUrl) {
-          throw new Error(`Item at index ${i} is missing required fields (name, careersUrl)`);
-        }
-      }
-
-      saveMutation.mutate(parsed);
+      saveMutation.mutate(companySyncBodySchema.parse(parsed));
     } catch (e) {
       setError((e as Error).message);
     }

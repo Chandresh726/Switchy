@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createCompanies } from "@/lib/api/clients/companies";
+import { companyImportBodySchema } from "@/lib/api/contracts/companies";
 import {
   excludeExistingPresetCompanies,
   parsePresetCompanies,
@@ -87,7 +88,7 @@ export function CompanyQuickAdd({ existingCompanies }: CompanyQuickAddProps) {
 
   const addMutation = useMutation({
     mutationFn: async (payload: Record<string, unknown> | Record<string, unknown>[]) => {
-      return createCompanies(payload);
+      return createCompanies(companyImportBodySchema.parse(payload));
     },
   });
 

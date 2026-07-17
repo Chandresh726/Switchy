@@ -6,19 +6,20 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
-import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api/client";
-import { clearJobs } from "@/lib/api/clients/jobs";
-import { getSettings, patchSettings } from "@/lib/api/clients/settings";
-import { successSchema } from "@/lib/api/contracts/common";
+import { clearAllAIContent } from "@/lib/api/clients/ai";
+import { clearJobMatchData, clearJobs } from "@/lib/api/clients/jobs";
 import {
-  clearAiContentResponseSchema,
-  clearMatchDataResponseSchema,
-  providerCreateResponseSchema,
-  providerModelsResponseSchema,
-  providerSettingsListSchema,
-  queuedMatchResponseSchema,
-  unmatchedJobsCountResponseSchema,
-} from "@/lib/api/contracts/settings";
+  createProvider,
+  deleteProvider,
+  getProviderModels,
+  getProviders,
+  updateProviderApiKey,
+} from "@/lib/api/clients/providers";
+import {
+  getUnmatchedJobsCount,
+  queueUnmatchedJobs,
+} from "@/lib/api/clients/runtime";
+import { getSettings, patchSettings } from "@/lib/api/clients/settings";
 import { MatcherSection } from "@/components/settings/matcher-section";
 import { ScraperSettings } from "@/components/settings/scraper-settings";
 import { DangerZone } from "@/components/settings/danger-zone";
@@ -238,17 +239,12 @@ function SettingsContent() {
     providerId: string,
     forceRefresh = false
   ): Promise<ProviderModelsResponse> => {
-    const refreshQuery = forceRefresh ? "?refresh=1" : "";
-    return apiGet(
-      `/api/providers/${providerId}/models${refreshQuery}`,
-      providerModelsResponseSchema,
-      "Failed to fetch provider models"
-    );
+    return getProviderModels(providerId, forceRefresh ? { refresh: "1" } : {});
   };
 
   const { data: providers = [], isLoading: isProvidersLoading } = useQuery<ProviderSettingsListItem[]>({
     queryKey: ["providers"],
-    queryFn: () => apiGet("/api/providers", providerSettingsListSchema, "Failed to fetch providers"),
+    queryFn: getProviders,
   });
 
   const providerModelsQueries = useQueries({
@@ -310,12 +306,7 @@ function SettingsContent() {
 
   const addProviderMutation = useMutation({
     mutationFn: async ({ provider, apiKey }: { provider: string; apiKey?: string }) => {
-      return apiPost(
-        "/api/providers",
-        { provider, apiKey },
-        providerCreateResponseSchema,
-        "Failed to add provider"
-      );
+      return createProvider({ provider, apiKey });
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["providers"] });
@@ -338,7 +329,7 @@ function SettingsContent() {
   });
 
   const deleteProviderMutation = useMutation({
-    mutationFn: (id: string) => apiDelete(`/api/providers/${id}`, successSchema, "Failed to delete provider"),
+    mutationFn: deleteProvider,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["providers"] });
       queryClient.invalidateQueries({ queryKey: ["provider-models"] });
@@ -350,12 +341,7 @@ function SettingsContent() {
 
   const updateProviderApiKeyMutation = useMutation({
     mutationFn: ({ id, apiKey }: { id: string; apiKey?: string }) =>
-      apiPatch(
-        `/api/providers/${id}`,
-        { apiKey },
-        successSchema,
-        "Failed to update provider API key"
-      ),
+      updateProviderApiKey(id, { apiKey }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["providers"] });
       queryClient.invalidateQueries({ queryKey: ["provider-models"] });
@@ -911,12 +897,7 @@ function SettingsContent() {
   });
 
   const clearMatchDataMutation = useMutation<{ jobsCleared: number }>({
-    mutationFn: () =>
-      apiDelete(
-        "/api/jobs/match-data",
-        clearMatchDataResponseSchema,
-        "Failed to clear match data"
-      ),
+    mutationFn: clearJobMatchData,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["match-history"] });
@@ -930,12 +911,7 @@ function SettingsContent() {
     historyDeleted: number;
     message: string;
   }>({
-    mutationFn: () =>
-      apiDelete(
-        "/api/ai/content",
-        clearAiContentResponseSchema,
-        "Failed to clear AI content"
-      ),
+    mutationFn: clearAllAIContent,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["ai-content"] });
       toast.success(data.message || "AI generated content deleted successfully");
@@ -1235,12 +1211,7 @@ function SettingsContent() {
     days: number;
   }>({
     queryKey: ["unmatched-jobs-count", debouncedUnmatchedWindowDays],
-    queryFn: () =>
-      apiGet(
-        `/api/jobs/match-unmatched?days=${debouncedUnmatchedWindowDays}`,
-        unmatchedJobsCountResponseSchema,
-        "Failed to fetch unmatched count"
-      ),
+    queryFn: () => getUnmatchedJobsCount(debouncedUnmatchedWindowDays),
   });
 
   const matchUnmatchedMutation = useMutation<{
@@ -1248,13 +1219,7 @@ function SettingsContent() {
     status: "queued" | "completed";
     sessionId: string;
   }, Error, number>({
-    mutationFn: (days: number) =>
-      apiPost(
-        "/api/jobs/match-unmatched",
-        { days },
-        queuedMatchResponseSchema,
-        "Failed to match jobs"
-      ),
+    mutationFn: queueUnmatchedJobs,
     onSuccess: (data) => {
       toast.success(`${data.total} ${data.total === 1 ? "job" : "jobs"} queued for matching`, {
         action: {

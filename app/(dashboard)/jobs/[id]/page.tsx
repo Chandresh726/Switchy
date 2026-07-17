@@ -16,6 +16,7 @@ import { LegacyMatchAlert } from "@/components/jobs/legacy-match-alert";
 import { MarkdownRenderer } from "@/components/jobs/markdown-renderer";
 import { getJob, updateJob } from "@/lib/api/clients/jobs";
 import { sanitizeHtmlContent } from "@/lib/jobs/description-processor";
+import type { JobStatus } from "@/lib/jobs/status";
 import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
 import {
   Building2,
@@ -29,7 +30,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 
-const STATUS_OPTIONS = [
+const STATUS_OPTIONS: Array<{ value: JobStatus; label: string; color: string }> = [
   { value: "new", label: "New", color: "text-blue-400" },
   { value: "viewed", label: "Viewed", color: "text-muted-foreground" },
   { value: "interested", label: "Interested", color: "text-purple-400" },
@@ -58,7 +59,7 @@ export default function JobDetailPage() {
   const isReadOnlyPostingAction = job?.status === "applied" || job?.status === "archived";
 
   const updateStatusMutation = useMutation({
-    mutationFn: async (newStatus: string) => {
+    mutationFn: async (newStatus: JobStatus) => {
       return updateJob(jobId, { status: newStatus });
     },
     onSuccess: () => {
@@ -269,7 +270,12 @@ export default function JobDetailPage() {
             <span className="text-sm text-muted-foreground">Status:</span>
             <select
               value={job.status}
-              onChange={(e) => updateStatusMutation.mutate(e.target.value)}
+              onChange={(e) => {
+                const selected = STATUS_OPTIONS.find((option) => option.value === e.target.value);
+                if (selected) {
+                  updateStatusMutation.mutate(selected.value);
+                }
+              }}
               className="h-8 rounded border border-border bg-card px-2 text-sm text-foreground"
             >
               {STATUS_OPTIONS.map((opt) => (

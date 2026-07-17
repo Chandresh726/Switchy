@@ -2,31 +2,17 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { JobCard } from "./job-card";
-import { JobFilters } from "./job-filters";
+import { JobFilters, type JobFilters as Filters } from "./job-filters";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Briefcase, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSearchParams, useRouter } from "next/navigation";
 import { getPageNumbers } from "@/lib/utils/pagination";
 import { getCompanies } from "@/lib/api/clients/companies";
-import { getJobs } from "@/lib/api/clients/jobs";
+import { getJobs, type JobsQueryInput } from "@/lib/api/clients/jobs";
+import { JOB_STATUSES, type JobStatus } from "@/lib/jobs/status";
 
 const STORAGE_KEY = "switchy-job-filters";
-
-interface Filters {
-  search: string;
-  status: string;
-  companyIds: string[];
-  locationType: string[];
-  employmentType: string[];
-  seniorityLevel: string[];
-  minScore: string;
-  matchBands: string;
-  department: string;
-  locationSearch: string;
-  sortBy: string;
-  sortOrder: string;
-}
 
 const defaultFilters: Filters = {
   search: "",
@@ -57,6 +43,21 @@ function loadFiltersFromStorage(): Filters {
   return defaultFilters;
 }
 
+function isJobStatus(value: string): value is JobStatus {
+  return JOB_STATUSES.some((candidate) => candidate === value);
+}
+
+type LocationType = NonNullable<JobsQueryInput["locationType"]>[number];
+type MatchBand = NonNullable<JobsQueryInput["matchBands"]>[number];
+
+function isLocationType(value: string): value is LocationType {
+  return value === "remote" || value === "hybrid" || value === "onsite";
+}
+
+function isMatchBand(value: string): value is MatchBand {
+  return value === "high" || value === "good";
+}
+
 function parseFiltersFromSearchParams(searchParams: URLSearchParams): Partial<Filters> {
   const filters: Partial<Filters> = {};
 
@@ -75,7 +76,9 @@ function parseFiltersFromSearchParams(searchParams: URLSearchParams): Partial<Fi
   const sortOrder = searchParams.get("sortOrder");
 
   if (search) filters.search = search;
-  if (status) filters.status = status;
+  if (status && isJobStatus(status)) {
+    filters.status = status;
+  }
   // Handle both companyId (legacy) and companyIds (preferred)
   if (companyId) {
     filters.companyIds = [companyId];
@@ -89,8 +92,10 @@ function parseFiltersFromSearchParams(searchParams: URLSearchParams): Partial<Fi
   if (matchBands) filters.matchBands = matchBands;
   if (department) filters.department = department;
   if (locationSearch) filters.locationSearch = locationSearch;
-  if (sortBy) filters.sortBy = sortBy;
-  if (sortOrder) filters.sortOrder = sortOrder;
+  if (sortBy === "matchScore" || sortBy === "discoveredAt" || sortBy === "postedDate" || sortBy === "companyName" || sortBy === "title") {
+    filters.sortBy = sortBy;
+  }
+  if (sortOrder === "asc" || sortOrder === "desc") filters.sortOrder = sortOrder;
 
   return filters;
 }
@@ -136,7 +141,7 @@ interface Job {
   salary: string | null;
   employmentType: string | null;
   seniorityLevel: string | null;
-  status: string;
+  status: JobStatus;
   matchScore: number | null;
   postedDate: string | null;
   discoveredAt: string | null;
@@ -286,37 +291,30 @@ export function JobList() {
     filters.status;
 
   // Build query params
-  const queryParams = useMemo(() => {
-    const params = new URLSearchParams();
-    if (debouncedSearch) params.set("search", debouncedSearch);
-    if (effectiveStatus) params.set("status", effectiveStatus);
-    if (!effectiveStatus && activeTab === "all") {
-      params.set("excludeStatus", "archived");
-    }
-    if (filters.companyIds && filters.companyIds.length > 0) {
-      params.set("companyIds", filters.companyIds.join(","));
-    }
-    if (filters.locationType.length > 0) {
-      params.set("locationType", filters.locationType.join(","));
-    }
-    if (filters.employmentType.length > 0) {
-      params.set("employmentType", filters.employmentType.join(","));
-    }
-    if (filters.seniorityLevel.length > 0) {
-      params.set("seniorityLevel", filters.seniorityLevel.join(","));
-    }
-    if (filters.minScore) params.set("minScore", filters.minScore);
-    if (filters.matchBands) params.set("matchBands", filters.matchBands);
-    if (debouncedDepartment) params.set("department", debouncedDepartment);
-    if (debouncedLocationSearch) params.set("locationSearch", debouncedLocationSearch);
-    if (filters.sortBy) params.set("sortBy", filters.sortBy);
-    if (filters.sortOrder) params.set("sortOrder", filters.sortOrder);
-
-    // Pagination params
-    params.set("limit", pageSize.toString());
-    params.set("offset", ((currentPage - 1) * pageSize).toString());
-
-    return params.toString();
+  const queryParams = useMemo<JobsQueryInput>(() => {
+    return {
+      search: debouncedSearch || undefined,
+      status: effectiveStatus || undefined,
+      excludeStatus: !effectiveStatus && activeTab === "all" ? ["archived" as const] : undefined,
+      companyIds: filters.companyIds.length > 0
+        ? filters.companyIds.map((id) => Number(id))
+        : undefined,
+      locationType: filters.locationType.length > 0
+        ? filters.locationType.filter(isLocationType)
+        : undefined,
+      employmentType: filters.employmentType.length > 0 ? filters.employmentType.join(",") : undefined,
+      seniorityLevel: filters.seniorityLevel.length > 0 ? filters.seniorityLevel.join(",") : undefined,
+      minScore: filters.minScore ? Number(filters.minScore) : undefined,
+      matchBands: filters.matchBands
+        ? filters.matchBands.split(",").filter(isMatchBand)
+        : undefined,
+      department: debouncedDepartment || undefined,
+      locationSearch: debouncedLocationSearch || undefined,
+      sortBy: filters.sortBy,
+      sortOrder: filters.sortOrder,
+      limit: pageSize,
+      offset: (currentPage - 1) * pageSize,
+    };
   }, [
     debouncedSearch,
     effectiveStatus,
@@ -351,7 +349,7 @@ export function JobList() {
   const { data: appliedData } = useQuery<{ totalCount: number }>({
     queryKey: ["jobs", "applied-count"],
     queryFn: async () => {
-      return getJobs("status=applied&limit=1");
+      return getJobs({ status: "applied", limit: 1 });
     },
   });
 
@@ -359,7 +357,7 @@ export function JobList() {
   const { data: savedData } = useQuery<{ totalCount: number }>({
     queryKey: ["jobs", "saved-count"],
     queryFn: async () => {
-      return getJobs("status=interested&limit=1");
+      return getJobs({ status: "interested", limit: 1 });
     },
   });
 
@@ -367,7 +365,7 @@ export function JobList() {
   const { data: archivedData } = useQuery<{ totalCount: number }>({
     queryKey: ["jobs", "archived-count"],
     queryFn: async () => {
-      return getJobs("status=archived&limit=1");
+      return getJobs({ status: "archived", limit: 1 });
     },
   });
 

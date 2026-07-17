@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { MatchBadge } from "./match-badge";
 import { ApplyButton } from "./apply-button";
 import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
+import type { JobStatus } from "@/lib/jobs/status";
 import {
   Building2,
   Calendar,
@@ -29,7 +30,7 @@ interface Job {
   salary: string | null;
   employmentType: string | null;
   seniorityLevel: string | null;
-  status: string;
+  status: JobStatus;
   matchScore: number | null;
   postedDate: string | null;
   discoveredAt: string | null;
@@ -79,7 +80,7 @@ export function JobCard({ job }: JobCardProps) {
   const isReadOnlyPostingAction = job.status === "applied" || job.status === "archived";
 
   const updateStatusMutation = useMutation({
-    mutationFn: async (newStatus: string) => {
+    mutationFn: async (newStatus: JobStatus) => {
       return updateJob(job.id, { status: newStatus });
     },
     onSuccess: () => {

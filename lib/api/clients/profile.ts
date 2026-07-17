@@ -1,37 +1,67 @@
 import {
+  educationCreateBodySchema,
+  childIdParamsSchema,
   educationSchema,
   educationResponseSchema,
+  educationUpdateBodySchema,
   experienceSchema,
   experienceResponseSchema,
+  experienceUpdateBodySchema,
+  experienceWriteBodySchema,
+  profileIdQuerySchema,
   profileResponseSchema,
   profileSchema,
+  profileWriteBodySchema,
   resumeUploadResponseSchema,
+  resumeUploadFormSchema,
+  skillCreateBodySchema,
   skillSchema,
   skillsResponseSchema,
 } from "@/lib/api/contracts/profile";
 import { successSchema } from "@/lib/api/contracts/common";
+import type { z } from "zod";
 
-import { apiGet, apiRequest } from "../client";
+import { apiCommand, apiFileRequest, apiGet, apiJsonMutation, apiRequest, serializePathParam, serializeQuery } from "../client";
 import { APP_REQUEST_HEADERS } from "../request-headers";
 
-const jsonMutation = (method: "POST" | "PATCH" | "DELETE", body?: unknown): RequestInit => ({
-  method,
-  headers: body === undefined ? APP_REQUEST_HEADERS : { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-  ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-});
-
 export const getProfile = () => apiGet("/api/profile", profileResponseSchema, "Failed to fetch profile");
-export const getSkills = (profileId: number) => apiGet(`/api/profile/skills?profileId=${profileId}`, skillsResponseSchema, "Failed to fetch skills");
-export const getExperience = (profileId: number) => apiGet(`/api/profile/experience?profileId=${profileId}`, experienceResponseSchema, "Failed to fetch experience");
-export const getEducation = (profileId: number) => apiGet(`/api/profile/education?profileId=${profileId}`, educationResponseSchema, "Failed to fetch education");
-export const saveProfile = (body: unknown) => apiRequest("/api/profile", jsonMutation("POST", body), profileSchema, "Failed to save profile");
-export const createSkill = (body: Record<string, unknown>) => apiRequest("/api/profile/skills", jsonMutation("POST", body), skillSchema, "Failed to create skill");
-export const deleteSkill = (id: number) => apiRequest(`/api/profile/skills/${id}`, jsonMutation("DELETE"), successSchema, "Failed to delete skill");
-export const createExperience = (body: Record<string, unknown>) => apiRequest("/api/profile/experience", jsonMutation("POST", body), experienceSchema, "Failed to create experience");
-export const updateExperience = (id: number, body: Record<string, unknown>) => apiRequest(`/api/profile/experience/${id}`, jsonMutation("PATCH", body), experienceSchema, "Failed to update experience");
-export const deleteExperience = (id: number) => apiRequest(`/api/profile/experience/${id}`, jsonMutation("DELETE"), successSchema, "Failed to delete experience");
-export const createEducation = (body: Array<Record<string, unknown>>) => apiRequest("/api/profile/education", jsonMutation("POST", body), educationResponseSchema, "Failed to create education");
-export const updateEducation = (id: number, body: Record<string, unknown>) => apiRequest(`/api/profile/education/${id}`, jsonMutation("PATCH", body), educationSchema, "Failed to update education");
-export const deleteEducation = (id: number) => apiRequest(`/api/profile/education/${id}`, jsonMutation("DELETE"), successSchema, "Failed to delete education");
-export const deleteResume = (id: number) => apiRequest(`/api/profile/resumes/${id}`, jsonMutation("DELETE"), successSchema, "Failed to delete resume");
-export const uploadResume = (formData: FormData) => apiRequest("/api/profile/parse-resume", { method: "POST", headers: APP_REQUEST_HEADERS, body: formData }, resumeUploadResponseSchema, "Failed to upload resume");
+const profileQuery = (profileId: number) => serializeQuery(profileIdQuerySchema, { profileId });
+const childPath = (id: number) => serializePathParam(childIdParamsSchema, { id });
+
+export const getSkills = (profileId: number) => apiGet(`/api/profile/skills?${profileQuery(profileId)}`, skillsResponseSchema, "Failed to fetch skills");
+export const getExperience = (profileId: number) => apiGet(`/api/profile/experience?${profileQuery(profileId)}`, experienceResponseSchema, "Failed to fetch experience");
+export const getEducation = (profileId: number) => apiGet(`/api/profile/education?${profileQuery(profileId)}`, educationResponseSchema, "Failed to fetch education");
+export const saveProfile = (body: z.input<typeof profileWriteBodySchema>) => apiJsonMutation("/api/profile", "POST", profileWriteBodySchema, body, profileSchema, "Failed to save profile");
+export const createSkill = (body: z.output<typeof skillCreateBodySchema>) => apiJsonMutation("/api/profile/skills", "POST", skillCreateBodySchema, body, skillSchema, "Failed to create skill");
+export const deleteSkill = (id: number) => apiCommand(`/api/profile/skills/${childPath(id)}`, "DELETE", successSchema, "Failed to delete skill");
+export const createExperience = (body: z.output<typeof experienceWriteBodySchema>) => apiJsonMutation("/api/profile/experience", "POST", experienceWriteBodySchema, body, experienceSchema, "Failed to create experience");
+export const updateExperience = (id: number, body: z.output<typeof experienceUpdateBodySchema>) => apiJsonMutation(`/api/profile/experience/${childPath(id)}`, "PATCH", experienceUpdateBodySchema, body, experienceSchema, "Failed to update experience");
+export const deleteExperience = (id: number) => apiCommand(`/api/profile/experience/${childPath(id)}`, "DELETE", successSchema, "Failed to delete experience");
+export const createEducation = (body: z.output<typeof educationCreateBodySchema>) => apiJsonMutation("/api/profile/education", "POST", educationCreateBodySchema, body, educationResponseSchema, "Failed to create education");
+export const updateEducation = (id: number, body: z.output<typeof educationUpdateBodySchema>) => apiJsonMutation(`/api/profile/education/${childPath(id)}`, "PATCH", educationUpdateBodySchema, body, educationSchema, "Failed to update education");
+export const deleteEducation = (id: number) => apiCommand(`/api/profile/education/${childPath(id)}`, "DELETE", successSchema, "Failed to delete education");
+export const deleteResume = (id: number) => apiCommand(`/api/profile/resumes/${childPath(id)}`, "DELETE", successSchema, "Failed to delete resume");
+export const uploadResume = (formData: FormData) => {
+  resumeUploadFormSchema.parse({
+    file: formData.get("file"),
+    autofill: formData.get("autofill") ?? undefined,
+  });
+  return apiRequest("/api/profile/parse-resume", { method: "POST", headers: APP_REQUEST_HEADERS, body: formData }, resumeUploadResponseSchema, "Failed to upload resume");
+};
+
+export async function downloadResume(id: number): Promise<void> {
+  const { blob, fileName } = await apiFileRequest(
+    `/api/profile/resumes/${childPath(id)}/download`,
+    { method: "GET" },
+    "Failed to download resume"
+  );
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = fileName ?? `resume-${id}`;
+    anchor.click();
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}

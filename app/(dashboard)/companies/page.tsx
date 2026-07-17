@@ -22,6 +22,7 @@ import {
   refreshCompanyJobs,
 } from "@/lib/api/clients/companies";
 import { CUSTOM_SCRAPER_PLATFORMS } from "@/lib/constants";
+import { companyImportBodySchema } from "@/lib/api/contracts/companies";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
 
 const CUSTOM_PLATFORM_SET = new Set<string>(["custom", ...CUSTOM_SCRAPER_PLATFORMS]);
@@ -232,7 +233,7 @@ function CompaniesPageContent() {
 
   const importMutation = useMutation({
     mutationFn: async (companies: unknown[]) => {
-      return createCompanies(companies);
+      return createCompanies(companyImportBodySchema.parse(companies));
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });

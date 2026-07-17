@@ -46,7 +46,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
   const { data, isLoading, error } = useQuery({
     queryKey: ["match-history", sessionId, logOffset, workOffset],
     queryFn: async () => {
-      return getMatchHistoryDetail(sessionId, logOffset, logLimit, workOffset, workLimit);
+      return getMatchHistoryDetail(sessionId, { logOffset, logLimit, workOffset, workLimit });
     },
     refetchInterval: (query) => {
       const session = query.state.data?.session;

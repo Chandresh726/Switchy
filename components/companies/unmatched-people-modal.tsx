@@ -200,12 +200,11 @@ function CompanyPeopleList({ companyNormalized, expanded }: CompanyPeopleListPro
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: peopleKeys.unmatchedCompanies.people(companyNormalized, page, pageSize),
     queryFn: async () => {
-      const params = new URLSearchParams({
+      return getUnmatchedCompanyPeople({
         companyNormalized,
-        limit: String(pageSize),
-        offset: String((page - 1) * pageSize),
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
       });
-      return getUnmatchedCompanyPeople(params.toString());
     },
     enabled: expanded,
     staleTime: 60000,
@@ -319,12 +318,11 @@ export function UnmatchedPeopleModal({
   const { data, isLoading, isFetching } = useQuery({
     queryKey: peopleKeys.unmatchedCompanies.list(mode, debouncedSearch, currentPage, pageSize),
     queryFn: async () => {
-      const params = new URLSearchParams();
-      params.set("limit", String(pageSize));
-      params.set("offset", String((currentPage - 1) * pageSize));
-      if (debouncedSearch) params.set("search", debouncedSearch);
-
-      return getUnmatchedCompanies(params.toString(), mode === "ignored");
+      return getUnmatchedCompanies({
+        limit: pageSize,
+        offset: (currentPage - 1) * pageSize,
+        search: debouncedSearch || undefined,
+      }, mode === "ignored");
     },
     enabled: open,
   });

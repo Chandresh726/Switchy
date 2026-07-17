@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import type { ResumeData } from "@/lib/ai/resume/contracts";
-import { uploadResume } from "@/lib/api/clients/profile";
+import { downloadResume, uploadResume } from "@/lib/api/clients/profile";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -134,6 +134,14 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
     }
   };
 
+  const handleDownload = async (id: number) => {
+    try {
+      await downloadResume(id);
+    } catch (downloadError) {
+      toast.error(downloadError instanceof Error ? downloadError.message : "Failed to download resume");
+    }
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString(undefined, {
       year: "numeric",
@@ -254,10 +262,14 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon-sm" className="h-8 w-8" asChild>
-                  <a href={`/api/profile/resumes/${currentResume.id}/download`} download>
-                    <Download className="h-4 w-4 text-muted-foreground" />
-                  </a>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="h-8 w-8"
+                  aria-label={`Download ${currentResume.fileName}`}
+                  onClick={() => void handleDownload(currentResume.id)}
+                >
+                  <Download className="h-4 w-4 text-muted-foreground" />
                 </Button>
               </div>
             </div>
@@ -309,10 +321,14 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
                     </div>
                     <div className="flex items-center gap-1">
                       {resume.storageState === "ready" && (
-                        <Button variant="ghost" size="icon-sm" className="h-8 w-8" asChild>
-                          <a href={`/api/profile/resumes/${resume.id}/download`} download>
-                            <Download className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-                          </a>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="h-8 w-8"
+                          aria-label={`Download ${resume.fileName}`}
+                          onClick={() => void handleDownload(resume.id)}
+                        >
+                          <Download className="h-4 w-4 text-muted-foreground hover:text-foreground" />
                         </Button>
                       )}
                       <Button

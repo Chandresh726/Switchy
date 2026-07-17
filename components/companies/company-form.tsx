@@ -10,6 +10,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createCompanies, updateCompany } from "@/lib/api/clients/companies";
+import {
+  companyCreateBodySchema,
+  companyReplaceBodySchema,
+} from "@/lib/api/contracts/companies";
 import { PLATFORM_OPTIONS } from "@/lib/constants";
 import { detectPlatformFromUrl, getPlatformLabel } from "@/lib/scraper/platform-detection";
 
@@ -90,7 +94,7 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      return createCompanies(data);
+      return createCompanies(companyCreateBodySchema.parse(data));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
@@ -103,7 +107,7 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
 
   const updateMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      return updateCompany(company!.id, data);
+      return updateCompany(company!.id, companyReplaceBodySchema.parse(data));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });

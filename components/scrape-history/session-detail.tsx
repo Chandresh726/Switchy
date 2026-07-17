@@ -46,7 +46,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
   const { data, isLoading, error } = useQuery({
     queryKey: ["scrape-history", sessionId, logOffset, workOffset],
     queryFn: async () => {
-      return getScrapeHistoryDetail(sessionId, logOffset, logLimit, workOffset, workLimit);
+      return getScrapeHistoryDetail(sessionId, { logOffset, logLimit, workOffset, workLimit });
     },
     refetchInterval: (query) => {
       const session = query.state.data?.session;

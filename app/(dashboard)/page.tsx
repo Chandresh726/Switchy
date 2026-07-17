@@ -232,7 +232,13 @@ export default function DashboardPage() {
   const { data: highMatchData } = useQuery({
     queryKey: ["jobs", "high-match"],
     queryFn: async () => {
-      return getJobs(`matchBands=high,good&excludeStatus=applied,archived&sortBy=matchScore&sortOrder=desc&limit=${DASHBOARD_LIST_MAX_ITEMS}`);
+      return getJobs({
+        matchBands: ["high", "good"],
+        excludeStatus: ["applied", "archived"],
+        sortBy: "matchScore",
+        sortOrder: "desc",
+        limit: DASHBOARD_LIST_MAX_ITEMS,
+      });
     },
   });
 
@@ -240,7 +246,12 @@ export default function DashboardPage() {
   const { data: recentJobsData } = useQuery({
     queryKey: ["jobs", "recent"],
     queryFn: async () => {
-      return getJobs(`excludeStatus=applied,archived&sortBy=discoveredAt&sortOrder=desc&limit=${DASHBOARD_LIST_MAX_ITEMS}`);
+      return getJobs({
+        excludeStatus: ["applied", "archived"],
+        sortBy: "discoveredAt",
+        sortOrder: "desc",
+        limit: DASHBOARD_LIST_MAX_ITEMS,
+      });
     },
   });
 
@@ -248,7 +259,7 @@ export default function DashboardPage() {
   const { data: appliedJobsData } = useQuery({
     queryKey: ["jobs", "applied-recent"],
     queryFn: async () => {
-      return getJobs("status=applied&sortBy=discoveredAt&sortOrder=desc&limit=5");
+      return getJobs({ status: "applied", sortBy: "discoveredAt", sortOrder: "desc", limit: 5 });
     },
   });
 

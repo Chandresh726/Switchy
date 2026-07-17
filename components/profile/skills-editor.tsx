@@ -69,6 +69,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
 
   const addMutation = useMutation({
     mutationFn: async (skill: typeof newSkill) => {
+      if (!profileId) throw new Error("Save the profile before adding skills");
       return createSkill({ ...skill, profileId });
     },
     onSuccess: () => {
@@ -79,6 +80,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
 
   const bulkAddMutation = useMutation({
     mutationFn: async (skillsToAdd: InitialSkill[]) => {
+      if (!profileId) throw new Error("Save the profile before adding skills");
       for (const skill of skillsToAdd) {
         await createSkill({
             name: skill.name,

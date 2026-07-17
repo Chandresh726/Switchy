@@ -21,7 +21,7 @@ export interface CompanyJob {
   id: number;
   title: string;
   url: string;
-  status: string;
+  status: JobStatus;
   matchScore: number | null;
   matchLegacy?: boolean;
   location: string | null;
@@ -79,3 +79,4 @@ export interface CompanyOverviewResponse {
   people: CompanyPerson[];
   activity: CompanyActivity;
 }
+import type { JobStatus } from "@/lib/jobs/status";

@@ -116,7 +116,13 @@ export function AIWorkspacePage({
     enabled: Boolean(job?.company.id) && peoplePanelEnabled,
     queryKey: ["people", "company", job?.company.id],
     queryFn: async () => {
-      return getPeople(`companyId=${job?.company.id}&active=true&limit=200&sortBy=isStarred&sortOrder=desc`);
+      return getPeople({
+        companyId: job?.company.id,
+        active: "true",
+        limit: 200,
+        sortBy: "isStarred",
+        sortOrder: "desc",
+      });
     },
   });
 

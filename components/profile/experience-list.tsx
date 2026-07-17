@@ -221,6 +221,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
 
   const addMutation = useMutation({
     mutationFn: async (exp: ExperienceFormData) => {
+      if (!profileId) throw new Error("Save the profile before adding experience");
       return createExperience({
           ...exp,
           profileId,
@@ -250,6 +251,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
 
   const bulkAddMutation = useMutation({
     mutationFn: async (experiencesToAdd: InitialExperience[]) => {
+      if (!profileId) throw new Error("Save the profile before adding experience");
       for (const exp of experiencesToAdd) {
         await createExperience({
             company: exp.company,

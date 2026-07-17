@@ -189,36 +189,33 @@ export default function PeoplePage() {
   const { data: sessions = [] } = useQuery<PeopleImportSession[]>({
     queryKey: peopleKeys.importSessions(),
     queryFn: async () => {
-      return (await getPeopleImportSessions(5)).sessions;
+      return (await getPeopleImportSessions({ limit: 5 })).sessions;
     },
   });
 
-  const peopleUrl = useMemo(() => {
-    const params = new URLSearchParams();
-    if (search) params.set("search", search);
-    if (companyId) params.set("companyId", companyId);
-    if (source !== "all") params.set("source", source);
-    if (showStarredOnly) params.set("starred", "true");
-
-    if (activityScope === "all") {
-      params.set("active", "all");
-    } else if (activityScope === "active") {
-      params.set("active", "true");
-    } else {
-      params.set("active", "false");
-    }
-
-    if (mappingScope === "mapped") {
-      params.set("unmatched", "false");
-    } else if (mappingScope === "unmapped") {
-      params.set("unmatched", "true");
-    }
-
-    params.set("limit", pageSize.toString());
-    params.set("offset", ((currentPage - 1) * pageSize).toString());
-    params.set("sortBy", "lastSeenAt");
-    params.set("sortOrder", "desc");
-    return `/api/people?${params.toString()}`;
+  const peopleParams = useMemo(() => {
+    const active = activityScope === "all"
+      ? "all" as const
+      : activityScope === "active"
+        ? "true" as const
+        : "false" as const;
+    const unmatched = mappingScope === "mapped"
+      ? "false" as const
+      : mappingScope === "unmapped"
+        ? "true" as const
+        : undefined;
+    return {
+      search: search || undefined,
+      companyId: companyId ? Number(companyId) : undefined,
+      source: source === "all" ? undefined : source,
+      starred: showStarredOnly ? "true" as const : undefined,
+      active,
+      unmatched,
+      limit: pageSize,
+      offset: (currentPage - 1) * pageSize,
+      sortBy: "lastSeenAt" as const,
+      sortOrder: "desc" as const,
+    };
   }, [activityScope, companyId, currentPage, mappingScope, pageSize, search, showStarredOnly, source]);
 
   const { data, isLoading, isFetching } = useQuery<PersonQueryResponse>({
@@ -233,14 +230,14 @@ export default function PeoplePage() {
       currentPage,
     }),
     queryFn: async () => {
-      return getPeople(peopleUrl.split("?")[1] ?? "");
+      return getPeople(peopleParams);
     },
   });
 
   const { data: totalPeopleData } = useQuery<PersonQueryResponse>({
     queryKey: peopleKeys.totalCount(),
     queryFn: async () => {
-      return getPeople("active=all&limit=1");
+      return getPeople({ active: "all", limit: 1 });
     },
   });
 
@@ -255,12 +252,12 @@ export default function PeoplePage() {
   }>({
     queryKey: peopleKeys.unmatchedCompanies.summary(),
     queryFn: async () => {
-      return getUnmatchedCompanies("summaryOnly=true");
+      return getUnmatchedCompanies({ summaryOnly: "true" });
     },
   });
 
   const patchMutation = useMutation({
-    mutationFn: async (payload: { id: number; body: Record<string, unknown> }) => {
+    mutationFn: async (payload: { id: number; body: Parameters<typeof patchPerson>[1] }) => {
       return patchPerson(payload.id, payload.body);
     },
     onSuccess: () => {

@@ -239,6 +239,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
   const addMutation = useMutation({
     mutationFn: async (edu: EducationFormData) => {
       try {
+        if (!profileId) throw new Error("Save the profile before adding education");
         return createEducation([{
             ...edu,
             profileId,
@@ -284,6 +285,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
   const bulkAddMutation = useMutation({
     mutationFn: async (educationToAdd: InitialEducation[]) => {
       try {
+        if (!profileId) throw new Error("Save the profile before adding education");
         await createEducation(educationToAdd.map((edu) => ({
           institution: edu.institution,
           degree: edu.degree,

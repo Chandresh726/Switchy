@@ -139,15 +139,15 @@ describe("job data consumers", () => {
   });
 
   it("renders dashboard recent, top-match, and applied job responses", async () => {
-    mocks.getJobs.mockImplementation(async (query: string) => {
-      if (query.startsWith("status=applied")) {
+    mocks.getJobs.mockImplementation(async (params: { status?: string; matchBands?: string[] }) => {
+      if (params.status === "applied") {
         return {
           jobs: [{ ...listJob, id: 44, title: "Recently Applied Engineer", status: "applied", appliedAt: "2026-07-16T01:00:00.000Z" }],
           totalCount: 1,
           hasMore: false,
         };
       }
-      if (query.startsWith("matchBands=")) {
+      if (params.matchBands) {
         return { jobs: [{ ...listJob, id: 43, title: "Top Match Engineer" }], totalCount: 1, hasMore: false };
       }
       return { jobs: [listJob], totalCount: 1, hasMore: false };
@@ -161,8 +161,8 @@ describe("job data consumers", () => {
   });
 
   it("renders the jobs list from the canonical paginated response", async () => {
-    mocks.getJobs.mockImplementation(async (query: string) => {
-      if (query.includes("status=applied") || query.includes("status=interested") || query.includes("status=archived")) {
+    mocks.getJobs.mockImplementation(async (params: { status?: string }) => {
+      if (params.status === "applied" || params.status === "interested" || params.status === "archived") {
         return { jobs: [], totalCount: 0, hasMore: false };
       }
       return { jobs: [listJob], totalCount: 1, hasMore: false };

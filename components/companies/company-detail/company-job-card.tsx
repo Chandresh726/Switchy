@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { updateJob } from "@/lib/api/clients/jobs";
 import { isNewJob } from "@/lib/jobs/is-new-job";
+import type { JobStatus } from "@/lib/jobs/status";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/utils/format";
 
@@ -44,7 +45,7 @@ export function CompanyJobCard({ job, currentTime }: CompanyJobCardProps) {
     currentTime,
   });
   const updateStatusMutation = useMutation({
-    mutationFn: async (newStatus: string) => {
+    mutationFn: async (newStatus: JobStatus) => {
       return updateJob(job.id, { status: newStatus });
     },
     onSuccess: () => {

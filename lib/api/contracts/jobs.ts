@@ -3,7 +3,7 @@ import { z } from "zod";
 import { MatchBreakdownSchema, MatchReasoningPointSchema } from "@/lib/ai/artifacts/schemas";
 import { JOB_STATUSES } from "@/lib/jobs/status";
 
-const jobStatusSchema = z.enum(JOB_STATUSES);
+export const jobStatusSchema = z.enum(JOB_STATUSES);
 
 const commaSeparated = <T extends z.ZodTypeAny>(item: T, maximum: number) =>
   z.preprocess(
