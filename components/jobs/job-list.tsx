@@ -8,6 +8,8 @@ import { Briefcase, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSearchParams, useRouter } from "next/navigation";
 import { getPageNumbers } from "@/lib/utils/pagination";
+import { getCompanies } from "@/lib/api/clients/companies";
+import { getJobs } from "@/lib/api/clients/jobs";
 
 const STORAGE_KEY = "switchy-job-filters";
 
@@ -137,7 +139,7 @@ interface Job {
   status: string;
   matchScore: number | null;
   postedDate: string | null;
-  discoveredAt: string;
+  discoveredAt: string | null;
   company: {
     id: number;
     name: string;
@@ -272,9 +274,7 @@ export function JobList() {
   const { data: companies = [] } = useQuery<Company[]>({
     queryKey: ["companies"],
     queryFn: async () => {
-      const res = await fetch("/api/companies");
-      if (!res.ok) throw new Error("Failed to fetch companies");
-      return res.json();
+      return getCompanies();
     },
   });
 
@@ -343,9 +343,7 @@ export function JobList() {
   }>({
     queryKey: ["jobs", queryParams],
     queryFn: async () => {
-      const res = await fetch(`/api/jobs?${queryParams}`);
-      if (!res.ok) throw new Error("Failed to fetch jobs");
-      return res.json();
+      return getJobs(queryParams);
     },
   });
 
@@ -353,9 +351,7 @@ export function JobList() {
   const { data: appliedData } = useQuery<{ totalCount: number }>({
     queryKey: ["jobs", "applied-count"],
     queryFn: async () => {
-      const res = await fetch("/api/jobs?status=applied&limit=1");
-      if (!res.ok) throw new Error("Failed to fetch applied count");
-      return res.json();
+      return getJobs("status=applied&limit=1");
     },
   });
 
@@ -363,9 +359,7 @@ export function JobList() {
   const { data: savedData } = useQuery<{ totalCount: number }>({
     queryKey: ["jobs", "saved-count"],
     queryFn: async () => {
-      const res = await fetch("/api/jobs?status=interested&limit=1");
-      if (!res.ok) throw new Error("Failed to fetch saved count");
-      return res.json();
+      return getJobs("status=interested&limit=1");
     },
   });
 
@@ -373,9 +367,7 @@ export function JobList() {
   const { data: archivedData } = useQuery<{ totalCount: number }>({
     queryKey: ["jobs", "archived-count"],
     queryFn: async () => {
-      const res = await fetch("/api/jobs?status=archived&limit=1");
-      if (!res.ok) throw new Error("Failed to fetch archived count");
-      return res.json();
+      return getJobs("status=archived&limit=1");
     },
   });
 

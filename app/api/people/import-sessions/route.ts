@@ -1,29 +1,15 @@
-import { desc } from "drizzle-orm";
-import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
 import { handleApiError } from "@/lib/api";
-import { db } from "@/lib/db";
-import { peopleImportSessions } from "@/lib/db/schema";
-
-const QuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(50).optional().default(10),
-});
+import { peopleImportSessionsQuerySchema } from "@/lib/api/contracts/people";
+import { listPeopleImportSessions } from "@/lib/application/people-service";
 
 export async function GET(request: NextRequest) {
   try {
-    const query = QuerySchema.parse({
-      limit: request.nextUrl.searchParams.get("limit") ?? undefined,
-    });
-
-    const sessions = await db
-      .select()
-      .from(peopleImportSessions)
-      .orderBy(desc(peopleImportSessions.startedAt))
-      .limit(query.limit);
-
-    return NextResponse.json(sessions);
+    const { limit, offset } = peopleImportSessionsQuerySchema.parse(Object.fromEntries(request.nextUrl.searchParams));
+    return NextResponse.json(await listPeopleImportSessions(limit, offset));
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(error, { request, fallbackMessage: "Failed to fetch import sessions", fallbackCode: "people_import_sessions_fetch_failed" });
   }
 }

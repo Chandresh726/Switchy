@@ -21,7 +21,7 @@ import {
   type ProviderReasoningControl,
 } from "./reasoning-controls";
 
-export type { ProviderReasoningControl, ProviderReasoningOption } from "./reasoning-controls";
+export type { ProviderReasoningControl } from "./reasoning-controls";
 
 const MODEL_CACHE_TTL_MS = 15 * 60 * 1000;
 
@@ -818,5 +818,3 @@ export function clearProviderModelsCache(providerId?: string): void {
 
   providerModelCache.clear();
 }
-
-export const PROVIDER_MODELS_CACHE_TTL_MS = MODEL_CACHE_TTL_MS;

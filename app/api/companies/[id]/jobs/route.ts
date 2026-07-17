@@ -1,38 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
-import { assertAppRequest } from "@/lib/api";
-import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
+import { assertAppRequest, handleApiError } from "@/lib/api";
+import { companyIdParamsSchema } from "@/lib/api/contracts/companies";
+import { deleteCompanyJobs } from "@/lib/application/companies-service";
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     assertAppRequest(request);
-
-    const { id } = await params;
-    const companyId = parseInt(id);
-
-    if (isNaN(companyId)) {
-      return NextResponse.json(
-        { error: "Invalid company ID" },
-        { status: 400 }
-      );
-    }
-
-    const deletedCount =
-      await getLocalDataMaintenanceService().deleteCompanyJobs([companyId]);
-
-    return NextResponse.json({
-      success: true,
-      deletedCount,
-      message: `Deleted ${deletedCount} job(s) for company ${companyId}`,
-    });
+    const { id } = companyIdParamsSchema.parse(await params);
+    return NextResponse.json(await deleteCompanyJobs(id));
   } catch (error) {
-    console.error("Failed to delete company jobs:", error);
-    return NextResponse.json(
-      { error: "Failed to delete jobs" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to delete jobs", fallbackCode: "company_jobs_delete_failed" });
   }
 }

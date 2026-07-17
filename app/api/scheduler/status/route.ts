@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
+import { handleApiError } from "@/lib/api";
 import { getSchedulerStatus } from "@/lib/jobs/scheduler";
 
 const NO_STORE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const status = await getSchedulerStatus();
 
@@ -21,10 +22,6 @@ export async function GET() {
       latestMissedRun: status.latestMissedRun?.toISOString() || null,
     }, { headers: NO_STORE_HEADERS });
   } catch (error) {
-    console.error("[Scheduler Status API] Error:", error);
-    return NextResponse.json(
-      { error: "Failed to get scheduler status" , code: "scheduler_status_failed" },
-      { status: 500, headers: NO_STORE_HEADERS }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to get scheduler status", fallbackCode: "scheduler_status_failed", headers: NO_STORE_HEADERS });
   }
 }

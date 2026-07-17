@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-import { assertAppRequest } from "@/lib/api";
+import { assertAppRequest, createApiRequestContext, handleApiError, withRequestIdHeader } from "@/lib/api";
 import { recoverMissedSchedulerRuns } from "@/lib/jobs/scheduler";
 
 const NO_STORE_HEADERS = {
@@ -9,17 +9,14 @@ const NO_STORE_HEADERS = {
 };
 
 export async function POST(request: NextRequest) {
+  const context = createApiRequestContext(request);
   try {
     assertAppRequest(request);
 
-    const result = await recoverMissedSchedulerRuns();
+    const result = await recoverMissedSchedulerRuns(context.requestId);
 
-    return NextResponse.json(result, { headers: NO_STORE_HEADERS });
+    return NextResponse.json(result, { headers: withRequestIdHeader(NO_STORE_HEADERS, context) });
   } catch (error) {
-    console.error("[Scheduler Recover API] Error:", error);
-    return NextResponse.json(
-      { error: "Failed to recover missed scheduler runs", code: "scheduler_recover_failed" },
-      { status: 500, headers: NO_STORE_HEADERS }
-    );
+    return handleApiError(error, { request, context, fallbackMessage: "Failed to recover missed scheduler runs", fallbackCode: "scheduler_recover_failed", headers: NO_STORE_HEADERS });
   }
 }

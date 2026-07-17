@@ -131,7 +131,7 @@ assert.equal(matchSession[0]?.jobsSucceeded, 1);
 assert.equal(persistedMatches.length, 1);
 
 function writingRequest(body: Record<string, unknown>): NextRequest {
-  return new NextRequest("http://switchy.local/api/ai/content/stream", {
+  return new NextRequest("http://localhost/api/ai/content/stream", {
     method: "POST",
     headers: {
       "content-type": "application/json",

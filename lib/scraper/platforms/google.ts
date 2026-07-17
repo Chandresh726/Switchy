@@ -52,7 +52,7 @@ export type GoogleConfig = ApiScraperConfig & {
   maxPages: number;
 };
 
-export const DEFAULT_GOOGLE_CONFIG: GoogleConfig = {
+const DEFAULT_GOOGLE_CONFIG: GoogleConfig = {
   ...DEFAULT_API_CONFIG,
   baseUrl: "https://www.google.com",
   detailBatchSize: 4,

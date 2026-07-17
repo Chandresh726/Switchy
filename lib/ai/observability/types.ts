@@ -27,7 +27,7 @@ export interface AIUsageCapabilitySummary {
   averageLatencyMs: number;
 }
 
-export interface AIUsageFailureSummary {
+interface AIUsageFailureSummary {
   code: string;
   count: number;
 }

@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import { LinkedinIcon } from "@/components/icons/linkedin-icon";
 import { Button } from "@/components/ui/button";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { patchPerson } from "@/lib/api/clients/people";
 import { canOpenLinkedInProfile } from "@/lib/people/message";
 import { cn } from "@/lib/utils";
 import { copyTextToClipboard } from "@/lib/utils/clipboard";
@@ -37,13 +37,7 @@ export function CompanyPersonCard({ person, showOutreachBadge = false }: Company
 
   const patchMutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
-      const res = await fetch(`/api/people/${person.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error("Failed to update person");
-      return res.json();
+      return patchPerson(person.id, body);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["company-overview"] });

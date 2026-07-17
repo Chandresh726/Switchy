@@ -1,3 +1,5 @@
+import { NextRequest } from "next/server";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -45,7 +47,7 @@ describe("GET /api/providers", () => {
   });
 
   it("performs a non-generative status probe when startup warming has no result", async () => {
-    const response = await GET();
+    const response = await GET(new NextRequest("http://localhost/api/providers"));
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -66,7 +68,7 @@ describe("GET /api/providers", () => {
       lastCheckedAt: "2026-07-16T00:00:00.000Z",
     });
 
-    const response = await GET();
+    const response = await GET(new NextRequest("http://localhost/api/providers"));
     const body = await response.json();
 
     expect(mocks.getLocalCLIStatus).not.toHaveBeenCalled();

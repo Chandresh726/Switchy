@@ -1,155 +1,25 @@
-import { db } from "@/lib/db";
-import { experience } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import { NextRequest, NextResponse } from "next/server";
-import { assertAppRequest } from "@/lib/api";
-import { scheduleProfileRematch } from "@/lib/ai/matcher/profile-rematch";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
-function parseDateValue(date: string | null) {
-  if (!date) return Number.POSITIVE_INFINITY;
-
-  const normalized = date.trim().toLowerCase();
-  if (["present", "current", "now"].includes(normalized)) {
-    return Number.POSITIVE_INFINITY;
-  }
-
-  const parsed = Date.parse(date);
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-function sortByMostRecent<T extends { startDate: string | null; endDate: string | null; id: number }>(a: T, b: T) {
-  return (
-    parseDateValue(b.endDate) - parseDateValue(a.endDate) ||
-    parseDateValue(b.startDate) - parseDateValue(a.startDate) ||
-    b.id - a.id
-  );
-}
+import { assertAppRequest, handleApiError } from "@/lib/api";
+import { experienceWriteBodySchema, profileIdQuerySchema } from "@/lib/api/contracts/profile";
+import { createExperience, listExperience } from "@/lib/application/profile-service";
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const profileId = searchParams.get("profileId");
-
-    if (!profileId) {
-      return NextResponse.json(
-        { error: "profileId is required" },
-        { status: 400 }
-      );
-    }
-
-    const experienceData = await db
-      .select()
-      .from(experience)
-      .where(eq(experience.profileId, parseInt(profileId)));
-
-    return NextResponse.json(experienceData.sort(sortByMostRecent));
+    const { profileId } = profileIdQuerySchema.parse(Object.fromEntries(request.nextUrl.searchParams));
+    return NextResponse.json(await listExperience(profileId));
   } catch (error) {
-    console.error("Failed to fetch experience:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch experience" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to fetch experience", fallbackCode: "experience_fetch_failed" });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     assertAppRequest(request);
-
-    const body = await request.json();
-    const { profileId, company, title, location, startDate, endDate, description, highlights } = body;
-
-    if (!profileId || !company || !title || !startDate) {
-      return NextResponse.json(
-        { error: "profileId, company, title, and startDate are required" },
-        { status: 400 }
-      );
-    }
-
-    const [newExperience] = await db
-      .insert(experience)
-      .values({
-        profileId,
-        company,
-        title,
-        location,
-        startDate,
-        endDate,
-        description,
-        highlights: highlights ? JSON.stringify(highlights) : null,
-      })
-      .returning();
-
-    await scheduleProfileRematch();
-    return NextResponse.json(newExperience);
+    const input = experienceWriteBodySchema.parse(await request.json());
+    return NextResponse.json(await createExperience(input));
   } catch (error) {
-    console.error("Failed to create experience:", error);
-    return NextResponse.json(
-      { error: "Failed to create experience" },
-      { status: 500 }
-    );
-  }
-}
-
-export async function DELETE(request: NextRequest) {
-  try {
-    assertAppRequest(request);
-
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get("id");
-
-    if (!id) {
-      return NextResponse.json({ error: "id is required" }, { status: 400 });
-    }
-
-    await db.delete(experience).where(eq(experience.id, parseInt(id)));
-
-    await scheduleProfileRematch();
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Failed to delete experience:", error);
-    return NextResponse.json(
-      { error: "Failed to delete experience" },
-      { status: 500 }
-    );
-  }
-}
-
-export async function PUT(request: NextRequest) {
-  try {
-    assertAppRequest(request);
-
-    const body = await request.json();
-    const { id, company, title, location, startDate, endDate, description, highlights } = body;
-
-    if (!id || !company || !title || !startDate) {
-      return NextResponse.json(
-        { error: "id, company, title, and startDate are required" },
-        { status: 400 }
-      );
-    }
-
-    const [updated] = await db
-      .update(experience)
-      .set({
-        company,
-        title,
-        location,
-        startDate,
-        endDate: endDate || null,
-        description,
-        highlights: highlights ? JSON.stringify(highlights) : null,
-      })
-      .where(eq(experience.id, parseInt(id)))
-      .returning();
-
-    await scheduleProfileRematch();
-    return NextResponse.json(updated);
-  } catch (error) {
-    console.error("Failed to update experience:", error);
-    return NextResponse.json(
-      { error: "Failed to update experience" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to create experience", fallbackCode: "experience_create_failed" });
   }
 }

@@ -28,35 +28,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { copyMarkdownToClipboard } from "@/lib/ai/writing/rich-text";
 import { useAIContentWorkspace } from "@/lib/ai/writing/workspace/use-ai-content-workspace";
 import type { AIContentType } from "@/lib/ai/contracts";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { getJob } from "@/lib/api/clients/jobs";
+import { getPeople, patchPerson } from "@/lib/api/clients/people";
 import { canOpenLinkedInProfile } from "@/lib/people/message";
 import { isRecruiterPosition } from "@/lib/people/position";
 import { applyConnectionPlaceholder } from "@/lib/people/referral-template";
 import { cn } from "@/lib/utils";
 
-interface JobResponse {
-  jobs: Array<{
-    id: number;
-    status: string;
-    title: string;
-    company: {
-      id: number;
-      name: string;
-    };
-  }>;
-}
-
-interface PeopleResponse {
-  people: Array<{
-    email: string | null;
-    firstName: string;
-    fullName: string;
-    id: number;
-    isStarred: boolean;
-    position: string | null;
-    profileUrl: string;
-  }>;
-}
+type PeopleResponse = Awaited<ReturnType<typeof getPeople>>;
 
 interface AIWorkspacePageProps {
   contentType: AIContentType;
@@ -100,13 +79,11 @@ export function AIWorkspacePage({
   const [copied, setCopied] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
 
-  const { data: jobData, isLoading: isJobLoading } = useQuery<JobResponse>({
+  const { data: jobData, isLoading: isJobLoading } = useQuery({
     enabled: Number.isFinite(jobId),
     queryKey: ["job", jobId],
     queryFn: async () => {
-      const res = await fetch(`/api/jobs?id=${jobId}`);
-      if (!res.ok) throw new Error("Failed to fetch job");
-      return res.json();
+      return { jobs: [await getJob(jobId)] };
     },
   });
 
@@ -139,27 +116,17 @@ export function AIWorkspacePage({
     requestedVariantId,
   });
 
-  const { data: peopleData, isLoading: isPeopleLoading } = useQuery<PeopleResponse>({
+  const { data: peopleData, isLoading: isPeopleLoading } = useQuery({
     enabled: Boolean(job?.company.id) && peoplePanelEnabled,
     queryKey: ["people", "company", job?.company.id],
     queryFn: async () => {
-      const res = await fetch(
-        `/api/people?companyId=${job?.company.id}&active=true&limit=200&sortBy=isStarred&sortOrder=desc`
-      );
-      if (!res.ok) throw new Error("Failed to fetch company people");
-      return res.json();
+      return getPeople(`companyId=${job?.company.id}&active=true&limit=200&sortBy=isStarred&sortOrder=desc`);
     },
   });
 
   const starMutation = useMutation({
     mutationFn: async ({ id, isStarred }: { id: number; isStarred: boolean }) => {
-      const res = await fetch(`/api/people/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({ isStarred }),
-      });
-      if (!res.ok) throw new Error("Failed to update star");
-      return res.json();
+      return patchPerson(id, { isStarred });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["people"] });

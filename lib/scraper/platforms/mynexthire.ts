@@ -50,7 +50,7 @@ const MynextHireResponseSchema = z
 
 export type MynextHireConfig = ApiScraperConfig;
 
-export const DEFAULT_MYNEXTHIRE_CONFIG: MynextHireConfig = {
+const DEFAULT_MYNEXTHIRE_CONFIG: MynextHireConfig = {
   ...DEFAULT_API_CONFIG,
   baseUrl: "https://mynexthire.com",
 };

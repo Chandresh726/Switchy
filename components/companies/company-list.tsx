@@ -34,7 +34,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import {
+  deleteCompany,
+  deleteCompanyJobs,
+  patchCompany,
+} from "@/lib/api/clients/companies";
 import { isCompanyScrapeSupported } from "@/lib/companies/scrape-support";
 import { PLATFORM_COLORS } from "@/lib/constants";
 
@@ -138,12 +142,7 @@ export function CompanyList({
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/companies/${id}`, {
-        method: "DELETE",
-        headers: APP_REQUEST_HEADERS,
-      });
-      if (!res.ok) throw new Error("Failed to delete company");
-      return res.json();
+      return deleteCompany(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
@@ -152,13 +151,7 @@ export function CompanyList({
 
   const toggleActiveMutation = useMutation({
     mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
-      const res = await fetch(`/api/companies/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({ isActive }),
-      });
-      if (!res.ok) throw new Error("Failed to update company");
-      return res.json();
+      return patchCompany(id, { isActive });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
@@ -167,12 +160,7 @@ export function CompanyList({
 
   const deleteJobsMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/companies/${id}/jobs`, {
-        method: "DELETE",
-        headers: APP_REQUEST_HEADERS,
-      });
-      if (!res.ok) throw new Error("Failed to delete jobs");
-      return res.json();
+      return deleteCompanyJobs(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });

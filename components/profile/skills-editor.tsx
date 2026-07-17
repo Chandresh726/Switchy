@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { createSkill, deleteSkill, getSkills } from "@/lib/api/clients/profile";
 import { useState, useEffect } from "react";
 import { Loader2, Plus, X, Sparkles, Zap, Save } from "lucide-react";
 import { toast } from "sonner";
@@ -61,9 +61,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
     queryKey: ["skills", profileId],
     queryFn: async () => {
       if (!profileId) return [];
-      const res = await fetch(`/api/profile/skills?profileId=${profileId}`);
-      if (!res.ok) throw new Error("Failed to fetch skills");
-      return res.json();
+      return getSkills(profileId);
     },
     enabled: !!profileId,
   });
@@ -71,13 +69,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
 
   const addMutation = useMutation({
     mutationFn: async (skill: typeof newSkill) => {
-      const res = await fetch("/api/profile/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({ ...skill, profileId }),
-      });
-      if (!res.ok) throw new Error("Failed to add skill");
-      return res.json();
+      return createSkill({ ...skill, profileId });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["skills", profileId] });
@@ -88,16 +80,11 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
   const bulkAddMutation = useMutation({
     mutationFn: async (skillsToAdd: InitialSkill[]) => {
       for (const skill of skillsToAdd) {
-        const res = await fetch("/api/profile/skills", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-          body: JSON.stringify({
+        await createSkill({
             name: skill.name,
             category: skill.category || "other",
             profileId,
-          }),
         });
-        if (!res.ok) throw new Error("Failed to add skill");
       }
     },
     onSuccess: () => {
@@ -116,12 +103,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/profile/skills?id=${id}`, {
-        method: "DELETE",
-        headers: APP_REQUEST_HEADERS,
-      });
-      if (!res.ok) throw new Error("Failed to delete skill");
-      return res.json();
+      return deleteSkill(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["skills", profileId] });

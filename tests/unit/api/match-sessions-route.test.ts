@@ -29,6 +29,7 @@ describe("match session API", () => {
         analysis: { total: 4, completed: 3, active: 1, queued: 0, cached: 1, failed: 0 },
         matching: { total: 4, completed: 2, active: 1, queued: 1, cached: 0, failed: 0 },
         jobs: [],
+        jobPagination: { total: 4, limit: 100, offset: 0, hasMore: false },
       },
     });
     const response = await GET(new Request("http://localhost"), {

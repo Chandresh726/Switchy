@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Clock,
@@ -19,76 +21,44 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import {
+  getScrapeHistoryDetail,
+  cancelScrapeHistorySession,
+  deleteScrapeHistorySession,
+} from "@/lib/api/clients/history";
 import { formatDateTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
 
-import {
-  CompanyProgressList,
-  type ScrapeQueueItem,
-  type SessionLog,
-} from "./company-progress-list";
+import { CompanyProgressList } from "./company-progress-list";
 import { TRIGGER_LABELS } from "./constants";
-
-interface ScrapeSession {
-  id: string;
-  triggerSource: string;
-  status: string;
-  companiesTotal: number | null;
-  companiesCompleted: number | null;
-  totalJobsFound: number | null;
-  totalJobsAdded: number | null;
-  totalJobsFiltered: number | null;
-  totalJobsArchived: number | null;
-  skipReason?: string | null;
-  scheduledForAt?: Date | string | null;
-  startedAt: Date | null;
-  completedAt: Date | null;
-}
-
-interface SessionDetailResponse {
-  session: ScrapeSession;
-  logs: SessionLog[];
-  queueItems: ScrapeQueueItem[];
-}
 
 interface SessionDetailProps {
   sessionId: string;
 }
 
 export function SessionDetail({ sessionId }: SessionDetailProps) {
+  const [logOffset, setLogOffset] = useState(0);
+  const logLimit = 50;
+  const [workOffset, setWorkOffset] = useState(0);
+  const workLimit = 50;
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { data, isLoading, error } = useQuery<SessionDetailResponse>({
-    queryKey: ["scrape-history", sessionId],
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["scrape-history", sessionId, logOffset, workOffset],
     queryFn: async () => {
-      const res = await fetch(`/api/scrape-history?sessionId=${sessionId}`, {
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error("Failed to fetch session details");
-      return res.json();
+      return getScrapeHistoryDetail(sessionId, logOffset, logLimit, workOffset, workLimit);
     },
     refetchInterval: (query) => {
       const session = query.state.data?.session;
-      const queueItems = query.state.data?.queueItems ?? [];
       if (!session) return 1000;
-      const hasActiveQueueWork = queueItems.some(
-        (item) => item.status === "queued" || item.status === "running"
-      );
-      return session.status === "in_progress" || hasActiveQueueWork ? 1000 : false;
+      return session.status === "in_progress" || query.state.data?.hasActiveWork ? 1000 : false;
     },
     refetchIntervalInBackground: true,
   });
 
   const stopMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/scrape-history?sessionId=${encodeURIComponent(sessionId)}`, {
-        method: "PATCH",
-        headers: APP_REQUEST_HEADERS,
-      });
-
-      if (!res.ok) throw new Error("Failed to stop session");
-      return res.json();
+      return cancelScrapeHistorySession(sessionId);
     },
     onSuccess: () => {
       toast.success("Stopping scrape session");
@@ -102,13 +72,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/scrape-history?sessionId=${encodeURIComponent(sessionId)}`, {
-        method: "DELETE",
-        headers: APP_REQUEST_HEADERS,
-      });
-      if (!res.ok) throw new Error("Failed to delete session");
-      const text = await res.text();
-      return text ? JSON.parse(text) : null;
+      return deleteScrapeHistorySession(sessionId);
     },
     onSuccess: () => {
       router.push("/history/scrape");
@@ -137,16 +101,14 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
     );
   }
 
-  const { session, logs, queueItems } = data;
+  const { session, logs, logPagination, workPagination, hasActiveWork, queueItems } = data;
   const sessionStatusConfig = getSessionStatusConfig(session.status);
   const SessionStatusIcon = sessionStatusConfig.icon;
   const sessionDisplayTime = session.scheduledForAt ? new Date(session.scheduledForAt) : session.startedAt;
   const progress = session.companiesTotal
     ? Math.round(((session.companiesCompleted || 0) / session.companiesTotal) * 100)
     : 0;
-  const hasActiveQueueWork = queueItems.some(
-    (item) => item.status === "queued" || item.status === "running"
-  );
+  const hasActiveQueueWork = hasActiveWork;
 
   return (
     <div className="space-y-6">
@@ -296,6 +258,27 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
       </div>
 
       <CompanyProgressList queueItems={queueItems} logs={logs} />
+      {workPagination.total > workLimit && (
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="outline" size="sm" disabled={workOffset === 0} onClick={() => setWorkOffset(Math.max(0, workOffset - workLimit))}>Previous companies</Button>
+          <Button variant="outline" size="sm" disabled={!workPagination.hasMore} onClick={() => setWorkOffset(workOffset + workLimit)}>Next companies</Button>
+        </div>
+      )}
+      {logPagination.total > logLimit && (
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">
+            Showing {logPagination.offset + 1}-{Math.min(logPagination.offset + logs.length, logPagination.total)} of {logPagination.total} log entries
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={logOffset === 0} onClick={() => setLogOffset(Math.max(0, logOffset - logLimit))}>
+              Previous
+            </Button>
+            <Button variant="outline" size="sm" disabled={!logPagination.hasMore} onClick={() => setLogOffset(logOffset + logLimit)}>
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

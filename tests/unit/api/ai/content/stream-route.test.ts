@@ -68,6 +68,8 @@ describe("POST /api/ai/content/stream", () => {
 
     expect(body).toContain("event: delta");
     expect(body).toContain("event: error");
+    expect(body).toContain('"code":"unknown"');
+    expect(body).toContain('"requestId":');
     expect(body).not.toContain("event: complete");
     expect(body).not.toContain("sk-secret");
   });

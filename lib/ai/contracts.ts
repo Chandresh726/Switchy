@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { isReasoningEffort } from "@/lib/ai/providers/types";
 
-export const AI_CONTENT_TYPE_VALUES = ["cover_letter", "referral", "recruiter_follow_up"] as const;
+const AI_CONTENT_TYPE_VALUES = ["cover_letter", "referral", "recruiter_follow_up"] as const;
 export const AIContentTypeSchema = z.enum(AI_CONTENT_TYPE_VALUES);
 export type AIContentType = z.infer<typeof AIContentTypeSchema>;
 
@@ -82,10 +82,3 @@ export const AISettingsUpdateSchema = z.object({
   codex_cli_executable: z.string().trim().optional(),
   opencode_cli_executable: z.string().trim().optional(),
 });
-
-export type MatchRouteBody = z.infer<typeof MatchRouteBodySchema>;
-export type MatchUnmatchedQuery = z.infer<typeof MatchUnmatchedQuerySchema>;
-export type MatchUnmatchedBody = z.infer<typeof MatchUnmatchedBodySchema>;
-export type AIContentPostBody = z.infer<typeof AIContentPostBodySchema>;
-export type AIContentPatchBody = z.infer<typeof AIContentPatchBodySchema>;
-export type AISettingsUpdate = z.infer<typeof AISettingsUpdateSchema>;

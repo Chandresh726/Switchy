@@ -4,15 +4,9 @@ import { useState } from "react";
 
 import { useMutation } from "@tanstack/react-query";
 
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { queueJobMatch } from "@/lib/api/clients/runtime";
 
 import { useMatchSession } from "./use-match-session";
-
-interface QueuedMatchResponse {
-  sessionId: string;
-  status: "queued";
-  total: number;
-}
 
 interface UseQueuedJobMatchOptions {
   jobId: number;
@@ -30,13 +24,7 @@ export function useQueuedJobMatch({
   });
   const mutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch("/api/match", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({ jobId }),
-      });
-      if (!response.ok) throw new Error("Failed to calculate match");
-      return response.json() as Promise<QueuedMatchResponse>;
+      return queueJobMatch(jobId);
     },
     onSuccess: (queued) => setSessionId(queued.sessionId),
   });

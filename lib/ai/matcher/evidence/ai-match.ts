@@ -13,8 +13,8 @@ import { buildCandidateEvidenceItems } from "./candidate";
 import type { MatchingJobAnalysis } from "./job-analysis";
 
 export const AI_MATCH_POLICY_BASE_VERSION = "ai-match-policy-v3";
-export const AI_MATCH_PROMPT_VERSION = "ai-match-prompt-v3";
-export const AI_MATCH_SCHEMA_VERSION = "ai-match-schema-v3";
+const AI_MATCH_PROMPT_VERSION = "ai-match-prompt-v3";
+const AI_MATCH_SCHEMA_VERSION = "ai-match-schema-v3";
 
 const MAX_MATCH_PROMPT_CHARS = 40_000;
 const MAX_CANDIDATE_ITEMS = 80;

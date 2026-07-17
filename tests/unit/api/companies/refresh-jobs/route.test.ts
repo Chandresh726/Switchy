@@ -56,9 +56,10 @@ describe("manual company refresh route", () => {
     const response = await POST(createRequest(body));
 
     expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toEqual({
-      error: "companyIds must be a non-empty array of positive numbers",
-      code: "validation_error",
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Invalid request payload",
+      code: "invalid_request",
+      requestId: expect.any(String),
     });
     expect(mocks.scrapeCompanies).not.toHaveBeenCalled();
   });
@@ -71,7 +72,7 @@ describe("manual company refresh route", () => {
     const response = await POST(request);
 
     expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toEqual({
+    await expect(response.json()).resolves.toMatchObject({
       error: "Invalid JSON in request body",
       code: "invalid_json",
     });

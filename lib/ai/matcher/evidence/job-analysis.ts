@@ -20,9 +20,9 @@ import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import type { JobData, MatcherConfig } from "../types";
 import { htmlToText } from "../utils";
 
-export const JOB_ANALYSIS_EXTRACTOR_VERSION = "job-analysis-ai-v2";
-export const JOB_ANALYSIS_PROMPT_VERSION = "job-analysis-prompt-v7";
-export const JOB_ANALYSIS_SCHEMA_VERSION = "job-analysis-schema-v7";
+const JOB_ANALYSIS_EXTRACTOR_VERSION = "job-analysis-ai-v2";
+const JOB_ANALYSIS_PROMPT_VERSION = "job-analysis-prompt-v7";
+const JOB_ANALYSIS_SCHEMA_VERSION = "job-analysis-schema-v7";
 export const MAX_ANALYSIS_PROMPT_CHARS = 40_000;
 
 const ANALYSIS_PROMPT_HEADER = `Create a concise, reusable hiring analysis for every job below.
@@ -130,7 +130,7 @@ function canonicalizeRequirements(
     }));
 }
 
-export function canonicalizeJobAnalysisEvidence(
+function canonicalizeJobAnalysisEvidence(
   input: JobAnalysisEvidence
 ): JobAnalysisEvidence {
   const evidence = JobAnalysisEvidenceSchema.parse(input);

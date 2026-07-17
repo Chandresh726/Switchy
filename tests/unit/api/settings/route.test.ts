@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertAppRequest: vi.fn(),
-  clearSchedulerEnabledCache: vi.fn(),
   getSchedulerEnabled: vi.fn(),
   restartScheduler: vi.fn(),
   stopScheduler: vi.fn(),
@@ -12,12 +11,12 @@ const mocks = vi.hoisted(() => ({
   getCachedProviderModelDefinition: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
   assertAppRequest: mocks.assertAppRequest,
 }));
 
 vi.mock("@/lib/jobs/scheduler", () => ({
-  clearSchedulerEnabledCache: mocks.clearSchedulerEnabledCache,
   getSchedulerEnabled: mocks.getSchedulerEnabled,
   restartScheduler: mocks.restartScheduler,
   stopScheduler: mocks.stopScheduler,
@@ -34,7 +33,7 @@ vi.mock("@/lib/ai/providers/model-catalog", () => ({
   getCachedProviderModelDefinition: mocks.getCachedProviderModelDefinition,
 }));
 
-import { GET, POST } from "@/app/api/settings/route";
+import { GET, PATCH } from "@/app/api/settings/route";
 
 describe("settings route", () => {
   beforeEach(() => {
@@ -63,7 +62,7 @@ describe("settings route", () => {
   });
 
   it("returns settings from service", async () => {
-    const response = await GET();
+    const response = await GET(new Request("http://localhost/api/settings"));
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -79,11 +78,28 @@ describe("settings route", () => {
       }),
     });
 
-    const response = await POST(request);
+    const response = await PATCH(request);
     const body = await response.json();
 
     expect(response.status).toBe(400);
     expect(body.code).toBe("invalid_request");
+    expect(mocks.parseSettingsUpdateBody).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown setting keys instead of silently ignoring them", async () => {
+    const request = new Request("http://localhost/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ theme: "dark" }),
+    });
+
+    const response = await PATCH(request);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "invalid_request",
+      requestId: expect.any(String),
+    });
     expect(mocks.parseSettingsUpdateBody).not.toHaveBeenCalled();
   });
 
@@ -97,7 +113,7 @@ describe("settings route", () => {
       body: JSON.stringify({ matcher_reasoning_effort: "medium" }),
     });
 
-    const response = await POST(request);
+    const response = await PATCH(request);
 
     expect(response.status).toBe(200);
     expect(mocks.parseSettingsUpdateBody).toHaveBeenCalledWith(
@@ -119,7 +135,7 @@ describe("settings route", () => {
       body: JSON.stringify({ matcher_reasoning_effort: "max" }),
     });
 
-    const response = await POST(request);
+    const response = await PATCH(request);
 
     expect(response.status).toBe(200);
     expect(mocks.parseSettingsUpdateBody).toHaveBeenCalledWith(
@@ -141,7 +157,7 @@ describe("settings route", () => {
       body: JSON.stringify({ matcher_reasoning_effort: " max " }),
     });
 
-    const response = await POST(request);
+    const response = await PATCH(request);
 
     expect(response.status).toBe(400);
     expect(mocks.parseSettingsUpdateBody).not.toHaveBeenCalled();
@@ -163,7 +179,7 @@ describe("settings route", () => {
       }),
     });
 
-    const response = await POST(request);
+    const response = await PATCH(request);
 
     expect(response.status).toBe(200);
     expect(mocks.parseSettingsUpdateBody).toHaveBeenCalledTimes(1);
@@ -192,7 +208,7 @@ describe("settings route", () => {
       }),
     });
 
-    const response = await POST(request);
+    const response = await PATCH(request);
 
     expect(response.status).toBe(200);
     expect(mocks.parseSettingsUpdateBody).toHaveBeenCalledTimes(1);
@@ -216,13 +232,12 @@ describe("settings route", () => {
       body: JSON.stringify({ scheduler_enabled: false }),
     });
 
-    const response = await POST(request);
+    const response = await PATCH(request);
 
     expect(response.status).toBe(200);
     expect(mocks.upsertSettings).toHaveBeenCalledWith([
       { key: "scheduler_enabled", value: "false" },
     ]);
-    expect(mocks.clearSchedulerEnabledCache).toHaveBeenCalledTimes(1);
     expect(mocks.stopScheduler).toHaveBeenCalledTimes(1);
     expect(mocks.restartScheduler).not.toHaveBeenCalled();
   });
@@ -242,10 +257,9 @@ describe("settings route", () => {
       body: JSON.stringify({ scheduler_cron: "*/5 * * * *" }),
     });
 
-    const response = await POST(request);
+    const response = await PATCH(request);
 
     expect(response.status).toBe(200);
-    expect(mocks.clearSchedulerEnabledCache).toHaveBeenCalledTimes(1);
     expect(mocks.getSchedulerEnabled).toHaveBeenCalledTimes(1);
     expect(mocks.restartScheduler).toHaveBeenCalledTimes(1);
     expect(mocks.stopScheduler).not.toHaveBeenCalled();

@@ -8,10 +8,6 @@ import type {
   AIUsageSummary,
 } from "./types";
 
-export function parseAIUsageDays(value: string | null | undefined): 7 | 30 {
-  return value === "30" ? 30 : 7;
-}
-
 export async function getAIUsageSummary(
   days: 7 | 30,
   database: typeof db = db,

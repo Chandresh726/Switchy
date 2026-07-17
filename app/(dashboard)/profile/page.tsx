@@ -6,42 +6,10 @@ import { SkillsEditor } from "@/components/profile/skills-editor";
 import { ExperienceList } from "@/components/profile/experience-list";
 import { EducationEditor } from "@/components/profile/education-editor";
 import { ResumeManager } from "@/components/profile/resume-manager";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import type { ResumeData } from "@/lib/ai/resume/contracts";
+import { deleteResume, getProfile } from "@/lib/api/clients/profile";
 import { useState } from "react";
 import { toast } from "sonner";
-
-interface ResumeData {
-  name: string;
-  email?: string;
-  phone?: string;
-  location?: string;
-  linkedinUrl?: string;
-  githubUrl?: string;
-  portfolioUrl?: string;
-  summary?: string;
-  skills: Array<{
-    name: string;
-    category?: string;
-  }>;
-  experience: Array<{
-    company: string;
-    title: string;
-    location?: string;
-    startDate: string;
-    endDate?: string;
-    description?: string;
-    highlights?: string[];
-  }>;
-  education?: Array<{
-    institution: string;
-    degree: string;
-    field?: string;
-    startDate?: string;
-    endDate?: string;
-    gpa?: string;
-    honors?: string;
-  }>;
-}
 
 export default function ProfilePage() {
   const [parsedResumeData, setParsedResumeData] = useState<ResumeData | null>(null);
@@ -49,9 +17,7 @@ export default function ProfilePage() {
   const { data: profile, refetch } = useQuery({
     queryKey: ["profile"],
     queryFn: async () => {
-      const res = await fetch("/api/profile");
-      if (!res.ok) throw new Error("Failed to fetch profile");
-      return res.json();
+      return getProfile();
     },
   });
 
@@ -63,11 +29,7 @@ export default function ProfilePage() {
   };
 
   const handleDeleteResume = async (id: number) => {
-    const res = await fetch(`/api/profile/resumes?id=${id}`, {
-      method: "DELETE",
-      headers: APP_REQUEST_HEADERS,
-    });
-    if (!res.ok) throw new Error("Failed to delete resume");
+    await deleteResume(id);
   };
 
   return (
@@ -122,13 +84,26 @@ export default function ProfilePage() {
       {/* Education */}
       <EducationEditor
         profileId={profile?.id || null}
-        initialEducation={parsedResumeData?.education}
+        initialEducation={parsedResumeData?.education?.map((education) => ({
+          institution: education.institution,
+          degree: education.degree,
+          field: education.field ?? undefined,
+          startDate: education.startDate ?? undefined,
+          endDate: education.endDate ?? undefined,
+          gpa: education.gpa ?? undefined,
+          honors: education.honors ?? undefined,
+        }))}
       />
 
       {/* Experience */}
       <ExperienceList
         profileId={profile?.id || null}
-        initialExperience={parsedResumeData?.experience}
+        initialExperience={parsedResumeData?.experience.map((experience) => ({
+          ...experience,
+          location: experience.location ?? undefined,
+          endDate: experience.endDate ?? undefined,
+          description: experience.description ?? undefined,
+        }))}
       />
 
       {/* Skills */}

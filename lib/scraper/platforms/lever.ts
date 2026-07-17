@@ -69,7 +69,7 @@ const LeverJobsSchema = z.array(
 
 export type LeverConfig = ApiScraperConfig;
 
-export const DEFAULT_LEVER_CONFIG: LeverConfig = {
+const DEFAULT_LEVER_CONFIG: LeverConfig = {
   ...DEFAULT_API_CONFIG,
   baseUrl: "https://api.lever.co",
 };

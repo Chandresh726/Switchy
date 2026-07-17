@@ -38,7 +38,11 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { LinkedinIcon } from "@/components/icons/linkedin-icon";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import {
+  createPerson,
+  importPeople,
+  previewPeopleImport,
+} from "@/lib/api/clients/people";
 import type { ImportMode, ImportSummary, PeopleImportPreviewResponse } from "@/lib/people/types";
 import { cn } from "@/lib/utils";
 
@@ -300,17 +304,7 @@ export function ImportPeopleModal({
       const formData = new FormData();
       formData.append("source", targetSource);
       formData.append("file", fileToPreview);
-      const res = await fetch("/api/people/import/preview", {
-        method: "POST",
-        headers: APP_REQUEST_HEADERS,
-        body: formData,
-      });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Failed to preview CSV");
-      }
-
-      const data = (await res.json()) as PeopleImportPreviewResponse;
+      const data: PeopleImportPreviewResponse = await previewPeopleImport(formData);
       setPreview(data);
       setMapping((data.suggestedMapping || {}) as ApolloMapping);
     } catch (error) {
@@ -341,17 +335,7 @@ export function ImportPeopleModal({
         formData.append("mapping", JSON.stringify(mapping));
       }
 
-      const res = await fetch("/api/people/import", {
-        method: "POST",
-        headers: APP_REQUEST_HEADERS,
-        body: formData,
-      });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Failed to import");
-      }
-
-      const summary = (await res.json()) as ImportSummary;
+      const summary: ImportSummary = await importPeople(formData);
       onImported(summary);
       toast.success("People imported successfully");
       handleClose(false);
@@ -366,22 +350,14 @@ export function ImportPeopleModal({
     if (!canCreateManual) return;
     setIsSubmitting(true);
     try {
-      const res = await fetch("/api/people", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({
+      await createPerson({
           fullName: manualForm.fullName,
           email: manualForm.email || undefined,
           profileUrl: manualForm.profileUrl || undefined,
           companyRaw: manualForm.companyRaw || undefined,
           position: manualForm.position || undefined,
           notes: manualForm.notes || undefined,
-        }),
       });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Failed to create person");
-      }
 
       onCreatedManual();
       toast.success("Person added");

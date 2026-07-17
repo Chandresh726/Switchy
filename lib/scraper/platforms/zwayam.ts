@@ -117,7 +117,7 @@ export type ZwayamConfig = ApiScraperConfig & {
   detailDelayMs: number;
 };
 
-export const DEFAULT_ZWAYAM_CONFIG: ZwayamConfig = {
+const DEFAULT_ZWAYAM_CONFIG: ZwayamConfig = {
   ...DEFAULT_API_CONFIG,
   baseUrl: "https://public.zwayam.com",
   pageSize: 10,

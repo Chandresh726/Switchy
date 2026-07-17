@@ -1,91 +1,25 @@
-import { db } from "@/lib/db";
-import { skills } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import { NextRequest, NextResponse } from "next/server";
-import { assertAppRequest } from "@/lib/api";
-import { scheduleProfileRematch } from "@/lib/ai/matcher/profile-rematch";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+
+import { assertAppRequest, handleApiError } from "@/lib/api";
+import { profileIdQuerySchema, skillCreateBodySchema } from "@/lib/api/contracts/profile";
+import { createSkill, listSkills } from "@/lib/application/profile-service";
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const profileId = searchParams.get("profileId");
-
-    if (!profileId) {
-      return NextResponse.json(
-        { error: "profileId is required" },
-        { status: 400 }
-      );
-    }
-
-    const skillsData = await db
-      .select()
-      .from(skills)
-      .where(eq(skills.profileId, parseInt(profileId)));
-
-    return NextResponse.json(skillsData);
+    const { profileId } = profileIdQuerySchema.parse(Object.fromEntries(request.nextUrl.searchParams));
+    return NextResponse.json(await listSkills(profileId));
   } catch (error) {
-    console.error("Failed to fetch skills:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch skills" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to fetch skills", fallbackCode: "skills_fetch_failed" });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     assertAppRequest(request);
-
-    const body = await request.json();
-    const { profileId, name, category } = body;
-
-    if (!profileId || !name) {
-      return NextResponse.json(
-        { error: "profileId and name are required" },
-        { status: 400 }
-      );
-    }
-
-    const [newSkill] = await db
-      .insert(skills)
-      .values({
-        profileId,
-        name,
-        category,
-      })
-      .returning();
-
-    await scheduleProfileRematch();
-    return NextResponse.json(newSkill);
+    const input = skillCreateBodySchema.parse(await request.json());
+    return NextResponse.json(await createSkill(input));
   } catch (error) {
-    console.error("Failed to create skill:", error);
-    return NextResponse.json(
-      { error: "Failed to create skill" },
-      { status: 500 }
-    );
-  }
-}
-
-export async function DELETE(request: NextRequest) {
-  try {
-    assertAppRequest(request);
-
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get("id");
-
-    if (!id) {
-      return NextResponse.json({ error: "id is required" }, { status: 400 });
-    }
-
-    await db.delete(skills).where(eq(skills.id, parseInt(id)));
-
-    await scheduleProfileRematch();
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Failed to delete skill:", error);
-    return NextResponse.json(
-      { error: "Failed to delete skill" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to create skill", fallbackCode: "skill_create_failed" });
   }
 }

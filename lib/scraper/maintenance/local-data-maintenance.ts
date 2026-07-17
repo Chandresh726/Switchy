@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 
-import { parseMatchWorkPayload } from "@/lib/ai/work-items/contracts";
+import { MatchWorkPayloadSchema, parseMatchWorkPayload } from "@/lib/ai/work-items/contracts";
+import { importLegacyMatchWork } from "@/lib/ai/work-items/legacy-import";
 import { db } from "@/lib/db";
 import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
 import {
@@ -30,6 +31,7 @@ export interface CompanyDeletionResult {
 export interface LocalDataMaintenance {
   deleteCompanies(companyIds: readonly number[]): Promise<CompanyDeletionResult>;
   deleteCompanyJobs(companyIds: readonly number[]): Promise<number>;
+  deleteJobs(jobIds: readonly number[]): Promise<number>;
   deleteAllJobs(): Promise<number>;
   deleteMatchHistory(sessionId?: string): Promise<number>;
   deleteMatchData(): Promise<number>;
@@ -47,6 +49,18 @@ function normalizedCompanyIds(companyIds: readonly number[]): number[] {
   return Array.from(
     new Set(companyIds.filter((id) => Number.isInteger(id) && id > 0))
   );
+}
+
+const normalizedJobIds = normalizedCompanyIds;
+
+function findJobCompanyIds(database: Database, jobIds: readonly number[]): number[] {
+  const companyIds = new Set<number>();
+  for (const jobBatch of chunkSqliteParameters(jobIds)) {
+    for (const row of database.select({ companyId: jobs.companyId }).from(jobs).where(inArray(jobs.id, jobBatch)).all()) {
+      companyIds.add(row.companyId);
+    }
+  }
+  return Array.from(companyIds);
 }
 
 function findCompanyJobIds(
@@ -334,6 +348,52 @@ function stopScopedWork(
   );
 }
 
+function findActiveJobOutboxes(
+  tx: Transaction,
+  jobIds: readonly number[]
+): OutboxReference[] {
+  const targetJobIds = new Set(jobIds);
+  const references: OutboxReference[] = tx.select({
+      sessionId: scrapeMatchOutbox.id,
+      scrapingLogId: scrapeMatchOutbox.scrapingLogId,
+      jobIdsJson: scrapeMatchOutbox.jobIdsJson,
+    }).from(scrapeMatchOutbox)
+    .where(inArray(scrapeMatchOutbox.status, ["pending", "running"]))
+    .all()
+    .filter((row) => {
+      try {
+        const parsed = MatchWorkPayloadSchema.shape.jobIds.parse(JSON.parse(row.jobIdsJson));
+        return parsed.some((jobId) => targetJobIds.has(jobId));
+      } catch {
+        return false;
+      }
+    })
+    .map(({ sessionId, scrapingLogId }) => ({ sessionId, scrapingLogId }));
+  const aiRows = tx.select({
+    sessionId: aiWorkItems.matchSessionId,
+    scrapingLogId: aiWorkItems.scrapingLogId,
+    payloadJson: aiWorkItems.payloadJson,
+  }).from(aiWorkItems).where(inArray(aiWorkItems.status, ["queued", "running"])).all();
+  for (const row of aiRows) {
+    const payload = parseMatchWorkPayload(row.payloadJson);
+    if (!payload.jobIds.some((jobId) => targetJobIds.has(jobId)) || !row.sessionId) continue;
+    references.push({ sessionId: row.sessionId, scrapingLogId: row.scrapingLogId ?? 0 });
+  }
+  return Array.from(new Map(references.map((reference) => [reference.sessionId, reference])).values());
+}
+
+function stopJobScopedWork(
+  tx: Transaction,
+  companyIds: readonly number[],
+  jobIds: readonly number[]
+): void {
+  const stoppedAt = new Date();
+  stopScrapeSessions(tx, findActiveScrapeSessions(tx, companyIds), stoppedAt);
+  const outboxes = findActiveJobOutboxes(tx, jobIds);
+  resetMatcherProjections(tx, outboxes.map(({ scrapingLogId }) => scrapingLogId));
+  deleteMatchSessions(tx, outboxes.map(({ sessionId }) => sessionId));
+}
+
 export class LocalDataMaintenanceService implements LocalDataMaintenance {
   constructor(
     private readonly database: Database = db,
@@ -409,6 +469,27 @@ export class LocalDataMaintenanceService implements LocalDataMaintenance {
         return tx.delete(jobs).returning({ id: jobs.id }).all().length;
       }, { behavior: "immediate" })
     );
+  }
+
+  async deleteJobs(jobIds: readonly number[]): Promise<number> {
+    const ids = normalizedJobIds(jobIds);
+    if (ids.length === 0) return 0;
+    const companyIds = findJobCompanyIds(this.database, ids);
+    if (companyIds.length === 0) return 0;
+    const scrapeCompanyIds = findParentScrapeCompanyIds(this.database, companyIds);
+    this.dataOperationGate.cancelScrapes(scrapeCompanyIds);
+    this.dataOperationGate.cancelMatches({ jobIds: ids });
+    return this.dataOperationGate.runMaintenance(() => {
+      importLegacyMatchWork(this.database);
+      return this.database.transaction((tx) => {
+        stopJobScopedWork(tx, companyIds, ids);
+        let deleted = 0;
+        for (const jobBatch of chunkSqliteParameters(ids)) {
+          deleted += tx.delete(jobs).where(inArray(jobs.id, jobBatch)).returning({ id: jobs.id }).all().length;
+        }
+        return deleted;
+      }, { behavior: "immediate" });
+    });
   }
 
   async deleteMatchHistory(sessionId?: string): Promise<number> {

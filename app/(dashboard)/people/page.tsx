@@ -22,7 +22,15 @@ import { toast } from "sonner";
 import { UnmatchedPeopleModal } from "@/components/companies/unmatched-people-modal";
 import { LinkedinIcon } from "@/components/icons/linkedin-icon";
 import { ImportPeopleModal } from "@/components/people/import-people-modal";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import { getCompanies } from "@/lib/api/clients/companies";
+import {
+  clearPeople,
+  getPeople,
+  getPeopleImportSessions,
+  getUnmatchedCompanies,
+  patchPerson,
+  refreshUnmatchedCompanyMappings,
+} from "@/lib/api/clients/people";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -174,18 +182,14 @@ export default function PeoplePage() {
   const { data: companies = [] } = useQuery<Company[]>({
     queryKey: companyKeys.list(),
     queryFn: async () => {
-      const res = await fetch("/api/companies");
-      if (!res.ok) throw new Error("Failed to fetch companies");
-      return res.json();
+      return getCompanies();
     },
   });
 
   const { data: sessions = [] } = useQuery<PeopleImportSession[]>({
     queryKey: peopleKeys.importSessions(),
     queryFn: async () => {
-      const res = await fetch("/api/people/import-sessions?limit=5");
-      if (!res.ok) throw new Error("Failed to fetch import sessions");
-      return res.json();
+      return (await getPeopleImportSessions(5)).sessions;
     },
   });
 
@@ -229,18 +233,14 @@ export default function PeoplePage() {
       currentPage,
     }),
     queryFn: async () => {
-      const res = await fetch(peopleUrl);
-      if (!res.ok) throw new Error("Failed to fetch people");
-      return res.json();
+      return getPeople(peopleUrl.split("?")[1] ?? "");
     },
   });
 
   const { data: totalPeopleData } = useQuery<PersonQueryResponse>({
     queryKey: peopleKeys.totalCount(),
     queryFn: async () => {
-      const res = await fetch("/api/people?active=all&limit=1");
-      if (!res.ok) throw new Error("Failed to fetch people count");
-      return res.json();
+      return getPeople("active=all&limit=1");
     },
   });
 
@@ -255,26 +255,13 @@ export default function PeoplePage() {
   }>({
     queryKey: peopleKeys.unmatchedCompanies.summary(),
     queryFn: async () => {
-      const res = await fetch("/api/people/unmatched-companies?summaryOnly=true");
-      if (!res.ok) {
-        throw new Error("Failed to fetch unmatched companies summary");
-      }
-      return res.json();
+      return getUnmatchedCompanies("summaryOnly=true");
     },
   });
 
   const patchMutation = useMutation({
     mutationFn: async (payload: { id: number; body: Record<string, unknown> }) => {
-      const res = await fetch(`/api/people/${payload.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify(payload.body),
-      });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Failed to update person");
-      }
-      return res.json();
+      return patchPerson(payload.id, payload.body);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: peopleKeys.all });
@@ -287,15 +274,7 @@ export default function PeoplePage() {
 
   const deleteAllMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/people", {
-        method: "DELETE",
-        headers: APP_REQUEST_HEADERS,
-      });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Failed to delete people");
-      }
-      return (await res.json()) as { deletedCount: number };
+      return clearPeople();
     },
     onSuccess: (result) => {
       setIsDeleteAllDialogOpen(false);
@@ -315,18 +294,7 @@ export default function PeoplePage() {
 
   const refreshMappingsMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/people/unmatched-companies", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({ action: "refresh" }),
-      });
-
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Failed to refresh mappings");
-      }
-
-      return (await res.json()) as { mappedPeopleCount: number; mappedCompanyCount: number };
+      return refreshUnmatchedCompanyMappings();
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: peopleKeys.unmatchedCompanies.all() });

@@ -19,9 +19,12 @@ export interface PersistResumeInput {
   aiRunId: string | null;
   parserVersion: string | null;
   warnings: ResumeValidationWarning[];
+  storageState: "staging" | "ready" | "deleting" | "missing";
+  stagingPath: string | null;
+  isCurrent: boolean;
 }
 
-export function serializeResumeArtifacts(input: Pick<
+function serializeResumeArtifacts(input: Pick<
   PersistResumeInput,
   "parsedData" | "warnings"
 >): { parsedData: string; validationWarnings: string } {
@@ -57,7 +60,7 @@ export function persistResumeVersion(
       .orderBy(desc(resumes.version))
       .get();
     const nextVersion = (lastResume?.version ?? 0) + 1;
-    if (nextVersion > 1) {
+    if (input.isCurrent) {
       tx.update(resumes).set({ isCurrent: false })
         .where(eq(resumes.profileId, input.profileId)).run();
     }
@@ -70,7 +73,9 @@ export function persistResumeVersion(
       parserVersion: input.parserVersion,
       validationWarnings: serialized.validationWarnings,
       version: nextVersion,
-      isCurrent: true,
+      isCurrent: input.isCurrent,
+      storageState: input.storageState,
+      stagingPath: input.stagingPath,
     }).returning().get();
-  });
+  }, { behavior: "immediate" });
 }

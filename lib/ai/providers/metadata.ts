@@ -9,7 +9,7 @@ export interface ProviderMetadata {
   freeTierNote?: string;
 }
 
-export const PROVIDER_METADATA: Record<AIProvider, ProviderMetadata> = {
+const PROVIDER_METADATA: Record<AIProvider, ProviderMetadata> = {
   anthropic: {
     id: "anthropic",
     displayName: "Anthropic",

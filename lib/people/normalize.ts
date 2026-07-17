@@ -52,7 +52,7 @@ export function normalizeLinkedInProfileUrl(value: string | null | undefined): s
   }
 }
 
-export function normalizePersonName(value: string | null | undefined): string {
+function normalizePersonName(value: string | null | undefined): string {
   if (!value) return "";
   return collapseWhitespace(value.toLowerCase());
 }

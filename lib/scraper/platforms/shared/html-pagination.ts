@@ -3,7 +3,7 @@ import { load } from "cheerio";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 
-export interface HtmlPageResult {
+interface HtmlPageResult {
   page: number;
   url: string;
   html: string;

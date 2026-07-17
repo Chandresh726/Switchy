@@ -74,7 +74,7 @@ export type VisaConfig = ApiScraperConfig & {
   pageSize: number;
 };
 
-export const DEFAULT_VISA_CONFIG: VisaConfig = {
+const DEFAULT_VISA_CONFIG: VisaConfig = {
   ...DEFAULT_API_CONFIG,
   baseUrl: "https://search.visa.com",
   pageSize: 100,

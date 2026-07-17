@@ -13,49 +13,29 @@ import fs from "fs";
  */
 
 const isDev = process.env.NODE_ENV === "development";
+const baseDirectory = path.join(os.homedir(), ".switchy");
+const coordinationDirectory = `${baseDirectory}.coordination`;
+const stateDirectory = isDev ? path.join(baseDirectory, "dev") : baseDirectory;
+const uploadsDirectory = path.join(stateDirectory, "uploads");
+const databasePath = path.join(stateDirectory, "switchy.db");
+const encryptionSecretPath = path.join(stateDirectory, "encryption.secret");
 
-const BASE_DIR = path.join(os.homedir(), ".switchy");
-const ENV_DIR = isDev ? path.join(BASE_DIR, "dev") : BASE_DIR;
-
-const STATE_DIR = ENV_DIR;
-const UPLOADS_DIR = path.join(STATE_DIR, "uploads");
-const DB_PATH = path.join(STATE_DIR, "switchy.db");
-const ENCRYPTION_SECRET_PATH = path.join(STATE_DIR, "encryption.secret");
-
-/**
- * Get the base state directory (~/.switchy)
- */
-export function getStateDir(): string {
-  return STATE_DIR;
+export function getStateCoordinationDir(): string {
+  return coordinationDirectory;
 }
 
 /**
  * Get the database file path
  */
 export function getDbPath(): string {
-  return DB_PATH;
-}
-
-/**
- * Get the database path for display (with ~ instead of home directory)
- */
-export function getDbPathDisplay(): string {
-  const home = os.homedir();
-  return DB_PATH.replace(home, "~");
-}
-
-/**
- * Get the uploads directory path
- */
-export function getUploadsDir(): string {
-  return UPLOADS_DIR;
+  return databasePath;
 }
 
 /**
  * Get the encryption secret file path
  */
 export function getEncryptionSecretPath(): string {
-  return ENCRYPTION_SECRET_PATH;
+  return encryptionSecretPath;
 }
 
 /**
@@ -63,8 +43,8 @@ export function getEncryptionSecretPath(): string {
  * @param relativePath - path relative to uploads dir (e.g., "resumes/file.pdf")
  */
 export function getUploadFilePath(relativePath: string): string {
-  const resolvedPath = path.resolve(UPLOADS_DIR, relativePath);
-  const uploadRoot = path.resolve(UPLOADS_DIR);
+  const resolvedPath = path.resolve(uploadsDirectory, relativePath);
+  const uploadRoot = path.resolve(uploadsDirectory);
   if (resolvedPath !== uploadRoot && !resolvedPath.startsWith(`${uploadRoot}${path.sep}`)) {
     throw new Error("Upload path escapes uploads directory");
   }
@@ -76,11 +56,11 @@ export function getUploadFilePath(relativePath: string): string {
  * Creates ~/.switchy/dev (or ~/.switchy) and ~/.switchy/dev/uploads if missing
  */
 export function ensureStateDir(): void {
-  if (!fs.existsSync(STATE_DIR)) {
-    fs.mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
+  if (!fs.existsSync(stateDirectory)) {
+    fs.mkdirSync(stateDirectory, { recursive: true, mode: 0o700 });
   }
-  if (!fs.existsSync(UPLOADS_DIR)) {
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true, mode: 0o700 });
+  if (!fs.existsSync(uploadsDirectory)) {
+    fs.mkdirSync(uploadsDirectory, { recursive: true, mode: 0o700 });
   }
 }
 
@@ -97,11 +77,4 @@ export function getUploadTypeDir(type: string): string {
     fs.mkdirSync(typeDir, { recursive: true, mode: 0o700 });
   }
   return typeDir;
-}
-
-/**
- * Check if running in development mode
- */
-export function isDevelopment(): boolean {
-  return isDev;
 }

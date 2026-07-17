@@ -1,8 +1,8 @@
 import cron from "node-cron";
-import { eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
-import { APIValidationError } from "@/lib/api/ai-error-handler";
+import { ValidationError } from "@/lib/api";
 import { isReasoningEffort } from "@/lib/ai/providers/types";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
@@ -85,7 +85,7 @@ function parseNumberInRange(
 ): string {
   const parsed = parseInt(String(value), 10);
   if (Number.isNaN(parsed) || parsed < min || parsed > max) {
-    throw new APIValidationError(
+    throw new ValidationError(
       `${key} must be a number between ${min} and ${max}`,
       "invalid_request"
     );
@@ -96,7 +96,7 @@ function parseNumberInRange(
 function ensureNonEmptyString(key: SettingKey, value: unknown): string {
   const parsed = String(value ?? "").trim();
   if (parsed.length === 0) {
-    throw new APIValidationError(`${key} must be a non-empty string`, "invalid_request");
+    throw new ValidationError(`${key} must be a non-empty string`, "invalid_request");
   }
   return parsed;
 }
@@ -104,7 +104,7 @@ function ensureNonEmptyString(key: SettingKey, value: unknown): string {
 function normalizeReasoningSetting(key: SettingKey, value: unknown): string {
   const parsed = String(value ?? "");
   if (parsed === "" || isReasoningEffort(parsed)) return parsed;
-  throw new APIValidationError(
+  throw new ValidationError(
     `${key} must be an effort advertised by the selected provider model`,
     "invalid_request"
   );
@@ -117,7 +117,7 @@ function ensureEnum<T extends readonly string[]>(
 ): T[number] {
   const parsed = String(value);
   if (!allowed.includes(parsed)) {
-    throw new APIValidationError(
+    throw new ValidationError(
       `${key} must be one of: ${allowed.join(", ")}`,
       "invalid_request"
     );
@@ -138,7 +138,7 @@ function normalizeTitleKeywords(value: unknown): string {
   if (typeof value === "string") {
     const parsed = safeJsonParse<unknown>(value, null);
     if (!Array.isArray(parsed)) {
-      throw new APIValidationError(
+      throw new ValidationError(
         "scraper_filter_title_keywords must be a JSON array of strings",
         "invalid_request"
       );
@@ -152,7 +152,7 @@ function normalizeTitleKeywords(value: unknown): string {
     );
   }
 
-  throw new APIValidationError(
+  throw new ValidationError(
     "scraper_filter_title_keywords must be an array or JSON array string",
     "invalid_request"
   );
@@ -170,7 +170,7 @@ function normalizeCoverLetterFocus(value: unknown): string {
   }
 
   if (typeof value !== "string") {
-    throw new APIValidationError(
+    throw new ValidationError(
       "cover_letter_focus must be a string or JSON array string",
       "invalid_request"
     );
@@ -191,7 +191,7 @@ function normalizeCoverLetterFocus(value: unknown): string {
     return trimmed;
   }
 
-  throw new APIValidationError(
+  throw new ValidationError(
     "cover_letter_focus must be one of: skills, experience, cultural_fit, all",
     "invalid_request"
   );
@@ -220,7 +220,7 @@ function parseSettingValue(
     case "scheduler_cron": {
       const cronExpr = String(value ?? "").trim();
       if (!cron.validate(cronExpr)) {
-        throw new APIValidationError("Invalid cron expression", "invalid_request");
+        throw new ValidationError("Invalid cron expression", "invalid_request");
       }
       return { value: cronExpr, cronUpdated: true, enabledChanged: false, newEnabledValue: null };
     }
@@ -302,7 +302,7 @@ function parseSettingValue(
 
 export function parseSettingsUpdateBody(body: unknown): ParsedSettingsUpdateResult {
   if (typeof body !== "object" || body === null) {
-    throw new APIValidationError("Request body must be an object", "invalid_request");
+    throw new ValidationError("Request body must be an object", "invalid_request");
   }
 
   const updates: ParsedSettingUpdate[] = [];
@@ -333,18 +333,16 @@ export function parseSettingsUpdateBody(body: unknown): ParsedSettingsUpdateResu
 }
 
 export async function upsertSettings(updates: ParsedSettingUpdate[]): Promise<void> {
-  for (const { key, value } of updates) {
-    const existing = await db.select().from(settings).where(eq(settings.key, key)).limit(1);
-
-    if (existing.length > 0) {
-      await db
-        .update(settings)
-        .set({ value, updatedAt: new Date() })
-        .where(eq(settings.key, key));
-    } else {
-      await db.insert(settings).values({ key, value, updatedAt: new Date() });
+  if (updates.length === 0) return;
+  const updatedAt = new Date();
+  db.transaction((tx) => {
+    for (const { key, value } of updates) {
+      tx.insert(settings).values({ key, value, updatedAt }).onConflictDoUpdate({
+        target: settings.key,
+        set: { value, updatedAt },
+      }).run();
     }
-  }
+  }, { behavior: "immediate" });
 }
 
 const DEPRECATED_MATCHING_PREFERENCE_KEYS = [
@@ -372,8 +370,4 @@ export async function getSettingsWithDefaults(): Promise<Record<SettingKey, stri
   }
 
   return result;
-}
-
-export async function upsertSetting(key: SettingKey, value: string): Promise<void> {
-  await upsertSettings([{ key, value }]);
 }

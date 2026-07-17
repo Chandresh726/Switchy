@@ -5,9 +5,37 @@ const mocks = vi.hoisted(() => ({
   importLegacyMatchWork: vi.fn(),
   recoverPending: vi.fn(),
   startScheduler: vi.fn(),
+  migrateSchedulerRecoveryState: vi.fn(),
   ensureBuiltinLocalCLIProviders: vi.fn(),
   removeDeprecatedMatchingPreferenceSettings: vi.fn(),
   warmLocalCLIStatuses: vi.fn(),
+  registerRuntimeLock: vi.fn(),
+  reconcileResumeStorage: vi.fn(),
+  setSchedulerInitialization: vi.fn(),
+  setScrapeQueueRecovery: vi.fn(),
+  setMatcherDispatchRecovery: vi.fn(),
+  setLegacyMatchImportRecovery: vi.fn(),
+  recordDispatchSuccess: vi.fn(),
+  recordRuntimeError: vi.fn(),
+  logRuntimeEvent: vi.fn(),
+}));
+
+vi.mock("@/lib/runtime/health", () => ({
+  setSchedulerInitialization: mocks.setSchedulerInitialization,
+  setScrapeQueueRecovery: mocks.setScrapeQueueRecovery,
+  setMatcherDispatchRecovery: mocks.setMatcherDispatchRecovery,
+  setLegacyMatchImportRecovery: mocks.setLegacyMatchImportRecovery,
+  recordDispatchSuccess: mocks.recordDispatchSuccess,
+  recordRuntimeError: mocks.recordRuntimeError,
+  logRuntimeEvent: mocks.logRuntimeEvent,
+}));
+
+vi.mock("@/lib/state/runtime-lock", () => ({
+  registerRuntimeLock: mocks.registerRuntimeLock,
+}));
+
+vi.mock("@/lib/application/profile-resume-service", () => ({
+  reconcileResumeStorage: mocks.reconcileResumeStorage,
 }));
 
 vi.mock("@/lib/ai/providers/provider-service", () => ({
@@ -24,6 +52,7 @@ vi.mock("@/lib/ai/local-cli/service", () => ({
 
 vi.mock("@/lib/jobs/scheduler", () => ({
   startScheduler: mocks.startScheduler,
+  migrateSchedulerRecoveryState: mocks.migrateSchedulerRecoveryState,
 }));
 
 vi.mock("@/lib/scraper", () => ({
@@ -58,6 +87,13 @@ describe("server startup instrumentation", () => {
     mocks.ensureBuiltinLocalCLIProviders.mockResolvedValue(undefined);
     mocks.removeDeprecatedMatchingPreferenceSettings.mockResolvedValue(undefined);
     mocks.warmLocalCLIStatuses.mockResolvedValue(undefined);
+    mocks.reconcileResumeStorage.mockResolvedValue({
+      ready: 0,
+      deleted: 0,
+      missing: 0,
+      orphanedDeleted: 0,
+      failed: 0,
+    });
   });
 
   it("does nothing outside the Node.js runtime", async () => {
@@ -65,6 +101,8 @@ describe("server startup instrumentation", () => {
 
     await register();
 
+    expect(mocks.registerRuntimeLock).not.toHaveBeenCalled();
+    expect(mocks.reconcileResumeStorage).not.toHaveBeenCalled();
     expect(mocks.startScheduler).not.toHaveBeenCalled();
     expect(mocks.warmLocalCLIStatuses).not.toHaveBeenCalled();
     expect(mocks.recoverPending).not.toHaveBeenCalled();
@@ -78,12 +116,18 @@ describe("server startup instrumentation", () => {
     await flushPromises();
 
     expect(mocks.startScheduler).toHaveBeenCalledTimes(1);
+    expect(mocks.migrateSchedulerRecoveryState).toHaveBeenCalledTimes(1);
+    expect(mocks.registerRuntimeLock).toHaveBeenCalledTimes(1);
+    expect(mocks.reconcileResumeStorage).toHaveBeenCalledTimes(1);
     expect(mocks.recoverPending).toHaveBeenCalledTimes(1);
     expect(mocks.importLegacyMatchWork).toHaveBeenCalledTimes(1);
     expect(mocks.dispatchPendingAIWork).toHaveBeenCalledTimes(1);
     expect(mocks.ensureBuiltinLocalCLIProviders).toHaveBeenCalledTimes(1);
     expect(mocks.removeDeprecatedMatchingPreferenceSettings).toHaveBeenCalledTimes(1);
     expect(mocks.warmLocalCLIStatuses).toHaveBeenCalledTimes(1);
+    expect(mocks.setScrapeQueueRecovery).toHaveBeenLastCalledWith("ready");
+    expect(mocks.setMatcherDispatchRecovery).toHaveBeenLastCalledWith("ready");
+    expect(mocks.setLegacyMatchImportRecovery).toHaveBeenLastCalledWith("ready");
   });
 
   it("isolates failures so every startup recovery path is still attempted", async () => {
@@ -105,6 +149,9 @@ describe("server startup instrumentation", () => {
     expect(mocks.recoverPending).toHaveBeenCalledTimes(1);
     expect(mocks.dispatchPendingAIWork).toHaveBeenCalledTimes(1);
     expect(mocks.warmLocalCLIStatuses).toHaveBeenCalledTimes(1);
+    expect(mocks.setScrapeQueueRecovery).toHaveBeenLastCalledWith("failed");
+    expect(mocks.setMatcherDispatchRecovery).toHaveBeenLastCalledWith("failed");
+    expect(mocks.setLegacyMatchImportRecovery).toHaveBeenLastCalledWith("ready");
     expect(consoleError).toHaveBeenCalledWith(
       "[Instrumentation] Failed to start scheduler:",
       schedulerError
@@ -145,6 +192,8 @@ describe("server startup instrumentation", () => {
 
     expect(mocks.importLegacyMatchWork).toHaveBeenCalledTimes(1);
     expect(mocks.dispatchPendingAIWork).toHaveBeenCalledTimes(1);
+    expect(mocks.setLegacyMatchImportRecovery).toHaveBeenLastCalledWith("failed");
+    expect(mocks.setMatcherDispatchRecovery).toHaveBeenLastCalledWith("ready");
     expect(consoleError).toHaveBeenCalledWith(
       "[Instrumentation] Failed to import legacy matcher outbox:",
       importError

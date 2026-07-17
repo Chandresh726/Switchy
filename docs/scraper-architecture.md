@@ -84,7 +84,7 @@ The macOS assertion uses `/usr/bin/caffeinate -i -t 300` and renews every four m
 
 ## Observability and recovery
 
-The scrape-session detail page merges queue state and company logs into one live company-progress view. Each row shows status, attempts, retry and lease timing, scrape counts, matching progress, and all attempt warnings or errors. The underlying API is `GET /api/scrape-history?sessionId=<id>`.
+The scrape-session detail page merges queue state and company logs into one live company-progress view. Each row shows status, attempts, retry and lease timing, scrape counts, matching progress, and all attempt warnings or errors. The underlying API is `GET /api/scrape-history/:id`.
 
 For local troubleshooting:
 

@@ -1,4 +1,5 @@
 import type { Company, NewJob } from "@/lib/db/schema";
+import type { JobStatus } from "@/lib/jobs/status";
 import type {
   Platform,
   TriggerSource,
@@ -45,7 +46,7 @@ export interface ScrapingLogCreate {
   matcherJobsCompleted?: number;
 }
 
-export type ScrapeResultLogCreate = Omit<
+type ScrapeResultLogCreate = Omit<
   ScrapingLogCreate,
   | "companyId"
   | "jobsAdded"
@@ -62,7 +63,7 @@ export interface PersistScrapeResultInput {
   companyId: number;
   openExternalIds: string[];
   archiveMissing: boolean;
-  statusesToArchive: string[];
+  statusesToArchive: readonly JobStatus[];
   jobsToInsert: Omit<
     NewJob,
     "id" | "companyId" | "discoveredAt" | "updatedAt"
@@ -94,7 +95,7 @@ export interface ScrapeSettingsSource {
   getSetting(key: string): Promise<string | null>;
 }
 
-export interface ScrapeResultUnitOfWork {
+interface ScrapeResultUnitOfWork {
   persistScrapeResult(input: PersistScrapeResultInput): Promise<PersistScrapeResultOutput>;
   createScrapingLog(log: ScrapingLogCreate): Promise<number>;
 }

@@ -1,0 +1,1 @@
+DROP INDEX `resumes_profile_version_idx`;

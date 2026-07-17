@@ -28,7 +28,7 @@ export interface IHttpClient {
   runWithSignal?<T>(signal: AbortSignal, callback: () => Promise<T>): Promise<T>;
 }
 
-export const DEFAULT_HTTP_CONFIG: HttpClientConfig = {
+const DEFAULT_HTTP_CONFIG: HttpClientConfig = {
   timeout: 30000,
   retries: 3,
   baseDelay: 1000,

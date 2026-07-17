@@ -176,6 +176,48 @@
       "when": 1784206059520,
       "tag": "0024_tearful_ghost_rider",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1784234653987,
+      "tag": "0025_handy_tempest",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1784235327713,
+      "tag": "0026_fantastic_gwen_stacy",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1784236304807,
+      "tag": "0027_old_boomer",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1784236921207,
+      "tag": "0028_concerned_princess_powerful",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1784237593752,
+      "tag": "0029_damp_unicorn",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1784237998100,
+      "tag": "0030_pale_dark_phoenix",
+      "breakpoints": true
     }
   ]
 }

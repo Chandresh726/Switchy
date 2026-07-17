@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 
 import { CompanyPeopleTab, type CompanyOverviewResponse } from "@/components/companies/company-detail";
+import { getCompanyOverview } from "@/lib/api/clients/companies";
 
 export default function CompanyPeoplePage() {
     const params = useParams();
@@ -13,9 +14,7 @@ export default function CompanyPeoplePage() {
     const { data, isLoading } = useQuery<CompanyOverviewResponse>({
         queryKey: ["company-overview", companyId],
         queryFn: async () => {
-            const res = await fetch(`/api/companies/${companyId}/overview`);
-            if (!res.ok) throw new Error("Failed to fetch company overview");
-            return res.json();
+            return getCompanyOverview(companyId);
         },
         enabled: Number.isFinite(companyId),
     });

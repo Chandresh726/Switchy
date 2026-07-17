@@ -9,15 +9,6 @@ import {
   type ResumeValidationWarning,
 } from "./resume/schema";
 
-export {
-  normalizeResumeData,
-  ResumeDataSchema,
-  ResumeValidationWarningSchema,
-  ResumeValidationWarningsSchema,
-  type ResumeData,
-  type ResumeValidationWarning,
-} from "./resume/schema";
-
 export const RESUME_PARSER_VERSION = "resume-normalizer-v2";
 export const RESUME_PROMPT_VERSION = "resume-normalization-prompt-v2";
 export const RESUME_SCHEMA_VERSION = "resume-data-v2";
@@ -72,8 +63,4 @@ export async function parseResumeWithProvenance(
     aiRunId: result.runId,
     parserVersion: RESUME_PARSER_VERSION,
   };
-}
-
-export async function parseResume(resumeText: string): Promise<ResumeData> {
-  return (await parseResumeWithProvenance(resumeText)).parsedData;
 }

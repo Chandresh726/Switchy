@@ -430,12 +430,15 @@ describe("LocalScrapeQueueService", () => {
         duration: 10,
       },
     ];
-    for (const [index, item] of items.entries()) {
+    const resultsByCompanyId = new Map(
+      serializedResults.map((result) => [result.companyId, result])
+    );
+    for (const item of items) {
       database
         .update(scrapeQueueItems)
         .set({
           status: "completed",
-          resultJson: JSON.stringify(serializedResults[index]),
+          resultJson: JSON.stringify(resultsByCompanyId.get(item.companyId)),
           completedAt,
         })
         .where(eq(scrapeQueueItems.id, item.id))

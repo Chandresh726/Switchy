@@ -9,7 +9,10 @@ const mocks = vi.hoisted(() => ({
   parseResumeWithProvenance: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => ({ assertAppRequest: mocks.assertAppRequest }));
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  assertAppRequest: mocks.assertAppRequest,
+}));
 vi.mock("@/lib/ai/resume/repository", () => ({ persistResumeVersion: vi.fn() }));
 vi.mock("@/lib/ai/resume/text-extraction", () => ({
   extractResumeText: mocks.extractResumeText,
@@ -20,8 +23,12 @@ vi.mock("@/lib/ai/resume-parser", () => ({
 vi.mock("@/lib/db", () => ({ db: {} }));
 vi.mock("@/lib/db/schema", () => ({ profile: {} }));
 vi.mock("@/lib/storage/files", () => ({
-  deleteFile: vi.fn(),
-  saveFile: vi.fn(),
+  deleteResumeFile: vi.fn(),
+  finalizeResumeFile: vi.fn(),
+  getResumeFilePath: vi.fn(),
+  listResumeStagingFiles: vi.fn(() => []),
+  resumeFileExists: vi.fn(),
+  stageResumeFile: vi.fn(),
 }));
 
 import { POST } from "@/app/api/profile/parse-resume/route";
@@ -56,12 +63,51 @@ describe("parse-resume route", () => {
     const body = await response.json();
 
     expect(response.status).toBe(500);
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       error: "The AI provider could not complete the request.",
       code: "generation_failed",
     });
     expect(JSON.stringify(body)).not.toContain("SENTINEL_RESUME_DATA");
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("SENTINEL_RESUME_DATA");
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("SENTINEL_PROVIDER_BODY");
+  });
+
+  it("rejects a string-valued file field with a stable 400", async () => {
+    const formData = new FormData();
+    formData.set("file", "not-a-file");
+    const request = new Request("http://localhost/api/profile/parse-resume", {
+      method: "POST",
+      body: formData,
+    });
+
+    const response = await POST(request as NextRequest);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "invalid_request",
+      requestId: expect.any(String),
+    });
+    expect(mocks.extractResumeText).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid autofill value before reading the file", async () => {
+    const formData = new FormData();
+    formData.set("file", new File(["Synthetic resume"], "resume.txt", {
+      type: "text/plain",
+    }));
+    formData.set("autofill", "sometimes");
+    const request = new Request("http://localhost/api/profile/parse-resume", {
+      method: "POST",
+      body: formData,
+    });
+
+    const response = await POST(request as NextRequest);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "invalid_request",
+      requestId: expect.any(String),
+    });
+    expect(mocks.extractResumeText).not.toHaveBeenCalled();
   });
 });

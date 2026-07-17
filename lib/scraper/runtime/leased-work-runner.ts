@@ -53,7 +53,7 @@ export interface LocalLeasedWorkStore<
   getNextAvailableAt(): Promise<Date | null>;
 }
 
-export interface LeasedWorkContext {
+interface LeasedWorkContext {
   signal: AbortSignal;
   workerId: string;
 }
@@ -90,7 +90,7 @@ export interface LocalLeasedWorkRunnerConfig {
   maxRetryDelayMs: number;
 }
 
-export const DEFAULT_LOCAL_LEASED_WORK_RUNNER_CONFIG: LocalLeasedWorkRunnerConfig = {
+const DEFAULT_LOCAL_LEASED_WORK_RUNNER_CONFIG: LocalLeasedWorkRunnerConfig = {
   workerIdPrefix: "local-work",
   concurrency: 3,
   leaseDurationMs: 2 * 60 * 1000,

@@ -5,7 +5,7 @@ export const companyKeys = {
   overview: (id: number) => ["company-overview", id] as const,
 };
 
-export const jobKeys = {
+const jobKeys = {
   all: ["jobs"] as const,
   list: () => [...jobKeys.all] as const,
   listWithParams: (params: Record<string, unknown>) => [...jobKeys.all, params] as const,
@@ -37,33 +37,25 @@ export const peopleKeys = {
   ignoredCompanies: () => ["ignored-unmatched-people-companies"] as const,
 };
 
-export const profileKeys = {
+const profileKeys = {
   all: ["profile"] as const,
   detail: () => [...profileKeys.all] as const,
   education: (profileId: string) => ["education", profileId] as const,
 };
 
-export const statsKeys = {
+const statsKeys = {
   all: ["stats"] as const,
   detail: () => [...statsKeys.all] as const,
 };
 
-export const scrapeHistoryKeys = {
+const scrapeHistoryKeys = {
   all: ["scrape-history"] as const,
   list: () => [...scrapeHistoryKeys.all] as const,
   detail: (id: string) => [...scrapeHistoryKeys.all, id] as const,
 };
 
-export const matchHistoryKeys = {
+const matchHistoryKeys = {
   all: ["match-history"] as const,
   list: () => [...matchHistoryKeys.all] as const,
   detail: (id: string) => [...matchHistoryKeys.all, id] as const,
-};
-
-export const aiHistoryKeys = {
-  all: ["ai-history-all"] as const,
-};
-
-export const presetCompaniesKeys = {
-  all: ["preset-companies"] as const,
 };

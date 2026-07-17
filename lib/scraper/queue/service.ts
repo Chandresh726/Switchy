@@ -1,4 +1,9 @@
 import type { ScrapeQueueItem } from "@/lib/db/schema";
+import {
+  recordDispatchSuccess,
+  recordRuntimeError,
+  setScrapeQueueRecovery,
+} from "@/lib/runtime/health";
 import { HistoryRetentionService } from "@/lib/scraper/application/history-retention-service";
 import { ScrapeSessionProjector } from "@/lib/scraper/application/scrape-session-projector";
 import { ScrapeWorkHandler } from "@/lib/scraper/application/scrape-work-handler";
@@ -74,10 +79,17 @@ export class LocalScrapeQueueService {
       serializeFetchResult
     );
     this.dispatcher = new ScheduledSingleFlightDispatcher({
-      run: () => this.runDispatch(),
+      run: async () => {
+        const summary = await this.runDispatch();
+        recordDispatchSuccess();
+        setScrapeQueueRecovery("ready");
+        return summary;
+      },
       getNextRunAt: (summary) => summary.nextAvailableAt,
       failureRetryMs: DISPATCH_FAILURE_RETRY_MS,
       onError: (error) => {
+        setScrapeQueueRecovery("failed");
+        recordRuntimeError("queue", "scrape_queue_dispatch_failed");
         console.error("[LocalScrapeQueueService] Queue dispatch failed:", error);
       },
     });

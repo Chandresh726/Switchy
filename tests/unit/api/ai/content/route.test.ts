@@ -4,7 +4,7 @@ import { APICallError } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AIError } from "@/lib/ai/shared/errors";
-import { APIValidationError } from "@/lib/api/ai-error-handler";
+import { ValidationError } from "@/lib/api";
 
 const APP_HEADERS = {
   "Content-Type": "application/json",
@@ -125,7 +125,7 @@ describe("POST /api/ai/content", () => {
     const body = await response.json();
 
     expect(response.status).toBe(500);
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       error: "Failed to delete AI generated content",
       code: "ai_content_delete_all_failed",
     });
@@ -151,7 +151,7 @@ describe("POST /api/ai/content", () => {
     const body = await response.json();
 
     expect(response.status).toBe(500);
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       error: "The AI provider could not complete the request.",
       code: "generation_failed",
     });
@@ -175,15 +175,15 @@ describe("POST /api/ai/content", () => {
     const body = await response.json();
 
     expect(response.status).toBe(422);
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       error: "Generated content quality was too low. Please try again.",
       code: "quality_gate_failed",
     });
   });
 
-  it("maps APIValidationError to 400 payload", async () => {
+  it("maps ValidationError to a 400 payload", async () => {
     mocks.generateContent.mockRejectedValue(
-      new APIValidationError(
+      new ValidationError(
         "Recruiter follow-up is only available for applied jobs.",
         "invalid_request",
         400
@@ -200,7 +200,7 @@ describe("POST /api/ai/content", () => {
     const body = await response.json();
 
     expect(response.status).toBe(400);
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       error: "Recruiter follow-up is only available for applied jobs.",
       code: "invalid_request",
     });

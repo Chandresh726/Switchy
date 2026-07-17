@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 
 import { getProviderModels } from "@/lib/ai/providers/model-catalog";
 import { getProviderMetadata } from "@/lib/ai/providers/metadata";
@@ -13,16 +12,11 @@ import {
   getCachedLocalCLIStatus,
   getLocalCLIStatus,
 } from "@/lib/ai/local-cli/service";
-import { assertAppRequest } from "@/lib/api";
-import { APIValidationError, handleAIAPIError } from "@/lib/api/ai-error-handler";
+import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
+import { providerCreateBodySchema } from "@/lib/api/contracts/providers";
 import { upsertSettings } from "@/lib/settings/settings-service";
 
-const CreateProviderBodySchema = z.object({
-  provider: z.string().min(1),
-  apiKey: z.string().optional(),
-});
-
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const providers = await listProviders();
     return NextResponse.json(await Promise.all(providers.map(async (provider) => {
@@ -40,7 +34,7 @@ export async function GET() {
       };
     })));
   } catch (error) {
-    return handleAIAPIError(error, "Failed to fetch providers", "providers_fetch_failed");
+    return handleApiError(error, { request, fallbackMessage: "Failed to fetch providers", fallbackCode: "providers_fetch_failed" });
   }
 }
 
@@ -49,19 +43,19 @@ export async function POST(request: NextRequest) {
     assertAppRequest(request);
 
     const body = await request.json();
-    const parsedBody = CreateProviderBodySchema.parse(body);
+    const parsedBody = providerCreateBodySchema.parse(body);
 
     const { provider: providerType, apiKey } = parsedBody;
 
     if (!isAIProvider(providerType)) {
-      throw new APIValidationError("Invalid provider type", "invalid_provider");
+      throw new ValidationError("Invalid provider type", "invalid_provider");
     }
 
     const metadata = getProviderMetadata(providerType);
     const normalizedApiKey = apiKey?.trim();
 
     if (metadata.requiresApiKey && !normalizedApiKey) {
-      throw new APIValidationError("API key is required for this provider", "missing_api_key");
+      throw new ValidationError("API key is required for this provider", "missing_api_key");
     }
 
     const created = await createProvider({
@@ -109,6 +103,6 @@ export async function POST(request: NextRequest) {
       autoConfiguredWarning,
     });
   } catch (error) {
-    return handleAIAPIError(error, "Failed to create provider", "provider_create_failed");
+    return handleApiError(error, { request, fallbackMessage: "Failed to create provider", fallbackCode: "provider_create_failed" });
   }
 }

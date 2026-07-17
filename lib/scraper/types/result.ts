@@ -4,7 +4,6 @@ import { PLATFORMS, type Platform } from "./platform";
 import type { ScrapedJob } from "./job";
 
 export type ScrapeOutcome = "success" | "partial" | "error";
-export type ListingCompleteness = "complete" | "partial" | "unknown";
 
 export type ScraperErrorCode =
   | "invalid_url"
@@ -36,7 +35,7 @@ export function createScraperError(
   return { code, message, retryable, ...metadata };
 }
 
-export interface ScraperMetadata {
+interface ScraperMetadata {
   detectedBoardToken?: string;
   platform: Platform;
   durationMs: number;
@@ -71,13 +70,13 @@ interface ScraperNonErrorResult<T extends ScrapedJob> extends ScraperResultBase<
   totalListings: number;
 }
 
-export type ScraperSuccessResult<T extends ScrapedJob = ScrapedJob> =
+type ScraperSuccessResult<T extends ScrapedJob = ScrapedJob> =
   ScraperNonErrorResult<T> & ListingContract & {
   outcome: "success";
   error?: never;
 };
 
-export type ScraperPartialResult<T extends ScrapedJob = ScrapedJob> =
+type ScraperPartialResult<T extends ScrapedJob = ScrapedJob> =
   ScraperNonErrorResult<T> & ListingContract & {
   outcome: "partial";
   issues?: ScraperError[];
@@ -147,14 +146,6 @@ export interface BatchFetchResult {
     totalJobsArchived: number;
     totalDuration: number;
   };
-}
-
-export interface SessionProgress {
-  companiesCompleted: number;
-  totalJobsFound: number;
-  totalJobsAdded: number;
-  totalJobsFiltered: number;
-  totalJobsArchived: number;
 }
 
 export type DeduplicationMatchReason = "externalId" | "url" | "titleSimilarity";

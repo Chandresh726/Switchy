@@ -32,7 +32,7 @@ const NutanixJobNodeSchema = z
 
 export type NutanixConfig = ApiScraperConfig;
 
-export const DEFAULT_NUTANIX_CONFIG: NutanixConfig = {
+const DEFAULT_NUTANIX_CONFIG: NutanixConfig = {
   ...DEFAULT_API_CONFIG,
   baseUrl: "https://careers.nutanix.com/en/jobs/xml/",
 };

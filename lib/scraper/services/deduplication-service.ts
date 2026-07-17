@@ -14,7 +14,7 @@ export interface DeduplicationConfig {
   titleSimilarityThreshold: number;
 }
 
-export const DEFAULT_DEDUPLICATION_CONFIG: DeduplicationConfig = {
+const DEFAULT_DEDUPLICATION_CONFIG: DeduplicationConfig = {
   titleSimilarityThreshold: 0.9,
 };
 

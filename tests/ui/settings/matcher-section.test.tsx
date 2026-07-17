@@ -194,6 +194,7 @@ describe("MatcherSection", () => {
       completedAt: null,
       analysis: { total: 2, completed: 2, active: 0, queued: 0, cached: 1, failed: 0 },
       matching: { total: 2, completed: 1, active: 1, queued: 0, cached: 0, failed: 0 },
+      jobPagination: { total: 5_000, limit: 100, offset: 0, hasMore: true },
       jobs: [{
         jobId: 1,
         jobTitle: "Platform Engineer",
@@ -212,6 +213,8 @@ describe("MatcherSection", () => {
     };
 
     render(<MatcherSection {...props} />);
+
+    expect(screen.getByText("4999 more jobs are in this session.")).toBeTruthy();
 
     expect(screen.getByText("Job analysis")).toBeTruthy();
     expect(screen.getByText("Final matching")).toBeTruthy();

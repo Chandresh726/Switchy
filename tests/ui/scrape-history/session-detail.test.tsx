@@ -28,7 +28,10 @@ const SESSION_ID = "session/with spaces";
 function sessionResponse(
   status: string,
   queueItems: Array<Record<string, unknown>> = [],
-  logs: Array<Record<string, unknown>> = []
+  logs: Array<Record<string, unknown>> = [],
+  hasActiveWork = queueItems.some((item) =>
+    item.status === "queued" || item.status === "running"
+  )
 ) {
   return {
     session: {
@@ -46,6 +49,19 @@ function sessionResponse(
         status === "in_progress" ? null : "2026-07-13T10:01:00.000Z",
     },
     logs,
+    logPagination: {
+      total: logs.length,
+      limit: 50,
+      offset: 0,
+      hasMore: false,
+    },
+    workPagination: {
+      total: queueItems.length,
+      limit: 50,
+      offset: 0,
+      hasMore: false,
+    },
+    hasActiveWork,
     queueItems,
   };
 }
@@ -84,6 +100,8 @@ function queueItem(overrides: Record<string, unknown> = {}) {
     id: "queue-1",
     companyId: 7,
     companyName: "Acme",
+    companyLogoUrl: null,
+    platform: "eightfold",
     status: "running",
     attemptCount: 2,
     maxAttempts: 3,
@@ -177,9 +195,9 @@ describe("SessionDetail", () => {
     expect(screen.getByText("one detail request failed")).toBeTruthy();
   });
 
-  it("stops an active session through the authenticated PATCH contract", async () => {
+  it("stops an active session through the local command contract", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.method === "PATCH") {
+      if (init?.method === "POST") {
         return jsonResponse({ success: true, stopped: true });
       }
       return jsonResponse(sessionResponse("in_progress", [queueItem()]));
@@ -198,14 +216,28 @@ describe("SessionDetail", () => {
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
-        `/api/scrape-history?sessionId=${encodeURIComponent(SESSION_ID)}`,
+        `/api/scrape-history/${encodeURIComponent(SESSION_ID)}/cancel`,
         expect.objectContaining({
-          method: "PATCH",
+          method: "POST",
           headers: expect.objectContaining({ "x-switchy-request": "true" }),
         })
       )
     );
     expect(mocks.toastSuccess).toHaveBeenCalledWith("Stopping scrape session");
+  });
+
+  it("keeps deletion disabled when active work exists outside the current page", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(sessionResponse(
+      "failed",
+      [queueItem({ status: "completed", completedAt: "2026-07-13T10:01:00.000Z" })],
+      [],
+      true
+    ))));
+
+    renderWithQueryClient(<SessionDetail sessionId={SESSION_ID} />);
+
+    const deleteButton = await screen.findByRole("button", { name: "Delete Session" });
+    expect((deleteButton as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("deletes a terminal idle session and navigates back to scrape history", async () => {
@@ -228,7 +260,7 @@ describe("SessionDetail", () => {
 
     await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/history/scrape"));
     expect(fetchMock).toHaveBeenCalledWith(
-      `/api/scrape-history?sessionId=${encodeURIComponent(SESSION_ID)}`,
+      `/api/scrape-history/${encodeURIComponent(SESSION_ID)}`,
       expect.objectContaining({
         method: "DELETE",
         headers: expect.objectContaining({ "x-switchy-request": "true" }),

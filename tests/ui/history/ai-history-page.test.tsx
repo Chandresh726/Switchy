@@ -54,10 +54,13 @@ describe("AIHistoryPage", () => {
     );
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/ai/history");
+      expect(fetchMock).toHaveBeenCalledWith("/api/ai/history", {
+        method: "GET",
+        cache: "no-store",
+      });
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/ai/usage?days=7",
-        { cache: "no-store" }
+        { method: "GET", cache: "no-store" }
       );
     });
 

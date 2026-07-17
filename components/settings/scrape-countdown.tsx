@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Clock, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getSchedulerStatus } from "@/lib/api/clients/runtime";
 
 interface SchedulerStatus {
   isActive: boolean;
@@ -41,9 +42,7 @@ export function ScrapeCountdown({ className }: ScrapeCountdownProps) {
   const { data: status, isLoading, isError, refetch } = useQuery<SchedulerStatus>({
     queryKey: ["scheduler-status"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduler/status");
-      if (!res.ok) throw new Error("Failed to fetch scheduler status");
-      return res.json();
+      return getSchedulerStatus();
     },
     refetchInterval: 10000,
     staleTime: 5000,

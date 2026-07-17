@@ -15,6 +15,7 @@ interface MatchPipelineProgressProps {
   analysis: MatchPhaseProgress;
   matching: MatchPhaseProgress;
   jobs: MatchJobProgress[];
+  totalJobs?: number;
   compact?: boolean;
 }
 
@@ -93,6 +94,7 @@ export function MatchPipelineProgress({
   analysis,
   matching,
   jobs,
+  totalJobs = jobs.length,
   compact = false,
 }: MatchPipelineProgressProps) {
   const displayedJobs = compact ? jobs.slice(0, 6) : jobs;
@@ -131,9 +133,9 @@ export function MatchPipelineProgress({
               </div>
             );
           })}
-          {compact && jobs.length > displayedJobs.length ? (
+          {compact && totalJobs > displayedJobs.length ? (
             <p className="py-2 text-xs text-muted-foreground">
-              {jobs.length - displayedJobs.length} more jobs are in this session.
+              {totalJobs - displayedJobs.length} more jobs are in this session.
             </p>
           ) : null}
         </div>

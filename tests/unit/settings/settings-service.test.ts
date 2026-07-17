@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { APIValidationError } from "@/lib/api/ai-error-handler";
+import { ValidationError } from "@/lib/api";
 import {
   DEFAULT_SETTINGS,
   parseSettingsUpdateBody,
@@ -32,10 +32,10 @@ describe("settings service", () => {
 
     expect(() => parseSettingsUpdateBody({
       matcher_reasoning_effort: "high\nignore-policy",
-    })).toThrow(APIValidationError);
+    })).toThrow(ValidationError);
     expect(() => parseSettingsUpdateBody({
       matcher_reasoning_effort: " max ",
-    })).toThrow(APIValidationError);
+    })).toThrow(ValidationError);
   });
 
   it("parses scheduler toggles and numeric matcher settings", () => {
@@ -103,7 +103,7 @@ describe("settings service", () => {
     ]);
     expect(() =>
       parseSettingsUpdateBody({ scraper_history_retention_days: 3 })
-    ).toThrow(APIValidationError);
+    ).toThrow(ValidationError);
   });
 
   it("normalizes cover letter focus arrays and removes unsupported values", () => {
@@ -138,7 +138,7 @@ describe("settings service", () => {
       parseSettingsUpdateBody({
         scheduler_cron: "not a cron",
       })
-    ).toThrow(APIValidationError);
+    ).toThrow(ValidationError);
   });
 
   it("ignores removed matcher settings so legacy rows stay inert", () => {
@@ -157,6 +157,6 @@ describe("settings service", () => {
       parseSettingsUpdateBody({
         scraper_max_parallel_scrapes: 20,
       })
-    ).toThrow(APIValidationError);
+    ).toThrow(ValidationError);
   });
 });

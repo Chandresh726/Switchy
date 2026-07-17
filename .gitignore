@@ -48,3 +48,7 @@ next-env.d.ts
 .claude/
 
 opencode.json
+
+# Local state snapshots and restore staging must never be committed.
+switchy-backup-*/
+*.switchy-backup/

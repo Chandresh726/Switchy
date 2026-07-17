@@ -90,10 +90,6 @@ export async function getMatcherConfig(): Promise<MatcherConfig> {
   };
 }
 
-export function getDefaultConfig(): MatcherConfig {
-  return { ...DEFAULT_MATCHER_CONFIG };
-}
-
 export function validateMatcherConfig(
   config: Partial<MatcherConfig>
 ): { isValid: boolean; errors: string[] } {

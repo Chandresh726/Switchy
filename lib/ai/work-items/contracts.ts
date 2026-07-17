@@ -2,9 +2,6 @@ import { z } from "zod";
 
 import type { NewAIWorkItem, NewMatchSession } from "@/lib/db/schema";
 
-export const AIWorkTypeSchema = z.enum(["match_jobs"]);
-export type AIWorkType = z.infer<typeof AIWorkTypeSchema>;
-
 export const MatchWorkPayloadSchema = z.object({
   jobIds: z.array(z.number().int().positive()).min(1).max(100_000)
     .transform((values) => Array.from(new Set(values))),
@@ -85,8 +82,4 @@ export function createAIWorkRecords(input: CreateAIWorkRecordsInput): {
 
 export function parseMatchWorkPayload(payloadJson: string): MatchWorkPayload {
   return MatchWorkPayloadSchema.parse(JSON.parse(payloadJson));
-}
-
-export function parseMatchWorkResult(resultJson: string | null): MatchWorkResult {
-  return MatchWorkResultSchema.parse(resultJson === null ? null : JSON.parse(resultJson));
 }

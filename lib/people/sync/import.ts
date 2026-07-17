@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, eq, notInArray, sql } from "drizzle-orm";
 
 import { parseApolloCsv, type ApolloColumnMapping } from "@/lib/people/import/parsers/apollo";
 import { parseLinkedinCsv } from "@/lib/people/import/parsers/linkedin";
@@ -45,211 +45,161 @@ function parseCsvBySource(input: ImportPeopleCsvInput) {
 export async function importPeopleCsv(input: ImportPeopleCsvInput): Promise<PersonImportSummary> {
   const sessionId = randomUUID();
   const startedAt = new Date();
-
-  await db.insert(peopleImportSessions).values({
-    id: sessionId,
-    source: input.source,
-    fileName: input.fileName,
-    status: "in_progress",
-    startedAt,
-  });
+  let totalRows = 0;
+  let invalidRows = 0;
 
   try {
     const parsed = parseCsvBySource(input);
-    const now = new Date();
-
-    const trackedCompanies = await db
-      .select({
-        id: companies.id,
-        name: companies.name,
-      })
-      .from(companies);
-
-    const companyMap = new Map<string, number>();
-    for (const company of trackedCompanies) {
-      const normalized = normalizeCompanyName(company.name);
-      if (normalized) {
-        companyMap.set(normalized, company.id);
-      }
+    totalRows = parsed.totalRows;
+    invalidRows = parsed.errors.length;
+    if (parsed.rows.length === 0) {
+      throw new Error("CSV file contains no valid people rows");
     }
-
-    const aliases = await db
-      .select({
+    return db.transaction((tx) => {
+      const now = new Date();
+      const trackedCompanies = tx.select({ id: companies.id, name: companies.name })
+        .from(companies).all();
+      const companyMap = new Map<string, number>();
+      for (const company of trackedCompanies) {
+        const normalized = normalizeCompanyName(company.name);
+        if (normalized) companyMap.set(normalized, company.id);
+      }
+      const aliases = tx.select({
         companyNormalized: companyAliases.companyNormalized,
         mappedCompanyId: companyAliases.mappedCompanyId,
-      })
-      .from(companyAliases);
-
-    for (const alias of aliases) {
-      if (alias.companyNormalized && !companyMap.has(alias.companyNormalized)) {
-        companyMap.set(alias.companyNormalized, alias.mappedCompanyId);
+      }).from(companyAliases).all();
+      for (const alias of aliases) {
+        if (alias.companyNormalized && !companyMap.has(alias.companyNormalized)) {
+          companyMap.set(alias.companyNormalized, alias.mappedCompanyId);
+        }
       }
-    }
 
-    const existingPeople = await db
-      .select({
+      const existingPeople = tx.select({
         id: people.id,
         identityKey: people.identityKey,
         mappedCompanyId: people.mappedCompanyId,
         email: people.email,
-      })
-      .from(people)
-      .where(eq(people.source, input.source));
+      }).from(people).where(eq(people.source, input.source)).all();
+      const existingMap = new Map(existingPeople.map((item) => [item.identityKey, item]));
+      const seenIdentityKeys = new Set<string>();
+      const toInsert: (typeof people.$inferInsert)[] = [];
+      const toUpdate: { id: number; data: Partial<typeof people.$inferSelect> }[] = [];
+      const importMode = input.importMode ?? "merge";
+      let unmatchedCompanyRows = 0;
 
-    const existingMap = new Map(
-      existingPeople.map((item) => [item.identityKey, { id: item.id, mappedCompanyId: item.mappedCompanyId, email: item.email }])
-    );
-    const seenIdentityKeys = new Set<string>();
-
-    let unmatchedCompanyRows = 0;
-    const toInsert: (typeof people.$inferInsert)[] = [];
-    const toUpdate: { id: number; data: Partial<typeof people.$inferSelect> }[] = [];
-    const importMode = input.importMode ?? "merge";
-
-    for (const row of parsed.rows) {
-      seenIdentityKeys.add(row.identityKey);
-      const csvMappedCompanyId = row.companyNormalized ? (companyMap.get(row.companyNormalized) ?? null) : null;
-      if (row.companyNormalized && !csvMappedCompanyId) {
-        unmatchedCompanyRows += 1;
-      }
-
-      const existing = existingMap.get(row.identityKey);
-      const commonData = {
-        source: row.source,
-        sourceRecordKey: row.sourceRecordKey,
-        firstName: row.firstName,
-        lastName: row.lastName,
-        fullName: row.fullName,
-        profileUrl: row.profileUrl || "",
-        profileUrlNormalized: row.profileUrlNormalized || "",
-        email: row.email,
-        companyRaw: row.companyRaw,
-        companyNormalized: row.companyNormalized,
-        position: row.position,
-        connectedOn: row.connectedOn,
-        notes: row.notes,
-        mappedCompanyId: csvMappedCompanyId,
-        isActive: true,
-        lastSeenAt: now,
-        updatedAt: now,
-      } as const;
-
-      if (existing) {
-        const shouldPreserveMappings = importMode === "merge";
-        toUpdate.push({
-          id: existing.id,
-          data: {
+      for (const row of parsed.rows) {
+        seenIdentityKeys.add(row.identityKey);
+        const csvMappedCompanyId = row.companyNormalized
+          ? (companyMap.get(row.companyNormalized) ?? null)
+          : null;
+        if (row.companyNormalized && !csvMappedCompanyId) unmatchedCompanyRows += 1;
+        const existing = existingMap.get(row.identityKey);
+        const commonData = {
+          source: row.source,
+          sourceRecordKey: row.sourceRecordKey,
+          firstName: row.firstName,
+          lastName: row.lastName,
+          fullName: row.fullName,
+          profileUrl: row.profileUrl || "",
+          profileUrlNormalized: row.profileUrlNormalized || "",
+          email: row.email,
+          companyRaw: row.companyRaw,
+          companyNormalized: row.companyNormalized,
+          position: row.position,
+          connectedOn: row.connectedOn,
+          notes: row.notes,
+          mappedCompanyId: csvMappedCompanyId,
+          isActive: true,
+          lastSeenAt: now,
+          updatedAt: now,
+        } as const;
+        if (existing) {
+          const preserve = importMode === "merge";
+          toUpdate.push({
+            id: existing.id,
+            data: {
+              ...commonData,
+              mappedCompanyId: preserve
+                ? (existing.mappedCompanyId ?? csvMappedCompanyId)
+                : csvMappedCompanyId,
+              email: preserve ? (existing.email ?? row.email) : row.email,
+            },
+          });
+        } else {
+          toInsert.push({
+            identityKey: row.identityKey,
             ...commonData,
-            mappedCompanyId: shouldPreserveMappings
-              ? (existing.mappedCompanyId ?? csvMappedCompanyId)
-              : csvMappedCompanyId,
-            email: shouldPreserveMappings
-              ? (existing.email ?? row.email)
-              : row.email,
-          },
-        });
-      } else {
-        toInsert.push({
-          identityKey: row.identityKey,
-          ...commonData,
-          isStarred: false,
-          createdAt: now,
-        });
-      }
-    }
-
-    if (seenIdentityKeys.size === 0) {
-      throw new Error("CSV file contains no valid people rows");
-    }
-
-    const BATCH_SIZE = 500;
-    let insertedRows = 0;
-    let updatedRows = 0;
-
-    for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
-      const batch = toInsert.slice(i, i + BATCH_SIZE);
-      await db.insert(people).values(batch);
-      insertedRows += batch.length;
-    }
-
-    for (let i = 0; i < toUpdate.length; i += BATCH_SIZE) {
-      const batch = toUpdate.slice(i, i + BATCH_SIZE);
-      db.transaction((tx) => {
-        for (const item of batch) {
-          tx
-            .update(people)
-            .set(item.data)
-            .where(eq(people.id, item.id))
-            .run();
+            isStarred: false,
+            createdAt: now,
+          });
         }
-      });
-      updatedRows += batch.length;
-    }
+      }
 
-    let deactivatedRows = 0;
-    if (importMode === "replace") {
-      const seenKeys = Array.from(seenIdentityKeys);
-      const toDeactivate = await db
-        .select({ id: people.id })
-        .from(people)
-        .where(
-          and(
+      const BATCH_SIZE = 500;
+      for (let index = 0; index < toInsert.length; index += BATCH_SIZE) {
+        tx.insert(people).values(toInsert.slice(index, index + BATCH_SIZE)).run();
+      }
+      for (const item of toUpdate) {
+        tx.update(people).set(item.data).where(eq(people.id, item.id)).run();
+      }
+
+      let deactivatedRows = 0;
+      if (importMode === "replace") {
+        const toDeactivate = tx.select({ id: people.id }).from(people).where(and(
+          eq(people.source, input.source),
+          eq(people.isActive, true),
+          notInArray(people.identityKey, [...seenIdentityKeys])
+        )).all();
+        if (toDeactivate.length > 0) {
+          tx.update(people).set({ isActive: false, updatedAt: now }).where(and(
             eq(people.source, input.source),
             eq(people.isActive, true),
-            notInArray(people.identityKey, seenKeys)
-          )
-        );
-
-      if (toDeactivate.length > 0) {
-        await db
-          .update(people)
-          .set({
-            isActive: false,
-            updatedAt: now,
-          })
-          .where(inArray(people.id, toDeactivate.map((row) => row.id)));
-        deactivatedRows = toDeactivate.length;
+            notInArray(people.identityKey, [...seenIdentityKeys])
+          )).run();
+          deactivatedRows = toDeactivate.length;
+        }
       }
-    }
 
-    const summary: PersonImportSummary = {
-      sessionId,
-      source: input.source,
-      fileName: input.fileName,
-      totalRows: parsed.totalRows,
-      insertedRows,
-      updatedRows,
-      deactivatedRows,
-      invalidRows: parsed.errors.length,
-      unmatchedCompanyRows,
-      errors: parsed.errors.slice(0, 100),
-    };
-
-    await db
-      .update(peopleImportSessions)
-      .set({
+      const summary: PersonImportSummary = {
+        sessionId,
+        source: input.source,
+        fileName: input.fileName,
+        totalRows: parsed.totalRows,
+        insertedRows: toInsert.length,
+        updatedRows: toUpdate.length,
+        deactivatedRows,
+        invalidRows: parsed.errors.length,
+        unmatchedCompanyRows,
+        errors: parsed.errors.slice(0, 100),
+      };
+      tx.insert(peopleImportSessions).values({
+        id: sessionId,
         source: summary.source,
+        fileName: summary.fileName,
         totalRows: summary.totalRows,
         insertedRows: summary.insertedRows,
         updatedRows: summary.updatedRows,
         deactivatedRows: summary.deactivatedRows,
         invalidRows: summary.invalidRows,
         unmatchedCompanyRows: summary.unmatchedCompanyRows,
+        startedAt,
         completedAt: new Date(),
         status: "completed",
-      })
-      .where(eq(peopleImportSessions.id, sessionId));
-
-    return summary;
+      }).run();
+      return summary;
+    }, { behavior: "immediate" });
   } catch (error) {
-    await db
-      .update(peopleImportSessions)
-      .set({
-        status: "failed",
-        errorMessage: error instanceof Error ? error.message : "Unknown import error",
-        completedAt: new Date(),
-      })
-      .where(eq(peopleImportSessions.id, sessionId));
+    await db.insert(peopleImportSessions).values({
+      id: sessionId,
+      source: input.source,
+      fileName: input.fileName,
+      totalRows,
+      invalidRows,
+      status: "failed",
+      errorMessage: error instanceof Error ? error.message : "Unknown import error",
+      startedAt,
+      completedAt: new Date(),
+    });
     throw error;
   }
 }

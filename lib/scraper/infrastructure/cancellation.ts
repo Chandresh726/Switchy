@@ -38,7 +38,7 @@ export function createScrapeAbortError(signal?: AbortSignal): DOMException {
   return new DOMException(message, "AbortError");
 }
 
-export function isAbortError(error: unknown): boolean {
+function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 

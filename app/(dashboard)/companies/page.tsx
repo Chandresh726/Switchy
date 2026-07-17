@@ -12,7 +12,15 @@ import { CompanyForm } from "@/components/companies/company-form";
 import { CompanyQuickAdd } from "@/components/companies/company-quick-add";
 import { CompanyList, type Company } from "@/components/companies/company-list";
 import { JsonEditor } from "@/components/companies/json-editor";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import {
+  bulkDeleteCompanies,
+  bulkDeleteCompanyJobs,
+  bulkSetCompaniesActive,
+  createCompanies,
+  getCompanies,
+  matchCompanies,
+  refreshCompanyJobs,
+} from "@/lib/api/clients/companies";
 import { CUSTOM_SCRAPER_PLATFORMS } from "@/lib/constants";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
 
@@ -155,9 +163,7 @@ function CompaniesPageContent() {
   const { data: companies = [], isLoading: isCompaniesLoading } = useQuery<Company[]>({
     queryKey: ["companies"],
     queryFn: async () => {
-      const res = await fetch("/api/companies");
-      if (!res.ok) throw new Error("Failed to fetch companies");
-      return res.json();
+      return getCompanies();
     },
   });
 
@@ -226,13 +232,7 @@ function CompaniesPageContent() {
 
   const importMutation = useMutation({
     mutationFn: async (companies: unknown[]) => {
-      const res = await fetch("/api/companies", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify(companies),
-      });
-      if (!res.ok) throw new Error("Failed to import companies");
-      return res.json();
+      return createCompanies(companies);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
@@ -245,13 +245,7 @@ function CompaniesPageContent() {
 
   const bulkRefreshMutation = useMutation({
     mutationFn: async (companyIds: number[]) => {
-      const res = await fetch("/api/companies/refresh-jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({ companyIds }),
-      });
-      if (!res.ok) throw new Error("Failed to refresh jobs");
-      return res.json();
+      return refreshCompanyJobs(companyIds);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
@@ -265,13 +259,7 @@ function CompaniesPageContent() {
 
   const bulkMatchMutation = useMutation({
     mutationFn: async (companyIds: number[]) => {
-      const res = await fetch("/api/companies/match", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({ companyIds }),
-      });
-      if (!res.ok) throw new Error("Failed to match jobs");
-      return res.json();
+      return matchCompanies(companyIds);
     },
     onSuccess: (data: { sessionId: string; total: number }) => {
       setMatchSessionId(data.sessionId || null);
@@ -284,13 +272,7 @@ function CompaniesPageContent() {
 
   const bulkDeleteJobsMutation = useMutation({
     mutationFn: async (companyIds: number[]) => {
-      const res = await fetch("/api/companies/bulk/jobs", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({ companyIds }),
-      });
-      if (!res.ok) throw new Error("Failed to delete jobs");
-      return res.json();
+      return bulkDeleteCompanyJobs(companyIds);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
@@ -304,13 +286,7 @@ function CompaniesPageContent() {
 
   const bulkDeleteCompaniesMutation = useMutation({
     mutationFn: async (companyIds: number[]) => {
-      const res = await fetch("/api/companies/bulk", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({ companyIds }),
-      });
-      if (!res.ok) throw new Error("Failed to delete companies");
-      return res.json();
+      return bulkDeleteCompanies(companyIds);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
@@ -326,13 +302,7 @@ function CompaniesPageContent() {
 
   const bulkToggleActiveMutation = useMutation({
     mutationFn: async ({ companyIds, isActive }: { companyIds: number[]; isActive: boolean }) => {
-      const res = await fetch("/api/companies/bulk", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({ companyIds, isActive }),
-      });
-      if (!res.ok) throw new Error("Failed to update companies");
-      return res.json();
+      return bulkSetCompaniesActive(companyIds, isActive);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
@@ -367,12 +337,10 @@ function CompaniesPageContent() {
 
   const handleExport = async () => {
     try {
-      const res = await fetch("/api/companies");
-      if (!res.ok) throw new Error("Failed to fetch companies");
-      const data = await res.json();
+      const data = await getCompanies();
 
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const exportData = data.map(({ id, createdAt, updatedAt, ...rest }: { id: number; createdAt: string; updatedAt: string; [key: string]: unknown }) => rest);
+      const exportData = data.map(({ id, createdAt, updatedAt, ...rest }) => rest);
 
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);

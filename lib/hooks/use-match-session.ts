@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 
 import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
+import { getMatchSession } from "@/lib/api/clients/runtime";
 
 export interface MatchSessionProgress {
   sessionId: string;
@@ -16,6 +17,12 @@ export interface MatchSessionProgress {
   analysis: MatchPhaseProgress;
   matching: MatchPhaseProgress;
   jobs: MatchJobProgress[];
+  jobPagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
 }
 
 export interface MatchPhaseProgress {
@@ -58,11 +65,7 @@ export function useMatchSession(
     queryKey: ["match-session", sessionId],
     queryFn: async () => {
       if (!sessionId) return null;
-      const response = await fetch(`/api/match/sessions/${encodeURIComponent(sessionId)}`, {
-        cache: "no-store",
-      });
-      if (!response.ok) throw new Error("Failed to read match progress");
-      return response.json();
+      return getMatchSession(sessionId);
     },
     enabled: Boolean(sessionId),
     refetchInterval: ({ state }) => {

@@ -6,7 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import {
+  createExperience,
+  deleteExperience,
+  getExperience,
+  updateExperience,
+} from "@/lib/api/clients/profile";
 import { useState, useEffect } from "react";
 import { Building2, Calendar, Loader2, MapPin, Pencil, Plus, Save, Trash2, X, Sparkles, Briefcase } from "lucide-react";
 import { toast } from "sonner";
@@ -208,9 +213,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
     queryKey: ["experience", profileId],
     queryFn: async () => {
       if (!profileId) return [];
-      const res = await fetch(`/api/profile/experience?profileId=${profileId}`);
-      if (!res.ok) throw new Error("Failed to fetch experience");
-      return res.json();
+      return getExperience(profileId);
     },
     enabled: !!profileId,
   });
@@ -218,17 +221,11 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
 
   const addMutation = useMutation({
     mutationFn: async (exp: ExperienceFormData) => {
-      const res = await fetch("/api/profile/experience", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({
+      return createExperience({
           ...exp,
           profileId,
           endDate: exp.endDate || null,
-        }),
       });
-      if (!res.ok) throw new Error("Failed to add experience");
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["experience", profileId] });
@@ -239,17 +236,10 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, exp }: { id: number; exp: ExperienceFormData }) => {
-      const res = await fetch("/api/profile/experience", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({
-          id,
+      return updateExperience(id, {
           ...exp,
           endDate: exp.endDate || null,
-        }),
       });
-      if (!res.ok) throw new Error("Failed to update experience");
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["experience", profileId] });
@@ -261,10 +251,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
   const bulkAddMutation = useMutation({
     mutationFn: async (experiencesToAdd: InitialExperience[]) => {
       for (const exp of experiencesToAdd) {
-        const res = await fetch("/api/profile/experience", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-          body: JSON.stringify({
+        await createExperience({
             company: exp.company,
             title: exp.title,
             location: exp.location || "",
@@ -272,9 +259,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
             endDate: exp.endDate || null,
             description: exp.description || (exp.highlights ? exp.highlights.join("\n") : ""),
             profileId,
-          }),
         });
-        if (!res.ok) throw new Error("Failed to add experience");
       }
     },
     onSuccess: () => {
@@ -293,12 +278,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/profile/experience?id=${id}`, {
-        method: "DELETE",
-        headers: APP_REQUEST_HEADERS,
-      });
-      if (!res.ok) throw new Error("Failed to delete experience");
-      return res.json();
+      return deleteExperience(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["experience", profileId] });

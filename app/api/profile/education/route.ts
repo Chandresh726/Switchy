@@ -1,156 +1,25 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
-import { assertAppRequest } from "@/lib/api";
-import { scheduleProfileRematch } from "@/lib/ai/matcher/profile-rematch";
-import { db } from "@/lib/db";
-import { education } from "@/lib/db/schema";
 
-function parseDateValue(date: string | null) {
-  if (!date) return Number.POSITIVE_INFINITY;
-
-  const normalized = date.trim().toLowerCase();
-  if (["present", "current", "now"].includes(normalized)) {
-    return Number.POSITIVE_INFINITY;
-  }
-
-  const parsed = Date.parse(date);
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-function sortByMostRecent<T extends { startDate: string | null; endDate: string | null; id: number }>(a: T, b: T) {
-  return (
-    parseDateValue(b.endDate) - parseDateValue(a.endDate) ||
-    parseDateValue(b.startDate) - parseDateValue(a.startDate) ||
-    b.id - a.id
-  );
-}
+import { assertAppRequest, handleApiError } from "@/lib/api";
+import { educationCreateBodySchema, profileIdQuerySchema } from "@/lib/api/contracts/profile";
+import { createEducation, listEducation } from "@/lib/application/profile-service";
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const profileId = searchParams.get("profileId");
-
-    if (!profileId) {
-      return NextResponse.json(
-        { error: "profileId is required" },
-        { status: 400 }
-      );
-    }
-
-    const educationData = await db
-      .select()
-      .from(education)
-      .where(eq(education.profileId, parseInt(profileId)));
-
-    return NextResponse.json(educationData.sort(sortByMostRecent));
+    const { profileId } = profileIdQuerySchema.parse(Object.fromEntries(request.nextUrl.searchParams));
+    return NextResponse.json(await listEducation(profileId));
   } catch (error) {
-    console.error("Failed to fetch education:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch education" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to fetch education", fallbackCode: "education_fetch_failed" });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     assertAppRequest(request);
-
-    const body = await request.json();
-    const { profileId, institution, degree, field, startDate, endDate, gpa, honors } = body;
-
-    if (!profileId || !institution || !degree || !startDate) {
-      return NextResponse.json(
-        { error: "profileId, institution, degree, and startDate are required" },
-        { status: 400 }
-      );
-    }
-
-    const [newEducation] = await db
-      .insert(education)
-      .values({
-        profileId,
-        institution,
-        degree,
-        field,
-        startDate,
-        endDate,
-        gpa,
-        honors,
-      })
-      .returning();
-
-    await scheduleProfileRematch();
-    return NextResponse.json(newEducation);
+    const input = educationCreateBodySchema.parse(await request.json());
+    return NextResponse.json(await createEducation(input));
   } catch (error) {
-    console.error("Failed to create education:", error);
-    return NextResponse.json(
-      { error: "Failed to create education" },
-      { status: 500 }
-    );
-  }
-}
-
-export async function DELETE(request: NextRequest) {
-  try {
-    assertAppRequest(request);
-
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get("id");
-
-    if (!id) {
-      return NextResponse.json({ error: "id is required" }, { status: 400 });
-    }
-
-    await db.delete(education).where(eq(education.id, parseInt(id)));
-
-    await scheduleProfileRematch();
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Failed to delete education:", error);
-    return NextResponse.json(
-      { error: "Failed to delete education" },
-      { status: 500 }
-    );
-  }
-}
-
-export async function PUT(request: NextRequest) {
-  try {
-    assertAppRequest(request);
-
-    const body = await request.json();
-    const { id, institution, degree, field, startDate, endDate, gpa, honors } = body;
-
-    if (!id || !institution || !degree || !startDate) {
-      return NextResponse.json(
-        { error: "id, institution, degree, and startDate are required" },
-        { status: 400 }
-      );
-    }
-
-    const [updated] = await db
-      .update(education)
-      .set({
-        institution,
-        degree,
-        field,
-        startDate,
-        endDate: endDate || null,
-        gpa,
-        honors,
-      })
-      .where(eq(education.id, parseInt(id)))
-      .returning();
-
-    await scheduleProfileRematch();
-    return NextResponse.json(updated);
-  } catch (error) {
-    console.error("Failed to update education:", error);
-    return NextResponse.json(
-      { error: "Failed to update education" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to create education", fallbackCode: "education_create_failed" });
   }
 }

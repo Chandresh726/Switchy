@@ -8,7 +8,8 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import type { ResumeData } from "@/lib/ai/resume/contracts";
+import { uploadResume } from "@/lib/api/clients/profile";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,45 +21,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-interface ResumeData {
-  name: string;
-  email?: string;
-  phone?: string;
-  location?: string;
-  linkedinUrl?: string;
-  githubUrl?: string;
-  portfolioUrl?: string;
-  summary?: string;
-  skills: Array<{
-    name: string;
-    category?: string;
-  }>;
-  experience: Array<{
-    company: string;
-    title: string;
-    location?: string;
-    startDate: string;
-    endDate?: string;
-    description?: string;
-    highlights?: string[];
-  }>;
-  education?: Array<{
-    institution: string;
-    degree: string;
-    field?: string;
-    startDate?: string;
-    endDate?: string;
-    gpa?: string;
-    honors?: string;
-  }>;
-}
-
 interface Resume {
   id: number;
   fileName: string;
   version: number;
   createdAt: string;
   isCurrent: boolean;
+  storageState: "staging" | "ready" | "deleting" | "missing";
 }
 
 interface ResumeManagerProps {
@@ -78,8 +47,10 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
   const [showHistory, setShowHistory] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
-  const currentResume = resumes.find((r) => r.isCurrent);
-  const previousResumes = resumes.filter((r) => !r.isCurrent).sort((a, b) => b.version - a.version);
+  const currentResume = resumes.find((resume) => resume.isCurrent && resume.storageState === "ready");
+  const previousResumes = resumes
+    .filter((resume) => resume.id !== currentResume?.id)
+    .sort((a, b) => b.version - a.version);
 
   const handleFile = useCallback(
     async (file: File) => {
@@ -93,18 +64,7 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
         formData.append("file", file);
         formData.append("autofill", String(autofill));
 
-        const response = await fetch("/api/profile/parse-resume", {
-          method: "POST",
-          headers: APP_REQUEST_HEADERS,
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const data = await response.json();
-          throw new Error(data.error || "Failed to parse resume");
-        }
-
-        const result = await response.json();
+        const result = await uploadResume(formData);
 
         setSuccess(true);
         if (autofill && result.parsedData) {
@@ -339,15 +299,22 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
                           <span className="text-xs text-muted-foreground">v{resume.version}</span>
                           <span className="text-xs text-muted-foreground">•</span>
                           <span className="text-xs text-muted-foreground">{formatDate(resume.createdAt)}</span>
+                          {resume.storageState !== "ready" && (
+                            <Badge variant="outline" className="text-xs">
+                              {resume.storageState === "missing" ? "File missing" : "Recovering"}
+                            </Badge>
+                          )}
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon-sm" className="h-8 w-8" asChild>
-                        <a href={`/api/profile/resumes/${resume.id}/download`} download>
-                          <Download className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-                        </a>
-                      </Button>
+                      {resume.storageState === "ready" && (
+                        <Button variant="ghost" size="icon-sm" className="h-8 w-8" asChild>
+                          <a href={`/api/profile/resumes/${resume.id}/download`} download>
+                            <Download className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                          </a>
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon-sm"

@@ -1,11 +1,8 @@
-import { eq } from "drizzle-orm";
-
 import {
   getMatchPipelineProgress,
   getMatchSessionStatus,
 } from "@/lib/ai/matcher/tracking";
 import { db } from "@/lib/db";
-import { matchSessions } from "@/lib/db/schema";
 import {
   getLocalDataOperationGate,
   type LocalDataOperationGate,
@@ -34,7 +31,7 @@ export function queueMatchWork(input: QueueMatchInput): {
   total: number;
 } {
   const queued = enqueueMatchWork(db, input);
-  dispatchPendingAIWork();
+  void dispatchPendingAIWork();
   return queued;
 }
 
@@ -44,7 +41,7 @@ export function queueProfileRematchWork(jobIds: number[]): {
   total: number;
 } {
   const queued = enqueueCoalescedProfileMatchWork(db, jobIds);
-  dispatchPendingAIWork();
+  void dispatchPendingAIWork();
   return queued;
 }
 
@@ -69,10 +66,4 @@ export async function getAIWorkSession(sessionId: string) {
     getMatchPipelineProgress(sessionId),
   ]);
   return session ? { ...session, pipeline } : null;
-}
-
-export async function hasMatchSession(sessionId: string): Promise<boolean> {
-  const rows = await db.select({ id: matchSessions.id }).from(matchSessions)
-    .where(eq(matchSessions.id, sessionId)).limit(1);
-  return rows.length === 1;
 }

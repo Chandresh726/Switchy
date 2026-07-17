@@ -27,7 +27,9 @@ describe("AI history route", () => {
   it("returns writing history without allowing response caching", async () => {
     mocks.getWritingHistoryContents.mockResolvedValue([{ id: 1, history: [] }]);
 
-    const response = await GET();
+    const response = await GET(
+      new Request("http://localhost/api/ai/history") as NextRequest
+    );
     const body = await response.json();
 
     expect(response.status).toBe(200);

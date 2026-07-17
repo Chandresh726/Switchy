@@ -6,7 +6,7 @@ import type { AIProvider, ModelConfig, ProviderConfig } from "./types";
 /**
  * Anthropic Claude provider implementation
  */
-export class AnthropicProvider extends BaseProvider {
+class AnthropicProvider extends BaseProvider {
   readonly id: AIProvider = "anthropic";
   readonly name = "Anthropic (Claude)";
   readonly requiresApiKey = true;

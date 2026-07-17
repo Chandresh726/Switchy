@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { asc, eq } from "drizzle-orm";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { describe, expect, it, vi } from "vitest";
 
@@ -17,6 +16,7 @@ import {
   toProviderPublic,
 } from "@/lib/ai/providers/provider-service";
 import { aiProviders, settings } from "@/lib/db/schema";
+import { migrateLocalDatabase } from "@/lib/db/migrations";
 import { removeDeprecatedMatchingPreferenceSettings } from "@/lib/settings/settings-service";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
@@ -59,7 +59,7 @@ describe("local CLI provider records", () => {
     const { database } = harness.createDatabase({ migrate: false });
     const previousMigrations = migrationsThrough(22);
     try {
-      migrate(database, { migrationsFolder: previousMigrations });
+      migrateLocalDatabase(database, previousMigrations);
       database.insert(aiProviders).values({
         id: "provider-before-cleanup",
         provider: "openai",
@@ -81,7 +81,7 @@ describe("local CLI provider records", () => {
         updatedAt: new Date(),
       }).run();
 
-      migrate(database, { migrationsFolder: join(process.cwd(), "drizzle") });
+      migrateLocalDatabase(database, join(process.cwd(), "drizzle"));
 
       expect(database.select().from(aiProviders)
         .where(eq(aiProviders.id, "provider-before-cleanup")).get()).toBeDefined();

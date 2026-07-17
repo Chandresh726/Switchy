@@ -6,7 +6,7 @@ import type { AIProvider, ModelConfig, ProviderConfig } from "./types";
 /**
  * Groq provider implementation
  */
-export class GroqProvider extends BaseProvider {
+class GroqProvider extends BaseProvider {
   readonly id: AIProvider = "groq";
   readonly name = "Groq";
   readonly requiresApiKey = true;

@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { eq } from "drizzle-orm";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { describe, expect, it } from "vitest";
 
@@ -26,6 +25,7 @@ import {
   matchResults,
   matchSessions,
 } from "@/lib/db/schema";
+import { migrateLocalDatabase } from "@/lib/db/migrations";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-artifacts-");
@@ -478,7 +478,7 @@ describe("versioned AI artifact repository", () => {
     const { database } = harness.createDatabase({ migrate: false });
     const previousMigrations = createMigrationsFolderThrough(16);
     try {
-      migrate(database, { migrationsFolder: previousMigrations });
+      migrateLocalDatabase(database, previousMigrations);
       const persistedJob = insertPreProjectionJob(database, 82);
       database.insert(matchSessions).values({
         id: "pre-link-session",
@@ -492,7 +492,7 @@ describe("versioned AI artifact repository", () => {
         score: 82,
       }).run();
 
-      migrate(database, { migrationsFolder: join(process.cwd(), "drizzle") });
+      migrateLocalDatabase(database, join(process.cwd(), "drizzle"));
       expect(database.select().from(matchLogs).get()).toMatchObject({
         score: 82,
         matchResultId: null,

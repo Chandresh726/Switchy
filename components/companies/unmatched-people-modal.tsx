@@ -27,46 +27,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
 
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
+import {
+  getUnmatchedCompanies,
+  getUnmatchedCompanyPeople,
+  updateUnmatchedCompany,
+} from "@/lib/api/clients/people";
 import { cn } from "@/lib/utils";
 import { peopleKeys } from "@/lib/query-keys";
 
 interface TrackedCompany {
   id: number;
   name: string;
-}
-
-interface UnmatchedCompanyPerson {
-  id: number;
-  fullName: string;
-  position: string | null;
-  email: string | null;
-  profileUrl: string;
-  isStarred: boolean;
-}
-
-interface UnmatchedCompanyGroup {
-  companyNormalized: string;
-  companyLabel: string;
-  peopleCount: number;
-  isIgnored: boolean;
-}
-
-interface UnmatchedCompaniesResponse {
-  summary: {
-    unmatchedCompanyCount: number;
-    unmatchedPeopleCount: number;
-    ignoredCompanyCount: number;
-  };
-  groups: UnmatchedCompanyGroup[];
-  totalCount: number;
-  hasMore: boolean;
-}
-
-interface UnmatchedCompanyPeopleResponse {
-  people: UnmatchedCompanyPerson[];
-  totalCount: number;
-  hasMore: boolean;
 }
 
 interface UnmatchedPeopleModalProps {
@@ -226,7 +197,7 @@ function CompanyPeopleList({ companyNormalized, expanded }: CompanyPeopleListPro
     setPage(1);
   };
 
-  const { data, isLoading, isFetching, error } = useQuery<UnmatchedCompanyPeopleResponse>({
+  const { data, isLoading, isFetching, error } = useQuery({
     queryKey: peopleKeys.unmatchedCompanies.people(companyNormalized, page, pageSize),
     queryFn: async () => {
       const params = new URLSearchParams({
@@ -234,12 +205,7 @@ function CompanyPeopleList({ companyNormalized, expanded }: CompanyPeopleListPro
         limit: String(pageSize),
         offset: String((page - 1) * pageSize),
       });
-      const res = await fetch(`/api/people/unmatched-company-people?${params.toString()}`);
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to load people");
-      }
-      return res.json();
+      return getUnmatchedCompanyPeople(params.toString());
     },
     enabled: expanded,
     staleTime: 60000,
@@ -350,7 +316,7 @@ export function UnmatchedPeopleModal({
     setCurrentPage(1);
   };
 
-  const { data, isLoading, isFetching } = useQuery<UnmatchedCompaniesResponse>({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: peopleKeys.unmatchedCompanies.list(mode, debouncedSearch, currentPage, pageSize),
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -358,12 +324,7 @@ export function UnmatchedPeopleModal({
       params.set("offset", String((currentPage - 1) * pageSize));
       if (debouncedSearch) params.set("search", debouncedSearch);
 
-      const endpoint = mode === "ignored"
-        ? "/api/people/ignored-unmatched-companies"
-        : "/api/people/unmatched-companies";
-      const res = await fetch(`${endpoint}?${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to load companies");
-      return res.json();
+      return getUnmatchedCompanies(params.toString(), mode === "ignored");
     },
     enabled: open,
   });
@@ -373,20 +334,11 @@ export function UnmatchedPeopleModal({
 
   const mapMutation = useMutation({
     mutationFn: async (payload: { companyNormalized: string; mappedCompanyId: number }) => {
-      const res = await fetch("/api/people/unmatched-companies", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({
+      return updateUnmatchedCompany({
           action: "map",
           companyNormalized: payload.companyNormalized,
           mappedCompanyId: payload.mappedCompanyId,
-        }),
       });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Failed to map company");
-      }
-      return res.json() as Promise<{ updatedCount: number }>;
     },
     onSuccess: (result, variables) => {
       setExpandedCompanies((prev) => {
@@ -406,19 +358,10 @@ export function UnmatchedPeopleModal({
 
   const ignoreMutation = useMutation({
     mutationFn: async (payload: { companyNormalized: string; ignored: boolean }) => {
-      const res = await fetch("/api/people/unmatched-companies", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-        body: JSON.stringify({
+      return updateUnmatchedCompany({
           action: payload.ignored ? "ignore" : "unignore",
           companyNormalized: payload.companyNormalized,
-        }),
       });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Failed to update ignore state");
-      }
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: peopleKeys.unmatchedCompanies.all() });

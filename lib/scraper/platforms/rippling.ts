@@ -95,7 +95,7 @@ export type RipplingConfig = ApiScraperConfig & {
   listingPageSize: number;
 };
 
-export const DEFAULT_RIPPLING_CONFIG: RipplingConfig = {
+const DEFAULT_RIPPLING_CONFIG: RipplingConfig = {
   ...DEFAULT_API_CONFIG,
   baseUrl: "https://www.rippling.com",
   detailBatchSize: 4,

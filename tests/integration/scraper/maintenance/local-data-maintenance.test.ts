@@ -41,6 +41,54 @@ function seedCompany(
 }
 
 describe("LocalDataMaintenanceService", () => {
+  it("routes targeted job deletion through the operation gate and preserves other jobs", async () => {
+    const database = createTestDatabase();
+    const company = seedCompany(database, "TargetedJob");
+    const [target, retained] = database.insert(jobs).values([
+      { companyId: company.id, title: "Delete me", url: "https://example.com/delete" },
+      { companyId: company.id, title: "Keep me", url: "https://example.com/keep" },
+    ]).returning({ id: jobs.id }).all();
+    const targetWork = createAIWorkRecords({
+      id: "target-job-match", jobIds: [target.id], triggerSource: "manual",
+      companyId: company.id, now: new Date(),
+    });
+    const siblingWork = createAIWorkRecords({
+      id: "sibling-job-match", jobIds: [retained.id], triggerSource: "manual",
+      companyId: company.id, now: new Date(),
+    });
+    database.insert(matchSessions).values([targetWork.session, siblingWork.session]).run();
+    database.insert(aiWorkItems).values([targetWork.workItem, siblingWork.workItem]).run();
+    const [targetLog, siblingLog] = database.insert(scrapingLogs).values([
+      { companyId: company.id, status: "success", matcherStatus: "pending" },
+      { companyId: company.id, status: "success", matcherStatus: "pending" },
+    ]).returning({ id: scrapingLogs.id }).all();
+    database.insert(matchSessions).values([
+      { id: "target-legacy-match", triggerSource: "auto_match", companyId: company.id, status: "queued", jobsTotal: 1 },
+      { id: "sibling-legacy-match", triggerSource: "auto_match", companyId: company.id, status: "queued", jobsTotal: 1 },
+    ]).run();
+    database.insert(scrapeMatchOutbox).values([
+      { id: "target-legacy-match", scrapingLogId: targetLog.id, companyId: company.id, jobIdsJson: JSON.stringify([target.id]), status: "pending" },
+      { id: "sibling-legacy-match", scrapingLogId: siblingLog.id, companyId: company.id, jobIdsJson: JSON.stringify([retained.id]), status: "pending" },
+    ]).run();
+    const gate = new InProcessLocalDataOperationGate();
+    const cancelScrapes = vi.spyOn(gate, "cancelScrapes");
+    const cancelMatches = vi.spyOn(gate, "cancelMatches");
+    const runMaintenance = vi.spyOn(gate, "runMaintenance");
+    const maintenance = new LocalDataMaintenanceService(database, gate);
+
+    await expect(maintenance.deleteJobs([target.id])).resolves.toBe(1);
+    expect(cancelScrapes).toHaveBeenCalledWith([company.id]);
+    expect(cancelMatches).toHaveBeenCalledWith({ jobIds: [target.id] });
+    expect(runMaintenance).toHaveBeenCalledTimes(1);
+    expect(database.select({ id: jobs.id }).from(jobs).all()).toEqual([{ id: retained.id }]);
+    expect(database.select({ id: matchSessions.id }).from(matchSessions).all().map(({ id }) => id).sort())
+      .toEqual(["sibling-job-match", "sibling-legacy-match"]);
+    expect(database.select({ id: aiWorkItems.id }).from(aiWorkItems).all().map(({ id }) => id).sort())
+      .toEqual(["sibling-job-match", "sibling-legacy-match"]);
+    expect(database.select({ id: scrapeMatchOutbox.id, status: scrapeMatchOutbox.status }).from(scrapeMatchOutbox).all())
+      .toEqual([{ id: "sibling-legacy-match", status: "migrated" }]);
+  });
+
   it("cancels an in-flight scrape before deleting its jobs", async () => {
     const database = createTestDatabase();
     const company = seedCompany(database, "ConcurrentScrape");

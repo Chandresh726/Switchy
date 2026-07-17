@@ -1,4 +1,4 @@
-import type { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,7 +14,8 @@ const store = vi.hoisted(() => ({
   list: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
   assertAppRequest: store.assertAppRequest,
 }));
 
@@ -33,12 +34,15 @@ vi.mock("@/lib/scraper/history", () => ({
   }),
 }));
 
-import { DELETE, GET, PATCH } from "@/app/api/scrape-history/route";
+import { DELETE, GET as getDetail } from "@/app/api/scrape-history/[id]/route";
+import { POST as cancel } from "@/app/api/scrape-history/[id]/cancel/route";
+import { POST as clear } from "@/app/api/maintenance/scrape-history/clear/route";
+import { GET } from "@/app/api/scrape-history/route";
 
-function createRequest(method: "GET" | "PATCH" | "DELETE", query = ""): NextRequest {
-  return new Request(`http://localhost/api/scrape-history${query}`, {
+function createRequest(method: "GET" | "POST" | "DELETE", path = ""): NextRequest {
+  return new NextRequest(`http://localhost/api/scrape-history${path}`, {
     method,
-  }) as NextRequest;
+  });
 }
 
 describe("scrape history route", () => {
@@ -87,14 +91,19 @@ describe("scrape history route", () => {
       leaseExpiresAt: new Date("2026-07-13T12:00:00.000Z"),
       lastError: "previous attempt failed",
     };
-    store.getDetail.mockReturnValue({ session, logs: [log], queueItems: [queueItem] });
+    const logPagination = { total: 1, limit: 50, offset: 0, hasMore: false };
+    const workPagination = { total: 1, limit: 50, offset: 0, hasMore: false };
+    store.getDetail.mockReturnValue({ session, logs: [log], logPagination, workPagination, hasActiveWork: true, queueItems: [queueItem] });
 
-    const response = await GET(createRequest("GET", "?sessionId=session-1"));
+    const response = await getDetail(createRequest("GET", "/session-1"), { params: Promise.resolve({ id: "session-1" }) });
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       session,
       logs: [log],
+      logPagination,
+      workPagination,
+      hasActiveWork: true,
       queueItems: [
         {
           ...queueItem,
@@ -102,43 +111,70 @@ describe("scrape history route", () => {
         },
       ],
     });
+    expect(store.getDetail).toHaveBeenCalledWith(
+      "session-1",
+      { limit: 50, offset: 0 },
+      { limit: 50, offset: 0 }
+    );
     expect(response.headers.get("cache-control")).toContain("no-store");
   });
 
   it("returns 404 when a requested session does not exist", async () => {
-    const response = await GET(createRequest("GET", "?sessionId=missing"));
+    const response = await getDetail(createRequest("GET", "/missing"), { params: Promise.resolve({ id: "missing" }) });
 
     expect(response.status).toBe(404);
-    await expect(response.json()).resolves.toEqual({ error: "Session not found" });
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Session not found",
+      code: "scrape_session_not_found",
+    });
   });
 
   it("rejects deletion while durable work remains active", async () => {
     store.deleteHistory.mockReturnValue({ active: true, deleted: 0 });
 
     const response = await DELETE(
-      createRequest("DELETE", "?sessionId=session-1")
+      createRequest("DELETE", "/session-1"),
+      { params: Promise.resolve({ id: "session-1" }) }
     );
 
     expect(store.assertAppRequest).toHaveBeenCalledTimes(1);
     expect(store.deleteHistory).toHaveBeenCalledWith("session-1");
     expect(response.status).toBe(409);
-    await expect(response.json()).resolves.toEqual({
+    await expect(response.json()).resolves.toMatchObject({
       error: "Stop the active scrape before deleting its history",
+      code: "scrape_session_active",
     });
   });
 
   it("deletes terminal history and reports the retained contract", async () => {
     store.deleteHistory.mockReturnValue({ active: false, deleted: 4 });
 
-    const response = await DELETE(createRequest("DELETE"));
+    const response = await clear(createRequest("POST", "/../maintenance/scrape-history/clear"));
 
-    expect(store.deleteHistory).toHaveBeenCalledWith(undefined);
+    expect(store.deleteHistory).toHaveBeenCalledWith();
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ success: true, deleted: 4 });
   });
 
+  it("returns 404 only for a missing targeted scrape-history session", async () => {
+    store.deleteHistory.mockReturnValue({ active: false, deleted: 0 });
+
+    const targeted = await DELETE(
+      createRequest("DELETE", "/missing"),
+      { params: Promise.resolve({ id: "missing" }) }
+    );
+    const collection = await clear(createRequest("POST", "/../maintenance/scrape-history/clear"));
+
+    expect(targeted.status).toBe(404);
+    await expect(targeted.json()).resolves.toMatchObject({
+      code: "scrape_session_not_found",
+      requestId: expect.any(String),
+    });
+    expect(collection.status).toBe(200);
+  });
+
   it("requires a session ID before requesting cancellation", async () => {
-    const response = await PATCH(createRequest("PATCH"));
+    const response = await cancel(createRequest("POST"), { params: Promise.resolve({ id: "" }) });
 
     expect(response.status).toBe(400);
     expect(store.cancelSession).not.toHaveBeenCalled();
@@ -151,8 +187,9 @@ describe("scrape history route", () => {
       sessionStopped: true,
     });
 
-    const response = await PATCH(
-      createRequest("PATCH", "?sessionId=session-1")
+    const response = await cancel(
+      createRequest("POST", "/session-1/cancel"),
+      { params: Promise.resolve({ id: "session-1" }) }
     );
 
     expect(store.cancelSession).toHaveBeenCalledWith("session-1");
@@ -164,8 +201,9 @@ describe("scrape history route", () => {
   it("reports the current terminal status when no active work was stopped", async () => {
     store.getSessionStatus.mockReturnValue({ id: "session-1", status: "completed" });
 
-    const response = await PATCH(
-      createRequest("PATCH", "?sessionId=session-1")
+    const response = await cancel(
+      createRequest("POST", "/session-1/cancel"),
+      { params: Promise.resolve({ id: "session-1" }) }
     );
 
     expect(response.status).toBe(200);
@@ -177,11 +215,15 @@ describe("scrape history route", () => {
   });
 
   it("returns 404 when cancellation targets an unknown session", async () => {
-    const response = await PATCH(
-      createRequest("PATCH", "?sessionId=missing")
+    const response = await cancel(
+      createRequest("POST", "/missing/cancel"),
+      { params: Promise.resolve({ id: "missing" }) }
     );
 
     expect(response.status).toBe(404);
-    await expect(response.json()).resolves.toEqual({ error: "Session not found" });
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Session not found",
+      code: "scrape_session_not_found",
+    });
   });
 });

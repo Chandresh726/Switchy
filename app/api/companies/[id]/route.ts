@@ -1,345 +1,55 @@
-import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
-import { eq } from "drizzle-orm";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
-import { assertAppRequest } from "@/lib/api";
-import { db } from "@/lib/db";
-import { companies } from "@/lib/db/schema";
-import { refreshUnmatchedCompanyMappings } from "@/lib/people/sync";
-import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
-import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
+import { assertAppRequest, createApiRequestContext, handleApiError, ValidationError } from "@/lib/api";
+import { companyIdParamsSchema, companyPatchBodySchema, companyReplaceBodySchema } from "@/lib/api/contracts/companies";
+import { deleteCompany, getCompany, patchCompany, replaceCompany } from "@/lib/application/companies-service";
 
-const ParamsSchema = z.object({
-  id: z.coerce.number().int().positive(),
-});
+type RouteContext = { params: Promise<{ id: string }> };
 
-const PLATFORM_VALUES = [
-  "greenhouse",
-  "lever",
-  "ashby",
-  "workday",
-  "eightfold",
-  "servicenow",
-  "zwayam",
-  "mynexthire",
-  "uber",
-  "google",
-  "atlassian",
-  "rippling",
-  "visa",
-  "nutanix",
-  "custom",
-] as const;
-
-const PlatformOverrideSchema = z
-  .union([z.enum(PLATFORM_VALUES), z.literal(""), z.null()])
-  .optional()
-  .transform((value) => (value === "" ? null : value));
-
-const PutBodySchema = z.object({
-  name: z.string().trim().min(1),
-  careersUrl: z.string().trim().url(),
-  logoUrl: z.string().trim().url().nullable().optional().or(z.literal("")),
-  notes: z.string().nullable().optional().or(z.literal("")),
-  isActive: z.boolean().optional(),
-  platform: PlatformOverrideSchema,
-  boardToken: z.string().trim().nullable().optional().or(z.literal("")),
-});
-
-const PatchBodySchema = z.object({
-  name: z.string().trim().min(1).optional(),
-  careersUrl: z.string().trim().url().optional(),
-  logoUrl: z.string().trim().url().nullable().optional().or(z.literal("")),
-  notes: z.string().nullable().optional().or(z.literal("")),
-  isActive: z.boolean().optional(),
-  platform: PlatformOverrideSchema,
-  boardToken: z.string().trim().nullable().optional().or(z.literal("")),
-});
-
-type CompanyUpdatePayload = {
-  name?: string;
-  careersUrl?: string;
-  logoUrl?: string | null;
-  notes?: string | null;
-  isActive?: boolean;
-  platform?:
-    | "greenhouse"
-    | "lever"
-    | "ashby"
-    | "workday"
-    | "eightfold"
-    | "servicenow"
-    | "zwayam"
-    | "mynexthire"
-    | "uber"
-    | "google"
-    | "atlassian"
-    | "rippling"
-    | "visa"
-    | "nutanix"
-    | "custom"
-    | null;
-  boardToken?: string | null;
-  updatedAt: Date;
-};
-
-const MANUAL_BOARD_TOKEN_REQUIRED = new Set(["greenhouse", "lever", "ashby"]);
-
-function normalizeOptionalText(value?: string | null): string | null {
-  if (!value) return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function validateBoardTokenRequirement(
-  platform: CompanyUpdatePayload["platform"],
-  careersUrl: string | undefined,
-  boardToken: string | null | undefined
-): string | null {
-  if (!platform || !careersUrl || !MANUAL_BOARD_TOKEN_REQUIRED.has(platform)) {
-    return null;
-  }
-
-  const detected = detectPlatformFromUrl(careersUrl);
-  if (detected === platform) {
-    return null;
-  }
-
-  if (!boardToken) {
-    return `boardToken is required when manually selecting ${platform} platform with a custom URL`;
-  }
-
-  return null;
-}
-
-async function getIdFromParams(params: Promise<{ id: string }>): Promise<number> {
-  const resolved = await params;
-  const parsed = ParamsSchema.safeParse(resolved);
-  if (!parsed.success) {
-    throw new Error("Invalid company id");
-  }
+async function parseCompanyId(context: RouteContext) {
+  const parsed = companyIdParamsSchema.safeParse(await context.params);
+  if (!parsed.success) throw new ValidationError("Invalid company id", "invalid_company_id");
   return parsed.data.id;
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
-    assertAppRequest(request);
-
-    const id = await getIdFromParams(params);
-
-    const [company] = await db
-      .select()
-      .from(companies)
-      .where(eq(companies.id, id));
-
-    if (!company) {
-      return NextResponse.json({ error: "Company not found" }, { status: 404 });
-    }
-
-    return NextResponse.json(company);
+    const id = await parseCompanyId(context);
+    return NextResponse.json(await getCompany(id));
   } catch (error) {
-    if (error instanceof Error && error.message === "Invalid company id") {
-      return NextResponse.json({ error: "Invalid company id" }, { status: 400 });
-    }
-
-    console.error("Failed to fetch company:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch company" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to fetch company", fallbackCode: "company_fetch_failed" });
   }
 }
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PUT(request: NextRequest, context: RouteContext) {
   try {
     assertAppRequest(request);
-
-    const id = await getIdFromParams(params);
-    const body = await request.json();
-    const parsed = PutBodySchema.safeParse(body);
-
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid request body", details: parsed.error.flatten() },
-        { status: 400 }
-      );
-    }
-
-    const payload = parsed.data;
-    const updateData: CompanyUpdatePayload = {
-      name: payload.name,
-      careersUrl: payload.careersUrl,
-      logoUrl: normalizeOptionalText(payload.logoUrl),
-      notes: normalizeOptionalText(payload.notes),
-      isActive: payload.isActive,
-      platform: payload.platform,
-      boardToken: normalizeOptionalText(payload.boardToken),
-      updatedAt: new Date(),
-    };
-
-    const boardTokenError = validateBoardTokenRequirement(
-      updateData.platform,
-      updateData.careersUrl,
-      updateData.boardToken
-    );
-
-    if (boardTokenError) {
-      return NextResponse.json({ error: boardTokenError }, { status: 400 });
-    }
-
-    const [updated] = await db
-      .update(companies)
-      .set(updateData)
-      .where(eq(companies.id, id))
-      .returning();
-
-    if (!updated) {
-      return NextResponse.json({ error: "Company not found" }, { status: 404 });
-    }
-
-    try {
-      await refreshUnmatchedCompanyMappings({
-        companyIds: [updated.id],
-      });
-    } catch (error) {
-      console.error("Failed to refresh unmatched company mappings:", error);
-    }
-
-    return NextResponse.json(updated);
+    const id = await parseCompanyId(context);
+    const input = companyReplaceBodySchema.parse(await request.json());
+    return NextResponse.json(await replaceCompany(id, input, createApiRequestContext(request)));
   } catch (error) {
-    if (error instanceof Error && error.message === "Invalid company id") {
-      return NextResponse.json({ error: "Invalid company id" }, { status: 400 });
-    }
-
-    console.error("Failed to update company:", error);
-    return NextResponse.json(
-      { error: "Failed to update company" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to update company", fallbackCode: "company_update_failed" });
   }
 }
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     assertAppRequest(request);
-
-    const id = await getIdFromParams(params);
-    const body = await request.json();
-    const parsed = PatchBodySchema.safeParse(body);
-
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid request body", details: parsed.error.flatten() },
-        { status: 400 }
-      );
-    }
-
-    const payload = parsed.data;
-    const updateData: CompanyUpdatePayload = {
-      updatedAt: new Date(),
-    };
-
-    if (payload.name !== undefined) updateData.name = payload.name;
-    if (payload.careersUrl !== undefined) updateData.careersUrl = payload.careersUrl;
-    if (payload.logoUrl !== undefined) updateData.logoUrl = normalizeOptionalText(payload.logoUrl);
-    if (payload.notes !== undefined) updateData.notes = normalizeOptionalText(payload.notes);
-    if (payload.isActive !== undefined) updateData.isActive = payload.isActive;
-    if (payload.platform !== undefined) updateData.platform = payload.platform;
-    if (payload.boardToken !== undefined) updateData.boardToken = normalizeOptionalText(payload.boardToken);
-
-    const [existing] = await db
-      .select({
-        careersUrl: companies.careersUrl,
-        platform: companies.platform,
-        boardToken: companies.boardToken,
-      })
-      .from(companies)
-      .where(eq(companies.id, id));
-
-    if (!existing) {
-      return NextResponse.json({ error: "Company not found" }, { status: 404 });
-    }
-
-    const existingPlatformParsed = PlatformOverrideSchema.safeParse(existing.platform);
-    const effectivePlatform =
-      updateData.platform !== undefined
-        ? updateData.platform
-        : existingPlatformParsed.success
-          ? (existingPlatformParsed.data ?? null)
-          : null;
-    const effectiveCareersUrl = updateData.careersUrl ?? existing.careersUrl;
-    const effectiveBoardToken =
-      updateData.boardToken !== undefined ? updateData.boardToken : existing.boardToken;
-
-    const boardTokenError = validateBoardTokenRequirement(
-      effectivePlatform,
-      effectiveCareersUrl,
-      effectiveBoardToken
-    );
-
-    if (boardTokenError) {
-      return NextResponse.json({ error: boardTokenError }, { status: 400 });
-    }
-
-    const [updated] = await db
-      .update(companies)
-      .set(updateData)
-      .where(eq(companies.id, id))
-      .returning();
-
-    if (updated && payload.name !== undefined) {
-      try {
-        await refreshUnmatchedCompanyMappings({
-          companyIds: [updated.id],
-        });
-      } catch (error) {
-        console.error("Failed to refresh unmatched company mappings:", error);
-      }
-    }
-
-    return NextResponse.json(updated);
+    const id = await parseCompanyId(context);
+    const input = companyPatchBodySchema.parse(await request.json());
+    return NextResponse.json(await patchCompany(id, input, createApiRequestContext(request)));
   } catch (error) {
-    if (error instanceof Error && error.message === "Invalid company id") {
-      return NextResponse.json({ error: "Invalid company id" }, { status: 400 });
-    }
-
-    console.error("Failed to update company:", error);
-    return NextResponse.json(
-      { error: "Failed to update company" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to update company", fallbackCode: "company_update_failed" });
   }
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
     assertAppRequest(request);
-
-    const id = await getIdFromParams(params);
-    await getLocalDataMaintenanceService().deleteCompanies([id]);
-
-    return NextResponse.json({ success: true });
+    const id = await parseCompanyId(context);
+    return NextResponse.json(await deleteCompany(id));
   } catch (error) {
-    if (error instanceof Error && error.message === "Invalid company id") {
-      return NextResponse.json({ error: "Invalid company id" }, { status: 400 });
-    }
-
-    console.error("Failed to delete company:", error);
-    return NextResponse.json(
-      { error: "Failed to delete company" },
-      { status: 500 }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to delete company", fallbackCode: "company_delete_failed" });
   }
 }

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // Drizzle emits SQL and JSON rather than analyzable source entrypoints.
+  // The landing workspace has its own verification gate; this gate owns the root app.
+  "ignoreWorkspaces": ["landing"],
+  "workspaces": {
+    ".": {
+      "entry": [
+        // These executable fixtures are launched through child-process paths in tests.
+        "tests/fixtures/ai/fake-codex-cli.mjs",
+        "tests/fixtures/ai/fake-opencode-cli.mjs",
+        "tests/fixtures/ai/local-cli-production-flow.mts",
+        "tests/fixtures/ai/register-server-only.mjs"
+      ]
+    }
+  }
+}

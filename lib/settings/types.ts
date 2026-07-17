@@ -1,5 +1,6 @@
 import type { ReasoningEffort } from "@/lib/ai/providers/types";
 import type { ProviderModelDefinition } from "@/lib/ai/providers/model-catalog";
+import type { LocalCLIConnectionStatus } from "@/lib/ai/local-cli/types";
 
 export interface ProviderModelsState {
   models: ProviderModelDefinition[];
@@ -54,7 +55,7 @@ export interface ProviderSettingsListItem {
   createdAt: string | Date | null;
   updatedAt: string | Date | null;
   kind: "api_key" | "local_cli";
-  connectionStatus?: import("@/lib/ai/local-cli/types").LocalCLIConnectionStatus;
+  connectionStatus?: LocalCLIConnectionStatus;
   selectable: boolean;
   cliVersion?: string;
   statusMessage?: string;

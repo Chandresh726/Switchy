@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { MatchRouteBodySchema } from "@/lib/ai/contracts";
 import { queueMatchWork } from "@/lib/ai/work-items";
-import { assertAppRequest } from "@/lib/api";
-import { handleAIAPIError } from "@/lib/api/ai-error-handler";
+import { assertAppRequest, handleApiError } from "@/lib/api";
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,6 +12,10 @@ export async function POST(request: NextRequest) {
     const queued = queueMatchWork({ jobIds, triggerSource: "manual" });
     return NextResponse.json(queued, { status: 202 });
   } catch (error) {
-    return handleAIAPIError(error, "Failed to queue match", "match_failed");
+    return handleApiError(error, {
+      request,
+      fallbackMessage: "Failed to queue match",
+      fallbackCode: "match_failed",
+    });
   }
 }

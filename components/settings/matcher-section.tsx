@@ -238,6 +238,7 @@ export function MatcherSection({
             analysis={matchProgress.analysis}
             matching={matchProgress.matching}
             jobs={matchProgress.jobs}
+            totalJobs={matchProgress.jobPagination.total}
             compact
           />
         ) : null}

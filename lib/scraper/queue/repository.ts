@@ -357,7 +357,7 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
       .select()
       .from(scrapeQueueItems)
       .where(eq(scrapeQueueItems.sessionId, sessionId))
-      .orderBy(asc(scrapeQueueItems.createdAt));
+      .orderBy(asc(scrapeQueueItems.createdAt), asc(scrapeQueueItems.id));
   }
 
   async getNextAvailableAt(): Promise<Date | null> {

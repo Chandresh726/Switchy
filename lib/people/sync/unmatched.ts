@@ -15,7 +15,7 @@ export interface UnmatchedCompanyPerson {
   isStarred: boolean;
 }
 
-export interface UnmatchedCompanyGroup {
+interface UnmatchedCompanyGroup {
   companyNormalized: string;
   companyLabel: string;
   peopleCount: number;

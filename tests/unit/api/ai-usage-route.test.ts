@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/ai/observability", () => ({
   getAIUsageSummary: mocks.getAIUsageSummary,
-  parseAIUsageDays: (value: string | null) => value === "30" ? 30 : 7,
 }));
 
 import { GET } from "@/app/api/ai/usage/route";
@@ -28,8 +27,13 @@ describe("AI usage API", () => {
     expect(mocks.getAIUsageSummary).toHaveBeenCalledWith(30);
   });
 
-  it("defaults unsupported periods to seven days", async () => {
-    await GET(new Request("http://localhost/api/ai/usage?days=365"));
-    expect(mocks.getAIUsageSummary).toHaveBeenCalledWith(7);
+  it("rejects unsupported periods", async () => {
+    const response = await GET(new Request("http://localhost/api/ai/usage?days=365"));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "invalid_request",
+      requestId: expect.any(String),
+    });
+    expect(mocks.getAIUsageSummary).not.toHaveBeenCalled();
   });
 });

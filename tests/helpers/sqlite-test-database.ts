@@ -4,9 +4,9 @@ import { join } from "node:path";
 
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { afterEach } from "vitest";
 
+import { migrateLocalDatabase } from "@/lib/db/migrations";
 import * as schema from "@/lib/db/schema";
 
 interface SqliteConnectionOptions {
@@ -20,8 +20,6 @@ interface SqliteDatabaseOptions extends SqliteConnectionOptions {
 
 const createDrizzleDatabase = (connection: Database.Database) =>
   drizzle(connection, { schema });
-
-export type SqliteTestDatabase = ReturnType<typeof createDrizzleDatabase>;
 
 export function createSqliteTestHarness(prefix: string) {
   const connections: Database.Database[] = [];
@@ -53,9 +51,7 @@ export function createSqliteTestHarness(prefix: string) {
     const path = join(directory, options.fileName ?? "switchy.db");
     const opened = connect(path, options);
     if (options.migrate !== false) {
-      migrate(opened.database, {
-        migrationsFolder: join(process.cwd(), "drizzle"),
-      });
+      migrateLocalDatabase(opened.database, join(process.cwd(), "drizzle"));
     }
     return { ...opened, path };
   };

@@ -137,7 +137,7 @@ export type EightfoldConfig = BrowserScraperConfig & {
   requestDelayMs: number;
 };
 
-export const DEFAULT_EIGHTFOLD_CONFIG: EightfoldConfig = {
+const DEFAULT_EIGHTFOLD_CONFIG: EightfoldConfig = {
   ...DEFAULT_BROWSER_CONFIG,
   pageSize: 10,
   parallelListFetches: 2,

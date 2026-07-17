@@ -52,7 +52,7 @@ export interface AIExecutionSubject {
   id: string;
 }
 
-export type SafeAIMetadataValue = string | number | boolean | null;
+type SafeAIMetadataValue = string | number | boolean | null;
 export type SafeAIMetadata = Record<string, SafeAIMetadataValue>;
 
 export type AIRunCacheStatus = "miss" | "hit" | "bypass";

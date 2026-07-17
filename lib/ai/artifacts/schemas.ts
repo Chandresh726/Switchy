@@ -55,7 +55,7 @@ export const JobEvidenceInputSchema = z.object({
 
 export type JobEvidenceInput = z.infer<typeof JobEvidenceInputSchema>;
 
-export const JobRequirementTypeSchema = z.enum([
+const JobRequirementTypeSchema = z.enum([
   "competency",
   "technology",
   "responsibility",
@@ -69,7 +69,7 @@ export const JobRequirementTypeSchema = z.enum([
   "employment",
 ]);
 
-export const JobRequirementImportanceSchema = z.enum([
+const JobRequirementImportanceSchema = z.enum([
   "critical",
   "important",
   "preferred",
@@ -103,14 +103,12 @@ export const MatchBreakdownSchema = z.object({
 
 export type MatchBreakdown = z.infer<typeof MatchBreakdownSchema>;
 
-export const MatchCategoryScoresSchema = z.object({
+const MatchCategoryScoresSchema = z.object({
   responsibilities: z.number().min(0).max(100).nullable(),
   skillsAndTechnologies: z.number().min(0).max(100).nullable(),
   experienceAndSeniority: z.number().min(0).max(100).nullable(),
   domainFit: z.number().min(0).max(100).nullable(),
 }).strict();
-
-export type MatchCategoryScores = z.infer<typeof MatchCategoryScoresSchema>;
 
 export const MatchReasoningPointSchema = z.object({
   type: z.enum(["match", "gap", "context"]),

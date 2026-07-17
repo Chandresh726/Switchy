@@ -37,7 +37,7 @@ describe("dashboard match statistics", () => {
       url: "https://example.com/jobs/unmatched",
     }]).run();
 
-    const response = await GET();
+    const response = await GET(new Request("http://localhost/api/stats"));
 
     expect(await response.json()).toMatchObject({
       totalJobs: 2,

@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -22,89 +24,29 @@ import {
 import Link from "next/link";
 import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
 import { toast } from "sonner";
-import { APP_REQUEST_HEADERS } from "@/lib/api/request-headers";
-import type { AIRunSummary } from "@/lib/ai/observability";
-import type {
-  MatchJobProgress,
-  MatchPhaseProgress,
-} from "@/lib/hooks/use-match-session";
+import {
+  getMatchHistoryDetail,
+  cancelMatchHistorySession,
+  deleteMatchHistorySession,
+} from "@/lib/api/clients/history";
 import { formatDurationMs, formatDurationFromDates, formatDateTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
-
-interface MatchSession {
-  id: string;
-  triggerSource: string;
-  companyId: number | null;
-  companyName: string | null;
-  status: string;
-  jobsTotal: number | null;
-  jobsCompleted: number | null;
-  jobsSucceeded: number | null;
-  jobsFailed: number | null;
-  errorCount: number | null;
-  startedAt: Date | null;
-  completedAt: Date | null;
-}
-
-interface MatchLog {
-  id: number;
-  sessionId: string | null;
-  jobId: number | null;
-  jobTitle: string | null;
-  companyName: string | null;
-  status: string;
-  score: number | null;
-  attemptCount: number | null;
-  errorType: string | null;
-  errorMessage: string | null;
-  duration: number | null;
-  modelUsed: string | null;
-  completedAt: Date | null;
-  analysisRunId?: string | null;
-  analysisRun?: AIRunSummary | null;
-  adjudicationRunId?: string | null;
-  adjudicationRun?: AIRunSummary | null;
-  matchRunId?: string | null;
-  matchRun?: AIRunSummary | null;
-}
-
-interface SessionDetailResponse {
-  session: MatchSession;
-  logs: MatchLog[];
-  pipeline: {
-    analysis: MatchPhaseProgress;
-    matching: MatchPhaseProgress;
-    jobs: MatchJobProgress[];
-  };
-}
 
 interface MatchSessionDetailProps {
   sessionId: string;
 }
 
 export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
+  const [logOffset, setLogOffset] = useState(0);
+  const logLimit = 50;
+  const [workOffset, setWorkOffset] = useState(0);
+  const workLimit = 50;
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { data, isLoading, error } = useQuery<SessionDetailResponse>({
-    queryKey: ["match-history", sessionId],
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["match-history", sessionId, logOffset, workOffset],
     queryFn: async () => {
-      const res = await fetch(`/api/match-history?sessionId=${encodeURIComponent(sessionId)}`, {
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error("Failed to fetch session details");
-      const json = await res.json();
-      return {
-        session: {
-          ...json.session,
-          startedAt: json.session.startedAt ? new Date(json.session.startedAt) : null,
-          completedAt: json.session.completedAt ? new Date(json.session.completedAt) : null,
-        },
-        logs: json.logs.map((log: MatchLog) => ({
-          ...log,
-          completedAt: log.completedAt ? new Date(log.completedAt) : null,
-        })),
-        pipeline: json.pipeline,
-      };
+      return getMatchHistoryDetail(sessionId, logOffset, logLimit, workOffset, workLimit);
     },
     refetchInterval: (query) => {
       const session = query.state.data?.session;
@@ -116,12 +58,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
 
   const stopMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/match-history?sessionId=${encodeURIComponent(sessionId)}`, {
-        method: "PATCH",
-        headers: APP_REQUEST_HEADERS,
-      });
-      if (!res.ok) throw new Error("Failed to stop session");
-      return res.json();
+      return cancelMatchHistorySession(sessionId);
     },
     onSuccess: () => {
       toast.success("Stopping match session");
@@ -135,15 +72,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/match-history?sessionId=${encodeURIComponent(sessionId)}`, {
-        method: "DELETE",
-        headers: APP_REQUEST_HEADERS,
-      });
-      if (!res.ok) throw new Error("Failed to delete session");
-      if (res.status !== 204) {
-        return res.json();
-      }
-      return null;
+      return deleteMatchHistorySession(sessionId);
     },
     onSuccess: () => {
       router.push("/history/match");
@@ -172,7 +101,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
     );
   }
 
-  const { session, logs, pipeline } = data;
+  const { session, logs, logPagination, pipeline } = data;
   const statusConfig = getSessionStatusConfig(session.status);
   const StatusIcon = statusConfig.icon;
   const progress = session.jobsTotal
@@ -271,7 +200,14 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
               analysis={pipeline.analysis}
               matching={pipeline.matching}
               jobs={pipeline.jobs}
+              totalJobs={pipeline.jobPagination.total}
             />
+            {pipeline.jobPagination.total > workLimit && (
+              <div className="mt-2 flex items-center justify-end gap-2">
+                <Button variant="outline" size="sm" disabled={workOffset === 0} onClick={() => setWorkOffset(Math.max(0, workOffset - workLimit))}>Previous jobs</Button>
+                <Button variant="outline" size="sm" disabled={!pipeline.jobPagination.hasMore} onClick={() => setWorkOffset(workOffset + workLimit)}>Next jobs</Button>
+              </div>
+            )}
           </div>
         ) : session.status === "in_progress" ? (
           <div className="mb-6">
@@ -496,6 +432,21 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
           <p className="text-sm text-muted-foreground text-center py-8">
             No job logs available for this session
           </p>
+        )}
+        {logPagination.total > logLimit && (
+          <div className="mt-4 flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
+              Showing {logPagination.offset + 1}-{Math.min(logPagination.offset + logs.length, logPagination.total)} of {logPagination.total}
+            </span>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" disabled={logOffset === 0} onClick={() => setLogOffset(Math.max(0, logOffset - logLimit))}>
+                Previous
+              </Button>
+              <Button variant="outline" size="sm" disabled={!logPagination.hasMore} onClick={() => setLogOffset(logOffset + logLimit)}>
+                Next
+              </Button>
+            </div>
+          </div>
         )}
       </div>
     </div>

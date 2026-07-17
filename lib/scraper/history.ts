@@ -55,6 +55,19 @@ export interface ScrapeHistoryDetail {
     attemptsTotal: number;
     isFinalAttempt: boolean;
   }>;
+  logPagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+  workPagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+  hasActiveWork: boolean;
   queueItems: Array<{
     id: string;
     companyId: number;
@@ -93,7 +106,11 @@ export interface ScrapeHistoryPage {
 }
 
 export interface ScrapeHistoryStore extends ScrapeHistoryRetentionStore {
-  getDetail(sessionId: string): ScrapeHistoryDetail | null;
+  getDetail(
+    sessionId: string,
+    logPage: { limit: number; offset: number },
+    workPage: { limit: number; offset: number }
+  ): ScrapeHistoryDetail | null;
   list(options: { limit: number; offset: number }): ScrapeHistoryPage;
   getSessionStatus(sessionId: string): { id: string; status: string } | null;
   delete(sessionId?: string): DeleteScrapeHistoryResult;
@@ -102,7 +119,11 @@ export interface ScrapeHistoryStore extends ScrapeHistoryRetentionStore {
 export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
   constructor(private readonly database: typeof db = db) {}
 
-  getDetail(sessionId: string): ScrapeHistoryDetail | null {
+  getDetail(
+    sessionId: string,
+    logPage: { limit: number; offset: number } = { limit: 50, offset: 0 },
+    workPage: { limit: number; offset: number } = { limit: 50, offset: 0 }
+  ): ScrapeHistoryDetail | null {
     const session = this.database
       .select()
       .from(scrapeSessions)
@@ -132,12 +153,18 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
         matcherJobsCompleted: scrapingLogs.matcherJobsCompleted,
         matcherDuration: scrapingLogs.matcherDuration,
         matcherErrorCount: scrapingLogs.matcherErrorCount,
+        attemptNumber: sql<number>`row_number() over (partition by ${scrapingLogs.companyId} order by ${scrapingLogs.startedAt}, ${scrapingLogs.id})`,
+        attemptsTotal: sql<number>`count(*) over (partition by ${scrapingLogs.companyId})`,
       })
       .from(scrapingLogs)
       .leftJoin(companies, eq(scrapingLogs.companyId, companies.id))
       .where(eq(scrapingLogs.sessionId, sessionId))
       .orderBy(scrapingLogs.startedAt, scrapingLogs.id)
+      .limit(logPage.limit)
+      .offset(logPage.offset)
       .all();
+    const totalLogs = Number(this.database.select({ value: sql<number>`count(*)` })
+      .from(scrapingLogs).where(eq(scrapingLogs.sessionId, sessionId)).get()?.value ?? 0);
     const queueItems = this.database
       .select({
         id: scrapeQueueItems.id,
@@ -162,21 +189,29 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
       .from(scrapeQueueItems)
       .leftJoin(companies, eq(companies.id, scrapeQueueItems.companyId))
       .where(eq(scrapeQueueItems.sessionId, sessionId))
-      .orderBy(scrapeQueueItems.createdAt)
+      .orderBy(scrapeQueueItems.createdAt, scrapeQueueItems.id)
+      .limit(workPage.limit)
+      .offset(workPage.offset)
       .all();
+    const totalQueueItems = Number(this.database.select({ value: sql<number>`count(*)` })
+      .from(scrapeQueueItems).where(eq(scrapeQueueItems.sessionId, sessionId)).get()?.value ?? 0);
+    const activeQueueItems = Number(this.database.select({ value: sql<number>`count(*)` })
+      .from(scrapeQueueItems).where(and(
+        eq(scrapeQueueItems.sessionId, sessionId),
+        inArray(scrapeQueueItems.status, ["queued", "running"])
+      )).get()?.value ?? 0);
 
-    const queueByCompany = new Map(
-      queueItems.map((item) => [item.companyId, item])
-    );
-    const logTotalsByCompany = new Map<number, number>();
-    for (const log of rawLogs) {
-      if (log.companyId === null) continue;
-      logTotalsByCompany.set(
-        log.companyId,
-        (logTotalsByCompany.get(log.companyId) ?? 0) + 1
-      );
-    }
-    const seenByCompany = new Map<number, number>();
+    const logCompanyIds = Array.from(new Set(rawLogs.flatMap((log) =>
+      log.companyId === null ? [] : [log.companyId]
+    )));
+    const queueStates = logCompanyIds.length === 0 ? [] : this.database.select({
+      companyId: scrapeQueueItems.companyId,
+      status: scrapeQueueItems.status,
+    }).from(scrapeQueueItems).where(and(
+      eq(scrapeQueueItems.sessionId, sessionId),
+      inArray(scrapeQueueItems.companyId, logCompanyIds)
+    )).all();
+    const queueStatusByCompany = new Map(queueStates.map((item) => [item.companyId, item.status]));
     const logs = rawLogs.map((log) => {
       if (log.companyId === null) {
         return {
@@ -186,35 +221,43 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
           isFinalAttempt: true,
         };
       }
-      const attemptNumber = (seenByCompany.get(log.companyId) ?? 0) + 1;
-      seenByCompany.set(log.companyId, attemptNumber);
-      const queueItem = queueByCompany.get(log.companyId);
-      const attemptsTotal = logTotalsByCompany.get(log.companyId) ?? 1;
+      const queueStatus = queueStatusByCompany.get(log.companyId);
       const queueIsTerminal =
-        queueItem === undefined ||
-        ["completed", "failed", "cancelled"].includes(queueItem.status);
+        queueStatus === undefined ||
+        ["completed", "failed", "cancelled"].includes(queueStatus);
       return {
         ...log,
-        attemptNumber,
-        attemptsTotal,
         isFinalAttempt:
           queueIsTerminal &&
-          attemptNumber === (logTotalsByCompany.get(log.companyId) ?? 1),
+          log.attemptNumber === log.attemptsTotal,
       };
     });
 
-    return { session, logs, queueItems };
+    return {
+      session,
+      logs,
+      logPagination: {
+        total: totalLogs,
+        limit: logPage.limit,
+        offset: logPage.offset,
+        hasMore: logPage.offset + logs.length < totalLogs,
+      },
+      workPagination: {
+        total: totalQueueItems,
+        limit: workPage.limit,
+        offset: workPage.offset,
+        hasMore: workPage.offset + queueItems.length < totalQueueItems,
+      },
+      hasActiveWork: activeQueueItems > 0,
+      queueItems,
+    };
   }
 
   list({ limit, offset }: { limit: number; offset: number }): ScrapeHistoryPage {
     const sessions = this.database
       .select()
       .from(scrapeSessions)
-      .orderBy(
-        desc(
-          sql`coalesce(${scrapeSessions.scheduledForAt}, ${scrapeSessions.startedAt})`
-        )
-      )
+      .orderBy(desc(scrapeSessions.startedAt), desc(scrapeSessions.id))
       .limit(limit)
       .offset(offset)
       .all();

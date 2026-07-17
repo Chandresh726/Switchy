@@ -1,11 +1,10 @@
-export { ValidationError, handleApiError } from "./error-handler";
-export { APP_REQUEST_HEADERS } from "./request-headers";
-export { assertAppRequest } from "./request-guard";
 export {
-  apiDelete,
-  apiGet,
-  apiPatch,
-  apiPost,
-  apiRequest,
-  APIClientError,
-} from "./client";
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+  handleApiError,
+  logApiFailure,
+} from "./error-handler";
+export { createApiRequestContext, withRequestIdHeader } from "./request-context";
+export type { ApiRequestContext } from "./contracts/common";
+export { assertAppRequest } from "./request-guard";

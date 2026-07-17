@@ -8,8 +8,7 @@ import {
 import { providerRegistry } from "@/lib/ai/providers";
 import { getLocalCLIStatus } from "@/lib/ai/local-cli/service";
 import { isLocalCLIProvider } from "@/lib/ai/providers/types";
-import { assertAppRequest } from "@/lib/api";
-import { APIValidationError, handleAIAPIError } from "@/lib/api/ai-error-handler";
+import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -24,12 +23,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (isLocalCLIProvider(context.providerType)) {
       const connection = await getLocalCLIStatus(context.providerType, { forceRefresh: true });
       if (!connection.selectable) {
-        return NextResponse.json({
-          valid: false,
-          provider: context.provider.provider,
-          connectionStatus: connection.status,
-          ...connection,
-        }, { status: 400 });
+        throw new ValidationError(
+          connection.statusMessage || "Local provider is not ready",
+          "provider_not_ready",
+          400,
+          {
+            provider: context.provider.provider,
+            connectionStatus: connection.status,
+          }
+        );
       }
       return NextResponse.json({
         valid: true,
@@ -41,18 +43,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const providerInstance = providerRegistry.get(context.providerType);
 
     if (!providerInstance) {
-      throw new APIValidationError("Provider not registered", "provider_not_found", 404);
+      throw new ValidationError("Provider not registered", "provider_not_found", 404);
     }
 
     if (providerInstance.requiresApiKey && !context.provider.apiKey) {
-      throw new APIValidationError("No API key configured", "missing_api_key");
+      throw new ValidationError("No API key configured", "missing_api_key");
     }
 
     const modelsResponse = await getProviderModels(parsedParams.id);
     const models = modelsResponse.models;
 
     if (models.length === 0) {
-      throw new APIValidationError("No models available", "invalid_model");
+      throw new ValidationError("No models available", "invalid_model");
     }
 
     providerInstance.createModel({
@@ -70,17 +72,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       modelsCount: models.length,
     });
   } catch (error) {
-    const response = handleAIAPIError(error, "Failed to validate provider", "provider_validation_failed");
-    const body = (await response.json()) as { error: string; code: string; details?: unknown };
-
-    return NextResponse.json(
-      {
-        valid: false,
-        ...body,
-      },
-      {
-        status: response.status,
-      }
-    );
+    return handleApiError(error, { request, fallbackMessage: "Failed to validate provider", fallbackCode: "provider_validation_failed" });
   }
 }

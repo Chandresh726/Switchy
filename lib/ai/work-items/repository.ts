@@ -31,7 +31,7 @@ export interface MatchCheckpoint {
   failed: number;
 }
 
-export interface MatchWorkExecutionState {
+interface MatchWorkExecutionState {
   checkpoint: MatchCheckpoint;
   completedResult: MatchWorkResult | null;
 }

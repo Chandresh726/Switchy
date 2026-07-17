@@ -30,7 +30,8 @@ export const DEFAULT_SCRAPE_COMPANY_PIPELINE_CONFIG: ScrapeCompanyPipelineConfig
   defaultFilters: {},
 };
 
-const ARCHIVABLE_JOB_STATUSES = ["new", "viewed", "interested", "rejected"];
+const ARCHIVABLE_JOB_STATUSES = ["new", "viewed", "interested", "rejected"] as const;
+const ARCHIVABLE_JOB_STATUS_SET: ReadonlySet<string> = new Set(ARCHIVABLE_JOB_STATUSES);
 const UBER_ARCHIVE_MISSING_ABSOLUTE_THRESHOLD = 5;
 const UBER_ARCHIVE_MISSING_RATIO_THRESHOLD = 0.05;
 const SAFE_HYDRATION_MATCH_REASONS: DeduplicationMatchReason[] = ["externalId", "url"];
@@ -388,7 +389,7 @@ export class ScrapeCompanyPipeline {
 
     logger.added(persistenceResult.jobsAdded, dedupeResult.duplicates.length);
     if (persistenceResult.matchOutboxId) {
-      dispatchPendingAIWork();
+      void dispatchPendingAIWork();
     }
 
     return {
@@ -416,7 +417,7 @@ export class ScrapeCompanyPipeline {
   ): boolean {
     const openExternalIdSet = new Set(openExternalIds);
     const archivableJobs = existingJobs.filter(
-      (job) => Boolean(job.externalId) && ARCHIVABLE_JOB_STATUSES.includes(job.status)
+      (job) => Boolean(job.externalId) && ARCHIVABLE_JOB_STATUS_SET.has(job.status)
     );
 
     if (archivableJobs.length === 0) {

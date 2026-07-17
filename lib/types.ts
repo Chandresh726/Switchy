@@ -7,12 +7,4 @@ export interface Provider {
   name: string;
 }
 
-export interface ProviderWithDetails {
-  id: string;
-  provider: string;
-  hasApiKey: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export type { AIProvider, ProviderModelDefinition as ProviderModelOption, ProviderModelsResponse };
+export type {  ProviderModelDefinition as ProviderModelOption, ProviderModelsResponse };
