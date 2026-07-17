@@ -9,8 +9,6 @@ import { Badge } from "@/components/ui/badge";
 import { MatchBadge } from "@/components/jobs/match-badge";
 import {
   MatchBreakdown,
-  type MatchBreakdownValue,
-  type MatchReasoningPointValue,
 } from "@/components/jobs/match-breakdown";
 import { ApplyButton } from "@/components/jobs/apply-button";
 import { JobAIActions } from "@/components/jobs/job-ai-actions";
@@ -31,38 +29,6 @@ import {
   CheckCircle,
 } from "lucide-react";
 
-interface Job {
-  id: number;
-  title: string;
-  description: string | null;
-  descriptionFormat: "markdown" | "plain" | "html";
-  url: string;
-  location: string | null;
-  locationType: string | null;
-  department: string | null;
-  salary: string | null;
-  employmentType: string | null;
-  seniorityLevel: string | null;
-  status: string;
-  matchScore: number | null;
-  matchResultId: string | null;
-  matchBreakdown: MatchBreakdownValue | null;
-  matchStale: boolean;
-  matchLegacy: boolean;
-  matchSummary: string;
-  matchReasoning: MatchReasoningPointValue[];
-  scoringPolicyVersion: string | null;
-  matchedSkills: string[];
-  postedDate: string | null;
-  discoveredAt: string | null;
-  company: {
-    id: number;
-    name: string;
-    logoUrl: string | null;
-    platform: string | null;
-  };
-}
-
 const STATUS_OPTIONS = [
   { value: "new", label: "New", color: "text-blue-400" },
   { value: "viewed", label: "Viewed", color: "text-muted-foreground" },
@@ -78,14 +44,10 @@ export default function JobDetailPage() {
   const queryClient = useQueryClient();
   const jobId = parseInt(params.id as string);
 
-  const { data: jobData, isLoading } = useQuery({
+  const { data: job, isLoading } = useQuery({
     queryKey: ["job", jobId],
-    queryFn: async () => {
-      return { jobs: [await getJob(jobId)] };
-    },
+    queryFn: () => getJob(jobId),
   });
-
-  const job = jobData?.jobs?.[0] as Job | undefined;
   const {
     mutation: calculateMatchMutation,
     isMatching,

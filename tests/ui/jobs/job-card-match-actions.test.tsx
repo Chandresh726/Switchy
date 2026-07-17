@@ -18,7 +18,15 @@ describe("JobCard match actions", () => {
       const url = String(input);
       const method = init?.method ?? "GET";
       requests.push({ method, url });
-      if (method === "PATCH") return Response.json({ id: 42, status: "applied" });
+      if (method === "PATCH") return Response.json({
+        id: 42,
+        status: "applied",
+        viewedAt: null,
+        appliedAt: new Date().toISOString(),
+        archivedAt: null,
+        archiveSource: null,
+        updatedAt: new Date().toISOString(),
+      });
       if (method === "POST") {
         return Response.json({ sessionId: "session-42", status: "queued", total: 1 }, {
           status: 202,

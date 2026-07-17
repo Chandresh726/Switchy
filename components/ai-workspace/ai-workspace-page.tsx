@@ -79,15 +79,11 @@ export function AIWorkspacePage({
   const [copied, setCopied] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
 
-  const { data: jobData, isLoading: isJobLoading } = useQuery({
+  const { data: job, isLoading: isJobLoading } = useQuery({
     enabled: Number.isFinite(jobId),
     queryKey: ["job", jobId],
-    queryFn: async () => {
-      return { jobs: [await getJob(jobId)] };
-    },
+    queryFn: () => getJob(jobId),
   });
-
-  const job = jobData?.jobs?.[0];
   const canUseWorkspace = !requireApplied || job?.status === "applied";
 
   const {

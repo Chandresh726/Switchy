@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { companies, education, jobs, people, profile } from "@/lib/db/schema";
-import { jobsQuerySchema } from "@/lib/api/contracts/jobs";
+import {
+  jobSchema,
+  jobsQuerySchema,
+  jobsResponseSchema,
+  jobUpdateResponseSchema,
+} from "@/lib/api/contracts/jobs";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-application-services-");
@@ -25,7 +30,8 @@ describe("backend application services", () => {
         new Map(rows.map((row) => [row.id, {
           matchScore: row.matchScore, matchReasons: [], matchedSkills: [], matchResultId: null,
           matchBreakdown: null, matchStale: false, matchLegacy: false,
-          matchSummary: "", matchReasoning: [], scoringPolicyVersion: null,
+          matchSummary: "", matchReasoning: [], matchRunId: null,
+          matchPolicyVersion: null, scoringPolicyVersion: null,
         }]))
       ),
     }));
@@ -34,11 +40,21 @@ describe("backend application services", () => {
     const { deleteJob, getJob, updateJob } = await import("@/lib/application/jobs-service");
 
     const detail = await getJob(job.id);
+    expect(jobSchema.parse(JSON.parse(JSON.stringify(detail)))).toMatchObject({
+      id: job.id,
+      matchReasons: [],
+      matchedSkills: [],
+    });
     expect(detail).not.toHaveProperty("aiFingerprint");
     expect(detail).not.toHaveProperty("missingSkills");
     expect(detail).not.toHaveProperty("recommendations");
     expect(detail).toHaveProperty("description");
     const archived = await updateJob(job.id, { status: "archived" });
+    expect(jobUpdateResponseSchema.parse(JSON.parse(JSON.stringify(archived)))).toMatchObject({
+      id: job.id,
+      status: "archived",
+      archiveSource: "manual",
+    });
     expect(archived).toMatchObject({ status: "archived", archiveSource: "manual" });
     expect(archived.archivedAt).toBeInstanceOf(Date);
     await expect(updateJob(999_999, { status: "viewed" })).rejects.toMatchObject({ code: "job_not_found" });
@@ -55,7 +71,8 @@ describe("backend application services", () => {
         new Map(rows.map((row) => [row.id, {
           matchScore: row.matchScore, matchReasons: [], matchedSkills: [], matchResultId: null,
           matchBreakdown: null, matchStale: false, matchLegacy: false,
-          matchSummary: "", matchReasoning: [], scoringPolicyVersion: null,
+          matchSummary: "", matchReasoning: [], matchRunId: null,
+          matchPolicyVersion: null, scoringPolicyVersion: null,
         }]))
       ),
     }));
@@ -91,6 +108,7 @@ describe("backend application services", () => {
     }));
 
     expect(firstPage).toMatchObject({ totalCount: 5_000, hasMore: true });
+    expect(jobsResponseSchema.parse(JSON.parse(JSON.stringify(firstPage))).jobs).toHaveLength(100);
     expect(firstPage.jobs).toHaveLength(100);
     expect(secondPage.jobs).toHaveLength(100);
     expect(firstPage.jobs.every((job) => !("description" in job))).toBe(true);

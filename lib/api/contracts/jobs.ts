@@ -90,14 +90,16 @@ const jobSummarySchema = z.object({
   viewedAt: z.string().nullable(),
   appliedAt: z.string().nullable(),
   matchScore: z.number().nullable(),
-  matchReasons: z.string().nullable(),
-  matchedSkills: z.string().nullable(),
+  matchReasons: z.array(z.string()),
+  matchedSkills: z.array(z.string()),
   matchResultId: z.string().nullable(),
   matchBreakdown: MatchBreakdownSchema.nullable(),
   matchStale: z.boolean(),
   matchLegacy: z.boolean(),
   matchSummary: z.string(),
   matchReasoning: z.array(MatchReasoningPointSchema),
+  matchRunId: z.string().nullable(),
+  matchPolicyVersion: z.string().nullable(),
   scoringPolicyVersion: z.string().nullable(),
   company: z.object({
     id: z.number().int().positive(),
@@ -105,7 +107,7 @@ const jobSummarySchema = z.object({
     logoUrl: z.string().nullable(),
     platform: z.string().nullable(),
   }),
-}).passthrough();
+}).strict();
 
 export const jobSchema = jobSummarySchema.extend({
   description: z.string().nullable(),
@@ -117,4 +119,12 @@ export const jobsResponseSchema = z.object({
   hasMore: z.boolean(),
 });
 
-export const jobUpdateResponseSchema = z.object({ id: z.number().int().positive() }).passthrough();
+export const jobUpdateResponseSchema = z.object({
+  id: z.number().int().positive(),
+  status: jobStatusSchema,
+  viewedAt: z.string().nullable(),
+  appliedAt: z.string().nullable(),
+  archivedAt: z.string().nullable(),
+  archiveSource: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+});
