@@ -79,6 +79,13 @@ export const personResponseSchema = z.object({
   isStarred: z.boolean(),
   isActive: z.boolean(),
   lastSeenAt: z.string(),
+  connectedOn: z.string().nullable(),
+  roleTag: z.string().nullable(),
+  roleTagSource: z.string().nullable(),
+  notes: z.string().nullable(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+  isRecruiter: z.boolean(),
   company: z.object({ id: z.number().int().positive(), name: z.string() }).nullable(),
 }).passthrough();
 

@@ -127,6 +127,12 @@ const companyPersonSchema = z.object({
   connectedOn: z.string().nullable(),
   isStarred: z.boolean(),
   notes: z.string().nullable(),
+  roleTag: z.string().nullable(),
+  roleTagSource: z.string().nullable(),
+  lastSeenAt: z.string(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+  isRecruiter: z.boolean(),
 });
 
 export const companyOverviewResponseSchema = z.object({
@@ -146,6 +152,16 @@ export const companyOverviewResponseSchema = z.object({
     highMatchJobs: z.number().int().nonnegative(),
     mappedPeople: z.number().int().nonnegative(),
     starredPeople: z.number().int().nonnegative(),
+    statusCounts: z.object({
+      new: z.number().int().nonnegative(),
+      viewed: z.number().int().nonnegative(),
+      interested: z.number().int().nonnegative(),
+      applied: z.number().int().nonnegative(),
+      rejected: z.number().int().nonnegative(),
+      archived: z.number().int().nonnegative(),
+    }),
+    jobsDiscoveredLast7Days: z.number().int().nonnegative(),
+    lastJobDiscoveredAt: z.string().nullable(),
   }),
   jobs: z.array(companyJobSchema),
   topMatches: z.array(companyJobSchema),

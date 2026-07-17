@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { and, count, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 
 import {
   ConflictError,
@@ -22,6 +22,7 @@ import { db } from "@/lib/db";
 import { companies, jobs, matchResults, matchSessions, people, scrapingLogs } from "@/lib/db/schema";
 import { completeEmptyMatchSession, fetchCompanyJobIds, queueMatchWork } from "@/lib/ai/work-items";
 import { refreshUnmatchedCompanyMappings } from "@/lib/people/sync";
+import { isRecruiterPosition } from "@/lib/people/position";
 import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 import { getLocalScrapeQueueService } from "@/lib/scraper";
@@ -294,8 +295,10 @@ export async function refreshCompanyJobs(companyIds: number[]) {
   };
 }
 
-export async function getCompanyOverview(id: number) {
+export async function getCompanyOverview(id: number, now = new Date()) {
   const company = await getCompany(id);
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1_000);
+  const discoveredLast7Days = and(gte(jobs.discoveredAt, sevenDaysAgo), lte(jobs.discoveredAt, now));
   const currentContext = await getCurrentMatchContext();
   const currentResultJoin = currentContext ? and(
     eq(matchResults.jobId, jobs.id),
@@ -318,7 +321,16 @@ export async function getCompanyOverview(id: number) {
     : db.select(COMPANY_JOB_SELECTION).from(jobs).where(and(eq(jobs.companyId, id), gte(jobs.matchScore, 70)))
       .orderBy(desc(jobs.matchScore), desc(jobs.discoveredAt), desc(jobs.id)).limit(3);
   const [jobStatsRows, peopleStatsRows, companyJobs, companyPeople, scrapeLogs, matchSessionRows, promotionCountRows, topMatchJobs] = await Promise.all([
-    db.select({ openJobs: count() }).from(jobs).where(eq(jobs.companyId, id)),
+    db.select({
+      openJobs: sql<number>`coalesce(sum(case when ${jobs.status} not in ('rejected', 'archived') then 1 else 0 end), 0)`,
+      newJobs: sql<number>`coalesce(sum(case when ${jobs.status} = 'new' then 1 else 0 end), 0)`,
+      viewedJobs: sql<number>`coalesce(sum(case when ${jobs.status} = 'viewed' then 1 else 0 end), 0)`,
+      interestedJobs: sql<number>`coalesce(sum(case when ${jobs.status} = 'interested' then 1 else 0 end), 0)`,
+      appliedJobs: sql<number>`coalesce(sum(case when ${jobs.status} = 'applied' then 1 else 0 end), 0)`,
+      rejectedJobs: sql<number>`coalesce(sum(case when ${jobs.status} = 'rejected' then 1 else 0 end), 0)`,
+      archivedJobs: sql<number>`coalesce(sum(case when ${jobs.status} = 'archived' then 1 else 0 end), 0)`,
+      jobsDiscoveredLast7Days: sql<number>`coalesce(sum(case when ${discoveredLast7Days} then 1 else 0 end), 0)`,
+    }).from(jobs).where(eq(jobs.companyId, id)),
     db.select({
       mappedPeople: sql<number>`count(*)`,
       starredPeople: sql<number>`sum(case when ${people.isStarred} = 1 then 1 else 0 end)`,
@@ -328,7 +340,9 @@ export async function getCompanyOverview(id: number) {
       id: people.id, fullName: people.fullName, firstName: people.firstName,
       lastName: people.lastName, profileUrl: people.profileUrl, email: people.email,
       position: people.position, source: people.source, connectedOn: people.connectedOn,
-      isStarred: people.isStarred, notes: people.notes,
+      isStarred: people.isStarred, notes: people.notes, roleTag: people.roleTag,
+      roleTagSource: people.roleTagSource, lastSeenAt: people.lastSeenAt,
+      createdAt: people.createdAt, updatedAt: people.updatedAt,
     }).from(people).where(and(eq(people.mappedCompanyId, id), eq(people.isActive, true)))
       .orderBy(desc(people.isStarred), people.fullName, desc(people.id)).limit(200),
     db.select({
@@ -361,10 +375,23 @@ export async function getCompanyOverview(id: number) {
       highMatchJobs: Number(promotionCountRows[0]?.value ?? 0),
       mappedPeople: peopleStatsRows[0]?.mappedPeople || 0,
       starredPeople: peopleStatsRows[0]?.starredPeople || 0,
+      statusCounts: {
+        new: Number(jobStatsRows[0]?.newJobs ?? 0),
+        viewed: Number(jobStatsRows[0]?.viewedJobs ?? 0),
+        interested: Number(jobStatsRows[0]?.interestedJobs ?? 0),
+        applied: Number(jobStatsRows[0]?.appliedJobs ?? 0),
+        rejected: Number(jobStatsRows[0]?.rejectedJobs ?? 0),
+        archived: Number(jobStatsRows[0]?.archivedJobs ?? 0),
+      },
+      jobsDiscoveredLast7Days: Number(jobStatsRows[0]?.jobsDiscoveredLast7Days ?? 0),
+      lastJobDiscoveredAt: companyJobs[0]?.discoveredAt ?? null,
     },
     jobs: present(companyJobs, presentations),
     topMatches: present(topMatchJobs, topPresentations),
-    people: companyPeople,
+    people: companyPeople.map((person) => ({
+      ...person,
+      isRecruiter: isRecruiterPosition(person.position),
+    })),
     activity: { scrapeLogs, matchSessions: matchSessionRows },
   };
 }
