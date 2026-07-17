@@ -198,7 +198,12 @@ export function CompanyJobsTab({ company, jobs, topMatches }: CompanyJobsTabProp
         ) : (
           <div className="grid gap-3">
             {filteredAndSorted.map((job) => (
-              <CompanyJobCard key={job.id} job={job} currentTime={currentTime} />
+              <CompanyJobCard
+                key={job.id}
+                companyId={company.id}
+                job={job}
+                currentTime={currentTime}
+              />
             ))}
           </div>
         )}

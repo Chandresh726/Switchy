@@ -33,7 +33,7 @@ import {
   updateUnmatchedCompany,
 } from "@/lib/api/clients/people";
 import { cn } from "@/lib/utils";
-import { peopleKeys } from "@/lib/query-keys";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
 interface TrackedCompany {
   id: number;
@@ -197,14 +197,15 @@ function CompanyPeopleList({ companyNormalized, expanded }: CompanyPeopleListPro
     setPage(1);
   };
 
+  const queryParams = {
+    companyNormalized,
+    limit: pageSize,
+    offset: (page - 1) * pageSize,
+  };
   const { data, isLoading, isFetching, error } = useQuery({
-    queryKey: peopleKeys.unmatchedCompanies.people(companyNormalized, page, pageSize),
+    queryKey: queryKeys.people.unmatchedCompanies.people(queryParams),
     queryFn: async () => {
-      return getUnmatchedCompanyPeople({
-        companyNormalized,
-        limit: pageSize,
-        offset: (page - 1) * pageSize,
-      });
+      return getUnmatchedCompanyPeople(queryParams);
     },
     enabled: expanded,
     staleTime: 60000,
@@ -315,14 +316,17 @@ export function UnmatchedPeopleModal({
     setCurrentPage(1);
   };
 
+  const queryParams = {
+    limit: pageSize,
+    offset: (currentPage - 1) * pageSize,
+    search: debouncedSearch || undefined,
+  };
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: peopleKeys.unmatchedCompanies.list(mode, debouncedSearch, currentPage, pageSize),
+    queryKey: mode === "ignored"
+      ? queryKeys.people.unmatchedCompanies.ignored(queryParams)
+      : queryKeys.people.unmatchedCompanies.list(queryParams),
     queryFn: async () => {
-      return getUnmatchedCompanies({
-        limit: pageSize,
-        offset: (currentPage - 1) * pageSize,
-        search: debouncedSearch || undefined,
-      }, mode === "ignored");
+      return getUnmatchedCompanies(queryParams, mode === "ignored");
     },
     enabled: open,
   });
@@ -344,9 +348,7 @@ export function UnmatchedPeopleModal({
         delete next[variables.companyNormalized];
         return next;
       });
-      queryClient.invalidateQueries({ queryKey: peopleKeys.unmatchedCompanies.all() });
-      queryClient.invalidateQueries({ queryKey: peopleKeys.ignoredCompanies() });
-      queryClient.invalidateQueries({ queryKey: peopleKeys.all });
+      void cacheOwnership.peopleMutation(queryClient);
       toast.success(`Mapped ${result.updatedCount} people`);
     },
     onError: (error) => {
@@ -362,9 +364,7 @@ export function UnmatchedPeopleModal({
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: peopleKeys.unmatchedCompanies.all() });
-      queryClient.invalidateQueries({ queryKey: peopleKeys.ignoredCompanies() });
-      queryClient.invalidateQueries({ queryKey: peopleKeys.all });
+      void cacheOwnership.peopleMutation(queryClient);
       toast.success("Updated company status");
     },
     onError: (error) => {

@@ -18,6 +18,7 @@ import { getJob, updateJob } from "@/lib/api/clients/jobs";
 import { sanitizeHtmlContent } from "@/lib/jobs/description-processor";
 import type { JobStatus } from "@/lib/jobs/status";
 import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import {
   Building2,
   Calendar,
@@ -44,17 +45,18 @@ export default function JobDetailPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const jobId = parseInt(params.id as string);
+  const hasValidJobId = Number.isInteger(jobId) && jobId > 0;
 
   const { data: job, isLoading } = useQuery({
-    queryKey: ["job", jobId],
+    queryKey: queryKeys.jobs.detail(jobId),
     queryFn: () => getJob(jobId),
+    enabled: hasValidJobId,
   });
   const {
     mutation: calculateMatchMutation,
     isMatching,
   } = useQueuedJobMatch({
-    jobId,
-    extraInvalidationKeys: [["job", jobId]],
+    jobId: hasValidJobId ? jobId : 0,
   });
   const isReadOnlyPostingAction = job?.status === "applied" || job?.status === "archived";
 
@@ -62,11 +64,10 @@ export default function JobDetailPage() {
     mutationFn: async (newStatus: JobStatus) => {
       return updateJob(jobId, { status: newStatus });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["job", jobId] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["stats"] });
-    },
+    onSuccess: () => void cacheOwnership.jobMutation(queryClient, {
+      jobId,
+      companyId: job?.company.id,
+    }),
   });
 
   useEffect(() => {

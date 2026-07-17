@@ -7,6 +7,7 @@ import DashboardPage from "@/app/(dashboard)/page";
 import JobDetailPage from "@/app/(dashboard)/jobs/[id]/page";
 import { AIWorkspacePage } from "@/components/ai-workspace/ai-workspace-page";
 import { JobList } from "@/components/jobs/job-list";
+import { queryKeys } from "@/lib/query-keys";
 
 const mocks = vi.hoisted(() => ({
   getCompanies: vi.fn(),
@@ -15,10 +16,11 @@ const mocks = vi.hoisted(() => ({
   getProfile: vi.fn(),
   getStats: vi.fn(),
   replace: vi.fn(),
+  routeId: "42",
 }));
 
 vi.mock("next/navigation", () => ({
-  useParams: () => ({ id: "42" }),
+  useParams: () => ({ id: mocks.routeId }),
   useRouter: () => ({ push: vi.fn(), replace: mocks.replace }),
   useSearchParams: () => new URLSearchParams(),
 }));
@@ -132,6 +134,8 @@ function renderWithClient(ui: React.ReactNode) {
 
 describe("job data consumers", () => {
   beforeEach(() => {
+    mocks.routeId = "42";
+    mocks.getJob.mockClear();
     mocks.getCompanies.mockResolvedValue([company]);
     mocks.getJob.mockResolvedValue(detailJob);
     mocks.getProfile.mockResolvedValue({ id: 1, name: "Test User" });
@@ -192,7 +196,7 @@ describe("job data consumers", () => {
     const queryClient = renderWithClient(<JobDetailPage />);
 
     expect(await screen.findByText("Canonical Backend Engineer")).toBeTruthy();
-    await waitFor(() => expect(queryClient.getQueryData(["job", 42])).toEqual(detailJob));
+    await waitFor(() => expect(queryClient.getQueryData(queryKeys.jobs.detail(42))).toEqual(detailJob));
     expect(mocks.getJob).toHaveBeenCalledWith(42);
   });
 
@@ -209,7 +213,16 @@ describe("job data consumers", () => {
     );
 
     expect(await screen.findByText("Canonical Backend Engineer at Example Company")).toBeTruthy();
-    await waitFor(() => expect(queryClient.getQueryData(["job", 42])).toEqual(detailJob));
+    await waitFor(() => expect(queryClient.getQueryData(queryKeys.jobs.detail(42))).toEqual(detailJob));
     expect(mocks.getJob).toHaveBeenCalledWith(42);
+  });
+
+  it("does not request job resources for an invalid route ID", async () => {
+    mocks.routeId = "not-a-job";
+
+    renderWithClient(<JobDetailPage />);
+
+    expect(await screen.findByText("Job not found")).toBeTruthy();
+    expect(mocks.getJob).not.toHaveBeenCalled();
   });
 });

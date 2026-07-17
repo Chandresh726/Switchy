@@ -44,6 +44,7 @@ import {
   formatDate,
 } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
 interface MatchSessionCardProps {
   session: MatchHistorySession;
@@ -67,7 +68,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
     try {
       await deleteMatchHistorySession(session.id);
 
-      queryClient.invalidateQueries({ queryKey: ["match-history"] });
+      void cacheOwnership.clearMatchHistory(queryClient);
       toast.success("Match session deleted successfully");
     } catch (error) {
       console.error("Failed to delete session:", error);
@@ -80,9 +81,9 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
   const markSessionStoppedInCache = () => {
     const now = new Date();
 
-    queryClient.setQueryData([
-      "match-history",
-    ], (old: MatchHistoryResponse | undefined) => {
+    queryClient.setQueriesData<MatchHistoryResponse>({
+      queryKey: queryKeys.matchHistory.lists(),
+    }, (old) => {
       if (!old?.sessions) return old;
       return {
         ...old,
@@ -94,10 +95,9 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
       };
     });
 
-    queryClient.setQueryData([
-      "match-history",
-      session.id,
-    ], (old: Pick<MatchHistoryDetailResponse, "session"> | undefined) => {
+    queryClient.setQueriesData<Pick<MatchHistoryDetailResponse, "session">>({
+      queryKey: queryKeys.matchHistory.detailRoot(session.id),
+    }, (old) => {
       if (!old?.session) return old;
       return {
         ...old,
@@ -118,13 +118,11 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
       await cancelMatchHistorySession(session.id);
 
       toast.success("Stopping match session");
-      queryClient.invalidateQueries({ queryKey: ["match-history"] });
-      queryClient.invalidateQueries({ queryKey: ["match-history", session.id] });
+      void cacheOwnership.updateMatchHistoryStatus(queryClient);
     } catch (error) {
       console.error("Failed to stop session:", error);
       toast.error("Failed to stop match session");
-      queryClient.invalidateQueries({ queryKey: ["match-history"] });
-      queryClient.invalidateQueries({ queryKey: ["match-history", session.id] });
+      void cacheOwnership.updateMatchHistoryStatus(queryClient);
     } finally {
       setIsStopping(false);
     }

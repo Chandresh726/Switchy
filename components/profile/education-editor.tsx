@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Calendar, GraduationCap, Loader2, Pencil, Plus, Save, Trash2, X, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -213,7 +214,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
   }, [initialEducation]);
 
   const { data: educationList = [], isLoading } = useQuery({
-    queryKey: ["education", profileId],
+    queryKey: queryKeys.profile.education(profileId),
     queryFn: async () => {
       try {
         if (!profileId) return [];
@@ -244,7 +245,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["education", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.education(profileId));
       setIsAdding(false);
       setFormData(emptyForm);
     },
@@ -266,7 +267,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["education", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.education(profileId));
       setEditingId(null);
       setFormData(emptyForm);
     },
@@ -292,7 +293,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["education", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.education(profileId));
       setPendingEducation([]);
       setIsBulkAdding(false);
       setSettingsSaved(true);
@@ -315,7 +316,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["education", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.education(profileId));
     },
   });
 

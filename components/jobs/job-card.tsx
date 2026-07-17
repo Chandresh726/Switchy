@@ -10,6 +10,7 @@ import { MatchBadge } from "./match-badge";
 import { ApplyButton } from "./apply-button";
 import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
 import type { JobStatus } from "@/lib/jobs/status";
+import { cacheOwnership } from "@/lib/query-keys";
 import {
   Building2,
   Calendar,
@@ -78,10 +79,10 @@ export function JobCard({ job }: JobCardProps) {
     mutationFn: async (newStatus: JobStatus) => {
       return updateJob(job.id, { status: newStatus });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["stats"] });
-    },
+    onSuccess: () => void cacheOwnership.jobMutation(queryClient, {
+      jobId: job.id,
+      companyId: job.company.id,
+    }),
   });
 
   const formatDate = (dateStr: string | null) => {

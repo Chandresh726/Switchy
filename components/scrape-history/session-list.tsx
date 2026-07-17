@@ -5,17 +5,18 @@ import { SessionCard } from "./session-card";
 import { Loader2, History } from "lucide-react";
 import { formatDurationMs, groupSessionsByDate } from "@/lib/utils/format";
 import { getScrapeHistoryList } from "@/lib/api/clients/history";
+import { queryKeys } from "@/lib/query-keys";
+import { historyPollingInterval } from "@/lib/hooks/history-polling";
 
 export function SessionList() {
   const { data, isLoading, error } = useQuery({
-    queryKey: ["scrape-history"],
+    queryKey: queryKeys.scrapeHistory.list(),
     queryFn: async () => {
       return getScrapeHistoryList();
     },
     refetchInterval: (query) => {
       const sessions = query.state.data?.sessions || [];
-      const hasInProgress = sessions.some((s) => s.status === "in_progress");
-      return hasInProgress ? 1000 : 5000;
+      return historyPollingInterval(sessions);
     },
     refetchIntervalInBackground: true,
   });

@@ -29,6 +29,7 @@ import { getJobs } from "@/lib/api/clients/jobs";
 import { getProfile } from "@/lib/api/clients/profile";
 import { getStats } from "@/lib/api/clients/stats";
 import type { JobSummary } from "@/lib/api/contracts/jobs";
+import { queryKeys } from "@/lib/query-keys";
 
 const DASHBOARD_LIST_MAX_ITEMS = 20;
 
@@ -160,14 +161,14 @@ export default function DashboardPage() {
   const [currentTime] = useState(() => Date.now());
 
   const { data: profile, isLoading: isProfileLoading } = useQuery({
-    queryKey: ["profile"],
+    queryKey: queryKeys.profile.detail(),
     queryFn: async () => {
       return getProfile();
     },
   });
 
   const { data: stats, isLoading: isStatsLoading } = useQuery({
-    queryKey: ["stats"],
+    queryKey: queryKeys.stats.detail(),
     queryFn: async () => {
       return getStats();
     },
@@ -177,7 +178,13 @@ export default function DashboardPage() {
 
   // Top five roles in the good-or-better compatibility bands.
   const { data: highMatchData } = useQuery({
-    queryKey: ["jobs", "high-match"],
+    queryKey: queryKeys.jobs.list({
+      matchBands: ["high", "good"],
+      excludeStatus: ["applied", "archived"],
+      sortBy: "matchScore",
+      sortOrder: "desc",
+      limit: DASHBOARD_LIST_MAX_ITEMS,
+    }),
     queryFn: async () => {
       return getJobs({
         matchBands: ["high", "good"],
@@ -191,7 +198,12 @@ export default function DashboardPage() {
 
   // Recently discovered jobs
   const { data: recentJobsData } = useQuery({
-    queryKey: ["jobs", "recent"],
+    queryKey: queryKeys.jobs.list({
+      excludeStatus: ["applied", "archived"],
+      sortBy: "discoveredAt",
+      sortOrder: "desc",
+      limit: DASHBOARD_LIST_MAX_ITEMS,
+    }),
     queryFn: async () => {
       return getJobs({
         excludeStatus: ["applied", "archived"],
@@ -204,7 +216,12 @@ export default function DashboardPage() {
 
   // Recently applied jobs
   const { data: appliedJobsData } = useQuery({
-    queryKey: ["jobs", "applied-recent"],
+    queryKey: queryKeys.jobs.list({
+      status: "applied",
+      sortBy: "discoveredAt",
+      sortOrder: "desc",
+      limit: 5,
+    }),
     queryFn: async () => {
       return getJobs({ status: "applied", sortBy: "discoveredAt", sortOrder: "desc", limit: 5 });
     },

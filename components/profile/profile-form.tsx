@@ -10,6 +10,7 @@ import { getProfile, saveProfile } from "@/lib/api/clients/profile";
 import { useState, useEffect, useMemo } from "react";
 import { Loader2, Save, User } from "lucide-react";
 import { toast } from "sonner";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
 interface ProfileData {
   id?: number;
@@ -43,7 +44,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
   const [settingsSaved, setSettingsSaved] = useState(false);
 
   const { data: profile, isLoading } = useQuery({
-    queryKey: ["profile"],
+    queryKey: queryKeys.profile.detail(),
     queryFn: async () => {
       return getProfile();
     },
@@ -105,7 +106,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
       return saveProfile(data);
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["profile"] });
+      void cacheOwnership.profileMutation(queryClient);
       setOriginalData({
         name: data.name || "",
         email: data.email || "",

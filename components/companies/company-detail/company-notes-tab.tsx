@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import { patchCompany } from "@/lib/api/clients/companies";
 import { useDebounce } from "@/lib/hooks/use-debounce";
-import { companyKeys } from "@/lib/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 
 import type { CompanyOverviewResponse } from "@/lib/api/contracts/companies";
 import { useCompanyNotesContext } from "./company-notes-context";
@@ -119,7 +119,7 @@ export function CompanyNotesTab({ companyId, note }: CompanyNotesTabProps) {
       setLastSavedDraft(savedNote);
       setNoteSaveIndicator("saved");
       queryClient.setQueryData<CompanyOverviewResponse | undefined>(
-        companyKeys.overview(companyId),
+        queryKeys.companies.overview(companyId),
         (current) =>
           current
             ? {
@@ -131,7 +131,7 @@ export function CompanyNotesTab({ companyId, note }: CompanyNotesTabProps) {
               }
             : current
       );
-      queryClient.invalidateQueries({ queryKey: companyKeys.list() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.list() });
       hideIndicatorTimeoutRef.current = window.setTimeout(() => {
         setNoteSaveIndicator("hidden");
         hideIndicatorTimeoutRef.current = null;

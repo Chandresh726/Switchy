@@ -17,6 +17,7 @@ import {
 import type { Company } from "@/lib/api/contracts/companies";
 import { PLATFORM_OPTIONS } from "@/lib/constants";
 import { detectPlatformFromUrl, getPlatformLabel } from "@/lib/scraper/platform-detection";
+import { cacheOwnership } from "@/lib/query-keys";
 
 interface CompanyFormProps {
   company?: Company;
@@ -86,7 +87,7 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
       return createCompanies(companyCreateBodySchema.parse(data));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      void cacheOwnership.companyMutation(queryClient, { affectsMappings: true });
       onSuccess?.();
     },
     onError: (error) => {
@@ -99,7 +100,10 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
       return updateCompany(company!.id, companyReplaceBodySchema.parse(data));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      void cacheOwnership.companyMutation(queryClient, {
+        companyId: company?.id,
+        affectsMappings: true,
+      });
       onSuccess?.();
     },
     onError: (error) => {

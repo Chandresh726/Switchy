@@ -5,6 +5,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
+import { queryKeys } from "@/lib/query-keys";
 
 describe("useQueuedJobMatch", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -59,7 +60,6 @@ describe("useQueuedJobMatch", () => {
     );
     const { result } = renderHook(() => useQueuedJobMatch({
       jobId: 42,
-      extraInvalidationKeys: [["job", 42]],
     }), { wrapper });
 
     await act(async () => result.current.mutation.mutateAsync());
@@ -69,7 +69,13 @@ describe("useQueuedJobMatch", () => {
     }));
     await waitFor(() => expect(result.current.isMatching).toBe(false));
 
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["job", 42] });
+    expect(invalidate.mock.calls.map(([filters]) => filters?.queryKey)).toEqual([
+      queryKeys.jobs.all,
+      queryKeys.stats.all,
+      queryKeys.companies.overviews(),
+      queryKeys.matchHistory.all,
+      queryKeys.runtime.unmatchedJobs(),
+      queryKeys.ai.usages(),
+    ]);
   });
 });

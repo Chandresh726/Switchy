@@ -62,7 +62,7 @@ import type {
   PeopleResponse,
   PersonSource,
 } from "@/lib/api/contracts/people";
-import { companyKeys, peopleKeys } from "@/lib/query-keys";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import { copyTextToClipboard } from "@/lib/utils/clipboard";
 import { formatDateTime } from "@/lib/utils/format";
 
@@ -176,14 +176,14 @@ export default function PeoplePage() {
   const [lastSummary, setLastSummary] = useState<PeopleImportResponse | null>(null);
 
   const { data: companies = [] } = useQuery<Company[]>({
-    queryKey: companyKeys.list(),
+    queryKey: queryKeys.companies.list(),
     queryFn: async () => {
       return getCompanies();
     },
   });
 
   const { data: sessions = [] } = useQuery<PeopleImportSession[]>({
-    queryKey: peopleKeys.importSessions(),
+    queryKey: queryKeys.people.importSessions({ limit: 5 }),
     queryFn: async () => {
       return (await getPeopleImportSessions({ limit: 5 })).sessions;
     },
@@ -215,23 +215,14 @@ export default function PeoplePage() {
   }, [activityScope, companyId, currentPage, mappingScope, pageSize, search, showStarredOnly, source]);
 
   const { data, isLoading, isFetching } = useQuery<PeopleResponse>({
-    queryKey: peopleKeys.listWithParams({
-      search,
-      companyId,
-      source,
-      showStarredOnly,
-      mappingScope,
-      activityScope,
-      pageSize,
-      currentPage,
-    }),
+    queryKey: queryKeys.people.list(peopleParams),
     queryFn: async () => {
       return getPeople(peopleParams);
     },
   });
 
   const { data: totalPeopleData } = useQuery<PeopleResponse>({
-    queryKey: peopleKeys.totalCount(),
+    queryKey: queryKeys.people.list({ active: "all", limit: 1 }),
     queryFn: async () => {
       return getPeople({ active: "all", limit: 1 });
     },
@@ -240,7 +231,7 @@ export default function PeoplePage() {
   const totalPeopleCount = totalPeopleData?.totalCount || 0;
 
   const { data: unmatchedSummary } = useQuery({
-    queryKey: peopleKeys.unmatchedCompanies.summary(),
+    queryKey: queryKeys.people.unmatchedCompanies.list({ summaryOnly: "true" }),
     queryFn: async () => {
       return getUnmatchedCompanies({ summaryOnly: "true" });
     },
@@ -251,8 +242,7 @@ export default function PeoplePage() {
       return patchPerson(payload.id, payload.body);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: peopleKeys.all });
-      queryClient.invalidateQueries({ queryKey: companyKeys.all });
+      void cacheOwnership.peopleMutation(queryClient);
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Failed to update person");
@@ -267,11 +257,7 @@ export default function PeoplePage() {
       setIsDeleteAllDialogOpen(false);
       setLastSummary(null);
       setCurrentPage(1);
-      queryClient.invalidateQueries({ queryKey: peopleKeys.all });
-      queryClient.invalidateQueries({ queryKey: peopleKeys.importSessions() });
-      queryClient.invalidateQueries({ queryKey: companyKeys.all });
-      queryClient.invalidateQueries({ queryKey: peopleKeys.unmatchedCompanies.all() });
-      queryClient.invalidateQueries({ queryKey: peopleKeys.ignoredCompanies() });
+      void cacheOwnership.peopleMutation(queryClient);
       toast.success(result.deletedCount > 0 ? `Deleted ${result.deletedCount} people` : "No people to delete");
     },
     onError: (error) => {
@@ -284,10 +270,7 @@ export default function PeoplePage() {
       return refreshUnmatchedCompanyMappings();
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: peopleKeys.unmatchedCompanies.all() });
-      queryClient.invalidateQueries({ queryKey: peopleKeys.ignoredCompanies() });
-      queryClient.invalidateQueries({ queryKey: peopleKeys.all });
-      queryClient.invalidateQueries({ queryKey: companyKeys.all });
+      void cacheOwnership.peopleMutation(queryClient);
 
       if (result.mappedPeopleCount > 0) {
         toast.success(
@@ -585,17 +568,11 @@ export default function PeoplePage() {
         onImported={(summary) => {
           setLastSummary(summary);
           setCurrentPage(1);
-          queryClient.invalidateQueries({ queryKey: peopleKeys.all });
-          queryClient.invalidateQueries({ queryKey: peopleKeys.importSessions() });
-          queryClient.invalidateQueries({ queryKey: companyKeys.all });
-          queryClient.invalidateQueries({ queryKey: peopleKeys.unmatchedCompanies.all() });
-          queryClient.invalidateQueries({ queryKey: peopleKeys.ignoredCompanies() });
+          void cacheOwnership.peopleMutation(queryClient);
         }}
         onCreatedManual={() => {
           setCurrentPage(1);
-          queryClient.invalidateQueries({ queryKey: peopleKeys.all });
-          queryClient.invalidateQueries({ queryKey: companyKeys.all });
-          queryClient.invalidateQueries({ queryKey: peopleKeys.unmatchedCompanies.all() });
+          void cacheOwnership.peopleMutation(queryClient);
         }}
       />
 

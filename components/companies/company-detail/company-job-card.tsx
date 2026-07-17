@@ -15,8 +15,10 @@ import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/utils/format";
 
 import type { CompanyJob } from "@/lib/api/contracts/companies";
+import { cacheOwnership } from "@/lib/query-keys";
 
 interface CompanyJobCardProps {
+  companyId: number;
   job: CompanyJob;
   currentTime: number;
 }
@@ -36,7 +38,7 @@ const LOCATION_TYPE_LABELS: Record<string, string> = {
   onsite: "On-site",
 };
 
-export function CompanyJobCard({ job, currentTime }: CompanyJobCardProps) {
+export function CompanyJobCard({ companyId, job, currentTime }: CompanyJobCardProps) {
   const queryClient = useQueryClient();
   const shouldShowNewTag = isNewJob({
     discoveredAt: job.discoveredAt,
@@ -49,8 +51,7 @@ export function CompanyJobCard({ job, currentTime }: CompanyJobCardProps) {
       return updateJob(job.id, { status: newStatus });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["company-overview"] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      void cacheOwnership.jobMutation(queryClient, { jobId: job.id, companyId });
     },
   });
 

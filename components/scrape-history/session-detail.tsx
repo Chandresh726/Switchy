@@ -28,6 +28,7 @@ import {
 } from "@/lib/api/clients/history";
 import { formatDateTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
 import { CompanyProgressList } from "./company-progress-list";
 import { TRIGGER_LABELS } from "./constants";
@@ -43,10 +44,11 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
   const workLimit = 50;
   const router = useRouter();
   const queryClient = useQueryClient();
+  const detailParams = { logOffset, logLimit, workOffset, workLimit };
   const { data, isLoading, error } = useQuery({
-    queryKey: ["scrape-history", sessionId, logOffset, workOffset],
+    queryKey: queryKeys.scrapeHistory.detail(sessionId, detailParams),
     queryFn: async () => {
-      return getScrapeHistoryDetail(sessionId, { logOffset, logLimit, workOffset, workLimit });
+      return getScrapeHistoryDetail(sessionId, detailParams);
     },
     refetchInterval: (query) => {
       const session = query.state.data?.session;
@@ -62,8 +64,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
     },
     onSuccess: () => {
       toast.success("Stopping scrape session");
-      queryClient.invalidateQueries({ queryKey: ["scrape-history"] });
-      queryClient.invalidateQueries({ queryKey: ["scrape-history", sessionId] });
+      void cacheOwnership.updateScrapeHistoryStatus(queryClient);
     },
     onError: () => {
       toast.error("Failed to stop scrape session");
@@ -75,6 +76,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
       return deleteScrapeHistorySession(sessionId);
     },
     onSuccess: () => {
+      void cacheOwnership.clearScrapeHistory(queryClient);
       router.push("/history/scrape");
     },
   });

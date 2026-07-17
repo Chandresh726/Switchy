@@ -6,6 +6,7 @@ import { Clock, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getSchedulerStatus } from "@/lib/api/clients/runtime";
 import type { SchedulerStatusResponse } from "@/lib/api/contracts/runtime";
+import { queryKeys } from "@/lib/query-keys";
 
 interface ScrapeCountdownProps {
   className?: string;
@@ -29,7 +30,7 @@ function formatTimeRemaining(ms: number): string {
 
 export function ScrapeCountdown({ className }: ScrapeCountdownProps) {
   const { data: status, isLoading, isError, refetch } = useQuery<SchedulerStatusResponse>({
-    queryKey: ["scheduler-status"],
+    queryKey: queryKeys.runtime.scheduler(),
     queryFn: async () => {
       return getSchedulerStatus();
     },

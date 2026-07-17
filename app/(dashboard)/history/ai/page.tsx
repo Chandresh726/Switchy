@@ -24,6 +24,7 @@ import { getContentTypeLabel, getWorkspacePathWithVariant } from "@/lib/ai/writi
 import { deleteAIContent, getAIHistory } from "@/lib/api/clients/ai";
 import type { GeneratedContent } from "@/lib/api/contracts/ai";
 import { cn } from "@/lib/utils";
+import { queryKeys } from "@/lib/query-keys";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -226,7 +227,7 @@ export default function AIHistoryPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["ai-history-all"],
+    queryKey: queryKeys.ai.history(),
     queryFn: async () => {
       return getAIHistory();
     },
@@ -237,7 +238,7 @@ export default function AIHistoryPage() {
       return deleteAIContent(id);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ai-history-all"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.ai.history() });
       toast.success("Deleted successfully");
       setDeletingId(null);
     },

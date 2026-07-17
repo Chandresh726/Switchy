@@ -42,6 +42,7 @@ import {
 import type { Company } from "@/lib/api/contracts/companies";
 import { isCompanyScrapeSupported } from "@/lib/companies/scrape-support";
 import { PLATFORM_COLORS } from "@/lib/constants";
+import { cacheOwnership } from "@/lib/query-keys";
 
 interface CompanyListProps {
   companies: Company[];
@@ -132,8 +133,12 @@ export function CompanyList({
     mutationFn: async (id: number) => {
       return deleteCompany(id);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
+    onSuccess: (_result, id) => {
+      void cacheOwnership.companyMutation(queryClient, {
+        companyId: id,
+        affectsMappings: true,
+        affectsJobRecords: true,
+      });
     },
   });
 
@@ -141,8 +146,8 @@ export function CompanyList({
     mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
       return patchCompany(id, { isActive });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
+    onSuccess: (_result, variables) => {
+      void cacheOwnership.companyMutation(queryClient, { companyId: variables.id });
     },
   });
 
@@ -150,9 +155,11 @@ export function CompanyList({
     mutationFn: async (id: number) => {
       return deleteCompanyJobs(id);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    onSuccess: (_result, id) => {
+      void cacheOwnership.companyMutation(queryClient, {
+        companyId: id,
+        affectsJobRecords: true,
+      });
       setDeleteJobsCompanyId(null);
     },
   });

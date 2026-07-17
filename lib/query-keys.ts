@@ -1,61 +1,358 @@
-export const companyKeys = {
-  all: ["companies"] as const,
-  list: () => [...companyKeys.all] as const,
-  detail: (id: number) => [...companyKeys.all, id] as const,
-  overview: (id: number) => ["company-overview", id] as const,
-};
+import type { QueryClient, QueryKey } from "@tanstack/react-query";
 
-const jobKeys = {
-  all: ["jobs"] as const,
-  list: () => [...jobKeys.all] as const,
-  listWithParams: (params: Record<string, unknown>) => [...jobKeys.all, params] as const,
-  detail: (id: number) => ["job", id] as const,
-  topMatches: () => [...jobKeys.all, "top-matches"] as const,
-  highMatch: () => [...jobKeys.all, "high-match"] as const,
-  recent: () => [...jobKeys.all, "recent"] as const,
-  appliedRecent: () => [...jobKeys.all, "applied-recent"] as const,
-  appliedCount: () => [...jobKeys.all, "applied-count"] as const,
-  savedCount: () => [...jobKeys.all, "saved-count"] as const,
-  archivedCount: () => [...jobKeys.all, "archived-count"] as const,
-};
+import type { AIContentType } from "@/lib/ai/contracts";
+import type { JobsQueryInput } from "@/lib/api/clients/jobs";
+import type {
+  HistoryDetailQueryInput,
+  HistoryQueryInput,
+  ScrapeHistoryQueryInput,
+} from "@/lib/api/clients/history";
+import type {
+  PeopleImportSessionsQueryInput,
+  PeopleQueryInput,
+  UnmatchedCompaniesQueryInput,
+  UnmatchedCompanyPeopleQueryInput,
+} from "@/lib/api/clients/people";
+import {
+  historyDetailQuerySchema,
+  historyQuerySchema,
+  scrapeHistoryQuerySchema,
+} from "@/lib/api/contracts/history";
+import { jobsQuerySchema } from "@/lib/api/contracts/jobs";
+import {
+  peopleImportSessionsQuerySchema,
+  peopleListQuerySchema,
+  unmatchedCompaniesQuerySchema,
+  unmatchedCompanyPeopleQuerySchema,
+} from "@/lib/api/contracts/people";
 
-export const peopleKeys = {
-  all: ["people"] as const,
-  list: () => [...peopleKeys.all] as const,
-  listWithParams: (params: Record<string, unknown>) => [...peopleKeys.all, params] as const,
-  totalCount: () => [...peopleKeys.all, "total-count"] as const,
-  byCompany: (companyId: number) => [...peopleKeys.all, "company", companyId] as const,
-  importSessions: () => ["people-import-sessions"] as const,
-  unmatchedCompanies: {
-    all: () => ["unmatched-people-companies"] as const,
-    summary: () => [...peopleKeys.unmatchedCompanies.all(), "summary"] as const,
-    list: (mode: string, search: string, page: number, pageSize: number) =>
-      [`${mode}-people-companies`, search, page, pageSize] as const,
-    people: (companyNormalized: string, page: number, pageSize: number) =>
-      ["unmatched-company-people", companyNormalized, page, pageSize] as const,
+function canonicalValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value
+      .map(canonicalValue)
+      .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, item]) => item !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalValue(item)])
+    );
+  }
+  return value;
+}
+
+export function canonicalQueryParams<TParams extends object>(params: TParams): TParams {
+  return canonicalValue(params) as TParams;
+}
+
+function canonicalSchemaParams<TOutput extends object>(
+  schema: {
+    safeParse(input: unknown):
+      | { success: true; data: TOutput }
+      | { success: false };
   },
-  ignoredCompanies: () => ["ignored-unmatched-people-companies"] as const,
-};
+  params: object
+): object {
+  const result = schema.safeParse(params);
+  return result.success
+    ? canonicalQueryParams(result.data)
+    : { invalid: canonicalQueryParams(params) };
+}
 
-const profileKeys = {
-  all: ["profile"] as const,
-  detail: () => [...profileKeys.all] as const,
-  education: (profileId: string) => ["education", profileId] as const,
-};
+export const queryKeys = {
+  jobs: {
+    all: ["jobs"] as const,
+    lists: () => ["jobs", "list"] as const,
+    list: (params: JobsQueryInput = {}) => [
+      "jobs",
+      "list",
+      canonicalSchemaParams(jobsQuerySchema, params),
+    ] as const,
+    details: () => ["jobs", "detail"] as const,
+    detail: (id: number) => ["jobs", "detail", id] as const,
+  },
+  stats: {
+    all: ["stats"] as const,
+    detail: () => ["stats", "detail"] as const,
+  },
+  companies: {
+    all: ["companies"] as const,
+    list: () => ["companies", "list"] as const,
+    overviews: () => ["companies", "overview"] as const,
+    overview: (id: number) => ["companies", "overview", id] as const,
+    presets: () => ["assets", "preset-companies"] as const,
+  },
+  people: {
+    all: ["people"] as const,
+    lists: () => ["people", "list"] as const,
+    list: (params: PeopleQueryInput = {}) => [
+      "people",
+      "list",
+      canonicalSchemaParams(peopleListQuerySchema, params),
+    ] as const,
+    importSessions: (params: PeopleImportSessionsQueryInput = {}) => [
+      "people",
+      "import-sessions",
+      canonicalSchemaParams(peopleImportSessionsQuerySchema, params),
+    ] as const,
+    unmatchedCompanies: {
+      all: () => ["people", "unmatched-companies"] as const,
+      list: (params: UnmatchedCompaniesQueryInput = {}) => [
+        "people",
+        "unmatched-companies",
+        "list",
+        canonicalSchemaParams(unmatchedCompaniesQuerySchema, params),
+      ] as const,
+      ignored: (params: UnmatchedCompaniesQueryInput = {}) => [
+        "people",
+        "unmatched-companies",
+        "ignored",
+        canonicalSchemaParams(unmatchedCompaniesQuerySchema, params),
+      ] as const,
+      people: (params: UnmatchedCompanyPeopleQueryInput) => [
+        "people",
+        "unmatched-companies",
+        "people",
+        canonicalSchemaParams(unmatchedCompanyPeopleQuerySchema, params),
+      ] as const,
+    },
+  },
+  profile: {
+    all: ["profile"] as const,
+    detail: () => ["profile", "detail"] as const,
+    skills: (profileId: number | null) => ["profile", "skills", profileId] as const,
+    experience: (profileId: number | null) => ["profile", "experience", profileId] as const,
+    education: (profileId: number | null) => ["profile", "education", profileId] as const,
+  },
+  settings: {
+    all: ["settings"] as const,
+    detail: () => ["settings", "detail"] as const,
+  },
+  providers: {
+    all: ["providers"] as const,
+    list: () => ["providers", "list"] as const,
+    models: () => ["providers", "models"] as const,
+    model: (providerId: string) => ["providers", "models", providerId] as const,
+  },
+  matchHistory: {
+    all: ["history", "match"] as const,
+    lists: () => ["history", "match", "list"] as const,
+    list: (params: HistoryQueryInput = {}) => [
+      "history",
+      "match",
+      "list",
+      canonicalSchemaParams(historyQuerySchema, params),
+    ] as const,
+    details: () => ["history", "match", "detail"] as const,
+    detailRoot: (id: string) => ["history", "match", "detail", id] as const,
+    detail: (id: string, params: HistoryDetailQueryInput = {}) => [
+      ...queryKeys.matchHistory.detailRoot(id),
+      canonicalSchemaParams(historyDetailQuerySchema, params),
+    ] as const,
+  },
+  scrapeHistory: {
+    all: ["history", "scrape"] as const,
+    lists: () => ["history", "scrape", "list"] as const,
+    list: (params: ScrapeHistoryQueryInput = {}) => [
+      "history",
+      "scrape",
+      "list",
+      canonicalSchemaParams(scrapeHistoryQuerySchema, params),
+    ] as const,
+    details: () => ["history", "scrape", "detail"] as const,
+    detailRoot: (id: string) => ["history", "scrape", "detail", id] as const,
+    detail: (id: string, params: HistoryDetailQueryInput = {}) => [
+      ...queryKeys.scrapeHistory.detailRoot(id),
+      canonicalSchemaParams(historyDetailQuerySchema, params),
+    ] as const,
+  },
+  runtime: {
+    scheduler: () => ["runtime", "scheduler"] as const,
+    matchSessions: () => ["runtime", "match-session"] as const,
+    matchSession: (id: string | null) => ["runtime", "match-session", id] as const,
+    unmatchedJobs: () => ["runtime", "unmatched-jobs"] as const,
+    unmatchedJobsCount: (days: number) => ["runtime", "unmatched-jobs", days] as const,
+    health: () => ["runtime", "health"] as const,
+    readiness: () => ["runtime", "health", "readiness"] as const,
+    diagnostics: () => ["runtime", "health", "diagnostics"] as const,
+  },
+  ai: {
+    all: ["ai"] as const,
+    history: () => ["ai", "history"] as const,
+    usages: () => ["ai", "usage"] as const,
+    usage: (days: 7 | 30) => ["ai", "usage", days] as const,
+    contents: () => ["ai", "content"] as const,
+    content: (jobId: number, type: AIContentType) => ["ai", "content", jobId, type] as const,
+  },
+} as const;
 
-const statsKeys = {
-  all: ["stats"] as const,
-  detail: () => [...statsKeys.all] as const,
-};
+async function invalidateMany(queryClient: QueryClient, keys: QueryKey[]): Promise<void> {
+  await Promise.all(keys.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
+}
 
-const scrapeHistoryKeys = {
-  all: ["scrape-history"] as const,
-  list: () => [...scrapeHistoryKeys.all] as const,
-  detail: (id: string) => [...scrapeHistoryKeys.all, id] as const,
-};
+export const cacheOwnership = {
+  jobMutation(
+    queryClient: QueryClient,
+    context: { jobId?: number; companyId?: number } = {}
+  ): Promise<void> {
+    const keys: QueryKey[] = [
+      queryKeys.jobs.lists(),
+      queryKeys.stats.all,
+    ];
+    if (context.jobId !== undefined) keys.push(queryKeys.jobs.detail(context.jobId));
+    if (context.companyId !== undefined) keys.push(queryKeys.companies.overview(context.companyId));
+    return invalidateMany(queryClient, keys);
+  },
 
-const matchHistoryKeys = {
-  all: ["match-history"] as const,
-  list: () => [...matchHistoryKeys.all] as const,
-  detail: (id: string) => [...matchHistoryKeys.all, id] as const,
+  companyMutation(
+    queryClient: QueryClient,
+    context: {
+      companyId?: number;
+      affectsMappings?: boolean;
+      affectsJobRecords?: boolean;
+      affectsScrapeHistory?: boolean;
+    } = {}
+  ): Promise<void> {
+    const keys: QueryKey[] = [
+      queryKeys.companies.list(),
+      queryKeys.jobs.all,
+      queryKeys.stats.all,
+      context.companyId === undefined
+        ? queryKeys.companies.overviews()
+        : queryKeys.companies.overview(context.companyId),
+    ];
+    if (context.affectsMappings) keys.push(queryKeys.people.all);
+    if (context.affectsScrapeHistory) keys.push(queryKeys.scrapeHistory.all);
+    if (context.affectsJobRecords) {
+      keys.push(
+        queryKeys.matchHistory.all,
+        queryKeys.scrapeHistory.all,
+        queryKeys.runtime.unmatchedJobs(),
+        queryKeys.ai.history(),
+        queryKeys.ai.usages(),
+        queryKeys.ai.contents()
+      );
+    }
+    return invalidateMany(queryClient, keys);
+  },
+
+  peopleMutation(queryClient: QueryClient): Promise<void> {
+    return invalidateMany(queryClient, [
+      queryKeys.people.all,
+      queryKeys.companies.overviews(),
+      queryKeys.stats.all,
+    ]);
+  },
+
+  profileMutation(queryClient: QueryClient, childKey?: QueryKey): Promise<void> {
+    return invalidateMany(queryClient, [
+      queryKeys.profile.detail(),
+      ...(childKey ? [childKey] : []),
+    ]);
+  },
+
+  matchCompletion(queryClient: QueryClient): Promise<void> {
+    return invalidateMany(queryClient, [
+      queryKeys.jobs.all,
+      queryKeys.stats.all,
+      queryKeys.companies.overviews(),
+      queryKeys.matchHistory.all,
+      queryKeys.runtime.unmatchedJobs(),
+      queryKeys.ai.usages(),
+    ]);
+  },
+
+  settingsMutation(queryClient: QueryClient): Promise<void> {
+    return invalidateMany(queryClient, [queryKeys.settings.all]);
+  },
+
+  schedulerSettingsMutation(queryClient: QueryClient): Promise<void> {
+    return invalidateMany(queryClient, [
+      queryKeys.settings.all,
+      queryKeys.runtime.scheduler(),
+    ]);
+  },
+
+  providerMutation(queryClient: QueryClient): Promise<void> {
+    return invalidateMany(queryClient, [
+      queryKeys.providers.all,
+      queryKeys.settings.all,
+    ]);
+  },
+
+  clearJobs(queryClient: QueryClient): Promise<void> {
+    return invalidateMany(queryClient, [
+      queryKeys.jobs.all,
+      queryKeys.companies.overviews(),
+      queryKeys.stats.all,
+      queryKeys.runtime.unmatchedJobs(),
+      queryKeys.matchHistory.all,
+      queryKeys.scrapeHistory.all,
+      queryKeys.ai.history(),
+      queryKeys.ai.usages(),
+      queryKeys.ai.contents(),
+    ]);
+  },
+
+  clearMatchHistory(queryClient: QueryClient): Promise<void> {
+    return invalidateMany(queryClient, [
+      queryKeys.matchHistory.all,
+      queryKeys.scrapeHistory.all,
+      queryKeys.companies.overviews(),
+      queryKeys.ai.usages(),
+    ]);
+  },
+
+  updateMatchHistoryStatus(queryClient: QueryClient): Promise<void> {
+    return invalidateMany(queryClient, [
+      queryKeys.jobs.all,
+      queryKeys.stats.all,
+      queryKeys.matchHistory.all,
+      queryKeys.scrapeHistory.all,
+      queryKeys.companies.overviews(),
+      queryKeys.runtime.unmatchedJobs(),
+      queryKeys.ai.usages(),
+    ]);
+  },
+
+  clearScrapeHistory(queryClient: QueryClient): Promise<void> {
+    return invalidateMany(queryClient, [
+      queryKeys.scrapeHistory.all,
+      queryKeys.matchHistory.all,
+      queryKeys.companies.overviews(),
+      queryKeys.stats.all,
+      queryKeys.ai.usages(),
+    ]);
+  },
+
+  updateScrapeHistoryStatus(queryClient: QueryClient): Promise<void> {
+    return invalidateMany(queryClient, [
+      queryKeys.jobs.all,
+      queryKeys.scrapeHistory.all,
+      queryKeys.matchHistory.all,
+      queryKeys.companies.overviews(),
+      queryKeys.stats.all,
+    ]);
+  },
+
+  clearMatchData(queryClient: QueryClient): Promise<void> {
+    return invalidateMany(queryClient, [
+      queryKeys.jobs.all,
+      queryKeys.matchHistory.all,
+      queryKeys.scrapeHistory.all,
+      queryKeys.stats.all,
+      queryKeys.companies.overviews(),
+      queryKeys.runtime.unmatchedJobs(),
+      queryKeys.ai.usages(),
+    ]);
+  },
+
+  clearAIContent(queryClient: QueryClient): Promise<void> {
+    return invalidateMany(queryClient, [
+      queryKeys.ai.history(),
+      queryKeys.ai.contents(),
+    ]);
+  },
 };

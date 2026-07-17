@@ -25,6 +25,7 @@ import {
 } from "@/lib/api/clients/companies";
 import type { CompanyOverviewResponse } from "@/lib/api/contracts/companies";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
 function CompanyLayoutContent({
     children,
@@ -39,7 +40,6 @@ function CompanyLayoutContent({
 
     const companyId = Number(params.id);
     useMatchSession(matchSessionId, {
-        extraInvalidationKeys: [["company-overview", companyId]],
         onSettled: () => setMatchSessionId(null),
     });
     const activeTab = pathname?.startsWith(`/companies/${companyId}/people`)
@@ -51,11 +51,11 @@ function CompanyLayoutContent({
                 : "jobs";
 
     const { data, isLoading } = useQuery<CompanyOverviewResponse>({
-        queryKey: ["company-overview", companyId],
+        queryKey: queryKeys.companies.overview(companyId),
         queryFn: async () => {
             return getCompanyOverview(companyId);
         },
-        enabled: Number.isFinite(companyId),
+        enabled: Number.isInteger(companyId) && companyId > 0,
     });
 
     const refreshJobsMutation = useMutation({
@@ -63,8 +63,10 @@ function CompanyLayoutContent({
             return refreshCompanyJobs([companyId]);
         },
         onSuccess: (result) => {
-            queryClient.invalidateQueries({ queryKey: ["company-overview", companyId] });
-            queryClient.invalidateQueries({ queryKey: ["jobs"] });
+            void cacheOwnership.companyMutation(queryClient, {
+                companyId,
+                affectsScrapeHistory: true,
+            });
             toast.success(result.message || "Jobs refreshed successfully");
         },
         onError: () => {
@@ -126,7 +128,7 @@ function CompanyLayoutContent({
                             companyId={companyId}
                             companyName={data.company.name}
                             onAdded={() => {
-                                queryClient.invalidateQueries({ queryKey: ["company-overview", companyId] });
+                                void cacheOwnership.peopleMutation(queryClient);
                             }}
                         />
                     ) : activeTab === "notes" ? (

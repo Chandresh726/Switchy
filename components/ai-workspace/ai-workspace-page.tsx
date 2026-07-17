@@ -35,6 +35,7 @@ import { canOpenLinkedInProfile } from "@/lib/people/message";
 import { isRecruiterPosition } from "@/lib/people/position";
 import { applyConnectionPlaceholder } from "@/lib/people/referral-template";
 import { cn } from "@/lib/utils";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
 interface AIWorkspacePageProps {
   contentType: AIContentType;
@@ -74,13 +75,14 @@ export function AIWorkspacePage({
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const jobId = Number(params.id);
+  const hasValidJobId = Number.isInteger(jobId) && jobId > 0;
   const requestedVariantId = Number(searchParams.get("variantId") || "0");
   const [copied, setCopied] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
 
   const { data: job, isLoading: isJobLoading } = useQuery({
-    enabled: Number.isFinite(jobId),
-    queryKey: ["job", jobId],
+    enabled: hasValidJobId,
+    queryKey: queryKeys.jobs.detail(jobId),
     queryFn: () => getJob(jobId),
   });
   const canUseWorkspace = !requireApplied || job?.status === "applied";
@@ -113,7 +115,13 @@ export function AIWorkspacePage({
 
   const { data: peopleData, isLoading: isPeopleLoading } = useQuery({
     enabled: Boolean(job?.company.id) && peoplePanelEnabled,
-    queryKey: ["people", "company", job?.company.id],
+    queryKey: queryKeys.people.list({
+      companyId: job?.company.id,
+      active: "true",
+      limit: 200,
+      sortBy: "isStarred",
+      sortOrder: "desc",
+    }),
     queryFn: async () => {
       return getPeople({
         companyId: job?.company.id,
@@ -129,9 +137,7 @@ export function AIWorkspacePage({
     mutationFn: async ({ id, isStarred }: { id: number; isStarred: boolean }) => {
       return patchPerson(id, { isStarred });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["people"] });
-    },
+    onSuccess: () => void cacheOwnership.peopleMutation(queryClient),
   });
 
   const prioritizedPeople = useMemo(() => {

@@ -31,6 +31,7 @@ import {
 } from "@/lib/api/clients/history";
 import { formatDurationMs, formatDurationFromDates, formatDateTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
 interface MatchSessionDetailProps {
   sessionId: string;
@@ -43,10 +44,11 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
   const workLimit = 50;
   const router = useRouter();
   const queryClient = useQueryClient();
+  const detailParams = { logOffset, logLimit, workOffset, workLimit };
   const { data, isLoading, error } = useQuery({
-    queryKey: ["match-history", sessionId, logOffset, workOffset],
+    queryKey: queryKeys.matchHistory.detail(sessionId, detailParams),
     queryFn: async () => {
-      return getMatchHistoryDetail(sessionId, { logOffset, logLimit, workOffset, workLimit });
+      return getMatchHistoryDetail(sessionId, detailParams);
     },
     refetchInterval: (query) => {
       const session = query.state.data?.session;
@@ -62,8 +64,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
     },
     onSuccess: () => {
       toast.success("Stopping match session");
-      queryClient.invalidateQueries({ queryKey: ["match-history"] });
-      queryClient.invalidateQueries({ queryKey: ["match-history", sessionId] });
+      void cacheOwnership.updateMatchHistoryStatus(queryClient);
     },
     onError: () => {
       toast.error("Failed to stop match session");
@@ -75,6 +76,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
       return deleteMatchHistorySession(sessionId);
     },
     onSuccess: () => {
+      void cacheOwnership.clearMatchHistory(queryClient);
       router.push("/history/match");
     },
   });

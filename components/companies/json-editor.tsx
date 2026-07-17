@@ -11,10 +11,11 @@ import "prismjs/components/prism-json";
 import { getCompanies, syncCompanies } from "@/lib/api/clients/companies";
 import { companySyncBodySchema } from "@/lib/api/contracts/companies";
 import type { Company } from "@/lib/api/contracts/companies";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
 export function JsonEditor({ onSuccess }: { onSuccess: () => void }) {
   const { data: companies, isLoading: isLoadingCompanies } = useQuery<Company[]>({
-    queryKey: ["companies"],
+    queryKey: queryKeys.companies.list(),
     queryFn: async () => {
       return getCompanies();
     },
@@ -59,7 +60,7 @@ function JsonEditorContent({ companies, onSuccess }: { companies: Company[]; onS
       return syncCompanies(data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      void cacheOwnership.companyMutation(queryClient, { affectsMappings: true });
       setOriginalValue(jsonValue);
       toast.success("Companies updated successfully");
       onSuccess();

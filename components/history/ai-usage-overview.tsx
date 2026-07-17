@@ -8,6 +8,7 @@ import { Activity, DatabaseZap, Gauge, Loader2, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AIUsageSummary } from "@/lib/ai/observability";
 import { getAIUsage } from "@/lib/api/clients/ai";
+import { queryKeys } from "@/lib/query-keys";
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("en-US", { notation: "compact" }).format(value);
@@ -27,7 +28,7 @@ function capabilityLabel(value: string): string {
 export function AIUsageOverview() {
   const [days, setDays] = useState<7 | 30>(7);
   const { data, isError, isLoading, refetch } = useQuery<AIUsageSummary>({
-    queryKey: ["ai-usage", days],
+    queryKey: queryKeys.ai.usage(days),
     queryFn: async () => {
       return getAIUsage(days);
     },

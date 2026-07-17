@@ -24,6 +24,7 @@ import {
 import { CUSTOM_SCRAPER_PLATFORMS } from "@/lib/constants";
 import { companyImportBodySchema } from "@/lib/api/contracts/companies";
 import type { Company } from "@/lib/api/contracts/companies";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
 
 const CUSTOM_PLATFORM_SET = new Set<string>(["custom", ...CUSTOM_SCRAPER_PLATFORMS]);
@@ -163,7 +164,7 @@ function CompaniesPageContent() {
   }, []);
 
   const { data: companies = [], isLoading: isCompaniesLoading } = useQuery<Company[]>({
-    queryKey: ["companies"],
+    queryKey: queryKeys.companies.list(),
     queryFn: async () => {
       return getCompanies();
     },
@@ -237,7 +238,7 @@ function CompaniesPageContent() {
       return createCompanies(companyImportBodySchema.parse(companies));
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      void cacheOwnership.companyMutation(queryClient, { affectsMappings: true });
       toast.success(`Successfully imported ${Array.isArray(data) ? data.length : 1} companies`);
     },
     onError: () => {
@@ -250,8 +251,7 @@ function CompaniesPageContent() {
       return refreshCompanyJobs(companyIds);
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      void cacheOwnership.companyMutation(queryClient, { affectsScrapeHistory: true });
       toast.success(data.message || "Jobs refreshed successfully");
     },
     onError: () => {
@@ -277,8 +277,7 @@ function CompaniesPageContent() {
       return bulkDeleteCompanyJobs(companyIds);
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      void cacheOwnership.companyMutation(queryClient, { affectsJobRecords: true });
       toast.success(data.message || "Jobs deleted successfully");
     },
     onError: () => {
@@ -291,8 +290,10 @@ function CompaniesPageContent() {
       return bulkDeleteCompanies(companyIds);
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      void cacheOwnership.companyMutation(queryClient, {
+        affectsMappings: true,
+        affectsJobRecords: true,
+      });
       setSelectedIds([]);
       setSelectionMode(false);
       toast.success(data.message || "Companies deleted successfully");
@@ -307,7 +308,7 @@ function CompaniesPageContent() {
       return bulkSetCompaniesActive(companyIds, isActive);
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      void cacheOwnership.companyMutation(queryClient);
       toast.success(data.message || "Companies updated successfully");
     },
     onError: () => {

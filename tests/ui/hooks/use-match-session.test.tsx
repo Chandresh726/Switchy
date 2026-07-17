@@ -5,6 +5,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { useMatchSession } from "@/lib/hooks/use-match-session";
+import { queryKeys } from "@/lib/query-keys";
 
 describe("useMatchSession", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -59,8 +60,14 @@ describe("useMatchSession", () => {
     await waitFor(() => expect(result.current.data?.status).toBe("completed"));
     await waitFor(() => expect(onSettled).toHaveBeenCalledTimes(1));
 
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["match-history"] });
+    expect(invalidate.mock.calls.map(([filters]) => filters?.queryKey)).toEqual([
+      queryKeys.jobs.all,
+      queryKeys.stats.all,
+      queryKeys.companies.overviews(),
+      queryKeys.matchHistory.all,
+      queryKeys.runtime.unmatchedJobs(),
+      queryKeys.ai.usages(),
+    ]);
     await result.current.refetch();
     expect(onSettled).toHaveBeenCalledTimes(1);
   });

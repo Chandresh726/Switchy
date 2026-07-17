@@ -10,16 +10,13 @@ import { useMatchSession } from "./use-match-session";
 
 interface UseQueuedJobMatchOptions {
   jobId: number;
-  extraInvalidationKeys?: Array<readonly unknown[]>;
 }
 
 export function useQueuedJobMatch({
   jobId,
-  extraInvalidationKeys,
 }: UseQueuedJobMatchOptions) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const session = useMatchSession(sessionId, {
-    extraInvalidationKeys,
     onSettled: () => setSessionId(null),
   });
   const mutation = useMutation({

@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { JobCard } from "@/components/jobs/job-card";
+import { queryKeys } from "@/lib/query-keys";
 
 describe("JobCard match actions", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -67,8 +68,8 @@ describe("JobCard match actions", () => {
 
     await user.click(screen.getByRole("button", { name: "Mark Applied" }));
     await waitFor(() => expect(requests).toContainEqual({ method: "PATCH", url: "/api/jobs/42" }));
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["stats"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.jobs.lists() });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.stats.all });
 
     await user.click(screen.getByRole("button", { name: "Score" }));
     await waitFor(() => expect(requests).toContainEqual({ method: "POST", url: "/api/match" }));

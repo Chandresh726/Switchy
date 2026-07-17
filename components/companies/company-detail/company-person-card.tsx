@@ -13,6 +13,7 @@ import { copyTextToClipboard } from "@/lib/utils/clipboard";
 import { formatRelativeTime } from "@/lib/utils/format";
 
 import type { CompanyPerson } from "@/lib/api/contracts/companies";
+import { cacheOwnership } from "@/lib/query-keys";
 
 interface CompanyPersonCardProps {
   person: CompanyPerson;
@@ -40,8 +41,7 @@ export function CompanyPersonCard({ person, showOutreachBadge = false }: Company
       return patchPerson(person.id, body);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["company-overview"] });
-      queryClient.invalidateQueries({ queryKey: ["people"] });
+      void cacheOwnership.peopleMutation(queryClient);
     },
   });
 

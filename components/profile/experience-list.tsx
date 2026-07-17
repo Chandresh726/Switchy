@@ -16,6 +16,7 @@ import type { Experience } from "@/lib/api/contracts/profile";
 import { useState, useEffect } from "react";
 import { Building2, Calendar, Loader2, MapPin, Pencil, Plus, Save, Trash2, X, Sparkles, Briefcase } from "lucide-react";
 import { toast } from "sonner";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
 interface InitialExperience {
   company: string;
@@ -200,7 +201,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
   }, [initialExperience]);
 
   const { data: experiences = [], isLoading } = useQuery<Experience[]>({
-    queryKey: ["experience", profileId],
+    queryKey: queryKeys.profile.experience(profileId),
     queryFn: async () => {
       if (!profileId) return [];
       return getExperience(profileId);
@@ -219,7 +220,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["experience", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.experience(profileId));
       setIsAdding(false);
       setFormData(emptyForm);
     },
@@ -233,7 +234,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["experience", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.experience(profileId));
       setEditingId(null);
       setFormData(emptyForm);
     },
@@ -255,7 +256,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["experience", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.experience(profileId));
       setPendingExperiences([]);
       setIsBulkAdding(false);
       setSettingsSaved(true);
@@ -273,7 +274,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
       return deleteExperience(id);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["experience", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.experience(profileId));
     },
   });
 

@@ -13,6 +13,7 @@ import { getJobs, type JobsQueryInput } from "@/lib/api/clients/jobs";
 import type { Company } from "@/lib/api/contracts/companies";
 import type { JobSummary, JobsResponse } from "@/lib/api/contracts/jobs";
 import { JOB_STATUSES, type JobStatus } from "@/lib/jobs/status";
+import { queryKeys } from "@/lib/query-keys";
 
 const STORAGE_KEY = "switchy-job-filters";
 
@@ -252,7 +253,7 @@ export function JobList() {
 
   // Fetch companies for filter dropdown
   const { data: companies = [] } = useQuery<Company[]>({
-    queryKey: ["companies"],
+    queryKey: queryKeys.companies.list(),
     queryFn: async () => {
       return getCompanies();
     },
@@ -310,7 +311,7 @@ export function JobList() {
 
   // Fetch jobs
   const { data, isLoading, isFetching } = useQuery<JobsResponse>({
-    queryKey: ["jobs", queryParams],
+    queryKey: queryKeys.jobs.list(queryParams),
     queryFn: async () => {
       return getJobs(queryParams);
     },
@@ -318,7 +319,7 @@ export function JobList() {
 
   // Fetch applied count for tab badge
   const { data: appliedData } = useQuery({
-    queryKey: ["jobs", "applied-count"],
+    queryKey: queryKeys.jobs.list({ status: "applied", limit: 1 }),
     queryFn: async () => {
       return getJobs({ status: "applied", limit: 1 });
     },
@@ -326,7 +327,7 @@ export function JobList() {
 
   // Fetch saved count for tab badge
   const { data: savedData } = useQuery({
-    queryKey: ["jobs", "saved-count"],
+    queryKey: queryKeys.jobs.list({ status: "interested", limit: 1 }),
     queryFn: async () => {
       return getJobs({ status: "interested", limit: 1 });
     },
@@ -334,7 +335,7 @@ export function JobList() {
 
   // Fetch archived count for tab badge
   const { data: archivedData } = useQuery({
-    queryKey: ["jobs", "archived-count"],
+    queryKey: queryKeys.jobs.list({ status: "archived", limit: 1 }),
     queryFn: async () => {
       return getJobs({ status: "archived", limit: 1 });
     },

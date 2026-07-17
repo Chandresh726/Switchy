@@ -5,19 +5,18 @@ import { MatchSessionCard } from "./match-session-card";
 import { Loader2, Sparkles } from "lucide-react";
 import { formatDurationMs, groupSessionsByDate } from "@/lib/utils/format";
 import { getMatchHistoryList } from "@/lib/api/clients/history";
+import { queryKeys } from "@/lib/query-keys";
+import { historyPollingInterval } from "@/lib/hooks/history-polling";
 
 export function MatchHistoryTab() {
   const { data, isLoading, error } = useQuery({
-    queryKey: ["match-history"],
+    queryKey: queryKeys.matchHistory.list(),
     queryFn: async () => {
       return getMatchHistoryList();
     },
     refetchInterval: (query) => {
       const sessions = query.state.data?.sessions || [];
-      const hasActiveSessions = sessions.some(
-        (s) => s.status === "in_progress" || s.status === "queued"
-      );
-      return hasActiveSessions ? 1000 : 5000;
+      return historyPollingInterval(sessions);
     },
     refetchIntervalInBackground: true,
   });

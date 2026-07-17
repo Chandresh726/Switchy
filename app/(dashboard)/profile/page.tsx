@@ -10,12 +10,13 @@ import type { ResumeData } from "@/lib/ai/resume/contracts";
 import { deleteResume, getProfile } from "@/lib/api/clients/profile";
 import { useState } from "react";
 import { toast } from "sonner";
+import { queryKeys } from "@/lib/query-keys";
 
 export default function ProfilePage() {
   const [parsedResumeData, setParsedResumeData] = useState<ResumeData | null>(null);
 
   const { data: profile, refetch } = useQuery({
-    queryKey: ["profile"],
+    queryKey: queryKeys.profile.detail(),
     queryFn: async () => {
       return getProfile();
     },

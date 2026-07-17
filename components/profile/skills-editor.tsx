@@ -10,6 +10,7 @@ import type { Skill } from "@/lib/api/contracts/profile";
 import { useState, useEffect } from "react";
 import { Loader2, Plus, X, Sparkles, Zap, Save } from "lucide-react";
 import { toast } from "sonner";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
 interface InitialSkill {
   name: string;
@@ -53,7 +54,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
   }, [initialSkills]);
 
   const { data: skills = [], isLoading } = useQuery<Skill[]>({
-    queryKey: ["skills", profileId],
+    queryKey: queryKeys.profile.skills(profileId),
     queryFn: async () => {
       if (!profileId) return [];
       return getSkills(profileId);
@@ -68,7 +69,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
       return createSkill({ ...skill, profileId });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["skills", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.skills(profileId));
       setNewSkill({ name: "", category: "other" });
     },
   });
@@ -85,7 +86,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["skills", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.skills(profileId));
       setPendingSkills([]);
       setIsBulkAdding(false);
       setSettingsSaved(true);
@@ -103,7 +104,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
       return deleteSkill(id);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["skills", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.skills(profileId));
     },
   });
 

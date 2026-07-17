@@ -17,6 +17,7 @@ import {
 } from "@/lib/companies/preset-companies";
 import { normalizeCareersUrl } from "@/lib/companies/normalization";
 import { useDebounce } from "@/lib/hooks/use-debounce";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
 interface ExistingCompany {
   name: string;
@@ -70,7 +71,7 @@ export function CompanyQuickAdd({ existingCompanies }: CompanyQuickAddProps) {
   const debouncedSearch = useDebounce(searchQuery, 180);
 
   const presetCompaniesQuery = useQuery({
-    queryKey: ["preset-companies"],
+    queryKey: queryKeys.companies.presets(),
     queryFn: async (): Promise<PresetCompany[]> => {
       const response = await fetch("/companies.json", { cache: "no-store" });
       if (!response.ok) {
@@ -170,7 +171,7 @@ export function CompanyQuickAdd({ existingCompanies }: CompanyQuickAddProps) {
       previous.filter((url) => !normalizedSet.has(url))
     );
 
-    queryClient.invalidateQueries({ queryKey: ["companies"] });
+    void cacheOwnership.companyMutation(queryClient, { affectsMappings: true });
   };
 
   const handleSingleAdd = async (company: PresetCompany) => {
