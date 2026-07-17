@@ -8,7 +8,7 @@ import { patchCompany } from "@/lib/api/clients/companies";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import { companyKeys } from "@/lib/query-keys";
 
-import type { CompanyOverviewResponse } from "./types";
+import type { CompanyOverviewResponse } from "@/lib/api/contracts/companies";
 import { useCompanyNotesContext } from "./company-notes-context";
 
 interface CompanyNotesTabProps {

@@ -34,6 +34,11 @@ import {
   cancelScrapeHistorySession,
   deleteScrapeHistorySession,
 } from "@/lib/api/clients/history";
+import type {
+  ScrapeHistoryResponse,
+  ScrapeHistoryDetailResponse,
+  ScrapeHistorySession,
+} from "@/lib/api/contracts/history";
 import {
   formatDurationFromDates,
   formatTime,
@@ -41,24 +46,8 @@ import {
 } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
 
-interface ScrapeSession {
-  id: string;
-  triggerSource: string;
-  status: string;
-  companiesTotal: number | null;
-  companiesCompleted: number | null;
-  totalJobsFound: number | null;
-  totalJobsAdded: number | null;
-  totalJobsFiltered: number | null;
-  totalJobsArchived: number | null;
-  skipReason?: string | null;
-  scheduledForAt?: Date | string | null;
-  startedAt: Date | null;
-  completedAt: Date | null;
-}
-
 interface SessionCardProps {
-  session: ScrapeSession;
+  session: ScrapeHistorySession;
 }
 
 export function SessionCard({ session }: SessionCardProps) {
@@ -93,7 +82,7 @@ export function SessionCard({ session }: SessionCardProps) {
 
     queryClient.setQueryData([
       "scrape-history",
-    ], (old: { sessions?: ScrapeSession[] } | undefined) => {
+    ], (old: ScrapeHistoryResponse | undefined) => {
       if (!old?.sessions) return old;
       return {
         ...old,
@@ -108,7 +97,7 @@ export function SessionCard({ session }: SessionCardProps) {
     queryClient.setQueryData([
       "scrape-history",
       session.id,
-    ], (old: { session?: ScrapeSession } | undefined) => {
+    ], (old: Pick<ScrapeHistoryDetailResponse, "session"> | undefined) => {
       if (!old?.session) return old;
       return {
         ...old,

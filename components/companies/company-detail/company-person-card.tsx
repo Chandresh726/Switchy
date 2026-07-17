@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { copyTextToClipboard } from "@/lib/utils/clipboard";
 import { formatRelativeTime } from "@/lib/utils/format";
 
-import type { CompanyPerson } from "./types";
+import type { CompanyPerson } from "@/lib/api/contracts/companies";
 
 interface CompanyPersonCardProps {
   person: CompanyPerson;

@@ -6,15 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { createSkill, deleteSkill, getSkills } from "@/lib/api/clients/profile";
+import type { Skill } from "@/lib/api/contracts/profile";
 import { useState, useEffect } from "react";
 import { Loader2, Plus, X, Sparkles, Zap, Save } from "lucide-react";
 import { toast } from "sonner";
-
-interface Skill {
-  id: number;
-  name: string;
-  category: string | null;
-}
 
 interface InitialSkill {
   name: string;

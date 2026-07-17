@@ -30,12 +30,11 @@ import { useAIContentWorkspace } from "@/lib/ai/writing/workspace/use-ai-content
 import type { AIContentType } from "@/lib/ai/contracts";
 import { getJob } from "@/lib/api/clients/jobs";
 import { getPeople, patchPerson } from "@/lib/api/clients/people";
+import type { PeopleResponse } from "@/lib/api/contracts/people";
 import { canOpenLinkedInProfile } from "@/lib/people/message";
 import { isRecruiterPosition } from "@/lib/people/position";
 import { applyConnectionPlaceholder } from "@/lib/people/referral-template";
 import { cn } from "@/lib/utils";
-
-type PeopleResponse = Awaited<ReturnType<typeof getPeople>>;
 
 interface AIWorkspacePageProps {
   contentType: AIContentType;

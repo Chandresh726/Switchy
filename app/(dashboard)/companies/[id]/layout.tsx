@@ -16,7 +16,6 @@ import {
     CompanyNoteSaveIndicator,
     CompanyNotesProvider,
     useCompanyNotesContext,
-    type CompanyOverviewResponse,
 } from "@/components/companies/company-detail";
 import { CompanyLayoutClient } from "@/components/companies/company-detail/company-layout-client";
 import {
@@ -24,6 +23,7 @@ import {
     matchCompanies,
     refreshCompanyJobs,
 } from "@/lib/api/clients/companies";
+import type { CompanyOverviewResponse } from "@/lib/api/contracts/companies";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
 
 function CompanyLayoutContent({

@@ -95,3 +95,7 @@ export const aiUsageResponseSchema = z.object({
   })),
   failures: z.array(z.object({ code: z.string(), count: z.number().int().nonnegative() })),
 });
+
+export type GeneratedContent = z.infer<typeof generatedContentSchema>;
+export type AIHistoryResponse = z.infer<typeof aiHistoryResponseSchema>;
+export type AIUsageResponse = z.infer<typeof aiUsageResponseSchema>;

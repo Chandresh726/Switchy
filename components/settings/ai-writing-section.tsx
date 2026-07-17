@@ -12,7 +12,8 @@ import { Separator } from "@/components/ui/separator";
 import { AlertTriangle, FileText, MessageCircle, Send, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReasoningEffort } from "@/lib/settings/types";
-import type { Provider, ProviderModelOption } from "@/lib/types";
+import type { ProviderModelOption } from "@/lib/api/contracts/settings";
+import type { Provider } from "@/lib/types";
 
 export interface AIWritingSettings {
   referralTone: string;

@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { CompanyFilters, type CompanyFilters as CompanyFiltersType } from "@/components/companies/company-filters";
 import { CompanyForm } from "@/components/companies/company-form";
 import { CompanyQuickAdd } from "@/components/companies/company-quick-add";
-import { CompanyList, type Company } from "@/components/companies/company-list";
+import { CompanyList } from "@/components/companies/company-list";
 import { JsonEditor } from "@/components/companies/json-editor";
 import {
   bulkDeleteCompanies,
@@ -23,6 +23,7 @@ import {
 } from "@/lib/api/clients/companies";
 import { CUSTOM_SCRAPER_PLATFORMS } from "@/lib/constants";
 import { companyImportBodySchema } from "@/lib/api/contracts/companies";
+import type { Company } from "@/lib/api/contracts/companies";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
 
 const CUSTOM_PLATFORM_SET = new Set<string>(["custom", ...CUSTOM_SCRAPER_PLATFORMS]);

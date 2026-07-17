@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { ProviderModelOption } from "@/lib/types";
+import type { ProviderModelOption } from "@/lib/api/contracts/settings";
 
 interface ReasoningEffortControlProps {
   model?: ProviderModelOption;

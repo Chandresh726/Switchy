@@ -14,7 +14,7 @@ import type { JobStatus } from "@/lib/jobs/status";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/utils/format";
 
-import type { CompanyJob } from "./types";
+import type { CompanyJob } from "@/lib/api/contracts/companies";
 
 interface CompanyJobCardProps {
   job: CompanyJob;

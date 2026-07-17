@@ -32,6 +32,11 @@ import {
   cancelMatchHistorySession,
   deleteMatchHistorySession,
 } from "@/lib/api/clients/history";
+import type {
+  MatchHistoryResponse,
+  MatchHistoryDetailResponse,
+  MatchHistorySession,
+} from "@/lib/api/contracts/history";
 import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
 import {
   formatDurationFromDates,
@@ -40,24 +45,8 @@ import {
 } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
 
-interface MatchSession {
-  id: string;
-  triggerSource: string;
-  companyId: number | null;
-  companyName: string | null;
-  status: string;
-  jobsTotal: number | null;
-  jobsCompleted: number | null;
-  jobsSucceeded: number | null;
-  jobsFailed: number | null;
-  errorCount: number | null;
-  startedAt: Date | null;
-  completedAt: Date | null;
-}
-
-
 interface MatchSessionCardProps {
-  session: MatchSession;
+  session: MatchHistorySession;
 }
 
 export function MatchSessionCard({ session }: MatchSessionCardProps) {
@@ -93,7 +82,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
 
     queryClient.setQueryData([
       "match-history",
-    ], (old: { sessions?: MatchSession[] } | undefined) => {
+    ], (old: MatchHistoryResponse | undefined) => {
       if (!old?.sessions) return old;
       return {
         ...old,
@@ -108,7 +97,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
     queryClient.setQueryData([
       "match-history",
       session.id,
-    ], (old: { session?: MatchSession } | undefined) => {
+    ], (old: Pick<MatchHistoryDetailResponse, "session"> | undefined) => {
       if (!old?.session) return old;
       return {
         ...old,

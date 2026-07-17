@@ -59,7 +59,7 @@ import {
 } from "@/components/ui/select";
 import { getAllProviderMetadata, type ProviderMetadata } from "@/lib/ai/providers/metadata";
 import { isLocalCLIProvider } from "@/lib/ai/providers/types";
-import type { ProviderSettingsListItem } from "@/lib/settings/types";
+import type { ProviderSettingsListItem } from "@/lib/api/contracts/settings";
 import { cn } from "@/lib/utils";
 
 interface AIProvidersManagerProps {

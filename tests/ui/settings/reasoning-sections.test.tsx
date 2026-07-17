@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { AIWritingSection } from "@/components/settings/ai-writing-section";
 import { resolveReasoningSelection } from "@/components/settings/reasoning-effort-control";
 import { ResumeParserSection } from "@/components/settings/resume-parser-section";
-import type { ProviderModelOption } from "@/lib/types";
+import type { ProviderModelOption } from "@/lib/api/contracts/settings";
 
 const providers = [{ id: "provider-1", provider: "opencode_cli", name: "OpenCode" }];
 const models: ProviderModelOption[] = [{

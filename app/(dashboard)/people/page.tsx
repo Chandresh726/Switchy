@@ -23,6 +23,7 @@ import { UnmatchedPeopleModal } from "@/components/companies/unmatched-people-mo
 import { LinkedinIcon } from "@/components/icons/linkedin-icon";
 import { ImportPeopleModal } from "@/components/people/import-people-modal";
 import { getCompanies } from "@/lib/api/clients/companies";
+import type { Company } from "@/lib/api/contracts/companies";
 import {
   clearPeople,
   getPeople,
@@ -56,22 +57,17 @@ import {
 import { TogglePill } from "@/components/ui/toggle-pill";
 import { canOpenLinkedInProfile } from "@/lib/people/message";
 import type {
-  ImportSummary,
+  PeopleImportResponse,
   PeopleImportSession,
-  PersonQueryResponse,
+  PeopleResponse,
   PersonSource,
-} from "@/lib/people/types";
+} from "@/lib/api/contracts/people";
 import { companyKeys, peopleKeys } from "@/lib/query-keys";
 import { copyTextToClipboard } from "@/lib/utils/clipboard";
 import { formatDateTime } from "@/lib/utils/format";
 
 type MappingScope = "mapped" | "all" | "unmapped";
 type ActivityScope = "active" | "inactive" | "all";
-
-interface Company {
-  id: number;
-  name: string;
-}
 
 interface EmailCellProps {
   personId: number;
@@ -177,7 +173,7 @@ export default function PeoplePage() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isDeleteAllDialogOpen, setIsDeleteAllDialogOpen] = useState(false);
   const [isUnmatchedModalOpen, setIsUnmatchedModalOpen] = useState(false);
-  const [lastSummary, setLastSummary] = useState<ImportSummary | null>(null);
+  const [lastSummary, setLastSummary] = useState<PeopleImportResponse | null>(null);
 
   const { data: companies = [] } = useQuery<Company[]>({
     queryKey: companyKeys.list(),
@@ -218,7 +214,7 @@ export default function PeoplePage() {
     };
   }, [activityScope, companyId, currentPage, mappingScope, pageSize, search, showStarredOnly, source]);
 
-  const { data, isLoading, isFetching } = useQuery<PersonQueryResponse>({
+  const { data, isLoading, isFetching } = useQuery<PeopleResponse>({
     queryKey: peopleKeys.listWithParams({
       search,
       companyId,
@@ -234,7 +230,7 @@ export default function PeoplePage() {
     },
   });
 
-  const { data: totalPeopleData } = useQuery<PersonQueryResponse>({
+  const { data: totalPeopleData } = useQuery<PeopleResponse>({
     queryKey: peopleKeys.totalCount(),
     queryFn: async () => {
       return getPeople({ active: "all", limit: 1 });
@@ -243,13 +239,7 @@ export default function PeoplePage() {
 
   const totalPeopleCount = totalPeopleData?.totalCount || 0;
 
-  const { data: unmatchedSummary } = useQuery<{
-    summary: {
-      unmatchedCompanyCount: number;
-      unmatchedPeopleCount: number;
-      ignoredCompanyCount: number;
-    };
-  }>({
+  const { data: unmatchedSummary } = useQuery({
     queryKey: peopleKeys.unmatchedCompanies.summary(),
     queryFn: async () => {
       return getUnmatchedCompanies({ summaryOnly: "true" });

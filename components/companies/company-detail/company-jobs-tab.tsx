@@ -9,7 +9,7 @@ import { formatRelativeTime } from "@/lib/utils/format";
 import { CompanyJobCard } from "./company-job-card";
 import { CompanyTopMatches } from "./company-top-matches";
 
-import type { CompanyJob, CompanyOverview } from "./types";
+import type { CompanyJob, CompanyOverview } from "@/lib/api/contracts/companies";
 
 interface CompanyJobsTabProps {
   company: CompanyOverview;

@@ -105,6 +105,20 @@ const listJob = {
 
 const detailJob = { ...listJob, description: "Build reliable local software." };
 
+const company = {
+  id: 7,
+  name: "Example Company",
+  careersUrl: "https://example.test/careers",
+  logoUrl: null,
+  notes: null,
+  platform: "custom",
+  boardToken: null,
+  isActive: true,
+  lastScrapedAt: null,
+  createdAt: "2026-07-16T00:00:00.000Z",
+  updatedAt: "2026-07-16T00:00:00.000Z",
+};
+
 function renderWithClient(ui: React.ReactNode) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -118,7 +132,7 @@ function renderWithClient(ui: React.ReactNode) {
 
 describe("job data consumers", () => {
   beforeEach(() => {
-    mocks.getCompanies.mockResolvedValue([{ id: 7, name: "Example Company" }]);
+    mocks.getCompanies.mockResolvedValue([company]);
     mocks.getJob.mockResolvedValue(detailJob);
     mocks.getProfile.mockResolvedValue({ id: 1, name: "Test User" });
     mocks.getStats.mockResolvedValue({

@@ -4,8 +4,9 @@ import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 
-import { CompanyActivityTab, type CompanyOverviewResponse } from "@/components/companies/company-detail";
+import { CompanyActivityTab } from "@/components/companies/company-detail";
 import { getCompanyOverview } from "@/lib/api/clients/companies";
+import type { CompanyOverviewResponse } from "@/lib/api/contracts/companies";
 
 export default function CompanyActivityPage() {
     const params = useParams();

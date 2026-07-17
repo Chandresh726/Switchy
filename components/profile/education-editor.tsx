@@ -16,17 +16,7 @@ import {
   getEducation,
   updateEducation,
 } from "@/lib/api/clients/profile";
-
-interface Education {
-  id: number;
-  institution: string;
-  degree: string;
-  field: string | null;
-  startDate: string;
-  endDate: string | null;
-  gpa: string | null;
-  honors: string | null;
-}
+import type { Education } from "@/lib/api/contracts/profile";
 
 interface InitialEducation {
   institution: string;

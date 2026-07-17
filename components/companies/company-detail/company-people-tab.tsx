@@ -8,7 +8,7 @@ import { isRecruiterPosition } from "@/lib/people/position";
 import { CompanyPersonCard } from "./company-person-card";
 import { CompanyOutreachSuggestions } from "./company-outreach-suggestions";
 
-import type { CompanyPerson } from "./types";
+import type { CompanyPerson } from "@/lib/api/contracts/companies";
 
 interface CompanyPeopleTabProps {
   people: CompanyPerson[];

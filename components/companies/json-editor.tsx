@@ -10,15 +10,7 @@ import { highlight, languages } from "prismjs";
 import "prismjs/components/prism-json";
 import { getCompanies, syncCompanies } from "@/lib/api/clients/companies";
 import { companySyncBodySchema } from "@/lib/api/contracts/companies";
-
-interface Company {
-  name: string;
-  careersUrl: string;
-  logoUrl?: string | null;
-  platform?: string | null;
-  boardToken?: string | null;
-  isActive?: boolean;
-}
+import type { Company } from "@/lib/api/contracts/companies";
 
 export function JsonEditor({ onSuccess }: { onSuccess: () => void }) {
   const { data: companies, isLoading: isLoadingCompanies } = useQuery<Company[]>({

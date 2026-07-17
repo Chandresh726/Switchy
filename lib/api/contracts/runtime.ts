@@ -65,3 +65,8 @@ export const matchSessionProgressResponseSchema = z.object({
     hasMore: z.boolean(),
   }),
 });
+
+export type SchedulerStatusResponse = z.infer<typeof schedulerStatusResponseSchema>;
+export type MatchPhaseProgress = z.infer<typeof matchPhaseProgressSchema>;
+export type MatchJobProgress = z.infer<typeof matchJobProgressSchema>;
+export type MatchSessionProgress = z.infer<typeof matchSessionProgressResponseSchema>;

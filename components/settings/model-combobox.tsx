@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
-import type { ProviderModelOption } from "@/lib/types";
+import type { ProviderModelOption } from "@/lib/api/contracts/settings";
 import {
   Combobox,
   ComboboxInput,

@@ -165,3 +165,10 @@ export const matchHistoryDetailResponseSchema = z.object({
   }),
 });
 export const historyMutationResponseSchema = z.object({ success: z.boolean() }).passthrough();
+
+export type MatchHistoryResponse = z.infer<typeof matchHistoryListResponseSchema>;
+export type MatchHistorySession = MatchHistoryResponse["sessions"][number];
+export type MatchHistoryDetailResponse = z.infer<typeof matchHistoryDetailResponseSchema>;
+export type ScrapeHistoryResponse = z.infer<typeof scrapeHistoryListResponseSchema>;
+export type ScrapeHistorySession = ScrapeHistoryResponse["sessions"][number];
+export type ScrapeHistoryDetailResponse = z.infer<typeof scrapeHistoryDetailResponseSchema>;

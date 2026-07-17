@@ -162,3 +162,14 @@ export const unmatchedCompanyPeopleResponseSchema = z.object({
   totalCount: z.number().int().nonnegative(),
   hasMore: z.boolean(),
 });
+
+export type Person = z.infer<typeof personResponseSchema>;
+export type PersonSource = Person["source"];
+export type PeopleImportMode = z.infer<typeof peopleImportModeSchema>;
+export type PeopleResponse = z.infer<typeof peopleListResponseSchema>;
+export type PeopleImportPreviewResponse = z.infer<typeof peopleImportPreviewResponseSchema>;
+export type PeopleImportResponse = z.infer<typeof peopleImportResponseSchema>;
+export type PeopleImportSessionsResponse = z.infer<typeof peopleImportSessionsResponseSchema>;
+export type PeopleImportSession = PeopleImportSessionsResponse["sessions"][number];
+export type UnmatchedCompaniesResponse = z.infer<typeof unmatchedCompaniesResponseSchema>;
+export type UnmatchedCompanyPeopleResponse = z.infer<typeof unmatchedCompanyPeopleResponseSchema>;

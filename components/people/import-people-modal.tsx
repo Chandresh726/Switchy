@@ -43,7 +43,11 @@ import {
   importPeople,
   previewPeopleImport,
 } from "@/lib/api/clients/people";
-import type { ImportMode, ImportSummary, PeopleImportPreviewResponse } from "@/lib/people/types";
+import type {
+  PeopleImportMode as ImportMode,
+  PeopleImportPreviewResponse,
+  PeopleImportResponse as ImportSummary,
+} from "@/lib/api/contracts/people";
 import { cn } from "@/lib/utils";
 
 type ImportSource = "linkedin" | "apollo" | "manual";

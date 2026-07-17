@@ -128,3 +128,9 @@ export const jobUpdateResponseSchema = z.object({
   archiveSource: z.string().nullable(),
   updatedAt: z.string().nullable(),
 });
+
+export type JobSummary = z.infer<typeof jobSummarySchema>;
+export type JobDetail = z.infer<typeof jobSchema>;
+export type JobsResponse = z.infer<typeof jobsResponseSchema>;
+export type JobUpdateResponse = z.infer<typeof jobUpdateResponseSchema>;
+export type JobUpdateInput = z.output<typeof jobResourceUpdateBodySchema>;

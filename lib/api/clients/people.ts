@@ -21,6 +21,14 @@ import {
   unmatchedCompanyPeopleQuerySchema,
   unmatchedCompanyPeopleResponseSchema,
 } from "@/lib/api/contracts/people";
+import type {
+  Person,
+  PeopleImportResponse,
+  PeopleImportSessionsResponse,
+  PeopleResponse,
+  UnmatchedCompaniesResponse,
+  UnmatchedCompanyPeopleResponse,
+} from "@/lib/api/contracts/people";
 import { z } from "zod";
 
 import { appendQuery, apiCommand, apiGet, apiJsonMutation, apiRequest, serializePathParam, serializeQuery } from "../client";
@@ -71,20 +79,20 @@ export type UnmatchedCompanyPeopleQueryInput = Pick<
   "companyNormalized"
 > & Partial<Omit<UnmatchedCompanyPeopleQuery, "companyNormalized">>;
 
-export const getPeople = (params: PeopleQueryInput = {}) => apiGet(appendQuery("/api/people", serializeQuery(peopleListQuerySchema, params)), peopleListResponseSchema, "Failed to fetch people");
-export const createPerson = (body: z.output<typeof manualPersonBodySchema>) => apiJsonMutation("/api/people", "POST", manualPersonBodySchema, body, personResponseSchema, "Failed to create person");
+export const getPeople = (params: PeopleQueryInput = {}): Promise<PeopleResponse> => apiGet(appendQuery("/api/people", serializeQuery(peopleListQuerySchema, params)), peopleListResponseSchema, "Failed to fetch people");
+export const createPerson = (body: z.output<typeof manualPersonBodySchema>): Promise<Person> => apiJsonMutation("/api/people", "POST", manualPersonBodySchema, body, personResponseSchema, "Failed to create person");
 export const patchPerson = (id: number, body: z.output<typeof personPatchBodySchema>) => apiJsonMutation(`/api/people/${personPath(id)}`, "PATCH", personPatchBodySchema, body, personResponseSchema, "Failed to update person");
 export const clearPeople = () => apiCommand("/api/maintenance/people/clear", "POST", peopleClearResponseSchema, "Failed to clear people");
-export const getPeopleImportSessions = (params: PeopleImportSessionsQueryInput = {}) => apiGet(appendQuery("/api/people/import-sessions", serializeQuery(peopleImportSessionsQuerySchema, params)), peopleImportSessionsResponseSchema, "Failed to fetch import sessions");
-export const getUnmatchedCompanies = (params: UnmatchedCompaniesQueryInput = {}, ignored = false) => apiGet(appendQuery(`/api/people/${ignored ? "ignored-" : ""}unmatched-companies`, serializeQuery(unmatchedCompaniesQuerySchema, params)), unmatchedCompaniesResponseSchema, "Failed to load unmatched companies");
-export const getUnmatchedCompanyPeople = (params: UnmatchedCompanyPeopleQueryInput) => apiGet(appendQuery("/api/people/unmatched-company-people", serializeQuery(unmatchedCompanyPeopleQuerySchema, params)), unmatchedCompanyPeopleResponseSchema, "Failed to load unmatched people");
+export const getPeopleImportSessions = (params: PeopleImportSessionsQueryInput = {}): Promise<PeopleImportSessionsResponse> => apiGet(appendQuery("/api/people/import-sessions", serializeQuery(peopleImportSessionsQuerySchema, params)), peopleImportSessionsResponseSchema, "Failed to fetch import sessions");
+export const getUnmatchedCompanies = (params: UnmatchedCompaniesQueryInput = {}, ignored = false): Promise<UnmatchedCompaniesResponse> => apiGet(appendQuery(`/api/people/${ignored ? "ignored-" : ""}unmatched-companies`, serializeQuery(unmatchedCompaniesQuerySchema, params)), unmatchedCompaniesResponseSchema, "Failed to load unmatched companies");
+export const getUnmatchedCompanyPeople = (params: UnmatchedCompanyPeopleQueryInput): Promise<UnmatchedCompanyPeopleResponse> => apiGet(appendQuery("/api/people/unmatched-company-people", serializeQuery(unmatchedCompanyPeopleQuerySchema, params)), unmatchedCompanyPeopleResponseSchema, "Failed to load unmatched people");
 export const updateUnmatchedCompany = (body: z.output<typeof unmatchedCompanyPatchBodySchema>) => apiJsonMutation("/api/people/unmatched-companies", "PATCH", unmatchedCompanyPatchBodySchema, body, peopleOperationResponseSchema, "Failed to update unmatched company");
 export const refreshUnmatchedCompanyMappings = () => apiJsonMutation("/api/people/unmatched-companies", "PATCH", unmatchedCompanyPatchBodySchema, { action: "refresh" }, peopleRefreshMappingsResponseSchema, "Failed to refresh unmatched company mappings");
 export const previewPeopleImport = (formData: FormData) => {
   peopleImportPreviewFormSchema.parse(peopleImportFormInput(formData));
   return apiRequest("/api/people/import/preview", { method: "POST", headers: APP_REQUEST_HEADERS, body: formData }, peopleImportPreviewResponseSchema, "Failed to preview people import");
 };
-export const importPeople = (formData: FormData) => {
+export const importPeople = (formData: FormData): Promise<PeopleImportResponse> => {
   peopleImportFormSchema.parse(peopleImportFormInput(formData));
   return apiRequest("/api/people/import", { method: "POST", headers: APP_REQUEST_HEADERS, body: formData }, peopleImportResponseSchema, "Failed to import people");
 };

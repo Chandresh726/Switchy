@@ -28,60 +28,7 @@ import { getSessionStatusConfig } from "@/lib/utils/status-config";
 import { getJobs } from "@/lib/api/clients/jobs";
 import { getProfile } from "@/lib/api/clients/profile";
 import { getStats } from "@/lib/api/clients/stats";
-
-interface ScrapeSession {
-  id: string;
-  triggerSource: string;
-  status: string;
-  companiesTotal: number;
-  companiesCompleted: number;
-  totalJobsFound: number;
-  totalJobsAdded: number;
-  scheduledForAt?: string | null;
-  startedAt: string;
-  completedAt: string | null;
-}
-
-interface Stats {
-  totalJobs: number;
-  totalCompanies: number;
-  highMatchJobs: number;
-  appliedJobs: number;
-  newJobs: number;
-  viewedJobs: number;
-  savedJobs: number;
-  jobsWithScore: number;
-  lastScan: ScrapeSession | null;
-  // Connection stats
-  totalPeople: number;
-  starredPeople: number;
-  mappedPeople: number;
-  unmatchedCompanyCount: number;
-}
-
-interface Profile {
-  id: number;
-  name: string;
-}
-
-interface Job {
-  id: number;
-  title: string;
-  url: string;
-  location: string | null;
-  locationType: string | null;
-  matchScore: number | null;
-  matchLegacy?: boolean;
-  status: string;
-  discoveredAt: string | null;
-  viewedAt: string | null;
-  appliedAt: string | null;
-  company: {
-    id: number;
-    name: string;
-    logoUrl: string | null;
-  };
-}
+import type { JobSummary } from "@/lib/api/contracts/jobs";
 
 const DASHBOARD_LIST_MAX_ITEMS = 20;
 
@@ -145,7 +92,7 @@ function JobRow({
   currentTime,
   showNewTag = false,
 }: {
-  job: Job;
+  job: JobSummary;
   type?: "default" | "applied";
   currentTime: number;
   showNewTag?: boolean;
@@ -212,14 +159,14 @@ function JobRow({
 export default function DashboardPage() {
   const [currentTime] = useState(() => Date.now());
 
-  const { data: profile, isLoading: isProfileLoading } = useQuery<Profile | null>({
+  const { data: profile, isLoading: isProfileLoading } = useQuery({
     queryKey: ["profile"],
     queryFn: async () => {
       return getProfile();
     },
   });
 
-  const { data: stats, isLoading: isStatsLoading } = useQuery<Stats>({
+  const { data: stats, isLoading: isStatsLoading } = useQuery({
     queryKey: ["stats"],
     queryFn: async () => {
       return getStats();
@@ -264,9 +211,9 @@ export default function DashboardPage() {
   });
 
   const userName = profile?.name?.split(" ")[0] || "there";
-  const highMatchJobs: Job[] = highMatchData?.jobs || [];
-  const recentJobs: Job[] = recentJobsData?.jobs || [];
-  const appliedJobs: Job[] = appliedJobsData?.jobs || [];
+  const highMatchJobs: JobSummary[] = highMatchData?.jobs || [];
+  const recentJobs: JobSummary[] = recentJobsData?.jobs || [];
+  const appliedJobs: JobSummary[] = appliedJobsData?.jobs || [];
   const lastScan = stats?.lastScan;
   const lastScanStatusConfig = lastScan
     ? getSessionStatusConfig(lastScan.status)

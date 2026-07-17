@@ -21,8 +21,8 @@ import { toast } from "sonner";
 import { AIUsageOverview } from "@/components/history/ai-usage-overview";
 import type { AIContentType } from "@/lib/ai/contracts";
 import { getContentTypeLabel, getWorkspacePathWithVariant } from "@/lib/ai/writing/workspace/routes";
-import type { ContentResponse } from "@/lib/ai/writing/types";
 import { deleteAIContent, getAIHistory } from "@/lib/api/clients/ai";
+import type { GeneratedContent } from "@/lib/api/contracts/ai";
 import { cn } from "@/lib/utils";
 import {
   AlertDialog,
@@ -85,7 +85,7 @@ function getTypeConfig(type: AIContentType) {
 }
 
 interface AIHistoryCardProps {
-  content: ContentResponse;
+  content: GeneratedContent;
   isDeleting: boolean;
   onClick: () => void;
   onDelete: (id: number) => void;
@@ -225,7 +225,7 @@ export default function AIHistoryPage() {
   const queryClient = useQueryClient();
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  const { data, isLoading } = useQuery<{ contents: ContentResponse[] }>({
+  const { data, isLoading } = useQuery({
     queryKey: ["ai-history-all"],
     queryFn: async () => {
       return getAIHistory();
@@ -267,14 +267,14 @@ export default function AIHistoryPage() {
     if (!acc[key]) acc[key] = [];
     acc[key].push(content);
     return acc;
-  }, {} as Record<string, ContentResponse[]>);
+  }, {} as Record<string, GeneratedContent[]>);
 
   const handleDelete = (id: number) => {
     setDeletingId(id);
     deleteMutation.mutate(id);
   };
 
-  const handleCardClick = (content: ContentResponse) => {
+  const handleCardClick = (content: GeneratedContent) => {
     const latestVariantId = content.history[content.history.length - 1]?.id;
     router.push(getWorkspacePathWithVariant(content.jobId, content.type, latestVariantId));
   };

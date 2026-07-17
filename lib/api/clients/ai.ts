@@ -5,6 +5,8 @@ import {
   AIContentVariantSignalSchema,
 } from "@/lib/ai/contracts";
 import {
+  type AIHistoryResponse,
+  type AIUsageResponse,
   aiContentEnvelopeSchema,
   aiContentWriteResponseSchema,
   aiHistoryResponseSchema,
@@ -15,7 +17,10 @@ import {
   aiUsageResponseSchema,
 } from "@/lib/api/contracts/ai";
 import { successSchema } from "@/lib/api/contracts/common";
-import { clearAiContentResponseSchema } from "@/lib/api/contracts/settings";
+import {
+  type ClearAIContentResponse,
+  clearAiContentResponseSchema,
+} from "@/lib/api/contracts/settings";
 import { numericIdParamsSchema } from "@/lib/api/contracts/matching";
 import { APIClientError } from "@/lib/api/errors";
 import type { z } from "zod";
@@ -25,14 +30,14 @@ import { APP_REQUEST_HEADERS } from "../request-headers";
 
 const contentPath = (id: number) => serializePathParam(numericIdParamsSchema, { id });
 
-export const getAIHistory = () => apiRequest("/api/ai/history", { method: "GET", cache: "no-store" }, aiHistoryResponseSchema, "Failed to fetch AI history");
+export const getAIHistory = (): Promise<AIHistoryResponse> => apiRequest("/api/ai/history", { method: "GET", cache: "no-store" }, aiHistoryResponseSchema, "Failed to fetch AI history");
 export const clearAIHistory = () => apiCommand("/api/ai/history", "DELETE", successSchema, "Failed to clear AI history");
-export const clearAllAIContent = () => apiCommand("/api/ai/content", "DELETE", clearAiContentResponseSchema, "Failed to clear AI content");
+export const clearAllAIContent = (): Promise<ClearAIContentResponse> => apiCommand("/api/ai/content", "DELETE", clearAiContentResponseSchema, "Failed to clear AI content");
 export const deleteAIContent = (id: number) => apiCommand(`/api/ai/content/${contentPath(id)}`, "DELETE", successSchema, "Failed to delete AI content");
 export const getAIContent = (jobId: number, type: z.output<typeof AIContentQuerySchema>["type"]) => apiRequest(appendQuery("/api/ai/content", serializeQuery(AIContentQuerySchema, { jobId, type })), { method: "GET" }, aiContentEnvelopeSchema, "Failed to load saved content");
 export const saveAIContent = (id: number, body: z.output<typeof AIContentPatchBodySchema>) => apiJsonMutation(`/api/ai/content/${contentPath(id)}`, "PATCH", AIContentPatchBodySchema, body, aiContentWriteResponseSchema, "Failed to save AI content");
 export const recordAIVariantSignal = (variantId: number, action: z.output<typeof AIContentVariantSignalSchema>["action"]) => apiJsonMutation(`/api/ai/content/variants/${contentPath(variantId)}`, "PATCH", AIContentVariantSignalSchema, { action }, successSchema, `Failed to record ${action} signal`);
-export const getAIUsage = (days: 7 | 30) => apiRequest(appendQuery("/api/ai/usage", serializeQuery(aiUsageQuerySchema, { days: String(days) as "7" | "30" })), { method: "GET", cache: "no-store" }, aiUsageResponseSchema, "Failed to fetch AI usage");
+export const getAIUsage = (days: 7 | 30): Promise<AIUsageResponse> => apiRequest(appendQuery("/api/ai/usage", serializeQuery(aiUsageQuerySchema, { days: String(days) as "7" | "30" })), { method: "GET", cache: "no-store" }, aiUsageResponseSchema, "Failed to fetch AI usage");
 export const openAIContentStream = (body: z.output<typeof AIContentPostBodySchema>, signal: AbortSignal) => apiStreamRequest("/api/ai/content/stream", {
   method: "POST",
   headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },

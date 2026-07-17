@@ -4,8 +4,9 @@ import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 
-import { CompanyPeopleTab, type CompanyOverviewResponse } from "@/components/companies/company-detail";
+import { CompanyPeopleTab } from "@/components/companies/company-detail";
 import { getCompanyOverview } from "@/lib/api/clients/companies";
+import type { CompanyOverviewResponse } from "@/lib/api/contracts/companies";
 
 export default function CompanyPeoplePage() {
     const params = useParams();

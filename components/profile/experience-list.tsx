@@ -12,20 +12,10 @@ import {
   getExperience,
   updateExperience,
 } from "@/lib/api/clients/profile";
+import type { Experience } from "@/lib/api/contracts/profile";
 import { useState, useEffect } from "react";
 import { Building2, Calendar, Loader2, MapPin, Pencil, Plus, Save, Trash2, X, Sparkles, Briefcase } from "lucide-react";
 import { toast } from "sonner";
-
-interface Experience {
-  id: number;
-  company: string;
-  title: string;
-  location: string | null;
-  startDate: string;
-  endDate: string | null;
-  description: string | null;
-  highlights: string | null;
-}
 
 interface InitialExperience {
   company: string;

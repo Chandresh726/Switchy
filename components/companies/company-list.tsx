@@ -39,21 +39,9 @@ import {
   deleteCompanyJobs,
   patchCompany,
 } from "@/lib/api/clients/companies";
+import type { Company } from "@/lib/api/contracts/companies";
 import { isCompanyScrapeSupported } from "@/lib/companies/scrape-support";
 import { PLATFORM_COLORS } from "@/lib/constants";
-
-export interface Company {
-  id: number;
-  name: string;
-  careersUrl: string;
-  logoUrl: string | null;
-  notes: string | null;
-  platform: string | null;
-  boardToken: string | null;
-  isActive: boolean;
-  lastScrapedAt: string | null;
-  createdAt: string;
-}
 
 interface CompanyListProps {
   companies: Company[];

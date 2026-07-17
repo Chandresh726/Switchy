@@ -4,6 +4,8 @@ import {
   MatchUnmatchedQuerySchema,
 } from "@/lib/ai/contracts";
 import {
+  type QueuedMatchResponse,
+  type UnmatchedJobsCountResponse,
   queuedMatchResponseSchema,
   unmatchedJobsCountResponseSchema,
 } from "@/lib/api/contracts/settings";
@@ -22,5 +24,5 @@ export const getSchedulerStatus = () => apiRequest("/api/scheduler/status", { me
 export const recoverScheduler = () => apiCommand("/api/scheduler/recover", "POST", schedulerRecoveryResponseSchema, "Failed to recover scheduler");
 export const queueJobMatch = (jobId: number) => apiJsonMutation("/api/match", "POST", MatchRouteBodySchema, { jobId }, queuedMatchResponseSchema, "Failed to calculate match");
 export const getMatchSession = (sessionId: string) => apiRequest(`/api/match/sessions/${matchSessionPath(sessionId)}`, { method: "GET", cache: "no-store" }, matchSessionProgressResponseSchema, "Failed to read match progress");
-export const getUnmatchedJobsCount = (days: number) => apiGet(`/api/jobs/match-unmatched?${serializeQuery(MatchUnmatchedQuerySchema, { days })}`, unmatchedJobsCountResponseSchema, "Failed to fetch unmatched count");
-export const queueUnmatchedJobs = (days: number) => apiJsonMutation("/api/jobs/match-unmatched", "POST", MatchUnmatchedBodySchema, { days }, queuedMatchResponseSchema, "Failed to match jobs");
+export const getUnmatchedJobsCount = (days: number): Promise<UnmatchedJobsCountResponse> => apiGet(`/api/jobs/match-unmatched?${serializeQuery(MatchUnmatchedQuerySchema, { days })}`, unmatchedJobsCountResponseSchema, "Failed to fetch unmatched count");
+export const queueUnmatchedJobs = (days: number): Promise<QueuedMatchResponse> => apiJsonMutation("/api/jobs/match-unmatched", "POST", MatchUnmatchedBodySchema, { days }, queuedMatchResponseSchema, "Failed to match jobs");

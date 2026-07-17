@@ -14,20 +14,9 @@ import {
   companyCreateBodySchema,
   companyReplaceBodySchema,
 } from "@/lib/api/contracts/companies";
+import type { Company } from "@/lib/api/contracts/companies";
 import { PLATFORM_OPTIONS } from "@/lib/constants";
 import { detectPlatformFromUrl, getPlatformLabel } from "@/lib/scraper/platform-detection";
-
-interface Company {
-  id: number;
-  name: string;
-  careersUrl: string;
-  logoUrl: string | null;
-  notes: string | null;
-  platform: string | null;
-  boardToken: string | null;
-  isActive: boolean;
-  lastScrapedAt: string | null;
-}
 
 interface CompanyFormProps {
   company?: Company;

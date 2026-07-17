@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import type {
   MatchJobProgress,
   MatchPhaseProgress,
-} from "@/lib/hooks/use-match-session";
+} from "@/lib/api/contracts/runtime";
 
 interface MatchPipelineProgressProps {
   analysis: MatchPhaseProgress;

@@ -10,6 +10,8 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { getPageNumbers } from "@/lib/utils/pagination";
 import { getCompanies } from "@/lib/api/clients/companies";
 import { getJobs, type JobsQueryInput } from "@/lib/api/clients/jobs";
+import type { Company } from "@/lib/api/contracts/companies";
+import type { JobSummary, JobsResponse } from "@/lib/api/contracts/jobs";
 import { JOB_STATUSES, type JobStatus } from "@/lib/jobs/status";
 
 const STORAGE_KEY = "switchy-job-filters";
@@ -129,33 +131,6 @@ function buildQueryString(filters: Filters, tab: TabType): string {
 
   const queryString = params.toString();
   return queryString ? `?${queryString}` : "";
-}
-
-interface Job {
-  id: number;
-  title: string;
-  url: string;
-  location: string | null;
-  locationType: string | null;
-  department: string | null;
-  salary: string | null;
-  employmentType: string | null;
-  seniorityLevel: string | null;
-  status: JobStatus;
-  matchScore: number | null;
-  postedDate: string | null;
-  discoveredAt: string | null;
-  company: {
-    id: number;
-    name: string;
-    logoUrl: string | null;
-    platform: string | null;
-  };
-}
-
-interface Company {
-  id: number;
-  name: string;
 }
 
 type TabType = "all" | "saved" | "applied" | "archived";
@@ -334,11 +309,7 @@ export function JobList() {
   ]);
 
   // Fetch jobs
-  const { data, isLoading, isFetching } = useQuery<{
-    jobs: Job[];
-    totalCount: number;
-    hasMore: boolean;
-  }>({
+  const { data, isLoading, isFetching } = useQuery<JobsResponse>({
     queryKey: ["jobs", queryParams],
     queryFn: async () => {
       return getJobs(queryParams);
@@ -346,7 +317,7 @@ export function JobList() {
   });
 
   // Fetch applied count for tab badge
-  const { data: appliedData } = useQuery<{ totalCount: number }>({
+  const { data: appliedData } = useQuery({
     queryKey: ["jobs", "applied-count"],
     queryFn: async () => {
       return getJobs({ status: "applied", limit: 1 });
@@ -354,7 +325,7 @@ export function JobList() {
   });
 
   // Fetch saved count for tab badge
-  const { data: savedData } = useQuery<{ totalCount: number }>({
+  const { data: savedData } = useQuery({
     queryKey: ["jobs", "saved-count"],
     queryFn: async () => {
       return getJobs({ status: "interested", limit: 1 });
@@ -362,14 +333,14 @@ export function JobList() {
   });
 
   // Fetch archived count for tab badge
-  const { data: archivedData } = useQuery<{ totalCount: number }>({
+  const { data: archivedData } = useQuery({
     queryKey: ["jobs", "archived-count"],
     queryFn: async () => {
       return getJobs({ status: "archived", limit: 1 });
     },
   });
 
-  const jobs: Job[] = data?.jobs || [];
+  const jobs: JobSummary[] = data?.jobs || [];
   const totalCount = data?.totalCount || 0;
   const appliedCount = appliedData?.totalCount || 0;
   const savedCount = savedData?.totalCount || 0;

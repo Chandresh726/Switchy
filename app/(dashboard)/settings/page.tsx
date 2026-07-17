@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
 import { clearAllAIContent } from "@/lib/api/clients/ai";
+import { getReadiness, getRuntimeHealth } from "@/lib/api/clients/health";
 import { clearJobMatchData, clearJobs } from "@/lib/api/clients/jobs";
 import {
   createProvider,
@@ -37,12 +38,14 @@ import type { AIProvider } from "@/lib/ai/providers/types";
 import { APP_VERSION, DB_PATH } from "@/lib/constants";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
-import type { ProviderModelsResponse } from "@/lib/types";
+import type {
+  ProviderModelsResponse,
+  ProviderSettingsListItem,
+  Settings,
+} from "@/lib/api/contracts/settings";
 import type {
   ProviderModelsState,
-  ProviderSettingsListItem,
   ReasoningEffort,
-  SettingsRecord,
 } from "@/lib/settings/types";
 
 const PROVIDER_MODELS_STALE_TIME_MS = 15 * 60 * 1000;
@@ -230,7 +233,7 @@ function SettingsContent() {
   const scraperAutosaveAttemptRef = useRef<string | null>(null);
   const aiWritingAutosaveAttemptRef = useRef<string | null>(null);
 
-  const { data: settings, isLoading: isSettingsLoading } = useQuery<SettingsRecord>({
+  const { data: settings, isLoading: isSettingsLoading } = useQuery<Settings>({
     queryKey: ["settings"],
     queryFn: getSettings,
   });
@@ -245,6 +248,16 @@ function SettingsContent() {
   const { data: providers = [], isLoading: isProvidersLoading } = useQuery<ProviderSettingsListItem[]>({
     queryKey: ["providers"],
     queryFn: getProviders,
+  });
+  const readinessQuery = useQuery({
+    queryKey: ["health", "readiness"],
+    queryFn: getReadiness,
+    refetchInterval: 15_000,
+  });
+  const runtimeHealthQuery = useQuery({
+    queryKey: ["health", "runtime"],
+    queryFn: getRuntimeHealth,
+    refetchInterval: 15_000,
   });
 
   const providerModelsQueries = useQueries({
@@ -896,7 +909,7 @@ function SettingsContent() {
     },
   });
 
-  const clearMatchDataMutation = useMutation<{ jobsCleared: number }>({
+  const clearMatchDataMutation = useMutation({
     mutationFn: clearJobMatchData,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
@@ -905,12 +918,7 @@ function SettingsContent() {
     },
   });
 
-  const clearAIContentMutation = useMutation<{
-    success: boolean;
-    contentDeleted: number;
-    historyDeleted: number;
-    message: string;
-  }>({
+  const clearAIContentMutation = useMutation({
     mutationFn: clearAllAIContent,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["ai-content"] });
@@ -929,7 +937,7 @@ function SettingsContent() {
     onError: () => toast.error("Failed to save resume parser settings"),
   });
 
-  const schedulerEnabledMutation = useMutation<SettingsRecord, Error, boolean, { previousEnabled: boolean }>({
+  const schedulerEnabledMutation = useMutation<Settings, Error, boolean, { previousEnabled: boolean }>({
     mutationFn: (enabled: boolean) =>
       patchSettings({ scheduler_enabled: enabled }),
     onMutate: (enabled: boolean) => {
@@ -1206,19 +1214,12 @@ function SettingsContent() {
     data: unmatchedData,
     isFetching: unmatchedCountLoading,
     refetch: refetchUnmatchedCount,
-  } = useQuery<{
-    count: number;
-    days: number;
-  }>({
+  } = useQuery({
     queryKey: ["unmatched-jobs-count", debouncedUnmatchedWindowDays],
     queryFn: () => getUnmatchedJobsCount(debouncedUnmatchedWindowDays),
   });
 
-  const matchUnmatchedMutation = useMutation<{
-    total: number;
-    status: "queued" | "completed";
-    sessionId: string;
-  }, Error, number>({
+  const matchUnmatchedMutation = useMutation({
     mutationFn: queueUnmatchedJobs,
     onSuccess: (data) => {
       toast.success(`${data.total} ${data.total === 1 ? "job" : "jobs"} queued for matching`, {
@@ -1425,7 +1426,16 @@ function SettingsContent() {
             onResumeParserReasoningEffortChange={setResumeParserReasoningEffort}
           />
 
-          <SystemInfo version={APP_VERSION} dbPath={DB_PATH} />
+          <SystemInfo
+            version={APP_VERSION}
+            dbPath={DB_PATH}
+            readiness={readinessQuery.data}
+            runtimeHealth={runtimeHealthQuery.data}
+            isReadinessLoading={readinessQuery.isLoading}
+            isReadinessUnavailable={readinessQuery.isError}
+            isRuntimeHealthLoading={runtimeHealthQuery.isLoading}
+            isRuntimeHealthUnavailable={runtimeHealthQuery.isError}
+          />
         </div>
       </div>
     </div>

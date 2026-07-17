@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { updateJob } from "@/lib/api/clients/jobs";
+import type { JobSummary } from "@/lib/api/contracts/jobs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MatchBadge } from "./match-badge";
@@ -20,30 +21,24 @@ import {
   DollarSign,
 } from "lucide-react";
 
-interface Job {
-  id: number;
-  title: string;
-  url: string;
-  location: string | null;
-  locationType: string | null;
-  department: string | null;
-  salary: string | null;
-  employmentType: string | null;
-  seniorityLevel: string | null;
-  status: JobStatus;
-  matchScore: number | null;
-  postedDate: string | null;
-  discoveredAt: string | null;
-  company: {
-    id: number;
-    name: string;
-    logoUrl: string | null;
-    platform: string | null;
-  };
-}
-
 interface JobCardProps {
-  job: Job;
+  job: Pick<
+    JobSummary,
+    | "id"
+    | "title"
+    | "url"
+    | "location"
+    | "locationType"
+    | "department"
+    | "salary"
+    | "employmentType"
+    | "seniorityLevel"
+    | "status"
+    | "matchScore"
+    | "postedDate"
+    | "discoveredAt"
+    | "company"
+  >;
 }
 
 const STATUS_COLORS: Record<string, string> = {

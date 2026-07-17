@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import type { ResumeData } from "@/lib/ai/resume/contracts";
 import { downloadResume, uploadResume } from "@/lib/api/clients/profile";
+import type { Resume } from "@/lib/api/contracts/profile";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,15 +21,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-
-interface Resume {
-  id: number;
-  fileName: string;
-  version: number;
-  createdAt: string;
-  isCurrent: boolean;
-  storageState: "staging" | "ready" | "deleting" | "missing";
-}
 
 interface ResumeManagerProps {
   resumes: Resume[];

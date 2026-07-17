@@ -201,3 +201,12 @@ export const queuedMatchResponseSchema = z.object({
   status: z.enum(["queued", "completed"]),
   sessionId: z.string(),
 });
+
+export type Settings = z.infer<typeof settingsResponseSchema>;
+export type ProviderSettingsListItem = z.infer<typeof providerSettingsListItemSchema>;
+export type ProviderModelsResponse = z.infer<typeof providerModelsResponseSchema>;
+export type ProviderModelOption = ProviderModelsResponse["models"][number];
+export type ClearMatchDataResponse = z.infer<typeof clearMatchDataResponseSchema>;
+export type ClearAIContentResponse = z.infer<typeof clearAiContentResponseSchema>;
+export type UnmatchedJobsCountResponse = z.infer<typeof unmatchedJobsCountResponseSchema>;
+export type QueuedMatchResponse = z.infer<typeof queuedMatchResponseSchema>;
