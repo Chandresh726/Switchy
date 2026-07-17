@@ -19,7 +19,8 @@ import { ModelCombobox } from "@/components/settings/model-combobox";
 import { ReasoningEffortControl } from "@/components/settings/reasoning-effort-control";
 import { AlertTriangle, Terminal } from "lucide-react";
 import type { ReasoningEffort } from "@/lib/settings/types";
-import type { Provider, ProviderModelOption } from "@/lib/types";
+import type { ProviderModelOption } from "@/lib/api/contracts/settings";
+import type { Provider } from "@/lib/types";
 
 interface ResumeParserSectionProps {
   availableProviders: Provider[];

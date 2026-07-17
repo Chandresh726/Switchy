@@ -8,6 +8,7 @@ import { Building2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/ui/empty-state";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import {
     CompanyHeader,
     CompanyStats,
@@ -16,7 +17,6 @@ import {
     CompanyNoteSaveIndicator,
     CompanyNotesProvider,
     useCompanyNotesContext,
-    type CompanyOverviewResponse,
 } from "@/components/companies/company-detail";
 import { CompanyLayoutClient } from "@/components/companies/company-detail/company-layout-client";
 import {
@@ -24,7 +24,10 @@ import {
     matchCompanies,
     refreshCompanyJobs,
 } from "@/lib/api/clients/companies";
+import type { CompanyOverviewResponse } from "@/lib/api/contracts/companies";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import { getApiErrorMessage, isApiNotFoundError } from "@/lib/api/error-presentation";
 
 function CompanyLayoutContent({
     children,
@@ -39,7 +42,6 @@ function CompanyLayoutContent({
 
     const companyId = Number(params.id);
     useMatchSession(matchSessionId, {
-        extraInvalidationKeys: [["company-overview", companyId]],
         onSettled: () => setMatchSessionId(null),
     });
     const activeTab = pathname?.startsWith(`/companies/${companyId}/people`)
@@ -50,12 +52,12 @@ function CompanyLayoutContent({
                 ? "notes"
                 : "jobs";
 
-    const { data, isLoading } = useQuery<CompanyOverviewResponse>({
-        queryKey: ["company-overview", companyId],
+    const { data, error, isError, isLoading, refetch } = useQuery<CompanyOverviewResponse>({
+        queryKey: queryKeys.companies.overview(companyId),
         queryFn: async () => {
             return getCompanyOverview(companyId);
         },
-        enabled: Number.isFinite(companyId),
+        enabled: Number.isInteger(companyId) && companyId > 0,
     });
 
     const refreshJobsMutation = useMutation({
@@ -63,12 +65,14 @@ function CompanyLayoutContent({
             return refreshCompanyJobs([companyId]);
         },
         onSuccess: (result) => {
-            queryClient.invalidateQueries({ queryKey: ["company-overview", companyId] });
-            queryClient.invalidateQueries({ queryKey: ["jobs"] });
+            void cacheOwnership.companyMutation(queryClient, {
+                companyId,
+                affectsScrapeHistory: true,
+            });
             toast.success(result.message || "Jobs refreshed successfully");
         },
-        onError: () => {
-            toast.error("Failed to refresh jobs");
+        onError: (mutationError) => {
+            toast.error(getApiErrorMessage(mutationError, "Failed to refresh jobs"));
         },
     });
 
@@ -80,8 +84,8 @@ function CompanyLayoutContent({
             setMatchSessionId(result.sessionId || null);
             toast.success(`Queued ${result.total} jobs for matching`);
         },
-        onError: () => {
-            toast.error("Failed to run matching");
+        onError: (mutationError) => {
+            toast.error(getApiErrorMessage(mutationError, "Failed to run matching"));
         },
     });
 
@@ -93,7 +97,17 @@ function CompanyLayoutContent({
         );
     }
 
-    if (!data) {
+    if (isError && !isApiNotFoundError(error)) {
+        return (
+            <ApiErrorState
+                error={error}
+                fallbackMessage="The company overview could not be loaded."
+                onRetry={() => void refetch()}
+            />
+        );
+    }
+
+    if (!Number.isInteger(companyId) || companyId <= 0 || isApiNotFoundError(error) || !data) {
         return (
             <EmptyState
                 icon={Building2}
@@ -126,7 +140,7 @@ function CompanyLayoutContent({
                             companyId={companyId}
                             companyName={data.company.name}
                             onAdded={() => {
-                                queryClient.invalidateQueries({ queryKey: ["company-overview", companyId] });
+                                void cacheOwnership.peopleMutation(queryClient);
                             }}
                         />
                     ) : activeTab === "notes" ? (

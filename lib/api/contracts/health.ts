@@ -25,3 +25,6 @@ export const runtimeHealthResponseSchema = z.object({
     at: z.string(),
   }).nullable(),
 });
+
+export type ReadinessResponse = z.infer<typeof readinessResponseSchema>;
+export type RuntimeHealthResponse = z.infer<typeof runtimeHealthResponseSchema>;

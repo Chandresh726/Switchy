@@ -149,3 +149,12 @@ export const resumeUploadResponseSchema = z.object({
   parserVersion: z.string().nullable(),
   warnings: ResumeValidationWarningsSchema,
 });
+
+export type Profile = z.infer<typeof profileSchema>;
+export type ProfileResponse = z.infer<typeof profileResponseSchema>;
+export type Skill = z.infer<typeof skillSchema>;
+export type Experience = z.infer<typeof experienceSchema>;
+export type Education = z.infer<typeof educationSchema>;
+export type Resume = z.infer<typeof resumeResponseSchema>;
+export type ResumeUploadResponse = z.infer<typeof resumeUploadResponseSchema>;
+export type SkillCreateInput = z.output<typeof skillCreateBodySchema>;

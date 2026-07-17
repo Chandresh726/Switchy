@@ -5,17 +5,19 @@ import { SessionCard } from "./session-card";
 import { Loader2, History } from "lucide-react";
 import { formatDurationMs, groupSessionsByDate } from "@/lib/utils/format";
 import { getScrapeHistoryList } from "@/lib/api/clients/history";
+import { queryKeys } from "@/lib/query-keys";
+import { historyPollingInterval } from "@/lib/hooks/history-polling";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 
 export function SessionList() {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["scrape-history"],
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: queryKeys.scrapeHistory.list(),
     queryFn: async () => {
       return getScrapeHistoryList();
     },
     refetchInterval: (query) => {
       const sessions = query.state.data?.sessions || [];
-      const hasInProgress = sessions.some((s) => s.status === "in_progress");
-      return hasInProgress ? 1000 : 5000;
+      return historyPollingInterval(sessions);
     },
     refetchIntervalInBackground: true,
   });
@@ -30,9 +32,11 @@ export function SessionList() {
 
   if (error) {
     return (
-      <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-center">
-        <p className="text-sm text-red-600 dark:text-red-400">Failed to load scrape history</p>
-      </div>
+      <ApiErrorState
+        error={error}
+        fallbackMessage="Scrape history could not be loaded."
+        onRetry={() => void refetch()}
+      />
     );
   }
 

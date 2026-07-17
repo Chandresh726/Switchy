@@ -26,6 +26,31 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  {
+    files: [
+      "app/(dashboard)/**/*.{ts,tsx}",
+      "components/**/*.{ts,tsx}",
+      "lib/hooks/**/*.{ts,tsx}",
+      "lib/**/use-*.{ts,tsx}",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@test/*"],
+              message: "Production modules cannot import test-only code.",
+            },
+            {
+              group: ["@/lib/api/client"],
+              message: "UI modules must use a typed feature client from lib/api/clients.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

@@ -3,23 +3,22 @@
 import { useState } from "react";
 
 import { useMutation } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import { queueJobMatch } from "@/lib/api/clients/runtime";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 import { useMatchSession } from "./use-match-session";
 
 interface UseQueuedJobMatchOptions {
   jobId: number;
-  extraInvalidationKeys?: Array<readonly unknown[]>;
 }
 
 export function useQueuedJobMatch({
   jobId,
-  extraInvalidationKeys,
 }: UseQueuedJobMatchOptions) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const session = useMatchSession(sessionId, {
-    extraInvalidationKeys,
     onSettled: () => setSessionId(null),
   });
   const mutation = useMutation({
@@ -27,6 +26,7 @@ export function useQueuedJobMatch({
       return queueJobMatch(jobId);
     },
     onSuccess: (queued) => setSessionId(queued.sessionId),
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to queue job matching")),
   });
 
   return {

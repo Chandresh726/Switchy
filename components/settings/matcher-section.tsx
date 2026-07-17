@@ -25,8 +25,9 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import type { ReasoningEffort } from "@/lib/settings/types";
-import type { MatchSessionProgress } from "@/lib/hooks/use-match-session";
-import type { Provider, ProviderModelOption } from "@/lib/types";
+import type { MatchSessionProgress } from "@/lib/api/contracts/runtime";
+import type { ProviderModelOption } from "@/lib/api/contracts/settings";
+import type { Provider } from "@/lib/types";
 
 export interface MatcherSectionProps {
   availableProviders: Provider[];

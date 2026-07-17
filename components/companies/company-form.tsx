@@ -10,20 +10,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createCompanies, updateCompany } from "@/lib/api/clients/companies";
+import {
+  companyCreateBodySchema,
+  companyReplaceBodySchema,
+} from "@/lib/api/contracts/companies";
+import type { Company } from "@/lib/api/contracts/companies";
 import { PLATFORM_OPTIONS } from "@/lib/constants";
 import { detectPlatformFromUrl, getPlatformLabel } from "@/lib/scraper/platform-detection";
-
-interface Company {
-  id: number;
-  name: string;
-  careersUrl: string;
-  logoUrl: string | null;
-  notes: string | null;
-  platform: string | null;
-  boardToken: string | null;
-  isActive: boolean;
-  lastScrapedAt: string | null;
-}
+import { cacheOwnership } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface CompanyFormProps {
   company?: Company;
@@ -33,14 +28,6 @@ interface CompanyFormProps {
 const PLATFORMS = [
   ...PLATFORM_OPTIONS.filter((platform) => platform.value !== "uber"),
 ];
-
-function getErrorMessage(error: unknown, fallbackMessage: string): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-
-  return fallbackMessage;
-}
 
 export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
   const queryClient = useQueryClient();
@@ -90,27 +77,30 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      return createCompanies(data);
+      return createCompanies(companyCreateBodySchema.parse(data));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      void cacheOwnership.companyMutation(queryClient, { affectsMappings: true });
       onSuccess?.();
     },
     onError: (error) => {
-      toast.error(getErrorMessage(error, "Failed to create company"));
+      toast.error(getApiErrorMessage(error, "Failed to create company"));
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      return updateCompany(company!.id, data);
+      return updateCompany(company!.id, companyReplaceBodySchema.parse(data));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      void cacheOwnership.companyMutation(queryClient, {
+        companyId: company?.id,
+        affectsMappings: true,
+      });
       onSuccess?.();
     },
     onError: (error) => {
-      toast.error(getErrorMessage(error, "Failed to update company"));
+      toast.error(getApiErrorMessage(error, "Failed to update company"));
     },
   });
 

@@ -2,12 +2,13 @@
 
 import { Input } from "@/components/ui/input";
 import { TogglePill } from "@/components/ui/toggle-pill";
+import type { JobStatus } from "@/lib/jobs/status";
 import { Search, X, ArrowUpDown, MapPin, Building2, Loader2, Briefcase } from "lucide-react";
 import { useMemo, useState, useRef, useEffect } from "react";
 
-interface JobFilters {
+export interface JobFilters {
   search: string;
-  status: string;
+  status: JobStatus | "";
   companyIds: string[];
   locationType: string[];
   employmentType: string[];
@@ -16,8 +17,8 @@ interface JobFilters {
   matchBands: string;
   department: string;
   locationSearch: string;
-  sortBy: string;
-  sortOrder: string;
+  sortBy: "matchScore" | "discoveredAt" | "postedDate" | "companyName" | "title";
+  sortOrder: "asc" | "desc";
 }
 
 interface JobFiltersProps {
@@ -61,7 +62,7 @@ const SCORE_OPTIONS = [
   { value: "40", label: "Stretch match (40+)" },
 ];
 
-const SORT_OPTIONS = [
+const SORT_OPTIONS: Array<{ value: JobFilters["sortBy"]; label: string }> = [
   { value: "matchScore", label: "Compatibility" },
   { value: "discoveredAt", label: "Date Added" },
   { value: "postedDate", label: "Date Posted" },
@@ -533,9 +534,12 @@ export function JobFilters({
           <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
           <select
             value={filters.sortBy}
-            onChange={(e) =>
-              onFiltersChange({ ...filters, sortBy: e.target.value })
-            }
+            onChange={(e) => {
+              const selected = SORT_OPTIONS.find((option) => option.value === e.target.value);
+              if (selected) {
+                onFiltersChange({ ...filters, sortBy: selected.value });
+              }
+            }}
             className="h-7 border border-border bg-muted px-3 text-xs text-foreground/80"
           >
             {SORT_OPTIONS.map((opt) => (

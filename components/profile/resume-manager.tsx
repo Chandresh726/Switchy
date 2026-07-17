@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import type { ResumeData } from "@/lib/ai/resume/contracts";
-import { uploadResume } from "@/lib/api/clients/profile";
+import { downloadResume, uploadResume } from "@/lib/api/clients/profile";
+import type { Resume } from "@/lib/api/contracts/profile";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,15 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-
-interface Resume {
-  id: number;
-  fileName: string;
-  version: number;
-  createdAt: string;
-  isCurrent: boolean;
-  storageState: "staging" | "ready" | "deleting" | "missing";
-}
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface ResumeManagerProps {
   resumes: Resume[];
@@ -79,7 +72,7 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
         }
         onRefresh();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to upload resume");
+        setError(getApiErrorMessage(err, "Failed to upload resume"));
       } finally {
         setIsUploading(false);
       }
@@ -127,10 +120,18 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
       await onDelete(deleteConfirmId);
       toast.success("Resume deleted");
       onRefresh();
-    } catch {
-      toast.error("Failed to delete resume");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to delete resume"));
     } finally {
       setDeleteConfirmId(null);
+    }
+  };
+
+  const handleDownload = async (id: number) => {
+    try {
+      await downloadResume(id);
+    } catch (downloadError) {
+      toast.error(getApiErrorMessage(downloadError, "Failed to download resume"));
     }
   };
 
@@ -254,10 +255,14 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon-sm" className="h-8 w-8" asChild>
-                  <a href={`/api/profile/resumes/${currentResume.id}/download`} download>
-                    <Download className="h-4 w-4 text-muted-foreground" />
-                  </a>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="h-8 w-8"
+                  aria-label={`Download ${currentResume.fileName}`}
+                  onClick={() => void handleDownload(currentResume.id)}
+                >
+                  <Download className="h-4 w-4 text-muted-foreground" />
                 </Button>
               </div>
             </div>
@@ -309,10 +314,14 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
                     </div>
                     <div className="flex items-center gap-1">
                       {resume.storageState === "ready" && (
-                        <Button variant="ghost" size="icon-sm" className="h-8 w-8" asChild>
-                          <a href={`/api/profile/resumes/${resume.id}/download`} download>
-                            <Download className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-                          </a>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="h-8 w-8"
+                          aria-label={`Download ${resume.fileName}`}
+                          onClick={() => void handleDownload(resume.id)}
+                        >
+                          <Download className="h-4 w-4 text-muted-foreground hover:text-foreground" />
                         </Button>
                       )}
                       <Button

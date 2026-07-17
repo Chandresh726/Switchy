@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { JobCard } from "@/components/jobs/job-card";
+import { queryKeys } from "@/lib/query-keys";
 
 describe("JobCard match actions", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -18,7 +19,15 @@ describe("JobCard match actions", () => {
       const url = String(input);
       const method = init?.method ?? "GET";
       requests.push({ method, url });
-      if (method === "PATCH") return Response.json({ id: 42, status: "applied" });
+      if (method === "PATCH") return Response.json({
+        id: 42,
+        status: "applied",
+        viewedAt: null,
+        appliedAt: new Date().toISOString(),
+        archivedAt: null,
+        archiveSource: null,
+        updatedAt: new Date().toISOString(),
+      });
       if (method === "POST") {
         return Response.json({ sessionId: "session-42", status: "queued", total: 1 }, {
           status: 202,
@@ -59,8 +68,8 @@ describe("JobCard match actions", () => {
 
     await user.click(screen.getByRole("button", { name: "Mark Applied" }));
     await waitFor(() => expect(requests).toContainEqual({ method: "PATCH", url: "/api/jobs/42" }));
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["stats"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.jobs.lists() });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.stats.all });
 
     await user.click(screen.getByRole("button", { name: "Score" }));
     await waitFor(() => expect(requests).toContainEqual({ method: "POST", url: "/api/match" }));

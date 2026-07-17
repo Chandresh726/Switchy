@@ -6,7 +6,7 @@ import { isRecruiterPosition } from "@/lib/people/position";
 
 import { CompanyPersonCard } from "./company-person-card";
 
-import type { CompanyPerson } from "./types";
+import type { CompanyPerson } from "@/lib/api/contracts/companies";
 
 interface CompanyOutreachSuggestionsProps {
   people: CompanyPerson[];

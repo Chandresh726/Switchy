@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatRelativeTime } from "@/lib/utils/format";
 import { isPromotedMatch } from "@/lib/ai/matcher/promotion";
 
-import type { CompanyJob } from "./types";
+import type { CompanyJob } from "@/lib/api/contracts/companies";
 
 interface CompanyTopMatchesProps {
   jobs: CompanyJob[];

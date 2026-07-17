@@ -8,7 +8,7 @@ import { PLATFORM_COLORS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/utils/format";
 
-import type { CompanyOverview } from "./types";
+import type { CompanyOverview } from "@/lib/api/contracts/companies";
 
 interface CompanyHeaderProps {
   company: CompanyOverview;

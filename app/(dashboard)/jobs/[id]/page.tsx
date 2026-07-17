@@ -5,20 +5,22 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import { Badge } from "@/components/ui/badge";
 import { MatchBadge } from "@/components/jobs/match-badge";
 import {
   MatchBreakdown,
-  type MatchBreakdownValue,
-  type MatchReasoningPointValue,
 } from "@/components/jobs/match-breakdown";
 import { ApplyButton } from "@/components/jobs/apply-button";
 import { JobAIActions } from "@/components/jobs/job-ai-actions";
 import { LegacyMatchAlert } from "@/components/jobs/legacy-match-alert";
 import { MarkdownRenderer } from "@/components/jobs/markdown-renderer";
 import { getJob, updateJob } from "@/lib/api/clients/jobs";
+import { getApiErrorMessage, isApiNotFoundError } from "@/lib/api/error-presentation";
 import { sanitizeHtmlContent } from "@/lib/jobs/description-processor";
+import type { JobStatus } from "@/lib/jobs/status";
 import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import {
   Building2,
   Calendar,
@@ -30,40 +32,9 @@ import {
   Star,
   CheckCircle,
 } from "lucide-react";
+import { toast } from "sonner";
 
-interface Job {
-  id: number;
-  title: string;
-  description: string | null;
-  descriptionFormat: "markdown" | "plain" | "html";
-  url: string;
-  location: string | null;
-  locationType: string | null;
-  department: string | null;
-  salary: string | null;
-  employmentType: string | null;
-  seniorityLevel: string | null;
-  status: string;
-  matchScore: number | null;
-  matchResultId: string | null;
-  matchBreakdown: MatchBreakdownValue | null;
-  matchStale: boolean;
-  matchLegacy: boolean;
-  matchSummary: string;
-  matchReasoning: MatchReasoningPointValue[];
-  scoringPolicyVersion: string | null;
-  matchedSkills: string[];
-  postedDate: string | null;
-  discoveredAt: string | null;
-  company: {
-    id: number;
-    name: string;
-    logoUrl: string | null;
-    platform: string | null;
-  };
-}
-
-const STATUS_OPTIONS = [
+const STATUS_OPTIONS: Array<{ value: JobStatus; label: string; color: string }> = [
   { value: "new", label: "New", color: "text-blue-400" },
   { value: "viewed", label: "Viewed", color: "text-muted-foreground" },
   { value: "interested", label: "Interested", color: "text-purple-400" },
@@ -77,32 +48,31 @@ export default function JobDetailPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const jobId = parseInt(params.id as string);
+  const hasValidJobId = Number.isInteger(jobId) && jobId > 0;
 
-  const { data: jobData, isLoading } = useQuery({
-    queryKey: ["job", jobId],
-    queryFn: async () => {
-      return { jobs: [await getJob(jobId)] };
-    },
+  const { data: job, error, isError, isLoading, refetch } = useQuery({
+    queryKey: queryKeys.jobs.detail(jobId),
+    queryFn: () => getJob(jobId),
+    enabled: hasValidJobId,
   });
-
-  const job = jobData?.jobs?.[0] as Job | undefined;
   const {
     mutation: calculateMatchMutation,
     isMatching,
   } = useQueuedJobMatch({
-    jobId,
-    extraInvalidationKeys: [["job", jobId]],
+    jobId: hasValidJobId ? jobId : 0,
   });
   const isReadOnlyPostingAction = job?.status === "applied" || job?.status === "archived";
 
   const updateStatusMutation = useMutation({
-    mutationFn: async (newStatus: string) => {
+    mutationFn: async (newStatus: JobStatus) => {
       return updateJob(jobId, { status: newStatus });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["job", jobId] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["stats"] });
+    onSuccess: () => void cacheOwnership.jobMutation(queryClient, {
+      jobId,
+      companyId: job?.company.id,
+    }),
+    onError: (mutationError) => {
+      toast.error(getApiErrorMessage(mutationError, "Failed to update job status"));
     },
   });
 
@@ -131,7 +101,17 @@ export default function JobDetailPage() {
     );
   }
 
-  if (!job) {
+  if (isError && !isApiNotFoundError(error)) {
+    return (
+      <ApiErrorState
+        error={error}
+        fallbackMessage="The job could not be loaded."
+        onRetry={() => void refetch()}
+      />
+    );
+  }
+
+  if (!hasValidJobId || isApiNotFoundError(error) || !job) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4">
         <p className="text-muted-foreground">Job not found</p>
@@ -307,7 +287,12 @@ export default function JobDetailPage() {
             <span className="text-sm text-muted-foreground">Status:</span>
             <select
               value={job.status}
-              onChange={(e) => updateStatusMutation.mutate(e.target.value)}
+              onChange={(e) => {
+                const selected = STATUS_OPTIONS.find((option) => option.value === e.target.value);
+                if (selected) {
+                  updateStatusMutation.mutate(selected.value);
+                }
+              }}
               className="h-8 rounded border border-border bg-card px-2 text-sm text-foreground"
             >
               {STATUS_OPTIONS.map((opt) => (

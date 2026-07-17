@@ -2,12 +2,17 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { toast } from "sonner";
 import { updateJob } from "@/lib/api/clients/jobs";
+import type { JobSummary } from "@/lib/api/contracts/jobs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MatchBadge } from "./match-badge";
 import { ApplyButton } from "./apply-button";
 import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
+import type { JobStatus } from "@/lib/jobs/status";
+import { cacheOwnership } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 import {
   Building2,
   Calendar,
@@ -19,30 +24,24 @@ import {
   DollarSign,
 } from "lucide-react";
 
-interface Job {
-  id: number;
-  title: string;
-  url: string;
-  location: string | null;
-  locationType: string | null;
-  department: string | null;
-  salary: string | null;
-  employmentType: string | null;
-  seniorityLevel: string | null;
-  status: string;
-  matchScore: number | null;
-  postedDate: string | null;
-  discoveredAt: string | null;
-  company: {
-    id: number;
-    name: string;
-    logoUrl: string | null;
-    platform: string | null;
-  };
-}
-
 interface JobCardProps {
-  job: Job;
+  job: Pick<
+    JobSummary,
+    | "id"
+    | "title"
+    | "url"
+    | "location"
+    | "locationType"
+    | "department"
+    | "salary"
+    | "employmentType"
+    | "seniorityLevel"
+    | "status"
+    | "matchScore"
+    | "postedDate"
+    | "discoveredAt"
+    | "company"
+  >;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -79,13 +78,14 @@ export function JobCard({ job }: JobCardProps) {
   const isReadOnlyPostingAction = job.status === "applied" || job.status === "archived";
 
   const updateStatusMutation = useMutation({
-    mutationFn: async (newStatus: string) => {
+    mutationFn: async (newStatus: JobStatus) => {
       return updateJob(job.id, { status: newStatus });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["stats"] });
-    },
+    onSuccess: () => void cacheOwnership.jobMutation(queryClient, {
+      jobId: job.id,
+      companyId: job.company.id,
+    }),
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update job status")),
   });
 
   const formatDate = (dateStr: string | null) => {

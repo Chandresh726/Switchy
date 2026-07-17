@@ -4,20 +4,21 @@ import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 
-import { CompanyNotesTab, type CompanyOverviewResponse } from "@/components/companies/company-detail";
+import { CompanyNotesTab } from "@/components/companies/company-detail";
 import { getCompanyOverview } from "@/lib/api/clients/companies";
-import { companyKeys } from "@/lib/query-keys";
+import type { CompanyOverviewResponse } from "@/lib/api/contracts/companies";
+import { queryKeys } from "@/lib/query-keys";
 
 export default function CompanyNotesPage() {
   const params = useParams();
   const companyId = Number(params.id);
 
   const { data, isLoading } = useQuery<CompanyOverviewResponse>({
-    queryKey: companyKeys.overview(companyId),
+    queryKey: queryKeys.companies.overview(companyId),
     queryFn: async () => {
       return getCompanyOverview(companyId);
     },
-    enabled: Number.isFinite(companyId),
+    enabled: Number.isInteger(companyId) && companyId > 0,
   });
 
   if (isLoading || !data) {

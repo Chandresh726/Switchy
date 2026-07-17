@@ -5,19 +5,19 @@ import { MatchSessionCard } from "./match-session-card";
 import { Loader2, Sparkles } from "lucide-react";
 import { formatDurationMs, groupSessionsByDate } from "@/lib/utils/format";
 import { getMatchHistoryList } from "@/lib/api/clients/history";
+import { queryKeys } from "@/lib/query-keys";
+import { historyPollingInterval } from "@/lib/hooks/history-polling";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 
 export function MatchHistoryTab() {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["match-history"],
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: queryKeys.matchHistory.list(),
     queryFn: async () => {
       return getMatchHistoryList();
     },
     refetchInterval: (query) => {
       const sessions = query.state.data?.sessions || [];
-      const hasActiveSessions = sessions.some(
-        (s) => s.status === "in_progress" || s.status === "queued"
-      );
-      return hasActiveSessions ? 1000 : 5000;
+      return historyPollingInterval(sessions);
     },
     refetchIntervalInBackground: true,
   });
@@ -32,9 +32,11 @@ export function MatchHistoryTab() {
 
   if (error) {
     return (
-      <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-center">
-        <p className="text-sm text-red-600 dark:text-red-400">Failed to load match history</p>
-      </div>
+      <ApiErrorState
+        error={error}
+        fallbackMessage="Match history could not be loaded."
+        onRetry={() => void refetch()}
+      />
     );
   }
 

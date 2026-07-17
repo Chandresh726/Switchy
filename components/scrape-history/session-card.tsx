@@ -34,31 +34,22 @@ import {
   cancelScrapeHistorySession,
   deleteScrapeHistorySession,
 } from "@/lib/api/clients/history";
+import type {
+  ScrapeHistoryResponse,
+  ScrapeHistoryDetailResponse,
+  ScrapeHistorySession,
+} from "@/lib/api/contracts/history";
 import {
   formatDurationFromDates,
   formatTime,
   formatDate,
 } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
-
-interface ScrapeSession {
-  id: string;
-  triggerSource: string;
-  status: string;
-  companiesTotal: number | null;
-  companiesCompleted: number | null;
-  totalJobsFound: number | null;
-  totalJobsAdded: number | null;
-  totalJobsFiltered: number | null;
-  totalJobsArchived: number | null;
-  skipReason?: string | null;
-  scheduledForAt?: Date | string | null;
-  startedAt: Date | null;
-  completedAt: Date | null;
-}
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface SessionCardProps {
-  session: ScrapeSession;
+  session: ScrapeHistorySession;
 }
 
 export function SessionCard({ session }: SessionCardProps) {
@@ -78,11 +69,11 @@ export function SessionCard({ session }: SessionCardProps) {
     try {
       await deleteScrapeHistorySession(session.id);
 
-      queryClient.invalidateQueries({ queryKey: ["scrape-history"] });
+      void cacheOwnership.clearScrapeHistory(queryClient);
       toast.success("Session deleted successfully");
     } catch (error) {
       console.error("Failed to delete session:", error);
-      toast.error("Failed to delete session");
+      toast.error(getApiErrorMessage(error, "Failed to delete session"));
     } finally {
       setIsDeleting(false);
     }
@@ -91,9 +82,9 @@ export function SessionCard({ session }: SessionCardProps) {
   const markSessionStoppedInCache = () => {
     const now = new Date();
 
-    queryClient.setQueryData([
-      "scrape-history",
-    ], (old: { sessions?: ScrapeSession[] } | undefined) => {
+    queryClient.setQueriesData<ScrapeHistoryResponse>({
+      queryKey: queryKeys.scrapeHistory.lists(),
+    }, (old) => {
       if (!old?.sessions) return old;
       return {
         ...old,
@@ -105,10 +96,9 @@ export function SessionCard({ session }: SessionCardProps) {
       };
     });
 
-    queryClient.setQueryData([
-      "scrape-history",
-      session.id,
-    ], (old: { session?: ScrapeSession } | undefined) => {
+    queryClient.setQueriesData<Pick<ScrapeHistoryDetailResponse, "session">>({
+      queryKey: queryKeys.scrapeHistory.detailRoot(session.id),
+    }, (old) => {
       if (!old?.session) return old;
       return {
         ...old,
@@ -129,13 +119,11 @@ export function SessionCard({ session }: SessionCardProps) {
       await cancelScrapeHistorySession(session.id);
 
       toast.success("Stopping scrape session");
-      queryClient.invalidateQueries({ queryKey: ["scrape-history"] });
-      queryClient.invalidateQueries({ queryKey: ["scrape-history", session.id] });
+      void cacheOwnership.updateScrapeHistoryStatus(queryClient);
     } catch (error) {
       console.error("Failed to stop session:", error);
-      toast.error("Failed to stop scrape session");
-      queryClient.invalidateQueries({ queryKey: ["scrape-history"] });
-      queryClient.invalidateQueries({ queryKey: ["scrape-history", session.id] });
+      toast.error(getApiErrorMessage(error, "Failed to stop scrape session"));
+      void cacheOwnership.updateScrapeHistoryStatus(queryClient);
     } finally {
       setIsStopping(false);
     }

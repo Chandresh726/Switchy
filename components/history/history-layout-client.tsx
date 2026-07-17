@@ -23,6 +23,8 @@ import {
   clearMatchHistory,
   clearScrapeHistory,
 } from "@/lib/api/clients/history";
+import { cacheOwnership } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface HistoryLayoutClientProps {
   children: React.ReactNode;
@@ -59,37 +61,35 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
   const handleClearHistory = async () => {
     setIsDeleting(true);
     try {
-      let queryKey: string;
       let clearRequest: Promise<unknown>;
+      let invalidate: () => Promise<void>;
 
       switch (activeTab) {
         case "scrape":
           clearRequest = clearScrapeHistory();
-          queryKey = "scrape-history";
+          invalidate = () => cacheOwnership.clearScrapeHistory(queryClient);
           break;
         case "match":
           clearRequest = clearMatchHistory();
-          queryKey = "match-history";
+          invalidate = () => cacheOwnership.clearMatchHistory(queryClient);
           break;
         case "ai":
           clearRequest = clearAIHistory();
-          queryKey = "ai-history-all";
+          invalidate = () => cacheOwnership.clearAIContent(queryClient);
           break;
         default:
           clearRequest = clearScrapeHistory();
-          queryKey = "scrape-history";
+          invalidate = () => cacheOwnership.clearScrapeHistory(queryClient);
       }
 
       await clearRequest;
 
-      queryClient.invalidateQueries({
-        queryKey: [queryKey],
-      });
+      await invalidate();
 
       toast.success(`${getTabLabel()} history cleared successfully`);
     } catch (error) {
       console.error("Failed to clear history:", error);
-      toast.error("Failed to clear history");
+      toast.error(getApiErrorMessage(error, "Failed to clear history"));
     } finally {
       setIsDeleting(false);
     }

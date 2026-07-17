@@ -5,16 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import { createSkill, deleteSkill, getSkills } from "@/lib/api/clients/profile";
+import type { Skill } from "@/lib/api/contracts/profile";
 import { useState, useEffect } from "react";
 import { Loader2, Plus, X, Sparkles, Zap, Save } from "lucide-react";
 import { toast } from "sonner";
-
-interface Skill {
-  id: number;
-  name: string;
-  category: string | null;
-}
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface InitialSkill {
   name: string;
@@ -57,8 +55,8 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
     }
   }, [initialSkills]);
 
-  const { data: skills = [], isLoading } = useQuery<Skill[]>({
-    queryKey: ["skills", profileId],
+  const { data: skills = [], error, isError, isLoading, refetch } = useQuery<Skill[]>({
+    queryKey: queryKeys.profile.skills(profileId),
     queryFn: async () => {
       if (!profileId) return [];
       return getSkills(profileId);
@@ -69,16 +67,19 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
 
   const addMutation = useMutation({
     mutationFn: async (skill: typeof newSkill) => {
+      if (!profileId) throw new Error("Save the profile before adding skills");
       return createSkill({ ...skill, profileId });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["skills", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.skills(profileId));
       setNewSkill({ name: "", category: "other" });
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to add skill")),
   });
 
   const bulkAddMutation = useMutation({
     mutationFn: async (skillsToAdd: InitialSkill[]) => {
+      if (!profileId) throw new Error("Save the profile before adding skills");
       for (const skill of skillsToAdd) {
         await createSkill({
             name: skill.name,
@@ -88,16 +89,16 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["skills", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.skills(profileId));
       setPendingSkills([]);
       setIsBulkAdding(false);
       setSettingsSaved(true);
       setTimeout(() => setSettingsSaved(false), 3000);
       toast.success("Skills saved");
     },
-    onError: () => {
+    onError: (error) => {
       setIsBulkAdding(false);
-      toast.error("Failed to save skills");
+      toast.error(getApiErrorMessage(error, "Failed to save skills"));
     },
   });
 
@@ -106,8 +107,9 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
       return deleteSkill(id);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["skills", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.skills(profileId));
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to delete skill")),
   });
 
   const handleAddSkill = (e: React.FormEvent) => {
@@ -163,6 +165,20 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="border-border bg-card">
+        <CardContent className="p-6">
+          <ApiErrorState
+            error={error}
+            fallbackMessage="Skills could not be loaded."
+            onRetry={() => void refetch()}
+          />
         </CardContent>
       </Card>
     );

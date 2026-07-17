@@ -142,18 +142,22 @@ describe("shared API contracts", () => {
       viewedAt: null,
       appliedAt: null,
       matchScore: null,
-      matchReasons: null,
-      matchedSkills: null,
+      matchReasons: [],
+      matchedSkills: [],
       matchResultId: null,
       matchBreakdown: null,
       matchStale: false,
       matchLegacy: false,
       matchSummary: "",
       matchReasoning: [],
+      matchRunId: null,
+      matchPolicyVersion: null,
       scoringPolicyVersion: null,
       company: { id: 1, name: "Example", logoUrl: null, platform: null },
     };
     expect(jobSchema.safeParse(job).success).toBe(true);
+    expect(jobSchema.safeParse({ ...job, matchReasons: "[]" }).success).toBe(false);
+    expect(jobSchema.safeParse({ ...job, matchedSkills: "[]" }).success).toBe(false);
     expect(settingsResponseSchema.parse(DEFAULT_SETTINGS)).toEqual(DEFAULT_SETTINGS);
     expect(schedulerRecoveryResponseSchema.safeParse({
       status: "not_needed",

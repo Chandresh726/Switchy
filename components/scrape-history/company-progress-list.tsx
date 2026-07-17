@@ -15,53 +15,10 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { formatDateTime, formatDurationMs } from "@/lib/utils/format";
 import { MATCHER_STATUS_CONFIG } from "@/lib/utils/status-config";
+import type { ScrapeHistoryDetailResponse } from "@/lib/api/contracts/history";
 
-export interface SessionLog {
-  id: number;
-  companyId: number | null;
-  companyName: string | null;
-  companyLogoUrl: string | null;
-  platform: string | null;
-  status: string;
-  jobsFound: number | null;
-  jobsAdded: number | null;
-  jobsUpdated: number | null;
-  jobsFiltered: number | null;
-  jobsArchived: number | null;
-  errorMessage: string | null;
-  duration: number | null;
-  startedAt: Date | string | null;
-  completedAt: Date | string | null;
-  matcherStatus: string | null;
-  matcherJobsTotal: number | null;
-  matcherJobsCompleted: number | null;
-  matcherDuration: number | null;
-  matcherErrorCount: number | null;
-  attemptNumber: number;
-  attemptsTotal: number;
-  isFinalAttempt: boolean;
-}
-
-export interface ScrapeQueueItem {
-  id: string;
-  companyId: number;
-  companyName: string | null;
-  companyLogoUrl?: string | null;
-  platform?: string | null;
-  status: string;
-  attemptCount: number;
-  maxAttempts: number;
-  availableAt: Date | string;
-  workerId: string | null;
-  lockedAt: Date | string | null;
-  leaseExpiresAt: Date | string | null;
-  cancelRequested: boolean;
-  lastError: string | null;
-  startedAt: Date | string | null;
-  completedAt: Date | string | null;
-  createdAt: Date | string;
-  updatedAt: Date | string;
-}
+type SessionLog = ScrapeHistoryDetailResponse["logs"][number];
+type ScrapeQueueItem = ScrapeHistoryDetailResponse["queueItems"][number];
 
 interface CompanyProgress {
   key: string;

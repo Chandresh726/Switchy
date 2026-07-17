@@ -8,8 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatDurationFromDates, formatDate, formatTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
 import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
-
-import type { CompanyActivity, ScrapeLog, MatchSession } from "./types";
+import type { CompanyActivity } from "@/lib/api/contracts/companies";
 
 function parseDate(value: string | null): Date | null {
   if (!value) return null;
@@ -66,8 +65,8 @@ export function CompanyActivityTab({ activity }: CompanyActivityTabProps) {
         const startedDate = parseDate(item.startedAt);
         const completedDate = parseDate(item.completedAt);
 
-        const scrapeData = isScrape ? (item.data as ScrapeLog) : null;
-        const matchData = !isScrape ? (item.data as MatchSession) : null;
+        const scrapeData = item.type === "scrape" ? item.data : null;
+        const matchData = item.type === "match" ? item.data : null;
 
         const triggerSource = item.data.triggerSource || "manual";
 

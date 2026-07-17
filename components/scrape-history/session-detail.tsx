@@ -21,6 +21,7 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import {
   getScrapeHistoryDetail,
   cancelScrapeHistorySession,
@@ -28,6 +29,8 @@ import {
 } from "@/lib/api/clients/history";
 import { formatDateTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 import { CompanyProgressList } from "./company-progress-list";
 import { TRIGGER_LABELS } from "./constants";
@@ -43,10 +46,11 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
   const workLimit = 50;
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["scrape-history", sessionId, logOffset, workOffset],
+  const detailParams = { logOffset, logLimit, workOffset, workLimit };
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: queryKeys.scrapeHistory.detail(sessionId, detailParams),
     queryFn: async () => {
-      return getScrapeHistoryDetail(sessionId, logOffset, logLimit, workOffset, workLimit);
+      return getScrapeHistoryDetail(sessionId, detailParams);
     },
     refetchInterval: (query) => {
       const session = query.state.data?.session;
@@ -62,11 +66,10 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
     },
     onSuccess: () => {
       toast.success("Stopping scrape session");
-      queryClient.invalidateQueries({ queryKey: ["scrape-history"] });
-      queryClient.invalidateQueries({ queryKey: ["scrape-history", sessionId] });
+      void cacheOwnership.updateScrapeHistoryStatus(queryClient);
     },
-    onError: () => {
-      toast.error("Failed to stop scrape session");
+    onError: (mutationError) => {
+      toast.error(getApiErrorMessage(mutationError, "Failed to stop scrape session"));
     },
   });
 
@@ -75,7 +78,11 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
       return deleteScrapeHistorySession(sessionId);
     },
     onSuccess: () => {
+      void cacheOwnership.clearScrapeHistory(queryClient);
       router.push("/history/scrape");
+    },
+    onError: (mutationError) => {
+      toast.error(getApiErrorMessage(mutationError, "Failed to delete scrape session"));
     },
   });
 
@@ -89,8 +96,12 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
 
   if (error || !data) {
     return (
-      <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-center">
-        <p className="text-sm text-red-600 dark:text-red-400">Failed to load session details</p>
+      <div className="space-y-3">
+        <ApiErrorState
+          error={error}
+          fallbackMessage="Scrape session details could not be loaded."
+          onRetry={() => void refetch()}
+        />
         <Link href="/history">
           <Button variant="ghost" className="mt-2">
             <ArrowLeft className="mr-2 h-4 w-4" />

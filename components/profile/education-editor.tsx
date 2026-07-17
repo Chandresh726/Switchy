@@ -5,28 +5,21 @@ import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Calendar, GraduationCap, Loader2, Pencil, Plus, Save, Trash2, X, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import {
   createEducation,
   deleteEducation,
   getEducation,
   updateEducation,
 } from "@/lib/api/clients/profile";
-
-interface Education {
-  id: number;
-  institution: string;
-  degree: string;
-  field: string | null;
-  startDate: string;
-  endDate: string | null;
-  gpa: string | null;
-  honors: string | null;
-}
+import type { Education } from "@/lib/api/contracts/profile";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface InitialEducation {
   institution: string;
@@ -222,16 +215,11 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
     }
   }, [initialEducation]);
 
-  const { data: educationList = [], isLoading } = useQuery({
-    queryKey: ["education", profileId],
+  const { data: educationList = [], error, isError, isLoading, refetch } = useQuery({
+    queryKey: queryKeys.profile.education(profileId),
     queryFn: async () => {
-      try {
-        if (!profileId) return [];
-        return getEducation(profileId);
-      } catch (error) {
-        console.error("fetch education:", error);
-        return [];
-      }
+      if (!profileId) return [];
+      return getEducation(profileId);
     },
     enabled: !!profileId,
   });
@@ -239,6 +227,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
   const addMutation = useMutation({
     mutationFn: async (edu: EducationFormData) => {
       try {
+        if (!profileId) throw new Error("Save the profile before adding education");
         return createEducation([{
             ...edu,
             profileId,
@@ -253,9 +242,12 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["education", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.education(profileId));
       setIsAdding(false);
       setFormData(emptyForm);
+    },
+    onError: (mutationError) => {
+      toast.error(getApiErrorMessage(mutationError, "Failed to add education"));
     },
   });
 
@@ -275,15 +267,19 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["education", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.education(profileId));
       setEditingId(null);
       setFormData(emptyForm);
+    },
+    onError: (mutationError) => {
+      toast.error(getApiErrorMessage(mutationError, "Failed to update education"));
     },
   });
 
   const bulkAddMutation = useMutation({
     mutationFn: async (educationToAdd: InitialEducation[]) => {
       try {
+        if (!profileId) throw new Error("Save the profile before adding education");
         await createEducation(educationToAdd.map((edu) => ({
           institution: edu.institution,
           degree: edu.degree,
@@ -300,16 +296,16 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["education", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.education(profileId));
       setPendingEducation([]);
       setIsBulkAdding(false);
       setSettingsSaved(true);
       setTimeout(() => setSettingsSaved(false), 3000);
       toast.success("Education saved");
     },
-    onError: () => {
+    onError: (mutationError) => {
       setIsBulkAdding(false);
-      toast.error("Failed to save education");
+      toast.error(getApiErrorMessage(mutationError, "Failed to save education"));
     },
   });
 
@@ -323,7 +319,10 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["education", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.education(profileId));
+    },
+    onError: (mutationError) => {
+      toast.error(getApiErrorMessage(mutationError, "Failed to delete education"));
     },
   });
 
@@ -394,6 +393,20 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="border-border bg-card">
+        <CardContent className="p-6">
+          <ApiErrorState
+            error={error}
+            fallbackMessage="Education could not be loaded."
+            onRetry={() => void refetch()}
+          />
         </CardContent>
       </Card>
     );

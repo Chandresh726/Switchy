@@ -6,26 +6,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import {
   createExperience,
   deleteExperience,
   getExperience,
   updateExperience,
 } from "@/lib/api/clients/profile";
+import type { Experience } from "@/lib/api/contracts/profile";
 import { useState, useEffect } from "react";
 import { Building2, Calendar, Loader2, MapPin, Pencil, Plus, Save, Trash2, X, Sparkles, Briefcase } from "lucide-react";
 import { toast } from "sonner";
-
-interface Experience {
-  id: number;
-  company: string;
-  title: string;
-  location: string | null;
-  startDate: string;
-  endDate: string | null;
-  description: string | null;
-  highlights: string | null;
-}
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface InitialExperience {
   company: string;
@@ -209,8 +202,8 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
     }
   }, [initialExperience]);
 
-  const { data: experiences = [], isLoading } = useQuery<Experience[]>({
-    queryKey: ["experience", profileId],
+  const { data: experiences = [], error, isError, isLoading, refetch } = useQuery<Experience[]>({
+    queryKey: queryKeys.profile.experience(profileId),
     queryFn: async () => {
       if (!profileId) return [];
       return getExperience(profileId);
@@ -221,6 +214,7 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
 
   const addMutation = useMutation({
     mutationFn: async (exp: ExperienceFormData) => {
+      if (!profileId) throw new Error("Save the profile before adding experience");
       return createExperience({
           ...exp,
           profileId,
@@ -228,10 +222,11 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["experience", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.experience(profileId));
       setIsAdding(false);
       setFormData(emptyForm);
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to add experience")),
   });
 
   const updateMutation = useMutation({
@@ -242,14 +237,16 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["experience", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.experience(profileId));
       setEditingId(null);
       setFormData(emptyForm);
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update experience")),
   });
 
   const bulkAddMutation = useMutation({
     mutationFn: async (experiencesToAdd: InitialExperience[]) => {
+      if (!profileId) throw new Error("Save the profile before adding experience");
       for (const exp of experiencesToAdd) {
         await createExperience({
             company: exp.company,
@@ -263,16 +260,16 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["experience", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.experience(profileId));
       setPendingExperiences([]);
       setIsBulkAdding(false);
       setSettingsSaved(true);
       setTimeout(() => setSettingsSaved(false), 3000);
       toast.success("Experience saved");
     },
-    onError: () => {
+    onError: (error) => {
       setIsBulkAdding(false);
-      toast.error("Failed to save experience");
+      toast.error(getApiErrorMessage(error, "Failed to save experience"));
     },
   });
 
@@ -281,8 +278,9 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
       return deleteExperience(id);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["experience", profileId] });
+      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.experience(profileId));
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to delete experience")),
   });
 
   const handleAddSubmit = (e: React.FormEvent) => {
@@ -351,6 +349,20 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="border-border bg-card">
+        <CardContent className="p-6">
+          <ApiErrorState
+            error={error}
+            fallbackMessage="Work experience could not be loaded."
+            onRetry={() => void refetch()}
+          />
         </CardContent>
       </Card>
     );

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { positiveIntegerIdSchema } from "./common";
+import { jobStatusSchema } from "./jobs";
 
 export const companyPlatformSchema = z.enum([
   "greenhouse",
@@ -105,7 +106,7 @@ const companyJobSchema = z.object({
   id: z.number().int().positive(),
   title: z.string(),
   url: z.string(),
-  status: z.string(),
+  status: jobStatusSchema,
   matchScore: z.number().nullable(),
   matchLegacy: z.boolean().optional(),
   location: z.string().nullable(),
@@ -189,3 +190,12 @@ export const companyBulkUpdateResponseSchema = z.object({
   updated: z.number().int().nonnegative(),
   message: z.string(),
 });
+
+export type Company = z.infer<typeof companyWriteResponseSchema>;
+export type CompaniesResponse = z.infer<typeof companiesResponseSchema>;
+export type CompanyOverviewResponse = z.infer<typeof companyOverviewResponseSchema>;
+export type CompanyOverview = CompanyOverviewResponse["company"];
+export type CompanyStats = CompanyOverviewResponse["stats"];
+export type CompanyJob = CompanyOverviewResponse["jobs"][number];
+export type CompanyPerson = CompanyOverviewResponse["people"][number];
+export type CompanyActivity = CompanyOverviewResponse["activity"];

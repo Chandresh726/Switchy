@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   Building2,
   ExternalLink,
@@ -39,21 +40,11 @@ import {
   deleteCompanyJobs,
   patchCompany,
 } from "@/lib/api/clients/companies";
+import type { Company } from "@/lib/api/contracts/companies";
 import { isCompanyScrapeSupported } from "@/lib/companies/scrape-support";
 import { PLATFORM_COLORS } from "@/lib/constants";
-
-export interface Company {
-  id: number;
-  name: string;
-  careersUrl: string;
-  logoUrl: string | null;
-  notes: string | null;
-  platform: string | null;
-  boardToken: string | null;
-  isActive: boolean;
-  lastScrapedAt: string | null;
-  createdAt: string;
-}
+import { cacheOwnership } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface CompanyListProps {
   companies: Company[];
@@ -144,29 +135,38 @@ export function CompanyList({
     mutationFn: async (id: number) => {
       return deleteCompany(id);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
+    onSuccess: (_result, id) => {
+      void cacheOwnership.companyMutation(queryClient, {
+        companyId: id,
+        affectsMappings: true,
+        affectsJobRecords: true,
+      });
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to delete company")),
   });
 
   const toggleActiveMutation = useMutation({
     mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
       return patchCompany(id, { isActive });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
+    onSuccess: (_result, variables) => {
+      void cacheOwnership.companyMutation(queryClient, { companyId: variables.id });
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update company")),
   });
 
   const deleteJobsMutation = useMutation({
     mutationFn: async (id: number) => {
       return deleteCompanyJobs(id);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    onSuccess: (_result, id) => {
+      void cacheOwnership.companyMutation(queryClient, {
+        companyId: id,
+        affectsJobRecords: true,
+      });
       setDeleteJobsCompanyId(null);
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to delete company jobs")),
   });
 
   const handleCardClick = (company: Company) => {

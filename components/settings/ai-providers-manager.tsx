@@ -59,7 +59,8 @@ import {
 } from "@/components/ui/select";
 import { getAllProviderMetadata, type ProviderMetadata } from "@/lib/ai/providers/metadata";
 import { isLocalCLIProvider } from "@/lib/ai/providers/types";
-import type { ProviderSettingsListItem } from "@/lib/settings/types";
+import type { ProviderSettingsListItem } from "@/lib/api/contracts/settings";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 import { cn } from "@/lib/utils";
 
 interface AIProvidersManagerProps {
@@ -171,7 +172,7 @@ export function AIProvidersManager({
       setError(null);
       void onSaveExecutablePaths(executablePaths)
         .catch((saveError: unknown) => {
-          setError(saveError instanceof Error ? saveError.message : "Failed to update executable path");
+          setError(getApiErrorMessage(saveError, "Failed to update executable path"));
         })
         .finally(() => setSavingPaths(false));
     }, 500);
@@ -213,7 +214,7 @@ export function AIProvidersManager({
       await onAddProvider(selectedProviderType, apiKey.trim() || undefined);
       resetAddForm();
     } catch (addError) {
-      setError(addError instanceof Error ? addError.message : "Failed to add provider");
+      setError(getApiErrorMessage(addError, "Failed to add provider"));
     } finally {
       setAdding(false);
     }
@@ -231,7 +232,7 @@ export function AIProvidersManager({
       setEditingProviderId(null);
       setEditApiKey("");
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "Failed to update API key");
+      setError(getApiErrorMessage(updateError, "Failed to update API key"));
     } finally {
       setUpdatingKey(false);
     }

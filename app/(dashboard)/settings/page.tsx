@@ -6,19 +6,21 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
-import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api/client";
-import { clearJobs } from "@/lib/api/clients/jobs";
-import { getSettings, patchSettings } from "@/lib/api/clients/settings";
-import { successSchema } from "@/lib/api/contracts/common";
+import { clearAllAIContent } from "@/lib/api/clients/ai";
+import { getReadiness, getRuntimeHealth } from "@/lib/api/clients/health";
+import { clearJobMatchData, clearJobs } from "@/lib/api/clients/jobs";
 import {
-  clearAiContentResponseSchema,
-  clearMatchDataResponseSchema,
-  providerCreateResponseSchema,
-  providerModelsResponseSchema,
-  providerSettingsListSchema,
-  queuedMatchResponseSchema,
-  unmatchedJobsCountResponseSchema,
-} from "@/lib/api/contracts/settings";
+  createProvider,
+  deleteProvider,
+  getProviderModels,
+  getProviders,
+  updateProviderApiKey,
+} from "@/lib/api/clients/providers";
+import {
+  getUnmatchedJobsCount,
+  queueUnmatchedJobs,
+} from "@/lib/api/clients/runtime";
+import { getSettings, patchSettings } from "@/lib/api/clients/settings";
 import { MatcherSection } from "@/components/settings/matcher-section";
 import { ScraperSettings } from "@/components/settings/scraper-settings";
 import { DangerZone } from "@/components/settings/danger-zone";
@@ -31,18 +33,23 @@ import {
   resolveReasoningSelection,
 } from "@/components/settings/reasoning-effort-control";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import { getProviderMetadata } from "@/lib/ai/providers/metadata";
 import type { AIProvider } from "@/lib/ai/providers/types";
 import { APP_VERSION, DB_PATH } from "@/lib/constants";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
-import type { ProviderModelsResponse } from "@/lib/types";
+import type {
+  ProviderModelsResponse,
+  ProviderSettingsListItem,
+  Settings,
+} from "@/lib/api/contracts/settings";
 import type {
   ProviderModelsState,
-  ProviderSettingsListItem,
   ReasoningEffort,
-  SettingsRecord,
 } from "@/lib/settings/types";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 const PROVIDER_MODELS_STALE_TIME_MS = 15 * 60 * 1000;
 const DEFAULT_SCRAPER_MAX_PARALLEL_SCRAPES = 3;
@@ -225,12 +232,18 @@ function SettingsContent() {
   const [unmatchedWindowDays, setUnmatchedWindowDays] = useState(5);
   const debouncedUnmatchedWindowDays = useDebounce(unmatchedWindowDays, 250);
   const lastModelReconciliationRef = useRef<string | null>(null);
+  const failedModelReconciliationRef = useRef<string | null>(null);
+  const resumeParserAutosaveAttemptRef = useRef<string | null>(null);
+  const resumeParserAutosaveFailureRef = useRef<string | null>(null);
   const matcherAutosaveAttemptRef = useRef<string | null>(null);
+  const matcherAutosaveFailureRef = useRef<string | null>(null);
   const scraperAutosaveAttemptRef = useRef<string | null>(null);
+  const scraperAutosaveFailureRef = useRef<string | null>(null);
   const aiWritingAutosaveAttemptRef = useRef<string | null>(null);
+  const aiWritingAutosaveFailureRef = useRef<string | null>(null);
 
-  const { data: settings, isLoading: isSettingsLoading } = useQuery<SettingsRecord>({
-    queryKey: ["settings"],
+  const settingsQuery = useQuery<Settings>({
+    queryKey: queryKeys.settings.detail(),
     queryFn: getSettings,
   });
 
@@ -238,22 +251,29 @@ function SettingsContent() {
     providerId: string,
     forceRefresh = false
   ): Promise<ProviderModelsResponse> => {
-    const refreshQuery = forceRefresh ? "?refresh=1" : "";
-    return apiGet(
-      `/api/providers/${providerId}/models${refreshQuery}`,
-      providerModelsResponseSchema,
-      "Failed to fetch provider models"
-    );
+    return getProviderModels(providerId, forceRefresh ? { refresh: "1" } : {});
   };
 
-  const { data: providers = [], isLoading: isProvidersLoading } = useQuery<ProviderSettingsListItem[]>({
-    queryKey: ["providers"],
-    queryFn: () => apiGet("/api/providers", providerSettingsListSchema, "Failed to fetch providers"),
+  const providersQuery = useQuery<ProviderSettingsListItem[]>({
+    queryKey: queryKeys.providers.list(),
+    queryFn: getProviders,
+  });
+  const settings = settingsQuery.data;
+  const providers = useMemo(() => providersQuery.data ?? [], [providersQuery.data]);
+  const readinessQuery = useQuery({
+    queryKey: queryKeys.runtime.readiness(),
+    queryFn: getReadiness,
+    refetchInterval: 15_000,
+  });
+  const runtimeHealthQuery = useQuery({
+    queryKey: queryKeys.runtime.diagnostics(),
+    queryFn: getRuntimeHealth,
+    refetchInterval: 15_000,
   });
 
   const providerModelsQueries = useQueries({
     queries: providers.map((provider) => ({
-      queryKey: ["provider-models", provider.id],
+      queryKey: queryKeys.providers.model(provider.id),
       queryFn: async () => fetchProviderModels(provider.id),
       enabled: Boolean(provider.id) && (provider.kind === "api_key" || provider.selectable),
       staleTime: PROVIDER_MODELS_STALE_TIME_MS,
@@ -267,7 +287,9 @@ function SettingsContent() {
     providers.forEach((provider, index) => {
       const query = providerModelsQueries[index];
       const data = query?.data;
-      const queryError = query?.error instanceof Error ? query.error.message : undefined;
+      const queryError = query?.error
+        ? getApiErrorMessage(query.error, "Failed to load provider models")
+        : undefined;
       const warning = data?.warning;
 
       state[provider.id] = {
@@ -289,10 +311,10 @@ function SettingsContent() {
   const refreshProviderModels = async (providerId: string): Promise<void> => {
     try {
       const models = await fetchProviderModels(providerId, true);
-      queryClient.setQueryData(["provider-models", providerId], models);
+      queryClient.setQueryData(queryKeys.providers.model(providerId), models);
       toast.success("Model list refreshed");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to refresh model list");
+      toast.error(getApiErrorMessage(error, "Failed to refresh model list"));
     }
   };
 
@@ -301,26 +323,17 @@ function SettingsContent() {
         codex_cli_executable: paths.codex,
         opencode_cli_executable: paths.opencode,
       });
-    await queryClient.invalidateQueries({ queryKey: ["settings"] });
-    await queryClient.invalidateQueries({ queryKey: ["providers"] });
-    await queryClient.invalidateQueries({ queryKey: ["provider-models"] });
+    await cacheOwnership.providerMutation(queryClient);
   }, [queryClient]);
 
-  const isInitialLoading = isSettingsLoading || isProvidersLoading;
+  const isInitialLoading = settingsQuery.isLoading || providersQuery.isLoading;
 
   const addProviderMutation = useMutation({
     mutationFn: async ({ provider, apiKey }: { provider: string; apiKey?: string }) => {
-      return apiPost(
-        "/api/providers",
-        { provider, apiKey },
-        providerCreateResponseSchema,
-        "Failed to add provider"
-      );
+      return createProvider({ provider, apiKey });
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["providers"] });
-      queryClient.invalidateQueries({ queryKey: ["provider-models"] });
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
+      void cacheOwnership.providerMutation(queryClient);
 
       if (data.autoConfiguredWarning) {
         toast.warning(data.autoConfiguredWarning);
@@ -334,34 +347,26 @@ function SettingsContent() {
         toast.success("Provider added successfully");
       }
     },
-    onError: () => toast.error("Failed to add provider"),
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to add provider")),
   });
 
   const deleteProviderMutation = useMutation({
-    mutationFn: (id: string) => apiDelete(`/api/providers/${id}`, successSchema, "Failed to delete provider"),
+    mutationFn: deleteProvider,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["providers"] });
-      queryClient.invalidateQueries({ queryKey: ["provider-models"] });
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
+      void cacheOwnership.providerMutation(queryClient);
       toast.success("Provider deleted successfully");
     },
-    onError: () => toast.error("Failed to delete provider"),
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to delete provider")),
   });
 
   const updateProviderApiKeyMutation = useMutation({
     mutationFn: ({ id, apiKey }: { id: string; apiKey?: string }) =>
-      apiPatch(
-        `/api/providers/${id}`,
-        { apiKey },
-        successSchema,
-        "Failed to update provider API key"
-      ),
+      updateProviderApiKey(id, { apiKey }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["providers"] });
-      queryClient.invalidateQueries({ queryKey: ["provider-models"] });
+      void cacheOwnership.providerMutation(queryClient);
       toast.success("Provider API key updated");
     },
-    onError: () => toast.error("Failed to update provider API key"),
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update provider API key")),
   });
 
   const derivedValues = useMemo(() => {
@@ -631,18 +636,30 @@ function SettingsContent() {
   const aiWritingModelsState = getProviderModelsState(aiWritingProviderId);
 
   const reconcileModelsMutation = useMutation({
-    mutationFn: ({ updates }: { updates: Record<string, string>; features: string[] }) =>
+    mutationFn: ({ updates }: { updates: Record<string, string>; features: string[]; signature: string }) =>
       patchSettings(updates),
     onSuccess: (_data, variables) => {
+      lastModelReconciliationRef.current = null;
+      failedModelReconciliationRef.current = null;
       const updatedFeatures = Array.from(new Set(variables.features));
       if (updatedFeatures.length > 0) {
         toast.warning(`Updated invalid AI model settings for ${updatedFeatures.join(", ")}.`);
       }
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
+      void cacheOwnership.settingsMutation(queryClient);
     },
-    onError: (error) => {
+    onError: (error, variables) => {
       lastModelReconciliationRef.current = null;
-      toast.error(error instanceof Error ? error.message : "Failed to auto-fix invalid model settings");
+      failedModelReconciliationRef.current = variables.signature;
+      toast.error(getApiErrorMessage(error, "Failed to auto-fix invalid model settings"), {
+        action: {
+          label: "Retry",
+          onClick: () => {
+            failedModelReconciliationRef.current = null;
+            lastModelReconciliationRef.current = variables.signature;
+            reconcileModelsMutation.mutate(variables);
+          },
+        },
+      });
     },
   });
 
@@ -754,16 +771,20 @@ function SettingsContent() {
 
     if (Object.keys(updates).length === 0) {
       lastModelReconciliationRef.current = null;
+      failedModelReconciliationRef.current = null;
       return;
     }
 
     const signature = JSON.stringify(updates);
-    if (lastModelReconciliationRef.current === signature) {
+    if (
+      lastModelReconciliationRef.current === signature ||
+      failedModelReconciliationRef.current === signature
+    ) {
       return;
     }
 
     lastModelReconciliationRef.current = signature;
-    reconcileModelsMutation.mutate({ updates, features });
+    reconcileModelsMutation.mutate({ updates, features, signature });
   }, [
     settings,
     providers,
@@ -904,56 +925,63 @@ function SettingsContent() {
   const clearJobsMutation = useMutation({
     mutationFn: () => clearJobs(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
-      queryClient.invalidateQueries({ queryKey: ["stats"] });
+      void cacheOwnership.clearJobs(queryClient);
+      toast.success("Jobs deleted successfully");
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to delete jobs")),
   });
 
-  const clearMatchDataMutation = useMutation<{ jobsCleared: number }>({
-    mutationFn: () =>
-      apiDelete(
-        "/api/jobs/match-data",
-        clearMatchDataResponseSchema,
-        "Failed to clear match data"
-      ),
+  const clearMatchDataMutation = useMutation({
+    mutationFn: clearJobMatchData,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["match-history"] });
-      queryClient.invalidateQueries({ queryKey: ["unmatched-jobs-count"] });
+      void cacheOwnership.clearMatchData(queryClient);
+      toast.success("Match data cleared successfully");
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to clear match data")),
   });
 
-  const clearAIContentMutation = useMutation<{
-    success: boolean;
-    contentDeleted: number;
-    historyDeleted: number;
-    message: string;
-  }>({
-    mutationFn: () =>
-      apiDelete(
-        "/api/ai/content",
-        clearAiContentResponseSchema,
-        "Failed to clear AI content"
-      ),
+  const clearAIContentMutation = useMutation({
+    mutationFn: clearAllAIContent,
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["ai-content"] });
+      void cacheOwnership.clearAIContent(queryClient);
       toast.success(data.message || "AI generated content deleted successfully");
     },
-    onError: () => toast.error("Failed to delete AI generated content"),
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to delete AI generated content")),
   });
 
   const resumeParserMutation = useMutation({
-    mutationFn: (updates: { resume_parser_model?: string; resume_parser_provider_id?: string; resume_parser_reasoning_effort?: ReasoningEffort }) =>
-      patchSettings(updates),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
-      setResumeParserLocalEdits({});
+    mutationFn: (variables: {
+      updates: {
+        resume_parser_model?: string;
+        resume_parser_provider_id?: string;
+        resume_parser_reasoning_effort?: ReasoningEffort;
+      };
+      signature: string;
+      snapshot: ResumeParserLocalEdits;
+    }) => patchSettings(variables.updates),
+    onSuccess: (_data, variables) => {
+      resumeParserAutosaveAttemptRef.current = null;
+      resumeParserAutosaveFailureRef.current = null;
+      void cacheOwnership.settingsMutation(queryClient);
+      setResumeParserLocalEdits((current) => clearSavedEdits(current, variables.snapshot));
     },
-    onError: () => toast.error("Failed to save resume parser settings"),
+    onError: (error, variables) => {
+      resumeParserAutosaveAttemptRef.current = null;
+      resumeParserAutosaveFailureRef.current = variables.signature;
+      toast.error(getApiErrorMessage(error, "Failed to save resume parser settings"), {
+        action: {
+          label: "Retry",
+          onClick: () => {
+            resumeParserAutosaveFailureRef.current = null;
+            resumeParserAutosaveAttemptRef.current = variables.signature;
+            resumeParserMutation.mutate(variables);
+          },
+        },
+      });
+    },
   });
 
-  const schedulerEnabledMutation = useMutation<SettingsRecord, Error, boolean, { previousEnabled: boolean }>({
+  const schedulerEnabledMutation = useMutation<Settings, Error, boolean, { previousEnabled: boolean }>({
     mutationFn: (enabled: boolean) =>
       patchSettings({ scheduler_enabled: enabled }),
     onMutate: (enabled: boolean) => {
@@ -962,7 +990,7 @@ function SettingsContent() {
       return { previousEnabled };
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(["settings"], data);
+      queryClient.setQueryData(queryKeys.settings.detail(), data);
       setScraperLocalEdits((prev) => ({ ...prev, schedulerEnabled: undefined }));
     },
     onError: (error, _enabled, context) => {
@@ -970,11 +998,10 @@ function SettingsContent() {
         ...prev,
         schedulerEnabled: context?.previousEnabled,
       }));
-      toast.error(error.message || "Failed to update auto-scrape setting");
+      toast.error(getApiErrorMessage(error, "Failed to update auto-scrape setting"));
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
-      queryClient.invalidateQueries({ queryKey: ["scheduler-status"] });
+      void cacheOwnership.schedulerSettingsMutation(queryClient);
     },
   });
 
@@ -1005,11 +1032,25 @@ function SettingsContent() {
       return;
     }
 
+    const updates = {
+      resume_parser_model: resumeParserModel,
+      resume_parser_provider_id: resumeParserProviderId,
+      resume_parser_reasoning_effort: resumeParserReasoningEffort,
+    };
+    const signature = JSON.stringify(resumeParserLocalEdits);
+    if (
+      resumeParserAutosaveAttemptRef.current === signature ||
+      resumeParserAutosaveFailureRef.current === signature
+    ) {
+      return;
+    }
+
     const timer = setTimeout(() => {
+      resumeParserAutosaveAttemptRef.current = signature;
       resumeParserMutation.mutate({
-        resume_parser_model: resumeParserModel,
-        resume_parser_provider_id: resumeParserProviderId,
-        resume_parser_reasoning_effort: resumeParserReasoningEffort,
+        updates,
+        signature,
+        snapshot: resumeParserLocalEdits,
       });
     }, 300);
     return () => clearTimeout(timer);
@@ -1027,10 +1068,25 @@ function SettingsContent() {
       patchSettings(updates),
     onSuccess: (data, variables) => {
       matcherAutosaveAttemptRef.current = null;
-      queryClient.setQueryData(["settings"], data);
+      matcherAutosaveFailureRef.current = null;
+      queryClient.setQueryData(queryKeys.settings.detail(), data);
       setMatcherLocalEdits((current) => clearSavedEdits(current, variables.snapshot));
     },
-    onError: () => toast.error("Failed to save matcher settings"),
+    onError: (error, variables) => {
+      const signature = JSON.stringify(variables.snapshot);
+      matcherAutosaveAttemptRef.current = null;
+      matcherAutosaveFailureRef.current = signature;
+      toast.error(getApiErrorMessage(error, "Failed to save matcher settings"), {
+        action: {
+          label: "Retry",
+          onClick: () => {
+            matcherAutosaveFailureRef.current = null;
+            matcherAutosaveAttemptRef.current = signature;
+            matcherSettingsMutation.mutate(variables);
+          },
+        },
+      });
+    },
   });
 
   const scraperSettingsMutation = useMutation<
@@ -1042,11 +1098,26 @@ function SettingsContent() {
       patchSettings(updates),
     onSuccess: (data, variables) => {
       scraperAutosaveAttemptRef.current = null;
-      queryClient.setQueryData(["settings"], data);
-      queryClient.invalidateQueries({ queryKey: ["scheduler-status"] });
+      scraperAutosaveFailureRef.current = null;
+      queryClient.setQueryData(queryKeys.settings.detail(), data);
+      queryClient.invalidateQueries({ queryKey: queryKeys.runtime.scheduler() });
       setScraperLocalEdits((current) => clearSavedEdits(current, variables.snapshot));
     },
-    onError: (error) => toast.error(error.message || "Failed to save scraper settings"),
+    onError: (error, variables) => {
+      const signature = JSON.stringify(variables.snapshot);
+      scraperAutosaveAttemptRef.current = null;
+      scraperAutosaveFailureRef.current = signature;
+      toast.error(getApiErrorMessage(error, "Failed to save scraper settings"), {
+        action: {
+          label: "Retry",
+          onClick: () => {
+            scraperAutosaveFailureRef.current = null;
+            scraperAutosaveAttemptRef.current = signature;
+            scraperSettingsMutation.mutate(variables);
+          },
+        },
+      });
+    },
   });
 
   const aiWritingMutation = useMutation({
@@ -1068,10 +1139,25 @@ function SettingsContent() {
         }),
     onSuccess: (data, variables) => {
       aiWritingAutosaveAttemptRef.current = null;
-      queryClient.setQueryData(["settings"], data);
+      aiWritingAutosaveFailureRef.current = null;
+      queryClient.setQueryData(queryKeys.settings.detail(), data);
       setAIWritingLocalEdits((current) => clearSavedEdits(current, variables.snapshot));
     },
-    onError: () => toast.error("Failed to save AI writing settings"),
+    onError: (error, variables) => {
+      const signature = JSON.stringify(variables.snapshot);
+      aiWritingAutosaveAttemptRef.current = null;
+      aiWritingAutosaveFailureRef.current = signature;
+      toast.error(getApiErrorMessage(error, "Failed to save AI writing settings"), {
+        action: {
+          label: "Retry",
+          onClick: () => {
+            aiWritingAutosaveFailureRef.current = null;
+            aiWritingAutosaveAttemptRef.current = signature;
+            aiWritingMutation.mutate(variables);
+          },
+        },
+      });
+    },
   });
   const saveMatcherSettings = matcherSettingsMutation.mutate;
   const matcherSettingsSaving = matcherSettingsMutation.isPending;
@@ -1083,7 +1169,10 @@ function SettingsContent() {
   useEffect(() => {
     if (!matcherHasUnsavedChanges || matcherSettingsSaving || providerOptions.length === 0) return;
     const signature = JSON.stringify(matcherLocalEdits);
-    if (matcherAutosaveAttemptRef.current === signature) return;
+    if (
+      matcherAutosaveAttemptRef.current === signature ||
+      matcherAutosaveFailureRef.current === signature
+    ) return;
     const selectedAnalysisModel = jobAnalysisModelsState.models.find(
       (model) => model.modelId === jobAnalysisModel
     );
@@ -1141,7 +1230,10 @@ function SettingsContent() {
   useEffect(() => {
     if (!scraperHasUnsavedChanges || scraperSettingsSaving) return;
     const signature = JSON.stringify(scraperLocalEdits);
-    if (scraperAutosaveAttemptRef.current === signature) return;
+    if (
+      scraperAutosaveAttemptRef.current === signature ||
+      scraperAutosaveFailureRef.current === signature
+    ) return;
 
     const timer = setTimeout(() => {
       scraperAutosaveAttemptRef.current = signature;
@@ -1176,7 +1268,10 @@ function SettingsContent() {
   useEffect(() => {
     if (!aiWritingHasUnsavedChanges || aiWritingSettingsSaving || providerOptions.length === 0) return;
     const signature = JSON.stringify(aiWritingLocalEdits);
-    if (aiWritingAutosaveAttemptRef.current === signature) return;
+    if (
+      aiWritingAutosaveAttemptRef.current === signature ||
+      aiWritingAutosaveFailureRef.current === signature
+    ) return;
     const selectedModel = aiWritingModelsState.models.find(
       (model) => model.modelId === aiWritingModel
     );
@@ -1230,31 +1325,13 @@ function SettingsContent() {
     data: unmatchedData,
     isFetching: unmatchedCountLoading,
     refetch: refetchUnmatchedCount,
-  } = useQuery<{
-    count: number;
-    days: number;
-  }>({
-    queryKey: ["unmatched-jobs-count", debouncedUnmatchedWindowDays],
-    queryFn: () =>
-      apiGet(
-        `/api/jobs/match-unmatched?days=${debouncedUnmatchedWindowDays}`,
-        unmatchedJobsCountResponseSchema,
-        "Failed to fetch unmatched count"
-      ),
+  } = useQuery({
+    queryKey: queryKeys.runtime.unmatchedJobsCount(debouncedUnmatchedWindowDays),
+    queryFn: () => getUnmatchedJobsCount(debouncedUnmatchedWindowDays),
   });
 
-  const matchUnmatchedMutation = useMutation<{
-    total: number;
-    status: "queued" | "completed";
-    sessionId: string;
-  }, Error, number>({
-    mutationFn: (days: number) =>
-      apiPost(
-        "/api/jobs/match-unmatched",
-        { days },
-        queuedMatchResponseSchema,
-        "Failed to match jobs"
-      ),
+  const matchUnmatchedMutation = useMutation({
+    mutationFn: queueUnmatchedJobs,
     onSuccess: (data) => {
       toast.success(`${data.total} ${data.total === 1 ? "job" : "jobs"} queued for matching`, {
         action: {
@@ -1266,6 +1343,7 @@ function SettingsContent() {
         setMatchSessionId(data.sessionId);
       }
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to queue unmatched jobs")),
   });
 
   const [matchSessionId, setMatchSessionId] = useState<string | null>(null);
@@ -1273,12 +1351,31 @@ function SettingsContent() {
   const { data: matchProgress } = useMatchSession(matchSessionId, {
     onSettled: () => {
       setMatchSessionId(null);
-      void queryClient.invalidateQueries({ queryKey: ["unmatched-jobs-count"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.runtime.unmatchedJobs() });
     },
   });
 
   if (isInitialLoading) {
     return <SettingsPageSkeleton />;
+  }
+
+  if (settingsQuery.isError || providersQuery.isError) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Settings</h1>
+          <p className="mt-1 text-muted-foreground">Configure your Switchy preferences and manage data</p>
+        </div>
+        <ApiErrorState
+          error={settingsQuery.error ?? providersQuery.error}
+          fallbackMessage="Settings could not be initialized."
+          onRetry={() => {
+            void settingsQuery.refetch();
+            void providersQuery.refetch();
+          }}
+        />
+      </div>
+    );
   }
 
   return (
@@ -1407,11 +1504,9 @@ function SettingsContent() {
               clearAIContentMutation.mutate();
             }}
             onClearMatchData={() => {
-              toast.success("Clear match data triggered");
               clearMatchDataMutation.mutate();
             }}
             onClearJobs={() => {
-              toast.success("Clear jobs triggered");
               clearJobsMutation.mutate();
             }}
           />
@@ -1460,7 +1555,16 @@ function SettingsContent() {
             onResumeParserReasoningEffortChange={setResumeParserReasoningEffort}
           />
 
-          <SystemInfo version={APP_VERSION} dbPath={DB_PATH} />
+          <SystemInfo
+            version={APP_VERSION}
+            dbPath={DB_PATH}
+            readiness={readinessQuery.data}
+            runtimeHealth={runtimeHealthQuery.data}
+            isReadinessLoading={readinessQuery.isLoading}
+            isReadinessUnavailable={readinessQuery.isError}
+            isRuntimeHealthLoading={runtimeHealthQuery.isLoading}
+            isRuntimeHealthUnavailable={runtimeHealthQuery.isError}
+          />
         </div>
       </div>
     </div>

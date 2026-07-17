@@ -7,12 +7,14 @@ import { toast } from "sonner";
 import { LinkedinIcon } from "@/components/icons/linkedin-icon";
 import { Button } from "@/components/ui/button";
 import { patchPerson } from "@/lib/api/clients/people";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 import { canOpenLinkedInProfile } from "@/lib/people/message";
 import { cn } from "@/lib/utils";
 import { copyTextToClipboard } from "@/lib/utils/clipboard";
 import { formatRelativeTime } from "@/lib/utils/format";
 
-import type { CompanyPerson } from "./types";
+import type { CompanyPerson } from "@/lib/api/contracts/companies";
+import { cacheOwnership } from "@/lib/query-keys";
 
 interface CompanyPersonCardProps {
   person: CompanyPerson;
@@ -40,9 +42,9 @@ export function CompanyPersonCard({ person, showOutreachBadge = false }: Company
       return patchPerson(person.id, body);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["company-overview"] });
-      queryClient.invalidateQueries({ queryKey: ["people"] });
+      void cacheOwnership.peopleMutation(queryClient);
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update person")),
   });
 
   const handleCopyEmail = async (email: string) => {

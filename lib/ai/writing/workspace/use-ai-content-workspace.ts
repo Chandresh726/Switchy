@@ -6,12 +6,7 @@ import { toast } from "sonner";
 
 import type { AIContentType } from "@/lib/ai/contracts";
 import {
-  aiStreamCompleteSchema,
-  aiStreamDeltaSchema,
-  aiStreamErrorSchema,
-} from "@/lib/api/contracts/ai";
-import { APIClientError } from "@/lib/api/client";
-import {
+  consumeAIContentStream,
   getAIContent,
   openAIContentStream,
   recordAIVariantSignal,
@@ -19,6 +14,7 @@ import {
 } from "@/lib/api/clients/ai";
 import { canonicalizeMarkdown } from "@/lib/ai/writing/rich-text";
 import type { GeneratedContent } from "@/lib/ai/writing/types";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 import {
   selectAdjacentVariantIndex,
   selectInitialVariantIndex,
@@ -102,57 +98,6 @@ export function useAIContentWorkspace({
     await recordAIVariantSignal(variantId, action);
   }, []);
 
-  const consumeContentStream = useCallback(async (
-    response: Response,
-    onDelta: (text: string) => void
-  ): Promise<ReturnType<typeof aiStreamCompleteSchema.parse>> => {
-    if (!response.body) throw new Error("Streaming response is unavailable");
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let complete: ReturnType<typeof aiStreamCompleteSchema.parse> | null = null;
-
-    const processFrame = (frame: string) => {
-      let event = "";
-      const dataLines: string[] = [];
-      for (const line of frame.split(/\r?\n/)) {
-        if (line.startsWith("event:")) event = line.slice(6).trim();
-        if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
-      }
-      if (!event || dataLines.length === 0) return;
-      const data: unknown = JSON.parse(dataLines.join("\n"));
-      if (event === "delta") {
-        onDelta(aiStreamDeltaSchema.parse(data).text);
-      } else if (event === "complete") {
-        complete = aiStreamCompleteSchema.parse(data);
-      } else if (event === "error") {
-        const streamError = aiStreamErrorSchema.parse(data);
-        throw new APIClientError(
-          streamError.message,
-          500,
-          streamError.code,
-          undefined,
-          streamError.requestId
-        );
-      }
-    };
-
-    while (true) {
-      const { value, done } = await reader.read();
-      buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, "\n");
-      let boundary = buffer.indexOf("\n\n");
-      while (boundary >= 0) {
-        processFrame(buffer.slice(0, boundary));
-        buffer = buffer.slice(boundary + 2);
-        boundary = buffer.indexOf("\n\n");
-      }
-      if (done) break;
-    }
-    if (buffer.trim()) processFrame(buffer);
-    if (!complete) throw new Error("Generation stream ended before completion");
-    return complete;
-  }, []);
-
   const generateContent = useCallback(
     async (userPrompt?: string) => {
       if (!enabled) return;
@@ -174,7 +119,7 @@ export function useAIContentWorkspace({
         }, abortController.signal);
 
         let accumulated = "";
-        const data = await consumeContentStream(res, (delta) => {
+        const data = await consumeAIContentStream(res, (delta) => {
           accumulated += delta;
           setStreamingContent(accumulated);
         });
@@ -187,7 +132,7 @@ export function useAIContentWorkspace({
       } catch (error) {
         if (abortController.signal.aborted) return;
         console.error("Generation error:", error);
-        toast.error(error instanceof Error ? error.message : "Failed to generate content");
+        toast.error(getApiErrorMessage(error, "Failed to generate content"));
       } finally {
         setIsContentLoading(false);
         setStreamingContent(null);
@@ -195,7 +140,7 @@ export function useAIContentWorkspace({
         generateInFlightRef.current = false;
       }
     },
-    [content, contentType, consumeContentStream, currentVariantIndex, enabled, jobId, selectVariantByIndex]
+    [content, contentType, currentVariantIndex, enabled, jobId, selectVariantByIndex]
   );
 
   useEffect(() => () => {
@@ -235,7 +180,7 @@ export function useAIContentWorkspace({
       await generateContent();
     } catch (error) {
       console.error("Failed to load existing AI content:", error);
-      toast.error("Failed to load saved content");
+      toast.error(getApiErrorMessage(error, "Failed to load saved content"));
     } finally {
       setIsContentLoading(false);
       bootstrapInFlightRef.current = false;
@@ -271,7 +216,7 @@ export function useAIContentWorkspace({
       toast.success("Saved as new variant");
     } catch (error) {
       console.error("Save error:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to save variant");
+      toast.error(getApiErrorMessage(error, "Failed to save variant"));
     } finally {
       setIsSaving(false);
     }
@@ -361,7 +306,7 @@ export function useAIContentWorkspace({
       toast.success("Variant marked as discarded");
     } catch (error) {
       console.error("Failed to discard writing variant:", error);
-      toast.error("Failed to discard variant");
+      toast.error(getApiErrorMessage(error, "Failed to discard variant"));
     } finally {
       setIsDiscarding(false);
     }

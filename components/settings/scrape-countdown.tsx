@@ -5,18 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Clock, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getSchedulerStatus } from "@/lib/api/clients/runtime";
-
-interface SchedulerStatus {
-  isActive: boolean;
-  isRunning: boolean;
-  isEnabled: boolean;
-  lastRun: string | null;
-  nextRun: string | null;
-  cronExpression: string;
-  pendingMissedCount: number;
-  oldestMissedRun: string | null;
-  latestMissedRun: string | null;
-}
+import type { SchedulerStatusResponse } from "@/lib/api/contracts/runtime";
+import { queryKeys } from "@/lib/query-keys";
 
 interface ScrapeCountdownProps {
   className?: string;
@@ -39,8 +29,8 @@ function formatTimeRemaining(ms: number): string {
 }
 
 export function ScrapeCountdown({ className }: ScrapeCountdownProps) {
-  const { data: status, isLoading, isError, refetch } = useQuery<SchedulerStatus>({
-    queryKey: ["scheduler-status"],
+  const { data: status, isLoading, isError, refetch } = useQuery<SchedulerStatusResponse>({
+    queryKey: queryKeys.runtime.scheduler(),
     queryFn: async () => {
       return getSchedulerStatus();
     },

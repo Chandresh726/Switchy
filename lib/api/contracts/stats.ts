@@ -27,3 +27,5 @@ export const statsResponseSchema = z.object({
   unmatchedCompanyCount: z.number().int().nonnegative(),
   unmatchedPeopleCount: z.number().int().nonnegative(),
 });
+
+export type StatsResponse = z.infer<typeof statsResponseSchema>;

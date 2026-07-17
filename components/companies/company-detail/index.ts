@@ -8,5 +8,3 @@ export { CompanyActivityTab } from "./company-activity-tab";
 export { CompanyNotesTab } from "./company-notes-tab";
 export { CompanyNoteSaveIndicator } from "./company-note-save-indicator";
 export { CompanyNotesProvider, useCompanyNotesContext } from "./company-notes-context";
-
-export * from "./types";

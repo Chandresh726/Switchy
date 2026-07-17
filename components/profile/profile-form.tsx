@@ -6,10 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import { getProfile, saveProfile } from "@/lib/api/clients/profile";
 import { useState, useEffect, useMemo } from "react";
 import { Loader2, Save, User } from "lucide-react";
 import { toast } from "sonner";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface ProfileData {
   id?: number;
@@ -42,8 +45,8 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
   });
   const [settingsSaved, setSettingsSaved] = useState(false);
 
-  const { data: profile, isLoading } = useQuery({
-    queryKey: ["profile"],
+  const { data: profile, error, isError, isLoading, refetch } = useQuery({
+    queryKey: queryKeys.profile.detail(),
     queryFn: async () => {
       return getProfile();
     },
@@ -105,7 +108,7 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
       return saveProfile(data);
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["profile"] });
+      void cacheOwnership.profileMutation(queryClient);
       setOriginalData({
         name: data.name || "",
         email: data.email || "",
@@ -120,8 +123,8 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
       setTimeout(() => setSettingsSaved(false), 3000);
       toast.success("Profile saved");
     },
-    onError: () => {
-      toast.error("Failed to save profile");
+    onError: (mutationError) => {
+      toast.error(getApiErrorMessage(mutationError, "Failed to save profile"));
     },
   });
 
@@ -144,6 +147,20 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="border-border bg-card">
+        <CardContent className="p-6">
+          <ApiErrorState
+            error={error}
+            fallbackMessage="Basic profile information could not be loaded."
+            onRetry={() => void refetch()}
+          />
         </CardContent>
       </Card>
     );

@@ -2,29 +2,17 @@ import { AlertTriangle } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-
-export interface MatchBreakdownValue {
-  responsibilities?: number | null;
-  skillsAndTechnologies?: number | null;
-  experienceAndSeniority?: number | null;
-  domainFit?: number | null;
-  legacy?: number;
-}
-
-export interface MatchReasoningPointValue {
-  type: "match" | "gap" | "context";
-  text: string;
-}
+import type { MatchBreakdown, MatchReasoningPoint } from "@/lib/ai/artifacts/schemas";
 
 interface MatchBreakdownProps {
-  breakdown: MatchBreakdownValue | null;
+  breakdown: MatchBreakdown | null;
   stale: boolean;
   summary?: string;
-  reasoning?: MatchReasoningPointValue[];
+  reasoning?: Array<Pick<MatchReasoningPoint, "type" | "text">>;
   matchedSkills?: string[];
 }
 
-const COMPONENT_LABELS: Array<[keyof MatchBreakdownValue, string]> = [
+const COMPONENT_LABELS: Array<[keyof MatchBreakdown, string]> = [
   ["responsibilities", "Responsibilities"],
   ["skillsAndTechnologies", "Skills & technologies"],
   ["experienceAndSeniority", "Experience & seniority"],

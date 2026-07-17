@@ -9,7 +9,7 @@ import { formatRelativeTime } from "@/lib/utils/format";
 import { CompanyJobCard } from "./company-job-card";
 import { CompanyTopMatches } from "./company-top-matches";
 
-import type { CompanyJob, CompanyOverview } from "./types";
+import type { CompanyJob, CompanyOverview } from "@/lib/api/contracts/companies";
 
 interface CompanyJobsTabProps {
   company: CompanyOverview;
@@ -198,7 +198,12 @@ export function CompanyJobsTab({ company, jobs, topMatches }: CompanyJobsTabProp
         ) : (
           <div className="grid gap-3">
             {filteredAndSorted.map((job) => (
-              <CompanyJobCard key={job.id} job={job} currentTime={currentTime} />
+              <CompanyJobCard
+                key={job.id}
+                companyId={company.id}
+                job={job}
+                currentTime={currentTime}
+              />
             ))}
           </div>
         )}

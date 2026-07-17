@@ -1,34 +1,60 @@
 import {
+  jobResourceUpdateBodySchema,
+  jobIdParamsSchema,
   jobSchema,
   jobUpdateResponseSchema,
+  jobsQuerySchema,
   jobsResponseSchema,
 } from "@/lib/api/contracts/jobs";
+import type {
+  JobDetail,
+  JobUpdateInput,
+  JobUpdateResponse,
+  JobsResponse,
+} from "@/lib/api/contracts/jobs";
 import { successSchema } from "@/lib/api/contracts/common";
+import {
+  type ClearMatchDataResponse,
+  clearMatchDataResponseSchema,
+} from "@/lib/api/contracts/settings";
+import type { z } from "zod";
 
-import { apiGet, apiRequest } from "../client";
-import { APP_REQUEST_HEADERS } from "../request-headers";
+import { appendQuery, apiCommand, apiGet, apiJsonMutation, serializePathParam, serializeQuery } from "../client";
 
-export const getJobs = (query = "") =>
-  apiGet(`/api/jobs${query ? `?${query.replace(/^\?/, "")}` : ""}`, jobsResponseSchema, "Failed to fetch jobs");
+const jobPath = (id: number) => serializePathParam(jobIdParamsSchema, { id });
+export type JobsQueryInput = Partial<z.output<typeof jobsQuerySchema>>;
 
-export const getJob = (id: number) =>
-  apiGet(`/api/jobs/${id}`, jobSchema, "Failed to fetch job");
+export const getJobs = (params: JobsQueryInput = {}): Promise<JobsResponse> => {
+  const query = serializeQuery(jobsQuerySchema, params);
+  return apiGet(appendQuery("/api/jobs", query), jobsResponseSchema, "Failed to fetch jobs");
+};
 
-export const updateJob = (id: number, body: Record<string, unknown>) =>
-  apiRequest(
-    `/api/jobs/${id}`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },
-      body: JSON.stringify(body),
-    },
+export const getJob = (id: number): Promise<JobDetail> =>
+  apiGet(`/api/jobs/${jobPath(id)}`, jobSchema, "Failed to fetch job");
+
+export const updateJob = (
+  id: number,
+  body: JobUpdateInput
+): Promise<JobUpdateResponse> =>
+  apiJsonMutation(
+    `/api/jobs/${jobPath(id)}`,
+    "PATCH",
+    jobResourceUpdateBodySchema,
+    body,
     jobUpdateResponseSchema,
     "Failed to update job"
   );
 
-export const clearJobs = () => apiRequest(
+export const clearJobs = () => apiCommand(
   "/api/maintenance/jobs/clear",
-  { method: "POST", headers: APP_REQUEST_HEADERS },
+  "POST",
   successSchema,
   "Failed to clear jobs"
+);
+
+export const clearJobMatchData = (): Promise<ClearMatchDataResponse> => apiCommand(
+  "/api/jobs/match-data",
+  "DELETE",
+  clearMatchDataResponseSchema,
+  "Failed to clear match data"
 );

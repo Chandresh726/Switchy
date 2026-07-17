@@ -23,6 +23,7 @@ import { UnmatchedPeopleModal } from "@/components/companies/unmatched-people-mo
 import { LinkedinIcon } from "@/components/icons/linkedin-icon";
 import { ImportPeopleModal } from "@/components/people/import-people-modal";
 import { getCompanies } from "@/lib/api/clients/companies";
+import type { Company } from "@/lib/api/contracts/companies";
 import {
   clearPeople,
   getPeople,
@@ -43,6 +44,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
@@ -56,22 +58,18 @@ import {
 import { TogglePill } from "@/components/ui/toggle-pill";
 import { canOpenLinkedInProfile } from "@/lib/people/message";
 import type {
-  ImportSummary,
+  PeopleImportResponse,
   PeopleImportSession,
-  PersonQueryResponse,
+  PeopleResponse,
   PersonSource,
-} from "@/lib/people/types";
-import { companyKeys, peopleKeys } from "@/lib/query-keys";
+} from "@/lib/api/contracts/people";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import { copyTextToClipboard } from "@/lib/utils/clipboard";
 import { formatDateTime } from "@/lib/utils/format";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 type MappingScope = "mapped" | "all" | "unmapped";
 type ActivityScope = "active" | "inactive" | "all";
-
-interface Company {
-  id: number;
-  name: string;
-}
 
 interface EmailCellProps {
   personId: number;
@@ -177,98 +175,79 @@ export default function PeoplePage() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isDeleteAllDialogOpen, setIsDeleteAllDialogOpen] = useState(false);
   const [isUnmatchedModalOpen, setIsUnmatchedModalOpen] = useState(false);
-  const [lastSummary, setLastSummary] = useState<ImportSummary | null>(null);
+  const [lastSummary, setLastSummary] = useState<PeopleImportResponse | null>(null);
 
-  const { data: companies = [] } = useQuery<Company[]>({
-    queryKey: companyKeys.list(),
+  const companiesQuery = useQuery<Company[]>({
+    queryKey: queryKeys.companies.list(),
     queryFn: async () => {
       return getCompanies();
     },
   });
 
-  const { data: sessions = [] } = useQuery<PeopleImportSession[]>({
-    queryKey: peopleKeys.importSessions(),
+  const sessionsQuery = useQuery<PeopleImportSession[]>({
+    queryKey: queryKeys.people.importSessions({ limit: 5 }),
     queryFn: async () => {
-      return (await getPeopleImportSessions(5)).sessions;
+      return (await getPeopleImportSessions({ limit: 5 })).sessions;
     },
   });
 
-  const peopleUrl = useMemo(() => {
-    const params = new URLSearchParams();
-    if (search) params.set("search", search);
-    if (companyId) params.set("companyId", companyId);
-    if (source !== "all") params.set("source", source);
-    if (showStarredOnly) params.set("starred", "true");
-
-    if (activityScope === "all") {
-      params.set("active", "all");
-    } else if (activityScope === "active") {
-      params.set("active", "true");
-    } else {
-      params.set("active", "false");
-    }
-
-    if (mappingScope === "mapped") {
-      params.set("unmatched", "false");
-    } else if (mappingScope === "unmapped") {
-      params.set("unmatched", "true");
-    }
-
-    params.set("limit", pageSize.toString());
-    params.set("offset", ((currentPage - 1) * pageSize).toString());
-    params.set("sortBy", "lastSeenAt");
-    params.set("sortOrder", "desc");
-    return `/api/people?${params.toString()}`;
+  const peopleParams = useMemo(() => {
+    const active = activityScope === "all"
+      ? "all" as const
+      : activityScope === "active"
+        ? "true" as const
+        : "false" as const;
+    const unmatched = mappingScope === "mapped"
+      ? "false" as const
+      : mappingScope === "unmapped"
+        ? "true" as const
+        : undefined;
+    return {
+      search: search || undefined,
+      companyId: companyId ? Number(companyId) : undefined,
+      source: source === "all" ? undefined : source,
+      starred: showStarredOnly ? "true" as const : undefined,
+      active,
+      unmatched,
+      limit: pageSize,
+      offset: (currentPage - 1) * pageSize,
+      sortBy: "lastSeenAt" as const,
+      sortOrder: "desc" as const,
+    };
   }, [activityScope, companyId, currentPage, mappingScope, pageSize, search, showStarredOnly, source]);
 
-  const { data, isLoading, isFetching } = useQuery<PersonQueryResponse>({
-    queryKey: peopleKeys.listWithParams({
-      search,
-      companyId,
-      source,
-      showStarredOnly,
-      mappingScope,
-      activityScope,
-      pageSize,
-      currentPage,
-    }),
+  const peopleQuery = useQuery<PeopleResponse>({
+    queryKey: queryKeys.people.list(peopleParams),
     queryFn: async () => {
-      return getPeople(peopleUrl.split("?")[1] ?? "");
+      return getPeople(peopleParams);
     },
   });
 
-  const { data: totalPeopleData } = useQuery<PersonQueryResponse>({
-    queryKey: peopleKeys.totalCount(),
+  const totalPeopleQuery = useQuery<PeopleResponse>({
+    queryKey: queryKeys.people.list({ active: "all", limit: 1 }),
     queryFn: async () => {
-      return getPeople("active=all&limit=1");
+      return getPeople({ active: "all", limit: 1 });
     },
   });
 
-  const totalPeopleCount = totalPeopleData?.totalCount || 0;
+  const totalPeopleCount = totalPeopleQuery.data?.totalCount || 0;
 
-  const { data: unmatchedSummary } = useQuery<{
-    summary: {
-      unmatchedCompanyCount: number;
-      unmatchedPeopleCount: number;
-      ignoredCompanyCount: number;
-    };
-  }>({
-    queryKey: peopleKeys.unmatchedCompanies.summary(),
+  const unmatchedSummaryQuery = useQuery({
+    queryKey: queryKeys.people.unmatchedCompanies.list({ summaryOnly: "true" }),
     queryFn: async () => {
-      return getUnmatchedCompanies("summaryOnly=true");
+      return getUnmatchedCompanies({ summaryOnly: "true" });
     },
   });
 
   const patchMutation = useMutation({
-    mutationFn: async (payload: { id: number; body: Record<string, unknown> }) => {
+    mutationFn: async (payload: { id: number; body: Parameters<typeof patchPerson>[1] }) => {
       return patchPerson(payload.id, payload.body);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: peopleKeys.all });
-      queryClient.invalidateQueries({ queryKey: companyKeys.all });
+      void cacheOwnership.peopleMutation(queryClient);
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Failed to update person");
+      toast.error(getApiErrorMessage(error, "Failed to update person"));
     },
   });
 
@@ -280,15 +259,11 @@ export default function PeoplePage() {
       setIsDeleteAllDialogOpen(false);
       setLastSummary(null);
       setCurrentPage(1);
-      queryClient.invalidateQueries({ queryKey: peopleKeys.all });
-      queryClient.invalidateQueries({ queryKey: peopleKeys.importSessions() });
-      queryClient.invalidateQueries({ queryKey: companyKeys.all });
-      queryClient.invalidateQueries({ queryKey: peopleKeys.unmatchedCompanies.all() });
-      queryClient.invalidateQueries({ queryKey: peopleKeys.ignoredCompanies() });
+      void cacheOwnership.peopleMutation(queryClient);
       toast.success(result.deletedCount > 0 ? `Deleted ${result.deletedCount} people` : "No people to delete");
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Failed to delete people");
+      toast.error(getApiErrorMessage(error, "Failed to delete people"));
     },
   });
 
@@ -297,10 +272,7 @@ export default function PeoplePage() {
       return refreshUnmatchedCompanyMappings();
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: peopleKeys.unmatchedCompanies.all() });
-      queryClient.invalidateQueries({ queryKey: peopleKeys.ignoredCompanies() });
-      queryClient.invalidateQueries({ queryKey: peopleKeys.all });
-      queryClient.invalidateQueries({ queryKey: companyKeys.all });
+      void cacheOwnership.peopleMutation(queryClient);
 
       if (result.mappedPeopleCount > 0) {
         toast.success(
@@ -312,12 +284,15 @@ export default function PeoplePage() {
       toast.success("No new mappings found");
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Failed to refresh mappings");
+      toast.error(getApiErrorMessage(error, "Failed to refresh mappings"));
     },
   });
 
-  const people = data?.people || [];
-  const totalCount = data?.totalCount || 0;
+  const companies = companiesQuery.data ?? [];
+  const sessions = sessionsQuery.data ?? [];
+  const unmatchedSummary = unmatchedSummaryQuery.data;
+  const people = peopleQuery.data?.people || [];
+  const totalCount = peopleQuery.data?.totalCount || 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   const copyToClipboard = async (value: string, successMessage: string) => {
@@ -361,6 +336,27 @@ export default function PeoplePage() {
           </Button>
         </div>
       </div>
+
+      {peopleQuery.isError ? (
+        <ApiErrorState
+          error={peopleQuery.error}
+          fallbackMessage="People could not be loaded."
+          onRetry={() => void peopleQuery.refetch()}
+        />
+      ) : null}
+
+      {companiesQuery.isError || sessionsQuery.isError || totalPeopleQuery.isError || unmatchedSummaryQuery.isError ? (
+        <ApiErrorState
+          error={companiesQuery.error ?? sessionsQuery.error ?? totalPeopleQuery.error ?? unmatchedSummaryQuery.error}
+          fallbackMessage="Supporting people data could not be loaded."
+          onRetry={() => {
+            void companiesQuery.refetch();
+            void sessionsQuery.refetch();
+            void totalPeopleQuery.refetch();
+            void unmatchedSummaryQuery.refetch();
+          }}
+        />
+      ) : null}
 
       {lastSummary ? (
         <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-300">
@@ -487,11 +483,11 @@ export default function PeoplePage() {
         </div>
       </div>
 
-      {isLoading ? (
+      {peopleQuery.isLoading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
-      ) : people.length === 0 ? (
+      ) : peopleQuery.isError ? null : people.length === 0 ? (
         <EmptyState icon={UserRound} title="No people found" description="Import people or adjust filters to view results." />
       ) : (
         <>
@@ -580,7 +576,7 @@ export default function PeoplePage() {
               totalPages={totalPages}
               totalCount={totalCount}
               pageSize={pageSize}
-              isFetching={isFetching}
+              isFetching={peopleQuery.isFetching}
               onPageChange={setCurrentPage}
               onPageSizeChange={(size) => {
                 setPageSize(size);
@@ -598,17 +594,11 @@ export default function PeoplePage() {
         onImported={(summary) => {
           setLastSummary(summary);
           setCurrentPage(1);
-          queryClient.invalidateQueries({ queryKey: peopleKeys.all });
-          queryClient.invalidateQueries({ queryKey: peopleKeys.importSessions() });
-          queryClient.invalidateQueries({ queryKey: companyKeys.all });
-          queryClient.invalidateQueries({ queryKey: peopleKeys.unmatchedCompanies.all() });
-          queryClient.invalidateQueries({ queryKey: peopleKeys.ignoredCompanies() });
+          void cacheOwnership.peopleMutation(queryClient);
         }}
         onCreatedManual={() => {
           setCurrentPage(1);
-          queryClient.invalidateQueries({ queryKey: peopleKeys.all });
-          queryClient.invalidateQueries({ queryKey: companyKeys.all });
-          queryClient.invalidateQueries({ queryKey: peopleKeys.unmatchedCompanies.all() });
+          void cacheOwnership.peopleMutation(queryClient);
         }}
       />
 

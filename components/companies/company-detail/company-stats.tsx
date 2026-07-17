@@ -4,7 +4,7 @@ import { Briefcase, Sparkles, Users, Star } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-import type { CompanyStats } from "./types";
+import type { CompanyStats } from "@/lib/api/contracts/companies";
 
 interface CompanyStatsProps {
   stats: CompanyStats;

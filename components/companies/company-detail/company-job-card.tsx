@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { MapPin, CheckCircle, Star, Loader2, CalendarDays } from "lucide-react";
+import { toast } from "sonner";
 
 import { NewJobBadge } from "@/components/jobs/new-job-badge";
 import { MatchBadge } from "@/components/jobs/match-badge";
@@ -10,12 +11,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { updateJob } from "@/lib/api/clients/jobs";
 import { isNewJob } from "@/lib/jobs/is-new-job";
+import type { JobStatus } from "@/lib/jobs/status";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/utils/format";
 
-import type { CompanyJob } from "./types";
+import type { CompanyJob } from "@/lib/api/contracts/companies";
+import { cacheOwnership } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface CompanyJobCardProps {
+  companyId: number;
   job: CompanyJob;
   currentTime: number;
 }
@@ -35,7 +40,7 @@ const LOCATION_TYPE_LABELS: Record<string, string> = {
   onsite: "On-site",
 };
 
-export function CompanyJobCard({ job, currentTime }: CompanyJobCardProps) {
+export function CompanyJobCard({ companyId, job, currentTime }: CompanyJobCardProps) {
   const queryClient = useQueryClient();
   const shouldShowNewTag = isNewJob({
     discoveredAt: job.discoveredAt,
@@ -44,13 +49,13 @@ export function CompanyJobCard({ job, currentTime }: CompanyJobCardProps) {
     currentTime,
   });
   const updateStatusMutation = useMutation({
-    mutationFn: async (newStatus: string) => {
+    mutationFn: async (newStatus: JobStatus) => {
       return updateJob(job.id, { status: newStatus });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["company-overview"] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      void cacheOwnership.jobMutation(queryClient, { jobId: job.id, companyId });
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update job status")),
   });
 
   return (

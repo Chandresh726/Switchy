@@ -10,12 +10,14 @@ import type { ResumeData } from "@/lib/ai/resume/contracts";
 import { deleteResume, getProfile } from "@/lib/api/clients/profile";
 import { useState } from "react";
 import { toast } from "sonner";
+import { queryKeys } from "@/lib/query-keys";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 
 export default function ProfilePage() {
   const [parsedResumeData, setParsedResumeData] = useState<ResumeData | null>(null);
 
-  const { data: profile, refetch } = useQuery({
-    queryKey: ["profile"],
+  const profileQuery = useQuery({
+    queryKey: queryKeys.profile.detail(),
     queryFn: async () => {
       return getProfile();
     },
@@ -42,13 +44,21 @@ export default function ProfilePage() {
         </p>
       </div>
 
+      {profileQuery.isError ? (
+        <ApiErrorState
+          error={profileQuery.error}
+          fallbackMessage="Your profile could not be loaded."
+          onRetry={() => void profileQuery.refetch()}
+        />
+      ) : null}
+
       {/* Resume Manager */}
-      <ResumeManager
-        resumes={profile?.resumes || []}
+      {profileQuery.isError ? null : <ResumeManager
+        resumes={profileQuery.data?.resumes || []}
         onParsed={handleResumeParsed}
         onDelete={handleDeleteResume}
-        onRefresh={refetch}
-      />
+        onRefresh={() => void profileQuery.refetch()}
+      />}
 
       {/* Parsed Resume Summary */}
       {parsedResumeData && (
@@ -64,7 +74,7 @@ export default function ProfilePage() {
       )}
 
       {/* Basic Information */}
-      <ProfileForm
+      {profileQuery.isError ? null : <ProfileForm
         initialData={
           parsedResumeData
             ? {
@@ -79,11 +89,11 @@ export default function ProfilePage() {
             }
             : undefined
         }
-      />
+      />}
 
       {/* Education */}
-      <EducationEditor
-        profileId={profile?.id || null}
+      {profileQuery.isError ? null : <EducationEditor
+        profileId={profileQuery.data?.id || null}
         initialEducation={parsedResumeData?.education?.map((education) => ({
           institution: education.institution,
           degree: education.degree,
@@ -93,24 +103,24 @@ export default function ProfilePage() {
           gpa: education.gpa ?? undefined,
           honors: education.honors ?? undefined,
         }))}
-      />
+      />}
 
       {/* Experience */}
-      <ExperienceList
-        profileId={profile?.id || null}
+      {profileQuery.isError ? null : <ExperienceList
+        profileId={profileQuery.data?.id || null}
         initialExperience={parsedResumeData?.experience.map((experience) => ({
           ...experience,
           location: experience.location ?? undefined,
           endDate: experience.endDate ?? undefined,
           description: experience.description ?? undefined,
         }))}
-      />
+      />}
 
       {/* Skills */}
-      <SkillsEditor
-        profileId={profile?.id || null}
+      {profileQuery.isError ? null : <SkillsEditor
+        profileId={profileQuery.data?.id || null}
         initialSkills={parsedResumeData?.skills}
-      />
+      />}
     </div>
   );
 }
