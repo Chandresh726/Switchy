@@ -16,13 +16,14 @@ import {
 import type { SQL } from "drizzle-orm";
 import type { z } from "zod";
 
+import { JobAnalysisEvidenceSchema, MatchSourceSchema } from "@/lib/ai/artifacts";
 import { getCurrentMatchContext, getMatchPresentations } from "@/lib/ai/matcher/presentation";
 import { getUnmatchedJobCount, getUnmatchedJobIds } from "@/lib/ai/matcher";
 import { completeEmptyMatchSession, getAIWorkSession, queueMatchWork } from "@/lib/ai/work-items";
 import { NotFoundError } from "@/lib/api";
 import type { jobResourceUpdateBodySchema, jobsQuerySchema } from "@/lib/api/contracts/jobs";
 import { db } from "@/lib/db";
-import { companies, jobs, matchResults } from "@/lib/db/schema";
+import { companies, jobAnalyses, jobs, matchResults } from "@/lib/db/schema";
 import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 
 type JobUpdate = z.infer<typeof jobResourceUpdateBodySchema>;
@@ -107,6 +108,41 @@ async function presentRows(rows: Array<{ job: Omit<Parameters<typeof getMatchPre
   });
 }
 
+async function getStoredJobIntelligence(jobId: number, matchResultId: string | null) {
+  if (!matchResultId) return { matchMetadata: null, jobAnalysis: null };
+
+  const [row] = await db.select({
+    source: matchResults.source,
+    matchCreatedAt: matchResults.createdAt,
+    analysisId: jobAnalyses.id,
+    extractorVersion: jobAnalyses.extractorVersion,
+    analysisEvidenceJson: jobAnalyses.evidenceJson,
+    analysisCreatedAt: jobAnalyses.createdAt,
+  }).from(matchResults)
+    .leftJoin(jobAnalyses, eq(matchResults.jobAnalysisId, jobAnalyses.id))
+    .where(and(eq(matchResults.id, matchResultId), eq(matchResults.jobId, jobId)))
+    .limit(1);
+
+  if (!row) return { matchMetadata: null, jobAnalysis: null };
+  const matchMetadata = {
+    source: MatchSourceSchema.parse(row.source),
+    createdAt: row.matchCreatedAt.toISOString(),
+  };
+  if (!row.analysisId || !row.extractorVersion || !row.analysisEvidenceJson || !row.analysisCreatedAt) {
+    return { matchMetadata, jobAnalysis: null };
+  }
+  const analysis = JobAnalysisEvidenceSchema.parse(JSON.parse(row.analysisEvidenceJson));
+  return {
+    matchMetadata,
+    jobAnalysis: {
+      id: row.analysisId,
+      extractorVersion: row.extractorVersion,
+      createdAt: row.analysisCreatedAt.toISOString(),
+      ...analysis,
+    },
+  };
+}
+
 export async function listJobs(query: JobsQuery) {
   const conditions = baseConditions(query);
   const requestedBands: MatchBand[] = query.matchBands ?? [];
@@ -171,7 +207,8 @@ export async function getJob(id: number) {
   const presentations = await getMatchPresentations([row.job]);
   const presentation = presentations.get(row.job.id);
   if (!presentation) throw new Error(`Missing match presentation for job ${row.job.id}`);
-  return { ...row.job, company: row.company, ...presentation };
+  const intelligence = await getStoredJobIntelligence(id, presentation.matchResultId);
+  return { ...row.job, company: row.company, ...presentation, ...intelligence };
 }
 
 export async function updateJob(id: number, input: JobUpdate) {

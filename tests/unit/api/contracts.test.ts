@@ -158,6 +158,8 @@ describe("shared API contracts", () => {
       matchRunId: null,
       matchPolicyVersion: null,
       scoringPolicyVersion: null,
+      matchMetadata: null,
+      jobAnalysis: null,
       company: { id: 1, name: "Example", logoUrl: null, platform: null },
     };
     expect(jobSchema.safeParse(job).success).toBe(true);

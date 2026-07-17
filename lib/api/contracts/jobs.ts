@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import { MatchBreakdownSchema, MatchReasoningPointSchema } from "@/lib/ai/artifacts/schemas";
+import {
+  JobAnalysisEvidenceSchema,
+  MatchBreakdownSchema,
+  MatchReasoningPointSchema,
+  MatchSourceSchema,
+} from "@/lib/ai/artifacts/schemas";
 import { JOB_STATUSES } from "@/lib/jobs/status";
 
 export const jobStatusSchema = z.enum(JOB_STATUSES);
@@ -116,8 +121,19 @@ const jobSummarySchema = z.object({
   }),
 }).strict();
 
+const storedJobAnalysisSchema = JobAnalysisEvidenceSchema.extend({
+  id: z.string(),
+  extractorVersion: z.string(),
+  createdAt: z.iso.datetime(),
+});
+
 export const jobSchema = jobSummarySchema.extend({
   description: z.string().nullable(),
+  matchMetadata: z.object({
+    source: MatchSourceSchema,
+    createdAt: z.iso.datetime(),
+  }).nullable(),
+  jobAnalysis: storedJobAnalysisSchema.nullable(),
 });
 
 export const jobsResponseSchema = z.object({
