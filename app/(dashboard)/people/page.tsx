@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
@@ -65,6 +66,7 @@ import type {
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import { copyTextToClipboard } from "@/lib/utils/clipboard";
 import { formatDateTime } from "@/lib/utils/format";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 type MappingScope = "mapped" | "all" | "unmapped";
 type ActivityScope = "active" | "inactive" | "all";
@@ -175,14 +177,14 @@ export default function PeoplePage() {
   const [isUnmatchedModalOpen, setIsUnmatchedModalOpen] = useState(false);
   const [lastSummary, setLastSummary] = useState<PeopleImportResponse | null>(null);
 
-  const { data: companies = [] } = useQuery<Company[]>({
+  const companiesQuery = useQuery<Company[]>({
     queryKey: queryKeys.companies.list(),
     queryFn: async () => {
       return getCompanies();
     },
   });
 
-  const { data: sessions = [] } = useQuery<PeopleImportSession[]>({
+  const sessionsQuery = useQuery<PeopleImportSession[]>({
     queryKey: queryKeys.people.importSessions({ limit: 5 }),
     queryFn: async () => {
       return (await getPeopleImportSessions({ limit: 5 })).sessions;
@@ -214,23 +216,23 @@ export default function PeoplePage() {
     };
   }, [activityScope, companyId, currentPage, mappingScope, pageSize, search, showStarredOnly, source]);
 
-  const { data, isLoading, isFetching } = useQuery<PeopleResponse>({
+  const peopleQuery = useQuery<PeopleResponse>({
     queryKey: queryKeys.people.list(peopleParams),
     queryFn: async () => {
       return getPeople(peopleParams);
     },
   });
 
-  const { data: totalPeopleData } = useQuery<PeopleResponse>({
+  const totalPeopleQuery = useQuery<PeopleResponse>({
     queryKey: queryKeys.people.list({ active: "all", limit: 1 }),
     queryFn: async () => {
       return getPeople({ active: "all", limit: 1 });
     },
   });
 
-  const totalPeopleCount = totalPeopleData?.totalCount || 0;
+  const totalPeopleCount = totalPeopleQuery.data?.totalCount || 0;
 
-  const { data: unmatchedSummary } = useQuery({
+  const unmatchedSummaryQuery = useQuery({
     queryKey: queryKeys.people.unmatchedCompanies.list({ summaryOnly: "true" }),
     queryFn: async () => {
       return getUnmatchedCompanies({ summaryOnly: "true" });
@@ -245,7 +247,7 @@ export default function PeoplePage() {
       void cacheOwnership.peopleMutation(queryClient);
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Failed to update person");
+      toast.error(getApiErrorMessage(error, "Failed to update person"));
     },
   });
 
@@ -261,7 +263,7 @@ export default function PeoplePage() {
       toast.success(result.deletedCount > 0 ? `Deleted ${result.deletedCount} people` : "No people to delete");
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Failed to delete people");
+      toast.error(getApiErrorMessage(error, "Failed to delete people"));
     },
   });
 
@@ -282,12 +284,15 @@ export default function PeoplePage() {
       toast.success("No new mappings found");
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Failed to refresh mappings");
+      toast.error(getApiErrorMessage(error, "Failed to refresh mappings"));
     },
   });
 
-  const people = data?.people || [];
-  const totalCount = data?.totalCount || 0;
+  const companies = companiesQuery.data ?? [];
+  const sessions = sessionsQuery.data ?? [];
+  const unmatchedSummary = unmatchedSummaryQuery.data;
+  const people = peopleQuery.data?.people || [];
+  const totalCount = peopleQuery.data?.totalCount || 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   const copyToClipboard = async (value: string, successMessage: string) => {
@@ -331,6 +336,27 @@ export default function PeoplePage() {
           </Button>
         </div>
       </div>
+
+      {peopleQuery.isError ? (
+        <ApiErrorState
+          error={peopleQuery.error}
+          fallbackMessage="People could not be loaded."
+          onRetry={() => void peopleQuery.refetch()}
+        />
+      ) : null}
+
+      {companiesQuery.isError || sessionsQuery.isError || totalPeopleQuery.isError || unmatchedSummaryQuery.isError ? (
+        <ApiErrorState
+          error={companiesQuery.error ?? sessionsQuery.error ?? totalPeopleQuery.error ?? unmatchedSummaryQuery.error}
+          fallbackMessage="Supporting people data could not be loaded."
+          onRetry={() => {
+            void companiesQuery.refetch();
+            void sessionsQuery.refetch();
+            void totalPeopleQuery.refetch();
+            void unmatchedSummaryQuery.refetch();
+          }}
+        />
+      ) : null}
 
       {lastSummary ? (
         <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-300">
@@ -457,11 +483,11 @@ export default function PeoplePage() {
         </div>
       </div>
 
-      {isLoading ? (
+      {peopleQuery.isLoading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
-      ) : people.length === 0 ? (
+      ) : peopleQuery.isError ? null : people.length === 0 ? (
         <EmptyState icon={UserRound} title="No people found" description="Import people or adjust filters to view results." />
       ) : (
         <>
@@ -550,7 +576,7 @@ export default function PeoplePage() {
               totalPages={totalPages}
               totalCount={totalCount}
               pageSize={pageSize}
-              isFetching={isFetching}
+              isFetching={peopleQuery.isFetching}
               onPageChange={setCurrentPage}
               onPageSizeChange={(size) => {
                 setPageSize(size);

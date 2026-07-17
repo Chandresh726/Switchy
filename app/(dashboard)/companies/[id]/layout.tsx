@@ -8,6 +8,7 @@ import { Building2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/ui/empty-state";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import {
     CompanyHeader,
     CompanyStats,
@@ -26,6 +27,7 @@ import {
 import type { CompanyOverviewResponse } from "@/lib/api/contracts/companies";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import { getApiErrorMessage, isApiNotFoundError } from "@/lib/api/error-presentation";
 
 function CompanyLayoutContent({
     children,
@@ -50,7 +52,7 @@ function CompanyLayoutContent({
                 ? "notes"
                 : "jobs";
 
-    const { data, isLoading } = useQuery<CompanyOverviewResponse>({
+    const { data, error, isError, isLoading, refetch } = useQuery<CompanyOverviewResponse>({
         queryKey: queryKeys.companies.overview(companyId),
         queryFn: async () => {
             return getCompanyOverview(companyId);
@@ -69,8 +71,8 @@ function CompanyLayoutContent({
             });
             toast.success(result.message || "Jobs refreshed successfully");
         },
-        onError: () => {
-            toast.error("Failed to refresh jobs");
+        onError: (mutationError) => {
+            toast.error(getApiErrorMessage(mutationError, "Failed to refresh jobs"));
         },
     });
 
@@ -82,8 +84,8 @@ function CompanyLayoutContent({
             setMatchSessionId(result.sessionId || null);
             toast.success(`Queued ${result.total} jobs for matching`);
         },
-        onError: () => {
-            toast.error("Failed to run matching");
+        onError: (mutationError) => {
+            toast.error(getApiErrorMessage(mutationError, "Failed to run matching"));
         },
     });
 
@@ -95,7 +97,17 @@ function CompanyLayoutContent({
         );
     }
 
-    if (!data) {
+    if (isError && !isApiNotFoundError(error)) {
+        return (
+            <ApiErrorState
+                error={error}
+                fallbackMessage="The company overview could not be loaded."
+                onRetry={() => void refetch()}
+            />
+        );
+    }
+
+    if (!Number.isInteger(companyId) || companyId <= 0 || isApiNotFoundError(error) || !data) {
         return (
             <EmptyState
                 icon={Building2}

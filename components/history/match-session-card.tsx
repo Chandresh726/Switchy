@@ -45,6 +45,7 @@ import {
 } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface MatchSessionCardProps {
   session: MatchHistorySession;
@@ -72,7 +73,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
       toast.success("Match session deleted successfully");
     } catch (error) {
       console.error("Failed to delete session:", error);
-      toast.error("Failed to delete match session");
+      toast.error(getApiErrorMessage(error, "Failed to delete match session"));
     } finally {
       setIsDeleting(false);
     }
@@ -121,7 +122,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
       void cacheOwnership.updateMatchHistoryStatus(queryClient);
     } catch (error) {
       console.error("Failed to stop session:", error);
-      toast.error("Failed to stop match session");
+      toast.error(getApiErrorMessage(error, "Failed to stop match session"));
       void cacheOwnership.updateMatchHistoryStatus(queryClient);
     } finally {
       setIsStopping(false);

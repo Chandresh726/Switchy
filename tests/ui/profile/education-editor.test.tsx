@@ -105,4 +105,23 @@ describe("EducationEditor", () => {
       startDate: null,
     }));
   });
+
+  it("shows a retryable load failure instead of converting it to empty education", async () => {
+    getEducation
+      .mockRejectedValueOnce(new Error("Education unavailable"))
+      .mockResolvedValueOnce([]);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <EducationEditor profileId={1} />
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByText("Education unavailable")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Education")).toBeTruthy();
+    expect(getEducation).toHaveBeenCalledTimes(2);
+  });
 });

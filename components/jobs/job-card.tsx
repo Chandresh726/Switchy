@@ -2,6 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { toast } from "sonner";
 import { updateJob } from "@/lib/api/clients/jobs";
 import type { JobSummary } from "@/lib/api/contracts/jobs";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +12,7 @@ import { ApplyButton } from "./apply-button";
 import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
 import type { JobStatus } from "@/lib/jobs/status";
 import { cacheOwnership } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 import {
   Building2,
   Calendar,
@@ -83,6 +85,7 @@ export function JobCard({ job }: JobCardProps) {
       jobId: job.id,
       companyId: job.company.id,
     }),
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update job status")),
   });
 
   const formatDate = (dateStr: string | null) => {

@@ -3,8 +3,10 @@
 import { useState } from "react";
 
 import { useMutation } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import { queueJobMatch } from "@/lib/api/clients/runtime";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 import { useMatchSession } from "./use-match-session";
 
@@ -24,6 +26,7 @@ export function useQueuedJobMatch({
       return queueJobMatch(jobId);
     },
     onSuccess: (queued) => setSessionId(queued.sessionId),
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to queue job matching")),
   });
 
   return {

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { MapPin, CheckCircle, Star, Loader2, CalendarDays } from "lucide-react";
+import { toast } from "sonner";
 
 import { NewJobBadge } from "@/components/jobs/new-job-badge";
 import { MatchBadge } from "@/components/jobs/match-badge";
@@ -16,6 +17,7 @@ import { formatRelativeTime } from "@/lib/utils/format";
 
 import type { CompanyJob } from "@/lib/api/contracts/companies";
 import { cacheOwnership } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface CompanyJobCardProps {
   companyId: number;
@@ -53,6 +55,7 @@ export function CompanyJobCard({ companyId, job, currentTime }: CompanyJobCardPr
     onSuccess: () => {
       void cacheOwnership.jobMutation(queryClient, { jobId: job.id, companyId });
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update job status")),
   });
 
   return (

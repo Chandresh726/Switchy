@@ -21,6 +21,7 @@ import Link from "next/link";
 import { NewJobBadge } from "@/components/jobs/new-job-badge";
 import { MatchBadge } from "@/components/jobs/match-badge";
 import { Button } from "@/components/ui/button";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isNewJob } from "@/lib/jobs/is-new-job";
 import { formatRelativeTime } from "@/lib/utils/format";
@@ -160,24 +161,26 @@ function JobRow({
 export default function DashboardPage() {
   const [currentTime] = useState(() => Date.now());
 
-  const { data: profile, isLoading: isProfileLoading } = useQuery({
+  const profileQuery = useQuery({
     queryKey: queryKeys.profile.detail(),
     queryFn: async () => {
       return getProfile();
     },
   });
 
-  const { data: stats, isLoading: isStatsLoading } = useQuery({
+  const statsQuery = useQuery({
     queryKey: queryKeys.stats.detail(),
     queryFn: async () => {
       return getStats();
     },
   });
 
-  const isInitialLoading = isProfileLoading || isStatsLoading;
+  const profile = profileQuery.data;
+  const stats = statsQuery.data;
+  const isInitialLoading = profileQuery.isLoading || statsQuery.isLoading;
 
   // Top five roles in the good-or-better compatibility bands.
-  const { data: highMatchData } = useQuery({
+  const highMatchQuery = useQuery({
     queryKey: queryKeys.jobs.list({
       matchBands: ["high", "good"],
       excludeStatus: ["applied", "archived"],
@@ -197,7 +200,7 @@ export default function DashboardPage() {
   });
 
   // Recently discovered jobs
-  const { data: recentJobsData } = useQuery({
+  const recentJobsQuery = useQuery({
     queryKey: queryKeys.jobs.list({
       excludeStatus: ["applied", "archived"],
       sortBy: "discoveredAt",
@@ -215,7 +218,7 @@ export default function DashboardPage() {
   });
 
   // Recently applied jobs
-  const { data: appliedJobsData } = useQuery({
+  const appliedJobsQuery = useQuery({
     queryKey: queryKeys.jobs.list({
       status: "applied",
       sortBy: "discoveredAt",
@@ -227,6 +230,9 @@ export default function DashboardPage() {
     },
   });
 
+  const highMatchData = highMatchQuery.data;
+  const recentJobsData = recentJobsQuery.data;
+  const appliedJobsData = appliedJobsQuery.data;
   const userName = profile?.name?.split(" ")[0] || "there";
   const highMatchJobs: JobSummary[] = highMatchData?.jobs || [];
   const recentJobs: JobSummary[] = recentJobsData?.jobs || [];
@@ -300,8 +306,19 @@ export default function DashboardPage() {
         )}
       </div>
 
+      {profileQuery.isError || statsQuery.isError ? (
+        <ApiErrorState
+          error={profileQuery.error ?? statsQuery.error}
+          fallbackMessage="Dashboard summary data could not be loaded."
+          onRetry={() => {
+            void profileQuery.refetch();
+            void statsQuery.refetch();
+          }}
+        />
+      ) : null}
+
       {/* Stats Grid */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      {!statsQuery.isError ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {isInitialLoading ? (
           <>
             {[...Array(5)].map((_, i) => (
@@ -353,13 +370,13 @@ export default function DashboardPage() {
             />
           </>
         )}
-      </div>
+      </div> : null}
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Main Content Column (2/3 width) */}
         <div className="lg:col-span-2 space-y-4">
           {/* Getting Started (Conditional) */}
-          {!isInitialLoading && (!profile?.name || (stats?.totalCompanies ?? 0) === 0) && (
+          {!isInitialLoading && !profileQuery.isError && !statsQuery.isError && (!profile?.name || (stats?.totalCompanies ?? 0) === 0) && (
             <div className="mb-4 rounded-xl border border-border bg-gradient-to-br from-card to-muted/40 p-4">
               <div className="flex items-start justify-between">
                 <div>
@@ -425,7 +442,13 @@ export default function DashboardPage() {
             </div>
 
             <div className="max-h-[17rem] space-y-1.5 overflow-y-auto pr-1">
-              {recentJobs.length > 0 ? (
+              {recentJobsQuery.isError ? (
+                <ApiErrorState
+                  error={recentJobsQuery.error}
+                  fallbackMessage="Recently found jobs could not be loaded."
+                  onRetry={() => void recentJobsQuery.refetch()}
+                />
+              ) : recentJobs.length > 0 ? (
                 recentJobs.map((job) => (
                   <JobRow key={job.id} job={job} currentTime={currentTime} />
                 ))
@@ -458,7 +481,13 @@ export default function DashboardPage() {
             </div>
 
             <div className="max-h-[17rem] space-y-1.5 overflow-y-auto pr-1">
-              {highMatchJobs.length > 0 ? (
+              {highMatchQuery.isError ? (
+                <ApiErrorState
+                  error={highMatchQuery.error}
+                  fallbackMessage="Top matches could not be loaded."
+                  onRetry={() => void highMatchQuery.refetch()}
+                />
+              ) : highMatchJobs.length > 0 ? (
                 highMatchJobs.map((job) => (
                   <JobRow key={job.id} job={job} currentTime={currentTime} showNewTag />
                 ))
@@ -490,7 +519,13 @@ export default function DashboardPage() {
             </div>
 
             <div className="space-y-3">
-              {appliedJobs.length > 0 ? (
+              {appliedJobsQuery.isError ? (
+                <ApiErrorState
+                  error={appliedJobsQuery.error}
+                  fallbackMessage="Recent applications could not be loaded."
+                  onRetry={() => void appliedJobsQuery.refetch()}
+                />
+              ) : appliedJobs.length > 0 ? (
                 appliedJobs.slice(0, 5).map((job) => (
                   <Link
                     key={job.id}

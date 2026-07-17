@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   Building2,
   ExternalLink,
@@ -43,6 +44,7 @@ import type { Company } from "@/lib/api/contracts/companies";
 import { isCompanyScrapeSupported } from "@/lib/companies/scrape-support";
 import { PLATFORM_COLORS } from "@/lib/constants";
 import { cacheOwnership } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface CompanyListProps {
   companies: Company[];
@@ -140,6 +142,7 @@ export function CompanyList({
         affectsJobRecords: true,
       });
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to delete company")),
   });
 
   const toggleActiveMutation = useMutation({
@@ -149,6 +152,7 @@ export function CompanyList({
     onSuccess: (_result, variables) => {
       void cacheOwnership.companyMutation(queryClient, { companyId: variables.id });
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update company")),
   });
 
   const deleteJobsMutation = useMutation({
@@ -162,6 +166,7 @@ export function CompanyList({
       });
       setDeleteJobsCompanyId(null);
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to delete company jobs")),
   });
 
   const handleCardClick = (company: Company) => {

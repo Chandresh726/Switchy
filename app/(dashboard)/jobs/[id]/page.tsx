@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import { Badge } from "@/components/ui/badge";
 import { MatchBadge } from "@/components/jobs/match-badge";
 import {
@@ -15,6 +16,7 @@ import { JobAIActions } from "@/components/jobs/job-ai-actions";
 import { LegacyMatchAlert } from "@/components/jobs/legacy-match-alert";
 import { MarkdownRenderer } from "@/components/jobs/markdown-renderer";
 import { getJob, updateJob } from "@/lib/api/clients/jobs";
+import { getApiErrorMessage, isApiNotFoundError } from "@/lib/api/error-presentation";
 import { sanitizeHtmlContent } from "@/lib/jobs/description-processor";
 import type { JobStatus } from "@/lib/jobs/status";
 import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
@@ -30,6 +32,7 @@ import {
   Star,
   CheckCircle,
 } from "lucide-react";
+import { toast } from "sonner";
 
 const STATUS_OPTIONS: Array<{ value: JobStatus; label: string; color: string }> = [
   { value: "new", label: "New", color: "text-blue-400" },
@@ -47,7 +50,7 @@ export default function JobDetailPage() {
   const jobId = parseInt(params.id as string);
   const hasValidJobId = Number.isInteger(jobId) && jobId > 0;
 
-  const { data: job, isLoading } = useQuery({
+  const { data: job, error, isError, isLoading, refetch } = useQuery({
     queryKey: queryKeys.jobs.detail(jobId),
     queryFn: () => getJob(jobId),
     enabled: hasValidJobId,
@@ -68,6 +71,9 @@ export default function JobDetailPage() {
       jobId,
       companyId: job?.company.id,
     }),
+    onError: (mutationError) => {
+      toast.error(getApiErrorMessage(mutationError, "Failed to update job status"));
+    },
   });
 
   useEffect(() => {
@@ -95,7 +101,17 @@ export default function JobDetailPage() {
     );
   }
 
-  if (!job) {
+  if (isError && !isApiNotFoundError(error)) {
+    return (
+      <ApiErrorState
+        error={error}
+        fallbackMessage="The job could not be loaded."
+        onRetry={() => void refetch()}
+      />
+    );
+  }
+
+  if (!hasValidJobId || isApiNotFoundError(error) || !job) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4">
         <p className="text-muted-foreground">Job not found</p>

@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createPerson } from "@/lib/api/clients/people";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface CompanyAddPersonProps {
   companyId: number;
@@ -67,7 +68,7 @@ export function CompanyAddPerson({ companyId, companyName, onAdded }: CompanyAdd
       handleClose(false);
       onAdded();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to add person");
+      toast.error(getApiErrorMessage(error, "Failed to add person"));
     } finally {
       setIsSubmitting(false);
     }

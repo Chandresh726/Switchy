@@ -24,6 +24,7 @@ import {
   clearScrapeHistory,
 } from "@/lib/api/clients/history";
 import { cacheOwnership } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface HistoryLayoutClientProps {
   children: React.ReactNode;
@@ -88,7 +89,7 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
       toast.success(`${getTabLabel()} history cleared successfully`);
     } catch (error) {
       console.error("Failed to clear history:", error);
-      toast.error("Failed to clear history");
+      toast.error(getApiErrorMessage(error, "Failed to clear history"));
     } finally {
       setIsDeleting(false);
     }

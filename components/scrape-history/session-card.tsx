@@ -46,6 +46,7 @@ import {
 } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface SessionCardProps {
   session: ScrapeHistorySession;
@@ -72,7 +73,7 @@ export function SessionCard({ session }: SessionCardProps) {
       toast.success("Session deleted successfully");
     } catch (error) {
       console.error("Failed to delete session:", error);
-      toast.error("Failed to delete session");
+      toast.error(getApiErrorMessage(error, "Failed to delete session"));
     } finally {
       setIsDeleting(false);
     }
@@ -121,7 +122,7 @@ export function SessionCard({ session }: SessionCardProps) {
       void cacheOwnership.updateScrapeHistoryStatus(queryClient);
     } catch (error) {
       console.error("Failed to stop session:", error);
-      toast.error("Failed to stop scrape session");
+      toast.error(getApiErrorMessage(error, "Failed to stop scrape session"));
       void cacheOwnership.updateScrapeHistoryStatus(queryClient);
     } finally {
       setIsStopping(false);

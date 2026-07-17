@@ -7,6 +7,7 @@ import { List, FileJson, Download, Upload, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import { CompanyFilters, type CompanyFilters as CompanyFiltersType } from "@/components/companies/company-filters";
 import { CompanyForm } from "@/components/companies/company-form";
 import { CompanyQuickAdd } from "@/components/companies/company-quick-add";
@@ -26,6 +27,7 @@ import { companyImportBodySchema } from "@/lib/api/contracts/companies";
 import type { Company } from "@/lib/api/contracts/companies";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 const CUSTOM_PLATFORM_SET = new Set<string>(["custom", ...CUSTOM_SCRAPER_PLATFORMS]);
 
@@ -163,12 +165,13 @@ function CompaniesPageContent() {
     );
   }, []);
 
-  const { data: companies = [], isLoading: isCompaniesLoading } = useQuery<Company[]>({
+  const companiesQuery = useQuery<Company[]>({
     queryKey: queryKeys.companies.list(),
     queryFn: async () => {
       return getCompanies();
     },
   });
+  const companies = useMemo(() => companiesQuery.data ?? [], [companiesQuery.data]);
 
   const filteredAndSortedCompanies = useMemo(() => {
     let result = [...companies];
@@ -241,8 +244,8 @@ function CompaniesPageContent() {
       void cacheOwnership.companyMutation(queryClient, { affectsMappings: true });
       toast.success(`Successfully imported ${Array.isArray(data) ? data.length : 1} companies`);
     },
-    onError: () => {
-      toast.error("Failed to import companies");
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Failed to import companies"));
     },
   });
 
@@ -254,8 +257,8 @@ function CompaniesPageContent() {
       void cacheOwnership.companyMutation(queryClient, { affectsScrapeHistory: true });
       toast.success(data.message || "Jobs refreshed successfully");
     },
-    onError: () => {
-      toast.error("Failed to refresh jobs");
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Failed to refresh jobs"));
     },
   });
 
@@ -267,8 +270,8 @@ function CompaniesPageContent() {
       setMatchSessionId(data.sessionId || null);
       toast.success(`Queued ${data.total} jobs for matching`);
     },
-    onError: () => {
-      toast.error("Failed to refresh matches");
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Failed to refresh matches"));
     },
   });
 
@@ -280,8 +283,8 @@ function CompaniesPageContent() {
       void cacheOwnership.companyMutation(queryClient, { affectsJobRecords: true });
       toast.success(data.message || "Jobs deleted successfully");
     },
-    onError: () => {
-      toast.error("Failed to delete jobs");
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Failed to delete jobs"));
     },
   });
 
@@ -298,8 +301,8 @@ function CompaniesPageContent() {
       setSelectionMode(false);
       toast.success(data.message || "Companies deleted successfully");
     },
-    onError: () => {
-      toast.error("Failed to delete companies");
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Failed to delete companies"));
     },
   });
 
@@ -311,8 +314,8 @@ function CompaniesPageContent() {
       void cacheOwnership.companyMutation(queryClient);
       toast.success(data.message || "Companies updated successfully");
     },
-    onError: () => {
-      toast.error("Failed to update companies");
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Failed to update companies"));
     },
   });
 
@@ -354,8 +357,8 @@ function CompaniesPageContent() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    } catch {
-      toast.error("Failed to export companies");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to export companies"));
     }
   };
 
@@ -501,18 +504,26 @@ function CompaniesPageContent() {
       )}
 
       {view === "list" ? (
-        <CompanyList
-          companies={filteredAndSortedCompanies}
-          isLoading={isCompaniesLoading}
-          selectionMode={selectionMode}
-          selectedIds={selectedIds}
-          onToggleSelection={toggleSelection}
-          onEditCompany={openEditCompanyPanel}
-          onRefreshJobs={(companyId) => bulkRefreshMutation.mutate([companyId])}
-          onRefreshMatches={(companyId) => bulkMatchMutation.mutate([companyId])}
-          isRefreshing={bulkRefreshMutation.isPending}
-          isMatching={bulkMatchMutation.isPending || Boolean(matchSessionId)}
-        />
+        companiesQuery.isError ? (
+          <ApiErrorState
+            error={companiesQuery.error}
+            fallbackMessage="Companies could not be loaded."
+            onRetry={() => void companiesQuery.refetch()}
+          />
+        ) : (
+          <CompanyList
+            companies={filteredAndSortedCompanies}
+            isLoading={companiesQuery.isLoading}
+            selectionMode={selectionMode}
+            selectedIds={selectedIds}
+            onToggleSelection={toggleSelection}
+            onEditCompany={openEditCompanyPanel}
+            onRefreshJobs={(companyId) => bulkRefreshMutation.mutate([companyId])}
+            onRefreshMatches={(companyId) => bulkMatchMutation.mutate([companyId])}
+            isRefreshing={bulkRefreshMutation.isPending}
+            isMatching={bulkMatchMutation.isPending || Boolean(matchSessionId)}
+          />
+        )
       ) : (
         <div className="flex h-[calc(100vh-9rem)] flex-col overflow-hidden rounded-xl border border-border bg-background">
           <JsonEditor onSuccess={() => {}} />

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { LinkedinIcon } from "@/components/icons/linkedin-icon";
 import { Button } from "@/components/ui/button";
 import { patchPerson } from "@/lib/api/clients/people";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 import { canOpenLinkedInProfile } from "@/lib/people/message";
 import { cn } from "@/lib/utils";
 import { copyTextToClipboard } from "@/lib/utils/clipboard";
@@ -43,6 +44,7 @@ export function CompanyPersonCard({ person, showOutreachBadge = false }: Company
     onSuccess: () => {
       void cacheOwnership.peopleMutation(queryClient);
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update person")),
   });
 
   const handleCopyEmail = async (email: string) => {

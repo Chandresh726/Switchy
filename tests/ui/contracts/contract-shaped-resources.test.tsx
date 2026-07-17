@@ -17,6 +17,7 @@ import {
   unmatchedCompaniesResponseSchema,
 } from "@/lib/api/contracts/people";
 import { profileResponseSchema } from "@/lib/api/contracts/profile";
+import { APIClientError } from "@/lib/api/errors";
 
 const mocks = vi.hoisted(() => ({
   getCompanies: vi.fn(),
@@ -250,5 +251,30 @@ describe("contract-shaped frontend resources", () => {
     expect(await screen.findByText("Contract Company")).toBeTruthy();
     expect(await screen.findByText("Contract University")).toBeTruthy();
     expect(screen.getByText("resume.pdf")).toBeTruthy();
+  });
+
+  it("does not present a failed people query as an empty people collection", async () => {
+    mocks.getPeople.mockRejectedValueOnce(
+      new APIClientError("People unavailable", 500, "internal_error", undefined, "req-people")
+    );
+
+    renderWithClient(<PeoplePage />);
+
+    expect(await screen.findByText("People unavailable")).toBeTruthy();
+    expect(screen.getByText("Request ID: req-people")).toBeTruthy();
+    expect(screen.queryByText("No people found")).toBeNull();
+  });
+
+  it("does not render empty profile editors after profile initialization fails", async () => {
+    mocks.getProfile.mockRejectedValueOnce(
+      new APIClientError("Profile unavailable", 500, "internal_error", undefined, "req-profile")
+    );
+
+    renderWithClient(<ProfilePage />);
+
+    expect(await screen.findByText("Profile unavailable")).toBeTruthy();
+    expect(screen.getByText("Request ID: req-profile")).toBeTruthy();
+    expect(screen.queryByText("Basic Information")).toBeNull();
+    expect(screen.queryByText("Resume")).toBeNull();
   });
 });

@@ -19,9 +19,11 @@ import {
 import { toast } from "sonner";
 
 import { AIUsageOverview } from "@/components/history/ai-usage-overview";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import type { AIContentType } from "@/lib/ai/contracts";
 import { getContentTypeLabel, getWorkspacePathWithVariant } from "@/lib/ai/writing/workspace/routes";
 import { deleteAIContent, getAIHistory } from "@/lib/api/clients/ai";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 import type { GeneratedContent } from "@/lib/api/contracts/ai";
 import { cn } from "@/lib/utils";
 import { queryKeys } from "@/lib/query-keys";
@@ -226,7 +228,7 @@ export default function AIHistoryPage() {
   const queryClient = useQueryClient();
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, error, isError, isLoading, refetch } = useQuery({
     queryKey: queryKeys.ai.history(),
     queryFn: async () => {
       return getAIHistory();
@@ -242,8 +244,8 @@ export default function AIHistoryPage() {
       toast.success("Deleted successfully");
       setDeletingId(null);
     },
-    onError: () => {
-      toast.error("Failed to delete");
+    onError: (mutationError) => {
+      toast.error(getApiErrorMessage(mutationError, "Failed to delete generated content"));
       setDeletingId(null);
     },
   });
@@ -287,6 +289,12 @@ export default function AIHistoryPage() {
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
         </div>
+      ) : isError ? (
+        <ApiErrorState
+          error={error}
+          fallbackMessage="AI content history could not be loaded."
+          onRetry={() => void refetch()}
+        />
       ) : contents.length === 0 ? (
         <div className="flex flex-col items-center justify-center px-4 py-16">
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-card">

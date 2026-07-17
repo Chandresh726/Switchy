@@ -49,6 +49,7 @@ import type {
   PeopleImportResponse as ImportSummary,
 } from "@/lib/api/contracts/people";
 import { cn } from "@/lib/utils";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 type ImportSource = "linkedin" | "apollo" | "manual";
 
@@ -312,7 +313,7 @@ export function ImportPeopleModal({
       setPreview(data);
       setMapping((data.suggestedMapping || {}) as ApolloMapping);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to preview CSV");
+      toast.error(getApiErrorMessage(error, "Failed to preview CSV"));
     } finally {
       setIsPreviewing(false);
     }
@@ -344,7 +345,7 @@ export function ImportPeopleModal({
       toast.success("People imported successfully");
       handleClose(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to import people");
+      toast.error(getApiErrorMessage(error, "Failed to import people"));
     } finally {
       setIsSubmitting(false);
     }
@@ -367,7 +368,7 @@ export function ImportPeopleModal({
       toast.success("Person added");
       handleClose(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to add person");
+      toast.error(getApiErrorMessage(error, "Failed to add person"));
     } finally {
       setIsSubmitting(false);
     }

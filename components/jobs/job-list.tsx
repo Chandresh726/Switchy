@@ -6,6 +6,7 @@ import { JobFilters, type JobFilters as Filters } from "./job-filters";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Briefcase, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import { useSearchParams, useRouter } from "next/navigation";
 import { getPageNumbers } from "@/lib/utils/pagination";
 import { getCompanies } from "@/lib/api/clients/companies";
@@ -252,12 +253,13 @@ export function JobList() {
   }, [filters.department]);
 
   // Fetch companies for filter dropdown
-  const { data: companies = [] } = useQuery<Company[]>({
+  const companiesQuery = useQuery<Company[]>({
     queryKey: queryKeys.companies.list(),
     queryFn: async () => {
       return getCompanies();
     },
   });
+  const companies = companiesQuery.data ?? [];
 
   // Determine effective status filter based on active tab
   const effectiveStatus =
@@ -310,7 +312,7 @@ export function JobList() {
   ]);
 
   // Fetch jobs
-  const { data, isLoading, isFetching } = useQuery<JobsResponse>({
+  const { data, error, isError, isLoading, isFetching, refetch } = useQuery<JobsResponse>({
     queryKey: queryKeys.jobs.list(queryParams),
     queryFn: async () => {
       return getJobs(queryParams);
@@ -318,7 +320,7 @@ export function JobList() {
   });
 
   // Fetch applied count for tab badge
-  const { data: appliedData } = useQuery({
+  const appliedCountQuery = useQuery({
     queryKey: queryKeys.jobs.list({ status: "applied", limit: 1 }),
     queryFn: async () => {
       return getJobs({ status: "applied", limit: 1 });
@@ -326,7 +328,7 @@ export function JobList() {
   });
 
   // Fetch saved count for tab badge
-  const { data: savedData } = useQuery({
+  const savedCountQuery = useQuery({
     queryKey: queryKeys.jobs.list({ status: "interested", limit: 1 }),
     queryFn: async () => {
       return getJobs({ status: "interested", limit: 1 });
@@ -334,13 +336,16 @@ export function JobList() {
   });
 
   // Fetch archived count for tab badge
-  const { data: archivedData } = useQuery({
+  const archivedCountQuery = useQuery({
     queryKey: queryKeys.jobs.list({ status: "archived", limit: 1 }),
     queryFn: async () => {
       return getJobs({ status: "archived", limit: 1 });
     },
   });
 
+  const appliedData = appliedCountQuery.data;
+  const savedData = savedCountQuery.data;
+  const archivedData = archivedCountQuery.data;
   const jobs: JobSummary[] = data?.jobs || [];
   const totalCount = data?.totalCount || 0;
   const appliedCount = appliedData?.totalCount || 0;
@@ -426,6 +431,30 @@ export function JobList() {
         </button>
       </div>
 
+      {appliedCountQuery.isError || savedCountQuery.isError || archivedCountQuery.isError ? (
+        <div className="mb-4">
+          <ApiErrorState
+            error={appliedCountQuery.error ?? savedCountQuery.error ?? archivedCountQuery.error}
+            fallbackMessage="One or more job counts could not be loaded."
+            onRetry={() => {
+              void appliedCountQuery.refetch();
+              void savedCountQuery.refetch();
+              void archivedCountQuery.refetch();
+            }}
+          />
+        </div>
+      ) : null}
+
+      {companiesQuery.isError ? (
+        <div className="mb-4">
+          <ApiErrorState
+            error={companiesQuery.error}
+            fallbackMessage="Company filters could not be loaded."
+            onRetry={() => void companiesQuery.refetch()}
+          />
+        </div>
+      ) : null}
+
       {/* Filters - hide status filter when on Applied/Saved tab */}
       <JobFilters
         filters={filters}
@@ -442,6 +471,12 @@ export function JobList() {
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
+        ) : isError ? (
+          <ApiErrorState
+            error={error}
+            fallbackMessage="Jobs could not be loaded."
+            onRetry={() => void refetch()}
+          />
         ) : jobs.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12">
             <Briefcase className="h-12 w-12 text-muted-foreground" />

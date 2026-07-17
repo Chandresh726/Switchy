@@ -7,9 +7,10 @@ import { formatDurationMs, groupSessionsByDate } from "@/lib/utils/format";
 import { getMatchHistoryList } from "@/lib/api/clients/history";
 import { queryKeys } from "@/lib/query-keys";
 import { historyPollingInterval } from "@/lib/hooks/history-polling";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 
 export function MatchHistoryTab() {
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: queryKeys.matchHistory.list(),
     queryFn: async () => {
       return getMatchHistoryList();
@@ -31,9 +32,11 @@ export function MatchHistoryTab() {
 
   if (error) {
     return (
-      <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-center">
-        <p className="text-sm text-red-600 dark:text-red-400">Failed to load match history</p>
-      </div>
+      <ApiErrorState
+        error={error}
+        fallbackMessage="Match history could not be loaded."
+        onRetry={() => void refetch()}
+      />
     );
   }
 

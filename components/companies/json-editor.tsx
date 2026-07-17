@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import { Loader2, Save, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import Editor from "react-simple-code-editor";
@@ -12,16 +13,17 @@ import { getCompanies, syncCompanies } from "@/lib/api/clients/companies";
 import { companySyncBodySchema } from "@/lib/api/contracts/companies";
 import type { Company } from "@/lib/api/contracts/companies";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 export function JsonEditor({ onSuccess }: { onSuccess: () => void }) {
-  const { data: companies, isLoading: isLoadingCompanies } = useQuery<Company[]>({
+  const companiesQuery = useQuery<Company[]>({
     queryKey: queryKeys.companies.list(),
     queryFn: async () => {
       return getCompanies();
     },
   });
 
-  if (isLoadingCompanies) {
+  if (companiesQuery.isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -29,7 +31,19 @@ export function JsonEditor({ onSuccess }: { onSuccess: () => void }) {
     );
   }
 
-  return <JsonEditorContent companies={companies ?? []} onSuccess={onSuccess} />;
+  if (companiesQuery.isError || companiesQuery.data === undefined) {
+    return (
+      <div className="p-4">
+        <ApiErrorState
+          error={companiesQuery.error}
+          fallbackMessage="Companies could not be loaded for JSON editing."
+          onRetry={() => void companiesQuery.refetch()}
+        />
+      </div>
+    );
+  }
+
+  return <JsonEditorContent companies={companiesQuery.data} onSuccess={onSuccess} />;
 }
 
 function serializeCompanies(companies: Company[]): string {
@@ -66,8 +80,9 @@ function JsonEditorContent({ companies, onSuccess }: { companies: Company[]; onS
       onSuccess();
     },
     onError: (err) => {
-      setError(err.message);
-      toast.error("Failed to update companies");
+      const message = getApiErrorMessage(err, "Failed to update companies");
+      setError(message);
+      toast.error(message);
     },
   });
 

@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import { MatchPipelineProgress } from "@/components/matching/match-pipeline-progress";
 import {
   CheckCircle,
@@ -32,6 +33,7 @@ import {
 import { formatDurationMs, formatDurationFromDates, formatDateTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface MatchSessionDetailProps {
   sessionId: string;
@@ -45,7 +47,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const detailParams = { logOffset, logLimit, workOffset, workLimit };
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: queryKeys.matchHistory.detail(sessionId, detailParams),
     queryFn: async () => {
       return getMatchHistoryDetail(sessionId, detailParams);
@@ -66,8 +68,8 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
       toast.success("Stopping match session");
       void cacheOwnership.updateMatchHistoryStatus(queryClient);
     },
-    onError: () => {
-      toast.error("Failed to stop match session");
+    onError: (mutationError) => {
+      toast.error(getApiErrorMessage(mutationError, "Failed to stop match session"));
     },
   });
 
@@ -78,6 +80,9 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
     onSuccess: () => {
       void cacheOwnership.clearMatchHistory(queryClient);
       router.push("/history/match");
+    },
+    onError: (mutationError) => {
+      toast.error(getApiErrorMessage(mutationError, "Failed to delete match session"));
     },
   });
 
@@ -91,8 +96,12 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
 
   if (error || !data) {
     return (
-      <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-center">
-        <p className="text-sm text-red-600 dark:text-red-400">Failed to load session details</p>
+      <div className="space-y-3">
+        <ApiErrorState
+          error={error}
+          fallbackMessage="Match session details could not be loaded."
+          onRetry={() => void refetch()}
+        />
         <Link href="/history/match">
           <Button variant="ghost" className="mt-2">
             <ArrowLeft className="mr-2 h-4 w-4" />

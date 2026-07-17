@@ -21,6 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface ResumeManagerProps {
   resumes: Resume[];
@@ -71,7 +72,7 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
         }
         onRefresh();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to upload resume");
+        setError(getApiErrorMessage(err, "Failed to upload resume"));
       } finally {
         setIsUploading(false);
       }
@@ -119,8 +120,8 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
       await onDelete(deleteConfirmId);
       toast.success("Resume deleted");
       onRefresh();
-    } catch {
-      toast.error("Failed to delete resume");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to delete resume"));
     } finally {
       setDeleteConfirmId(null);
     }
@@ -130,7 +131,7 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
     try {
       await downloadResume(id);
     } catch (downloadError) {
-      toast.error(downloadError instanceof Error ? downloadError.message : "Failed to download resume");
+      toast.error(getApiErrorMessage(downloadError, "Failed to download resume"));
     }
   };
 

@@ -18,6 +18,7 @@ import type { Company } from "@/lib/api/contracts/companies";
 import { PLATFORM_OPTIONS } from "@/lib/constants";
 import { detectPlatformFromUrl, getPlatformLabel } from "@/lib/scraper/platform-detection";
 import { cacheOwnership } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface CompanyFormProps {
   company?: Company;
@@ -27,14 +28,6 @@ interface CompanyFormProps {
 const PLATFORMS = [
   ...PLATFORM_OPTIONS.filter((platform) => platform.value !== "uber"),
 ];
-
-function getErrorMessage(error: unknown, fallbackMessage: string): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-
-  return fallbackMessage;
-}
 
 export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
   const queryClient = useQueryClient();
@@ -91,7 +84,7 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
       onSuccess?.();
     },
     onError: (error) => {
-      toast.error(getErrorMessage(error, "Failed to create company"));
+      toast.error(getApiErrorMessage(error, "Failed to create company"));
     },
   });
 
@@ -107,7 +100,7 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
       onSuccess?.();
     },
     onError: (error) => {
-      toast.error(getErrorMessage(error, "Failed to update company"));
+      toast.error(getApiErrorMessage(error, "Failed to update company"));
     },
   });
 

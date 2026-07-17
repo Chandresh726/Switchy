@@ -18,6 +18,7 @@ import {
 import { normalizeCareersUrl } from "@/lib/companies/normalization";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface ExistingCompany {
   name: string;
@@ -26,13 +27,6 @@ interface ExistingCompany {
 
 interface CompanyQuickAddProps {
   existingCompanies: ExistingCompany[];
-}
-
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-  return fallback;
 }
 
 function extractAddedCareersUrls(data: unknown): string[] {
@@ -189,7 +183,7 @@ export function CompanyQuickAdd({ existingCompanies }: CompanyQuickAddProps) {
       markAdded(addedUrls);
       toast.success(`Added ${company.name}`);
     } catch (error) {
-      toast.error(getErrorMessage(error, "Failed to add company"));
+      toast.error(getApiErrorMessage(error, "Failed to add company"));
     } finally {
       setPendingSingleAddUrl(null);
     }
@@ -225,7 +219,7 @@ export function CompanyQuickAdd({ existingCompanies }: CompanyQuickAddProps) {
         toast.error("No companies were added");
       }
     } catch (error) {
-      toast.error(getErrorMessage(error, "Failed to add selected companies"));
+      toast.error(getApiErrorMessage(error, "Failed to add selected companies"));
     }
   };
 
@@ -270,7 +264,7 @@ export function CompanyQuickAdd({ existingCompanies }: CompanyQuickAddProps) {
               Failed to load `/companies.json`
             </p>
             <p className="text-xs text-red-300/90">
-              {getErrorMessage(
+              {getApiErrorMessage(
                 presetCompaniesQuery.error,
                 "Could not parse preset companies."
               )}

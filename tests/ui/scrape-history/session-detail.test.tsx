@@ -305,7 +305,8 @@ describe("SessionDetail", () => {
 
     renderWithQueryClient(<SessionDetail sessionId={SESSION_ID} />);
 
-    expect(await screen.findByText("Failed to load session details")).toBeTruthy();
+    expect(await screen.findByText("Failed to fetch scrape history")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     expect(
       screen.getByRole("link", { name: /Back to History/ }).getAttribute("href")
     ).toBe("/history");

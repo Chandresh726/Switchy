@@ -14,6 +14,7 @@ import {
 } from "@/lib/api/clients/ai";
 import { canonicalizeMarkdown } from "@/lib/ai/writing/rich-text";
 import type { GeneratedContent } from "@/lib/ai/writing/types";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 import {
   selectAdjacentVariantIndex,
   selectInitialVariantIndex,
@@ -131,7 +132,7 @@ export function useAIContentWorkspace({
       } catch (error) {
         if (abortController.signal.aborted) return;
         console.error("Generation error:", error);
-        toast.error(error instanceof Error ? error.message : "Failed to generate content");
+        toast.error(getApiErrorMessage(error, "Failed to generate content"));
       } finally {
         setIsContentLoading(false);
         setStreamingContent(null);
@@ -179,7 +180,7 @@ export function useAIContentWorkspace({
       await generateContent();
     } catch (error) {
       console.error("Failed to load existing AI content:", error);
-      toast.error("Failed to load saved content");
+      toast.error(getApiErrorMessage(error, "Failed to load saved content"));
     } finally {
       setIsContentLoading(false);
       bootstrapInFlightRef.current = false;
@@ -215,7 +216,7 @@ export function useAIContentWorkspace({
       toast.success("Saved as new variant");
     } catch (error) {
       console.error("Save error:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to save variant");
+      toast.error(getApiErrorMessage(error, "Failed to save variant"));
     } finally {
       setIsSaving(false);
     }
@@ -305,7 +306,7 @@ export function useAIContentWorkspace({
       toast.success("Variant marked as discarded");
     } catch (error) {
       console.error("Failed to discard writing variant:", error);
-      toast.error("Failed to discard variant");
+      toast.error(getApiErrorMessage(error, "Failed to discard variant"));
     } finally {
       setIsDiscarding(false);
     }

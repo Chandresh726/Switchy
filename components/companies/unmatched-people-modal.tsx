@@ -24,6 +24,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import { Input } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
 
@@ -34,6 +35,7 @@ import {
 } from "@/lib/api/clients/people";
 import { cn } from "@/lib/utils";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface TrackedCompany {
   id: number;
@@ -220,7 +222,7 @@ function CompanyPeopleList({ companyNormalized, expanded }: CompanyPeopleListPro
     <div className="mt-3 border-t border-border pt-3">
       {error ? (
         <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
-          {error instanceof Error ? error.message : "Failed to load people"}
+          {getApiErrorMessage(error, "Failed to load people")}
         </div>
       ) : isLoading ? (
         <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
@@ -321,7 +323,7 @@ export function UnmatchedPeopleModal({
     offset: (currentPage - 1) * pageSize,
     search: debouncedSearch || undefined,
   };
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, error, isError, isLoading, isFetching, refetch } = useQuery({
     queryKey: mode === "ignored"
       ? queryKeys.people.unmatchedCompanies.ignored(queryParams)
       : queryKeys.people.unmatchedCompanies.list(queryParams),
@@ -352,7 +354,7 @@ export function UnmatchedPeopleModal({
       toast.success(`Mapped ${result.updatedCount} people`);
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Failed to map company");
+      toast.error(getApiErrorMessage(error, "Failed to map company"));
     },
   });
 
@@ -368,7 +370,7 @@ export function UnmatchedPeopleModal({
       toast.success("Updated company status");
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Failed to update company status");
+      toast.error(getApiErrorMessage(error, "Failed to update company status"));
     },
   });
 
@@ -413,19 +415,21 @@ export function UnmatchedPeopleModal({
                 size="sm"
                 onClick={() => handleModeChange("unmatched")}
               >
-                Unmapped ({data?.summary.unmatchedCompanyCount || 0})
+                Unmapped
+                {!isError && data ? ` (${data.summary.unmatchedCompanyCount})` : ""}
               </Button>
               <Button
                 variant={mode === "ignored" ? "secondary" : "ghost"}
                 size="sm"
                 onClick={() => handleModeChange("ignored")}
               >
-                Ignored ({data?.summary.ignoredCompanyCount || 0})
+                Ignored
+                {!isError && data ? ` (${data.summary.ignoredCompanyCount})` : ""}
               </Button>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          {!isError ? <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-amber-300">
               {data?.summary.unmatchedCompanyCount || 0} unmatched companies
             </span>
@@ -435,7 +439,7 @@ export function UnmatchedPeopleModal({
             <span className="rounded-full border border-border bg-muted px-2.5 py-1">
               {data?.summary.ignoredCompanyCount || 0} ignored
             </span>
-          </div>
+          </div> : null}
 
           <div
             ref={scrollContainerRef}
@@ -448,6 +452,12 @@ export function UnmatchedPeopleModal({
               <div className="flex items-center justify-center py-10">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
+            ) : isError ? (
+              <ApiErrorState
+                error={error}
+                fallbackMessage="Unmatched companies could not be loaded."
+                onRetry={() => void refetch()}
+              />
             ) : groups.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
                 {mode === "ignored"

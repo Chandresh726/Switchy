@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { patchCompany } from "@/lib/api/clients/companies";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import { queryKeys } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 import type { CompanyOverviewResponse } from "@/lib/api/contracts/companies";
 import { useCompanyNotesContext } from "./company-notes-context";
@@ -100,6 +101,8 @@ export function CompanyNotesTab({ companyId, note }: CompanyNotesTabProps) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const pendingCaretOffsetRef = useRef<number | null>(null);
   const hideIndicatorTimeoutRef = useRef<number | null>(null);
+  const attemptedDraftRef = useRef<string | null>(null);
+  const failedDraftRef = useRef<string | null>(null);
 
   const debouncedDraft = useDebounce(draft, 500);
   const editorHtml = useMemo(() => textToHtml(draft), [draft]);
@@ -108,7 +111,9 @@ export function CompanyNotesTab({ companyId, note }: CompanyNotesTabProps) {
     mutationFn: async (nextNote: string) => {
       return patchCompany(companyId, { notes: nextNote });
     },
-    onMutate: () => {
+    onMutate: (nextNote) => {
+      attemptedDraftRef.current = nextNote;
+      failedDraftRef.current = null;
       if (hideIndicatorTimeoutRef.current) {
         window.clearTimeout(hideIndicatorTimeoutRef.current);
         hideIndicatorTimeoutRef.current = null;
@@ -116,6 +121,8 @@ export function CompanyNotesTab({ companyId, note }: CompanyNotesTabProps) {
       setNoteSaveIndicator("saving");
     },
     onSuccess: (updatedCompany, savedNote) => {
+      attemptedDraftRef.current = null;
+      failedDraftRef.current = null;
       setLastSavedDraft(savedNote);
       setNoteSaveIndicator("saved");
       queryClient.setQueryData<CompanyOverviewResponse | undefined>(
@@ -137,9 +144,19 @@ export function CompanyNotesTab({ companyId, note }: CompanyNotesTabProps) {
         hideIndicatorTimeoutRef.current = null;
       }, 1200);
     },
-    onError: (error) => {
+    onError: (error, failedNote) => {
+      attemptedDraftRef.current = null;
+      failedDraftRef.current = failedNote;
       setNoteSaveIndicator("hidden");
-      toast.error(error instanceof Error ? error.message : "Failed to save company notes");
+      toast.error(getApiErrorMessage(error, "Failed to save company notes"), {
+        action: {
+          label: "Retry",
+          onClick: () => {
+            failedDraftRef.current = null;
+            saveMutation.mutate(failedNote);
+          },
+        },
+      });
     },
   });
 
@@ -155,7 +172,12 @@ export function CompanyNotesTab({ companyId, note }: CompanyNotesTabProps) {
   }, [setNoteSaveIndicator]);
 
   useEffect(() => {
-    if (debouncedDraft === lastSavedDraft || saveMutation.isPending) {
+    if (
+      debouncedDraft === lastSavedDraft ||
+      saveMutation.isPending ||
+      attemptedDraftRef.current === debouncedDraft ||
+      failedDraftRef.current === debouncedDraft
+    ) {
       return;
     }
 

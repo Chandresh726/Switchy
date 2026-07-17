@@ -8,6 +8,7 @@ import JobDetailPage from "@/app/(dashboard)/jobs/[id]/page";
 import { AIWorkspacePage } from "@/components/ai-workspace/ai-workspace-page";
 import { JobList } from "@/components/jobs/job-list";
 import { queryKeys } from "@/lib/query-keys";
+import { APIClientError } from "@/lib/api/errors";
 
 const mocks = vi.hoisted(() => ({
   getCompanies: vi.fn(),
@@ -136,6 +137,7 @@ describe("job data consumers", () => {
   beforeEach(() => {
     mocks.routeId = "42";
     mocks.getJob.mockClear();
+    mocks.getJobs.mockReset();
     mocks.getCompanies.mockResolvedValue([company]);
     mocks.getJob.mockResolvedValue(detailJob);
     mocks.getProfile.mockResolvedValue({ id: 1, name: "Test User" });
@@ -176,6 +178,28 @@ describe("job data consumers", () => {
     expect(await screen.findByText("Canonical Backend Engineer")).toBeTruthy();
     expect(screen.getByText("Top Match Engineer")).toBeTruthy();
     expect(screen.getByText("Recently Applied Engineer")).toBeTruthy();
+  });
+
+  it("renders dashboard job failures separately from legitimate empty panels", async () => {
+    mocks.getJobs.mockImplementation(async (params: { status?: string; matchBands?: string[] }) => {
+      if (!params.status && !params.matchBands) {
+        throw new APIClientError(
+          "Recently found jobs are unavailable",
+          500,
+          "internal_error",
+          undefined,
+          "req-dashboard-jobs"
+        );
+      }
+      return { jobs: [], totalCount: 0, hasMore: false };
+    });
+
+    renderWithClient(<DashboardPage />);
+
+    expect(await screen.findByText("Recently found jobs are unavailable")).toBeTruthy();
+    expect(screen.getByText("Request ID: req-dashboard-jobs")).toBeTruthy();
+    expect(screen.queryByText("No new jobs found recently")).toBeNull();
+    expect(screen.getByText("No high-match jobs found yet")).toBeTruthy();
   });
 
   it("renders the jobs list from the canonical paginated response", async () => {
@@ -224,5 +248,67 @@ describe("job data consumers", () => {
 
     expect(await screen.findByText("Job not found")).toBeTruthy();
     expect(mocks.getJob).not.toHaveBeenCalled();
+  });
+
+  it("renders invalid job payload failures instead of an empty state or spinner", async () => {
+    mocks.getJobs.mockRejectedValue(
+      new APIClientError(
+        "The server returned an invalid response",
+        200,
+        "invalid_response",
+        undefined,
+        "req-invalid-jobs"
+      )
+    );
+
+    renderWithClient(<JobList />);
+
+    expect(await screen.findAllByText("Invalid server response")).not.toHaveLength(0);
+    expect(screen.getAllByText("Request ID: req-invalid-jobs")).not.toHaveLength(0);
+    expect(screen.queryByText("No jobs found")).toBeNull();
+  });
+
+  it("keeps a successful empty jobs response as the legitimate empty state", async () => {
+    mocks.getJobs.mockResolvedValue({ jobs: [], totalCount: 0, hasMore: false });
+
+    renderWithClient(<JobList />);
+
+    expect(await screen.findByText("No jobs found")).toBeTruthy();
+    expect(screen.queryByText("Request failed")).toBeNull();
+  });
+
+  it("keeps job results visible when only the supporting company filter query fails", async () => {
+    mocks.getCompanies.mockRejectedValueOnce(
+      new APIClientError("Company filters unavailable", 500, "internal_error", undefined, "req-job-companies")
+    );
+    mocks.getJobs.mockImplementation(async (params: { status?: string }) => {
+      if (params.status) return { jobs: [], totalCount: 0, hasMore: false };
+      return { jobs: [listJob], totalCount: 1, hasMore: false };
+    });
+
+    renderWithClient(<JobList />);
+
+    expect(await screen.findByText("Company filters unavailable")).toBeTruthy();
+    expect(screen.getByText("Canonical Backend Engineer")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("distinguishes a missing job from a server failure and retries the failed query", async () => {
+    mocks.getJob.mockRejectedValueOnce(
+      new APIClientError("Job not found", 404, "not_found", undefined, "req-missing")
+    );
+    const firstClient = renderWithClient(<JobDetailPage />);
+    expect(await screen.findByText("Job not found")).toBeTruthy();
+    firstClient.clear();
+
+    mocks.getJob
+      .mockRejectedValueOnce(new APIClientError("Unable to load job", 500, "internal_error", undefined, "req-retry"))
+      .mockResolvedValueOnce(detailJob);
+    renderWithClient(<JobDetailPage />);
+
+    expect(await screen.findByText("Local server error")).toBeTruthy();
+    expect(screen.getByText("Request ID: req-retry")).toBeTruthy();
+    screen.getByRole("button", { name: "Retry" }).click();
+    expect(await screen.findByText("Canonical Backend Engineer")).toBeTruthy();
   });
 });

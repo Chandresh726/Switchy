@@ -23,12 +23,14 @@ import { RichTextEditor } from "@/components/ai-workspace/rich-text-editor";
 import { LinkedinIcon } from "@/components/icons/linkedin-icon";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { copyMarkdownToClipboard } from "@/lib/ai/writing/rich-text";
 import { useAIContentWorkspace } from "@/lib/ai/writing/workspace/use-ai-content-workspace";
 import type { AIContentType } from "@/lib/ai/contracts";
 import { getJob } from "@/lib/api/clients/jobs";
+import { getApiErrorMessage, isApiNotFoundError } from "@/lib/api/error-presentation";
 import { getPeople, patchPerson } from "@/lib/api/clients/people";
 import type { PeopleResponse } from "@/lib/api/contracts/people";
 import { canOpenLinkedInProfile } from "@/lib/people/message";
@@ -80,11 +82,12 @@ export function AIWorkspacePage({
   const [copied, setCopied] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
 
-  const { data: job, isLoading: isJobLoading } = useQuery({
+  const jobQuery = useQuery({
     enabled: hasValidJobId,
     queryKey: queryKeys.jobs.detail(jobId),
     queryFn: () => getJob(jobId),
   });
+  const job = jobQuery.data;
   const canUseWorkspace = !requireApplied || job?.status === "applied";
 
   const {
@@ -113,7 +116,7 @@ export function AIWorkspacePage({
     requestedVariantId,
   });
 
-  const { data: peopleData, isLoading: isPeopleLoading } = useQuery({
+  const peopleQuery = useQuery({
     enabled: Boolean(job?.company.id) && peoplePanelEnabled,
     queryKey: queryKeys.people.list({
       companyId: job?.company.id,
@@ -132,12 +135,14 @@ export function AIWorkspacePage({
       });
     },
   });
+  const peopleData = peopleQuery.data;
 
   const starMutation = useMutation({
     mutationFn: async ({ id, isStarred }: { id: number; isStarred: boolean }) => {
       return patchPerson(id, { isStarred });
     },
     onSuccess: () => void cacheOwnership.peopleMutation(queryClient),
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update person")),
   });
 
   const prioritizedPeople = useMemo(() => {
@@ -181,7 +186,7 @@ export function AIWorkspacePage({
     await sendModification();
   };
 
-  if (isJobLoading) {
+  if (jobQuery.isLoading) {
     return (
       <div className="space-y-6">
         <div className="space-y-2">
@@ -207,7 +212,17 @@ export function AIWorkspacePage({
     );
   }
 
-  if (!job) {
+  if (jobQuery.isError && !isApiNotFoundError(jobQuery.error)) {
+    return (
+      <ApiErrorState
+        error={jobQuery.error}
+        fallbackMessage="The job could not be loaded."
+        onRetry={() => void jobQuery.refetch()}
+      />
+    );
+  }
+
+  if (!hasValidJobId || isApiNotFoundError(jobQuery.error) || !job) {
     return (
       <EmptyState
         description={emptyStateDescription}
@@ -451,12 +466,18 @@ export function AIWorkspacePage({
           </div>
 
           <div className="space-y-3">
-            {isPeopleLoading ? (
+            {peopleQuery.isLoading ? (
               <div className="space-y-3 py-1">
                 <Skeleton className="h-16 w-full" />
                 <Skeleton className="h-16 w-full" />
                 <Skeleton className="h-16 w-full" />
               </div>
+            ) : peopleQuery.isError ? (
+              <ApiErrorState
+                error={peopleQuery.error}
+                fallbackMessage="People for this company could not be loaded."
+                onRetry={() => void peopleQuery.refetch()}
+              />
             ) : prioritizedPeople.length ? (
               prioritizedPeople.map((person) => {
                 const personalizedMessage = applyConnectionPlaceholder(currentContent, person.firstName);

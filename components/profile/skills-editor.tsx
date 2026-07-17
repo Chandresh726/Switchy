@@ -5,12 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import { createSkill, deleteSkill, getSkills } from "@/lib/api/clients/profile";
 import type { Skill } from "@/lib/api/contracts/profile";
 import { useState, useEffect } from "react";
 import { Loader2, Plus, X, Sparkles, Zap, Save } from "lucide-react";
 import { toast } from "sonner";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface InitialSkill {
   name: string;
@@ -53,7 +55,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
     }
   }, [initialSkills]);
 
-  const { data: skills = [], isLoading } = useQuery<Skill[]>({
+  const { data: skills = [], error, isError, isLoading, refetch } = useQuery<Skill[]>({
     queryKey: queryKeys.profile.skills(profileId),
     queryFn: async () => {
       if (!profileId) return [];
@@ -72,6 +74,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
       void cacheOwnership.profileMutation(queryClient, queryKeys.profile.skills(profileId));
       setNewSkill({ name: "", category: "other" });
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to add skill")),
   });
 
   const bulkAddMutation = useMutation({
@@ -93,9 +96,9 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
       setTimeout(() => setSettingsSaved(false), 3000);
       toast.success("Skills saved");
     },
-    onError: () => {
+    onError: (error) => {
       setIsBulkAdding(false);
-      toast.error("Failed to save skills");
+      toast.error(getApiErrorMessage(error, "Failed to save skills"));
     },
   });
 
@@ -106,6 +109,7 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
     onSuccess: () => {
       void cacheOwnership.profileMutation(queryClient, queryKeys.profile.skills(profileId));
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to delete skill")),
   });
 
   const handleAddSkill = (e: React.FormEvent) => {
@@ -161,6 +165,20 @@ export function SkillsEditor({ profileId, initialSkills }: SkillsEditorProps) {
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="border-border bg-card">
+        <CardContent className="p-6">
+          <ApiErrorState
+            error={error}
+            fallbackMessage="Skills could not be loaded."
+            onRetry={() => void refetch()}
+          />
         </CardContent>
       </Card>
     );
