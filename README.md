@@ -100,6 +100,13 @@ data with shared Zod contracts. Failures use a stable envelope containing
 returned in the `x-request-id` header. Mutation requests additionally require
 same-origin local request validation and the `x-switchy-request` marker.
 
+The browser-side contract flow, typed feature-client rule, query-cache
+ownership, error/request-ID behavior, streaming and download exceptions, and
+the route compatibility matrix are documented in
+[Frontend API Integration](docs/frontend-integration.md). Runtime readiness,
+database status, scheduler initialization, and queue recovery are shown in the
+existing Settings System Info card.
+
 ## Useful Commands
 
 | Command | Description |

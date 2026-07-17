@@ -44,6 +44,16 @@ async function assertMappedCompanyExists(companyId: number | null | undefined) {
   if (!company) throw new ValidationError("mappedCompanyId not found");
 }
 
+async function withMappedCompany<T extends { mappedCompanyId?: number | null }>(person: T) {
+  if (!person.mappedCompanyId) return { ...person, company: null };
+  const [company] = await db
+    .select({ id: companies.id, name: companies.name })
+    .from(companies)
+    .where(eq(companies.id, person.mappedCompanyId))
+    .limit(1);
+  return { ...person, company: company ?? null };
+}
+
 export function listPeople(query: PeopleListQuery) {
   return getPeopleList({
     search: query.search,
@@ -61,7 +71,7 @@ export function listPeople(query: PeopleListQuery) {
 
 export async function createPerson(input: ManualPersonInput) {
   await assertMappedCompanyExists(input.mappedCompanyId);
-  return createManualPerson({
+  const created = await createManualPerson({
     fullName: input.fullName,
     firstName: input.firstName,
     lastName: input.lastName,
@@ -72,13 +82,14 @@ export async function createPerson(input: ManualPersonInput) {
     notes: input.notes,
     mappedCompanyId: input.mappedCompanyId ?? null,
   });
+  return withMappedCompany(created);
 }
 
 export async function updatePerson(id: number, input: PersonPatchInput) {
   await assertMappedCompanyExists(input.mappedCompanyId);
   const [updated] = await db.update(people).set({ ...input, updatedAt: new Date() }).where(eq(people.id, id)).returning();
   if (!updated) throw new NotFoundError("Person not found", "person_not_found");
-  return updated;
+  return withMappedCompany(updated);
 }
 
 export async function listPeopleImportSessions(limit: number, offset: number) {
