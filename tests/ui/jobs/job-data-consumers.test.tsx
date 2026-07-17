@@ -155,6 +155,12 @@ describe("job data consumers", () => {
       starredPeople: 0,
       mappedPeople: 0,
       unmatchedCompanyCount: 0,
+      unmatchedPeopleCount: 0,
+      period: { days: 7, start: "2026-07-11T00:00:00.000Z", end: "2026-07-18T00:00:00.000Z" },
+      activeJobs: 3,
+      activeHighMatchJobs: 1,
+      statusCounts: { new: 1, viewed: 1, interested: 0, applied: 1, rejected: 0, archived: 0 },
+      recentActivity: { discovered: 1, viewed: 1, applied: 1 },
     });
   });
 

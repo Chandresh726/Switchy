@@ -12,6 +12,28 @@ import { getMatchSession, recoverScheduler } from "@/lib/api/clients/runtime";
 import { patchSettings } from "@/lib/api/clients/settings";
 import { getStats } from "@/lib/api/clients/stats";
 
+const EMPTY_STATS_RESPONSE = {
+  totalJobs: 0,
+  totalCompanies: 0,
+  highMatchJobs: 0,
+  appliedJobs: 0,
+  newJobs: 0,
+  viewedJobs: 0,
+  savedJobs: 0,
+  jobsWithScore: 0,
+  lastScan: null,
+  totalPeople: 0,
+  starredPeople: 0,
+  mappedPeople: 0,
+  unmatchedCompanyCount: 0,
+  unmatchedPeopleCount: 0,
+  period: { days: 30, start: "2026-06-18T00:00:00.000Z", end: "2026-07-18T00:00:00.000Z" },
+  activeJobs: 0,
+  activeHighMatchJobs: 0,
+  statusCounts: { new: 0, viewed: 0, interested: 0, applied: 0, rejected: 0, archived: 0 },
+  recentActivity: { discovered: 0, viewed: 0, applied: 0 },
+} as const;
+
 describe("typed feature clients", () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -168,24 +190,19 @@ describe("typed feature clients", () => {
   });
 
   it("validates the stats client response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(EMPTY_STATS_RESPONSE)));
+
+    await expect(getStats(30)).resolves.toMatchObject({ totalJobs: 0, period: { days: 30 } });
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe("/api/stats?days=30");
+  });
+
+  it("rejects malformed stats period timestamps", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({
-      totalJobs: 0,
-      totalCompanies: 0,
-      highMatchJobs: 0,
-      appliedJobs: 0,
-      newJobs: 0,
-      viewedJobs: 0,
-      savedJobs: 0,
-      jobsWithScore: 0,
-      lastScan: null,
-      totalPeople: 0,
-      starredPeople: 0,
-      mappedPeople: 0,
-      unmatchedCompanyCount: 0,
-      unmatchedPeopleCount: 0,
+      ...EMPTY_STATS_RESPONSE,
+      period: { ...EMPTY_STATS_RESPONSE.period, start: "not-an-iso-timestamp" },
     })));
 
-    await expect(getStats()).resolves.toMatchObject({ totalJobs: 0 });
+    await expect(getStats(30)).rejects.toMatchObject({ code: "invalid_response" });
   });
 
   it("validates readiness and runtime-health responses", async () => {

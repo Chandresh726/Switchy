@@ -43,7 +43,7 @@ import {
   settingsResponseSchema,
   settingsUpdateBodySchema,
 } from "@/lib/api/contracts/settings";
-import { statsResponseSchema } from "@/lib/api/contracts/stats";
+import { statsQuerySchema, statsResponseSchema } from "@/lib/api/contracts/stats";
 import { DEFAULT_SETTINGS } from "@/lib/settings/settings-service";
 
 describe("shared API contracts", () => {
@@ -115,6 +115,8 @@ describe("shared API contracts", () => {
     expect(localCLIStatusQuerySchema.safeParse({ provider: "openai" }).success).toBe(false);
     expect(aiUsageQuerySchema.safeParse({ days: "365" }).success).toBe(false);
     expect(aiUsageQuerySchema.parse({})).toEqual({ days: 7 });
+    expect(statsQuerySchema.safeParse({ days: "365" }).success).toBe(false);
+    expect(statsQuerySchema.parse({})).toEqual({ days: 7 });
     expect(historyIdParamsSchema.safeParse({ id: "" }).success).toBe(false);
   });
 
