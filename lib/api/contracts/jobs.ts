@@ -30,11 +30,18 @@ export const jobsQuerySchema = z
     employmentType: z.string().trim().min(1).max(80).optional(),
     seniorityLevel: z.string().trim().min(1).max(80).optional(),
     locationSearch: z.string().trim().min(1).max(120).optional(),
+    discoveredSince: z.coerce.date().optional(),
+    updatedSince: z.coerce.date().optional(),
+    viewedSince: z.coerce.date().optional(),
+    appliedSince: z.coerce.date().optional(),
     sortBy: z
       .enum([
         "matchScore",
         "discoveredAt",
         "postedDate",
+        "updatedAt",
+        "viewedAt",
+        "appliedAt",
         "companyName",
         "title",
       ])

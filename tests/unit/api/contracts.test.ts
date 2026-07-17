@@ -59,6 +59,9 @@ describe("shared API contracts", () => {
     expect(
       jobsQuerySchema.safeParse({ minScore: "80", maxScore: "20" }).success
     ).toBe(false);
+    expect(jobsQuerySchema.safeParse({ appliedSince: "not-a-date" }).success).toBe(false);
+    expect(jobsQuerySchema.parse({ discoveredSince: "2026-07-18T00:00:00.000Z" }).discoveredSince)
+      .toEqual(new Date("2026-07-18T00:00:00.000Z"));
   });
 
   it("rejects invalid mutation dates and statuses", () => {

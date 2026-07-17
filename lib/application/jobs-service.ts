@@ -76,6 +76,10 @@ function baseConditions(query: JobsQuery) {
   if (seniorityLevels.length === 1) conditions.push(eq(jobs.seniorityLevel, seniorityLevels[0]));
   else if (seniorityLevels.length > 1) conditions.push(or(...seniorityLevels.map((value) => eq(jobs.seniorityLevel, value))));
   if (query.locationSearch) conditions.push(like(jobs.location, `%${query.locationSearch}%`));
+  if (query.discoveredSince) conditions.push(gte(jobs.discoveredAt, query.discoveredSince));
+  if (query.updatedSince) conditions.push(gte(jobs.updatedAt, query.updatedSince));
+  if (query.viewedSince) conditions.push(gte(jobs.viewedAt, query.viewedSince));
+  if (query.appliedSince) conditions.push(gte(jobs.appliedAt, query.appliedSince));
   return conditions;
 }
 
@@ -84,6 +88,9 @@ function orderByFor(query: JobsQuery, scoreExpression: typeof jobs.matchScore | 
   switch (query.sortBy) {
     case "postedDate": return [sql`CASE WHEN ${jobs.postedDate} IS NULL THEN 1 ELSE 0 END`, direction(jobs.postedDate), desc(jobs.id)] as const;
     case "discoveredAt": return [direction(jobs.discoveredAt), desc(jobs.id)] as const;
+    case "updatedAt": return [sql`CASE WHEN ${jobs.updatedAt} IS NULL THEN 1 ELSE 0 END`, direction(jobs.updatedAt), desc(jobs.id)] as const;
+    case "viewedAt": return [sql`CASE WHEN ${jobs.viewedAt} IS NULL THEN 1 ELSE 0 END`, direction(jobs.viewedAt), desc(jobs.id)] as const;
+    case "appliedAt": return [sql`CASE WHEN ${jobs.appliedAt} IS NULL THEN 1 ELSE 0 END`, direction(jobs.appliedAt), desc(jobs.id)] as const;
     case "companyName": return [direction(companies.name), desc(jobs.discoveredAt), desc(jobs.id)] as const;
     case "title": return [direction(jobs.title), desc(jobs.discoveredAt), desc(jobs.id)] as const;
     default: return [sql`CASE WHEN ${scoreExpression} IS NULL THEN 1 ELSE 0 END`, direction(scoreExpression), desc(jobs.discoveredAt), desc(jobs.id)] as const;
@@ -107,16 +114,8 @@ export async function listJobs(query: JobsQuery) {
     || query.maxScore !== undefined || requestedBands.length > 0;
   const baseWhere = conditions.length > 0 ? and(...conditions) : undefined;
   if (!scoreAware) {
-    const direction = query.sortOrder === "asc" ? asc : desc;
     const select = db.select(JOB_SUMMARY_SELECTION).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id)).where(baseWhere);
-    let rows;
-    switch (query.sortBy) {
-      case "postedDate": rows = await select.orderBy(sql`CASE WHEN ${jobs.postedDate} IS NULL THEN 1 ELSE 0 END`, direction(jobs.postedDate), desc(jobs.id)).limit(query.limit).offset(query.offset); break;
-      case "discoveredAt": rows = await select.orderBy(direction(jobs.discoveredAt), desc(jobs.id)).limit(query.limit).offset(query.offset); break;
-      case "companyName": rows = await select.orderBy(direction(companies.name), desc(jobs.discoveredAt), desc(jobs.id)).limit(query.limit).offset(query.offset); break;
-      case "title": rows = await select.orderBy(direction(jobs.title), desc(jobs.discoveredAt), desc(jobs.id)).limit(query.limit).offset(query.offset); break;
-      default: rows = await select.orderBy(desc(jobs.discoveredAt), desc(jobs.id)).limit(query.limit).offset(query.offset);
-    }
+    const rows = await select.orderBy(...orderByFor(query)).limit(query.limit).offset(query.offset);
     const [{ value: totalCount }] = await db.select({ value: count() }).from(jobs).where(baseWhere);
     return { jobs: await presentRows(rows), totalCount, hasMore: query.offset + query.limit < totalCount };
   }

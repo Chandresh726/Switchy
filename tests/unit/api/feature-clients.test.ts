@@ -70,6 +70,23 @@ describe("typed feature clients", () => {
     ]);
   });
 
+  it("serializes job activity dates and date sorting through the jobs contract", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({ jobs: [], totalCount: 0, hasMore: false })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getJobs({
+      appliedSince: new Date("2026-07-18T00:00:00.000Z"),
+      sortBy: "appliedAt",
+      sortOrder: "asc",
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/jobs?appliedSince=2026-07-18T00%3A00%3A00.000Z&sortBy=appliedAt&sortOrder=asc&offset=0&limit=25"
+    );
+  });
+
   it("rejects invalid resource IDs before making a request", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
