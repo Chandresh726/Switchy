@@ -218,6 +218,20 @@
       "when": 1784237998100,
       "tag": "0030_pale_dark_phoenix",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1784376073990,
+      "tag": "0031_lively_avengers",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1784381267665,
+      "tag": "0032_fine_mephistopheles",
+      "breakpoints": true
     }
   ]
 }

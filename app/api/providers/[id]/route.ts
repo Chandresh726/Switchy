@@ -5,7 +5,7 @@ import {
   deleteProvider,
   requireProviderById,
   toProviderPublic,
-  updateProviderApiKey,
+  updateProvider,
 } from "@/lib/ai/providers/provider-service";
 import { assertAppRequest, handleApiError } from "@/lib/api";
 import { providerPatchBodySchema } from "@/lib/api/contracts/providers";
@@ -21,7 +21,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({
       ...toProviderPublic(provider),
-      status: provider.apiKey ? "connected" : "missing_api_key",
+      status: provider.provider === "custom" || provider.apiKey
+        ? "connected"
+        : "missing_api_key",
     });
   } catch (error) {
     return handleApiError(error, { request, fallbackMessage: "Failed to fetch provider", fallbackCode: "provider_fetch_failed" });
@@ -35,8 +37,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const parsedParams = ProviderRouteParamsSchema.parse(await params);
     const parsedBody = providerPatchBodySchema.parse(await request.json());
 
-    await requireProviderById(parsedParams.id);
-    await updateProviderApiKey(parsedParams.id, parsedBody.apiKey);
+    await updateProvider(parsedParams.id, parsedBody);
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -9,6 +9,8 @@ import { settingsResponseSchema } from "@/lib/api/contracts/settings";
 const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
   patchSettings: vi.fn(),
+  updateProvider: vi.fn(),
+  updateProviderApiKey: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
 }));
@@ -32,7 +34,8 @@ vi.mock("@/lib/api/clients/providers", () => ({
   deleteProvider: vi.fn(),
   getProviderModels: vi.fn(),
   getProviders: vi.fn().mockResolvedValue([]),
-  updateProviderApiKey: vi.fn(),
+  updateProvider: mocks.updateProvider,
+  updateProviderApiKey: mocks.updateProviderApiKey,
 }));
 vi.mock("@/lib/api/clients/health", () => ({
   getReadiness: vi.fn().mockResolvedValue({ status: "ready", checks: { database: "ready", runtime: "ready" } }),
@@ -63,7 +66,18 @@ vi.mock("@/components/settings/danger-zone", () => ({ DangerZone: () => <div>Dan
 vi.mock("@/components/settings/resume-parser-section", () => ({ ResumeParserSection: () => <div>Resume parser</div> }));
 vi.mock("@/components/settings/system-info", () => ({ SystemInfo: () => <div>System info</div> }));
 vi.mock("@/components/settings/ai-writing-section", () => ({ AIWritingSection: () => <div>AI writing</div> }));
-vi.mock("@/components/settings/ai-providers-manager", () => ({ AIProvidersManager: () => <div>Providers</div> }));
+vi.mock("@/components/settings/ai-providers-manager", () => ({
+  AIProvidersManager: (props: {
+    onUpdateProvider: (id: string, input: { apiKey?: string | null }) => Promise<void>;
+  }) => (
+    <button
+      type="button"
+      onClick={() => void props.onUpdateProvider("custom-provider", { apiKey: null })}
+    >
+      Remove provider credential
+    </button>
+  ),
+}));
 vi.mock("@/components/settings/scraper-settings", () => ({
   ScraperSettings: (props: {
     schedulerCron: string;
@@ -136,8 +150,24 @@ describe("settings failure recovery", () => {
   beforeEach(() => {
     mocks.getSettings.mockReset();
     mocks.patchSettings.mockReset();
+    mocks.updateProvider.mockReset();
+    mocks.updateProviderApiKey.mockReset();
     mocks.toastError.mockReset();
     mocks.toastSuccess.mockReset();
+  });
+
+  it("preserves the null signal when removing a provider credential", async () => {
+    mocks.getSettings.mockResolvedValue(settings);
+    mocks.updateProviderApiKey.mockResolvedValue({ success: true });
+
+    renderSettings();
+    fireEvent.click(await screen.findByRole("button", { name: "Remove provider credential" }));
+
+    await waitFor(() => expect(mocks.updateProviderApiKey).toHaveBeenCalledWith(
+      "custom-provider",
+      { apiKey: null }
+    ));
+    expect(mocks.updateProvider).not.toHaveBeenCalled();
   });
 
   it("renders a retryable initialization error with its request reference", async () => {

@@ -1,13 +1,25 @@
 import "server-only";
 
 import { and, asc, eq } from "drizzle-orm";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { aiProviders, settings } from "@/lib/db/schema";
+import type * as databaseSchema from "@/lib/db/schema";
 import { decryptApiKey } from "@/lib/encryption";
 import { AIError } from "@/lib/ai/shared/errors";
 import { getLocalCLIModels } from "@/lib/ai/local-cli/service";
+
+import {
+  buildCustomRequestHeaders,
+  resolveStoredCustomProvider,
+  type CustomProviderConnection,
+} from "./custom-config";
+import {
+  cancelCustomProviderResponse,
+  customProviderFetch,
+} from "./custom-fetch";
 
 import {
   isAIProvider,
@@ -24,6 +36,8 @@ import {
 export type { ProviderReasoningControl } from "./reasoning-controls";
 
 const MODEL_CACHE_TTL_MS = 15 * 60 * 1000;
+const CUSTOM_MODEL_DISCOVERY_TIMEOUT_MS = 10_000;
+const CUSTOM_MODEL_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
 
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
 const ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1";
@@ -53,6 +67,7 @@ export interface ResolvedProviderCatalogRecord {
   provider: AIProvider;
   apiKey?: string;
   updatedAt: Date | null;
+  customConnection?: CustomProviderConnection;
 }
 
 type ProviderRecord = ResolvedProviderCatalogRecord;
@@ -78,6 +93,15 @@ interface AnthropicModelsResponse {
     type?: string;
   }>;
 }
+
+const customModelsResponseSchema = z.object({
+  data: z.array(z.object({
+    id: z.string().optional(),
+    display_name: z.string().optional(),
+    owned_by: z.string().optional(),
+    type: z.string().optional(),
+  })),
+});
 
 interface GeminiModelsResponse {
   models?: Array<{
@@ -136,6 +160,7 @@ export interface ProviderModelsResponse {
 
 export interface GetProviderModelsOptions {
   forceRefresh?: boolean;
+  allowStaleOnError?: boolean;
 }
 
 export interface ResolvedProviderModelSelection {
@@ -254,31 +279,70 @@ async function fetchJson<T>(
 ): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(url, {
+    const fetcher = providerType === "custom" ? customProviderFetch : fetch;
+    response = await fetcher(url, {
       ...options,
       cache: "no-store",
     });
   } catch (error) {
+    if (error instanceof AIError) throw error;
+    const timedOut = providerType === "custom" &&
+      error instanceof Error &&
+      ["AbortError", "TimeoutError"].includes(error.name);
     throw new AIError({
-      type: "network",
-      message: `Failed to fetch models from ${providerType}`,
+      type: timedOut ? "timeout" : "network",
+      message: timedOut
+        ? "Custom provider model discovery timed out"
+        : `Failed to fetch models from ${providerType}`,
       cause: error instanceof Error ? error : undefined,
     });
   }
 
   if (!response.ok) {
-    const bodyText = await response.text();
+    const bodyText = providerType === "custom" ? "" : await response.text();
+    if (providerType === "custom") await cancelCustomProviderResponse(response);
     throw new AIError({
       type: "generation_failed",
       message: `Failed to fetch models from ${providerType}: HTTP ${response.status}`,
       context: {
         status: response.status,
-        body: bodyText.slice(0, 300),
+        ...(providerType === "custom" ? {} : { body: bodyText.slice(0, 300) }),
       },
     });
   }
 
   try {
+    if (providerType === "custom") {
+      const contentLength = Number(response.headers.get("content-length") ?? "0");
+      if (contentLength > CUSTOM_MODEL_RESPONSE_MAX_BYTES) {
+        await cancelCustomProviderResponse(response);
+        throw new Error("Custom provider model response is too large");
+      }
+      if (!response.body) {
+        const body = await response.text();
+        if (new TextEncoder().encode(body).byteLength > CUSTOM_MODEL_RESPONSE_MAX_BYTES) {
+          throw new Error("Custom provider model response is too large");
+        }
+        return JSON.parse(body) as T;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let totalBytes = 0;
+      let body = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > CUSTOM_MODEL_RESPONSE_MAX_BYTES) {
+          await reader.cancel();
+          throw new Error("Custom provider model response is too large");
+        }
+        body += decoder.decode(value, { stream: true });
+      }
+      body += decoder.decode();
+      return JSON.parse(body) as T;
+    }
     return (await response.json()) as T;
   } catch (error) {
     throw new AIError({
@@ -329,6 +393,9 @@ async function getProviderRecord(providerId: string): Promise<ProviderRecord> {
     provider: provider.provider,
     apiKey: decryptedApiKey,
     updatedAt: provider.updatedAt,
+    customConnection: provider.provider === "custom"
+      ? resolveStoredCustomProvider(provider, decryptedApiKey)
+      : undefined,
   };
 }
 
@@ -376,6 +443,9 @@ async function getFallbackProviderRecord(): Promise<ProviderRecord | null> {
     provider: candidate.provider,
     apiKey: decryptedApiKey,
     updatedAt: candidate.updatedAt,
+    customConnection: candidate.provider === "custom"
+      ? resolveStoredCustomProvider(candidate, decryptedApiKey)
+      : undefined,
   };
 }
 
@@ -454,6 +524,74 @@ async function fetchAnthropicModels(
     .filter((model): model is ProviderModelDefinition => model !== null);
 
   return dedupeModels(normalized);
+}
+
+export async function discoverCustomProviderModels(
+  connection: CustomProviderConnection
+): Promise<ProviderModelDefinition[]> {
+  const payload = await fetchJson<unknown>(
+    `${connection.baseUrl}/models`,
+    {
+      method: "GET",
+      headers: buildCustomRequestHeaders(connection),
+      signal: AbortSignal.timeout(CUSTOM_MODEL_DISCOVERY_TIMEOUT_MS),
+    },
+    "custom"
+  );
+  const parsed = customModelsResponseSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new AIError({
+      type: "validation",
+      message: "Invalid custom provider model catalog",
+      retryable: false,
+      cause: parsed.error,
+    });
+  }
+
+  const rawModels = parsed.data.data;
+  if (rawModels.length > 1_000) {
+    throw new AIError({
+      type: "validation",
+      message: "The custom provider returned more than 1,000 models",
+      retryable: false,
+    });
+  }
+  const discovered = rawModels
+    .map((model) => {
+      const modelId = model.id?.trim();
+      if (!modelId || !isLikelyTextModel(
+        modelId,
+        model.display_name,
+        model.owned_by ?? model.type
+      )) {
+        return null;
+      }
+      const label = connection.apiFormat === "anthropic_messages"
+        ? model.display_name
+        : undefined;
+      const description = model.owned_by ?? model.type ?? "";
+      return buildModelDefinition(modelId, label ?? modelId, description);
+    })
+    .filter((model): model is ProviderModelDefinition => model !== null);
+  const manual = connection.manualModelIds.map((modelId) =>
+    buildModelDefinition(modelId, modelId, "Manually configured model")
+  );
+  const models = dedupeModels([...discovered, ...manual]);
+  if (models.length > 1_000) {
+    throw new AIError({
+      type: "validation",
+      message: "The custom provider catalog cannot contain more than 1,000 models",
+      retryable: false,
+    });
+  }
+  if (models.length === 0) {
+    throw new AIError({
+      type: "invalid_model",
+      message: "The custom provider did not return any text/chat models",
+      retryable: false,
+    });
+  }
+  return models;
 }
 
 async function fetchGeminiModels(
@@ -560,6 +698,16 @@ async function fetchProviderModels(
   const providerType = provider.provider;
   if (isLocalCLIProvider(providerType)) {
     return getLocalCLIModels(providerType, { forceRefresh });
+  }
+  if (providerType === "custom") {
+    if (!provider.customConnection) {
+      throw new AIError({
+        type: "validation",
+        message: "Custom provider connection settings are unavailable",
+        retryable: false,
+      });
+    }
+    return discoverCustomProviderModels(provider.customConnection);
   }
   const apiKey = ensureApiKey(provider);
 
@@ -710,7 +858,7 @@ export async function getProviderModelsForResolvedProvider(
 
     return buildResponse(provider, freshEntry, "live", false);
   } catch (error) {
-    if (cacheEntry) {
+    if (cacheEntry && options.allowStaleOnError !== false) {
       const warning = error instanceof Error ? error.message : "Failed to refresh provider models";
       return buildResponse(provider, cacheEntry, "cache", true, warning);
     }
@@ -745,9 +893,12 @@ export async function getCachedProviderModelDefinition(
   return entry?.models.find((model) => model.modelId === modelId) ?? null;
 }
 
-export async function deleteStoredProviderModelsCache(providerId: string): Promise<void> {
-  providerModelCache.delete(providerId);
-  await db.delete(settings).where(eq(settings.key, catalogSettingKey(providerId)));
+export async function deleteStoredProviderModelsCache(
+  providerId: string,
+  database: BetterSQLite3Database<typeof databaseSchema> = db
+): Promise<void> {
+  clearProviderModelsCache(providerId);
+  await database.delete(settings).where(eq(settings.key, catalogSettingKey(providerId)));
 }
 
 export async function resolveProviderModelSelection(options: {

@@ -13,19 +13,33 @@ import {
 } from "@/lib/db/schema";
 import type * as databaseSchema from "@/lib/db/schema";
 import { decryptApiKey, encryptApiKey } from "@/lib/encryption";
+import type {
+  ProviderCreateBody,
+  ProviderPatchBody,
+} from "@/lib/api/contracts/providers";
 
 import {
   deleteStoredProviderModelsCache,
+  discoverCustomProviderModels,
   getProviderModels,
   type ProviderModelsResponse,
 } from "./model-catalog";
 import { getProviderMetadata } from "./metadata";
 import { providerRegistry } from "./index";
 import {
+  encryptCustomHeaders,
+  mergeCustomHeaderPatch,
+  normalizeCustomBaseUrl,
+  normalizeCustomDisplayName,
+  normalizeCustomHeaders,
+  normalizeManualModelIds,
+  resolveStoredCustomProvider,
+  type CustomProviderConnection,
+} from "./custom-config";
+import {
   isAIProvider,
   isLocalCLIProvider,
   type AIProvider,
-  type LocalCLIProvider,
 } from "./types";
 
 export type ProviderRecord = typeof aiProviders.$inferSelect;
@@ -38,8 +52,13 @@ export interface ProviderPublic {
   createdAt: Date | null;
   updatedAt: Date | null;
   hasApiKey: boolean;
-  kind: "api_key" | "local_cli";
+  kind: "api_key" | "local_cli" | "custom";
   selectable: boolean;
+  displayName?: string;
+  apiFormat?: CustomProviderConnection["apiFormat"];
+  baseUrl?: string;
+  headerNames?: string[];
+  manualModelIds?: string[];
 }
 
 export interface ProviderValidationContext {
@@ -49,6 +68,9 @@ export interface ProviderValidationContext {
 }
 
 export function toProviderPublic(record: ProviderRecord): ProviderPublic {
+  const custom = record.provider === "custom"
+    ? resolveStoredCustomProvider(record)
+    : undefined;
   return {
     id: record.id,
     provider: record.provider,
@@ -61,6 +83,15 @@ export function toProviderPublic(record: ProviderRecord): ProviderPublic {
       ? getProviderMetadata(record.provider).kind
       : "api_key",
     selectable: record.isActive !== false && !isLocalCLIProvider(record.provider),
+    ...(custom
+      ? {
+          displayName: custom.displayName,
+          apiFormat: custom.apiFormat,
+          baseUrl: custom.baseUrl,
+          headerNames: Object.keys(custom.headers),
+          manualModelIds: custom.manualModelIds,
+        }
+      : {}),
   };
 }
 
@@ -80,16 +111,6 @@ export async function ensureBuiltinLocalCLIProviders(
       const existing = tx.select().from(aiProviders)
         .where(eq(aiProviders.provider, provider)).all();
       let builtin = existing.find(({ id }) => id === builtinId);
-      if (!builtin) {
-        builtin = tx.insert(aiProviders).values({
-          id: builtinId,
-          provider,
-          apiKey: null,
-          isActive: true,
-          isDefault: false,
-          updatedAt: new Date(),
-        }).returning().get();
-      }
 
       for (const legacy of existing.filter(({ id }) => id !== builtinId)) {
         tx.update(settings).set({ value: builtinId })
@@ -99,6 +120,17 @@ export async function ensureBuiltinLocalCLIProviders(
         tx.update(aiRuns).set({ providerRecordId: builtinId })
           .where(eq(aiRuns.providerRecordId, legacy.id)).run();
         tx.delete(aiProviders).where(eq(aiProviders.id, legacy.id)).run();
+      }
+
+      if (!builtin) {
+        builtin = tx.insert(aiProviders).values({
+          id: builtinId,
+          provider,
+          apiKey: null,
+          isActive: true,
+          isDefault: false,
+          updatedAt: new Date(),
+        }).returning().get();
       }
 
       if (
@@ -155,8 +187,10 @@ const FEATURE_PROVIDER_SETTINGS = [
 interface DeleteProviderOptions {
   database?: BetterSQLite3Database<typeof databaseSchema>;
   resolveModels?: (providerId: string) => Promise<Pick<ProviderModelsResponse, "models">>;
-  deleteModelsCache?: (providerId: string) => Promise<void>;
-  resetLocalProvider?: (provider: LocalCLIProvider) => Promise<void>;
+  deleteModelsCache?: (
+    providerId: string,
+    database: BetterSQLite3Database<typeof databaseSchema>
+  ) => Promise<void>;
 }
 
 export interface ProviderDeletionResult {
@@ -197,10 +231,37 @@ function decryptProviderApiKey(provider: ProviderRecord): string | undefined {
   }
 }
 
-export async function createProvider(options: {
-  provider: AIProvider;
-  apiKey?: string;
-}, database: BetterSQLite3Database<typeof databaseSchema> = db): Promise<ProviderRecord> {
+interface ProviderMutationDependencies {
+  discoverCustomModels?: typeof discoverCustomProviderModels;
+  deleteModelsCache?: (
+    providerId: string,
+    database: BetterSQLite3Database<typeof databaseSchema>
+  ) => Promise<void>;
+}
+
+function buildNewCustomConnection(options: ProviderCreateBody): CustomProviderConnection {
+  if (!options.displayName || !options.apiFormat || !options.baseUrl) {
+    throw new AIError({
+      type: "validation",
+      message: "Custom provider name, API format, and URL are required",
+      retryable: false,
+    });
+  }
+  return {
+    displayName: normalizeCustomDisplayName(options.displayName),
+    apiFormat: options.apiFormat,
+    baseUrl: normalizeCustomBaseUrl(options.baseUrl),
+    apiKey: options.apiKey?.trim() || undefined,
+    headers: normalizeCustomHeaders(options.headers ?? []),
+    manualModelIds: normalizeManualModelIds(options.manualModelIds ?? []),
+  };
+}
+
+export async function createProvider(
+  options: ProviderCreateBody & { provider: AIProvider },
+  database: BetterSQLite3Database<typeof databaseSchema> = db,
+  dependencies: ProviderMutationDependencies = {}
+): Promise<ProviderRecord> {
   if (isLocalCLIProvider(options.provider)) {
     throw new AIError({
       type: "validation",
@@ -208,16 +269,26 @@ export async function createProvider(options: {
       retryable: false,
     });
   }
-  const existing = await database
-    .select({ id: aiProviders.id })
-    .from(aiProviders)
-    .where(eq(aiProviders.provider, options.provider))
-    .limit(1);
-  if (existing.length > 0) {
-    throw new AIError({
-      type: "validation",
-      message: "This provider has already been added",
-    });
+  if (options.provider !== "custom") {
+    const existing = await database
+      .select({ id: aiProviders.id })
+      .from(aiProviders)
+      .where(eq(aiProviders.provider, options.provider))
+      .limit(1);
+    if (existing.length > 0) {
+      throw new AIError({
+        type: "validation",
+        message: "This provider has already been added",
+      });
+    }
+  }
+
+  const customConnection = options.provider === "custom"
+    ? buildNewCustomConnection(options)
+    : undefined;
+  if (customConnection) {
+    const discover = dependencies.discoverCustomModels ?? discoverCustomProviderModels;
+    await discover(customConnection);
   }
 
   const allProviders = await database.select().from(aiProviders);
@@ -234,6 +305,15 @@ export async function createProvider(options: {
       id: randomUUID(),
       provider: options.provider,
       apiKey: encryptedApiKey,
+      displayName: customConnection?.displayName,
+      apiFormat: customConnection?.apiFormat,
+      baseUrl: customConnection?.baseUrl,
+      encryptedHeaders: customConnection
+        ? encryptCustomHeaders(customConnection.headers)
+        : undefined,
+      manualModelIds: customConnection
+        ? JSON.stringify(customConnection.manualModelIds)
+        : undefined,
       isActive: true,
       isDefault: isFirstAPIProvider,
       updatedAt: new Date(),
@@ -243,29 +323,87 @@ export async function createProvider(options: {
   return created[0];
 }
 
-export async function updateProviderApiKey(
+export async function updateProvider(
   providerId: string,
-  apiKey?: string | null
+  patch: ProviderPatchBody,
+  database: BetterSQLite3Database<typeof databaseSchema> = db,
+  dependencies: ProviderMutationDependencies = {}
 ): Promise<void> {
-  const provider = await requireProviderById(providerId);
+  const provider = await requireProviderById(providerId, database);
   if (isLocalCLIProvider(provider.provider)) {
     throw new AIError({
       type: "validation",
       message: "Local CLI providers do not store API keys",
     });
   }
-  const normalized = apiKey?.trim();
-  const encryptedApiKey = normalized ? encryptApiKey(normalized) : null;
+  const existingApiKey = decryptProviderApiKey(provider);
+  const nextApiKey = patch.apiKey === undefined
+    ? existingApiKey
+    : patch.apiKey?.trim() || undefined;
 
-  await db
+  let customConnection: CustomProviderConnection | undefined;
+  let customConnectivityChanged = false;
+  let customCatalogChanged = false;
+  if (provider.provider === "custom") {
+    const current = resolveStoredCustomProvider(provider, existingApiKey);
+    customConnection = {
+      displayName: normalizeCustomDisplayName(patch.displayName ?? current.displayName),
+      apiFormat: patch.apiFormat ?? current.apiFormat,
+      baseUrl: normalizeCustomBaseUrl(patch.baseUrl ?? current.baseUrl),
+      apiKey: nextApiKey,
+      headers: patch.headers === undefined
+        ? current.headers
+        : mergeCustomHeaderPatch(current.headers, patch.headers),
+      manualModelIds: patch.manualModelIds === undefined
+        ? current.manualModelIds
+        : normalizeManualModelIds(patch.manualModelIds),
+    };
+    customConnectivityChanged = patch.apiKey !== undefined ||
+      patch.apiFormat !== undefined ||
+      patch.baseUrl !== undefined ||
+      patch.headers !== undefined;
+    customCatalogChanged = customConnectivityChanged || patch.manualModelIds !== undefined;
+    if (customConnectivityChanged) {
+      const discover = dependencies.discoverCustomModels ?? discoverCustomProviderModels;
+      await discover(customConnection);
+    }
+  } else if (
+    patch.displayName !== undefined ||
+    patch.apiFormat !== undefined ||
+    patch.baseUrl !== undefined ||
+    patch.headers !== undefined ||
+    patch.manualModelIds !== undefined
+  ) {
+    throw new AIError({
+      type: "validation",
+      message: "Custom connection fields can only be updated on a custom provider",
+      retryable: false,
+    });
+  }
+
+  const encryptedApiKey = nextApiKey ? encryptApiKey(nextApiKey) : null;
+
+  if (provider.provider !== "custom" || customCatalogChanged) {
+    const deleteModelsCache = dependencies.deleteModelsCache ?? deleteStoredProviderModelsCache;
+    await deleteModelsCache(providerId, database);
+  }
+
+  await database
     .update(aiProviders)
     .set({
       apiKey: encryptedApiKey,
+      ...(customConnection
+        ? {
+            displayName: customConnection.displayName,
+            apiFormat: customConnection.apiFormat,
+            baseUrl: customConnection.baseUrl,
+            encryptedHeaders: encryptCustomHeaders(customConnection.headers),
+            manualModelIds: JSON.stringify(customConnection.manualModelIds),
+          }
+        : {}),
       updatedAt: new Date(),
     })
     .where(eq(aiProviders.id, providerId));
-
-  await deleteStoredProviderModelsCache(providerId);
 }
 
 export async function deleteProvider(
@@ -329,52 +467,47 @@ export async function deleteProvider(
     }
   }
 
-  await database.delete(aiProviders).where(eq(aiProviders.id, providerId));
-  await deleteModelsCache(providerId);
-  if (isLocalCLIProvider(provider.provider)) {
-    if (options.resetLocalProvider) {
-      await options.resetLocalProvider(provider.provider);
-    } else {
-      const { resetLocalCLIProvider } = await import("@/lib/ai/local-cli/service");
-      await resetLocalCLIProvider(provider.provider);
+  await deleteModelsCache(providerId, database);
+  database.transaction((tx) => {
+    tx.delete(aiProviders).where(eq(aiProviders.id, providerId)).run();
+
+    if (provider.isDefault && apiCandidates.length > 0) {
+      const defaultProviderId = fallback?.providerId ?? apiCandidates[0]!.id;
+      tx.update(aiProviders)
+        .set({ isDefault: false, updatedAt: new Date() })
+        .where(eq(aiProviders.isActive, true))
+        .run();
+      tx.update(aiProviders)
+        .set({ isDefault: true, updatedAt: new Date() })
+        .where(eq(aiProviders.id, defaultProviderId))
+        .run();
     }
-  }
 
-  if (provider.isDefault && apiCandidates.length > 0) {
-    const defaultProviderId = fallback?.providerId ?? apiCandidates[0]!.id;
-    await database
-      .update(aiProviders)
-      .set({ isDefault: false, updatedAt: new Date() })
-      .where(eq(aiProviders.isActive, true));
-    await database
-      .update(aiProviders)
-      .set({ isDefault: true, updatedAt: new Date() })
-      .where(eq(aiProviders.id, defaultProviderId));
-  }
+    if (impactedFeatures.length === 0) return;
 
-  if (impactedFeatures.length > 0) {
     const impactedSettingKeys = impactedFeatures.flatMap(({ provider: providerKey, model, effort }) => [
       providerKey,
       model,
       effort,
     ]);
     if (!fallback) {
-      await database.delete(settings).where(inArray(settings.key, impactedSettingKeys));
-    } else {
-      const now = new Date();
-      const updates = impactedFeatures.flatMap(({ provider: providerKey, model, effort }) => [
-        { key: providerKey, value: fallback.providerId, updatedAt: now },
-        { key: model, value: fallback.modelId, updatedAt: now },
-        { key: effort, value: fallback.reasoningEffort, updatedAt: now },
-      ]);
-      for (const update of updates) {
-        await database.insert(settings).values(update).onConflictDoUpdate({
-          target: settings.key,
-          set: { value: update.value, updatedAt: now },
-        });
-      }
+      tx.delete(settings).where(inArray(settings.key, impactedSettingKeys)).run();
+      return;
     }
-  }
+
+    const now = new Date();
+    const updates = impactedFeatures.flatMap(({ provider: providerKey, model, effort }) => [
+      { key: providerKey, value: fallback.providerId, updatedAt: now },
+      { key: model, value: fallback.modelId, updatedAt: now },
+      { key: effort, value: fallback.reasoningEffort, updatedAt: now },
+    ]);
+    for (const update of updates) {
+      tx.insert(settings).values(update).onConflictDoUpdate({
+        target: settings.key,
+        set: { value: update.value, updatedAt: now },
+      }).run();
+    }
+  }, { behavior: "immediate" });
 
   return {
     fallbackProviderId: fallback?.providerId,

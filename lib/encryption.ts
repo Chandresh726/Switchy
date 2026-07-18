@@ -63,14 +63,14 @@ function getKey(salt: Buffer): Buffer {
   return deriveKey(getOrCreateLocalSecret(), salt);
 }
 
-export function encryptApiKey(apiKey: string): string {
+function encryptValue(value: string): string {
   const salt = randomBytes(SALT_LENGTH);
   const iv = randomBytes(IV_LENGTH);
   const key = getKey(salt);
   const cipher = createCipheriv(ALGORITHM, key, iv);
 
   const encrypted = Buffer.concat([
-    cipher.update(apiKey, "utf8"),
+    cipher.update(value, "utf8"),
     cipher.final(),
   ]);
   const tag = cipher.getAuthTag();
@@ -85,7 +85,7 @@ class DecryptionError extends Error {
   }
 }
 
-export function decryptApiKey(encryptedData: string): string {
+function decryptValue(encryptedData: string): string {
   try {
     const parts = encryptedData.split(":");
     if (parts.length !== 4) {
@@ -109,4 +109,20 @@ export function decryptApiKey(encryptedData: string): string {
     }
     throw new DecryptionError("Failed to decrypt API key", error instanceof Error ? error : undefined);
   }
+}
+
+export function encryptSecret(value: string): string {
+  return encryptValue(value);
+}
+
+export function decryptSecret(encryptedData: string): string {
+  return decryptValue(encryptedData);
+}
+
+export function encryptApiKey(apiKey: string): string {
+  return encryptValue(apiKey);
+}
+
+export function decryptApiKey(encryptedData: string): string {
+  return decryptValue(encryptedData);
 }

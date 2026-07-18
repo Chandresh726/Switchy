@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   select: vi.fn(),
   insert: vi.fn(),
   decryptApiKey: vi.fn(),
+  decryptSecret: vi.fn(),
   getProviderModelsForResolvedProvider: vi.fn(),
   getCachedProviderModelDefinition: vi.fn(),
   createModel: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock("@/lib/db", () => ({
 
 vi.mock("@/lib/encryption", () => ({
   decryptApiKey: mocks.decryptApiKey,
+  decryptSecret: mocks.decryptSecret,
 }));
 
 vi.mock("@/lib/ai/providers/model-catalog", () => ({
@@ -44,20 +46,38 @@ vi.mock("@/lib/ai/local-cli/service", () => ({
 import {
   resolveAIContextForCapability,
 } from "@/lib/ai/runtime-context";
+import type { ProviderRecord } from "@/lib/ai/providers/provider-service";
 
 interface SelectResponse {
   rows: unknown[];
 }
 
-function providerRecord() {
+function providerRecord(): ProviderRecord {
   return {
     id: "provider-1",
     provider: "openai",
     apiKey: "encrypted-key",
+    displayName: null,
+    apiFormat: null,
+    baseUrl: null,
+    encryptedHeaders: null,
+    manualModelIds: null,
     isActive: true,
     isDefault: true,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+  };
+}
+
+function customProviderRecord(): ProviderRecord {
+  return {
+    ...providerRecord(),
+    provider: "custom",
+    displayName: "Local proxy",
+    apiFormat: "openai_chat_completions",
+    baseUrl: "http://127.0.0.1:8317/v1",
+    encryptedHeaders: "encrypted-headers",
+    manualModelIds: "[\"manual-model\"]",
   };
 }
 
@@ -70,6 +90,9 @@ describe("AI runtime context resolution", () => {
     vi.clearAllMocks();
     selectQueue = [];
     mocks.decryptApiKey.mockReturnValue("decrypted-key");
+    mocks.decryptSecret.mockReturnValue(JSON.stringify({
+      Authorization: "Bearer header-secret",
+    }));
     mocks.createModel.mockReturnValue({ modelId: "model-instance" });
     mocks.getGenerationOptions.mockReturnValue({ providerOptions: { openai: {} } });
     mocks.getCachedProviderModelDefinition.mockResolvedValue({
@@ -133,6 +156,42 @@ describe("AI runtime context resolution", () => {
       providerConfig: { apiKey: "decrypted-key" },
     });
     expect(mocks.getProviderModelsForResolvedProvider).not.toHaveBeenCalled();
+  });
+
+  it("resolves a stored custom connection into the standard AI SDK runtime", async () => {
+    selectQueue.push(
+      {
+        rows: [
+          { key: "matcher_model", value: "custom-model" },
+          { key: "matcher_provider_id", value: "provider-1" },
+          { key: "matcher_reasoning_effort", value: null },
+        ],
+      },
+      { rows: [customProviderRecord()] }
+    );
+    mocks.getCachedProviderModelDefinition.mockResolvedValue({
+      reasoningControl: { kind: "provider_default" },
+    });
+
+    const context = await resolveAIContextForCapability("job_analysis");
+
+    expect(context).toMatchObject({
+      providerRecordId: "provider-1",
+      provider: "custom",
+      modelId: "custom-model",
+      backendKind: "ai_sdk",
+    });
+    expect(mocks.decryptApiKey).toHaveBeenCalledTimes(1);
+    expect(mocks.decryptSecret).toHaveBeenCalledTimes(1);
+    expect(mocks.createModel).toHaveBeenCalledWith({
+      config: { modelId: "custom-model" },
+      providerConfig: {
+        apiKey: "decrypted-key",
+        baseUrl: "http://127.0.0.1:8317/v1",
+        apiFormat: "openai_chat_completions",
+        headers: { Authorization: "Bearer header-secret" },
+      },
+    });
   });
 
   it("uses provider default without sending a legacy reasoning value", async () => {

@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/input-group";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -58,20 +59,205 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getAllProviderMetadata, type ProviderMetadata } from "@/lib/ai/providers/metadata";
-import { isLocalCLIProvider } from "@/lib/ai/providers/types";
+import {
+  isLocalCLIProvider,
+  type CustomAPIFormat,
+} from "@/lib/ai/providers/types";
+import type {
+  ProviderCreateBody,
+  ProviderPatchBody,
+} from "@/lib/api/contracts/providers";
 import type { ProviderSettingsListItem } from "@/lib/api/contracts/settings";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
 import { cn } from "@/lib/utils";
 
 interface AIProvidersManagerProps {
   providers: ProviderSettingsListItem[];
-  onAddProvider: (provider: string, apiKey?: string) => Promise<void>;
+  onAddProvider: (input: ProviderCreateBody) => Promise<void>;
   onDeleteProvider: (id: string) => Promise<void>;
-  onUpdateProviderApiKey: (id: string, apiKey?: string) => Promise<void>;
+  onUpdateProvider: (id: string, input: ProviderPatchBody) => Promise<void>;
   onRefreshProviderModels: (id: string) => Promise<void>;
   codexExecutablePath: string;
   openCodeExecutablePath: string;
   onSaveExecutablePaths: (paths: { codex: string; opencode: string }) => Promise<void>;
+}
+
+interface HeaderDraft {
+  id: string;
+  name: string;
+  value: string;
+  configured?: boolean;
+}
+
+interface CustomFormState {
+  displayName: string;
+  apiFormat: CustomAPIFormat;
+  baseUrl: string;
+  apiKey: string;
+  removeApiKey: boolean;
+  headers: HeaderDraft[];
+  manualModels: string;
+}
+
+const EMPTY_CUSTOM_FORM: CustomFormState = {
+  displayName: "",
+  apiFormat: "openai_chat_completions",
+  baseUrl: "",
+  apiKey: "",
+  removeApiKey: false,
+  headers: [],
+  manualModels: "",
+};
+
+const API_FORMAT_LABELS: Record<CustomAPIFormat, string> = {
+  openai_chat_completions: "OpenAI Chat Completions",
+  openai_responses: "OpenAI Responses",
+  anthropic_messages: "Anthropic Messages",
+};
+
+function parseManualModels(value: string): string[] {
+  return value.split(/[\n,]/).map((model) => model.trim()).filter(Boolean);
+}
+
+function createHeaderDraft(input: Omit<HeaderDraft, "id">): HeaderDraft {
+  return { id: crypto.randomUUID(), ...input };
+}
+
+interface CustomProviderFieldsProps {
+  value: CustomFormState;
+  onChange: (value: CustomFormState) => void;
+  editing?: boolean;
+}
+
+function CustomProviderFields({ value, onChange, editing = false }: CustomProviderFieldsProps) {
+  const update = <K extends keyof CustomFormState>(key: K, next: CustomFormState[K]) => {
+    onChange({ ...value, [key]: next });
+  };
+
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-2">
+        <Label htmlFor={editing ? "edit-custom-name" : "custom-name"}>Name</Label>
+        <Input
+          id={editing ? "edit-custom-name" : "custom-name"}
+          value={value.displayName}
+          onChange={(event) => update("displayName", event.target.value)}
+          placeholder="CLI Proxy API"
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor={editing ? "edit-custom-format" : "custom-format"}>API format</Label>
+        <Select
+          value={value.apiFormat}
+          onValueChange={(apiFormat) => update("apiFormat", apiFormat as CustomAPIFormat)}
+        >
+          <SelectTrigger id={editing ? "edit-custom-format" : "custom-format"} className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(API_FORMAT_LABELS).map(([format, label]) => (
+              <SelectItem key={format} value={format}>{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor={editing ? "edit-custom-url" : "custom-url"}>Base URL</Label>
+        <Input
+          id={editing ? "edit-custom-url" : "custom-url"}
+          value={value.baseUrl}
+          onChange={(event) => update("baseUrl", event.target.value)}
+          placeholder="http://127.0.0.1:8317/v1"
+        />
+        <p className="text-xs text-muted-foreground">Switchy appends /models and the selected API route.</p>
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor={editing ? "edit-custom-api-key" : "custom-api-key"}>API key or token (optional)</Label>
+        <Input
+          id={editing ? "edit-custom-api-key" : "custom-api-key"}
+          type="password"
+          value={value.apiKey}
+          onChange={(event) => update("apiKey", event.target.value)}
+          placeholder={editing ? "Leave blank to keep the stored credential" : "Uses the format's standard auth header"}
+          disabled={value.removeApiKey}
+        />
+        {editing ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="justify-self-start"
+            onClick={() => update("removeApiKey", !value.removeApiKey)}
+          >
+            {value.removeApiKey ? "Keep stored credential" : "Remove stored credential"}
+          </Button>
+        ) : null}
+      </div>
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <Label>Custom headers</Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => update("headers", [
+              ...value.headers,
+              createHeaderDraft({ name: "", value: "" }),
+            ])}
+          >
+            <Plus data-icon="inline-start" />
+            Add header
+          </Button>
+        </div>
+        {value.headers.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No additional headers.</p>
+        ) : (
+          <div className="grid gap-2">
+            {value.headers.map((header, index) => (
+              <div key={header.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
+                <Input
+                  aria-label={`Header ${index + 1} name`}
+                  value={header.name}
+                  onChange={(event) => update("headers", value.headers.map((item, itemIndex) =>
+                    itemIndex === index ? { ...item, name: event.target.value } : item
+                  ))}
+                  placeholder="Header name"
+                />
+                <Input
+                  aria-label={`Header ${index + 1} value`}
+                  type="password"
+                  value={header.value}
+                  onChange={(event) => update("headers", value.headers.map((item, itemIndex) =>
+                    itemIndex === index ? { ...item, value: event.target.value } : item
+                  ))}
+                  placeholder={header.configured ? "Stored value" : "Header value"}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Remove header ${index + 1}`}
+                  onClick={() => update("headers", value.headers.filter((_, itemIndex) => itemIndex !== index))}
+                >
+                  <X />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor={editing ? "edit-custom-models" : "custom-models"}>Manual model IDs (optional)</Label>
+        <Textarea
+          id={editing ? "edit-custom-models" : "custom-models"}
+          value={value.manualModels}
+          onChange={(event) => update("manualModels", event.target.value)}
+          placeholder="One model ID per line"
+        />
+        <p className="text-xs text-muted-foreground">Manual IDs are merged with models returned by /models.</p>
+      </div>
+    </div>
+  );
 }
 
 interface ProviderApiKeyHelpProps {
@@ -120,6 +306,14 @@ function providerStatus(provider: ProviderSettingsListItem): {
     };
   }
 
+  if (provider.kind === "custom") {
+    return {
+      label: "connected",
+      ready: true,
+      message: `${provider.apiFormat ? API_FORMAT_LABELS[provider.apiFormat] : "Custom API"} · ${provider.baseUrl ?? "Configured endpoint"}`,
+    };
+  }
+
   return provider.hasApiKey
     ? { label: "connected", ready: true, message: "API key configured" }
     : { label: "needs key", ready: false, message: "Add an API key to use this provider" };
@@ -129,7 +323,7 @@ export function AIProvidersManager({
   providers,
   onAddProvider,
   onDeleteProvider,
-  onUpdateProviderApiKey,
+  onUpdateProvider,
   onRefreshProviderModels,
   codexExecutablePath,
   openCodeExecutablePath,
@@ -146,6 +340,8 @@ export function AIProvidersManager({
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [editApiKey, setEditApiKey] = useState("");
   const [updatingKey, setUpdatingKey] = useState(false);
+  const [customForm, setCustomForm] = useState<CustomFormState>(EMPTY_CUSTOM_FORM);
+  const [editCustomForm, setEditCustomForm] = useState<CustomFormState | null>(null);
   const [refreshingProviderIds, setRefreshingProviderIds] = useState<Record<string, boolean>>({});
   const [executablePaths, setExecutablePaths] = useState({
     codex: codexExecutablePath,
@@ -156,7 +352,7 @@ export function AIProvidersManager({
   const selectedMetadata = metadata.find((item) => item.id === selectedProviderType);
   const availableProviders = metadata.filter(
     (item) => !isLocalCLIProvider(item.id) &&
-      !providers.some((provider) => provider.provider === item.id)
+      (item.id === "custom" || !providers.some((provider) => provider.provider === item.id))
   );
 
   useEffect(() => {
@@ -189,12 +385,14 @@ export function AIProvidersManager({
     setSelectedProviderType("");
     setApiKey("");
     setShowApiKey(false);
+    setCustomForm(EMPTY_CUSTOM_FORM);
     setError(null);
   };
 
   const handleProviderSelection = (provider: string) => {
     setSelectedProviderType(provider);
     setApiKey("");
+    setCustomForm(EMPTY_CUSTOM_FORM);
     setError(null);
   };
 
@@ -211,7 +409,22 @@ export function AIProvidersManager({
     setAdding(true);
     setError(null);
     try {
-      await onAddProvider(selectedProviderType, apiKey.trim() || undefined);
+      if (selectedProviderType === "custom") {
+        await onAddProvider({
+          provider: "custom",
+          displayName: customForm.displayName,
+          apiFormat: customForm.apiFormat,
+          baseUrl: customForm.baseUrl,
+          apiKey: customForm.apiKey.trim() || undefined,
+          headers: customForm.headers.map(({ name, value }) => ({ name, value })),
+          manualModelIds: parseManualModels(customForm.manualModels),
+        });
+      } else {
+        await onAddProvider({
+          provider: selectedProviderType,
+          apiKey: apiKey.trim() || undefined,
+        });
+      }
       resetAddForm();
     } catch (addError) {
       setError(getApiErrorMessage(addError, "Failed to add provider"));
@@ -228,11 +441,59 @@ export function AIProvidersManager({
     setUpdatingKey(true);
     setError(null);
     try {
-      await onUpdateProviderApiKey(provider.id, editApiKey.trim());
+      await onUpdateProvider(provider.id, { apiKey: editApiKey.trim() });
       setEditingProviderId(null);
       setEditApiKey("");
     } catch (updateError) {
       setError(getApiErrorMessage(updateError, "Failed to update API key"));
+    } finally {
+      setUpdatingKey(false);
+    }
+  };
+
+  const beginEditing = (provider: ProviderSettingsListItem) => {
+    setEditingProviderId(editingProviderId === provider.id ? null : provider.id);
+    setEditApiKey("");
+    setEditCustomForm(provider.kind === "custom"
+      ? {
+          displayName: provider.displayName ?? "",
+          apiFormat: provider.apiFormat ?? "openai_chat_completions",
+          baseUrl: provider.baseUrl ?? "",
+          apiKey: "",
+          removeApiKey: false,
+          headers: (provider.headerNames ?? []).map((name) => createHeaderDraft({
+            name,
+            value: "",
+            configured: true,
+          })),
+          manualModels: (provider.manualModelIds ?? []).join("\n"),
+        }
+      : null);
+    setError(null);
+  };
+
+  const handleUpdateCustom = async (provider: ProviderSettingsListItem) => {
+    if (!editCustomForm) return;
+    setUpdatingKey(true);
+    setError(null);
+    try {
+      await onUpdateProvider(provider.id, {
+        displayName: editCustomForm.displayName,
+        apiFormat: editCustomForm.apiFormat,
+        baseUrl: editCustomForm.baseUrl,
+        apiKey: editCustomForm.removeApiKey
+          ? null
+          : editCustomForm.apiKey.trim() || undefined,
+        headers: editCustomForm.headers.map(({ name, value, configured }) => ({
+          name,
+          ...(value.length > 0 || !configured ? { value } : {}),
+        })),
+        manualModelIds: parseManualModels(editCustomForm.manualModels),
+      });
+      setEditingProviderId(null);
+      setEditCustomForm(null);
+    } catch (updateError) {
+      setError(getApiErrorMessage(updateError, "Failed to update custom provider"));
     } finally {
       setUpdatingKey(false);
     }
@@ -256,7 +517,7 @@ export function AIProvidersManager({
             AI Providers
           </CardTitle>
           <CardDescription>
-            Manage API-key and local CLI providers in one place.
+            Manage API-key, custom API, and local CLI providers in one place.
           </CardDescription>
         </div>
       </CardHeader>
@@ -283,7 +544,7 @@ export function AIProvidersManager({
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         {isCLI ? <Terminal className="size-4 text-emerald-500" /> : null}
-                        <span className="font-medium">{providerMetadata?.displayName ?? provider.provider}</span>
+                        <span className="font-medium">{provider.displayName ?? providerMetadata?.displayName ?? provider.provider}</span>
                         {provider.cliVersion ? <span className="text-muted-foreground">v{provider.cliVersion}</span> : null}
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">{status.message}</p>
@@ -310,13 +571,9 @@ export function AIProvidersManager({
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label={isCLI ? "Edit executable path" : "Edit API key"}
-                        title={isCLI ? "Edit executable path" : "Edit API key"}
-                        onClick={() => {
-                          setEditingProviderId(isEditing ? null : provider.id);
-                          setEditApiKey("");
-                          setError(null);
-                        }}
+                        aria-label={isCLI ? "Edit executable path" : provider.kind === "custom" ? "Edit connection" : "Edit API key"}
+                        title={isCLI ? "Edit executable path" : provider.kind === "custom" ? "Edit connection" : "Edit API key"}
+                        onClick={() => beginEditing(provider)}
                       >
                         <Pencil />
                       </Button>
@@ -329,7 +586,7 @@ export function AIProvidersManager({
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Delete {providerMetadata?.displayName ?? "provider"}?</AlertDialogTitle>
+                              <AlertDialogTitle>Delete {provider.displayName ?? providerMetadata?.displayName ?? "provider"}?</AlertDialogTitle>
                               <AlertDialogDescription>
                                 Its connection and cached model list will be removed. This cannot be undone.
                               </AlertDialogDescription>
@@ -370,6 +627,22 @@ export function AIProvidersManager({
                           </InputGroup>
                           <FieldDescription>Leave empty to use the executable from PATH.</FieldDescription>
                         </Field>
+                      </FieldGroup>
+                    ) : provider.kind === "custom" && editCustomForm ? (
+                      <FieldGroup>
+                        <CustomProviderFields
+                          value={editCustomForm}
+                          onChange={setEditCustomForm}
+                          editing
+                        />
+                        {error ? <FieldError>{error}</FieldError> : null}
+                        <div className="flex justify-end gap-2">
+                          <Button variant="outline" size="sm" onClick={() => setEditingProviderId(null)}>Cancel</Button>
+                          <Button size="sm" onClick={() => handleUpdateCustom(provider)} disabled={updatingKey}>
+                            {updatingKey ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+                            Update connection
+                          </Button>
+                        </div>
                       </FieldGroup>
                     ) : (
                       <FieldGroup>
@@ -417,13 +690,17 @@ export function AIProvidersManager({
                   <SelectGroup>
                     {availableProviders.map((provider) => (
                       <SelectItem key={provider.id} value={provider.id}>
-                        {provider.displayName} · API key
+                        {provider.displayName} · {provider.kind === "custom" ? "API endpoint" : "API key"}
                       </SelectItem>
                     ))}
                   </SelectGroup>
                 </SelectContent>
               </Select>
             </div>
+
+            {selectedProviderType === "custom" ? (
+              <CustomProviderFields value={customForm} onChange={setCustomForm} />
+            ) : null}
 
             {selectedMetadata?.requiresApiKey ? (
               <div className="flex flex-col gap-2">

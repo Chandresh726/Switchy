@@ -33,6 +33,7 @@ import {
   localCLIStatusQuerySchema,
   providerCreateBodySchema,
   providerModelsQuerySchema,
+  providerPatchBodySchema,
 } from "@/lib/api/contracts/providers";
 import {
   matchSessionParamsSchema,
@@ -110,6 +111,24 @@ describe("shared API contracts", () => {
     expect(profileWriteBodySchema.safeParse({ name: "", email: "bad" }).success).toBe(false);
     expect(providerCreateBodySchema.safeParse({ provider: "" }).success).toBe(false);
     expect(unmatchedCompanyPatchBodySchema.safeParse({ action: "map", companyNormalized: "A" }).success).toBe(false);
+  });
+
+  it("enforces custom provider connection contracts", () => {
+    expect(providerCreateBodySchema.safeParse({ provider: "custom" }).success).toBe(false);
+    expect(providerCreateBodySchema.safeParse({
+      provider: "custom",
+      displayName: "Local proxy",
+      apiFormat: "openai_chat_completions",
+      baseUrl: "http://127.0.0.1:8317/v1",
+      headers: [{ name: "Authorization", value: "Bearer secret" }],
+      manualModelIds: ["proxy-model"],
+    }).success).toBe(true);
+    expect(providerPatchBodySchema.safeParse({
+      headers: [{ name: "Authorization" }],
+    }).success).toBe(true);
+    expect(providerPatchBodySchema.safeParse({
+      apiFormat: "unsupported_format",
+    }).success).toBe(false);
   });
 
   it("rejects malformed runtime and stats responses", () => {

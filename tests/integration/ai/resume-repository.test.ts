@@ -1,5 +1,4 @@
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
@@ -22,6 +21,7 @@ import {
 } from "@/lib/db/schema";
 import { migrateLocalDatabase } from "@/lib/db/migrations";
 import { runPersistencePreflight } from "@/lib/db/persistence-preflight";
+import { createMigrationsThrough } from "@test/helpers/migrations";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-resume-repository-");
@@ -47,21 +47,8 @@ afterEach(() => {
 });
 
 function migrationsThrough(maxIndex: number): string {
-  const source = join(process.cwd(), "drizzle");
-  const destination = mkdtempSync(join(tmpdir(), "switchy-resume-migrations-"));
+  const destination = createMigrationsThrough(maxIndex, "switchy-resume-migrations-");
   temporaryMigrationFolders.push(destination);
-  mkdirSync(join(destination, "meta"), { recursive: true });
-  const journal = JSON.parse(readFileSync(join(source, "meta", "_journal.json"), "utf8")) as {
-    entries: Array<{ idx: number; tag: string }>;
-  };
-  const entries = journal.entries.filter((entry) => entry.idx <= maxIndex);
-  for (const entry of entries) {
-    cpSync(join(source, `${entry.tag}.sql`), join(destination, `${entry.tag}.sql`));
-  }
-  writeFileSync(join(destination, "meta", "_journal.json"), JSON.stringify({
-    ...journal,
-    entries,
-  }));
   return destination;
 }
 

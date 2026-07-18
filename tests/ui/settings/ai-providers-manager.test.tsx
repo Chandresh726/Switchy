@@ -34,7 +34,7 @@ function props() {
     ],
     onAddProvider: vi.fn(),
     onDeleteProvider: vi.fn(),
-    onUpdateProviderApiKey: vi.fn(),
+    onUpdateProvider: vi.fn(),
     onRefreshProviderModels: vi.fn(),
     codexExecutablePath: "",
     openCodeExecutablePath: "",
@@ -46,7 +46,7 @@ describe("AIProvidersManager local CLI providers", () => {
   it("shows permanent CLI providers without add or delete actions", () => {
     render(<AIProvidersManager {...props()} />);
 
-    expect(screen.getByText("Manage API-key and local CLI providers in one place.")).toBeTruthy();
+    expect(screen.getByText("Manage API-key, custom API, and local CLI providers in one place.")).toBeTruthy();
     expect(screen.getByText("Codex CLI")).toBeTruthy();
     expect(screen.getByText("OpenCode")).toBeTruthy();
     expect(screen.getByText("v1.2.3")).toBeTruthy();
@@ -110,6 +110,84 @@ describe("AIProvidersManager local CLI providers", () => {
     fireEvent.click(screen.getByLabelText("Provider"));
     expect(screen.queryByRole("option", { name: "Codex CLI · Local CLI" })).toBeNull();
     expect(screen.queryByRole("option", { name: "OpenCode · Local CLI" })).toBeNull();
+  });
+
+  it("keeps Custom available and submits the complete connection form", async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const input = props();
+    render(<AIProvidersManager {...input} providers={[]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add Provider" }));
+    fireEvent.click(screen.getByLabelText("Provider"));
+    fireEvent.click(screen.getByRole("option", { name: "Custom · API endpoint" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "CLI Proxy API" } });
+    fireEvent.change(screen.getByLabelText("Base URL"), {
+      target: { value: "http://127.0.0.1:8317/v1" },
+    });
+    fireEvent.change(screen.getByLabelText("API key or token (optional)"), {
+      target: { value: "proxy-secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add header" }));
+    const headerNameInput = screen.getByLabelText("Header 1 name");
+    headerNameInput.focus();
+    fireEvent.change(headerNameInput, {
+      target: { value: "X-Route" },
+    });
+    expect(document.activeElement).toBe(headerNameInput);
+    fireEvent.change(screen.getByLabelText("Header 1 value"), {
+      target: { value: "codex" },
+    });
+    fireEvent.change(screen.getByLabelText("Manual model IDs (optional)"), {
+      target: { value: "manual-one\nmanual-two" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add Provider" }));
+
+    expect(input.onAddProvider).toHaveBeenCalledWith({
+      provider: "custom",
+      displayName: "CLI Proxy API",
+      apiFormat: "openai_chat_completions",
+      baseUrl: "http://127.0.0.1:8317/v1",
+      apiKey: "proxy-secret",
+      headers: [{ name: "X-Route", value: "codex" }],
+      manualModelIds: ["manual-one", "manual-two"],
+    });
+  });
+
+  it("renders multiple named custom providers and preserves masked headers while editing", async () => {
+    const input = props();
+    const customProviders = ["Primary proxy", "Backup proxy"].map((displayName, index) => ({
+      id: `custom-${index}`,
+      provider: "custom",
+      kind: "custom" as const,
+      displayName,
+      apiFormat: "anthropic_messages" as const,
+      baseUrl: `http://127.0.0.1:${8317 + index}/v1`,
+      headerNames: ["Authorization"],
+      manualModelIds: ["claude-proxy"],
+      isActive: true,
+      hasApiKey: true,
+      selectable: true,
+      createdAt: null,
+      updatedAt: null,
+    }));
+    render(<AIProvidersManager {...input} providers={customProviders} />);
+
+    expect(screen.getByText("Primary proxy")).toBeTruthy();
+    expect(screen.getByText("Backup proxy")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add Another Provider" })).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit connection" })[0]);
+    expect(screen.getByLabelText("Header 1 value").getAttribute("placeholder")).toBe("Stored value");
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Renamed proxy" } });
+    fireEvent.click(screen.getByRole("button", { name: "Update connection" }));
+
+    expect(input.onUpdateProvider).toHaveBeenCalledWith("custom-0", {
+      displayName: "Renamed proxy",
+      apiFormat: "anthropic_messages",
+      baseUrl: "http://127.0.0.1:8317/v1",
+      apiKey: undefined,
+      headers: [{ name: "Authorization" }],
+      manualModelIds: ["claude-proxy"],
+    });
   });
 
 });

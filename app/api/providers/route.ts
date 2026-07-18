@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
     }
 
     const created = await createProvider({
+      ...parsedBody,
       provider: providerType,
       apiKey: normalizedApiKey,
     });

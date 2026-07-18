@@ -50,11 +50,24 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       throw new ValidationError("No API key configured", "missing_api_key");
     }
 
-    const modelsResponse = await getProviderModels(parsedParams.id);
+    const modelsResponse = await getProviderModels(
+      parsedParams.id,
+      context.providerType === "custom"
+        ? { forceRefresh: true, allowStaleOnError: false }
+        : undefined
+    );
     const models = modelsResponse.models;
 
     if (models.length === 0) {
       throw new ValidationError("No models available", "invalid_model");
+    }
+
+    if (context.providerType === "custom") {
+      return NextResponse.json({
+        valid: true,
+        provider: context.provider.provider,
+        modelsCount: models.length,
+      });
     }
 
     providerInstance.createModel({
