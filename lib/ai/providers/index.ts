@@ -6,6 +6,7 @@ import { openrouterProvider } from "./openrouter";
 import { cerebrasProvider } from "./cerebras";
 import { groqProvider } from "./groq";
 import { nvidiaProvider } from "./nvidia";
+import { customProvider } from "./custom";
 
 // Create and populate the global provider registry
 export const providerRegistry = new SimpleProviderRegistry();
@@ -18,6 +19,7 @@ providerRegistry.register(openrouterProvider);
 providerRegistry.register(cerebrasProvider);
 providerRegistry.register(groqProvider);
 providerRegistry.register(nvidiaProvider);
+providerRegistry.register(customProvider);
 
 // Re-export types and classes
 export * from "./types";
@@ -29,4 +31,7 @@ export * from "./openrouter";
 export * from "./cerebras";
 export * from "./groq";
 export * from "./nvidia";
+export * from "./custom";
+export * from "./custom-config";
+export * from "./custom-fetch";
 export * from "./metadata";

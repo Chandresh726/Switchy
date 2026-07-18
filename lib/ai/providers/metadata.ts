@@ -3,7 +3,7 @@ import type { AIProvider } from "./types";
 export interface ProviderMetadata {
   id: AIProvider;
   displayName: string;
-  kind: "api_key" | "local_cli";
+  kind: "api_key" | "local_cli" | "custom";
   requiresApiKey: boolean;
   apiKeyUrl?: string;
   freeTierNote?: string;
@@ -79,6 +79,13 @@ const PROVIDER_METADATA: Record<AIProvider, ProviderMetadata> = {
     kind: "local_cli",
     requiresApiKey: false,
     freeTierNote: "Uses providers and authentication already configured by OpenCode.",
+  },
+  custom: {
+    id: "custom",
+    displayName: "Custom",
+    kind: "custom",
+    requiresApiKey: false,
+    freeTierNote: "Connects directly to a compatible API endpoint you control.",
   },
 };
 

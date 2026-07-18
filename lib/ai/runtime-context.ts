@@ -10,6 +10,10 @@ import { getLocalCLIExecutionTarget } from "@/lib/ai/local-cli/service";
 import type { AIGenerationBackend } from "@/lib/ai/local-cli/types";
 import { providerRegistry } from "@/lib/ai/providers";
 import {
+  resolveStoredCustomProvider,
+  type CustomProviderConnection,
+} from "@/lib/ai/providers/custom-config";
+import {
   AIError,
   isAIProvider,
   isReasoningEffort,
@@ -42,6 +46,7 @@ interface ResolvedProviderRecord {
   provider: AIProvider;
   apiKey?: string;
   updatedAt: Date | null;
+  customConnection?: CustomProviderConnection;
 }
 
 const FEATURE_SETTING_KEYS: Record<
@@ -217,11 +222,15 @@ async function resolveProviderRecord(providerId?: string): Promise<ResolvedProvi
     });
   }
 
+  const apiKey = decryptProviderKey(record);
   return {
     id: record.id,
     provider: record.provider,
-    apiKey: decryptProviderKey(record),
+    apiKey,
     updatedAt: record.updatedAt,
+    customConnection: record.provider === "custom"
+      ? resolveStoredCustomProvider(record, apiKey)
+      : undefined,
   };
 }
 
@@ -333,7 +342,14 @@ async function resolveAIContext(
     modelId,
     ...(reasoningEffort ? { reasoningEffort } : {}),
   };
-  const providerConfig = { apiKey: providerRecord.apiKey };
+  const providerConfig = providerRecord.customConnection
+    ? {
+        apiKey: providerRecord.customConnection.apiKey,
+        baseUrl: providerRecord.customConnection.baseUrl,
+        apiFormat: providerRecord.customConnection.apiFormat,
+        headers: providerRecord.customConnection.headers,
+      }
+    : { apiKey: providerRecord.apiKey };
   const model: LanguageModel = provider.createModel({
     config: modelConfig,
     providerConfig,

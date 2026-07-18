@@ -22,6 +22,7 @@ vi.mock("server-only", () => ({}));
 
 import {
   clearProviderModelsCache,
+  discoverCustomProviderModels,
   getProviderModels,
   resolveProviderModelSelection,
 } from "@/lib/ai/providers/model-catalog";
@@ -111,6 +112,142 @@ describe("model catalog", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("discovers OpenAI-style custom models with bearer authentication and manual additions", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({
+        data: [
+          { id: "proxy-model", owned_by: "cliproxy" },
+          { id: "embedding-model", owned_by: "cliproxy" },
+        ],
+      })));
+
+    const models = await discoverCustomProviderModels({
+      displayName: "Local proxy",
+      apiFormat: "openai_chat_completions",
+      baseUrl: "http://127.0.0.1:8317/v1",
+      apiKey: "proxy-key",
+      headers: { "X-Route": "codex" },
+      manualModelIds: ["manual-model", "proxy-model"],
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://127.0.0.1:8317/v1/models");
+    const openAIHeaders = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
+    expect(openAIHeaders.get("authorization")).toBe("Bearer proxy-key");
+    expect(openAIHeaders.get("x-route")).toBe("codex");
+    expect(models.map(({ modelId }) => modelId)).toEqual(["proxy-model", "manual-model"]);
+  });
+
+  it("parses Anthropic-style custom catalogs and does not expose error bodies", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+        data: [{ id: "claude-proxy", display_name: "Claude Proxy", type: "model" }],
+      })));
+    const models = await discoverCustomProviderModels({
+      displayName: "Anthropic proxy",
+      apiFormat: "anthropic_messages",
+      baseUrl: "https://proxy.example/v1",
+      apiKey: "secret-key",
+      headers: {},
+      manualModelIds: [],
+    });
+    expect(models[0]).toMatchObject({ modelId: "claude-proxy", label: "Claude Proxy" });
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe("https://proxy.example/v1/models");
+    const anthropicHeaders = new Headers(fetchMock.mock.calls.at(-1)?.[1]?.headers);
+    expect(anthropicHeaders.get("x-api-key")).toBe("secret-key");
+    expect(anthropicHeaders.get("anthropic-version")).toBe("2023-06-01");
+
+    const rejectedResponse = new Response("request echoed secret-key", {
+      status: 401,
+    });
+    const cancel = vi.spyOn(rejectedResponse.body!, "cancel");
+    fetchMock.mockResolvedValueOnce(rejectedResponse);
+    await expect(discoverCustomProviderModels({
+      displayName: "Anthropic proxy",
+      apiFormat: "anthropic_messages",
+      baseUrl: "https://proxy.example/v1",
+      apiKey: "secret-key",
+      headers: {},
+      manualModelIds: [],
+    })).rejects.not.toMatchObject({ context: { body: expect.anything() } });
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    {},
+    { data: {} },
+    { data: [null] },
+  ])("rejects malformed custom catalog shapes with an AI error", async (payload) => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(payload)));
+
+    await expect(discoverCustomProviderModels({
+      displayName: "Malformed proxy",
+      apiFormat: "openai_chat_completions",
+      baseUrl: "https://malformed.example/v1",
+      headers: {},
+      manualModelIds: ["manual-model"],
+    })).rejects.toMatchObject({
+      type: "validation",
+      message: "Invalid custom provider model catalog",
+    });
+  });
+
+  it("bounds custom discovery time and response size", async () => {
+    const timeout = new Error("timed out");
+    timeout.name = "TimeoutError";
+    fetchMock.mockRejectedValueOnce(timeout);
+    await expect(discoverCustomProviderModels({
+      displayName: "Slow proxy",
+      apiFormat: "openai_chat_completions",
+      baseUrl: "https://slow.example/v1",
+      headers: {},
+      manualModelIds: [],
+    })).rejects.toMatchObject({ message: "Custom provider model discovery timed out" });
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+
+    const oversizedResponse = new Response("{}", {
+      headers: { "content-length": String(2 * 1024 * 1024 + 1) },
+    });
+    const cancel = vi.spyOn(oversizedResponse.body!, "cancel");
+    cancel.mockRejectedValueOnce(new Error("cancel failed"));
+    fetchMock.mockResolvedValueOnce(oversizedResponse);
+    await expect(discoverCustomProviderModels({
+      displayName: "Large proxy",
+      apiFormat: "openai_chat_completions",
+      baseUrl: "https://large.example/v1",
+      headers: {},
+      manualModelIds: ["manual-model"],
+    })).rejects.toMatchObject({ message: "Invalid model catalog response from custom" });
+    expect(cancel).toHaveBeenCalledTimes(1);
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      body: null,
+      text: async () => "x".repeat(2 * 1024 * 1024 + 1),
+    });
+    await expect(discoverCustomProviderModels({
+      displayName: "Bodyless proxy",
+      apiFormat: "openai_chat_completions",
+      baseUrl: "https://bodyless.example/v1",
+      headers: {},
+      manualModelIds: ["manual-model"],
+    })).rejects.toMatchObject({ message: "Invalid model catalog response from custom" });
+  });
+
+  it("rejects a discovered and manual catalog whose final deduplicated size exceeds the cache bound", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      data: Array.from({ length: 900 }, (_, index) => ({ id: `remote-${index}` })),
+    })));
+    await expect(discoverCustomProviderModels({
+      displayName: "Large catalog",
+      apiFormat: "openai_chat_completions",
+      baseUrl: "https://large.example/v1",
+      headers: {},
+      manualModelIds: Array.from({ length: 200 }, (_, index) => `manual-${index}`),
+    })).rejects.toMatchObject({
+      message: "The custom provider catalog cannot contain more than 1,000 models",
+    });
+  });
+
   it("returns stale cache with warning when refresh fails", async () => {
     const providerRecord = {
       id: "provider-openai",
@@ -122,6 +259,7 @@ describe("model catalog", () => {
     queueSelectResponses(
       { limit: [providerRecord] },
       { limit: [] },
+      { limit: [providerRecord] },
       { limit: [providerRecord] }
     );
 
@@ -132,7 +270,8 @@ describe("model catalog", () => {
           data: [{ id: "gpt-4.1-mini", owned_by: "openai" }],
         }),
       })
-      .mockRejectedValueOnce(new Error("network down"));
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockRejectedValueOnce(new Error("still down"));
 
     const live = await getProviderModels("provider-openai");
     const stale = await getProviderModels("provider-openai", { forceRefresh: true });
@@ -142,6 +281,14 @@ describe("model catalog", () => {
     expect(stale.isStale).toBe(true);
     expect(stale.warning).toContain("Failed to fetch models from openai");
     expect(stale.models).toEqual(live.models);
+
+    await expect(getProviderModels("provider-openai", {
+      forceRefresh: true,
+      allowStaleOnError: false,
+    })).rejects.toMatchObject({
+      type: "network",
+      message: "Failed to fetch models from openai",
+    });
   });
 
   it("preserves OpenRouter reasoning efforts, ordering, and default from the catalog", async () => {

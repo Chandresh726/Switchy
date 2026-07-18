@@ -13,12 +13,25 @@ const AI_PROVIDER_IDS = [
   "nvidia",
   "codex_cli",
   "opencode_cli",
+  "custom",
 ] as const;
 
 export type AIProvider = (typeof AI_PROVIDER_IDS)[number];
 
 const LOCAL_CLI_PROVIDER_IDS = ["codex_cli", "opencode_cli"] as const;
 export type LocalCLIProvider = (typeof LOCAL_CLI_PROVIDER_IDS)[number];
+
+export const CUSTOM_API_FORMATS = [
+  "openai_chat_completions",
+  "openai_responses",
+  "anthropic_messages",
+] as const;
+
+export type CustomAPIFormat = (typeof CUSTOM_API_FORMATS)[number];
+
+export function isCustomAPIFormat(value: string): value is CustomAPIFormat {
+  return (CUSTOM_API_FORMATS as readonly string[]).includes(value);
+}
 
 export function isLocalCLIProvider(value: string): value is LocalCLIProvider {
   return (LOCAL_CLI_PROVIDER_IDS as readonly string[]).includes(value);
@@ -59,6 +72,8 @@ export interface ProviderConfig {
   apiKey?: string;
   /** Optional base URL override */
   baseUrl?: string;
+  apiFormat?: CustomAPIFormat;
+  headers?: Record<string, string>;
   /** Additional provider-specific options */
   extraOptions?: Record<string, unknown>;
 }

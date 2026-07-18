@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `ai_providers_builtin_provider_unique` ON `aiProviders` (`provider`) WHERE "aiProviders"."provider" <> 'custom';

@@ -1,5 +1,4 @@
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { asc, eq } from "drizzle-orm";
@@ -18,6 +17,7 @@ import {
 import { aiProviders, settings } from "@/lib/db/schema";
 import { migrateLocalDatabase } from "@/lib/db/migrations";
 import { removeDeprecatedMatchingPreferenceSettings } from "@/lib/settings/settings-service";
+import { createMigrationsThrough } from "@test/helpers/migrations";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-cli-providers-");
@@ -36,22 +36,18 @@ const legacyModelCapabilities = sqliteTable("ai_model_capabilities", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
 
+const legacyAiProviders = sqliteTable("aiProviders", {
+  id: text("id").primaryKey(),
+  provider: text("provider").notNull(),
+  apiKey: text("api_key"),
+  isActive: integer("is_active", { mode: "boolean" }).default(true),
+  isDefault: integer("is_default", { mode: "boolean" }).default(false),
+  createdAt: integer("created_at", { mode: "timestamp" }),
+  updatedAt: integer("updated_at", { mode: "timestamp" }),
+});
+
 function migrationsThrough(maxIndex: number): string {
-  const source = join(process.cwd(), "drizzle");
-  const destination = mkdtempSync(join(tmpdir(), "switchy-cli-provider-migrations-"));
-  mkdirSync(join(destination, "meta"), { recursive: true });
-  const journal = JSON.parse(
-    readFileSync(join(source, "meta", "_journal.json"), "utf8")
-  ) as { entries: Array<{ idx: number; tag: string }> };
-  const entries = journal.entries.filter((entry) => entry.idx <= maxIndex);
-  for (const entry of entries) {
-    cpSync(join(source, `${entry.tag}.sql`), join(destination, `${entry.tag}.sql`));
-  }
-  writeFileSync(
-    join(destination, "meta", "_journal.json"),
-    JSON.stringify({ ...journal, entries })
-  );
-  return destination;
+  return createMigrationsThrough(maxIndex, "switchy-cli-provider-migrations-");
 }
 
 describe("local CLI provider records", () => {
@@ -60,7 +56,7 @@ describe("local CLI provider records", () => {
     const previousMigrations = migrationsThrough(22);
     try {
       migrateLocalDatabase(database, previousMigrations);
-      database.insert(aiProviders).values({
+      database.insert(legacyAiProviders).values({
         id: "provider-before-cleanup",
         provider: "openai",
         isActive: true,
@@ -213,7 +209,6 @@ describe("local CLI provider records", () => {
     const result = await deleteProvider(selected.id, {
       database,
       deleteModelsCache: vi.fn().mockResolvedValue(undefined),
-      resetLocalProvider: vi.fn().mockResolvedValue(undefined),
       resolveModels: vi.fn().mockResolvedValue({
         models: [{
           modelId: "fallback-model",

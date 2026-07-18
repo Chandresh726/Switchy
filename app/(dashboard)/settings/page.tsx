@@ -14,6 +14,7 @@ import {
   deleteProvider,
   getProviderModels,
   getProviders,
+  updateProvider,
   updateProviderApiKey,
 } from "@/lib/api/clients/providers";
 import {
@@ -44,6 +45,10 @@ import type {
   ProviderSettingsListItem,
   Settings,
 } from "@/lib/api/contracts/settings";
+import type {
+  ProviderCreateBody,
+  ProviderPatchBody,
+} from "@/lib/api/contracts/providers";
 import type {
   ProviderModelsState,
   ReasoningEffort,
@@ -329,8 +334,8 @@ function SettingsContent() {
   const isInitialLoading = settingsQuery.isLoading || providersQuery.isLoading;
 
   const addProviderMutation = useMutation({
-    mutationFn: async ({ provider, apiKey }: { provider: string; apiKey?: string }) => {
-      return createProvider({ provider, apiKey });
+    mutationFn: async (input: ProviderCreateBody) => {
+      return createProvider(input);
     },
     onSuccess: (data) => {
       void cacheOwnership.providerMutation(queryClient);
@@ -360,13 +365,23 @@ function SettingsContent() {
   });
 
   const updateProviderApiKeyMutation = useMutation({
-    mutationFn: ({ id, apiKey }: { id: string; apiKey?: string }) =>
+    mutationFn: ({ id, apiKey }: { id: string; apiKey?: string | null }) =>
       updateProviderApiKey(id, { apiKey }),
     onSuccess: () => {
       void cacheOwnership.providerMutation(queryClient);
       toast.success("Provider API key updated");
     },
     onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update provider API key")),
+  });
+
+  const updateProviderMutation = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: ProviderPatchBody }) =>
+      updateProvider(id, input),
+    onSuccess: () => {
+      void cacheOwnership.providerMutation(queryClient);
+      toast.success("Provider connection updated");
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update provider connection")),
   });
 
   const derivedValues = useMemo(() => {
@@ -615,7 +630,7 @@ function SettingsContent() {
       return {
         id: provider.id,
         provider: provider.provider,
-        name: meta?.displayName || provider.provider,
+        name: provider.displayName ?? meta.displayName,
         isActive: provider.isActive,
       };
     });
@@ -1392,14 +1407,21 @@ function SettingsContent() {
 
           <AIProvidersManager
             providers={providers}
-            onAddProvider={async (provider, apiKey) => {
-              await addProviderMutation.mutateAsync({ provider, apiKey });
+            onAddProvider={async (input) => {
+              await addProviderMutation.mutateAsync(input);
             }}
             onDeleteProvider={async (id) => {
               await deleteProviderMutation.mutateAsync(id);
             }}
-            onUpdateProviderApiKey={async (id, apiKey) => {
-              await updateProviderApiKeyMutation.mutateAsync({ id, apiKey });
+            onUpdateProvider={async (id, input) => {
+              if (Object.keys(input).length === 1 && "apiKey" in input) {
+                await updateProviderApiKeyMutation.mutateAsync({
+                  id,
+                  apiKey: input.apiKey,
+                });
+                return;
+              }
+              await updateProviderMutation.mutateAsync({ id, input });
             }}
             onRefreshProviderModels={refreshProviderModels}
             codexExecutablePath={settings?.codex_cli_executable ?? ""}

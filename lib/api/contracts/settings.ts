@@ -107,7 +107,16 @@ const providerSettingsListItemSchema = z.object({
   hasApiKey: z.boolean(),
   createdAt: z.union([z.string(), z.date()]).nullable(),
   updatedAt: z.union([z.string(), z.date()]).nullable(),
-  kind: z.enum(["api_key", "local_cli"]),
+  kind: z.enum(["api_key", "local_cli", "custom"]),
+  displayName: z.string().optional(),
+  apiFormat: z.enum([
+    "openai_chat_completions",
+    "openai_responses",
+    "anthropic_messages",
+  ]).optional(),
+  baseUrl: z.string().optional(),
+  headerNames: z.array(z.string()).optional(),
+  manualModelIds: z.array(z.string()).optional(),
   connectionStatus: z
     .enum([
       "ready",
@@ -166,6 +175,7 @@ export const providerModelsResponseSchema = z.object({
     "nvidia",
     "codex_cli",
     "opencode_cli",
+    "custom",
   ]),
   models: z.array(providerModelSchema),
   fetchedAt: z.string(),

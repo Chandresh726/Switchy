@@ -52,7 +52,7 @@ export const createProvider = (body: z.input<typeof providerCreateBodySchema>) =
   "Failed to add provider"
 );
 
-export const updateProviderApiKey = (
+export const updateProvider = (
   providerId: string,
   body: z.input<typeof providerPatchBodySchema>
 ) => apiJsonMutation(
@@ -61,8 +61,13 @@ export const updateProviderApiKey = (
   providerPatchBodySchema,
   body,
   successSchema,
-  "Failed to update provider API key"
+  "Failed to update provider"
 );
+
+export const updateProviderApiKey = (
+  providerId: string,
+  body: Pick<z.input<typeof providerPatchBodySchema>, "apiKey">
+) => updateProvider(providerId, body);
 
 export const deleteProvider = (providerId: string) => apiCommand(
   `/api/providers/${providerPath(providerId)}`,

@@ -360,11 +360,20 @@ export const aiProviders = sqliteTable("aiProviders", {
   id: text("id").primaryKey(), // UUID
   provider: text("provider").notNull(), // "anthropic", "openai", "gemini_api_key", "openrouter", "cerebras", "groq", "nvidia"
   apiKey: text("api_key"), // Encrypted API key
+  displayName: text("display_name"),
+  apiFormat: text("api_format"),
+  baseUrl: text("base_url"),
+  encryptedHeaders: text("encrypted_headers"),
+  manualModelIds: text("manual_model_ids"),
   isActive: integer("is_active", { mode: "boolean" }).default(true),
   isDefault: integer("is_default", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
-});
+}, (table) => ({
+  builtInProviderUnique: uniqueIndex("ai_providers_builtin_provider_unique")
+    .on(table.provider)
+    .where(sql`${table.provider} <> 'custom'`),
+}));
 
 // AI Runs - Sanitized provenance and telemetry for every logical AI execution
 export const aiRuns = sqliteTable("ai_runs", {
