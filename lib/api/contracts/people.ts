@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import { positiveIntegerIdSchema } from "./common";
 
+const nullableIsoDateSchema = z.iso.datetime().nullable();
+
 export const peopleSourceSchema = z.enum(["linkedin", "apollo"]);
 export const peopleImportModeSchema = z.enum(["merge", "replace"]);
 export const personIdParamsSchema = z.object({ id: positiveIntegerIdSchema });
@@ -78,13 +80,13 @@ export const personResponseSchema = z.object({
   mappedCompanyId: z.number().int().positive().nullable(),
   isStarred: z.boolean(),
   isActive: z.boolean(),
-  lastSeenAt: z.string(),
-  connectedOn: z.string().nullable(),
+  lastSeenAt: z.iso.datetime(),
+  connectedOn: nullableIsoDateSchema,
   roleTag: z.string().nullable(),
   roleTagSource: z.string().nullable(),
   notes: z.string().nullable(),
-  createdAt: z.string().nullable(),
-  updatedAt: z.string().nullable(),
+  createdAt: nullableIsoDateSchema,
+  updatedAt: nullableIsoDateSchema,
   isRecruiter: z.boolean(),
   company: z.object({ id: z.number().int().positive(), name: z.string() }).nullable(),
 }).passthrough();
@@ -132,7 +134,7 @@ export const peopleImportSessionsResponseSchema = z.object({
     id: z.string(),
     source: z.enum(["linkedin", "apollo", "manual"]),
     fileName: z.string(),
-    startedAt: z.string(),
+    startedAt: z.iso.datetime(),
   }).passthrough()),
   pagination: z.object({
     total: z.number().int().nonnegative(),

@@ -17,6 +17,11 @@ const commaSeparated = <T extends z.ZodTypeAny>(item: T, maximum: number) =>
     z.array(item).max(maximum)
   );
 
+const isoDateInputSchema = z.union([z.date(), z.iso.datetime()]).transform(
+  (value) => typeof value === "string" ? new Date(value) : value
+);
+const nullableIsoDateSchema = z.iso.datetime().nullable();
+
 export const jobsQuerySchema = z
   .object({
     companyId: z.coerce.number().int().positive().optional(),
@@ -35,10 +40,10 @@ export const jobsQuerySchema = z
     employmentType: z.string().trim().min(1).max(80).optional(),
     seniorityLevel: z.string().trim().min(1).max(80).optional(),
     locationSearch: z.string().trim().min(1).max(120).optional(),
-    discoveredSince: z.coerce.date().optional(),
-    updatedSince: z.coerce.date().optional(),
-    viewedSince: z.coerce.date().optional(),
-    appliedSince: z.coerce.date().optional(),
+    discoveredSince: isoDateInputSchema.optional(),
+    updatedSince: isoDateInputSchema.optional(),
+    viewedSince: isoDateInputSchema.optional(),
+    appliedSince: isoDateInputSchema.optional(),
     sortBy: z
       .enum([
         "matchScore",
@@ -71,8 +76,8 @@ export const jobIdParamsSchema = z.object({ id: z.coerce.number().int().positive
 export const jobResourceUpdateBodySchema = z
   .object({
     status: jobStatusSchema.optional(),
-    viewedAt: z.coerce.date().optional(),
-    appliedAt: z.coerce.date().optional(),
+    viewedAt: isoDateInputSchema.optional(),
+    appliedAt: isoDateInputSchema.optional(),
   })
   .refine(
     ({ status, viewedAt, appliedAt }) =>
@@ -94,13 +99,13 @@ const jobSummarySchema = z.object({
   employmentType: z.string().nullable(),
   seniorityLevel: z.string().nullable(),
   status: jobStatusSchema,
-  postedDate: z.string().nullable(),
-  discoveredAt: z.string().nullable(),
-  updatedAt: z.string().nullable(),
-  archivedAt: z.string().nullable(),
+  postedDate: nullableIsoDateSchema,
+  discoveredAt: nullableIsoDateSchema,
+  updatedAt: nullableIsoDateSchema,
+  archivedAt: nullableIsoDateSchema,
   archiveSource: z.string().nullable(),
-  viewedAt: z.string().nullable(),
-  appliedAt: z.string().nullable(),
+  viewedAt: nullableIsoDateSchema,
+  appliedAt: nullableIsoDateSchema,
   matchScore: z.number().nullable(),
   matchReasons: z.array(z.string()),
   matchedSkills: z.array(z.string()),
@@ -145,11 +150,11 @@ export const jobsResponseSchema = z.object({
 export const jobUpdateResponseSchema = z.object({
   id: z.number().int().positive(),
   status: jobStatusSchema,
-  viewedAt: z.string().nullable(),
-  appliedAt: z.string().nullable(),
-  archivedAt: z.string().nullable(),
+  viewedAt: nullableIsoDateSchema,
+  appliedAt: nullableIsoDateSchema,
+  archivedAt: nullableIsoDateSchema,
   archiveSource: z.string().nullable(),
-  updatedAt: z.string().nullable(),
+  updatedAt: nullableIsoDateSchema,
 });
 
 export type JobSummary = z.infer<typeof jobSummarySchema>;

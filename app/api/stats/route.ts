@@ -4,7 +4,7 @@ import { handleApiError } from "@/lib/api";
 import { statsQuerySchema } from "@/lib/api/contracts/stats";
 import { getDashboardStats } from "@/lib/application/stats-service";
 
-export async function GET(request: Request) {
+export async function GET(request: Request): Promise<NextResponse> {
   try {
     const { days } = statsQuerySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams)

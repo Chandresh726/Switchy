@@ -1,13 +1,21 @@
 import { and, count, desc, eq, gte, lte, sql } from "drizzle-orm";
 
 import { getCurrentMatchContext } from "@/lib/ai/matcher/presentation";
+import type { StatsResponse } from "@/lib/api/contracts/stats";
 import { db } from "@/lib/db";
 import { companies, jobs, matchResults, people, scrapeSessions } from "@/lib/db/schema";
 import { getUnmatchedCompaniesSummary } from "@/lib/people/sync/unmatched";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
-export async function getDashboardStats(days: 7 | 30 | 90 = 7, now = new Date()) {
+type DashboardStats = Omit<StatsResponse, "lastScan"> & {
+  lastScan: typeof scrapeSessions.$inferSelect | null;
+};
+
+export async function getDashboardStats(
+  days: 7 | 30 | 90 = 7,
+  now: Date = new Date()
+): Promise<DashboardStats> {
   const periodStart = new Date(now.getTime() - days * DAY_MS);
   const discoveredInPeriod = and(gte(jobs.discoveredAt, periodStart), lte(jobs.discoveredAt, now));
   const viewedInPeriod = and(gte(jobs.viewedAt, periodStart), lte(jobs.viewedAt, now));
@@ -30,7 +38,14 @@ export async function getDashboardStats(days: 7 | 30 | 90 = 7, now = new Date())
     ? scoreStatsQuery.leftJoin(matchResults, currentResultJoin)
     : scoreStatsQuery;
 
-  const [jobStatsResult, companyStatsResult, lastSessionResult, peopleStatsResult, scoreStatsResult] = await Promise.all([
+  const [
+    jobStatsResult,
+    companyStatsResult,
+    lastSessionResult,
+    peopleStatsResult,
+    scoreStatsResult,
+    recentJobsResult,
+  ] = await Promise.all([
     db.select({
       totalJobs: count(),
       appliedJobs: sql<number>`coalesce(sum(case when ${jobs.status} = 'applied' then 1 else 0 end), 0)`,
@@ -51,12 +66,12 @@ export async function getDashboardStats(days: 7 | 30 | 90 = 7, now = new Date())
       mappedPeople: sql<number>`coalesce(sum(case when ${people.isActive} = 1 and ${people.mappedCompanyId} is not null then 1 else 0 end), 0)`,
     }).from(people),
     scoreStatsPromise,
+    db.select({
+      discovered: sql<number>`coalesce(sum(case when ${discoveredInPeriod} then 1 else 0 end), 0)`,
+      viewed: sql<number>`coalesce(sum(case when ${viewedInPeriod} then 1 else 0 end), 0)`,
+      applied: sql<number>`coalesce(sum(case when ${appliedInPeriod} then 1 else 0 end), 0)`,
+    }).from(jobs),
   ]);
-  const recentJobsResult = await db.select({
-    discovered: sql<number>`coalesce(sum(case when ${discoveredInPeriod} then 1 else 0 end), 0)`,
-    viewed: sql<number>`coalesce(sum(case when ${viewedInPeriod} then 1 else 0 end), 0)`,
-    applied: sql<number>`coalesce(sum(case when ${appliedInPeriod} then 1 else 0 end), 0)`,
-  }).from(jobs);
   const jobStats = jobStatsResult[0];
   const companyStats = companyStatsResult[0];
   const peopleStats = peopleStatsResult[0];

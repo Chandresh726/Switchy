@@ -54,7 +54,8 @@ export const companyIdsBodySchema = z.object({
 });
 export const companyBulkActiveBodySchema = companyIdsBodySchema.extend({ isActive: z.boolean() });
 
-const dateValueSchema = z.string().nullable();
+const dateValueSchema = z.iso.datetime().nullable();
+const requiredDateValueSchema = z.iso.datetime();
 
 export const companyWriteResponseSchema = z.object({
   id: z.number().int().positive(),
@@ -66,7 +67,7 @@ export const companyWriteResponseSchema = z.object({
   boardToken: z.string().nullable(),
   isActive: z.boolean(),
   lastScrapedAt: dateValueSchema,
-  createdAt: z.string(),
+  createdAt: requiredDateValueSchema,
   updatedAt: dateValueSchema,
 });
 
@@ -111,8 +112,8 @@ const companyJobSchema = z.object({
   matchLegacy: z.boolean().optional(),
   location: z.string().nullable(),
   locationType: z.string().nullable(),
-  discoveredAt: z.string().nullable(),
-  viewedAt: z.string().nullable(),
+  discoveredAt: dateValueSchema,
+  viewedAt: dateValueSchema,
 });
 
 const companyPersonSchema = z.object({
@@ -124,14 +125,14 @@ const companyPersonSchema = z.object({
   profileUrl: z.string(),
   email: z.string().nullable(),
   position: z.string().nullable(),
-  connectedOn: z.string().nullable(),
+  connectedOn: dateValueSchema,
   isStarred: z.boolean(),
   notes: z.string().nullable(),
   roleTag: z.string().nullable(),
   roleTagSource: z.string().nullable(),
-  lastSeenAt: z.string(),
-  createdAt: z.string().nullable(),
-  updatedAt: z.string().nullable(),
+  lastSeenAt: requiredDateValueSchema,
+  createdAt: dateValueSchema,
+  updatedAt: dateValueSchema,
   isRecruiter: z.boolean(),
 });
 
@@ -145,7 +146,7 @@ export const companyOverviewResponseSchema = z.object({
     platform: z.string().nullable(),
     canScrapeJobs: z.boolean(),
     isActive: z.boolean(),
-    lastScrapedAt: z.string().nullable(),
+    lastScrapedAt: dateValueSchema,
   }),
   stats: z.object({
     openJobs: z.number().int().nonnegative(),
@@ -161,7 +162,7 @@ export const companyOverviewResponseSchema = z.object({
       archived: z.number().int().nonnegative(),
     }),
     jobsDiscoveredLast7Days: z.number().int().nonnegative(),
-    lastJobDiscoveredAt: z.string().nullable(),
+    lastJobDiscoveredAt: dateValueSchema,
   }),
   jobs: z.array(companyJobSchema),
   topMatches: z.array(companyJobSchema),
@@ -173,8 +174,8 @@ export const companyOverviewResponseSchema = z.object({
       triggerSource: z.string().nullable(),
       jobsFound: z.number().nullable(),
       jobsAdded: z.number().nullable(),
-      startedAt: z.string().nullable(),
-      completedAt: z.string().nullable(),
+      startedAt: dateValueSchema,
+      completedAt: dateValueSchema,
     })),
     matchSessions: z.array(z.object({
       id: z.string(),
@@ -184,8 +185,8 @@ export const companyOverviewResponseSchema = z.object({
       jobsCompleted: z.number().nullable(),
       jobsSucceeded: z.number().nullable(),
       jobsFailed: z.number().nullable(),
-      startedAt: z.string().nullable(),
-      completedAt: z.string().nullable(),
+      startedAt: dateValueSchema,
+      completedAt: dateValueSchema,
     })),
   }),
 });

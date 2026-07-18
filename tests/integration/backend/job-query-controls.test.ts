@@ -74,14 +74,19 @@ describe("job query date controls", () => {
     }
   });
 
-  it.each(["discoveredSince", "updatedSince", "viewedSince", "appliedSince"])(
+  it.each([
+    ["discoveredSince", "not-a-date"],
+    ["updatedSince", "2026-07-18"],
+    ["viewedSince", "July%2018,%202026"],
+    ["appliedSince", "1721260800000"],
+  ])(
     "rejects an invalid %s value",
-    async (field) => {
+    async (field, value) => {
       const { database } = harness.createDatabase();
       mockJobDependencies(database);
       const { GET } = await import("@/app/api/jobs/route");
 
-      const response = await GET(new NextRequest(`http://localhost/api/jobs?${field}=not-a-date`));
+      const response = await GET(new NextRequest(`http://localhost/api/jobs?${field}=${value}`));
 
       expect(response.status).toBe(400);
       await expect(response.json()).resolves.toMatchObject({ code: "invalid_request" });

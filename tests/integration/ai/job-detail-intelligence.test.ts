@@ -197,6 +197,105 @@ describe("job detail intelligence", () => {
     expect(payload.jobAnalysis).toBeNull();
   });
 
+  it.each([
+    { label: "malformed JSON", evidenceJson: "{" },
+    { label: "schema-invalid JSON", evidenceJson: JSON.stringify({ summary: 42, requirements: [] }) },
+  ])("returns metadata and a null analysis for $label", async ({ label, evidenceJson }) => {
+    const { database } = harness.createDatabase();
+    const matchCreatedAt = new Date("2026-07-17T10:00:00.000Z");
+    const company = database.insert(companies).values({
+      name: `${label} fixture`,
+      careersUrl: `https://example.com/${encodeURIComponent(label)}`,
+    }).returning().get();
+    const job = database.insert(jobs).values({
+      companyId: company.id,
+      title: `${label} job`,
+      url: `https://example.com/jobs/${encodeURIComponent(label)}`,
+    }).returning().get();
+    const analysisId = `analysis-${label.replaceAll(" ", "-")}`;
+    const resultId = `result-${label.replaceAll(" ", "-")}`;
+    database.insert(jobAnalyses).values({
+      id: analysisId,
+      jobFingerprint: "e".repeat(64),
+      extractorVersion: "job-analysis-v1",
+      evidenceJson,
+    }).run();
+    database.insert(matchResults).values({
+      id: resultId,
+      jobId: job.id,
+      jobAnalysisId: analysisId,
+      candidateFingerprint: "f".repeat(64),
+      jobFingerprint: "e".repeat(64),
+      scoringPolicyVersion: "scoring-v1",
+      score: 82,
+      breakdownJson: "{}",
+      evidenceJson: "{}",
+      confidence: 0,
+      source: "deterministic",
+      createdAt: matchCreatedAt,
+    }).run();
+    mockJobDependencies(database, {
+      ...EMPTY_PRESENTATION,
+      matchScore: 82,
+      matchResultId: resultId,
+    });
+    const { GET } = await import("@/app/api/jobs/[id]/route");
+
+    const response = await GET(
+      new NextRequest(`http://localhost/api/jobs/${job.id}`),
+      { params: Promise.resolve({ id: String(job.id) }) }
+    );
+    const payload = jobSchema.parse(await response.json());
+
+    expect(response.status).toBe(200);
+    expect(payload.matchMetadata).toEqual({
+      source: "deterministic",
+      createdAt: matchCreatedAt.toISOString(),
+    });
+    expect(payload.jobAnalysis).toBeNull();
+  });
+
+  it("returns null intelligence for an unrecognized stored match source", async () => {
+    const { database } = harness.createDatabase();
+    const company = database.insert(companies).values({
+      name: "Unknown source fixture",
+      careersUrl: "https://example.com/unknown-source",
+    }).returning().get();
+    const job = database.insert(jobs).values({
+      companyId: company.id,
+      title: "Unknown source job",
+      url: "https://example.com/jobs/unknown-source",
+    }).returning().get();
+    database.insert(matchResults).values({
+      id: "result-unknown-source",
+      jobId: job.id,
+      candidateFingerprint: "1".repeat(64),
+      jobFingerprint: "2".repeat(64),
+      scoringPolicyVersion: "scoring-v1",
+      score: 80,
+      breakdownJson: "{}",
+      evidenceJson: "{}",
+      confidence: 0,
+      source: "future-source",
+    }).run();
+    mockJobDependencies(database, {
+      ...EMPTY_PRESENTATION,
+      matchScore: 80,
+      matchResultId: "result-unknown-source",
+    });
+    const { GET } = await import("@/app/api/jobs/[id]/route");
+
+    const response = await GET(
+      new NextRequest(`http://localhost/api/jobs/${job.id}`),
+      { params: Promise.resolve({ id: String(job.id) }) }
+    );
+    const payload = jobSchema.parse(await response.json());
+
+    expect(response.status).toBe(200);
+    expect(payload.matchMetadata).toBeNull();
+    expect(payload.jobAnalysis).toBeNull();
+  });
+
   it("keeps stored analysis out of job list payloads", async () => {
     const { database } = harness.createDatabase();
     const company = database.insert(companies).values({

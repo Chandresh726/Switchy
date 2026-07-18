@@ -224,6 +224,21 @@ describe("contract-shaped frontend resources", () => {
     mocks.getEducation.mockResolvedValue(profile?.education ?? []);
   });
 
+  it("rejects non-ISO timestamps in company and people responses", () => {
+    expect(companiesResponseSchema.safeParse([{
+      ...companies[0],
+      createdAt: "2026-07-16",
+    }]).success).toBe(false);
+    expect(companyOverviewResponseSchema.safeParse({
+      ...overview,
+      stats: { ...overview.stats, lastJobDiscoveredAt: "July 16, 2026" },
+    }).success).toBe(false);
+    expect(peopleListResponseSchema.safeParse({
+      ...people,
+      people: [{ ...people.people[0], connectedOn: "06/01/2026" }],
+    }).success).toBe(false);
+  });
+
   it("renders canonical company list and overview resources", () => {
     renderWithClient(
       <>

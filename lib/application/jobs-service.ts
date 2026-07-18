@@ -124,14 +124,21 @@ async function getStoredJobIntelligence(jobId: number, matchResultId: string | n
     .limit(1);
 
   if (!row) return { matchMetadata: null, jobAnalysis: null };
+  const source = MatchSourceSchema.safeParse(row.source);
+  if (!source.success) return { matchMetadata: null, jobAnalysis: null };
   const matchMetadata = {
-    source: MatchSourceSchema.parse(row.source),
+    source: source.data,
     createdAt: row.matchCreatedAt.toISOString(),
   };
   if (!row.analysisId || !row.extractorVersion || !row.analysisEvidenceJson || !row.analysisCreatedAt) {
     return { matchMetadata, jobAnalysis: null };
   }
-  const analysis = JobAnalysisEvidenceSchema.parse(JSON.parse(row.analysisEvidenceJson));
+  let analysis;
+  try {
+    analysis = JobAnalysisEvidenceSchema.parse(JSON.parse(row.analysisEvidenceJson));
+  } catch {
+    return { matchMetadata, jobAnalysis: null };
+  }
   return {
     matchMetadata,
     jobAnalysis: {

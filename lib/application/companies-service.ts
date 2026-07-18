@@ -371,7 +371,7 @@ export async function getCompanyOverview(id: number, now = new Date()) {
   return {
     company: { ...company, canScrapeJobs: isCompanyScrapeSupported(company.careersUrl, company.platform) },
     stats: {
-      openJobs: jobStatsRows[0]?.openJobs ?? 0,
+      openJobs: Number(jobStatsRows[0]?.openJobs ?? 0),
       highMatchJobs: Number(promotionCountRows[0]?.value ?? 0),
       mappedPeople: peopleStatsRows[0]?.mappedPeople || 0,
       starredPeople: peopleStatsRows[0]?.starredPeople || 0,

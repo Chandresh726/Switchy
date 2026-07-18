@@ -60,7 +60,10 @@ describe("shared API contracts", () => {
       jobsQuerySchema.safeParse({ minScore: "80", maxScore: "20" }).success
     ).toBe(false);
     expect(jobsQuerySchema.safeParse({ appliedSince: "not-a-date" }).success).toBe(false);
+    expect(jobsQuerySchema.safeParse({ appliedSince: "2026-07-18" }).success).toBe(false);
     expect(jobsQuerySchema.parse({ discoveredSince: "2026-07-18T00:00:00.000Z" }).discoveredSince)
+      .toEqual(new Date("2026-07-18T00:00:00.000Z"));
+    expect(jobsQuerySchema.parse({ discoveredSince: new Date("2026-07-18T00:00:00.000Z") }).discoveredSince)
       .toEqual(new Date("2026-07-18T00:00:00.000Z"));
   });
 
@@ -70,6 +73,9 @@ describe("shared API contracts", () => {
     ).toBe(false);
     expect(
       jobResourceUpdateBodySchema.safeParse({ appliedAt: "not-a-date" }).success
+    ).toBe(false);
+    expect(
+      jobResourceUpdateBodySchema.safeParse({ appliedAt: "2026-07-18" }).success
     ).toBe(false);
   });
 
@@ -165,6 +171,7 @@ describe("shared API contracts", () => {
     expect(jobSchema.safeParse(job).success).toBe(true);
     expect(jobSchema.safeParse({ ...job, matchReasons: "[]" }).success).toBe(false);
     expect(jobSchema.safeParse({ ...job, matchedSkills: "[]" }).success).toBe(false);
+    expect(jobSchema.safeParse({ ...job, viewedAt: "July 18, 2026" }).success).toBe(false);
     expect(settingsResponseSchema.parse(DEFAULT_SETTINGS)).toEqual(DEFAULT_SETTINGS);
     expect(schedulerRecoveryResponseSchema.safeParse({
       status: "not_needed",
