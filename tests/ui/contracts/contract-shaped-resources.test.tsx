@@ -97,7 +97,15 @@ const overview = companyOverviewResponseSchema.parse({
     isActive: true,
     lastScrapedAt: null,
   },
-  stats: { openJobs: 4, highMatchJobs: 2, mappedPeople: 3, starredPeople: 1 },
+  stats: {
+    openJobs: 4,
+    highMatchJobs: 2,
+    mappedPeople: 3,
+    starredPeople: 1,
+    statusCounts: { new: 1, viewed: 1, interested: 1, applied: 1, rejected: 0, archived: 0 },
+    jobsDiscoveredLast7Days: 2,
+    lastJobDiscoveredAt: "2026-07-16T00:00:00.000Z",
+  },
   jobs: [],
   topMatches: [],
   people: [],
@@ -119,6 +127,13 @@ const people = peopleListResponseSchema.parse({
     isStarred: false,
     isActive: true,
     lastSeenAt: "2026-07-16T00:00:00.000Z",
+    connectedOn: null,
+    roleTag: null,
+    roleTagSource: null,
+    notes: null,
+    createdAt: "2026-07-16T00:00:00.000Z",
+    updatedAt: "2026-07-16T00:00:00.000Z",
+    isRecruiter: false,
     company: { id: 7, name: "Contract Company" },
   }],
   totalCount: 1,
@@ -207,6 +222,21 @@ describe("contract-shaped frontend resources", () => {
     mocks.getSkills.mockResolvedValue(profile?.skills ?? []);
     mocks.getExperience.mockResolvedValue(profile?.experience ?? []);
     mocks.getEducation.mockResolvedValue(profile?.education ?? []);
+  });
+
+  it("rejects non-ISO timestamps in company and people responses", () => {
+    expect(companiesResponseSchema.safeParse([{
+      ...companies[0],
+      createdAt: "2026-07-16",
+    }]).success).toBe(false);
+    expect(companyOverviewResponseSchema.safeParse({
+      ...overview,
+      stats: { ...overview.stats, lastJobDiscoveredAt: "July 16, 2026" },
+    }).success).toBe(false);
+    expect(peopleListResponseSchema.safeParse({
+      ...people,
+      people: [{ ...people.people[0], connectedOn: "06/01/2026" }],
+    }).success).toBe(false);
   });
 
   it("renders canonical company list and overview resources", () => {

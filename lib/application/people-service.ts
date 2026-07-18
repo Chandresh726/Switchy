@@ -18,6 +18,7 @@ import { db } from "@/lib/db";
 import { companies, people, peopleImportSessions } from "@/lib/db/schema";
 import { parsePeopleCsvRows } from "@/lib/people/csv";
 import { suggestApolloMapping, type ApolloColumnMapping } from "@/lib/people/import/parsers/apollo";
+import { isRecruiterPosition } from "@/lib/people/position";
 import {
   createManualPerson,
   getIgnoredUnmatchedCompaniesList,
@@ -44,14 +45,15 @@ async function assertMappedCompanyExists(companyId: number | null | undefined) {
   if (!company) throw new ValidationError("mappedCompanyId not found");
 }
 
-async function withMappedCompany<T extends { mappedCompanyId?: number | null }>(person: T) {
-  if (!person.mappedCompanyId) return { ...person, company: null };
+async function withMappedCompany<T extends { mappedCompanyId?: number | null; position?: string | null }>(person: T) {
+  const isRecruiter = isRecruiterPosition(person.position);
+  if (!person.mappedCompanyId) return { ...person, isRecruiter, company: null };
   const [company] = await db
     .select({ id: companies.id, name: companies.name })
     .from(companies)
     .where(eq(companies.id, person.mappedCompanyId))
     .limit(1);
-  return { ...person, company: company ?? null };
+  return { ...person, isRecruiter, company: company ?? null };
 }
 
 export function listPeople(query: PeopleListQuery) {

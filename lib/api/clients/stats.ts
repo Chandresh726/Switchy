@@ -1,6 +1,11 @@
-import { statsResponseSchema } from "@/lib/api/contracts/stats";
+import { statsQuerySchema, statsResponseSchema } from "@/lib/api/contracts/stats";
 import type { StatsResponse } from "@/lib/api/contracts/stats";
 
-import { apiGet } from "../client";
+import { appendQuery, apiGet, serializeQuery } from "../client";
 
-export const getStats = (): Promise<StatsResponse> => apiGet("/api/stats", statsResponseSchema, "Failed to fetch stats");
+export const getStats = (days?: 7 | 30 | 90): Promise<StatsResponse> => {
+  const query = days === undefined
+    ? ""
+    : serializeQuery(statsQuerySchema, { days: String(days) as "7" | "30" | "90" });
+  return apiGet(appendQuery("/api/stats", query), statsResponseSchema, "Failed to fetch stats");
+};

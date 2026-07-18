@@ -2,6 +2,7 @@ import { and, asc, desc, eq, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { companies, people } from "@/lib/db/schema";
+import { isRecruiterPosition } from "@/lib/people/position";
 import type { PersonSource } from "@/lib/people/types";
 
 export interface PeopleListFilters {
@@ -120,8 +121,13 @@ export async function getPeopleList(filters: PeopleListFilters) {
       isStarred: row.person.isStarred,
       isActive: row.person.isActive,
       lastSeenAt: row.person.lastSeenAt,
+      connectedOn: row.person.connectedOn,
+      roleTag: row.person.roleTag,
+      roleTagSource: row.person.roleTagSource,
+      notes: row.person.notes,
       createdAt: row.person.createdAt,
       updatedAt: row.person.updatedAt,
+      isRecruiter: isRecruiterPosition(row.person.position),
       company: row.company?.id ? row.company : null,
     })),
     totalCount: Number(totalCount ?? 0),

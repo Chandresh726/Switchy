@@ -43,7 +43,7 @@ import {
   settingsResponseSchema,
   settingsUpdateBodySchema,
 } from "@/lib/api/contracts/settings";
-import { statsResponseSchema } from "@/lib/api/contracts/stats";
+import { statsQuerySchema, statsResponseSchema } from "@/lib/api/contracts/stats";
 import { DEFAULT_SETTINGS } from "@/lib/settings/settings-service";
 
 describe("shared API contracts", () => {
@@ -59,6 +59,12 @@ describe("shared API contracts", () => {
     expect(
       jobsQuerySchema.safeParse({ minScore: "80", maxScore: "20" }).success
     ).toBe(false);
+    expect(jobsQuerySchema.safeParse({ appliedSince: "not-a-date" }).success).toBe(false);
+    expect(jobsQuerySchema.safeParse({ appliedSince: "2026-07-18" }).success).toBe(false);
+    expect(jobsQuerySchema.parse({ discoveredSince: "2026-07-18T00:00:00.000Z" }).discoveredSince)
+      .toEqual(new Date("2026-07-18T00:00:00.000Z"));
+    expect(jobsQuerySchema.parse({ discoveredSince: new Date("2026-07-18T00:00:00.000Z") }).discoveredSince)
+      .toEqual(new Date("2026-07-18T00:00:00.000Z"));
   });
 
   it("rejects invalid mutation dates and statuses", () => {
@@ -67,6 +73,9 @@ describe("shared API contracts", () => {
     ).toBe(false);
     expect(
       jobResourceUpdateBodySchema.safeParse({ appliedAt: "not-a-date" }).success
+    ).toBe(false);
+    expect(
+      jobResourceUpdateBodySchema.safeParse({ appliedAt: "2026-07-18" }).success
     ).toBe(false);
   });
 
@@ -115,6 +124,8 @@ describe("shared API contracts", () => {
     expect(localCLIStatusQuerySchema.safeParse({ provider: "openai" }).success).toBe(false);
     expect(aiUsageQuerySchema.safeParse({ days: "365" }).success).toBe(false);
     expect(aiUsageQuerySchema.parse({})).toEqual({ days: 7 });
+    expect(statsQuerySchema.safeParse({ days: "365" }).success).toBe(false);
+    expect(statsQuerySchema.parse({})).toEqual({ days: 7 });
     expect(historyIdParamsSchema.safeParse({ id: "" }).success).toBe(false);
   });
 
@@ -153,11 +164,14 @@ describe("shared API contracts", () => {
       matchRunId: null,
       matchPolicyVersion: null,
       scoringPolicyVersion: null,
+      matchMetadata: null,
+      jobAnalysis: null,
       company: { id: 1, name: "Example", logoUrl: null, platform: null },
     };
     expect(jobSchema.safeParse(job).success).toBe(true);
     expect(jobSchema.safeParse({ ...job, matchReasons: "[]" }).success).toBe(false);
     expect(jobSchema.safeParse({ ...job, matchedSkills: "[]" }).success).toBe(false);
+    expect(jobSchema.safeParse({ ...job, viewedAt: "July 18, 2026" }).success).toBe(false);
     expect(settingsResponseSchema.parse(DEFAULT_SETTINGS)).toEqual(DEFAULT_SETTINGS);
     expect(schedulerRecoveryResponseSchema.safeParse({
       status: "not_needed",
