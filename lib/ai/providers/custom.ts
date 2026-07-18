@@ -110,6 +110,38 @@ export class CustomProvider extends BaseProvider {
         });
     }
   }
+
+  override getGenerationOptions(
+    config: ModelConfig,
+    providerConfig: ProviderConfig
+  ): Record<string, unknown> | undefined {
+    if (!config.reasoningEffort) return undefined;
+
+    switch (providerConfig.apiFormat) {
+      case "openai_chat_completions":
+        return this.buildProviderReasoningOptions("custom", config);
+      case "openai_responses":
+        return {
+          providerOptions: {
+            openai: {
+              reasoningEffort: config.reasoningEffort,
+              forceReasoning: true,
+            },
+          },
+        };
+      case "anthropic_messages":
+        return {
+          providerOptions: {
+            custom: {
+              thinking: { type: "adaptive" },
+              effort: config.reasoningEffort,
+            },
+          },
+        };
+      default:
+        return undefined;
+    }
+  }
 }
 
 export const customProvider = new CustomProvider();

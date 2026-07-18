@@ -63,28 +63,7 @@ export function ReasoningEffortControl({
   onValueChange,
   ariaLabel = "Reasoning effort",
 }: ReasoningEffortControlProps) {
-  if (!model) {
-    if (!value) return null;
-    return (
-      <span
-        className="inline-flex h-9 shrink-0 items-center border border-amber-500/40 bg-amber-500/5 px-3 text-xs text-amber-400"
-        title="The saved reasoning value cannot be validated until this model is available"
-      >
-        {value} (unavailable)
-      </span>
-    );
-  }
-
-  if (model.reasoningControl.kind === "provider_default") {
-    return (
-      <span
-        className="inline-flex h-9 shrink-0 items-center border border-border bg-background/40 px-3 text-xs text-muted-foreground"
-        title="This provider does not publish selectable reasoning levels for this model"
-      >
-        Provider default
-      </span>
-    );
-  }
+  if (!model || model.reasoningControl.kind === "provider_default") return null;
 
   const options = model.reasoningControl.options;
   const invalid = hasInvalidReasoningSelection(model, value);

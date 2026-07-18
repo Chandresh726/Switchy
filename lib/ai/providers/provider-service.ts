@@ -4,7 +4,11 @@ import { asc, desc, eq, inArray } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
 import { AIError } from "@/lib/ai/shared/errors";
-import { BUILTIN_CLI_PROVIDER_IDS } from "@/lib/ai/local-cli/constants";
+import {
+  BUILTIN_CLI_PROVIDER_IDS,
+  CLI_EXECUTABLE_CONFIG,
+} from "@/lib/ai/local-cli/constants";
+import { retireLocalCLIProvider } from "@/lib/ai/local-cli/service";
 import { db } from "@/lib/db";
 import {
   aiProviders,
@@ -32,6 +36,7 @@ import {
   normalizeCustomBaseUrl,
   normalizeCustomDisplayName,
   normalizeCustomHeaders,
+  normalizeCustomReasoningEfforts,
   normalizeManualModelIds,
   resolveStoredCustomProvider,
   type CustomProviderConnection,
@@ -40,6 +45,7 @@ import {
   isAIProvider,
   isLocalCLIProvider,
   type AIProvider,
+  type LocalCLIProvider,
 } from "./types";
 
 export type ProviderRecord = typeof aiProviders.$inferSelect;
@@ -59,6 +65,7 @@ export interface ProviderPublic {
   baseUrl?: string;
   headerNames?: string[];
   manualModelIds?: string[];
+  reasoningEfforts?: string[];
 }
 
 export interface ProviderValidationContext {
@@ -90,6 +97,7 @@ export function toProviderPublic(record: ProviderRecord): ProviderPublic {
           baseUrl: custom.baseUrl,
           headerNames: Object.keys(custom.headers),
           manualModelIds: custom.manualModelIds,
+          reasoningEfforts: custom.reasoningEfforts,
         }
       : {}),
   };
@@ -98,19 +106,21 @@ export function toProviderPublic(record: ProviderRecord): ProviderPublic {
 export async function listProviders(
   database: BetterSQLite3Database<typeof databaseSchema> = db
 ): Promise<ProviderRecord[]> {
-  await ensureBuiltinLocalCLIProviders(database);
+  await reconcileConfiguredLocalCLIProviders(database);
   return database.select().from(aiProviders).orderBy(aiProviders.createdAt);
 }
 
-export async function ensureBuiltinLocalCLIProviders(
+export async function reconcileConfiguredLocalCLIProviders(
   database: BetterSQLite3Database<typeof databaseSchema> = db
-): Promise<void> {
+): Promise<LocalCLIProvider[]> {
   database.transaction((tx) => {
     for (const provider of ["codex_cli", "opencode_cli"] as const) {
       const builtinId = BUILTIN_CLI_PROVIDER_IDS[provider];
       const existing = tx.select().from(aiProviders)
         .where(eq(aiProviders.provider, provider)).all();
+      if (existing.length === 0) continue;
       let builtin = existing.find(({ id }) => id === builtinId);
+      const preferred = builtin ?? existing.find(({ isDefault }) => isDefault) ?? existing[0]!;
 
       for (const legacy of existing.filter(({ id }) => id !== builtinId)) {
         tx.update(settings).set({ value: builtinId })
@@ -128,25 +138,33 @@ export async function ensureBuiltinLocalCLIProviders(
           provider,
           apiKey: null,
           isActive: true,
-          isDefault: false,
+          isDefault: preferred.isDefault,
+          createdAt: preferred.createdAt,
           updatedAt: new Date(),
         }).returning().get();
       }
 
       if (
         builtin.apiKey !== null ||
-        builtin.isActive !== true ||
-        builtin.isDefault !== false
+        builtin.isActive !== true
       ) {
         tx.update(aiProviders).set({
           apiKey: null,
           isActive: true,
-          isDefault: false,
           updatedAt: new Date(),
         }).where(eq(aiProviders.id, builtinId)).run();
       }
     }
   }, { behavior: "immediate" });
+
+  const configured = database.select({ provider: aiProviders.provider })
+    .from(aiProviders).where(inArray(
+      aiProviders.provider,
+      ["codex_cli", "opencode_cli"]
+    )).all();
+  return configured.flatMap(({ provider }) =>
+    isLocalCLIProvider(provider) ? [provider] : []
+  );
 }
 
 export async function getProviderById(
@@ -254,6 +272,7 @@ function buildNewCustomConnection(options: ProviderCreateBody): CustomProviderCo
     apiKey: options.apiKey?.trim() || undefined,
     headers: normalizeCustomHeaders(options.headers ?? []),
     manualModelIds: normalizeManualModelIds(options.manualModelIds ?? []),
+    reasoningEfforts: normalizeCustomReasoningEfforts(options.reasoningEfforts ?? []),
   };
 }
 
@@ -262,13 +281,6 @@ export async function createProvider(
   database: BetterSQLite3Database<typeof databaseSchema> = db,
   dependencies: ProviderMutationDependencies = {}
 ): Promise<ProviderRecord> {
-  if (isLocalCLIProvider(options.provider)) {
-    throw new AIError({
-      type: "validation",
-      message: "Local CLI providers are built in and cannot be created",
-      retryable: false,
-    });
-  }
   if (options.provider !== "custom") {
     const existing = await database
       .select({ id: aiProviders.id })
@@ -292,8 +304,11 @@ export async function createProvider(
   }
 
   const allProviders = await database.select().from(aiProviders);
-  const isFirstAPIProvider = allProviders.every((provider) =>
-    isLocalCLIProvider(provider.provider)
+  const hasDefaultProvider = allProviders.some((provider) => provider.isDefault);
+  const shouldBecomeDefault = !hasDefaultProvider && (
+    isLocalCLIProvider(options.provider)
+      ? allProviders.length === 0
+      : allProviders.every((provider) => isLocalCLIProvider(provider.provider))
   );
   const encryptedApiKey = options.apiKey?.trim()
     ? encryptApiKey(options.apiKey.trim())
@@ -302,9 +317,11 @@ export async function createProvider(
   const created = await database
     .insert(aiProviders)
     .values({
-      id: randomUUID(),
+      id: isLocalCLIProvider(options.provider)
+        ? BUILTIN_CLI_PROVIDER_IDS[options.provider]
+        : randomUUID(),
       provider: options.provider,
-      apiKey: encryptedApiKey,
+      apiKey: isLocalCLIProvider(options.provider) ? null : encryptedApiKey,
       displayName: customConnection?.displayName,
       apiFormat: customConnection?.apiFormat,
       baseUrl: customConnection?.baseUrl,
@@ -314,8 +331,11 @@ export async function createProvider(
       manualModelIds: customConnection
         ? JSON.stringify(customConnection.manualModelIds)
         : undefined,
+      reasoningEfforts: customConnection
+        ? JSON.stringify(customConnection.reasoningEfforts)
+        : undefined,
       isActive: true,
-      isDefault: isFirstAPIProvider,
+      isDefault: shouldBecomeDefault,
       updatedAt: new Date(),
     })
     .returning();
@@ -357,12 +377,17 @@ export async function updateProvider(
       manualModelIds: patch.manualModelIds === undefined
         ? current.manualModelIds
         : normalizeManualModelIds(patch.manualModelIds),
+      reasoningEfforts: patch.reasoningEfforts === undefined
+        ? current.reasoningEfforts
+        : normalizeCustomReasoningEfforts(patch.reasoningEfforts),
     };
     customConnectivityChanged = patch.apiKey !== undefined ||
       patch.apiFormat !== undefined ||
       patch.baseUrl !== undefined ||
       patch.headers !== undefined;
-    customCatalogChanged = customConnectivityChanged || patch.manualModelIds !== undefined;
+    customCatalogChanged = customConnectivityChanged ||
+      patch.manualModelIds !== undefined ||
+      patch.reasoningEfforts !== undefined;
     if (customConnectivityChanged) {
       const discover = dependencies.discoverCustomModels ?? discoverCustomProviderModels;
       await discover(customConnection);
@@ -372,7 +397,8 @@ export async function updateProvider(
     patch.apiFormat !== undefined ||
     patch.baseUrl !== undefined ||
     patch.headers !== undefined ||
-    patch.manualModelIds !== undefined
+    patch.manualModelIds !== undefined ||
+    patch.reasoningEfforts !== undefined
   ) {
     throw new AIError({
       type: "validation",
@@ -399,6 +425,7 @@ export async function updateProvider(
             baseUrl: customConnection.baseUrl,
             encryptedHeaders: encryptCustomHeaders(customConnection.headers),
             manualModelIds: JSON.stringify(customConnection.manualModelIds),
+            reasoningEfforts: JSON.stringify(customConnection.reasoningEfforts),
           }
         : {}),
       updatedAt: new Date(),
@@ -414,13 +441,6 @@ export async function deleteProvider(
   const resolveModels = options.resolveModels ?? getProviderModels;
   const deleteModelsCache = options.deleteModelsCache ?? deleteStoredProviderModelsCache;
   const provider = await requireProviderById(providerId, database);
-  if (isLocalCLIProvider(provider.provider)) {
-    throw new AIError({
-      type: "validation",
-      message: "Built-in local CLI providers cannot be deleted",
-      retryable: false,
-    });
-  }
   const providerSettingKeys = FEATURE_PROVIDER_SETTINGS.map(({ provider: key }) => key);
   const storedProviderSelections = await database
     .select({ key: settings.key, value: settings.value })
@@ -441,6 +461,10 @@ export async function deleteProvider(
   const apiCandidates = candidates.filter(({ provider: candidateProvider }) =>
     !isLocalCLIProvider(candidateProvider)
   );
+  const localCLICandidates = candidates.filter(({ provider: candidateProvider }) =>
+    isLocalCLIProvider(candidateProvider)
+  );
+  const fallbackCandidates = [...apiCandidates, ...localCLICandidates];
 
   let fallback: {
     providerId: string;
@@ -448,7 +472,7 @@ export async function deleteProvider(
     reasoningEffort: string;
   } | null = null;
   if (impactedFeatures.length > 0) {
-    for (const candidate of apiCandidates) {
+    for (const candidate of fallbackCandidates) {
       try {
         const { models } = await resolveModels(candidate.id);
         const model = models.find(({ isDefault }) => isDefault) ?? models[0];
@@ -468,11 +492,21 @@ export async function deleteProvider(
   }
 
   await deleteModelsCache(providerId, database);
+  if (isLocalCLIProvider(provider.provider)) {
+    await retireLocalCLIProvider(provider.provider);
+  }
   database.transaction((tx) => {
     tx.delete(aiProviders).where(eq(aiProviders.id, providerId)).run();
 
-    if (provider.isDefault && apiCandidates.length > 0) {
-      const defaultProviderId = fallback?.providerId ?? apiCandidates[0]!.id;
+    if (isLocalCLIProvider(provider.provider)) {
+      tx.delete(settings).where(inArray(settings.key, [
+        `local_cli_model_catalog:${provider.provider}`,
+        CLI_EXECUTABLE_CONFIG[provider.provider].settingKey,
+      ])).run();
+    }
+
+    if (provider.isDefault && fallbackCandidates.length > 0) {
+      const defaultProviderId = fallback?.providerId ?? fallbackCandidates[0]!.id;
       tx.update(aiProviders)
         .set({ isDefault: false, updatedAt: new Date() })
         .where(eq(aiProviders.isActive, true))

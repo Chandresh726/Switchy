@@ -5,6 +5,7 @@ import {
   mergeCustomHeaderPatch,
   normalizeCustomBaseUrl,
   normalizeCustomHeaders,
+  normalizeCustomReasoningEfforts,
   normalizeManualModelIds,
 } from "@/lib/ai/providers/custom-config";
 
@@ -60,5 +61,17 @@ describe("custom provider configuration", () => {
   it("deduplicates manual model IDs without changing their order", () => {
     expect(normalizeManualModelIds([" model-a ", "model-b", "model-a", ""]))
       .toEqual(["model-a", "model-b"]);
+  });
+
+  it("normalizes opaque custom reasoning levels without changing their order", () => {
+    expect(normalizeCustomReasoningEfforts([
+      " low ",
+      "medium",
+      "future_v1",
+      "low",
+      "",
+    ])).toEqual(["low", "medium", "future_v1"]);
+    expect(() => normalizeCustomReasoningEfforts(["not valid"]))
+      .toThrow("is invalid");
   });
 });

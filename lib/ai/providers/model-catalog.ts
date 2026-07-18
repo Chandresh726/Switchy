@@ -36,8 +36,14 @@ import {
 export type { ProviderReasoningControl } from "./reasoning-controls";
 
 const MODEL_CACHE_TTL_MS = 15 * 60 * 1000;
+const MODEL_CATALOG_SCHEMA_VERSION = 2;
 const CUSTOM_MODEL_DISCOVERY_TIMEOUT_MS = 10_000;
 const CUSTOM_MODEL_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
+
+const GPT_5_6_REASONING_CONTROL = createEffortReasoningControl(
+  ["none", "low", "medium", "high", "xhigh", "max"].map((value) => ({ value })),
+  "medium"
+);
 
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
 const ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1";
@@ -230,6 +236,7 @@ const ProviderModelDefinitionSchema = z.object({
   }
 });
 const StoredProviderCatalogSchema = z.object({
+  schemaVersion: z.literal(MODEL_CATALOG_SCHEMA_VERSION),
   providerUpdatedAtMs: z.number().int().nonnegative(),
   fetchedAt: z.string().datetime(),
   models: z.array(ProviderModelDefinitionSchema).max(1_000),
@@ -270,6 +277,27 @@ function dedupeModels(models: ProviderModelDefinition[]): ProviderModelDefinitio
   }
 
   return deduped;
+}
+
+function getCustomModelReasoningControl(
+  connection: CustomProviderConnection,
+  modelId: string
+): ProviderReasoningControl {
+  if (connection.reasoningEfforts.length > 0) {
+    return createEffortReasoningControl(
+      connection.reasoningEfforts.map((value) => ({ value })),
+      connection.reasoningEfforts.includes("medium") ? "medium" : undefined
+    );
+  }
+
+  if (
+    connection.apiFormat !== "anthropic_messages" &&
+    /^gpt-5\.6(?:-(?:luna|sol|terra))?$/i.test(modelId)
+  ) {
+    return GPT_5_6_REASONING_CONTROL;
+  }
+
+  return { kind: "provider_default" };
 }
 
 async function fetchJson<T>(
@@ -556,6 +584,15 @@ export async function discoverCustomProviderModels(
       retryable: false,
     });
   }
+  const buildCustomModelDefinition = (
+    modelId: string,
+    label: string,
+    description: string
+  ): ProviderModelDefinition => withReasoningControl({
+    modelId,
+    label,
+    description,
+  }, getCustomModelReasoningControl(connection, modelId));
   const discovered = rawModels
     .map((model) => {
       const modelId = model.id?.trim();
@@ -570,11 +607,11 @@ export async function discoverCustomProviderModels(
         ? model.display_name
         : undefined;
       const description = model.owned_by ?? model.type ?? "";
-      return buildModelDefinition(modelId, label ?? modelId, description);
+      return buildCustomModelDefinition(modelId, label ?? modelId, description);
     })
     .filter((model): model is ProviderModelDefinition => model !== null);
   const manual = connection.manualModelIds.map((modelId) =>
-    buildModelDefinition(modelId, modelId, "Manually configured model")
+    buildCustomModelDefinition(modelId, modelId, "Manually configured model")
   );
   const models = dedupeModels([...discovered, ...manual]);
   if (models.length > 1_000) {
@@ -781,6 +818,7 @@ async function saveStoredCacheEntry(
   entry: CachedProviderModels
 ): Promise<void> {
   const value = JSON.stringify(StoredProviderCatalogSchema.parse({
+    schemaVersion: MODEL_CATALOG_SCHEMA_VERSION,
     providerUpdatedAtMs: entry.providerUpdatedAtMs,
     fetchedAt: entry.fetchedAt,
     models: entry.models,

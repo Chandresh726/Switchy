@@ -24,16 +24,16 @@ export async function register() {
     }
 
     try {
-      const { ensureBuiltinLocalCLIProviders } = await import(
+      const { reconcileConfiguredLocalCLIProviders } = await import(
         "@/lib/ai/providers/provider-service"
       );
-      await ensureBuiltinLocalCLIProviders();
+      const configuredLocalCLIProviders = await reconcileConfiguredLocalCLIProviders();
       const { removeDeprecatedMatchingPreferenceSettings } = await import(
         "@/lib/settings/settings-service"
       );
       await removeDeprecatedMatchingPreferenceSettings();
       const { warmLocalCLIStatuses } = await import("@/lib/ai/local-cli/service");
-      void warmLocalCLIStatuses().catch((error) => {
+      void warmLocalCLIStatuses(configuredLocalCLIProviders).catch((error) => {
         console.error("[Instrumentation] Failed to check local CLI providers:", error);
       });
     } catch (error) {

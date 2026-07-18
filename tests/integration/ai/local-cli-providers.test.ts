@@ -1,7 +1,7 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { describe, expect, it, vi } from "vitest";
 
@@ -88,23 +88,20 @@ describe("local CLI provider records", () => {
     }
   });
 
-  it("idempotently creates permanent deterministic CLI records without credentials", async () => {
+  it("lists only configured CLI providers and supports deterministic add and delete", async () => {
     const { database } = harness.createDatabase();
 
-    await listProviders(database);
-    const firstUpdatedAt = database.select({
-      id: aiProviders.id,
-      updatedAt: aiProviders.updatedAt,
-    }).from(aiProviders).orderBy(asc(aiProviders.id)).all();
-    await listProviders(database);
+    await expect(listProviders(database)).resolves.toEqual([]);
+    const codex = await createProvider({ provider: "codex_cli" }, database);
+    const openCode = await createProvider({ provider: "opencode_cli" }, database);
 
-    const providers = await database.select().from(aiProviders).orderBy(asc(aiProviders.id));
+    const providers = await listProviders(database);
     expect(providers).toEqual([
       expect.objectContaining({
         id: "builtin:codex-cli",
         provider: "codex_cli",
         apiKey: null,
-        isDefault: false,
+        isDefault: true,
         isActive: true,
       }),
       expect.objectContaining({
@@ -118,18 +115,33 @@ describe("local CLI provider records", () => {
     expect(JSON.stringify(providers.map(toProviderPublic))).not.toContain("apiKey");
     expect(JSON.stringify(providers.map(toProviderPublic))).not.toContain("credential");
     await expect(createProvider({ provider: "codex_cli" }, database)).rejects.toThrow(
-      "built in"
+      "already been added"
     );
-    expect(database.select({
-      id: aiProviders.id,
-      updatedAt: aiProviders.updatedAt,
-    }).from(aiProviders).orderBy(asc(aiProviders.id)).all()).toEqual(firstUpdatedAt);
 
     const apiProvider = await createProvider({ provider: "openai" }, database);
-    expect(apiProvider.isDefault).toBe(true);
-    await expect(deleteProvider("builtin:codex-cli", { database })).rejects.toThrow(
-      "cannot be deleted"
-    );
+    expect(apiProvider.isDefault).toBe(false);
+    expect(codex.id).toBe("builtin:codex-cli");
+    expect(openCode.id).toBe("builtin:opencode-cli");
+    database.insert(settings).values([
+      { key: "codex_cli_executable", value: "/opt/codex" },
+      { key: "local_cli_model_catalog:codex_cli", value: "cached" },
+    ]).run();
+
+    await deleteProvider(codex.id, {
+      database,
+      deleteModelsCache: vi.fn().mockResolvedValue(undefined),
+    });
+    expect(database.select().from(aiProviders)
+      .where(eq(aiProviders.id, codex.id)).get()).toBeUndefined();
+    expect(database.select().from(settings)
+      .where(eq(settings.key, "codex_cli_executable")).get()).toBeUndefined();
+    expect(database.select().from(settings)
+      .where(eq(settings.key, "local_cli_model_catalog:codex_cli")).get()).toBeUndefined();
+    expect(database.select().from(aiProviders)
+      .where(eq(aiProviders.id, apiProvider.id)).get()?.isDefault).toBe(true);
+
+    const readded = await createProvider({ provider: "codex_cli" }, database);
+    expect(readded.id).toBe("builtin:codex-cli");
   });
 
   it("removes obsolete active matching preferences while preserving other settings", async () => {
@@ -172,7 +184,7 @@ describe("local CLI provider records", () => {
         id: "builtin:codex-cli",
         apiKey: null,
         isActive: true,
-        isDefault: false,
+        isDefault: true,
       }),
     ]);
     expect(database.select().from(settings)
@@ -242,10 +254,10 @@ describe("local CLI provider records", () => {
     expect(storedSettings.get("ai_writing_model")).toBe("fallback-model");
   });
 
-  it("does not promote or silently select a built-in CLI when deleting the default API provider", async () => {
+  it("falls back to a configured CLI when deleting the selected default API provider", async () => {
     const { database } = harness.createDatabase();
-    await listProviders(database);
     const selected = await createProvider({ provider: "openai" }, database);
+    const codex = await createProvider({ provider: "codex_cli" }, database);
     database.insert(settings).values([
       { key: "matcher_provider_id", value: selected.id },
       { key: "matcher_model", value: "selected-model" },
@@ -270,15 +282,15 @@ describe("local CLI provider records", () => {
     });
 
     expect(result).toEqual({
-      fallbackProviderId: undefined,
-      fallbackModelId: undefined,
+      fallbackProviderId: codex.id,
+      fallbackModelId: "cli-model",
       updatedFeatures: ["matcher_provider_id"],
     });
-    expect(resolveModels).not.toHaveBeenCalled();
-    expect(database.select().from(aiProviders).all().every((row) => !row.isDefault))
-      .toBe(true);
+    expect(resolveModels).toHaveBeenCalledWith(codex.id);
+    expect(database.select().from(aiProviders)
+      .where(eq(aiProviders.id, codex.id)).get()?.isDefault).toBe(true);
     expect(database.select().from(settings)
-      .where(eq(settings.key, "matcher_provider_id")).get()).toBeUndefined();
+      .where(eq(settings.key, "matcher_provider_id")).get()?.value).toBe(codex.id);
   });
 
   it("persists validated capability metadata and can reuse stale metadata for execution", async () => {

@@ -3,6 +3,7 @@ import { decryptSecret, encryptSecret } from "@/lib/encryption";
 
 import {
   isCustomAPIFormat,
+  isReasoningEffort,
   type CustomAPIFormat,
 } from "./types";
 
@@ -31,6 +32,7 @@ export interface CustomProviderConnection {
   apiKey?: string;
   headers: Record<string, string>;
   manualModelIds: string[];
+  reasoningEfforts: string[];
 }
 
 interface StoredCustomProviderRecord {
@@ -40,6 +42,7 @@ interface StoredCustomProviderRecord {
   baseUrl: string | null;
   encryptedHeaders: string | null;
   manualModelIds: string | null;
+  reasoningEfforts: string | null;
 }
 
 function configurationError(message: string): AIError {
@@ -163,6 +166,26 @@ export function normalizeManualModelIds(values: readonly string[]): string[] {
   return normalized;
 }
 
+export function normalizeCustomReasoningEfforts(values: readonly string[]): string[] {
+  if (values.length > 100) {
+    throw configurationError("A custom provider can configure at most 100 reasoning levels");
+  }
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const value of values) {
+    const effort = value.trim();
+    if (!effort) continue;
+    if (!isReasoningEffort(effort)) {
+      throw configurationError(`Custom reasoning level "${effort}" is invalid`);
+    }
+    if (!seen.has(effort)) {
+      seen.add(effort);
+      normalized.push(effort);
+    }
+  }
+  return normalized;
+}
+
 export function encryptCustomHeaders(headers: Record<string, string>): string | null {
   return Object.keys(headers).length > 0
     ? encryptSecret(JSON.stringify(headers))
@@ -207,6 +230,24 @@ function parseStoredManualModelIds(value: string | null): string[] {
   }
 }
 
+function parseStoredReasoningEfforts(value: string | null): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === "string")) {
+      throw new Error("Invalid stored reasoning level list");
+    }
+    return normalizeCustomReasoningEfforts(parsed);
+  } catch (error) {
+    throw new AIError({
+      type: "validation",
+      message: "Stored custom provider reasoning levels are invalid",
+      cause: error instanceof Error ? error : undefined,
+      retryable: false,
+    });
+  }
+}
+
 export function resolveStoredCustomProvider(
   record: StoredCustomProviderRecord,
   apiKey?: string
@@ -224,6 +265,7 @@ export function resolveStoredCustomProvider(
     apiKey,
     headers: decryptCustomHeaders(record.encryptedHeaders),
     manualModelIds: parseStoredManualModelIds(record.manualModelIds),
+    reasoningEfforts: parseStoredReasoningEfforts(record.reasoningEfforts),
   };
 }
 

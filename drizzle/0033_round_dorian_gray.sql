@@ -1,0 +1,1 @@
+ALTER TABLE `aiProviders` ADD `reasoning_efforts` text;

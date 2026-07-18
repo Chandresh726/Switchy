@@ -62,6 +62,7 @@ function providerRecord(): ProviderRecord {
     baseUrl: null,
     encryptedHeaders: null,
     manualModelIds: null,
+    reasoningEfforts: null,
     isActive: true,
     isDefault: true,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),

@@ -58,6 +58,17 @@ export async function POST(request: NextRequest) {
       throw new ValidationError("API key is required for this provider", "missing_api_key");
     }
 
+    let localCLIStatus: Awaited<ReturnType<typeof getLocalCLIStatus>> | undefined;
+    if (isLocalCLIProvider(providerType)) {
+      localCLIStatus = await getLocalCLIStatus(providerType, { forceRefresh: true });
+      if (!localCLIStatus.selectable) {
+        throw new ValidationError(
+          localCLIStatus.statusMessage ?? "The local CLI is not ready",
+          "local_cli_unavailable"
+        );
+      }
+    }
+
     const created = await createProvider({
       ...parsedBody,
       provider: providerType,
@@ -99,6 +110,15 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ...toProviderPublic(created),
+      ...(localCLIStatus
+        ? {
+            connectionStatus: localCLIStatus.status,
+            selectable: localCLIStatus.selectable,
+            cliVersion: localCLIStatus.cliVersion,
+            statusMessage: localCLIStatus.statusMessage,
+            lastCheckedAt: localCLIStatus.lastCheckedAt,
+          }
+        : {}),
       autoConfiguredDefaults,
       autoConfiguredModelId,
       autoConfiguredWarning,

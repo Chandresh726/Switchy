@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-import { CUSTOM_API_FORMATS } from "@/lib/ai/providers/types";
+import {
+  CUSTOM_API_FORMATS,
+  isReasoningEffort,
+} from "@/lib/ai/providers/types";
 
 export const providerModelsQuerySchema = z.object({
   refresh: z.enum(["1", "true", "0", "false"]).optional(),
@@ -24,6 +27,9 @@ const customProviderFields = {
   apiFormat: z.enum(CUSTOM_API_FORMATS),
   baseUrl: z.string().trim().min(1).max(2_000),
   manualModelIds: z.array(z.string().max(240)).max(200).default([]),
+  reasoningEfforts: z.array(
+    z.string().refine(isReasoningEffort, "Invalid reasoning level")
+  ).max(100),
 };
 
 export const providerPatchBodySchema = z.object({
@@ -33,6 +39,7 @@ export const providerPatchBodySchema = z.object({
   baseUrl: customProviderFields.baseUrl.optional(),
   headers: z.array(customHeaderPatchSchema).max(50).optional(),
   manualModelIds: z.array(z.string().max(240)).max(200).optional(),
+  reasoningEfforts: customProviderFields.reasoningEfforts.optional(),
 });
 export const providerCreateBodySchema = z.object({
   provider: z.string().trim().min(1).max(100),
@@ -42,6 +49,7 @@ export const providerCreateBodySchema = z.object({
   baseUrl: customProviderFields.baseUrl.optional(),
   headers: z.array(customHeaderCreateSchema).max(50).optional(),
   manualModelIds: customProviderFields.manualModelIds.optional(),
+  reasoningEfforts: customProviderFields.reasoningEfforts.optional(),
 }).superRefine((value, context) => {
   if (value.provider !== "custom") return;
   for (const key of ["displayName", "apiFormat", "baseUrl"] as const) {

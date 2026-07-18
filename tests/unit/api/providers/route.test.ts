@@ -190,4 +190,64 @@ describe("GET /api/providers", () => {
     expect(serialized).not.toContain("proxy-secret");
     expect(serialized).not.toContain("header-secret");
   });
+
+  it("verifies a local CLI before creating its provider record", async () => {
+    mocks.getLocalCLIStatus.mockResolvedValue({
+      status: "ready",
+      selectable: true,
+      cliVersion: "1.2.3",
+      statusMessage: "2 text models available.",
+      lastCheckedAt: "2026-07-18T00:00:00.000Z",
+    });
+    mocks.createProvider.mockResolvedValue({
+      id: "builtin:codex-cli",
+      provider: "codex_cli",
+      isDefault: false,
+    });
+    mocks.toProviderPublic.mockReturnValueOnce({
+      id: "builtin:codex-cli",
+      provider: "codex_cli",
+      kind: "local_cli",
+      selectable: false,
+    });
+    const request = new NextRequest("http://localhost/api/providers", {
+      method: "POST",
+      headers: { origin: "http://localhost", "x-switchy-request": "true" },
+      body: JSON.stringify({ provider: "codex_cli" }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mocks.getLocalCLIStatus).toHaveBeenCalledWith("codex_cli", { forceRefresh: true });
+    expect(mocks.createProvider).toHaveBeenCalledWith({
+      provider: "codex_cli",
+      apiKey: undefined,
+      manualModelIds: [],
+    });
+    expect(body).toMatchObject({ selectable: true, connectionStatus: "ready" });
+  });
+
+  it("does not add a local CLI that fails verification", async () => {
+    mocks.getLocalCLIStatus.mockResolvedValue({
+      status: "not_authenticated",
+      selectable: false,
+      statusMessage: "Codex CLI is installed but not logged in.",
+      lastCheckedAt: "2026-07-18T00:00:00.000Z",
+    });
+    const request = new NextRequest("http://localhost/api/providers", {
+      method: "POST",
+      headers: { origin: "http://localhost", "x-switchy-request": "true" },
+      body: JSON.stringify({ provider: "codex_cli" }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: "Codex CLI is installed but not logged in.",
+    });
+    expect(mocks.createProvider).not.toHaveBeenCalled();
+  });
 });

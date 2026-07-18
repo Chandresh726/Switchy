@@ -127,6 +127,7 @@ describe("model catalog", () => {
       apiKey: "proxy-key",
       headers: { "X-Route": "codex" },
       manualModelIds: ["manual-model", "proxy-model"],
+      reasoningEfforts: ["low", "medium", "high", "xhigh"],
     });
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe("http://127.0.0.1:8317/v1/models");
@@ -134,6 +135,59 @@ describe("model catalog", () => {
     expect(openAIHeaders.get("authorization")).toBe("Bearer proxy-key");
     expect(openAIHeaders.get("x-route")).toBe("codex");
     expect(models.map(({ modelId }) => modelId)).toEqual(["proxy-model", "manual-model"]);
+    expect(models[0]).toMatchObject({
+      supportsReasoning: true,
+      reasoningControl: {
+        kind: "effort",
+        options: [
+          { value: "low" },
+          { value: "medium" },
+          { value: "high" },
+          { value: "xhigh" },
+        ],
+        defaultValue: "medium",
+      },
+      supportedReasoningEfforts: ["low", "medium", "high", "xhigh"],
+      defaultReasoningEffort: "medium",
+    });
+    expect(models[1]?.reasoningControl).toEqual(models[0]?.reasoningControl);
+  });
+
+  it("advertises verified GPT-5.6 reasoning efforts for an OpenAI-compatible custom provider", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({
+      data: [
+        { id: "gpt-5.6-luna", owned_by: "openai" },
+        { id: "gpt-5.6-sol", owned_by: "openai" },
+        { id: "gpt-5.6-terra", owned_by: "openai" },
+        { id: "gpt-5.6-preview", owned_by: "openai" },
+        { id: "proxy-model", owned_by: "cliproxy" },
+      ],
+    })));
+
+    const models = await discoverCustomProviderModels({
+      displayName: "CLI Proxy API",
+      apiFormat: "openai_responses",
+      baseUrl: "http://127.0.0.1:8317/v1",
+      headers: {},
+      manualModelIds: [],
+      reasoningEfforts: [],
+    });
+
+    for (const modelId of ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]) {
+      expect(models.find((model) => model.modelId === modelId)).toMatchObject({
+        supportsReasoning: true,
+        reasoningControl: {
+          kind: "effort",
+          options: ["none", "low", "medium", "high", "xhigh", "max"]
+            .map((value) => ({ value })),
+          defaultValue: "medium",
+        },
+      });
+    }
+    expect(models.find((model) => model.modelId === "gpt-5.6-preview")?.reasoningControl)
+      .toEqual({ kind: "provider_default" });
+    expect(models.find((model) => model.modelId === "proxy-model")?.reasoningControl)
+      .toEqual({ kind: "provider_default" });
   });
 
   it("parses Anthropic-style custom catalogs and does not expose error bodies", async () => {
@@ -147,6 +201,7 @@ describe("model catalog", () => {
       apiKey: "secret-key",
       headers: {},
       manualModelIds: [],
+      reasoningEfforts: [],
     });
     expect(models[0]).toMatchObject({ modelId: "claude-proxy", label: "Claude Proxy" });
     expect(fetchMock.mock.calls.at(-1)?.[0]).toBe("https://proxy.example/v1/models");
@@ -166,6 +221,7 @@ describe("model catalog", () => {
       apiKey: "secret-key",
       headers: {},
       manualModelIds: [],
+      reasoningEfforts: [],
     })).rejects.not.toMatchObject({ context: { body: expect.anything() } });
     expect(cancel).toHaveBeenCalledTimes(1);
   });
@@ -183,6 +239,7 @@ describe("model catalog", () => {
       baseUrl: "https://malformed.example/v1",
       headers: {},
       manualModelIds: ["manual-model"],
+      reasoningEfforts: [],
     })).rejects.toMatchObject({
       type: "validation",
       message: "Invalid custom provider model catalog",
@@ -199,6 +256,7 @@ describe("model catalog", () => {
       baseUrl: "https://slow.example/v1",
       headers: {},
       manualModelIds: [],
+      reasoningEfforts: [],
     })).rejects.toMatchObject({ message: "Custom provider model discovery timed out" });
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
 
@@ -214,6 +272,7 @@ describe("model catalog", () => {
       baseUrl: "https://large.example/v1",
       headers: {},
       manualModelIds: ["manual-model"],
+      reasoningEfforts: [],
     })).rejects.toMatchObject({ message: "Invalid model catalog response from custom" });
     expect(cancel).toHaveBeenCalledTimes(1);
 
@@ -230,6 +289,7 @@ describe("model catalog", () => {
       baseUrl: "https://bodyless.example/v1",
       headers: {},
       manualModelIds: ["manual-model"],
+      reasoningEfforts: [],
     })).rejects.toMatchObject({ message: "Invalid model catalog response from custom" });
   });
 
@@ -243,6 +303,7 @@ describe("model catalog", () => {
       baseUrl: "https://large.example/v1",
       headers: {},
       manualModelIds: Array.from({ length: 200 }, (_, index) => `manual-${index}`),
+      reasoningEfforts: [],
     })).rejects.toMatchObject({
       message: "The custom provider catalog cannot contain more than 1,000 models",
     });
@@ -411,6 +472,36 @@ describe("model catalog", () => {
       defaultValue: "xhigh",
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes durable catalogs created before model-specific capability inference", async () => {
+    const providerRecord = {
+      id: "provider-openai-old-cache",
+      provider: "openai",
+      apiKey: "encrypted-key",
+      updatedAt: new Date("2026-02-20T00:00:00.000Z"),
+    };
+    queueSelectResponses(
+      { limit: [providerRecord] },
+      { limit: [{
+        value: JSON.stringify({
+          providerUpdatedAtMs: providerRecord.updatedAt.getTime(),
+          fetchedAt: new Date().toISOString(),
+          models: [],
+        }),
+      }] }
+    );
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ id: "gpt-5.6-luna", owned_by: "openai" }] }),
+    });
+
+    const response = await getProviderModels(providerRecord.id);
+
+    expect(response.source).toBe("live");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const stored = mocks.insertValues.mock.calls.at(-1)?.[0] as { value: string };
+    expect(JSON.parse(stored.value)).toMatchObject({ schemaVersion: 2 });
   });
 
   it("uses provider-default when a catalog does not enumerate exact efforts", async () => {

@@ -100,7 +100,7 @@ describe("dynamic reasoning placement", () => {
     expect(screen.getByRole("combobox", { name: "Reasoning effort" })).toBeTruthy();
   });
 
-  it("retains unavailable writing selections when the catalog cannot load", () => {
+  it("retains an unavailable writing model without showing reasoning", () => {
     render(<AIWritingSection
       availableProviders={providers}
       hasProviders
@@ -126,11 +126,12 @@ describe("dynamic reasoning placement", () => {
     />);
 
     expect(screen.getByText("Configured: openai/retired-model")).toBeTruthy();
-    expect(screen.getByText("max (unavailable)")).toBeTruthy();
+    expect(screen.queryByText("max (unavailable)")).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Reasoning effort" })).toBeNull();
     expect(screen.getByText(/configured model is unavailable/i)).toBeTruthy();
   });
 
-  it("retains unavailable resume selections when the catalog cannot load", () => {
+  it("retains an unavailable resume model without showing reasoning", () => {
     render(<ResumeParserSection
       availableProviders={providers}
       hasProviders
@@ -147,7 +148,8 @@ describe("dynamic reasoning placement", () => {
     />);
 
     expect(screen.getByText("Configured: openai/retired-model")).toBeTruthy();
-    expect(screen.getByText("future_v1 (unavailable)")).toBeTruthy();
+    expect(screen.queryByText("future_v1 (unavailable)")).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Reasoning effort" })).toBeNull();
     expect(screen.getByText(/configured model is unavailable/i)).toBeTruthy();
   });
 });

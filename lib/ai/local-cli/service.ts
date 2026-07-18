@@ -46,9 +46,11 @@ const modelCache = new Map<LocalCLIProvider, ModelEntry>();
 const modelFlights = new Map<LocalCLIProvider, Promise<ProviderModelDefinition[]>>();
 const openCodeConnectionCache = new Map<LocalCLIProvider, ConnectedProviderEntry>();
 
-export async function warmLocalCLIStatuses(): Promise<void> {
+export async function warmLocalCLIStatuses(
+  providers: readonly LocalCLIProvider[] = ["codex_cli", "opencode_cli"]
+): Promise<void> {
   await Promise.allSettled(
-    (["codex_cli", "opencode_cli"] as const).map((provider) =>
+    providers.map((provider) =>
       getLocalCLIStatus(provider, { forceRefresh: true })
     )
   );
@@ -293,7 +295,7 @@ export function clearLocalCLICaches(provider?: LocalCLIProvider): void {
   openCodeConnectionCache.clear();
 }
 
-export async function resetLocalCLIProvider(provider: LocalCLIProvider): Promise<void> {
+export async function retireLocalCLIProvider(provider: LocalCLIProvider): Promise<void> {
   const flight = modelFlights.get(provider);
   if (flight) await flight.catch(() => undefined);
   backendCache.get(provider)?.backend.retire();
@@ -302,6 +304,10 @@ export async function resetLocalCLIProvider(provider: LocalCLIProvider): Promise
   modelCache.delete(provider);
   openCodeConnectionCache.delete(provider);
   modelFlights.delete(provider);
+}
+
+export async function resetLocalCLIProvider(provider: LocalCLIProvider): Promise<void> {
+  await retireLocalCLIProvider(provider);
   await deleteStoredLocalCLICatalog(provider);
 }
 

@@ -94,7 +94,7 @@ describe("MatcherSection", () => {
     expect(screen.getByLabelText("Concurrency")).toBeTruthy();
   });
 
-  it("uses provider default when the model does not publish exact efforts", () => {
+  it("hides reasoning when the model does not publish selectable efforts", () => {
     const props = createProps();
     props.models[0].supportsReasoning = false;
     props.models[0].reasoningControl = { kind: "provider_default" };
@@ -103,7 +103,7 @@ describe("MatcherSection", () => {
 
     expect(screen.queryByRole("combobox", { name: "Final match reasoning effort" })).toBeNull();
     expect(screen.getByRole("combobox", { name: "Job analysis reasoning effort" })).toBeTruthy();
-    expect(screen.getByText("Provider default")).toBeTruthy();
+    expect(screen.queryByText("Provider default")).toBeNull();
   });
 
   it("renders provider-native effort values and blocks a stale selection", () => {
@@ -141,7 +141,7 @@ describe("MatcherSection", () => {
     expect(screen.getByText(/choose an available model/i)).toBeTruthy();
   });
 
-  it("retains saved model and reasoning values when the catalog is empty", () => {
+  it("retains the saved model but hides reasoning when the catalog is empty", () => {
     const props = createProps();
     props.models = [];
     props.modelsError = "Catalog unavailable";
@@ -151,7 +151,8 @@ describe("MatcherSection", () => {
     render(<MatcherSection {...props} />);
 
     expect(screen.getByText("Configured: retired-model")).toBeTruthy();
-    expect(screen.getByText("xhigh (unavailable)")).toBeTruthy();
+    expect(screen.queryByText("xhigh (unavailable)")).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Final match reasoning effort" })).toBeNull();
     expect(screen.getByText(/choose an available model/i)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /save/i })).toBeNull();
   });

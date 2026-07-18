@@ -56,6 +56,7 @@ function customInput(name: string): ProviderCreateBody & { provider: "custom" } 
     apiKey: "proxy-secret",
     headers: [{ name: "X-Account", value: `header-secret-${name}` }],
     manualModelIds: ["manual-model"],
+    reasoningEfforts: ["low", "medium", "high", "xhigh"],
   };
 }
 
@@ -80,6 +81,7 @@ describe("custom provider persistence", () => {
         baseUrl: null,
         encryptedHeaders: null,
         manualModelIds: null,
+        reasoningEfforts: null,
       });
     } finally {
       rmSync(previousMigrations, { recursive: true, force: true });
@@ -91,7 +93,7 @@ describe("custom provider persistence", () => {
     const previousMigrations = createMigrationsThrough(31, "switchy-provider-uniqueness-");
     try {
       migrateLocalDatabase(database, previousMigrations);
-      database.insert(aiProviders).values([
+      database.insert(legacyAiProviders).values([
         { id: "preferred-openai", provider: "openai", isDefault: true },
         { id: "duplicate-openai", provider: "openai", isDefault: false },
         { id: "custom-one", provider: "custom" },
@@ -144,6 +146,7 @@ describe("custom provider persistence", () => {
       baseUrl: "http://127.0.0.1:8317/v1",
       headerNames: ["X-Account"],
       manualModelIds: ["manual-model"],
+      reasoningEfforts: ["low", "medium", "high", "xhigh"],
       hasApiKey: true,
       kind: "custom",
     });

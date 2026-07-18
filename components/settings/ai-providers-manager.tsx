@@ -59,10 +59,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getAllProviderMetadata, type ProviderMetadata } from "@/lib/ai/providers/metadata";
-import {
-  isLocalCLIProvider,
-  type CustomAPIFormat,
-} from "@/lib/ai/providers/types";
+import type { CustomAPIFormat } from "@/lib/ai/providers/types";
 import type {
   ProviderCreateBody,
   ProviderPatchBody,
@@ -97,6 +94,7 @@ interface CustomFormState {
   removeApiKey: boolean;
   headers: HeaderDraft[];
   manualModels: string;
+  reasoningEfforts: string;
 }
 
 const EMPTY_CUSTOM_FORM: CustomFormState = {
@@ -107,6 +105,7 @@ const EMPTY_CUSTOM_FORM: CustomFormState = {
   removeApiKey: false,
   headers: [],
   manualModels: "",
+  reasoningEfforts: "",
 };
 
 const API_FORMAT_LABELS: Record<CustomAPIFormat, string> = {
@@ -117,6 +116,10 @@ const API_FORMAT_LABELS: Record<CustomAPIFormat, string> = {
 
 function parseManualModels(value: string): string[] {
   return value.split(/[\n,]/).map((model) => model.trim()).filter(Boolean);
+}
+
+function parseReasoningEfforts(value: string): string[] {
+  return value.split(/[\n,]/).map((effort) => effort.trim()).filter(Boolean);
 }
 
 function createHeaderDraft(input: Omit<HeaderDraft, "id">): HeaderDraft {
@@ -256,6 +259,18 @@ function CustomProviderFields({ value, onChange, editing = false }: CustomProvid
         />
         <p className="text-xs text-muted-foreground">Manual IDs are merged with models returned by /models.</p>
       </div>
+      <div className="grid gap-2">
+        <Label htmlFor={editing ? "edit-custom-reasoning" : "custom-reasoning"}>Reasoning levels (optional)</Label>
+        <Input
+          id={editing ? "edit-custom-reasoning" : "custom-reasoning"}
+          value={value.reasoningEfforts}
+          onChange={(event) => update("reasoningEfforts", event.target.value)}
+          placeholder="low, medium, high"
+        />
+        <p className="text-xs text-muted-foreground">
+          Enables reasoning selectors for every model from this provider. Add xhigh or max only when those models accept it.
+        </p>
+      </div>
     </div>
   );
 }
@@ -351,8 +366,8 @@ export function AIProvidersManager({
 
   const selectedMetadata = metadata.find((item) => item.id === selectedProviderType);
   const availableProviders = metadata.filter(
-    (item) => !isLocalCLIProvider(item.id) &&
-      (item.id === "custom" || !providers.some((provider) => provider.provider === item.id))
+    (item) => item.id === "custom" ||
+      !providers.some((provider) => provider.provider === item.id)
   );
 
   useEffect(() => {
@@ -418,6 +433,7 @@ export function AIProvidersManager({
           apiKey: customForm.apiKey.trim() || undefined,
           headers: customForm.headers.map(({ name, value }) => ({ name, value })),
           manualModelIds: parseManualModels(customForm.manualModels),
+          reasoningEfforts: parseReasoningEfforts(customForm.reasoningEfforts),
         });
       } else {
         await onAddProvider({
@@ -467,6 +483,7 @@ export function AIProvidersManager({
             configured: true,
           })),
           manualModels: (provider.manualModelIds ?? []).join("\n"),
+          reasoningEfforts: (provider.reasoningEfforts ?? []).join(", "),
         }
       : null);
     setError(null);
@@ -489,6 +506,7 @@ export function AIProvidersManager({
           ...(value.length > 0 || !configured ? { value } : {}),
         })),
         manualModelIds: parseManualModels(editCustomForm.manualModels),
+        reasoningEfforts: parseReasoningEfforts(editCustomForm.reasoningEfforts),
       });
       setEditingProviderId(null);
       setEditCustomForm(null);
@@ -577,8 +595,7 @@ export function AIProvidersManager({
                       >
                         <Pencil />
                       </Button>
-                      {!isCLI ? (
-                        <AlertDialog>
+                      <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button variant="ghost" size="icon" aria-label="Delete provider" title="Delete provider">
                               <Trash2 className="text-muted-foreground hover:text-red-400" />
@@ -599,7 +616,6 @@ export function AIProvidersManager({
                             </AlertDialogFooter>
                           </AlertDialogContent>
                         </AlertDialog>
-                      ) : null}
                     </div>
                   </div>
 
@@ -690,7 +706,9 @@ export function AIProvidersManager({
                   <SelectGroup>
                     {availableProviders.map((provider) => (
                       <SelectItem key={provider.id} value={provider.id}>
-                        {provider.displayName} · {provider.kind === "custom" ? "API endpoint" : "API key"}
+                        {provider.displayName} · {provider.kind === "custom"
+                          ? "API endpoint"
+                          : provider.kind === "local_cli" ? "Local CLI" : "API key"}
                       </SelectItem>
                     ))}
                   </SelectGroup>
@@ -700,6 +718,12 @@ export function AIProvidersManager({
 
             {selectedProviderType === "custom" ? (
               <CustomProviderFields value={customForm} onChange={setCustomForm} />
+            ) : null}
+
+            {selectedMetadata?.kind === "local_cli" ? (
+              <p className="text-xs text-muted-foreground">
+                Switchy will verify that the CLI is installed, authenticated, and exposes usable models before adding it.
+              </p>
             ) : null}
 
             {selectedMetadata?.requiresApiKey ? (

@@ -117,6 +117,7 @@ const providerSettingsListItemSchema = z.object({
   baseUrl: z.string().optional(),
   headerNames: z.array(z.string()).optional(),
   manualModelIds: z.array(z.string()).optional(),
+  reasoningEfforts: z.array(z.string()).optional(),
   connectionStatus: z
     .enum([
       "ready",

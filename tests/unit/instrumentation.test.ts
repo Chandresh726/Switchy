@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   recoverPending: vi.fn(),
   startScheduler: vi.fn(),
   migrateSchedulerRecoveryState: vi.fn(),
-  ensureBuiltinLocalCLIProviders: vi.fn(),
+  reconcileConfiguredLocalCLIProviders: vi.fn(),
   removeDeprecatedMatchingPreferenceSettings: vi.fn(),
   warmLocalCLIStatuses: vi.fn(),
   registerRuntimeLock: vi.fn(),
@@ -39,7 +39,7 @@ vi.mock("@/lib/application/profile-resume-service", () => ({
 }));
 
 vi.mock("@/lib/ai/providers/provider-service", () => ({
-  ensureBuiltinLocalCLIProviders: mocks.ensureBuiltinLocalCLIProviders,
+  reconcileConfiguredLocalCLIProviders: mocks.reconcileConfiguredLocalCLIProviders,
 }));
 
 vi.mock("@/lib/settings/settings-service", () => ({
@@ -84,7 +84,7 @@ describe("server startup instrumentation", () => {
     });
     mocks.dispatchPendingAIWork.mockReturnValue(undefined);
     mocks.importLegacyMatchWork.mockReturnValue(0);
-    mocks.ensureBuiltinLocalCLIProviders.mockResolvedValue(undefined);
+    mocks.reconcileConfiguredLocalCLIProviders.mockResolvedValue(["codex_cli"]);
     mocks.removeDeprecatedMatchingPreferenceSettings.mockResolvedValue(undefined);
     mocks.warmLocalCLIStatuses.mockResolvedValue(undefined);
     mocks.reconcileResumeStorage.mockResolvedValue({
@@ -122,9 +122,9 @@ describe("server startup instrumentation", () => {
     expect(mocks.recoverPending).toHaveBeenCalledTimes(1);
     expect(mocks.importLegacyMatchWork).toHaveBeenCalledTimes(1);
     expect(mocks.dispatchPendingAIWork).toHaveBeenCalledTimes(1);
-    expect(mocks.ensureBuiltinLocalCLIProviders).toHaveBeenCalledTimes(1);
+    expect(mocks.reconcileConfiguredLocalCLIProviders).toHaveBeenCalledTimes(1);
     expect(mocks.removeDeprecatedMatchingPreferenceSettings).toHaveBeenCalledTimes(1);
-    expect(mocks.warmLocalCLIStatuses).toHaveBeenCalledTimes(1);
+    expect(mocks.warmLocalCLIStatuses).toHaveBeenCalledWith(["codex_cli"]);
     expect(mocks.setScrapeQueueRecovery).toHaveBeenLastCalledWith("ready");
     expect(mocks.setMatcherDispatchRecovery).toHaveBeenLastCalledWith("ready");
     expect(mocks.setLegacyMatchImportRecovery).toHaveBeenLastCalledWith("ready");

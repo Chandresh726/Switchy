@@ -43,18 +43,24 @@ function props() {
 }
 
 describe("AIProvidersManager local CLI providers", () => {
-  it("shows permanent CLI providers without add or delete actions", () => {
-    render(<AIProvidersManager {...props()} />);
+  it("shows configured CLI providers with working delete actions", () => {
+    const input = props();
+    render(<AIProvidersManager {...input} />);
 
     expect(screen.getByText("Manage API-key, custom API, and local CLI providers in one place.")).toBeTruthy();
     expect(screen.getByText("Codex CLI")).toBeTruthy();
     expect(screen.getByText("OpenCode")).toBeTruthy();
     expect(screen.getByText("v1.2.3")).toBeTruthy();
     expect(screen.queryByText("Local CLI")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Delete provider" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Delete provider" })).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
     expect(screen.queryByRole("button", { name: /test ai features/i })).toBeNull();
     expect(screen.getAllByRole("button", { name: "Refresh models" })).toHaveLength(2);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete provider" })[0]);
+    expect(screen.getByText("Delete Codex CLI?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(input.onDeleteProvider).toHaveBeenCalledWith("builtin:codex-cli");
   });
 
   it("keeps API provider status colorful on the right without a row icon or check action", () => {
@@ -101,7 +107,7 @@ describe("AIProvidersManager local CLI providers", () => {
     vi.useRealTimers();
   });
 
-  it("does not offer permanent CLI providers in the add-provider menu", async () => {
+  it("does not offer already-configured CLI providers in the add-provider menu", async () => {
     Element.prototype.scrollIntoView = vi.fn();
     const input = props();
     render(<AIProvidersManager {...input} />);
@@ -110,6 +116,23 @@ describe("AIProvidersManager local CLI providers", () => {
     fireEvent.click(screen.getByLabelText("Provider"));
     expect(screen.queryByRole("option", { name: "Codex CLI · Local CLI" })).toBeNull();
     expect(screen.queryByRole("option", { name: "OpenCode · Local CLI" })).toBeNull();
+  });
+
+  it("offers an unconfigured CLI provider and submits it for verification", async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const input = props();
+    render(<AIProvidersManager {...input} providers={input.providers.slice(0, 1)} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add Another Provider" }));
+    fireEvent.click(screen.getByLabelText("Provider"));
+    fireEvent.click(screen.getByRole("option", { name: "OpenCode · Local CLI" }));
+
+    expect(screen.getByText(/verify that the CLI is installed/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add Provider" }));
+    expect(input.onAddProvider).toHaveBeenCalledWith({
+      provider: "opencode_cli",
+      apiKey: undefined,
+    });
   });
 
   it("keeps Custom available and submits the complete connection form", async () => {
@@ -140,6 +163,9 @@ describe("AIProvidersManager local CLI providers", () => {
     fireEvent.change(screen.getByLabelText("Manual model IDs (optional)"), {
       target: { value: "manual-one\nmanual-two" },
     });
+    fireEvent.change(screen.getByLabelText("Reasoning levels (optional)"), {
+      target: { value: "low, medium, high, xhigh" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Add Provider" }));
 
     expect(input.onAddProvider).toHaveBeenCalledWith({
@@ -150,6 +176,7 @@ describe("AIProvidersManager local CLI providers", () => {
       apiKey: "proxy-secret",
       headers: [{ name: "X-Route", value: "codex" }],
       manualModelIds: ["manual-one", "manual-two"],
+      reasoningEfforts: ["low", "medium", "high", "xhigh"],
     });
   });
 
@@ -164,6 +191,7 @@ describe("AIProvidersManager local CLI providers", () => {
       baseUrl: `http://127.0.0.1:${8317 + index}/v1`,
       headerNames: ["Authorization"],
       manualModelIds: ["claude-proxy"],
+      reasoningEfforts: ["low", "medium", "high"],
       isActive: true,
       hasApiKey: true,
       selectable: true,
@@ -187,6 +215,7 @@ describe("AIProvidersManager local CLI providers", () => {
       apiKey: undefined,
       headers: [{ name: "Authorization" }],
       manualModelIds: ["claude-proxy"],
+      reasoningEfforts: ["low", "medium", "high"],
     });
   });
 
