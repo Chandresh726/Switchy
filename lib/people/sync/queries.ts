@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { companies, people } from "@/lib/db/schema";
@@ -32,7 +32,7 @@ export async function getPeopleList(filters: PeopleListFilters) {
     sortOrder = "desc",
   } = filters;
 
-  const conditions = [];
+  const conditions = [isNull(people.archivedAt)];
 
   if (typeof companyId === "number") {
     conditions.push(eq(people.mappedCompanyId, companyId));
@@ -125,6 +125,7 @@ export async function getPeopleList(filters: PeopleListFilters) {
       roleTag: row.person.roleTag,
       roleTagSource: row.person.roleTagSource,
       notes: row.person.notes,
+      archivedAt: row.person.archivedAt,
       createdAt: row.person.createdAt,
       updatedAt: row.person.updatedAt,
       isRecruiter: isRecruiterPosition(row.person.position),

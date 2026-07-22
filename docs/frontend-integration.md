@@ -92,9 +92,17 @@ Backup and restore are CLI-only package scripts and are not HTTP APIs.
 | `/api/match-history` | GET | JSON client | `clients/history` |
 | `/api/match` | POST | JSON client | `clients/runtime` |
 | `/api/match/sessions/[id]` | GET; DELETE retained without a current UI caller | JSON client / server-only | `clients/runtime` |
-| `/api/people/[id]` | PATCH | JSON client | `clients/people` |
+| `/api/people/[id]/merge` | POST | JSON client / server-only | `clients/people` |
+| `/api/people/[id]/purge` | DELETE | JSON client / server-only | `clients/people` |
+| `/api/people/[id]/restore` | POST | JSON client / server-only | `clients/people` |
+| `/api/people/[id]/sources/[sourceRecordId]/split` | POST | JSON client / server-only | `clients/people` |
+| `/api/people/[id]` | GET, PATCH, DELETE | JSON client / server-only | `clients/people` |
+| `/api/people/company-aliases/[id]` | PATCH, DELETE | JSON client / server-only | `clients/people` |
+| `/api/people/company-aliases` | GET | JSON client / server-only | `clients/people` |
+| `/api/people/duplicates` | GET | JSON client / server-only | `clients/people` |
 | `/api/people/ignored-unmatched-companies` | GET | JSON client | `clients/people` |
 | `/api/people/import-sessions` | GET | JSON client | `clients/people` |
+| `/api/people/import-sessions/[id]` | GET | JSON client / server-only | `clients/people` |
 | `/api/people/import/preview` | POST | JSON client (multipart) | `clients/people` |
 | `/api/people/import` | POST | JSON client (multipart) | `clients/people` |
 | `/api/people` | GET, POST | JSON client | `clients/people` |
@@ -122,4 +130,3 @@ Backup and restore are CLI-only package scripts and are not HTTP APIs.
 | `/api/scrape-history` | GET | JSON client | `clients/history` |
 | `/api/settings` | GET, PATCH | JSON client | `clients/settings` |
 | `/api/stats` | GET | JSON client | `clients/stats` |
-

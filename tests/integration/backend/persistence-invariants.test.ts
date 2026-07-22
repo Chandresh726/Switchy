@@ -4,7 +4,9 @@ import {
   companies,
   jobs,
   people,
+  peopleImportIssues,
   peopleImportSessions,
+  personSourceRecords,
   profile,
   resumes,
   settings,
@@ -40,7 +42,7 @@ describe("local persistence invariants", () => {
     expect(database.select().from(settings).all()).toEqual([]);
   });
 
-  it("rolls back person mutations and records a separate failed import session", async () => {
+  it("deduplicates repeated source identities and records the issue atomically", async () => {
     const { database } = harness.createDatabase();
     vi.doMock("@/lib/db", () => ({ db: database }));
     const { importPeopleCsv } = await import("@/lib/people/sync/import");
@@ -54,11 +56,17 @@ describe("local persistence invariants", () => {
       source: "linkedin",
       content: duplicateCsv,
       fileName: "connections.csv",
-    })).rejects.toThrow();
-    expect(database.select().from(people).all()).toEqual([]);
+    })).resolves.toMatchObject({ insertedRows: 1, duplicateRows: 1 });
+    expect(database.select().from(people).all()).toHaveLength(1);
+    expect(database.select().from(personSourceRecords).all()).toHaveLength(1);
     expect(database.select().from(peopleImportSessions).get()).toMatchObject({
-      status: "failed",
+      status: "completed",
       totalRows: 2,
+      duplicateRows: 1,
+    });
+    expect(database.select().from(peopleImportIssues).get()).toMatchObject({
+      rowNumber: 3,
+      kind: "duplicate",
     });
   });
 

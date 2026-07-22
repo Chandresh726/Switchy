@@ -61,9 +61,9 @@ export async function getDashboardStats(
       .orderBy(desc(scrapeSessions.startedAt), desc(scrapeSessions.id))
       .limit(1),
     db.select({
-      totalPeople: sql<number>`coalesce(sum(case when ${people.isActive} = 1 then 1 else 0 end), 0)`,
-      starredPeople: sql<number>`coalesce(sum(case when ${people.isActive} = 1 and ${people.isStarred} = 1 then 1 else 0 end), 0)`,
-      mappedPeople: sql<number>`coalesce(sum(case when ${people.isActive} = 1 and ${people.mappedCompanyId} is not null then 1 else 0 end), 0)`,
+      totalPeople: sql<number>`coalesce(sum(case when ${people.isActive} = 1 and ${people.archivedAt} is null then 1 else 0 end), 0)`,
+      starredPeople: sql<number>`coalesce(sum(case when ${people.isActive} = 1 and ${people.archivedAt} is null and ${people.isStarred} = 1 then 1 else 0 end), 0)`,
+      mappedPeople: sql<number>`coalesce(sum(case when ${people.isActive} = 1 and ${people.archivedAt} is null and ${people.mappedCompanyId} is not null then 1 else 0 end), 0)`,
     }).from(people),
     scoreStatsPromise,
     db.select({

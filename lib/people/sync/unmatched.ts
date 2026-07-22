@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { companies, companyAliases, people, settings } from "@/lib/db/schema";
@@ -108,6 +108,7 @@ function buildUnmatchedConditions(options: {
 }) {
   const conditions = [
     eq(people.isActive, true),
+    isNull(people.archivedAt),
     sql`${people.mappedCompanyId} IS NULL`,
     sql`${people.companyNormalized} IS NOT NULL`,
     sql`${people.companyNormalized} <> ''`,
@@ -154,6 +155,7 @@ async function getIgnoredCompanyCount(): Promise<number> {
     .where(
       and(
         eq(people.isActive, true),
+        isNull(people.archivedAt),
         sql`${people.mappedCompanyId} IS NULL`,
         sql`${people.companyNormalized} IS NOT NULL`,
         sql`${people.companyNormalized} <> ''`,
@@ -348,6 +350,7 @@ export async function getUnmatchedCompanyPersons(options: {
   const offset = options.offset ?? 0;
   const whereClause = and(
     eq(people.isActive, true),
+    isNull(people.archivedAt),
     sql`${people.mappedCompanyId} IS NULL`,
     eq(people.companyNormalized, normalizedCompany)
   );
@@ -397,6 +400,7 @@ export async function mapUnmatchedCompanyGroup(
     .where(
       and(
         eq(people.companyNormalized, companyNormalized),
+        isNull(people.archivedAt),
         sql`${people.mappedCompanyId} IS NULL`
       )
     )
@@ -478,6 +482,7 @@ export async function refreshUnmatchedCompanyMappings(
       .where(
         and(
           eq(people.companyNormalized, companyNormalized),
+          isNull(people.archivedAt),
           sql`${people.mappedCompanyId} IS NULL`
         )
       )

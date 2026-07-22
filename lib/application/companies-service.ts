@@ -334,7 +334,11 @@ export async function getCompanyOverview(id: number, now = new Date()) {
     db.select({
       mappedPeople: sql<number>`count(*)`,
       starredPeople: sql<number>`sum(case when ${people.isStarred} = 1 then 1 else 0 end)`,
-    }).from(people).where(and(eq(people.mappedCompanyId, id), eq(people.isActive, true))),
+    }).from(people).where(and(
+      eq(people.mappedCompanyId, id),
+      eq(people.isActive, true),
+      isNull(people.archivedAt)
+    )),
     db.select(COMPANY_JOB_SELECTION).from(jobs).where(eq(jobs.companyId, id)).orderBy(desc(jobs.discoveredAt), desc(jobs.id)).limit(50),
     db.select({
       id: people.id, fullName: people.fullName, firstName: people.firstName,
@@ -343,7 +347,11 @@ export async function getCompanyOverview(id: number, now = new Date()) {
       isStarred: people.isStarred, notes: people.notes, roleTag: people.roleTag,
       roleTagSource: people.roleTagSource, lastSeenAt: people.lastSeenAt,
       createdAt: people.createdAt, updatedAt: people.updatedAt,
-    }).from(people).where(and(eq(people.mappedCompanyId, id), eq(people.isActive, true)))
+    }).from(people).where(and(
+      eq(people.mappedCompanyId, id),
+      eq(people.isActive, true),
+      isNull(people.archivedAt)
+    ))
       .orderBy(desc(people.isStarred), people.fullName, desc(people.id)).limit(200),
     db.select({
       id: scrapingLogs.id, status: scrapingLogs.status, triggerSource: scrapingLogs.triggerSource,

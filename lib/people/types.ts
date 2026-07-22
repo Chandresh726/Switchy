@@ -37,6 +37,9 @@ export interface PersonImportSummary {
   totalRows: number;
   insertedRows: number;
   updatedRows: number;
+  unchangedRows: number;
+  reactivatedRows: number;
+  duplicateRows: number;
   deactivatedRows: number;
   invalidRows: number;
   unmatchedCompanyRows: number;

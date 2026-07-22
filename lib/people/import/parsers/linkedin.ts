@@ -94,7 +94,6 @@ function buildSourceRecordKey(params: {
   fullName: string;
   companyNormalized: string | null;
   connectedOn: Date | null;
-  rowNumber: number;
 }): string | null {
   if (params.profileUrlNormalized) {
     return params.profileUrlNormalized;
@@ -106,7 +105,7 @@ function buildSourceRecordKey(params: {
   }
 
   const connectedOn = params.connectedOn.toISOString().slice(0, 10);
-  return `${normalizedName}|${params.companyNormalized}|${connectedOn}|row:${params.rowNumber}`;
+  return `${normalizedName}|${params.companyNormalized}|${connectedOn}`;
 }
 
 function mapRow(
@@ -129,13 +128,12 @@ function mapRow(
     fullName,
     companyNormalized,
     connectedOn,
-    rowNumber,
   });
 
   return {
     rowNumber,
     source: "linkedin",
-    sourceRecordKey: sourceRecordKey || `row:${rowNumber}`,
+    sourceRecordKey: sourceRecordKey || "",
     identityKey: sourceRecordKey ? `linkedin:${sourceRecordKey}` : "",
     firstName,
     lastName,

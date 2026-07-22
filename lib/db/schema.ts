@@ -624,6 +624,7 @@ export const people = sqliteTable("linkedin_connections", {
   roleTag: text("role_tag"),
   roleTagSource: text("role_tag_source"), // "manual" | "inferred"
   notes: text("notes"),
+  archivedAt: integer("archived_at", { mode: "timestamp" }),
   lastSeenAt: integer("last_seen_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
@@ -647,6 +648,7 @@ export const people = sqliteTable("linkedin_connections", {
   sourceActiveIdx: index("people_source_active_idx").on(table.source, table.isActive),
   mappedCompanyActiveIdx: index("people_mapped_company_active_idx").on(table.mappedCompanyId, table.isActive),
   roleTagActiveIdx: index("people_role_tag_active_idx").on(table.roleTag, table.isActive),
+  archivedAtIdx: index("people_archived_at_idx").on(table.archivedAt),
 }));
 
 export const peopleImportSessions = sqliteTable("connection_import_sessions", {
@@ -656,12 +658,16 @@ export const peopleImportSessions = sqliteTable("connection_import_sessions", {
   totalRows: integer("total_rows").notNull().default(0),
   insertedRows: integer("inserted_rows").notNull().default(0),
   updatedRows: integer("updated_rows").notNull().default(0),
+  unchangedRows: integer("unchanged_rows").notNull().default(0),
+  reactivatedRows: integer("reactivated_rows").notNull().default(0),
+  duplicateRows: integer("duplicate_rows").notNull().default(0),
   deactivatedRows: integer("deactivated_rows").notNull().default(0),
   invalidRows: integer("invalid_rows").notNull().default(0),
   unmatchedCompanyRows: integer("unmatched_company_rows").notNull().default(0),
   startedAt: integer("started_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   completedAt: integer("completed_at", { mode: "timestamp" }),
   status: text("status").notNull().default("in_progress"),
+  importMode: text("import_mode").notNull().default("merge"),
   errorMessage: text("error_message"),
 }, (table) => ({
   startedIdIdx: index("people_import_sessions_started_id_idx").on(table.startedAt, table.id),
@@ -671,6 +677,54 @@ export const peopleImportSessions = sqliteTable("connection_import_sessions", {
   deactivatedRowsCheck: check("people_import_deactivated_rows_check", sql`${table.deactivatedRows} >= 0`),
   invalidRowsCheck: check("people_import_invalid_rows_check", sql`${table.invalidRows} >= 0`),
   unmatchedCompanyRowsCheck: check("people_import_unmatched_rows_check", sql`${table.unmatchedCompanyRows} >= 0`),
+}));
+
+export const personSourceRecords = sqliteTable("person_source_records", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  personId: integer("person_id").references(() => people.id, { onDelete: "cascade" }).notNull(),
+  source: text("source").notNull(), // "linkedin" | "apollo" | "manual"
+  sourceRecordKey: text("source_record_key").notNull(),
+  stableIdentityKey: text("stable_identity_key"),
+  identityKind: text("identity_kind"), // "linkedin_url" | "email" | "composite" | "manual"
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  fullName: text("full_name").notNull(),
+  profileUrl: text("profile_url").notNull(),
+  profileUrlNormalized: text("profile_url_normalized"),
+  email: text("email"),
+  emailNormalized: text("email_normalized"),
+  companyRaw: text("company_raw"),
+  companyNormalized: text("company_normalized"),
+  position: text("position"),
+  connectedOn: integer("connected_on", { mode: "timestamp" }),
+  sourceNotes: text("source_notes"),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  firstSeenAt: integer("first_seen_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  lastSeenAt: integer("last_seen_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  lastImportSessionId: text("last_import_session_id").references(() => peopleImportSessions.id, { onDelete: "set null" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+}, (table) => ({
+  sourceRecordUnique: unique("person_source_records_source_key_unique").on(table.source, table.sourceRecordKey),
+  personIdIdx: index("person_source_records_person_idx").on(table.personId),
+  stableIdentityIdx: index("person_source_records_stable_identity_idx").on(table.stableIdentityKey),
+  profileUrlIdx: index("person_source_records_profile_url_idx").on(table.profileUrlNormalized),
+  emailIdx: index("person_source_records_email_idx").on(table.emailNormalized),
+  sourceActiveIdx: index("person_source_records_source_active_idx").on(table.source, table.isActive),
+  importSessionIdx: index("person_source_records_import_session_idx").on(table.lastImportSessionId),
+}));
+
+export const peopleImportIssues = sqliteTable("connection_import_issues", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sessionId: text("session_id").references(() => peopleImportSessions.id, { onDelete: "cascade" }).notNull(),
+  rowNumber: integer("row_number").notNull(),
+  kind: text("kind").notNull(), // "invalid" | "duplicate" | "ambiguous_identity"
+  reason: text("reason").notNull(),
+  sourceRecordKey: text("source_record_key"),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+}, (table) => ({
+  sessionRowIdx: index("people_import_issues_session_row_idx").on(table.sessionId, table.rowNumber, table.id),
+  rowNumberCheck: check("people_import_issue_row_number_check", sql`${table.rowNumber} > 0`),
 }));
 
 export const companyAliases = sqliteTable("company_aliases", {
@@ -856,10 +910,34 @@ export const aiGenerationHistoryRelations = relations(aiGenerationHistory, ({ on
   }),
 }));
 
-export const peopleRelations = relations(people, ({ one }) => ({
+export const peopleRelations = relations(people, ({ one, many }) => ({
   mappedCompany: one(companies, {
     fields: [people.mappedCompanyId],
     references: [companies.id],
+  }),
+  sourceRecords: many(personSourceRecords),
+}));
+
+export const personSourceRecordsRelations = relations(personSourceRecords, ({ one }) => ({
+  person: one(people, {
+    fields: [personSourceRecords.personId],
+    references: [people.id],
+  }),
+  lastImportSession: one(peopleImportSessions, {
+    fields: [personSourceRecords.lastImportSessionId],
+    references: [peopleImportSessions.id],
+  }),
+}));
+
+export const peopleImportSessionsRelations = relations(peopleImportSessions, ({ many }) => ({
+  sourceRecords: many(personSourceRecords),
+  issues: many(peopleImportIssues),
+}));
+
+export const peopleImportIssuesRelations = relations(peopleImportIssues, ({ one }) => ({
+  session: one(peopleImportSessions, {
+    fields: [peopleImportIssues.sessionId],
+    references: [peopleImportSessions.id],
   }),
 }));
 
@@ -912,7 +990,11 @@ export type AIRun = typeof aiRuns.$inferSelect;
 export type NewAIRun = typeof aiRuns.$inferInsert;
 export type Person = typeof people.$inferSelect;
 export type NewPerson = typeof people.$inferInsert;
+export type PersonSourceRecord = typeof personSourceRecords.$inferSelect;
+export type NewPersonSourceRecord = typeof personSourceRecords.$inferInsert;
 export type PeopleImportSession = typeof peopleImportSessions.$inferSelect;
 export type NewPeopleImportSession = typeof peopleImportSessions.$inferInsert;
+export type PeopleImportIssue = typeof peopleImportIssues.$inferSelect;
+export type NewPeopleImportIssue = typeof peopleImportIssues.$inferInsert;
 export type CompanyAlias = typeof companyAliases.$inferSelect;
 export type NewCompanyAlias = typeof companyAliases.$inferInsert;

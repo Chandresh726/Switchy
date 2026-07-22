@@ -9,6 +9,9 @@ import type {
 } from "@/lib/api/clients/history";
 import type {
   PeopleImportSessionsQueryInput,
+  PeopleImportSessionDetailQueryInput,
+  PeopleDuplicatesQueryInput,
+  CompanyAliasesQueryInput,
   PeopleQueryInput,
   UnmatchedCompaniesQueryInput,
   UnmatchedCompanyPeopleQueryInput,
@@ -21,6 +24,9 @@ import {
 import { jobsQuerySchema } from "@/lib/api/contracts/jobs";
 import {
   peopleImportSessionsQuerySchema,
+  peopleImportSessionDetailQuerySchema,
+  peopleDuplicatesQuerySchema,
+  companyAliasesQuerySchema,
   peopleListQuerySchema,
   unmatchedCompaniesQuerySchema,
   unmatchedCompanyPeopleQuerySchema,
@@ -92,10 +98,28 @@ export const queryKeys = {
       "list",
       canonicalSchemaParams(peopleListQuerySchema, params),
     ] as const,
+    details: () => ["people", "detail"] as const,
+    detail: (id: number) => ["people", "detail", id] as const,
+    duplicates: (params: PeopleDuplicatesQueryInput = {}) => [
+      "people",
+      "duplicates",
+      canonicalSchemaParams(peopleDuplicatesQuerySchema, params),
+    ] as const,
     importSessions: (params: PeopleImportSessionsQueryInput = {}) => [
       "people",
       "import-sessions",
       canonicalSchemaParams(peopleImportSessionsQuerySchema, params),
+    ] as const,
+    importSession: (id: string, params: PeopleImportSessionDetailQueryInput = {}) => [
+      "people",
+      "import-session",
+      id,
+      canonicalSchemaParams(peopleImportSessionDetailQuerySchema, params),
+    ] as const,
+    companyAliases: (params: CompanyAliasesQueryInput = {}) => [
+      "people",
+      "company-aliases",
+      canonicalSchemaParams(companyAliasesQuerySchema, params),
     ] as const,
     unmatchedCompanies: {
       all: () => ["people", "unmatched-companies"] as const,

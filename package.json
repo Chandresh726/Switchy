@@ -33,7 +33,7 @@
     "landing:build": "pnpm --filter switchy-landing build",
     "landing:verify": "pnpm --filter switchy-landing verify",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
-    "db:migrate": "tsx scripts/preflight-persistence-invariants.ts && tsx scripts/migrate-database.ts && tsx scripts/backfill-job-fingerprints.ts && tsx scripts/remove-obsolete-match-data.ts",
+    "db:migrate": "tsx scripts/preflight-persistence-invariants.ts && tsx scripts/migrate-database.ts && tsx scripts/backfill-person-source-records.ts && tsx scripts/backfill-job-fingerprints.ts && tsx scripts/remove-obsolete-match-data.ts",
     "db:studio": "drizzle-kit studio --config=drizzle.config.ts",
     "db:cleanup-job-duplicates": "tsx scripts/cleanup-job-duplicates.ts",
     "ai:cli:smoke": "tsx scripts/ai-cli-smoke.mts",

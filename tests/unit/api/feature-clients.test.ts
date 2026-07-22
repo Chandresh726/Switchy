@@ -5,7 +5,22 @@ import { bulkSetCompaniesActive, syncCompanies } from "@/lib/api/clients/compani
 import { getReadiness, getRuntimeHealth } from "@/lib/api/clients/health";
 import { cancelMatchHistorySession } from "@/lib/api/clients/history";
 import { clearJobs, getJob, getJobs, updateJob } from "@/lib/api/clients/jobs";
-import { clearPeople, getPeople, importPeople } from "@/lib/api/clients/people";
+import {
+  archivePerson,
+  clearPeople,
+  deleteCompanyAlias,
+  getCompanyAliases,
+  getPeople,
+  getPeopleDuplicates,
+  getPeopleImportSession,
+  getPersonDetail,
+  importPeople,
+  mergePeople,
+  purgePerson,
+  remapCompanyAlias,
+  restorePerson,
+  splitPersonSource,
+} from "@/lib/api/clients/people";
 import { createSkill, deleteResume } from "@/lib/api/clients/profile";
 import { deleteProvider, getProviderModels } from "@/lib/api/clients/providers";
 import { getMatchSession, recoverScheduler } from "@/lib/api/clients/runtime";
@@ -32,6 +47,83 @@ const EMPTY_STATS_RESPONSE = {
   activeHighMatchJobs: 0,
   statusCounts: { new: 0, viewed: 0, interested: 0, applied: 0, rejected: 0, archived: 0 },
   recentActivity: { discovered: 0, viewed: 0, applied: 0 },
+} as const;
+
+const PERSON_DETAIL_RESPONSE = {
+  id: 1,
+  source: "linkedin",
+  sourceRecordKey: "ada",
+  identityKey: "linkedin:ada",
+  fullName: "Ada Lovelace",
+  firstName: "Ada",
+  lastName: "Lovelace",
+  profileUrl: "https://linkedin.com/in/ada",
+  profileUrlNormalized: "https://linkedin.com/in/ada",
+  email: "ada@example.com",
+  companyRaw: "Acme",
+  companyNormalized: "acme",
+  position: "Engineer",
+  mappedCompanyId: null,
+  isStarred: false,
+  isActive: true,
+  lastSeenAt: "2026-07-20T00:00:00.000Z",
+  connectedOn: null,
+  roleTag: null,
+  roleTagSource: null,
+  notes: null,
+  archivedAt: null,
+  createdAt: "2026-07-20T00:00:00.000Z",
+  updatedAt: "2026-07-20T00:00:00.000Z",
+  isRecruiter: false,
+  company: null,
+  sources: [{
+    id: 1,
+    personId: 1,
+    source: "linkedin",
+    sourceRecordKey: "ada",
+    stableIdentityKey: "linkedin:https://linkedin.com/in/ada",
+    identityKind: "linkedin_url",
+    firstName: "Ada",
+    lastName: "Lovelace",
+    fullName: "Ada Lovelace",
+    profileUrl: "https://linkedin.com/in/ada",
+    profileUrlNormalized: "https://linkedin.com/in/ada",
+    email: "ada@example.com",
+    emailNormalized: "ada@example.com",
+    companyRaw: "Acme",
+    companyNormalized: "acme",
+    position: "Engineer",
+    connectedOn: null,
+    sourceNotes: null,
+    isActive: true,
+    firstSeenAt: "2026-07-20T00:00:00.000Z",
+    lastSeenAt: "2026-07-20T00:00:00.000Z",
+    lastImportSessionId: null,
+    createdAt: "2026-07-20T00:00:00.000Z",
+    updatedAt: "2026-07-20T00:00:00.000Z",
+  }],
+} as const;
+
+const IMPORT_SESSION_DETAIL_RESPONSE = {
+  id: "session/id",
+  source: "linkedin",
+  fileName: "connections.csv",
+  importMode: "merge",
+  totalRows: 1,
+  insertedRows: 1,
+  updatedRows: 0,
+  unchangedRows: 0,
+  reactivatedRows: 0,
+  duplicateRows: 0,
+  deactivatedRows: 0,
+  invalidRows: 0,
+  unmatchedCompanyRows: 0,
+  startedAt: "2026-07-20T00:00:00.000Z",
+  completedAt: "2026-07-20T00:00:01.000Z",
+  status: "completed",
+  errorMessage: null,
+  issues: [],
+  issuePagination: { total: 0, limit: 5, offset: 0, hasMore: false },
 } as const;
 
 describe("typed feature clients", () => {
@@ -120,6 +212,79 @@ describe("typed feature clients", () => {
     expect(fetchMock.mock.calls[1]?.[0]).toBe(
       "/api/providers/provider%2Fid/models?refresh=true"
     );
+  });
+
+  it("covers backend-only people lifecycle, provenance, duplicate, and alias clients", async () => {
+    const alias = {
+      id: 3,
+      companyNormalized: "acme",
+      mappedCompanyId: 7,
+      mappedCompany: { id: 7, name: "Acme" },
+      affectedPeopleCount: 1,
+      createdAt: "2026-07-20T00:00:00.000Z",
+    };
+    const splitPerson = {
+      ...PERSON_DETAIL_RESPONSE,
+      id: 2,
+      identityKey: "linkedin:split",
+      sourceRecordKey: "split",
+      sources: [{ ...PERSON_DETAIL_RESPONSE.sources[0], id: 2, personId: 2, sourceRecordKey: "split" }],
+    };
+    const responses = [
+      PERSON_DETAIL_RESPONSE,
+      PERSON_DETAIL_RESPONSE,
+      PERSON_DETAIL_RESPONSE,
+      { deletedId: 1 },
+      { groups: [], totalCount: 0, hasMore: false },
+      { person: PERSON_DETAIL_RESPONSE, mergedPersonId: 2 },
+      { person: PERSON_DETAIL_RESPONSE, createdPerson: splitPerson },
+      IMPORT_SESSION_DETAIL_RESPONSE,
+      { aliases: [alias], totalCount: 1, hasMore: false },
+      { alias, updatedPeopleCount: 1 },
+      { alias: null, updatedPeopleCount: 1 },
+    ];
+    const fetchMock = vi.fn().mockImplementation(async () => Response.json(responses.shift()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getPersonDetail(1);
+    await archivePerson(1);
+    await restorePerson(1);
+    await purgePerson(1);
+    await getPeopleDuplicates({ limit: 5, offset: 10 });
+    await mergePeople(1, { duplicatePersonId: 2 });
+    await splitPersonSource(1, 2);
+    await getPeopleImportSession("session/id", { issueLimit: 5 });
+    await getCompanyAliases({ limit: 10 });
+    await remapCompanyAlias(3, { mappedCompanyId: 7, updateExistingPeople: true });
+    await deleteCompanyAlias(3, "unmap");
+
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/people/1",
+      "/api/people/1",
+      "/api/people/1/restore",
+      "/api/people/1/purge",
+      "/api/people/duplicates?limit=5&offset=10",
+      "/api/people/1/merge",
+      "/api/people/1/sources/2/split",
+      "/api/people/import-sessions/session%2Fid?issueLimit=5&issueOffset=0",
+      "/api/people/company-aliases?limit=10&offset=0",
+      "/api/people/company-aliases/3",
+      "/api/people/company-aliases/3?existingPeople=unmap",
+    ]);
+    expect(fetchMock.mock.calls.slice(1, 4).map(([, init]) => init.method)).toEqual([
+      "DELETE",
+      "POST",
+      "DELETE",
+    ]);
+    expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({
+      method: "POST",
+      headers: expect.objectContaining({ "x-switchy-request": "true" }),
+      body: JSON.stringify({ duplicatePersonId: 2 }),
+    });
+    expect(fetchMock.mock.calls[9]?.[1]).toMatchObject({
+      method: "PATCH",
+      body: JSON.stringify({ mappedCompanyId: 7, updateExistingPeople: true }),
+    });
   });
 
   it("omits an empty provider-model query delimiter", async () => {
