@@ -165,6 +165,47 @@ describe("dashboard match statistics", () => {
     });
   });
 
+  it("keeps prior-profile match scores in dashboard totals", async () => {
+    const { database } = harness.createDatabase();
+    vi.doMock("@/lib/db", () => ({ db: database }));
+    vi.doMock("@/lib/ai/matcher/presentation", () => ({
+      getCurrentMatchContext: vi.fn().mockResolvedValue({
+        candidateFingerprint: "b".repeat(64),
+        scoringPolicyVersion: "current-policy",
+      }),
+    }));
+    const company = database.insert(companies).values({
+      name: "Prior profile score fixture",
+      careersUrl: "https://example.com/prior-profile-score",
+    }).returning().get();
+    const job = database.insert(jobs).values({
+      companyId: company.id,
+      title: "Prior profile high match",
+      url: "https://example.com/prior-profile-high",
+      status: "new",
+    }).returning().get();
+    database.insert(matchResults).values({
+      id: "prior-profile-result",
+      jobId: job.id,
+      candidateFingerprint: "a".repeat(64),
+      jobFingerprint: "c".repeat(64),
+      scoringPolicyVersion: "prior-policy",
+      score: 92,
+      breakdownJson: "{}",
+      evidenceJson: "{}",
+      confidence: 0,
+      source: "deterministic",
+    }).run();
+
+    const { getDashboardStats } = await import("@/lib/application/stats-service");
+
+    await expect(getDashboardStats()).resolves.toMatchObject({
+      highMatchJobs: 1,
+      activeHighMatchJobs: 1,
+      jobsWithScore: 1,
+    });
+  });
+
   it("rejects unsupported stats periods", async () => {
     const { GET } = await import("@/app/api/stats/route");
     const response = await GET(new Request("http://localhost/api/stats?days=365"));

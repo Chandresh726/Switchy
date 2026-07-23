@@ -1,18 +1,30 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Calendar, GraduationCap, Loader2, Pencil, Plus, Save, Trash2, X, Sparkles } from "lucide-react";
+import {
+  Calendar,
+  GraduationCap,
+  Loader2,
+  Pencil,
+  Plus,
+  Save,
+  Sparkles,
+  Trash2,
+  Undo2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
-import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
+import { ApiErrorState } from "@/components/ui/api-error-state";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { ApiErrorState } from "@/components/ui/api-error-state";
 import {
+  applyResumeSection,
   createEducation,
   deleteEducation,
   getEducation,
@@ -20,16 +32,11 @@ import {
 } from "@/lib/api/clients/profile";
 import type { Education } from "@/lib/api/contracts/profile";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
-
-interface InitialEducation {
-  institution: string;
-  degree: string;
-  field?: string;
-  startDate?: string;
-  endDate?: string;
-  gpa?: string;
-  honors?: string;
-}
+import type {
+  ResumeEducationInput,
+  ResumeSectionReview,
+} from "@/lib/profile/resume-review";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
 interface EducationFormData {
   institution: string;
@@ -43,10 +50,14 @@ interface EducationFormData {
 
 interface EducationEditorProps {
   profileId: number | null;
-  initialEducation?: InitialEducation[];
+  resumeReview?: {
+    key: number;
+    review: ResumeSectionReview<ResumeEducationInput>;
+  };
+  onReviewResolved?: () => void;
 }
 
-const emptyForm: EducationFormData = {
+const EMPTY_FORM: EducationFormData = {
   institution: "",
   degree: "",
   field: "",
@@ -64,7 +75,7 @@ function EducationForm({
   formData,
   setFormData,
 }: {
-  onSubmit: (e: React.FormEvent) => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   onCancel: () => void;
   isEdit: boolean;
   isPending: boolean;
@@ -80,12 +91,7 @@ function EducationForm({
         <h4 className="text-sm font-medium text-foreground">
           {isEdit ? "Edit Education" : "Add Education"}
         </h4>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          onClick={onCancel}
-        >
+        <Button type="button" variant="ghost" size="icon-sm" onClick={onCancel}>
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -96,9 +102,10 @@ function EducationForm({
           <Input
             id="institution"
             value={formData.institution}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, institution: e.target.value }))
-            }
+            onChange={(event) => setFormData((current) => ({
+              ...current,
+              institution: event.target.value,
+            }))}
             required
             placeholder="Stanford University"
           />
@@ -109,9 +116,10 @@ function EducationForm({
           <Input
             id="degree"
             value={formData.degree}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, degree: e.target.value }))
-            }
+            onChange={(event) => setFormData((current) => ({
+              ...current,
+              degree: event.target.value,
+            }))}
             required
             placeholder="Bachelor of Science"
           />
@@ -122,33 +130,36 @@ function EducationForm({
           <Input
             id="field"
             value={formData.field}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, field: e.target.value }))
-            }
+            onChange={(event) => setFormData((current) => ({
+              ...current,
+              field: event.target.value,
+            }))}
             placeholder="Computer Science"
           />
         </div>
 
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-2">
-            <Label htmlFor="startDate">Start Date</Label>
+            <Label htmlFor="educationStartDate">Start Date</Label>
             <Input
-              id="startDate"
+              id="educationStartDate"
               value={formData.startDate}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, startDate: e.target.value }))
-              }
+              onChange={(event) => setFormData((current) => ({
+                ...current,
+                startDate: event.target.value,
+              }))}
               placeholder="Sep 2018"
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="endDate">End Date</Label>
+            <Label htmlFor="educationEndDate">End Date</Label>
             <Input
-              id="endDate"
+              id="educationEndDate"
               value={formData.endDate}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, endDate: e.target.value }))
-              }
+              onChange={(event) => setFormData((current) => ({
+                ...current,
+                endDate: event.target.value,
+              }))}
               placeholder="Jun 2022"
             />
           </div>
@@ -159,9 +170,10 @@ function EducationForm({
           <Input
             id="gpa"
             value={formData.gpa}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, gpa: e.target.value }))
-            }
+            onChange={(event) => setFormData((current) => ({
+              ...current,
+              gpa: event.target.value,
+            }))}
             placeholder="3.8 / 4.0"
           />
         </div>
@@ -171,9 +183,10 @@ function EducationForm({
           <Input
             id="honors"
             value={formData.honors}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, honors: e.target.value }))
-            }
+            onChange={(event) => setFormData((current) => ({
+              ...current,
+              honors: event.target.value,
+            }))}
             placeholder="Magna Cum Laude, Dean's List"
           />
         </div>
@@ -198,24 +211,30 @@ function EducationForm({
   );
 }
 
-export function EducationEditor({ profileId, initialEducation }: EducationEditorProps) {
+export function EducationEditor({
+  profileId,
+  resumeReview,
+  onReviewResolved,
+}: EducationEditorProps) {
   const queryClient = useQueryClient();
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [formData, setFormData] = useState<EducationFormData>(emptyForm);
-  const [pendingEducation, setPendingEducation] = useState<InitialEducation[]>([]);
-  const [isBulkAdding, setIsBulkAdding] = useState(false);
-  const [settingsSaved, setSettingsSaved] = useState(false);
+  const [formData, setFormData] = useState<EducationFormData>(EMPTY_FORM);
+  const [dismissedReview, setDismissedReview] = useState<{
+    reviewKey: number | null;
+    keys: string[];
+  }>({ reviewKey: null, keys: [] });
+  const dismissedReviewKeys = dismissedReview.reviewKey === resumeReview?.key
+    ? dismissedReview.keys
+    : [];
 
-  useEffect(() => {
-    if (initialEducation && initialEducation.length > 0) {
-      // Keep parsed resume education available after the profile is saved.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPendingEducation(initialEducation);
-    }
-  }, [initialEducation]);
-
-  const { data: educationList = [], error, isError, isLoading, refetch } = useQuery({
+  const {
+    data: educationList = [],
+    error,
+    isError,
+    isLoading,
+    refetch,
+  } = useQuery({
     queryKey: queryKeys.profile.education(profileId),
     queryFn: async () => {
       if (!profileId) return [];
@@ -225,146 +244,135 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
   });
 
   const addMutation = useMutation({
-    mutationFn: async (edu: EducationFormData) => {
-      try {
-        if (!profileId) throw new Error("Save the profile before adding education");
-        return createEducation([{
-            ...edu,
-            profileId,
-            startDate: edu.startDate || null,
-            endDate: edu.endDate || null,
-            gpa: edu.gpa || null,
-            honors: edu.honors || null,
-        }]);
-      } catch (error) {
-        console.error("add education:", error);
-        throw error;
-      }
+    mutationFn: async (educationData: EducationFormData) => {
+      if (!profileId) throw new Error("Save the profile before adding education");
+      return createEducation([{
+        ...educationData,
+        profileId,
+        startDate: educationData.startDate || null,
+        endDate: educationData.endDate || null,
+        gpa: educationData.gpa || null,
+        honors: educationData.honors || null,
+      }]);
     },
     onSuccess: () => {
-      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.education(profileId));
+      void cacheOwnership.profileMutation(
+        queryClient,
+        queryKeys.profile.education(profileId)
+      );
       setIsAdding(false);
-      setFormData(emptyForm);
+      setFormData(EMPTY_FORM);
     },
-    onError: (mutationError) => {
-      toast.error(getApiErrorMessage(mutationError, "Failed to add education"));
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Failed to add education"));
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, edu }: { id: number; edu: EducationFormData }) => {
-      try {
-        return updateEducation(id, {
-            ...edu,
-            startDate: edu.startDate || null,
-            endDate: edu.endDate || null,
-            gpa: edu.gpa || null,
-            honors: edu.honors || null,
-        });
-      } catch (error) {
-        console.error("update education:", error);
-        throw error;
-      }
+    mutationFn: async ({ id, data }: { id: number; data: EducationFormData }) => {
+      return updateEducation(id, {
+        ...data,
+        startDate: data.startDate || null,
+        endDate: data.endDate || null,
+        gpa: data.gpa || null,
+        honors: data.honors || null,
+      });
     },
     onSuccess: () => {
-      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.education(profileId));
+      void cacheOwnership.profileMutation(
+        queryClient,
+        queryKeys.profile.education(profileId)
+      );
       setEditingId(null);
-      setFormData(emptyForm);
+      setFormData(EMPTY_FORM);
     },
-    onError: (mutationError) => {
-      toast.error(getApiErrorMessage(mutationError, "Failed to update education"));
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Failed to update education"));
     },
   });
 
-  const bulkAddMutation = useMutation({
-    mutationFn: async (educationToAdd: InitialEducation[]) => {
-      try {
-        if (!profileId) throw new Error("Save the profile before adding education");
-        await createEducation(educationToAdd.map((edu) => ({
-          institution: edu.institution,
-          degree: edu.degree,
-          field: edu.field || null,
-          startDate: edu.startDate || null,
-          endDate: edu.endDate || null,
-          gpa: edu.gpa || null,
-          honors: edu.honors || null,
-          profileId,
-        })));
-      } catch (error) {
-        console.error("bulk add education:", error);
-        throw error;
-      }
+  const reviewMutation = useMutation({
+    mutationFn: async (items: ResumeEducationInput[]) => {
+      if (!profileId) throw new Error("Save the profile before applying education");
+      return applyResumeSection({
+        section: "education",
+        profileId,
+        items,
+      });
     },
-    onSuccess: () => {
-      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.education(profileId));
-      setPendingEducation([]);
-      setIsBulkAdding(false);
-      setSettingsSaved(true);
-      setTimeout(() => setSettingsSaved(false), 3000);
-      toast.success("Education saved");
+    onSuccess: (result) => {
+      void cacheOwnership.profileMutation(
+        queryClient,
+        queryKeys.profile.education(profileId)
+      );
+      toast.success(
+        `Education updated: ${result.added} added, ${result.updated} updated`
+      );
+      onReviewResolved?.();
     },
-    onError: (mutationError) => {
-      setIsBulkAdding(false);
-      toast.error(getApiErrorMessage(mutationError, "Failed to save education"));
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Failed to apply resume education"));
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      try {
-        return deleteEducation(id);
-      } catch (error) {
-        console.error("delete education:", error);
-        throw error;
-      }
-    },
+    mutationFn: deleteEducation,
     onSuccess: () => {
-      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.education(profileId));
+      void cacheOwnership.profileMutation(
+        queryClient,
+        queryKeys.profile.education(profileId)
+      );
     },
-    onError: (mutationError) => {
-      toast.error(getApiErrorMessage(mutationError, "Failed to delete education"));
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Failed to delete education"));
     },
   });
 
-  const handleAddSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const pendingChanges = resumeReview?.review.changes.filter(
+    ({ key }) => !dismissedReviewKeys.includes(key)
+  ) ?? [];
+
+  const handleAddSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     addMutation.mutate(formData);
   };
 
-  const handleEditSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingId) {
-      updateMutation.mutate({ id: editingId, edu: formData });
-    }
+  const handleEditSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (editingId) updateMutation.mutate({ id: editingId, data: formData });
   };
 
-  const startEditing = (edu: Education) => {
-    setEditingId(edu.id);
+  const startEditing = (item: Education) => {
+    setEditingId(item.id);
     setIsAdding(false);
     setFormData({
-      institution: edu.institution,
-      degree: edu.degree,
-      field: edu.field || "",
-      startDate: edu.startDate,
-      endDate: edu.endDate || "",
-      gpa: edu.gpa || "",
-      honors: edu.honors || "",
+      institution: item.institution,
+      degree: item.degree,
+      field: item.field || "",
+      startDate: item.startDate,
+      endDate: item.endDate || "",
+      gpa: item.gpa || "",
+      honors: item.honors || "",
     });
   };
 
   const cancelEditing = () => {
     setEditingId(null);
-    setFormData(emptyForm);
+    setFormData(EMPTY_FORM);
   };
 
-  const handleSavePending = () => {
-    if (!profileId || pendingEducation.length === 0) return;
-    setIsBulkAdding(true);
-    bulkAddMutation.mutate(pendingEducation);
+  const removePendingChange = (key: string) => {
+    const remainingCount = pendingChanges.filter((change) => change.key !== key).length;
+    setDismissedReview({
+      reviewKey: resumeReview?.key ?? null,
+      keys: [...dismissedReviewKeys, key],
+    });
+    if (remainingCount === 0) onReviewResolved?.();
   };
 
-  const removePendingEducation = (index: number) => {
-    setPendingEducation((prev) => prev.filter((_, i) => i !== index));
+  const handleRevertReview = () => {
+    setDismissedReview({ reviewKey: null, keys: [] });
+    onReviewResolved?.();
   };
 
   if (!profileId) {
@@ -372,15 +380,8 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
       <Card className="border-border bg-card">
         <CardContent className="p-6">
           <p className="text-sm text-muted-foreground">
-            Save your profile first to add education.
+            Save your basic information first to add education.
           </p>
-          {pendingEducation.length > 0 && (
-            <div className="mt-4">
-              <p className="text-sm text-amber-700 dark:text-amber-400">
-                {pendingEducation.length} education entries from resume will be added after you save your profile.
-              </p>
-            </div>
-          )}
         </CardContent>
       </Card>
     );
@@ -423,32 +424,47 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {pendingEducation.length > 0 && (
+        {pendingChanges.length > 0 ? (
           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                  {pendingEducation.length} education entries from resume
-                </span>
-              </div>
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                Resume changes to review
+              </span>
             </div>
             <div className="mt-3 space-y-2">
-              {pendingEducation.map((edu, idx) => (
+              {pendingChanges.map((change) => (
                 <div
-                  key={idx}
+                  key={change.key}
                   className="flex items-center justify-between rounded border border-emerald-500/30 bg-emerald-500/15 p-2"
                 >
-                  <div className="text-sm">
-                    <span className="font-medium text-emerald-700 dark:text-emerald-300">{edu.degree}</span>
-                    {edu.field && <span className="text-emerald-600 dark:text-emerald-400"> in {edu.field}</span>}
-                    <span className="text-emerald-600 dark:text-emerald-400"> at {edu.institution}</span>
-                    <span className="ml-2 text-xs text-emerald-600/80 dark:text-emerald-400/90">
-                      {edu.startDate} - {edu.endDate || "Present"}
-                    </span>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Badge variant="outline">
+                      {change.kind === "add" ? "New" : "Update"}
+                    </Badge>
+                    <div>
+                      <span className="font-medium text-emerald-700 dark:text-emerald-300">
+                        {change.value.degree}
+                      </span>
+                      {change.value.field ? (
+                        <span className="text-emerald-600 dark:text-emerald-400">
+                          {" "}in {change.value.field}
+                        </span>
+                      ) : null}
+                      <span className="text-emerald-600 dark:text-emerald-400">
+                        {" "}at {change.value.institution}
+                      </span>
+                      {change.changedFields.length > 0 ? (
+                        <p className="text-xs text-emerald-600/80 dark:text-emerald-400/90">
+                          Changes: {change.changedFields.join(", ")}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
                   <button
-                    onClick={() => removePendingEducation(idx)}
+                    type="button"
+                    aria-label={`Ignore ${change.value.degree} at ${change.value.institution}`}
+                    onClick={() => removePendingChange(change.key)}
                     className="rounded p-1 text-emerald-600 hover:bg-emerald-500/20 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
                   >
                     <X className="h-4 w-4" />
@@ -457,57 +473,61 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
               ))}
             </div>
           </div>
-        )}
+        ) : null}
 
-        {editingId && (
+        {editingId ? (
           <EducationForm
             onSubmit={handleEditSubmit}
             onCancel={cancelEditing}
-            isEdit={true}
+            isEdit
             isPending={updateMutation.isPending}
             formData={formData}
             setFormData={setFormData}
           />
-        )}
+        ) : null}
 
-        {educationList.map((edu) => (
+        {educationList.map((item) => (
           <div
-            key={edu.id}
+            key={item.id}
             className={`group rounded-lg border border-border bg-card p-4 ${
-              editingId === edu.id ? "opacity-50" : ""
+              editingId === item.id ? "opacity-50" : ""
             }`}
           >
             <div className="flex items-start justify-between">
               <div className="space-y-1">
                 <h4 className="font-medium text-foreground">
-                  {edu.degree}
-                  {edu.field && <span className="font-normal text-foreground/80"> in {edu.field}</span>}
+                  {item.degree}
+                  {item.field ? (
+                    <span className="font-normal text-foreground/80">
+                      {" "}in {item.field}
+                    </span>
+                  ) : null}
                 </h4>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  <span>{edu.institution}</span>
+                  <span>{item.institution}</span>
                   <span className="flex items-center gap-1">
                     <Calendar className="h-3.5 w-3.5" />
-                    {edu.startDate} - {edu.endDate || "Present"}
+                    {item.startDate || "Unknown"} - {item.endDate || "Present"}
                   </span>
                 </div>
                 <div className="flex gap-4 text-sm text-muted-foreground">
-                  {edu.gpa && <span>GPA: {edu.gpa}</span>}
-                  {edu.honors && <span>Honors: {edu.honors}</span>}
+                  {item.gpa ? <span>GPA: {item.gpa}</span> : null}
+                  {item.honors ? <span>Honors: {item.honors}</span> : null}
                 </div>
               </div>
               <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  onClick={() => startEditing(edu)}
-                  disabled={editingId === edu.id}
+                  onClick={() => startEditing(item)}
+                  disabled={editingId === item.id}
                 >
                   <Pencil className="h-4 w-4 text-muted-foreground hover:text-foreground" />
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  onClick={() => deleteMutation.mutate(edu.id)}
+                  onClick={() => deleteMutation.mutate(item.id)}
                 >
                   <Trash2 className="h-4 w-4 text-muted-foreground hover:text-red-400" />
                 </Button>
@@ -521,7 +541,7 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
             onSubmit={handleAddSubmit}
             onCancel={() => {
               setIsAdding(false);
-              setFormData(emptyForm);
+              setFormData(EMPTY_FORM);
             }}
             isEdit={false}
             isPending={addMutation.isPending}
@@ -536,32 +556,43 @@ export function EducationEditor({ profileId, initialEducation }: EducationEditor
         ) : null}
       </CardContent>
 
-      {pendingEducation.length > 0 && (
+      {pendingChanges.length > 0 ? (
         <CardFooter className="flex items-center justify-between border-t border-border bg-card px-6 py-4">
           <p className="text-xs text-muted-foreground">
-            {settingsSaved ? (
-              <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400" />
-                Changes saved successfully
-              </span>
-            ) : (
-              <span className="text-yellow-700 dark:text-yellow-400">{pendingEducation.length} pending education entries to save</span>
-            )}
+            {pendingChanges.filter(({ kind }) => kind === "add").length} to add ·{" "}
+            {pendingChanges.filter(({ kind }) => kind === "update").length} to update
+            {resumeReview?.review.unchangedCount
+              ? ` · ${resumeReview.review.unchangedCount} already current`
+              : ""}
           </p>
-          <Button
-            onClick={handleSavePending}
-            disabled={isBulkAdding || pendingEducation.length === 0}
-            className="bg-blue-600 hover:bg-blue-500 text-foreground min-w-[120px]"
-          >
-            {isBulkAdding ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="mr-2 h-4 w-4" />
-            )}
-            {isBulkAdding ? "Saving..." : "Save All"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleRevertReview}
+              disabled={reviewMutation.isPending}
+            >
+              <Undo2 data-icon="inline-start" />
+              Revert
+            </Button>
+            <Button
+              type="button"
+              onClick={() => reviewMutation.mutate(
+                pendingChanges.map(({ value }) => value)
+              )}
+              disabled={reviewMutation.isPending}
+              className="min-w-[120px] bg-blue-600 text-foreground hover:bg-blue-500"
+            >
+              {reviewMutation.isPending ? (
+                <Loader2 data-icon="inline-start" className="animate-spin" />
+              ) : (
+                <Save data-icon="inline-start" />
+              )}
+              {reviewMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </div>
         </CardFooter>
-      )}
+      ) : null}
     </Card>
   );
 }

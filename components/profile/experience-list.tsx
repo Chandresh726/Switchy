@@ -1,34 +1,45 @@
 "use client";
 
+import { useState } from "react";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Briefcase,
+  Building2,
+  Calendar,
+  Loader2,
+  MapPin,
+  Pencil,
+  Plus,
+  Save,
+  Sparkles,
+  Trash2,
+  Undo2,
+  X,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import { ApiErrorState } from "@/components/ui/api-error-state";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { ApiErrorState } from "@/components/ui/api-error-state";
 import {
+  applyResumeSection,
   createExperience,
   deleteExperience,
   getExperience,
   updateExperience,
 } from "@/lib/api/clients/profile";
 import type { Experience } from "@/lib/api/contracts/profile";
-import { useState, useEffect } from "react";
-import { Building2, Calendar, Loader2, MapPin, Pencil, Plus, Save, Trash2, X, Sparkles, Briefcase } from "lucide-react";
-import { toast } from "sonner";
-import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
-
-interface InitialExperience {
-  company: string;
-  title: string;
-  location?: string;
-  startDate: string;
-  endDate?: string;
-  description?: string;
-  highlights?: string[];
-}
+import type {
+  ResumeExperienceInput,
+  ResumeSectionReview,
+} from "@/lib/profile/resume-review";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
 interface ExperienceFormData {
   company: string;
@@ -41,10 +52,14 @@ interface ExperienceFormData {
 
 interface ExperienceListProps {
   profileId: number | null;
-  initialExperience?: InitialExperience[];
+  resumeReview?: {
+    key: number;
+    review: ResumeSectionReview<ResumeExperienceInput>;
+  };
+  onReviewResolved?: () => void;
 }
 
-const emptyForm: ExperienceFormData = {
+const EMPTY_FORM: ExperienceFormData = {
   company: "",
   title: "",
   location: "",
@@ -61,7 +76,7 @@ function ExperienceForm({
   formData,
   setFormData,
 }: {
-  onSubmit: (e: React.FormEvent) => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   onCancel: () => void;
   isEdit: boolean;
   isPending: boolean;
@@ -77,12 +92,7 @@ function ExperienceForm({
         <h4 className="text-sm font-medium text-foreground">
           {isEdit ? "Edit Experience" : "Add Experience"}
         </h4>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          onClick={onCancel}
-        >
+        <Button type="button" variant="ghost" size="icon-sm" onClick={onCancel}>
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -93,9 +103,10 @@ function ExperienceForm({
           <Input
             id="title"
             value={formData.title}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, title: e.target.value }))
-            }
+            onChange={(event) => setFormData((current) => ({
+              ...current,
+              title: event.target.value,
+            }))}
             required
             placeholder="Senior Software Engineer"
           />
@@ -106,9 +117,10 @@ function ExperienceForm({
           <Input
             id="company"
             value={formData.company}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, company: e.target.value }))
-            }
+            onChange={(event) => setFormData((current) => ({
+              ...current,
+              company: event.target.value,
+            }))}
             required
             placeholder="Acme Inc"
           />
@@ -119,9 +131,10 @@ function ExperienceForm({
           <Input
             id="location"
             value={formData.location}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, location: e.target.value }))
-            }
+            onChange={(event) => setFormData((current) => ({
+              ...current,
+              location: event.target.value,
+            }))}
             placeholder="San Francisco, CA"
           />
         </div>
@@ -132,9 +145,10 @@ function ExperienceForm({
             <Input
               id="startDate"
               value={formData.startDate}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, startDate: e.target.value }))
-              }
+              onChange={(event) => setFormData((current) => ({
+                ...current,
+                startDate: event.target.value,
+              }))}
               required
               placeholder="Jan 2022"
             />
@@ -144,9 +158,10 @@ function ExperienceForm({
             <Input
               id="endDate"
               value={formData.endDate}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, endDate: e.target.value }))
-              }
+              onChange={(event) => setFormData((current) => ({
+                ...current,
+                endDate: event.target.value,
+              }))}
               placeholder="Present"
             />
           </div>
@@ -158,9 +173,10 @@ function ExperienceForm({
         <Textarea
           id="description"
           value={formData.description}
-          onChange={(e) =>
-            setFormData((prev) => ({ ...prev, description: e.target.value }))
-          }
+          onChange={(event) => setFormData((current) => ({
+            ...current,
+            description: event.target.value,
+          }))}
           rows={3}
           placeholder="Describe your role and responsibilities..."
         />
@@ -185,24 +201,30 @@ function ExperienceForm({
   );
 }
 
-export function ExperienceList({ profileId, initialExperience }: ExperienceListProps) {
+export function ExperienceList({
+  profileId,
+  resumeReview,
+  onReviewResolved,
+}: ExperienceListProps) {
   const queryClient = useQueryClient();
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [formData, setFormData] = useState<ExperienceFormData>(emptyForm);
-  const [pendingExperiences, setPendingExperiences] = useState<InitialExperience[]>([]);
-  const [isBulkAdding, setIsBulkAdding] = useState(false);
-  const [settingsSaved, setSettingsSaved] = useState(false);
+  const [formData, setFormData] = useState<ExperienceFormData>(EMPTY_FORM);
+  const [dismissedReview, setDismissedReview] = useState<{
+    reviewKey: number | null;
+    keys: string[];
+  }>({ reviewKey: null, keys: [] });
+  const dismissedReviewKeys = dismissedReview.reviewKey === resumeReview?.key
+    ? dismissedReview.keys
+    : [];
 
-  // Set pending experiences when initialExperience changes (from resume parsing)
-  useEffect(() => {
-    if (initialExperience && initialExperience.length > 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPendingExperiences(initialExperience);
-    }
-  }, [initialExperience]);
-
-  const { data: experiences = [], error, isError, isLoading, refetch } = useQuery<Experience[]>({
+  const {
+    data: experiences = [],
+    error,
+    isError,
+    isLoading,
+    refetch,
+  } = useQuery<Experience[]>({
     queryKey: queryKeys.profile.experience(profileId),
     queryFn: async () => {
       if (!profileId) return [];
@@ -211,116 +233,129 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
     enabled: !!profileId,
   });
 
-
   const addMutation = useMutation({
-    mutationFn: async (exp: ExperienceFormData) => {
+    mutationFn: async (experienceData: ExperienceFormData) => {
       if (!profileId) throw new Error("Save the profile before adding experience");
       return createExperience({
-          ...exp,
-          profileId,
-          endDate: exp.endDate || null,
+        ...experienceData,
+        profileId,
+        endDate: experienceData.endDate || null,
       });
     },
     onSuccess: () => {
-      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.experience(profileId));
+      void cacheOwnership.profileMutation(
+        queryClient,
+        queryKeys.profile.experience(profileId)
+      );
       setIsAdding(false);
-      setFormData(emptyForm);
+      setFormData(EMPTY_FORM);
     },
-    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to add experience")),
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Failed to add experience"));
+    },
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, exp }: { id: number; exp: ExperienceFormData }) => {
+    mutationFn: async ({ id, data }: { id: number; data: ExperienceFormData }) => {
       return updateExperience(id, {
-          ...exp,
-          endDate: exp.endDate || null,
+        ...data,
+        endDate: data.endDate || null,
       });
     },
     onSuccess: () => {
-      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.experience(profileId));
+      void cacheOwnership.profileMutation(
+        queryClient,
+        queryKeys.profile.experience(profileId)
+      );
       setEditingId(null);
-      setFormData(emptyForm);
-    },
-    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update experience")),
-  });
-
-  const bulkAddMutation = useMutation({
-    mutationFn: async (experiencesToAdd: InitialExperience[]) => {
-      if (!profileId) throw new Error("Save the profile before adding experience");
-      for (const exp of experiencesToAdd) {
-        await createExperience({
-            company: exp.company,
-            title: exp.title,
-            location: exp.location || "",
-            startDate: exp.startDate,
-            endDate: exp.endDate || null,
-            description: exp.description || (exp.highlights ? exp.highlights.join("\n") : ""),
-            profileId,
-        });
-      }
-    },
-    onSuccess: () => {
-      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.experience(profileId));
-      setPendingExperiences([]);
-      setIsBulkAdding(false);
-      setSettingsSaved(true);
-      setTimeout(() => setSettingsSaved(false), 3000);
-      toast.success("Experience saved");
+      setFormData(EMPTY_FORM);
     },
     onError: (error) => {
-      setIsBulkAdding(false);
-      toast.error(getApiErrorMessage(error, "Failed to save experience"));
+      toast.error(getApiErrorMessage(error, "Failed to update experience"));
+    },
+  });
+
+  const reviewMutation = useMutation({
+    mutationFn: async (items: ResumeExperienceInput[]) => {
+      if (!profileId) throw new Error("Save the profile before applying experience");
+      return applyResumeSection({
+        section: "experience",
+        profileId,
+        items,
+      });
+    },
+    onSuccess: (result) => {
+      void cacheOwnership.profileMutation(
+        queryClient,
+        queryKeys.profile.experience(profileId)
+      );
+      toast.success(
+        `Experience updated: ${result.added} added, ${result.updated} updated`
+      );
+      onReviewResolved?.();
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Failed to apply resume experience"));
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      return deleteExperience(id);
-    },
+    mutationFn: deleteExperience,
     onSuccess: () => {
-      void cacheOwnership.profileMutation(queryClient, queryKeys.profile.experience(profileId));
+      void cacheOwnership.profileMutation(
+        queryClient,
+        queryKeys.profile.experience(profileId)
+      );
     },
-    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to delete experience")),
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Failed to delete experience"));
+    },
   });
 
-  const handleAddSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const pendingChanges = resumeReview?.review.changes.filter(
+    ({ key }) => !dismissedReviewKeys.includes(key)
+  ) ?? [];
+
+  const handleAddSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     addMutation.mutate(formData);
   };
 
-  const handleEditSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingId) {
-      updateMutation.mutate({ id: editingId, exp: formData });
-    }
+  const handleEditSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (editingId) updateMutation.mutate({ id: editingId, data: formData });
   };
 
-  const startEditing = (exp: Experience) => {
-    setEditingId(exp.id);
+  const startEditing = (item: Experience) => {
+    setEditingId(item.id);
     setIsAdding(false);
     setFormData({
-      company: exp.company,
-      title: exp.title,
-      location: exp.location || "",
-      startDate: exp.startDate,
-      endDate: exp.endDate || "",
-      description: exp.description || "",
+      company: item.company,
+      title: item.title,
+      location: item.location || "",
+      startDate: item.startDate,
+      endDate: item.endDate || "",
+      description: item.description || "",
     });
   };
 
   const cancelEditing = () => {
     setEditingId(null);
-    setFormData(emptyForm);
+    setFormData(EMPTY_FORM);
   };
 
-  const handleSavePending = () => {
-    if (!profileId || pendingExperiences.length === 0) return;
-    setIsBulkAdding(true);
-    bulkAddMutation.mutate(pendingExperiences);
+  const removePendingChange = (key: string) => {
+    const remainingCount = pendingChanges.filter((change) => change.key !== key).length;
+    setDismissedReview({
+      reviewKey: resumeReview?.key ?? null,
+      keys: [...dismissedReviewKeys, key],
+    });
+    if (remainingCount === 0) onReviewResolved?.();
   };
 
-  const removePendingExperience = (index: number) => {
-    setPendingExperiences((prev) => prev.filter((_, i) => i !== index));
+  const handleRevertReview = () => {
+    setDismissedReview({ reviewKey: null, keys: [] });
+    onReviewResolved?.();
   };
 
   if (!profileId) {
@@ -328,15 +363,8 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
       <Card className="border-border bg-card">
         <CardContent className="p-6">
           <p className="text-sm text-muted-foreground">
-            Save your profile first to add work experience.
+            Save your basic information first to add work experience.
           </p>
-          {pendingExperiences.length > 0 && (
-            <div className="mt-4">
-              <p className="text-sm text-amber-700 dark:text-amber-400">
-                {pendingExperiences.length} work experiences from resume will be added after you save your profile.
-              </p>
-            </div>
-          )}
         </CardContent>
       </Card>
     );
@@ -375,36 +403,48 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10">
             <Briefcase className="h-5 w-5 text-amber-500" />
           </div>
-          <CardTitle className="text-lg font-medium text-foreground">Work Experience</CardTitle>
+          <CardTitle className="text-lg font-medium text-foreground">
+            Work Experience
+          </CardTitle>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Pending experiences from resume */}
-        {pendingExperiences.length > 0 && (
+        {pendingChanges.length > 0 ? (
           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                  {pendingExperiences.length} work experiences from resume
-                </span>
-              </div>
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                Resume changes to review
+              </span>
             </div>
             <div className="mt-3 space-y-2">
-              {pendingExperiences.map((exp, idx) => (
+              {pendingChanges.map((change) => (
                 <div
-                  key={idx}
+                  key={change.key}
                   className="flex items-center justify-between rounded border border-emerald-500/30 bg-emerald-500/15 p-2"
                 >
-                  <div className="text-sm">
-                    <span className="font-medium text-emerald-700 dark:text-emerald-300">{exp.title}</span>
-                    <span className="text-emerald-600 dark:text-emerald-400"> at {exp.company}</span>
-                    <span className="ml-2 text-xs text-emerald-600/80 dark:text-emerald-400/90">
-                      {exp.startDate} - {exp.endDate || "Present"}
-                    </span>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Badge variant="outline">
+                      {change.kind === "add" ? "New" : "Update"}
+                    </Badge>
+                    <div>
+                      <span className="font-medium text-emerald-700 dark:text-emerald-300">
+                        {change.value.title}
+                      </span>
+                      <span className="text-emerald-600 dark:text-emerald-400">
+                        {" "}at {change.value.company}
+                      </span>
+                      {change.changedFields.length > 0 ? (
+                        <p className="text-xs text-emerald-600/80 dark:text-emerald-400/90">
+                          Changes: {change.changedFields.join(", ")}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
                   <button
-                    onClick={() => removePendingExperience(idx)}
+                    type="button"
+                    aria-label={`Ignore ${change.value.title} at ${change.value.company}`}
+                    onClick={() => removePendingChange(change.key)}
                     className="rounded p-1 text-emerald-600 hover:bg-emerald-500/20 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
                   >
                     <X className="h-4 w-4" />
@@ -413,64 +453,64 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
               ))}
             </div>
           </div>
-        )}
+        ) : null}
 
-        {/* Edit form (shown at top when editing) */}
-        {editingId && (
+        {editingId ? (
           <ExperienceForm
             onSubmit={handleEditSubmit}
             onCancel={cancelEditing}
-            isEdit={true}
+            isEdit
             isPending={updateMutation.isPending}
             formData={formData}
             setFormData={setFormData}
           />
-        )}
+        ) : null}
 
-        {/* Experience list */}
-        {experiences.map((exp) => (
+        {experiences.map((item) => (
           <div
-            key={exp.id}
+            key={item.id}
             className={`group rounded-lg border border-border bg-card p-4 ${
-              editingId === exp.id ? "opacity-50" : ""
+              editingId === item.id ? "opacity-50" : ""
             }`}
           >
             <div className="flex items-start justify-between">
               <div className="space-y-1">
-                <h4 className="font-medium text-foreground">{exp.title}</h4>
+                <h4 className="font-medium text-foreground">{item.title}</h4>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Building2 className="h-3.5 w-3.5" />
-                    {exp.company}
+                    {item.company}
                   </span>
-                  {exp.location && (
+                  {item.location ? (
                     <span className="flex items-center gap-1">
                       <MapPin className="h-3.5 w-3.5" />
-                      {exp.location}
+                      {item.location}
                     </span>
-                  )}
+                  ) : null}
                   <span className="flex items-center gap-1">
                     <Calendar className="h-3.5 w-3.5" />
-                    {exp.startDate} - {exp.endDate || "Present"}
+                    {item.startDate} - {item.endDate || "Present"}
                   </span>
                 </div>
-                {exp.description && (
-                  <p className="mt-2 text-sm text-foreground/80 whitespace-pre-wrap">{exp.description}</p>
-                )}
+                {item.description ? (
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-foreground/80">
+                    {item.description}
+                  </p>
+                ) : null}
               </div>
               <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  onClick={() => startEditing(exp)}
-                  disabled={editingId === exp.id}
+                  onClick={() => startEditing(item)}
+                  disabled={editingId === item.id}
                 >
                   <Pencil className="h-4 w-4 text-muted-foreground hover:text-foreground" />
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  onClick={() => deleteMutation.mutate(exp.id)}
+                  onClick={() => deleteMutation.mutate(item.id)}
                 >
                   <Trash2 className="h-4 w-4 text-muted-foreground hover:text-red-400" />
                 </Button>
@@ -479,13 +519,12 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
           </div>
         ))}
 
-        {/* Add experience form */}
         {isAdding ? (
           <ExperienceForm
             onSubmit={handleAddSubmit}
             onCancel={() => {
               setIsAdding(false);
-              setFormData(emptyForm);
+              setFormData(EMPTY_FORM);
             }}
             isEdit={false}
             isPending={addMutation.isPending}
@@ -500,32 +539,43 @@ export function ExperienceList({ profileId, initialExperience }: ExperienceListP
         ) : null}
       </CardContent>
 
-      {pendingExperiences.length > 0 && (
+      {pendingChanges.length > 0 ? (
         <CardFooter className="flex items-center justify-between border-t border-border bg-card px-6 py-4">
           <p className="text-xs text-muted-foreground">
-            {settingsSaved ? (
-              <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400" />
-                Changes saved successfully
-              </span>
-            ) : (
-              <span className="text-yellow-700 dark:text-yellow-400">{pendingExperiences.length} pending experiences to save</span>
-            )}
+            {pendingChanges.filter(({ kind }) => kind === "add").length} to add ·{" "}
+            {pendingChanges.filter(({ kind }) => kind === "update").length} to update
+            {resumeReview?.review.unchangedCount
+              ? ` · ${resumeReview.review.unchangedCount} already current`
+              : ""}
           </p>
-          <Button
-            onClick={handleSavePending}
-            disabled={isBulkAdding || pendingExperiences.length === 0}
-            className="bg-amber-600 hover:bg-amber-500 text-foreground min-w-[120px]"
-          >
-            {isBulkAdding ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="mr-2 h-4 w-4" />
-            )}
-            {isBulkAdding ? "Saving..." : "Save All"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleRevertReview}
+              disabled={reviewMutation.isPending}
+            >
+              <Undo2 data-icon="inline-start" />
+              Revert
+            </Button>
+            <Button
+              type="button"
+              onClick={() => reviewMutation.mutate(
+                pendingChanges.map(({ value }) => value)
+              )}
+              disabled={reviewMutation.isPending}
+              className="min-w-[120px] bg-amber-600 text-foreground hover:bg-amber-500"
+            >
+              {reviewMutation.isPending ? (
+                <Loader2 data-icon="inline-start" className="animate-spin" />
+              ) : (
+                <Save data-icon="inline-start" />
+              )}
+              {reviewMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </div>
         </CardFooter>
-      )}
+      ) : null}
     </Card>
   );
 }

@@ -113,6 +113,7 @@ Backup and restore are CLI-only package scripts and are not HTTP APIs.
 | `/api/profile/experience/[id]` | PATCH, DELETE | JSON client | `clients/profile` |
 | `/api/profile/experience` | GET, POST | JSON client | `clients/profile` |
 | `/api/profile/parse-resume` | POST | JSON client (multipart) | `clients/profile` |
+| `/api/profile/resume-review` | POST | JSON client | `clients/profile` |
 | `/api/profile/resumes/[id]/download` | GET | Download | `clients/profile` |
 | `/api/profile/resumes/[id]` | DELETE | JSON client | `clients/profile` |
 | `/api/profile` | GET, POST | JSON client | `clients/profile` |

@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { companies, education, jobs, people, profile } from "@/lib/db/schema";
+import {
+  companies,
+  education,
+  experience,
+  jobs,
+  people,
+  profile,
+  skills,
+} from "@/lib/db/schema";
 import {
   jobSchema,
   jobsQuerySchema,
@@ -224,6 +232,70 @@ describe("backend application services", () => {
       { profileId: localProfile.id, institution: "Example University", degree: "BS" },
     ])).resolves.toMatchObject([{ startDate: null }]);
     expect(scheduleProfileRematch).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies resume sections idempotently without creating duplicate profile records", async () => {
+    const { database } = harness.createDatabase();
+    const scheduleProfileRematch = vi.fn();
+    vi.doMock("@/lib/db", () => ({ db: database }));
+    vi.doMock("@/lib/ai/matcher/profile-rematch", () => ({ scheduleProfileRematch }));
+    const localProfile = database.insert(profile).values({ name: "Local user" }).returning().get();
+    const service = await import("@/lib/application/profile-service");
+
+    const skillInput = {
+      section: "skills" as const,
+      profileId: localProfile.id,
+      items: [
+        { name: "TypeScript", category: "backend" },
+        { name: " typescript ", category: "frontend" },
+      ],
+    };
+    await expect(service.applyResumeSection(skillInput)).resolves.toMatchObject({
+      added: 1,
+      updated: 0,
+      duplicatesSkipped: 1,
+    });
+    await expect(service.applyResumeSection(skillInput)).resolves.toMatchObject({
+      added: 0,
+      updated: 0,
+      unchanged: 1,
+      duplicatesSkipped: 1,
+    });
+    expect(database.select().from(skills).all()).toHaveLength(1);
+
+    const experienceInput = {
+      section: "experience" as const,
+      profileId: localProfile.id,
+      items: [{
+        company: "Acme",
+        title: "Engineer",
+        startDate: "2024-01",
+        endDate: null,
+        description: "Built the platform",
+      }],
+    };
+    await expect(service.applyResumeSection(experienceInput)).resolves.toMatchObject({
+      added: 1,
+      updated: 0,
+    });
+    await expect(service.applyResumeSection({
+      ...experienceInput,
+      items: [{
+        ...experienceInput.items[0],
+        location: "Remote",
+        description: "Built and scaled the platform",
+      }],
+    })).resolves.toMatchObject({
+      added: 0,
+      updated: 1,
+    });
+    expect(database.select().from(experience).all()).toMatchObject([{
+      company: "Acme",
+      title: "Engineer",
+      location: "Remote",
+      description: "Built and scaled the platform",
+    }]);
+    expect(scheduleProfileRematch).toHaveBeenCalledTimes(3);
   });
 
   it("converges concurrent initial profile saves on the local singleton", async () => {

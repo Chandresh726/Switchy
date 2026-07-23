@@ -46,4 +46,19 @@ describe("simplified match presentation", () => {
     render(<MatchBadge score={82} showLabel />);
     expect(screen.getByText("82% Strong")).toBeTruthy();
   });
+
+  it("keeps old analysis visible with a refresh-required note", () => {
+    render(
+      <MatchBreakdown
+        breakdown={{ responsibilities: 86 }}
+        stale
+        summary="This analysis was calculated before the profile changed."
+      />
+    );
+
+    expect(screen.getByText("This analysis was calculated before the profile changed."))
+      .toBeTruthy();
+    expect(screen.getByText("Responsibilities")).toBeTruthy();
+    expect(screen.getByText("Match refresh required")).toBeTruthy();
+  });
 });

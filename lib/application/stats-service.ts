@@ -1,9 +1,10 @@
 import { and, count, desc, eq, gte, lte, sql } from "drizzle-orm";
 
 import { getCurrentMatchContext } from "@/lib/ai/matcher/presentation";
+import { buildPreferredMatchResultsQuery } from "@/lib/ai/matcher/presentation-query";
 import type { StatsResponse } from "@/lib/api/contracts/stats";
 import { db } from "@/lib/db";
-import { companies, jobs, matchResults, people, scrapeSessions } from "@/lib/db/schema";
+import { companies, jobs, people, scrapeSessions } from "@/lib/db/schema";
 import { getUnmatchedCompaniesSummary } from "@/lib/people/sync/unmatched";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -21,22 +22,17 @@ export async function getDashboardStats(
   const viewedInPeriod = and(gte(jobs.viewedAt, periodStart), lte(jobs.viewedAt, now));
   const appliedInPeriod = and(gte(jobs.appliedAt, periodStart), lte(jobs.appliedAt, now));
   const currentContext = await getCurrentMatchContext();
-  const currentResultJoin = currentContext ? and(
-    eq(matchResults.jobId, jobs.id),
-    eq(matchResults.candidateFingerprint, currentContext.candidateFingerprint),
-    eq(matchResults.isStale, false)
-  ) : undefined;
-  const effectiveScore = currentContext
-    ? sql<number | null>`coalesce(${matchResults.score}, ${jobs.matchScore})`
-    : jobs.matchScore;
+  const preferredMatchResults = buildPreferredMatchResultsQuery(currentContext);
+  const preferredResultJoin = and(
+    eq(preferredMatchResults.jobId, jobs.id),
+    eq(preferredMatchResults.presentationRank, 1)
+  );
+  const effectiveScore = sql<number | null>`coalesce(${preferredMatchResults.score}, ${jobs.matchScore})`;
   const scoreStatsQuery = db.select({
     highMatchJobs: sql<number>`coalesce(sum(case when ${effectiveScore} >= 70 then 1 else 0 end), 0)`,
     activeHighMatchJobs: sql<number>`coalesce(sum(case when ${jobs.status} not in ('rejected', 'archived') and ${effectiveScore} >= 70 then 1 else 0 end), 0)`,
     jobsWithScore: sql<number>`coalesce(sum(case when ${effectiveScore} is not null then 1 else 0 end), 0)`,
-  }).from(jobs);
-  const scoreStatsPromise = currentResultJoin
-    ? scoreStatsQuery.leftJoin(matchResults, currentResultJoin)
-    : scoreStatsQuery;
+  }).from(jobs).leftJoin(preferredMatchResults, preferredResultJoin);
 
   const [
     jobStatsResult,
@@ -65,7 +61,7 @@ export async function getDashboardStats(
       starredPeople: sql<number>`coalesce(sum(case when ${people.isActive} = 1 and ${people.archivedAt} is null and ${people.isStarred} = 1 then 1 else 0 end), 0)`,
       mappedPeople: sql<number>`coalesce(sum(case when ${people.isActive} = 1 and ${people.archivedAt} is null and ${people.mappedCompanyId} is not null then 1 else 0 end), 0)`,
     }).from(people),
-    scoreStatsPromise,
+    scoreStatsQuery,
     db.select({
       discovered: sql<number>`coalesce(sum(case when ${discoveredInPeriod} then 1 else 0 end), 0)`,
       viewed: sql<number>`coalesce(sum(case when ${viewedInPeriod} then 1 else 0 end), 0)`,

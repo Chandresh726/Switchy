@@ -24,7 +24,7 @@ import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface ResumeManagerProps {
   resumes: Resume[];
-  onParsed: (data: ResumeData, autofill: boolean) => void;
+  onParsed: (data: ResumeData, resume: Resume) => void;
   onDelete: (id: number) => Promise<void>;
   onRefresh: () => void;
 }
@@ -60,7 +60,7 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
 
         setSuccess(true);
         if (autofill && result.parsedData) {
-          onParsed(result.parsedData, autofill);
+          onParsed(result.parsedData, result.resumeRecord);
           if (Array.isArray(result.warnings) && result.warnings.length > 0) {
             toast.warning(
               `Resume parsed with ${result.warnings.length} field warning${result.warnings.length === 1 ? "" : "s"}. Review the autofilled profile before saving.`

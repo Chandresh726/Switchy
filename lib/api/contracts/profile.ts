@@ -68,6 +68,36 @@ export const educationWriteBodySchema = z.object({
 export const educationCreateBodySchema = z.array(educationWriteBodySchema).min(1).max(100);
 export const educationUpdateBodySchema = educationWriteBodySchema.omit({ profileId: true });
 
+export const resumeSkillApplyItemSchema = skillCreateBodySchema.omit({ profileId: true });
+export const resumeExperienceApplyItemSchema = experienceWriteBodySchema.omit({ profileId: true });
+export const resumeEducationApplyItemSchema = educationWriteBodySchema.omit({ profileId: true });
+
+export const resumeSectionApplyBodySchema = z.discriminatedUnion("section", [
+  z.object({
+    section: z.literal("skills"),
+    profileId: positiveIntegerIdSchema,
+    items: z.array(resumeSkillApplyItemSchema).max(500),
+  }),
+  z.object({
+    section: z.literal("experience"),
+    profileId: positiveIntegerIdSchema,
+    items: z.array(resumeExperienceApplyItemSchema).max(100),
+  }),
+  z.object({
+    section: z.literal("education"),
+    profileId: positiveIntegerIdSchema,
+    items: z.array(resumeEducationApplyItemSchema).max(100),
+  }),
+]);
+
+export const resumeSectionApplyResponseSchema = z.object({
+  added: z.number().int().nonnegative(),
+  updated: z.number().int().nonnegative(),
+  unchanged: z.number().int().nonnegative(),
+  duplicatesSkipped: z.number().int().nonnegative(),
+  invalidSkipped: z.number().int().nonnegative(),
+});
+
 export const skillSchema = z.object({
   id: z.number().int().positive(),
   profileId: z.number().int().positive(),
@@ -158,3 +188,5 @@ export type Education = z.infer<typeof educationSchema>;
 export type Resume = z.infer<typeof resumeResponseSchema>;
 export type ResumeUploadResponse = z.infer<typeof resumeUploadResponseSchema>;
 export type SkillCreateInput = z.output<typeof skillCreateBodySchema>;
+export type ResumeSectionApplyInput = z.output<typeof resumeSectionApplyBodySchema>;
+export type ResumeSectionApplyResponse = z.infer<typeof resumeSectionApplyResponseSchema>;

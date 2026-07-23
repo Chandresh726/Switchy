@@ -53,6 +53,7 @@ vi.mock("@/lib/api/clients/people", () => ({
 }));
 
 vi.mock("@/lib/api/clients/profile", () => ({
+  applyResumeSection: vi.fn(),
   createEducation: vi.fn(),
   createExperience: vi.fn(),
   createSkill: vi.fn(),

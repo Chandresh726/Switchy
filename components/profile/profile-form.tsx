@@ -1,21 +1,24 @@
 "use client";
 
+import { useEffect, useMemo, useRef, useState } from "react";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Loader2, Save, Undo2, User } from "lucide-react";
+import { toast } from "sonner";
+
+import { ApiErrorState } from "@/components/ui/api-error-state";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { ApiErrorState } from "@/components/ui/api-error-state";
 import { getProfile, saveProfile } from "@/lib/api/clients/profile";
-import { useState, useEffect, useMemo } from "react";
-import { Loader2, Save, User } from "lucide-react";
-import { toast } from "sonner";
-import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import type { ProfileResponse } from "@/lib/api/contracts/profile";
+import { profileWriteBodySchema } from "@/lib/api/contracts/profile";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
 interface ProfileData {
-  id?: number;
   name: string;
   email: string;
   phone: string;
@@ -28,115 +31,163 @@ interface ProfileData {
 
 interface ProfileFormProps {
   initialData?: Partial<ProfileData>;
+  reviewKey?: number;
+  onReviewResolved?: () => void;
 }
 
-export function ProfileForm({ initialData }: ProfileFormProps) {
+type ProfileDataSource = {
+  [Key in keyof ProfileData]?: ProfileData[Key] | null;
+};
+
+const EMPTY_PROFILE_DATA: ProfileData = {
+  name: "",
+  email: "",
+  phone: "",
+  location: "",
+  linkedinUrl: "",
+  githubUrl: "",
+  portfolioUrl: "",
+  summary: "",
+};
+
+const PROFILE_FIELD_LABELS: Record<keyof ProfileData, string> = {
+  name: "Full name",
+  email: "Email",
+  phone: "Phone",
+  location: "Location",
+  linkedinUrl: "LinkedIn URL",
+  githubUrl: "GitHub URL",
+  portfolioUrl: "Portfolio URL",
+  summary: "Professional summary",
+};
+
+const toProfileData = (profile?: ProfileDataSource | null): ProfileData => ({
+  name: profile?.name || "",
+  email: profile?.email || "",
+  phone: profile?.phone || "",
+  location: profile?.location || "",
+  linkedinUrl: profile?.linkedinUrl || "",
+  githubUrl: profile?.githubUrl || "",
+  portfolioUrl: profile?.portfolioUrl || "",
+  summary: profile?.summary || "",
+});
+
+export function ProfileForm({
+  initialData,
+  reviewKey,
+  onReviewResolved,
+}: ProfileFormProps) {
   const queryClient = useQueryClient();
   const [originalData, setOriginalData] = useState<ProfileData | null>(null);
-  const [formData, setFormData] = useState<ProfileData>({
-    name: "",
-    email: "",
-    phone: "",
-    location: "",
-    linkedinUrl: "",
-    githubUrl: "",
-    portfolioUrl: "",
-    summary: "",
-  });
-  const [settingsSaved, setSettingsSaved] = useState(false);
+  const [formData, setFormData] = useState<ProfileData>(EMPTY_PROFILE_DATA);
+  const hasHydratedRef = useRef(false);
+  const appliedReviewKeyRef = useRef<number | null>(null);
 
-  const { data: profile, error, isError, isLoading, refetch } = useQuery({
+  const { data: profile, error, isError, isLoading, isSuccess, refetch } = useQuery({
     queryKey: queryKeys.profile.detail(),
-    queryFn: async () => {
-      return getProfile();
-    },
+    queryFn: getProfile,
   });
 
-  // Update form when profile data is loaded
   useEffect(() => {
-    if (profile) {
-      const data = {
-        name: profile.name || "",
-        email: profile.email || "",
-        phone: profile.phone || "",
-        location: profile.location || "",
-        linkedinUrl: profile.linkedinUrl || "",
-        githubUrl: profile.githubUrl || "",
-        portfolioUrl: profile.portfolioUrl || "",
-        summary: profile.summary || "",
-      };
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setFormData(data);
-      setOriginalData(data);
-    }
-  }, [profile]);
+    if (!isSuccess || hasHydratedRef.current) return;
 
-  // Apply initialData when provided (from resume parsing)
+    const data = toProfileData(profile);
+    hasHydratedRef.current = true;
+    setFormData(data);
+    setOriginalData(data);
+  }, [isSuccess, profile]);
+
   useEffect(() => {
-    if (initialData) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setFormData((prev) => ({
-        ...prev,
-        name: initialData.name || prev.name,
-        email: initialData.email || prev.email,
-        phone: initialData.phone || prev.phone,
-        location: initialData.location || prev.location,
-        linkedinUrl: initialData.linkedinUrl || prev.linkedinUrl,
-        githubUrl: initialData.githubUrl || prev.githubUrl,
-        portfolioUrl: initialData.portfolioUrl || prev.portfolioUrl,
-        summary: initialData.summary || prev.summary,
-      }));
+    if (
+      reviewKey === undefined ||
+      !initialData ||
+      !originalData ||
+      appliedReviewKeyRef.current === reviewKey
+    ) {
+      return;
     }
-  }, [initialData]);
 
-  const hasUnsavedChanges = useMemo(() => {
-    if (!originalData) return false;
-    return (
-      formData.name !== originalData.name ||
-      formData.email !== originalData.email ||
-      formData.phone !== originalData.phone ||
-      formData.location !== originalData.location ||
-      formData.linkedinUrl !== originalData.linkedinUrl ||
-      formData.githubUrl !== originalData.githubUrl ||
-      formData.portfolioUrl !== originalData.portfolioUrl ||
-      formData.summary !== originalData.summary
-    );
+    appliedReviewKeyRef.current = reviewKey;
+    setFormData((current) => {
+      const next = { ...current };
+      for (const key of Object.keys(PROFILE_FIELD_LABELS) as Array<keyof ProfileData>) {
+        const proposedValue = initialData[key];
+        if (
+          proposedValue !== undefined &&
+          proposedValue !== originalData[key]
+        ) {
+          next[key] = proposedValue;
+        }
+      }
+      return next;
+    });
+  }, [initialData, originalData, reviewKey]);
+
+  const changedFieldKeys = useMemo(() => {
+    if (!originalData) return [];
+    return (Object.keys(PROFILE_FIELD_LABELS) as Array<keyof ProfileData>)
+      .filter((key) => formData[key] !== originalData[key]);
   }, [formData, originalData]);
+  const changedFields = changedFieldKeys.map((key) => PROFILE_FIELD_LABELS[key]);
+  const hasUnsavedChanges = changedFields.length > 0;
+  const validationErrors = useMemo(() => {
+    const result = profileWriteBodySchema.safeParse(formData);
+    if (result.success) return [];
+
+    const errors = new Map<string, string>();
+    for (const issue of result.error.issues) {
+      const field = issue.path[0];
+      if (typeof field !== "string" || !(field in PROFILE_FIELD_LABELS)) continue;
+      const label = PROFILE_FIELD_LABELS[field as keyof ProfileData];
+      if (!errors.has(field)) errors.set(field, `${label}: ${issue.message}`);
+    }
+    return [...errors.values()];
+  }, [formData]);
+  const formIsValid = validationErrors.length === 0;
 
   const mutation = useMutation({
-    mutationFn: async (data: ProfileData) => {
-      return saveProfile(data);
-    },
-    onSuccess: (data) => {
+    mutationFn: saveProfile,
+    onSuccess: (savedProfile) => {
+      const savedData = toProfileData(savedProfile);
+      setFormData(savedData);
+      setOriginalData(savedData);
+      queryClient.setQueryData<ProfileResponse>(
+        queryKeys.profile.detail(),
+        (current) => current
+          ? { ...current, ...savedProfile }
+          : {
+              ...savedProfile,
+              skills: [],
+              experience: [],
+              education: [],
+              resumes: [],
+            }
+      );
       void cacheOwnership.profileMutation(queryClient);
-      setOriginalData({
-        name: data.name || "",
-        email: data.email || "",
-        phone: data.phone || "",
-        location: data.location || "",
-        linkedinUrl: data.linkedinUrl || "",
-        githubUrl: data.githubUrl || "",
-        portfolioUrl: data.portfolioUrl || "",
-        summary: data.summary || "",
-      });
-      setSettingsSaved(true);
-      setTimeout(() => setSettingsSaved(false), 3000);
-      toast.success("Profile saved");
+      toast.success("Basic information saved");
+      if (reviewKey !== undefined) onReviewResolved?.();
     },
     onError: (mutationError) => {
       toast.error(getApiErrorMessage(mutationError, "Failed to save profile"));
     },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!hasUnsavedChanges || !formIsValid) return;
     mutation.mutate(formData);
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setFormData((prev) => ({
-      ...prev,
-      [e.target.name]: e.target.value,
+  const handleRevert = () => {
+    if (!originalData) return;
+    setFormData(originalData);
+    if (reviewKey !== undefined) onReviewResolved?.();
+  };
+
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    setFormData((current) => ({
+      ...current,
+      [event.target.name]: event.target.value,
     }));
   };
 
@@ -274,32 +325,44 @@ export function ProfileForm({ initialData }: ProfileFormProps) {
           </div>
         </CardContent>
 
-        <CardFooter className="flex items-center justify-between border-t border-border bg-card px-6 py-4">
-          <p className="text-xs text-muted-foreground">
-            {settingsSaved ? (
-              <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                Changes saved successfully
-              </span>
-            ) : hasUnsavedChanges ? (
-              <span className="text-amber-700 dark:text-amber-400">Unsaved changes</span>
-            ) : (
-              "Up to date"
-            )}
-          </p>
-          <Button
-            type="submit"
-            disabled={mutation.isPending || !hasUnsavedChanges}
-            className="bg-blue-600 hover:bg-blue-500 text-foreground min-w-[120px]"
-          >
-            {mutation.isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="mr-2 h-4 w-4" />
-            )}
-            {mutation.isPending ? "Saving..." : "Save Changes"}
-          </Button>
-        </CardFooter>
+        {hasUnsavedChanges ? (
+          <CardFooter className="flex items-center justify-between border-t border-border bg-card px-6 py-4">
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">
+                {changedFields.length} pending {changedFields.length === 1 ? "change" : "changes"}:{" "}
+                {changedFields.join(", ")}
+              </p>
+              {validationErrors.length > 0 ? (
+                <p role="alert" className="text-xs text-destructive">
+                  Fix before saving: {validationErrors.join("; ")}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleRevert}
+                disabled={mutation.isPending}
+              >
+                <Undo2 data-icon="inline-start" />
+                Revert
+              </Button>
+              <Button
+                type="submit"
+                disabled={mutation.isPending || !formIsValid}
+                className="min-w-[120px] bg-blue-600 text-foreground hover:bg-blue-500"
+              >
+                {mutation.isPending ? (
+                  <Loader2 data-icon="inline-start" className="animate-spin" />
+                ) : (
+                  <Save data-icon="inline-start" />
+                )}
+                {mutation.isPending ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </CardFooter>
+        ) : null}
       </form>
     </Card>
   );

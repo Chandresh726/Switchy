@@ -14,6 +14,8 @@ import {
   profileWriteBodySchema,
   resumeUploadResponseSchema,
   resumeUploadFormSchema,
+  resumeSectionApplyBodySchema,
+  resumeSectionApplyResponseSchema,
   skillCreateBodySchema,
   skillSchema,
   skillsResponseSchema,
@@ -22,6 +24,8 @@ import type {
   Profile,
   ProfileResponse,
   ResumeUploadResponse,
+  ResumeSectionApplyInput,
+  ResumeSectionApplyResponse,
   SkillCreateInput,
 } from "@/lib/api/contracts/profile";
 import { successSchema } from "@/lib/api/contracts/common";
@@ -47,6 +51,16 @@ export const createEducation = (body: z.output<typeof educationCreateBodySchema>
 export const updateEducation = (id: number, body: z.output<typeof educationUpdateBodySchema>) => apiJsonMutation(`/api/profile/education/${childPath(id)}`, "PATCH", educationUpdateBodySchema, body, educationSchema, "Failed to update education");
 export const deleteEducation = (id: number) => apiCommand(`/api/profile/education/${childPath(id)}`, "DELETE", successSchema, "Failed to delete education");
 export const deleteResume = (id: number) => apiCommand(`/api/profile/resumes/${childPath(id)}`, "DELETE", successSchema, "Failed to delete resume");
+export const applyResumeSection = (
+  body: ResumeSectionApplyInput
+): Promise<ResumeSectionApplyResponse> => apiJsonMutation(
+  "/api/profile/resume-review",
+  "POST",
+  resumeSectionApplyBodySchema,
+  body,
+  resumeSectionApplyResponseSchema,
+  "Failed to apply resume changes"
+);
 export const uploadResume = (formData: FormData): Promise<ResumeUploadResponse> => {
   resumeUploadFormSchema.parse({
     file: formData.get("file"),

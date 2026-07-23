@@ -275,6 +275,11 @@ export const cacheOwnership = {
     return invalidateMany(queryClient, [
       queryKeys.profile.detail(),
       ...(childKey ? [childKey] : []),
+      queryKeys.jobs.all,
+      queryKeys.stats.all,
+      queryKeys.companies.overviews(),
+      queryKeys.matchHistory.all,
+      queryKeys.runtime.unmatchedJobs(),
     ]);
   },
 

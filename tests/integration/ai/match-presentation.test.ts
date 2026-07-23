@@ -110,7 +110,7 @@ describe("authoritative match presentation queries", () => {
     });
     expect(changedCandidate.get(job.id)).toMatchObject({
       matchResultId: "latest-history",
-      matchScore: null,
+      matchScore: 74,
       matchStale: true,
     });
 

@@ -4,13 +4,21 @@ import { describe, expect, it, vi } from "vitest";
 
 import { EducationEditor } from "@/components/profile/education-editor";
 
-const { createEducation, getEducation, updateEducation } = vi.hoisted(() => ({
+const { applyResumeSection, createEducation, getEducation, updateEducation } = vi.hoisted(() => ({
+  applyResumeSection: vi.fn().mockResolvedValue({
+    added: 2,
+    updated: 0,
+    unchanged: 0,
+    duplicatesSkipped: 0,
+    invalidSkipped: 0,
+  }),
   createEducation: vi.fn().mockResolvedValue([]),
   getEducation: vi.fn().mockResolvedValue([]),
   updateEducation: vi.fn(),
 }));
 
 vi.mock("@/lib/api/clients/profile", () => ({
+  applyResumeSection,
   createEducation,
   deleteEducation: vi.fn(),
   getEducation,
@@ -26,41 +34,55 @@ describe("EducationEditor", () => {
       <QueryClientProvider client={queryClient}>
         <EducationEditor
           profileId={1}
-          initialEducation={[
-            { institution: "Example University", degree: "BS" },
-            { institution: "Second University", degree: "MS", field: "Systems" },
-          ]}
+          resumeReview={{
+            key: 9,
+            review: {
+              changes: [
+                {
+                  key: "example university|bs",
+                  kind: "add",
+                  currentId: null,
+                  value: { institution: "Example University", degree: "BS" },
+                  changedFields: [],
+                },
+                {
+                  key: "second university|ms",
+                  kind: "add",
+                  currentId: null,
+                  value: {
+                    institution: "Second University",
+                    degree: "MS",
+                    field: "Systems",
+                  },
+                  changedFields: [],
+                },
+              ],
+              unchangedCount: 0,
+              duplicateCount: 0,
+              invalidCount: 0,
+            },
+          }}
         />
       </QueryClientProvider>
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "Save All" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save Changes" }));
 
     await waitFor(() => {
-      expect(createEducation).toHaveBeenCalledOnce();
+      expect(applyResumeSection).toHaveBeenCalledOnce();
     });
-    expect(createEducation).toHaveBeenCalledWith([
-      {
-        institution: "Example University",
-        degree: "BS",
-        field: null,
-        startDate: null,
-        endDate: null,
-        gpa: null,
-        honors: null,
-        profileId: 1,
-      },
-      {
-        institution: "Second University",
-        degree: "MS",
-        field: "Systems",
-        startDate: null,
-        endDate: null,
-        gpa: null,
-        honors: null,
-        profileId: 1,
-      },
-    ]);
+    expect(applyResumeSection).toHaveBeenCalledWith({
+      section: "education",
+      profileId: 1,
+      items: [
+        { institution: "Example University", degree: "BS" },
+        {
+          institution: "Second University",
+          degree: "MS",
+          field: "Systems",
+        },
+      ],
+    });
   });
 
   it("edits another field on a no-date education without inventing a date", async () => {

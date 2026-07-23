@@ -111,7 +111,15 @@ describe("cache ownership", () => {
     invalidate.mockClear();
     const skillsKey = queryKeys.profile.skills(1);
     await cacheOwnership.profileMutation(client, skillsKey);
-    expect(invalidatedKeys(invalidate)).toEqual([queryKeys.profile.detail(), skillsKey]);
+    expect(invalidatedKeys(invalidate)).toEqual([
+      queryKeys.profile.detail(),
+      skillsKey,
+      queryKeys.jobs.all,
+      queryKeys.stats.all,
+      queryKeys.companies.overviews(),
+      queryKeys.matchHistory.all,
+      queryKeys.runtime.unmatchedJobs(),
+    ]);
 
     invalidate.mockClear();
     await cacheOwnership.matchCompletion(client);

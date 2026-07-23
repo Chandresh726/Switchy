@@ -89,7 +89,12 @@ describe("authoritative match presentation", () => {
     expect(selectMatchPresentation(job, [row], {
       ...context,
       candidateFingerprint: "b".repeat(64),
-    }).matchStale).toBe(true);
+    })).toMatchObject({
+      matchScore: 88,
+      matchResultId: "result-1",
+      matchStale: true,
+      matchSummary: "Strong backend alignment with one preference to confirm.",
+    });
     expect(selectMatchPresentation(job, [row], {
       ...context,
       scoringPolicyVersion: "evidence-score-v2",

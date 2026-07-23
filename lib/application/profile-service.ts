@@ -7,12 +7,18 @@ import type {
   experienceUpdateBodySchema,
   experienceWriteBodySchema,
   profileWriteBodySchema,
+  resumeSectionApplyBodySchema,
   skillCreateBodySchema,
   skillUpdateBodySchema,
 } from "@/lib/api/contracts/profile";
 import { scheduleProfileRematch } from "@/lib/ai/matcher/profile-rematch";
 import { db } from "@/lib/db";
 import { education, experience, profile, resumes, skills } from "@/lib/db/schema";
+import {
+  buildEducationResumeReview,
+  buildExperienceResumeReview,
+  buildSkillsResumeReview,
+} from "@/lib/profile/resume-review";
 
 import type { z } from "zod";
 
@@ -23,6 +29,7 @@ type ExperienceCreateInput = z.infer<typeof experienceWriteBodySchema>;
 type ExperienceUpdateInput = z.infer<typeof experienceUpdateBodySchema>;
 type EducationCreateInput = z.infer<typeof educationWriteBodySchema>;
 type EducationUpdateInput = z.infer<typeof educationUpdateBodySchema>;
+type ResumeSectionApplyInput = z.infer<typeof resumeSectionApplyBodySchema>;
 
 function parseDateValue(date: string | null) {
   if (!date) return Number.POSITIVE_INFINITY;
@@ -156,4 +163,82 @@ export async function deleteEducation(id: number) {
   if (!deleted) throw new NotFoundError("Education not found", "education_not_found");
   await scheduleProfileRematch();
   return { success: true as const };
+}
+
+export async function applyResumeSection(input: ResumeSectionApplyInput) {
+  const result = db.transaction((tx) => {
+    if (input.section === "skills") {
+      const current = tx.select().from(skills).where(eq(skills.profileId, input.profileId)).all();
+      const review = buildSkillsResumeReview(current, input.items);
+      for (const change of review.changes) {
+        if (change.kind === "add") {
+          tx.insert(skills).values({ ...change.value, profileId: input.profileId }).run();
+        } else if (change.currentId) {
+          tx.update(skills).set(change.value).where(eq(skills.id, change.currentId)).run();
+        }
+      }
+      return {
+        added: review.changes.filter(({ kind }) => kind === "add").length,
+        updated: review.changes.filter(({ kind }) => kind === "update").length,
+        unchanged: review.unchangedCount,
+        duplicatesSkipped: review.duplicateCount,
+        invalidSkipped: review.invalidCount,
+      };
+    }
+
+    if (input.section === "experience") {
+      const current = tx.select().from(experience)
+        .where(eq(experience.profileId, input.profileId)).all();
+      const review = buildExperienceResumeReview(current, input.items);
+      for (const change of review.changes) {
+        const { highlights, ...values } = change.value;
+        const databaseValues = {
+          ...values,
+          endDate: values.endDate || null,
+          highlights: highlights?.length ? JSON.stringify(highlights) : null,
+        };
+        if (change.kind === "add") {
+          tx.insert(experience).values({
+            ...databaseValues,
+            profileId: input.profileId,
+          }).run();
+        } else if (change.currentId) {
+          tx.update(experience).set(databaseValues)
+            .where(eq(experience.id, change.currentId)).run();
+        }
+      }
+      return {
+        added: review.changes.filter(({ kind }) => kind === "add").length,
+        updated: review.changes.filter(({ kind }) => kind === "update").length,
+        unchanged: review.unchangedCount,
+        duplicatesSkipped: review.duplicateCount,
+        invalidSkipped: review.invalidCount,
+      };
+    }
+
+    const current = tx.select().from(education)
+      .where(eq(education.profileId, input.profileId)).all();
+    const review = buildEducationResumeReview(current, input.items);
+    for (const change of review.changes) {
+      if (change.kind === "add") {
+        tx.insert(education).values({
+          ...change.value,
+          profileId: input.profileId,
+        }).run();
+      } else if (change.currentId) {
+        tx.update(education).set(change.value)
+          .where(eq(education.id, change.currentId)).run();
+      }
+    }
+    return {
+      added: review.changes.filter(({ kind }) => kind === "add").length,
+      updated: review.changes.filter(({ kind }) => kind === "update").length,
+      unchanged: review.unchangedCount,
+      duplicatesSkipped: review.duplicateCount,
+      invalidSkipped: review.invalidCount,
+    };
+  }, { behavior: "immediate" });
+
+  if (result.added > 0 || result.updated > 0) await scheduleProfileRematch();
+  return result;
 }

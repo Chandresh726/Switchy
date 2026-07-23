@@ -237,7 +237,6 @@ export function selectMatchPresentation(
   if (latest) {
     return {
       ...latest.presentation,
-      matchScore: null,
       matchStale: true,
     };
   }

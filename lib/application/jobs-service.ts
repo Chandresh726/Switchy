@@ -5,7 +5,6 @@ import {
   desc,
   eq,
   gte,
-  isNull,
   like,
   lt,
   lte,
@@ -17,7 +16,11 @@ import type { SQL } from "drizzle-orm";
 import type { z } from "zod";
 
 import { JobAnalysisEvidenceSchema, MatchSourceSchema } from "@/lib/ai/artifacts";
-import { getCurrentMatchContext, getMatchPresentations } from "@/lib/ai/matcher/presentation";
+import {
+  getCurrentMatchContext,
+  getMatchPresentations,
+} from "@/lib/ai/matcher/presentation";
+import { buildPreferredMatchResultsQuery } from "@/lib/ai/matcher/presentation-query";
 import { getUnmatchedJobCount, getUnmatchedJobIds } from "@/lib/ai/matcher";
 import { completeEmptyMatchSession, getAIWorkSession, queueMatchWork } from "@/lib/ai/work-items";
 import { NotFoundError } from "@/lib/api";
@@ -49,15 +52,6 @@ const JOB_DETAIL_SELECTION = {
   ...JOB_SUMMARY_SELECTION.job,
   description: jobs.description,
 } as const;
-
-function legacyBandCondition(bands: MatchBand[]) {
-  const high = bands.includes("high");
-  const good = bands.includes("good");
-  if (high && good) return gte(jobs.matchScore, 70);
-  if (high) return gte(jobs.matchScore, 85);
-  if (good) return and(gte(jobs.matchScore, 70), lt(jobs.matchScore, 85));
-  return sql`0 = 1`;
-}
 
 function baseConditions(query: JobsQuery) {
   const conditions = [];
@@ -164,36 +158,38 @@ export async function listJobs(query: JobsQuery) {
   }
 
   const currentContext = await getCurrentMatchContext();
+  const preferredMatchResults = buildPreferredMatchResultsQuery(currentContext);
+  const preferredResultJoin = and(
+    eq(preferredMatchResults.jobId, jobs.id),
+    eq(preferredMatchResults.presentationRank, 1)
+  );
+  const effectiveScore = sql<number | null>`coalesce(${preferredMatchResults.score}, ${jobs.matchScore})`;
   const scoreConditions = [...conditions];
-  let rows;
-  let totalCount: number;
-  if (!currentContext) {
-    if (query.minScore !== undefined) scoreConditions.push(gte(jobs.matchScore, query.minScore));
-    if (query.maxScore !== undefined) scoreConditions.push(lte(jobs.matchScore, query.maxScore));
-    if (requestedBands.length > 0) scoreConditions.push(legacyBandCondition(requestedBands));
-    const where = scoreConditions.length > 0 ? and(...scoreConditions) : undefined;
-    rows = await db.select(JOB_SUMMARY_SELECTION).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id))
-      .where(where).orderBy(...orderByFor(query)).limit(query.limit).offset(query.offset);
-    const [total] = await db.select({ value: count() }).from(jobs).where(where);
-    totalCount = total.value;
-  } else {
-    const join = and(eq(matchResults.jobId, jobs.id), eq(matchResults.candidateFingerprint, currentContext.candidateFingerprint), eq(matchResults.isStale, false));
-    const effectiveScore = sql<number | null>`coalesce(${matchResults.score}, ${jobs.matchScore})`;
-    if (query.minScore !== undefined) scoreConditions.push(gte(effectiveScore, query.minScore));
-    if (query.maxScore !== undefined) scoreConditions.push(lte(effectiveScore, query.maxScore));
-    if (requestedBands.length > 0) {
-      const high = requestedBands.includes("high");
-      const good = requestedBands.includes("good");
-      const currentBand = high && good ? gte(effectiveScore, 70) : high ? gte(effectiveScore, 85) : and(gte(effectiveScore, 70), lt(effectiveScore, 85));
-      const band = or(currentBand, and(isNull(matchResults.id), legacyBandCondition(requestedBands)));
-      if (band) scoreConditions.push(band);
-    }
-    const where = scoreConditions.length > 0 ? and(...scoreConditions) : undefined;
-    rows = await db.select(JOB_SUMMARY_SELECTION).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id))
-      .leftJoin(matchResults, join).where(where).orderBy(...orderByFor(query, effectiveScore)).limit(query.limit).offset(query.offset);
-    const [total] = await db.select({ value: count() }).from(jobs).leftJoin(matchResults, join).where(where);
-    totalCount = total.value;
+  if (query.minScore !== undefined) scoreConditions.push(gte(effectiveScore, query.minScore));
+  if (query.maxScore !== undefined) scoreConditions.push(lte(effectiveScore, query.maxScore));
+  if (requestedBands.length > 0) {
+    const high = requestedBands.includes("high");
+    const good = requestedBands.includes("good");
+    scoreConditions.push(
+      high && good
+        ? gte(effectiveScore, 70)
+        : high
+          ? gte(effectiveScore, 85)
+          : and(gte(effectiveScore, 70), lt(effectiveScore, 85))
+    );
   }
+  const where = scoreConditions.length > 0 ? and(...scoreConditions) : undefined;
+  const rows = await db.select(JOB_SUMMARY_SELECTION).from(jobs)
+    .innerJoin(companies, eq(jobs.companyId, companies.id))
+    .leftJoin(preferredMatchResults, preferredResultJoin)
+    .where(where)
+    .orderBy(...orderByFor(query, effectiveScore))
+    .limit(query.limit)
+    .offset(query.offset);
+  const [total] = await db.select({ value: count() }).from(jobs)
+    .leftJoin(preferredMatchResults, preferredResultJoin)
+    .where(where);
+  const totalCount = total.value;
   return { jobs: await presentRows(rows, currentContext), totalCount, hasMore: query.offset + query.limit < totalCount };
 }
 

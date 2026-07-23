@@ -15,6 +15,73 @@ afterEach(() => {
 });
 
 describe("score-aware jobs pagination", () => {
+  it("keeps prior-profile scores eligible for dashboard top matches", async () => {
+    const { database } = harness.createDatabase();
+    const context = {
+      candidateFingerprint: "b".repeat(64),
+      scoringPolicyVersion: "policy-current",
+    };
+    vi.doMock("@/lib/db", () => ({ db: database }));
+    vi.doMock("@/lib/ai/matcher/presentation", () => ({
+      getCurrentMatchContext: vi.fn().mockResolvedValue(context),
+      getMatchPresentations: vi.fn().mockImplementation(async (
+        jobRows: Array<{ id: number }>
+      ) => new Map(jobRows.map((job) => [job.id, {
+        matchScore: 93,
+        matchReasons: [],
+        matchedSkills: [],
+        matchResultId: "prior-profile-result",
+        matchBreakdown: null,
+        matchStale: true,
+        matchLegacy: false,
+        matchSummary: "Strong fit based on the previous profile.",
+        matchReasoning: [],
+        scoringPolicyVersion: "policy-prior",
+      }]))),
+    }));
+    const { GET } = await import("@/app/api/jobs/route");
+    const company = database.insert(companies).values({
+      name: "Prior profile pagination fixture",
+      careersUrl: "https://example.com/prior-profile-careers",
+    }).returning().get();
+    const job = database.insert(jobs).values({
+      companyId: company.id,
+      title: "Prior profile top match",
+      description: "A strong historical match",
+      url: "https://example.com/jobs/prior-profile-top",
+    }).returning().get();
+    database.insert(matchResults).values({
+      id: "prior-profile-result",
+      jobId: job.id,
+      candidateFingerprint: "a".repeat(64),
+      jobFingerprint: "c".repeat(64),
+      scoringPolicyVersion: "policy-prior",
+      score: 93,
+      breakdownJson: "{}",
+      evidenceJson: JSON.stringify({
+        summary: "Strong fit based on the previous profile.",
+        reasoning: [],
+        matchedSkills: [],
+      }),
+      confidence: 0,
+      source: "deterministic",
+    }).run();
+
+    const response = await GET(new Request(
+      "http://localhost/api/jobs?matchBands=high,good&sortBy=matchScore&sortOrder=desc&limit=5"
+    ) as NextRequest);
+
+    expect(await response.json()).toMatchObject({
+      jobs: [{
+        id: job.id,
+        matchScore: 93,
+        matchStale: true,
+      }],
+      totalCount: 1,
+      hasMore: false,
+    });
+  });
+
   it("sorts and filters current-candidate results before pagination", async () => {
     const { database } = harness.createDatabase();
     const context = {
