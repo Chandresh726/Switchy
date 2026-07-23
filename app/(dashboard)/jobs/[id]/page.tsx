@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { MatchBadge } from "@/components/jobs/match-badge";
 import {
   MatchBreakdown,
+  MatchStaleNote,
 } from "@/components/jobs/match-breakdown";
 import { ApplyButton } from "@/components/jobs/apply-button";
 import { JobAIActions } from "@/components/jobs/job-ai-actions";
@@ -331,7 +332,10 @@ export default function JobDetailPage() {
       {/* Match Analysis */}
       {(job.matchResultId !== null || job.matchLegacy) && (
         <div className="mb-6 rounded-lg border border-border bg-card/70 p-6">
-          <h2 className="mb-4 text-lg font-medium text-foreground">Match Analysis</h2>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="text-lg font-medium text-foreground">Match Analysis</h2>
+            {job.matchStale && !job.matchLegacy ? <MatchStaleNote /> : null}
+          </div>
 
           <div className="space-y-4">
             {job.matchLegacy ? (
@@ -339,7 +343,6 @@ export default function JobDetailPage() {
             ) : (
                   <MatchBreakdown
                     breakdown={job.matchBreakdown}
-                    stale={job.matchStale}
                     summary={job.matchSummary}
                     reasoning={job.matchReasoning}
                     matchedSkills={job.matchedSkills}
