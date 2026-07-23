@@ -22,7 +22,11 @@ import {
   splitPersonSource,
 } from "@/lib/api/clients/people";
 import { createSkill, deleteResume } from "@/lib/api/clients/profile";
-import { deleteProvider, getProviderModels } from "@/lib/api/clients/providers";
+import {
+  deleteProvider,
+  getLocalCLIStatus,
+  getProviderModels,
+} from "@/lib/api/clients/providers";
 import { getMatchSession, recoverScheduler } from "@/lib/api/clients/runtime";
 import { patchSettings } from "@/lib/api/clients/settings";
 import { getStats } from "@/lib/api/clients/stats";
@@ -202,15 +206,28 @@ describe("typed feature clients", () => {
           isStale: false,
           source: "live",
         })
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          status: "ready",
+          selectable: true,
+          cliVersion: "1.2.3",
+          statusMessage: "2 text models available.",
+          lastCheckedAt: "2026-07-23T00:00:00.000Z",
+        })
       );
     vi.stubGlobal("fetch", fetchMock);
 
     await getPeople({ active: "all", source: "manual", limit: 5 });
     await getProviderModels("provider/id", { refresh: "true" });
+    await getLocalCLIStatus("codex_cli");
 
     expect(fetchMock.mock.calls[0]?.[0]).toContain("source=manual");
     expect(fetchMock.mock.calls[1]?.[0]).toBe(
       "/api/providers/provider%2Fid/models?refresh=true"
+    );
+    expect(fetchMock.mock.calls[2]?.[0]).toBe(
+      "/api/providers/local-cli/status?provider=codex_cli"
     );
   });
 

@@ -2,9 +2,8 @@
 
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
 
 import { clearAllAIContent } from "@/lib/api/clients/ai";
 import { getReadiness, getRuntimeHealth } from "@/lib/api/clients/health";
@@ -12,6 +11,7 @@ import { clearJobMatchData, clearJobs } from "@/lib/api/clients/jobs";
 import {
   createProvider,
   deleteProvider,
+  getLocalCLIStatus,
   getProviderModels,
   getProviders,
   updateProvider,
@@ -34,10 +34,13 @@ import {
   hasInvalidReasoningSelection,
   resolveReasoningSelection,
 } from "@/components/settings/reasoning-effort-control";
-import { Skeleton } from "@/components/ui/skeleton";
 import { ApiErrorState } from "@/components/ui/api-error-state";
 import { getProviderMetadata } from "@/lib/ai/providers/metadata";
-import type { AIProvider } from "@/lib/ai/providers/types";
+import {
+  isLocalCLIProvider,
+  type AIProvider,
+  type LocalCLIProvider,
+} from "@/lib/ai/providers/types";
 import { APP_VERSION, DB_PATH } from "@/lib/constants";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
@@ -58,6 +61,7 @@ import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 const PROVIDER_MODELS_STALE_TIME_MS = 15 * 60 * 1000;
+const LOCAL_CLI_STATUS_STALE_TIME_MS = 30_000;
 const DEFAULT_SCRAPER_MAX_PARALLEL_SCRAPES = 3;
 const DEFAULT_SCRAPER_HISTORY_RETENTION_DAYS = 60;
 
@@ -123,106 +127,11 @@ interface AIWritingLocalEdits {
   aiWritingReasoningEffort?: ReasoningEffort;
 }
 
-function SettingsPageSkeleton() {
+function SettingsHeader() {
   return (
-    <div className="space-y-6">
-      <div>
-        <Skeleton className="h-8 w-32" />
-        <Skeleton className="mt-1 h-4 w-72" />
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
-          <div className="rounded-xl border border-border bg-card/70 p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Skeleton className="h-5 w-5 rounded" />
-              <Skeleton className="h-5 w-28" />
-            </div>
-            <Skeleton className="h-4 w-64 mb-4" />
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-card/70 p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Skeleton className="h-5 w-5 rounded" />
-              <Skeleton className="h-5 w-36" />
-            </div>
-            <Skeleton className="h-4 w-80 mb-6" />
-            <div className="space-y-4">
-              <Skeleton className="h-10 w-full" />
-              <div className="flex gap-2">
-                <Skeleton className="h-10 w-48" />
-                <Skeleton className="h-10 flex-1" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-card/70 p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Skeleton className="h-5 w-5 rounded" />
-              <Skeleton className="h-5 w-24" />
-            </div>
-            <Skeleton className="h-4 w-72 mb-6" />
-            <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-3">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-card/70 p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Skeleton className="h-5 w-5 rounded" />
-              <Skeleton className="h-5 w-28" />
-            </div>
-            <div className="space-y-3">
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <div className="rounded-xl border border-border bg-card/70 p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Skeleton className="h-5 w-5 rounded" />
-              <Skeleton className="h-5 w-28" />
-            </div>
-            <div className="space-y-4">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-card/70 p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Skeleton className="h-5 w-5 rounded" />
-              <Skeleton className="h-5 w-28" />
-            </div>
-            <div className="space-y-4">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-card/70 p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Skeleton className="h-5 w-5 rounded" />
-              <Skeleton className="h-5 w-20" />
-            </div>
-            <div className="space-y-3">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-3/4" />
-              <Skeleton className="h-4 w-5/6" />
-            </div>
-          </div>
-        </div>
-      </div>
+    <div>
+      <h1 className="text-2xl font-semibold text-foreground">Settings</h1>
+      <p className="mt-1 text-muted-foreground">Configure your Switchy preferences and manage data</p>
     </div>
   );
 }
@@ -265,7 +174,58 @@ function SettingsContent() {
     queryFn: getProviders,
   });
   const settings = settingsQuery.data;
-  const providers = useMemo(() => providersQuery.data ?? [], [providersQuery.data]);
+  const providerRecords = useMemo(() => providersQuery.data ?? [], [providersQuery.data]);
+  const localCLIProviders = useMemo(
+    () => providerRecords.filter(
+      (provider): provider is ProviderSettingsListItem & {
+        kind: "local_cli";
+        provider: LocalCLIProvider;
+      } => provider.kind === "local_cli" && isLocalCLIProvider(provider.provider)
+    ),
+    [providerRecords]
+  );
+  const localCLIStatusQueries = useQueries({
+    queries: localCLIProviders.map((provider) => ({
+      queryKey: queryKeys.providers.status(provider.id),
+      queryFn: () => getLocalCLIStatus(provider.provider),
+      staleTime: LOCAL_CLI_STATUS_STALE_TIME_MS,
+      retry: 1,
+    })),
+  });
+  const providers = useMemo(() => {
+    const statusQueriesByProviderId = new Map(
+      localCLIProviders.map((provider, index) => [
+        provider.id,
+        localCLIStatusQueries[index],
+      ])
+    );
+
+    return providerRecords.map((provider) => {
+      if (provider.kind !== "local_cli") return provider;
+
+      const statusQuery = statusQueriesByProviderId.get(provider.id);
+      const connection = statusQuery?.data;
+      if (connection) {
+        return {
+          ...provider,
+          connectionStatus: connection.status,
+          selectable: connection.selectable,
+          cliVersion: connection.cliVersion,
+          statusMessage: connection.statusMessage,
+          lastCheckedAt: connection.lastCheckedAt,
+        };
+      }
+      if (statusQuery?.isError) {
+        return {
+          ...provider,
+          connectionStatus: "error" as const,
+          selectable: false,
+          statusMessage: getApiErrorMessage(statusQuery.error, "Failed to check local CLI"),
+        };
+      }
+      return provider;
+    });
+  }, [localCLIProviders, localCLIStatusQueries, providerRecords]);
   const readinessQuery = useQuery({
     queryKey: queryKeys.runtime.readiness(),
     queryFn: getReadiness,
@@ -300,8 +260,8 @@ function SettingsContent() {
 
       state[provider.id] = {
         models: data?.models ?? [],
-        loading: query?.isPending ?? false,
-        isRefreshing: (query?.isFetching ?? false) && !(query?.isPending ?? false),
+        loading: Boolean(query?.isFetching && !data),
+        isRefreshing: Boolean(query?.isFetching && data),
         isStale: data?.isStale ?? false,
         error: queryError ?? warning ?? (
           provider.kind === "local_cli" && !provider.selectable
@@ -1372,16 +1332,13 @@ function SettingsContent() {
   });
 
   if (isInitialLoading) {
-    return <SettingsPageSkeleton />;
+    return <SettingsHeader />;
   }
 
   if (settingsQuery.isError || providersQuery.isError) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Settings</h1>
-          <p className="mt-1 text-muted-foreground">Configure your Switchy preferences and manage data</p>
-        </div>
+        <SettingsHeader />
         <ApiErrorState
           error={settingsQuery.error ?? providersQuery.error}
           fallbackMessage="Settings could not be initialized."
@@ -1396,11 +1353,7 @@ function SettingsContent() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">Settings</h1>
-        <p className="mt-1 text-muted-foreground">Configure your Switchy preferences and manage data</p>
-      </div>
+      <SettingsHeader />
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Left Column: Configuration (Spans 2 columns) */}
@@ -1597,9 +1550,5 @@ function SettingsContent() {
 }
 
 export default function SettingsPage() {
-  return (
-    <Suspense fallback={<SettingsPageSkeleton />}>
-      <SettingsContent />
-    </Suspense>
-  );
+  return <SettingsContent />;
 }

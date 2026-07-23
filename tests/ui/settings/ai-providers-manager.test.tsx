@@ -43,6 +43,24 @@ function props() {
 }
 
 describe("AIProvidersManager local CLI providers", () => {
+  it("limits a pending CLI check skeleton to that provider's status", () => {
+    const input = props();
+    const pendingProvider = {
+      ...input.providers[0],
+      selectable: false,
+      connectionStatus: undefined,
+      cliVersion: undefined,
+      statusMessage: undefined,
+    };
+
+    render(<AIProvidersManager {...input} providers={[pendingProvider]} />);
+
+    expect(screen.getByText("Codex CLI")).toBeTruthy();
+    expect(screen.getByLabelText("Codex CLI status loading")).toBeTruthy();
+    expect(screen.queryByText("checking")).toBeNull();
+    expect(screen.getByRole("button", { name: "Edit executable path" })).toBeTruthy();
+  });
+
   it("shows configured CLI providers with working delete actions", () => {
     const input = props();
     render(<AIProvidersManager {...input} />);

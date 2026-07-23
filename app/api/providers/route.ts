@@ -19,11 +19,16 @@ import { upsertSettings } from "@/lib/settings/settings-service";
 export async function GET(request: NextRequest) {
   try {
     const providers = await listProviders();
-    return NextResponse.json(await Promise.all(providers.map(async (provider) => {
+    return NextResponse.json(providers.map((provider) => {
       const publicProvider = toProviderPublic(provider);
       if (!isLocalCLIProvider(provider.provider)) return publicProvider;
-      const connection = getCachedLocalCLIStatus(provider.provider) ??
-        await getLocalCLIStatus(provider.provider);
+      const connection = getCachedLocalCLIStatus(provider.provider);
+      if (!connection) {
+        return {
+          ...publicProvider,
+          selectable: false,
+        };
+      }
       return {
         ...publicProvider,
         connectionStatus: connection.status,
@@ -32,7 +37,7 @@ export async function GET(request: NextRequest) {
         statusMessage: connection.statusMessage,
         lastCheckedAt: connection.lastCheckedAt,
       };
-    })));
+    }));
   } catch (error) {
     return handleApiError(error, { request, fallbackMessage: "Failed to fetch providers", fallbackCode: "providers_fetch_failed" });
   }

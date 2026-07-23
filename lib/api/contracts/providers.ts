@@ -12,6 +12,23 @@ export const localCLIStatusQuerySchema = z.object({
   provider: z.enum(["codex_cli", "opencode_cli"]),
 });
 
+export const localCLIConnectionStatusSchema = z.enum([
+  "ready",
+  "not_installed",
+  "not_authenticated",
+  "no_models",
+  "incompatible",
+  "error",
+]);
+
+export const localCLIStatusResponseSchema = z.object({
+  status: localCLIConnectionStatusSchema,
+  selectable: z.boolean(),
+  cliVersion: z.string().optional(),
+  statusMessage: z.string(),
+  lastCheckedAt: z.string(),
+});
+
 const customHeaderCreateSchema = z.object({
   name: z.string().trim().min(1).max(100),
   value: z.string().max(10_000),

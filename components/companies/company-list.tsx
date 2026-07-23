@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -40,10 +40,13 @@ import {
   deleteCompanyJobs,
   patchCompany,
 } from "@/lib/api/clients/companies";
-import type { Company } from "@/lib/api/contracts/companies";
+import type {
+  Company,
+  CompanyOverviewResponse,
+} from "@/lib/api/contracts/companies";
 import { isCompanyScrapeSupported } from "@/lib/companies/scrape-support";
 import { PLATFORM_COLORS } from "@/lib/constants";
-import { cacheOwnership } from "@/lib/query-keys";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface CompanyListProps {
@@ -89,19 +92,22 @@ function ToggleSwitch({
   checked,
   onChange,
   disabled,
+  ariaLabel,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
+  ariaLabel: string;
 }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={ariaLabel}
       disabled={disabled}
-      onClick={(e) => {
-        e.stopPropagation();
+      onClick={(event) => {
+        event.stopPropagation();
         onChange(!checked);
       }}
       className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 ${checked ? "bg-emerald-500" : "bg-muted"
@@ -114,6 +120,222 @@ function ToggleSwitch({
     </button>
   );
 }
+
+interface CompanyCardProps {
+  company: Company;
+  isSelected: boolean;
+  isTogglePending: boolean;
+  selectionMode: boolean;
+  onToggleSelection: (id: number) => void;
+  onEditCompany: (company: Company) => void;
+  onRefreshJobs: (companyId: number) => void;
+  onRefreshMatches: (companyId: number) => void;
+  onDeleteCompany: (companyId: number) => void;
+  onDeleteJobs: (companyId: number) => void;
+  onToggleActive: (companyId: number, isActive: boolean) => void;
+  isRefreshing: boolean;
+  isMatching: boolean;
+}
+
+const CompanyCard = memo(function CompanyCard({
+  company,
+  isSelected,
+  isTogglePending,
+  selectionMode,
+  onToggleSelection,
+  onEditCompany,
+  onRefreshJobs,
+  onRefreshMatches,
+  onDeleteCompany,
+  onDeleteJobs,
+  onToggleActive,
+  isRefreshing,
+  isMatching,
+}: CompanyCardProps) {
+  const suppressCloseAutoFocusRef = useRef(false);
+  const canScrapeJobs = isCompanyScrapeSupported(company.careersUrl, company.platform);
+
+  return (
+    <div
+      onClick={() => {
+        if (selectionMode) onToggleSelection(company.id);
+      }}
+      className={`group relative rounded-lg border bg-card/70 p-4 transition-all ${selectionMode
+          ? isSelected
+            ? "border-emerald-500 ring-1 ring-emerald-500/50 bg-emerald-500/5"
+            : "border-border hover:border-emerald-500/50 cursor-pointer"
+          : "border-border hover:border-border"
+        } ${!company.isActive && !isSelected ? "opacity-60 grayscale" : ""}`}
+    >
+      {isSelected ? (
+        <div className="absolute right-2 top-2">
+          <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+        </div>
+      ) : null}
+
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3">
+          {company.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={company.logoUrl}
+              alt={company.name}
+              className="h-10 w-10 rounded bg-muted object-contain p-1"
+            />
+          ) : (
+            <div className="flex h-10 w-10 items-center justify-center rounded bg-muted text-lg font-medium text-muted-foreground">
+              {company.name.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div>
+            <Link
+              href={`/companies/${company.id}/jobs`}
+              className="font-medium text-foreground transition-colors hover:text-emerald-400"
+              title={`View company details for ${company.name}`}
+              onClick={(event) => {
+                if (selectionMode) event.preventDefault();
+              }}
+            >
+              {company.name}
+            </Link>
+          </div>
+        </div>
+
+        {!selectionMode ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="opacity-0 transition-opacity group-hover:opacity-100"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="w-56"
+              onCloseAutoFocus={(event) => {
+                if (suppressCloseAutoFocusRef.current) {
+                  event.preventDefault();
+                  suppressCloseAutoFocusRef.current = false;
+                }
+              }}
+            >
+              <DropdownMenuItem
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRefreshJobs(company.id);
+                }}
+                disabled={isRefreshing || !canScrapeJobs}
+                className="cursor-pointer"
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                <span className="truncate">Refresh Jobs</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRefreshMatches(company.id);
+                }}
+                disabled={isMatching}
+                className="cursor-pointer text-purple-400 focus:text-purple-400"
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                <span className="truncate">Refresh Matching</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDeleteJobs(company.id);
+                }}
+                className="cursor-pointer text-orange-400 focus:text-orange-400"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                <span className="truncate">Delete All Jobs</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={(event) => {
+                  event.stopPropagation();
+                  suppressCloseAutoFocusRef.current = true;
+                  onEditCompany(company);
+                }}
+                className="cursor-pointer"
+              >
+                <Pencil className="mr-2 h-4 w-4" />
+                <span className="truncate">Edit</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDeleteCompany(company.id);
+                }}
+                className="cursor-pointer text-red-400 focus:text-red-400"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                <span className="truncate">Delete</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          {company.platform ? (
+            <Badge
+              variant="outline"
+              className={PLATFORM_COLORS[company.platform] || PLATFORM_COLORS.custom}
+            >
+              {company.platform}
+            </Badge>
+          ) : null}
+        </div>
+
+        <a
+          href={company.careersUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 hover:underline"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <ExternalLink className="h-3 w-3" />
+          {truncateUrl(company.careersUrl)}
+        </a>
+      </div>
+
+      <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <ToggleSwitch
+            checked={company.isActive}
+            onChange={(isActive) => onToggleActive(company.id, isActive)}
+            disabled={isTogglePending}
+            ariaLabel={`${company.name} active status`}
+          />
+          <span className={company.isActive ? "text-emerald-400" : "text-muted-foreground"}>
+            {company.isActive ? "Active" : "Paused"}
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          {company.lastScrapedAt ? (
+            <span>{`Scraped ${getRelativeTime(company.lastScrapedAt)}`}</span>
+          ) : canScrapeJobs ? (
+            <span>Never scraped</span>
+          ) : (
+            <Badge
+              variant="outline"
+              className="border-amber-500/30 bg-amber-500/10 text-amber-300"
+            >
+              Scraping unavailable
+            </Badge>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
 
 export function CompanyList({
   companies,
@@ -129,7 +351,8 @@ export function CompanyList({
 }: CompanyListProps) {
   const queryClient = useQueryClient();
   const [deleteJobsCompanyId, setDeleteJobsCompanyId] = useState<number | null>(null);
-  const suppressCloseAutoFocusRef = useRef(false);
+  const [pendingToggleIds, setPendingToggleIds] = useState<Set<number>>(() => new Set());
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -149,10 +372,84 @@ export function CompanyList({
     mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
       return patchCompany(id, { isActive });
     },
-    onSuccess: (_result, variables) => {
-      void cacheOwnership.companyMutation(queryClient, { companyId: variables.id });
+    onMutate: async ({ id, isActive }) => {
+      const listKey = queryKeys.companies.list();
+      const overviewKey = queryKeys.companies.overview(id);
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: listKey }),
+        queryClient.cancelQueries({ queryKey: overviewKey }),
+      ]);
+
+      const previousCompany = queryClient
+        .getQueryData<Company[]>(listKey)
+        ?.find((company) => company.id === id);
+      const previousOverview = queryClient.getQueryData<CompanyOverviewResponse>(overviewKey);
+
+      queryClient.setQueryData<Company[]>(listKey, (current) =>
+        current?.map((company) =>
+          company.id === id ? { ...company, isActive } : company
+        )
+      );
+      queryClient.setQueryData<CompanyOverviewResponse>(overviewKey, (current) =>
+        current
+          ? {
+              ...current,
+              company: { ...current.company, isActive },
+            }
+          : current
+      );
+      setPendingToggleIds((current) => {
+        const next = new Set(current);
+        next.add(id);
+        return next;
+      });
+
+      return { previousCompany, previousOverview };
     },
-    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update company")),
+    onSuccess: (updatedCompany) => {
+      queryClient.setQueryData<Company[]>(queryKeys.companies.list(), (current) =>
+        current?.map((company) =>
+          company.id === updatedCompany.id ? updatedCompany : company
+        )
+      );
+      queryClient.setQueryData<CompanyOverviewResponse>(
+        queryKeys.companies.overview(updatedCompany.id),
+        (current) =>
+          current
+            ? {
+                ...current,
+                company: {
+                  ...current.company,
+                  isActive: updatedCompany.isActive,
+                },
+              }
+            : current
+      );
+    },
+    onError: (error, variables, context) => {
+      const previousCompany = context?.previousCompany;
+      if (previousCompany) {
+        queryClient.setQueryData<Company[]>(queryKeys.companies.list(), (current) =>
+          current?.map((company) =>
+            company.id === variables.id ? previousCompany : company
+          )
+        );
+      }
+      if (context?.previousOverview) {
+        queryClient.setQueryData(
+          queryKeys.companies.overview(variables.id),
+          context.previousOverview
+        );
+      }
+      toast.error(getApiErrorMessage(error, "Failed to update company"));
+    },
+    onSettled: (_data, _error, variables) => {
+      setPendingToggleIds((current) => {
+        const next = new Set(current);
+        next.delete(variables.id);
+        return next;
+      });
+    },
   });
 
   const deleteJobsMutation = useMutation({
@@ -169,11 +466,22 @@ export function CompanyList({
     onError: (error) => toast.error(getApiErrorMessage(error, "Failed to delete company jobs")),
   });
 
-  const handleCardClick = (company: Company) => {
-    if (selectionMode) {
-      onToggleSelection(company.id);
-    }
-  };
+  const deleteCompanyMutation = deleteMutation.mutate;
+  const toggleActiveCompanyMutation = toggleActiveMutation.mutate;
+  const deleteCompanyById = useCallback(
+    (companyId: number) => deleteCompanyMutation(companyId),
+    [deleteCompanyMutation]
+  );
+  const openDeleteJobsDialog = useCallback(
+    (companyId: number) => setDeleteJobsCompanyId(companyId),
+    []
+  );
+  const toggleCompanyActive = useCallback(
+    (companyId: number, isActive: boolean) => {
+      toggleActiveCompanyMutation({ id: companyId, isActive });
+    },
+    [toggleActiveCompanyMutation]
+  );
 
   if (isLoading) {
     return (
@@ -198,189 +506,24 @@ export function CompanyList({
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {companies.map((company) => {
-          const isSelected = selectedIds.includes(company.id);
-          const canScrapeJobs = isCompanyScrapeSupported(company.careersUrl, company.platform);
-
-          return (
-            <div
-              key={company.id}
-              onClick={() => handleCardClick(company)}
-              className={`group relative rounded-lg border bg-card/70 p-4 transition-all ${selectionMode
-                  ? isSelected
-                    ? "border-emerald-500 ring-1 ring-emerald-500/50 bg-emerald-500/5"
-                    : "border-border hover:border-emerald-500/50 cursor-pointer"
-                  : "border-border hover:border-border"
-                } ${!company.isActive && !isSelected ? "opacity-60 grayscale" : ""}`}
-            >
-              {isSelected && (
-                <div className="absolute right-2 top-2">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-400" />
-                </div>
-              )}
-
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  {company.logoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={company.logoUrl}
-                      alt={company.name}
-                      className="h-10 w-10 rounded bg-muted object-contain p-1"
-                    />
-                  ) : (
-                    <div className="flex h-10 w-10 items-center justify-center rounded bg-muted text-lg font-medium text-muted-foreground">
-                      {company.name.charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                  <div>
-                    <Link
-                      href={`/companies/${company.id}/jobs`}
-                      className="font-medium text-foreground hover:text-emerald-400 transition-colors"
-                      title={`View company details for ${company.name}`}
-                      onClick={(e) => selectionMode && e.preventDefault()}
-                    >
-                      {company.name}
-                    </Link>
-                  </div>
-                </div>
-
-                {!selectionMode && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="opacity-0 transition-opacity group-hover:opacity-100"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="end"
-                      className="w-56"
-                      onCloseAutoFocus={(event) => {
-                        if (suppressCloseAutoFocusRef.current) {
-                          event.preventDefault();
-                          suppressCloseAutoFocusRef.current = false;
-                        }
-                      }}
-                    >
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onRefreshJobs(company.id);
-                        }}
-                        disabled={isRefreshing || !canScrapeJobs}
-                        className="cursor-pointer"
-                      >
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                        <span className="truncate">Refresh Jobs</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onRefreshMatches(company.id);
-                        }}
-                        disabled={isMatching}
-                        className="text-purple-400 focus:text-purple-400 cursor-pointer"
-                      >
-                        <Sparkles className="mr-2 h-4 w-4" />
-                        <span className="truncate">Refresh Matching</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteJobsCompanyId(company.id);
-                        }}
-                        className="text-orange-400 focus:text-orange-400 cursor-pointer"
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        <span className="truncate">Delete All Jobs</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          suppressCloseAutoFocusRef.current = true;
-                          onEditCompany(company);
-                        }}
-                        className="cursor-pointer"
-                      >
-                        <Pencil className="mr-2 h-4 w-4" />
-                        <span className="truncate">Edit</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteMutation.mutate(company.id);
-                        }}
-                        className="text-red-400 focus:text-red-400 cursor-pointer"
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        <span className="truncate">Delete</span>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </div>
-
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap gap-2">
-                  {company.platform && (
-                    <Badge
-                      variant="outline"
-                      className={PLATFORM_COLORS[company.platform] || PLATFORM_COLORS.custom}
-                    >
-                      {company.platform}
-                    </Badge>
-                  )}
-                </div>
-
-                <a
-                  href={company.careersUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 hover:underline"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  {truncateUrl(company.careersUrl)}
-                </a>
-              </div>
-
-              <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <ToggleSwitch
-                    checked={company.isActive}
-                    onChange={(isActive) =>
-                      toggleActiveMutation.mutate({ id: company.id, isActive })
-                    }
-                    disabled={toggleActiveMutation.isPending}
-                  />
-                  <span className={company.isActive ? "text-emerald-400" : "text-muted-foreground"}>
-                    {company.isActive ? "Active" : "Paused"}
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  {company.lastScrapedAt ? (
-                    <span>{`Scraped ${getRelativeTime(company.lastScrapedAt)}`}</span>
-                  ) : canScrapeJobs ? (
-                    <span>Never scraped</span>
-                  ) : (
-                    <Badge
-                      variant="outline"
-                      className="border-amber-500/30 bg-amber-500/10 text-amber-300"
-                    >
-                      Scraping unavailable
-                    </Badge>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
+        {companies.map((company) => (
+          <CompanyCard
+            key={company.id}
+            company={company}
+            isSelected={selectedIdSet.has(company.id)}
+            isTogglePending={pendingToggleIds.has(company.id)}
+            selectionMode={selectionMode}
+            onToggleSelection={onToggleSelection}
+            onEditCompany={onEditCompany}
+            onRefreshJobs={onRefreshJobs}
+            onRefreshMatches={onRefreshMatches}
+            onDeleteCompany={deleteCompanyById}
+            onDeleteJobs={openDeleteJobsDialog}
+            onToggleActive={toggleCompanyActive}
+            isRefreshing={isRefreshing}
+            isMatching={isMatching}
+          />
+        ))}
       </div>
 
       <AlertDialog open={deleteJobsCompanyId !== null} onOpenChange={(open) => !open && setDeleteJobsCompanyId(null)}>

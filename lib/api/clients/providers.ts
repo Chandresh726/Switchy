@@ -2,6 +2,8 @@ import type { z } from "zod";
 
 import { successSchema } from "@/lib/api/contracts/common";
 import {
+  localCLIStatusQuerySchema,
+  localCLIStatusResponseSchema,
   providerCreateBodySchema,
   providerModelsQuerySchema,
   providerPatchBodySchema,
@@ -24,11 +26,21 @@ import {
 
 const providerPath = (id: string) => serializePathParam(ProviderRouteParamsSchema, { id });
 export type ProviderModelsQueryInput = Partial<z.output<typeof providerModelsQuerySchema>>;
+export type LocalCLIStatusProvider = z.output<typeof localCLIStatusQuerySchema>["provider"];
 
 export const getProviders = () => apiGet(
   "/api/providers",
   providerSettingsListSchema,
   "Failed to fetch providers"
+);
+
+export const getLocalCLIStatus = (provider: LocalCLIStatusProvider) => apiGet(
+  appendQuery(
+    "/api/providers/local-cli/status",
+    serializeQuery(localCLIStatusQuerySchema, { provider })
+  ),
+  localCLIStatusResponseSchema,
+  "Failed to check local CLI"
 );
 
 export const getProviderModels = (

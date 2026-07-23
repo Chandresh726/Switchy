@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/input-group";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -553,10 +554,12 @@ export function AIProvidersManager({
               const providerMetadata = metadata.find((item) => item.id === provider.provider);
               const status = providerStatus(provider);
               const isCLI = provider.kind === "local_cli";
+              const isStatusLoading = isCLI && provider.connectionStatus === undefined;
               const isEditing = editingProviderId === provider.id;
               const refreshing = Boolean(refreshingProviderIds[provider.id]);
               const canRefresh = status.ready;
               const pathKey = provider.provider === "codex_cli" ? "codex" : "opencode";
+              const providerName = provider.displayName ?? providerMetadata?.displayName ?? provider.provider;
 
               return (
                 <div key={provider.id} className="flex flex-col gap-3 rounded-lg border border-border bg-background/30 p-4">
@@ -564,20 +567,31 @@ export function AIProvidersManager({
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         {isCLI ? <Terminal className="size-4 text-emerald-500" /> : null}
-                        <span className="font-medium">{provider.displayName ?? providerMetadata?.displayName ?? provider.provider}</span>
+                        <span className="font-medium">{providerName}</span>
                         {provider.cliVersion ? <span className="text-muted-foreground">v{provider.cliVersion}</span> : null}
                       </div>
-                      <p className="mt-1 text-xs text-muted-foreground">{status.message}</p>
+                      {isStatusLoading ? (
+                        <Skeleton
+                          className="mt-1 h-3 w-48"
+                          aria-label={`${providerName} status loading`}
+                        />
+                      ) : (
+                        <p className="mt-1 text-xs text-muted-foreground">{status.message}</p>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge
-                        variant="outline"
-                        className={cn("text-xs capitalize", providerStatusClass(provider, status.ready))}
-                      >
-                        {status.ready ? <Check data-icon="inline-start" /> : <X data-icon="inline-start" />}
-                        {status.label}
-                      </Badge>
+                      {isStatusLoading ? (
+                        <Skeleton className="h-6 w-24 rounded-full" />
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className={cn("text-xs capitalize", providerStatusClass(provider, status.ready))}
+                        >
+                          {status.ready ? <Check data-icon="inline-start" /> : <X data-icon="inline-start" />}
+                          {status.label}
+                        </Badge>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"

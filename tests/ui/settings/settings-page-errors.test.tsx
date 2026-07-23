@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import SettingsPage from "@/app/(dashboard)/settings/page";
@@ -8,6 +8,9 @@ import { settingsResponseSchema } from "@/lib/api/contracts/settings";
 
 const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
+  getLocalCLIStatus: vi.fn(),
+  getProviderModels: vi.fn(),
+  getProviders: vi.fn(),
   patchSettings: vi.fn(),
   updateProvider: vi.fn(),
   updateProviderApiKey: vi.fn(),
@@ -32,8 +35,9 @@ vi.mock("@/lib/api/clients/settings", () => ({
 vi.mock("@/lib/api/clients/providers", () => ({
   createProvider: vi.fn(),
   deleteProvider: vi.fn(),
-  getProviderModels: vi.fn(),
-  getProviders: vi.fn().mockResolvedValue([]),
+  getLocalCLIStatus: mocks.getLocalCLIStatus,
+  getProviderModels: mocks.getProviderModels,
+  getProviders: mocks.getProviders,
   updateProvider: mocks.updateProvider,
   updateProviderApiKey: mocks.updateProviderApiKey,
 }));
@@ -68,14 +72,22 @@ vi.mock("@/components/settings/system-info", () => ({ SystemInfo: () => <div>Sys
 vi.mock("@/components/settings/ai-writing-section", () => ({ AIWritingSection: () => <div>AI writing</div> }));
 vi.mock("@/components/settings/ai-providers-manager", () => ({
   AIProvidersManager: (props: {
+    providers: Array<{ id: string; provider: string; connectionStatus?: string }>;
     onUpdateProvider: (id: string, input: { apiKey?: string | null }) => Promise<void>;
   }) => (
-    <button
-      type="button"
-      onClick={() => void props.onUpdateProvider("custom-provider", { apiKey: null })}
-    >
-      Remove provider credential
-    </button>
+    <div>
+      {props.providers.map((provider) => (
+        <div key={provider.id}>
+          {provider.provider}:{provider.connectionStatus ?? "checking"}
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => void props.onUpdateProvider("custom-provider", { apiKey: null })}
+      >
+        Remove provider credential
+      </button>
+    </div>
   ),
 }));
 vi.mock("@/components/settings/scraper-settings", () => ({
@@ -149,11 +161,64 @@ function renderSettings() {
 describe("settings failure recovery", () => {
   beforeEach(() => {
     mocks.getSettings.mockReset();
+    mocks.getLocalCLIStatus.mockReset();
+    mocks.getProviderModels.mockReset();
+    mocks.getProviders.mockReset();
     mocks.patchSettings.mockReset();
     mocks.updateProvider.mockReset();
     mocks.updateProviderApiKey.mockReset();
     mocks.toastError.mockReset();
     mocks.toastSuccess.mockReset();
+    mocks.getProviders.mockResolvedValue([]);
+    mocks.getProviderModels.mockResolvedValue({
+      providerId: "builtin:codex-cli",
+      provider: "codex_cli",
+      models: [],
+      fetchedAt: "2026-07-23T00:00:00.000Z",
+      isStale: false,
+      source: "live",
+    });
+  });
+
+  it("renders the settings content while a local CLI status check is pending", async () => {
+    let resolveStatus: ((status: {
+      status: "ready";
+      selectable: true;
+      cliVersion: string;
+      statusMessage: string;
+      lastCheckedAt: string;
+    }) => void) | undefined;
+
+    mocks.getSettings.mockResolvedValue(settings);
+    mocks.getProviders.mockResolvedValue([{
+      id: "builtin:codex-cli",
+      provider: "codex_cli",
+      kind: "local_cli",
+      isActive: true,
+      hasApiKey: false,
+      selectable: false,
+      createdAt: null,
+      updatedAt: null,
+    }]);
+    mocks.getLocalCLIStatus.mockImplementation(() => new Promise((resolve) => {
+      resolveStatus = resolve;
+    }));
+
+    renderSettings();
+
+    expect(await screen.findByText("Matcher")).toBeTruthy();
+    expect(screen.getByText("codex_cli:checking")).toBeTruthy();
+    expect(mocks.getLocalCLIStatus).toHaveBeenCalledWith("codex_cli");
+
+    await act(async () => resolveStatus?.({
+      status: "ready",
+      selectable: true,
+      cliVersion: "1.2.3",
+      statusMessage: "2 text models available.",
+      lastCheckedAt: "2026-07-23T00:00:00.000Z",
+    }));
+
+    expect(await screen.findByText("codex_cli:ready")).toBeTruthy();
   });
 
   it("preserves the null signal when removing a provider credential", async () => {

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { localCLIConnectionStatusSchema } from "@/lib/api/contracts/providers";
+
 const settingTextInputSchema = z.string().max(20_000);
 const settingIntegerInputSchema = z.union([
   z.number().int(),
@@ -118,16 +120,7 @@ const providerSettingsListItemSchema = z.object({
   headerNames: z.array(z.string()).optional(),
   manualModelIds: z.array(z.string()).optional(),
   reasoningEfforts: z.array(z.string()).optional(),
-  connectionStatus: z
-    .enum([
-      "ready",
-      "not_installed",
-      "not_authenticated",
-      "no_models",
-      "incompatible",
-      "error",
-    ])
-    .optional(),
+  connectionStatus: localCLIConnectionStatusSchema.optional(),
   selectable: z.boolean(),
   cliVersion: z.string().optional(),
   statusMessage: z.string().optional(),

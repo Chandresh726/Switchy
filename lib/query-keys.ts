@@ -157,6 +157,7 @@ export const queryKeys = {
   providers: {
     all: ["providers"] as const,
     list: () => ["providers", "list"] as const,
+    status: (providerId: string) => ["providers", "status", providerId] as const,
     models: () => ["providers", "models"] as const,
     model: (providerId: string) => ["providers", "models", providerId] as const,
   },

@@ -56,17 +56,16 @@ describe("GET /api/providers", () => {
     });
   });
 
-  it("performs a non-generative status probe when startup warming has no result", async () => {
+  it("returns a non-selectable CLI record without blocking on a cold status probe", async () => {
     const response = await GET(new NextRequest("http://localhost/api/providers"));
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(mocks.getLocalCLIStatus).toHaveBeenCalledWith("codex_cli");
+    expect(mocks.getLocalCLIStatus).not.toHaveBeenCalled();
     expect(body[0]).toMatchObject({
-      connectionStatus: "ready",
-      selectable: true,
-      cliVersion: "1.2.3",
+      selectable: false,
     });
+    expect(body[0]).not.toHaveProperty("connectionStatus");
     expect(body[1]).not.toHaveProperty("connectionStatus");
   });
 

@@ -319,6 +319,17 @@ function CompaniesPageContent() {
     },
   });
 
+  const refreshSelectedCompany = bulkRefreshMutation.mutate;
+  const matchSelectedCompany = bulkMatchMutation.mutate;
+  const handleRefreshCompanyJobs = useCallback(
+    (companyId: number) => refreshSelectedCompany([companyId]),
+    [refreshSelectedCompany]
+  );
+  const handleRefreshCompanyMatches = useCallback(
+    (companyId: number) => matchSelectedCompany([companyId]),
+    [matchSelectedCompany]
+  );
+
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -518,8 +529,8 @@ function CompaniesPageContent() {
             selectedIds={selectedIds}
             onToggleSelection={toggleSelection}
             onEditCompany={openEditCompanyPanel}
-            onRefreshJobs={(companyId) => bulkRefreshMutation.mutate([companyId])}
-            onRefreshMatches={(companyId) => bulkMatchMutation.mutate([companyId])}
+            onRefreshJobs={handleRefreshCompanyJobs}
+            onRefreshMatches={handleRefreshCompanyMatches}
             isRefreshing={bulkRefreshMutation.isPending}
             isMatching={bulkMatchMutation.isPending || Boolean(matchSessionId)}
           />
