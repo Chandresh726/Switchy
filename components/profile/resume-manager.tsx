@@ -14,7 +14,6 @@ import type { Resume } from "@/lib/api/contracts/profile";
 import {
   AlertDialog,
   AlertDialogAction,
-  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -343,7 +342,7 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!deleteConfirmId} onOpenChange={() => setDeleteConfirmId(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent showCloseButton>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Resume Version?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -351,8 +350,7 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDeleteConfirmId(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
+            <AlertDialogAction onClick={handleDelete} className="w-full bg-red-600 hover:bg-red-700">
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -13,7 +13,7 @@ function createProps() {
     onMaxParallelScrapesChange: vi.fn(),
     keepDeviceAwake: true,
     onKeepDeviceAwakeChange: vi.fn(),
-    historyRetentionDays: 90,
+    historyRetentionDays: 60,
     onHistoryRetentionDaysChange: vi.fn(),
     filterCountry: "",
     filterCity: "",
@@ -72,7 +72,7 @@ describe("ScraperSettings", () => {
     expect(screen.getByText("Only while scrape work is active.")).toBeTruthy();
 
     fireEvent.click(
-      screen.getByRole("switch", { name: "Keep Mac awake while scraping" })
+      screen.getByRole("checkbox", { name: "Keep Mac awake while scraping" })
     );
     expect(props.onKeepDeviceAwakeChange).toHaveBeenCalledWith(false);
   });

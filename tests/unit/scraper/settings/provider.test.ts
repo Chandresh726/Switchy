@@ -68,9 +68,9 @@ describe("StoredScrapeSettingsProvider", () => {
   it.each([
     ["7", 7],
     ["3650", 3650],
-    ["6", 90],
-    ["3651", 90],
-    [null, 90],
+    ["6", 60],
+    ["3651", 60],
+    [null, 60],
   ])("parses retention %s as %i days", async (stored, expected) => {
     const { provider } = createProvider({
       scraper_history_retention_days: stored,

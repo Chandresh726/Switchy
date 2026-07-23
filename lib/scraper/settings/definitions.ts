@@ -20,7 +20,7 @@ export const SCRAPER_SETTINGS = {
   },
   historyRetentionDays: {
     key: "scraper_history_retention_days",
-    defaultValue: 90,
+    defaultValue: 60,
     minimum: 7,
     maximum: 3_650,
   },

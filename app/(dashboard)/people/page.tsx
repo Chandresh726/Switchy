@@ -35,7 +35,6 @@ import {
 import {
   AlertDialog,
   AlertDialogAction,
-  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -603,7 +602,7 @@ export default function PeoplePage() {
       />
 
       <AlertDialog open={isDeleteAllDialogOpen} onOpenChange={setIsDeleteAllDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent showCloseButton>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete All People</AlertDialogTitle>
             <AlertDialogDescription>
@@ -611,9 +610,8 @@ export default function PeoplePage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteAllMutation.isPending}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-red-600 hover:bg-red-700"
+              className="w-full bg-red-600 hover:bg-red-700"
               disabled={deleteAllMutation.isPending}
               onClick={(event) => {
                 event.preventDefault();

@@ -22,6 +22,7 @@ import {
   queueUnmatchedJobs,
 } from "@/lib/api/clients/runtime";
 import { getSettings, patchSettings } from "@/lib/api/clients/settings";
+import { AppearanceSection } from "@/components/settings/appearance-section";
 import { MatcherSection } from "@/components/settings/matcher-section";
 import { ScraperSettings } from "@/components/settings/scraper-settings";
 import { DangerZone } from "@/components/settings/danger-zone";
@@ -58,7 +59,7 @@ import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 const PROVIDER_MODELS_STALE_TIME_MS = 15 * 60 * 1000;
 const DEFAULT_SCRAPER_MAX_PARALLEL_SCRAPES = 3;
-const DEFAULT_SCRAPER_HISTORY_RETENTION_DAYS = 90;
+const DEFAULT_SCRAPER_HISTORY_RETENTION_DAYS = 60;
 
 function clampScraperParallelScrapes(value: number): number {
   return Math.min(10, Math.max(1, value));
@@ -1576,6 +1577,8 @@ function SettingsContent() {
             resumeParserReasoningEffort={resumeParserReasoningEffort}
             onResumeParserReasoningEffortChange={setResumeParserReasoningEffort}
           />
+
+          <AppearanceSection />
 
           <SystemInfo
             version={APP_VERSION}

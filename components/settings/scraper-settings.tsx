@@ -116,7 +116,7 @@ export function ScraperSettings({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-4">
         <div className="space-y-3">
           <Label>Scheduler Frequency</Label>
           <div className="flex items-center gap-3">
@@ -184,12 +184,13 @@ export function ScraperSettings({
               Only while scrape work is active.
             </p>
           </div>
-          <Switch
+          <input
+            type="checkbox"
             id="scraper-keep-device-awake"
             checked={keepDeviceAwake}
-            onCheckedChange={onKeepDeviceAwakeChange}
+            onChange={(e) => onKeepDeviceAwakeChange(e.target.checked)}
             aria-label="Keep Mac awake while scraping"
-            className="shrink-0"
+            className="h-4 w-4 shrink-0 rounded border-border bg-muted text-emerald-500 focus:ring-emerald-500 focus:ring-offset-background"
           />
         </div>
 
@@ -220,8 +221,10 @@ export function ScraperSettings({
         </div>
 
         <div className="space-y-4 pt-4 border-t border-border">
-          <Label>Location Filter</Label>
-          <p className="text-xs text-muted-foreground -mt-2">Remote jobs are always included.</p>
+          <div className="flex items-baseline justify-between gap-3">
+            <Label>Location Filter</Label>
+            <p className="text-xs text-muted-foreground">Remote jobs are always included.</p>
+          </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">

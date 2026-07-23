@@ -16,7 +16,7 @@ describe("settings service", () => {
     expect(DEFAULT_SETTINGS.follow_up_length).toBe("medium");
     expect(DEFAULT_SETTINGS.scraper_max_parallel_scrapes).toBe("3");
     expect(DEFAULT_SETTINGS.scraper_keep_device_awake).toBe("true");
-    expect(DEFAULT_SETTINGS.scraper_history_retention_days).toBe("90");
+    expect(DEFAULT_SETTINGS.scraper_history_retention_days).toBe("60");
   });
 
   it("accepts provider-native reasoning values and rejects unsafe values", () => {

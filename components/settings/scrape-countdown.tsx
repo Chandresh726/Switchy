@@ -119,7 +119,6 @@ export function ScrapeCountdown({ className }: ScrapeCountdownProps) {
   if (remainingMs !== null && remainingMs > 0) {
     return (
       <div className={cn("flex items-center gap-2 text-sm text-muted-foreground", className)}>
-        <Clock className="h-4 w-4" />
         <span className="tabular-nums">Next: {formatTimeRemaining(remainingMs)}</span>
       </div>
     );

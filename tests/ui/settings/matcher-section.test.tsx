@@ -162,7 +162,7 @@ describe("MatcherSection", () => {
     props.unmatchedCount = 12;
 
     const { rerender } = render(<MatcherSection {...props} />);
-    fireEvent.click(screen.getByRole("button", { name: "Match recent jobs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Match Unmatched" }));
 
     expect(props.onUnmatchedWindowOpen).toHaveBeenCalledOnce();
     expect(screen.getByRole("dialog")).toBeTruthy();

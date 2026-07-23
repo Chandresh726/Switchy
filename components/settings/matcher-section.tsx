@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -170,7 +169,7 @@ export function MatcherSection({
               ? matchProgress
                 ? `${matchProgress.completed}/${matchProgress.total} matched`
                 : "Matching..."
-              : "Match recent jobs"}
+              : "Match Unmatched"}
             {isMatching && matchProgress ? (
               <span className="text-xs text-muted-foreground">
                 {matchProgress.succeeded}✓ {matchProgress.failed}✕
@@ -215,10 +214,8 @@ export function MatcherSection({
             )}
           </div>
           <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
             <Button
+              className="w-full"
               onClick={handleMatchConfirmation}
               disabled={
                 !validDays ||
@@ -233,7 +230,7 @@ export function MatcherSection({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-4">
         {isMatching && matchProgress ? (
           <MatchPipelineProgress
             analysis={matchProgress.analysis}
@@ -245,7 +242,7 @@ export function MatcherSection({
         ) : null}
         {hasProviders ? (
           <>
-            <div className="grid gap-6">
+            <div className="grid gap-4">
               <div className="space-y-3 rounded-lg border border-border bg-background/30 p-4">
                 <div>
                   <Label>Job Analysis</Label>
@@ -299,7 +296,7 @@ export function MatcherSection({
                 <div>
                   <Label>Final Match</Label>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Compares the facts snapshot with the job analysis and decides the score, confidence, and evidence-linked explanation.
+                    Scores the final match with a confidence level and evidence-linked reasoning.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">

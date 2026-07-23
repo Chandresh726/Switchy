@@ -18,7 +18,6 @@ import {
 import {
   AlertDialog,
   AlertDialogAction,
-  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -314,9 +313,12 @@ function providerStatus(provider: ProviderSettingsListItem): {
   message: string;
 } {
   if (provider.kind === "local_cli") {
+    const isReady = provider.connectionStatus === "ready";
     return {
-      label: provider.connectionStatus?.replaceAll("_", " ") ?? "checking",
-      ready: provider.connectionStatus === "ready",
+      label: isReady
+        ? "connected"
+        : provider.connectionStatus?.replaceAll("_", " ") ?? "checking",
+      ready: isReady,
       message: provider.statusMessage ?? "Switchy is checking this CLI automatically.",
     };
   }
@@ -589,11 +591,11 @@ export function AIProvidersManager({
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label={isCLI ? "Edit executable path" : provider.kind === "custom" ? "Edit connection" : "Edit API key"}
-                        title={isCLI ? "Edit executable path" : provider.kind === "custom" ? "Edit connection" : "Edit API key"}
+                        aria-label={isEditing ? "Close editor" : isCLI ? "Edit executable path" : provider.kind === "custom" ? "Edit connection" : "Edit API key"}
+                        title={isEditing ? "Close editor" : isCLI ? "Edit executable path" : provider.kind === "custom" ? "Edit connection" : "Edit API key"}
                         onClick={() => beginEditing(provider)}
                       >
-                        <Pencil />
+                        {isEditing ? <X /> : <Pencil />}
                       </Button>
                       <AlertDialog>
                           <AlertDialogTrigger asChild>
@@ -601,7 +603,7 @@ export function AIProvidersManager({
                               <Trash2 className="text-muted-foreground hover:text-red-400" />
                             </Button>
                           </AlertDialogTrigger>
-                          <AlertDialogContent>
+                          <AlertDialogContent showCloseButton>
                             <AlertDialogHeader>
                               <AlertDialogTitle>Delete {provider.displayName ?? providerMetadata?.displayName ?? "provider"}?</AlertDialogTitle>
                               <AlertDialogDescription>
@@ -609,8 +611,7 @@ export function AIProvidersManager({
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction variant="destructive" onClick={() => onDeleteProvider(provider.id)}>
+                              <AlertDialogAction className="w-full" variant="destructive" onClick={() => onDeleteProvider(provider.id)}>
                                 Delete
                               </AlertDialogAction>
                             </AlertDialogFooter>
@@ -623,7 +624,10 @@ export function AIProvidersManager({
                     isCLI ? (
                       <FieldGroup>
                         <Field>
-                          <FieldLabel htmlFor={`executable-${provider.id}`}>Executable path</FieldLabel>
+                          <div className="flex items-baseline justify-between gap-3">
+                            <FieldLabel htmlFor={`executable-${provider.id}`}>Executable path</FieldLabel>
+                            <FieldDescription className="mt-0">Leave empty to use the executable from PATH.</FieldDescription>
+                          </div>
                           <InputGroup>
                             <InputGroupInput
                               id={`executable-${provider.id}`}
@@ -641,7 +645,6 @@ export function AIProvidersManager({
                               </InputGroupAddon>
                             ) : null}
                           </InputGroup>
-                          <FieldDescription>Leave empty to use the executable from PATH.</FieldDescription>
                         </Field>
                       </FieldGroup>
                     ) : provider.kind === "custom" && editCustomForm ? (
@@ -663,28 +666,32 @@ export function AIProvidersManager({
                     ) : (
                       <FieldGroup>
                         <Field data-invalid={Boolean(error)}>
-                          <FieldLabel htmlFor={`api-key-${provider.id}`}>Replacement API key</FieldLabel>
-                          <InputGroup>
-                            <InputGroupAddon><Key /></InputGroupAddon>
-                            <InputGroupInput
-                              id={`api-key-${provider.id}`}
-                              type="password"
-                              value={editApiKey}
-                              onChange={(event) => setEditApiKey(event.target.value)}
-                              placeholder="Enter a new key"
-                              aria-invalid={Boolean(error)}
-                            />
-                          </InputGroup>
-                          <FieldDescription>The stored key remains hidden and encrypted.</FieldDescription>
+                          <div className="flex items-baseline justify-between gap-3">
+                            <FieldLabel htmlFor={`api-key-${provider.id}`}>Replacement API key</FieldLabel>
+                            <FieldDescription className="mt-0">The stored key remains hidden and encrypted.</FieldDescription>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <InputGroup className="flex-1">
+                              <InputGroupAddon><Key /></InputGroupAddon>
+                              <InputGroupInput
+                                id={`api-key-${provider.id}`}
+                                type="password"
+                                value={editApiKey}
+                                onChange={(event) => setEditApiKey(event.target.value)}
+                                placeholder="Enter a new key"
+                                aria-invalid={Boolean(error)}
+                              />
+                            </InputGroup>
+                            <Button
+                              onClick={() => handleUpdateKey(provider)}
+                              disabled={updatingKey || !editApiKey.trim()}
+                            >
+                              {updatingKey ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+                              Update
+                            </Button>
+                          </div>
                           {error ? <FieldError>{error}</FieldError> : null}
                         </Field>
-                        <div className="flex justify-end gap-2">
-                          <Button variant="outline" size="sm" onClick={() => setEditingProviderId(null)}>Cancel</Button>
-                          <Button size="sm" onClick={() => handleUpdateKey(provider)} disabled={updatingKey}>
-                            {updatingKey ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Key data-icon="inline-start" />}
-                            Update key
-                          </Button>
-                        </div>
                       </FieldGroup>
                     )
                   ) : null}

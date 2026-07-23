@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { persistSidebarCollapsedAction } from "@/app/actions/sidebar";
-import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 import { cn } from "@/lib/utils";
 import {
   SIDEBAR_COOKIE_MAX_AGE,
@@ -60,12 +59,10 @@ export function Sidebar({ initialCollapsed = false }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(initialCollapsed);
 
   const toggleCollapsed = () => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      persistSidebarCollapsedClient(next);
-      void persistSidebarCollapsedAction(next);
-      return next;
-    });
+    const next = !collapsed;
+    setCollapsed(next);
+    persistSidebarCollapsedClient(next);
+    void persistSidebarCollapsedAction(next);
   };
 
   const renderNavItem = (item: { name: string; href: string; icon: React.ElementType }) => {
@@ -107,14 +104,22 @@ export function Sidebar({ initialCollapsed = false }: SidebarProps) {
         )}
       >
         {collapsed ? (
-          <Image
-            src="/Switchy-logo-nobg.png"
-            alt="Switchy"
-            width={32}
-            height={32}
-            className="h-8 w-8 rounded-lg"
-            title="Switchy"
-          />
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            aria-label="Expand sidebar"
+            title="Expand sidebar"
+            className="group relative flex h-8 w-8 items-center justify-center rounded-lg"
+          >
+            <Image
+              src="/Switchy-logo-nobg.png"
+              alt="Switchy"
+              width={32}
+              height={32}
+              className="h-8 w-8 rounded-lg transition-opacity group-hover:opacity-0"
+            />
+            <ChevronRight className="absolute h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+          </button>
         ) : (
           <span className="text-xl font-semibold text-foreground">Switchy</span>
         )}
@@ -131,20 +136,6 @@ export function Sidebar({ initialCollapsed = false }: SidebarProps) {
         )}
       </div>
 
-      {collapsed && (
-        <div className="flex justify-center border-b border-sidebar-border py-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-muted-foreground"
-            onClick={toggleCollapsed}
-            aria-label="Expand sidebar"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
-
       {/* Main Navigation */}
       <nav className={cn("flex-1 space-y-1 py-4", collapsed ? "px-2" : "px-3")}>
         {mainNavigation.map(renderNavItem)}
@@ -160,7 +151,6 @@ export function Sidebar({ initialCollapsed = false }: SidebarProps) {
         {renderNavItem(peopleNavigation)}
         {renderNavItem(historyNavigation)}
         {renderNavItem(settingsNavigation)}
-        <ThemeToggle collapsed={collapsed} />
       </div>
     </aside>
   );
