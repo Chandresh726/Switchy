@@ -127,7 +127,7 @@ async function signalProcessTree(
         "/PID",
         String(pid),
         "/T",
-        ...(signal === "SIGKILL" ? ["/F"] : []),
+        "/F",
       ],
       { stdio: "ignore", windowsHide: true }
     );
