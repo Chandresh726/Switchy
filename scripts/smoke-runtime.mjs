@@ -113,21 +113,29 @@ try {
     throw new Error(`OpenCode status returned ${openCodeResponse.status}`);
   }
   const openCodeStatus = await openCodeResponse.json();
-  if (
-    openCodeStatus.status !== "ready"
-    || openCodeStatus.cliVersion !== "8.8.8"
+  let openCodePid;
+  if (openCodeStatus.status === "ready") {
+    if (openCodeStatus.cliVersion !== "8.8.8") {
+      throw new Error(
+        `Unexpected OpenCode status: ${JSON.stringify(openCodeStatus)}`
+      );
+    }
+    openCodePid = Number((await readFile(openCodePidPath, "utf8")).trim());
+  } else if (
+    process.platform !== "win32"
+    || openCodeStatus.status !== "error"
+    || openCodeStatus.selectable !== false
   ) {
     throw new Error(
       `Unexpected OpenCode status: ${JSON.stringify(openCodeStatus)}`
     );
   }
-  const openCodePid = Number((await readFile(openCodePidPath, "utf8")).trim());
   await execute(
     process.execPath,
     [cli, "stop"],
     { env: environment, timeout: 30_000 }
   );
-  await waitForProcessExit(openCodePid);
+  if (openCodePid) await waitForProcessExit(openCodePid);
   const stopped = await execute(
     process.execPath,
     [cli, "status"],
