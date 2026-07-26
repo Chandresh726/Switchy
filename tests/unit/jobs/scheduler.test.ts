@@ -178,10 +178,12 @@ describe("scheduler recovery", () => {
 
   it("records missed executions as skipped sessions and pending recovery", async () => {
     const scheduler = await import("@/lib/jobs/scheduler");
+    const missedAt = new Date(2026, 3, 5, 6, 30);
+    const expectedScheduledFor = new Date(2026, 3, 5, 6);
 
     await scheduler.startScheduler();
     await store.task?.listeners.get("execution:missed")?.({
-      date: new Date("2026-04-05T06:30:00.000Z"),
+      date: missedAt,
     });
 
     const status = await scheduler.getSchedulerStatus();
@@ -189,10 +191,16 @@ describe("scheduler recovery", () => {
     expect(store.sessions).toHaveLength(1);
     expect(store.sessions[0]?.status).toBe("skipped");
     expect(store.sessions[0]?.triggerSource).toBe("scheduler");
-    expect((store.sessions[0]?.scheduledForAt as Date)?.toISOString()).toBe("2026-04-05T00:30:00.000Z");
-    expect((store.sessions[0]?.startedAt as Date)?.toISOString()).toBe("2026-04-05T00:30:00.000Z");
+    expect(
+      (store.sessions[0]?.scheduledForAt as Date)?.toISOString()
+    ).toBe(expectedScheduledFor.toISOString());
+    expect(
+      (store.sessions[0]?.startedAt as Date)?.toISOString()
+    ).toBe(expectedScheduledFor.toISOString());
     expect(status.pendingMissedCount).toBe(1);
-    expect(status.oldestMissedRun?.toISOString()).toBe("2026-04-05T00:30:00.000Z");
+    expect(status.oldestMissedRun?.toISOString()).toBe(
+      expectedScheduledFor.toISOString()
+    );
   });
 
   it("migrates legacy scheduler keys into one versioned recovery record", async () => {
