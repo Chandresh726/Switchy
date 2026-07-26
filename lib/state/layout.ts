@@ -350,7 +350,13 @@ function acquireLayoutLock(
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       const owner = readLayoutLockOwner(lockDirectory);
-      const lockAgeMs = Date.now() - lstatSync(lockDirectory).mtimeMs;
+      let lockAgeMs: number;
+      try {
+        lockAgeMs = Date.now() - lstatSync(lockDirectory).mtimeMs;
+      } catch (lockError) {
+        if ((lockError as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw lockError;
+      }
       if (
         (owner && !processIsAlive(owner.pid))
         || (!owner && lockAgeMs > INVALID_LAYOUT_LOCK_GRACE_MS)

@@ -64,7 +64,7 @@ Before the first public release:
    reviewers if release approval is desired.
 2. Keep `NPM_TRUSTED_PUBLISHING_READY` unset for the first release because npm
    trusted publishing can only be configured after the package exists.
-3. Push the stabilized commit and the matching `v1.0.4` tag. The workflow
+3. Push the stabilized commit and the matching `v1.0.5` tag. The workflow
    publishes the five runtimes, checksum manifest, and GitHub release.
 4. From an authenticated owner account, run
    `npm publish ./packages/cli --access public` at that exact tag.
