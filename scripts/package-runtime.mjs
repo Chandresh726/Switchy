@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { createRequire } from "node:module";
 import {
   cp,
   mkdir,
   readFile,
+  readdir,
   realpath,
   rm,
   stat,
@@ -82,51 +82,119 @@ await cp(
   path.join(runtimeDirectory, "node_modules"),
   { recursive: true, verbatimSymlinks: true }
 );
-const betterSqlite3Source = await realpath(
-  path.join(projectDirectory, "node_modules", "better-sqlite3")
-);
-const betterSqlite3Require = createRequire(
-  path.join(betterSqlite3Source, "package.json")
-);
-const bindingsSource = path.dirname(
-  betterSqlite3Require.resolve("bindings/package.json")
-);
-const bindingsRequire = createRequire(
-  path.join(bindingsSource, "package.json")
-);
-const fileUriToPathSource = path.dirname(
-  bindingsRequire.resolve("file-uri-to-path/package.json")
-);
-for (const [name, source] of [
-  ["bindings", bindingsSource],
-  ["file-uri-to-path", fileUriToPathSource],
-]) {
-  const destination = path.join(runtimeDirectory, "node_modules", name);
-  await rm(destination, { recursive: true, force: true });
-  await cp(source, destination, { recursive: true });
-}
-const playwrightSource = await realpath(
+const projectPlaywrightSource = await realpath(
   path.join(projectDirectory, "node_modules", "playwright")
 );
-const playwrightCoreSource = await realpath(
-  path.join(path.dirname(playwrightSource), "playwright-core")
-);
-const playwrightDestination = await realpath(
-  path.join(runtimeDirectory, "node_modules", "playwright")
-);
-const playwrightCoreDestination = await realpath(
-  path.join(path.dirname(playwrightDestination), "playwright-core")
-);
-for (const [source, destination] of [
-  [playwrightSource, playwrightDestination],
-  [playwrightCoreSource, playwrightCoreDestination],
-]) {
-  await rm(destination, { recursive: true, force: true });
-  await cp(source, destination, {
-    recursive: true,
-    verbatimSymlinks: true,
-  });
+const preferredPackageSources = new Map([
+  ["playwright", projectPlaywrightSource],
+  [
+    "playwright-core",
+    await realpath(
+      path.join(path.dirname(projectPlaywrightSource), "playwright-core")
+    ),
+  ],
+]);
+
+async function packageEntries(nodeModulesDirectory) {
+  const packages = [];
+  for (const entry of await readdir(nodeModulesDirectory, {
+    withFileTypes: true,
+  })) {
+    if (entry.name.startsWith(".")) continue;
+    if (!entry.name.startsWith("@")) {
+      packages.push(entry.name);
+      continue;
+    }
+    const scopeDirectory = path.join(nodeModulesDirectory, entry.name);
+    for (const scopedEntry of await readdir(scopeDirectory, {
+      withFileTypes: true,
+    })) {
+      packages.push(`${entry.name}/${scopedEntry.name}`);
+    }
+  }
+  return packages;
 }
+
+async function materializePackage(source, destination, ancestors = new Set()) {
+  let resolvedSource = await realpath(source);
+  let packageDefinition = JSON.parse(
+    await readFile(path.join(resolvedSource, "package.json"), "utf8")
+  );
+  const preferredSource = preferredPackageSources.get(packageDefinition.name);
+  if (preferredSource) {
+    const projectDefinition = JSON.parse(
+      await readFile(path.join(preferredSource, "package.json"), "utf8")
+    );
+    if (projectDefinition.version === packageDefinition.version) {
+      resolvedSource = preferredSource;
+      packageDefinition = projectDefinition;
+    }
+  }
+  if (ancestors.has(resolvedSource)) return;
+
+  await mkdir(path.dirname(destination), { recursive: true });
+  await rm(destination, { recursive: true, force: true });
+  await cp(resolvedSource, destination, {
+    recursive: true,
+    dereference: true,
+  });
+
+  const dependencies = new Set([
+    ...Object.keys(packageDefinition.dependencies ?? {}),
+    ...Object.keys(packageDefinition.optionalDependencies ?? {}),
+    ...Object.keys(packageDefinition.peerDependencies ?? {}),
+  ]);
+  const dependencyDirectory = path.dirname(resolvedSource);
+  const nextAncestors = new Set(ancestors).add(resolvedSource);
+  for (const dependency of dependencies) {
+    const dependencySource = path.join(dependencyDirectory, dependency);
+    if (!(await stat(dependencySource).catch(() => null))?.isDirectory()) {
+      continue;
+    }
+    await materializePackage(
+      dependencySource,
+      path.join(destination, "node_modules", dependency),
+      nextAncestors
+    );
+  }
+}
+
+async function materializeSymlinks(directory) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (entry.name === ".pnpm") continue;
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isSymbolicLink()) {
+      const source = await realpath(entryPath);
+      const sourceStats = await stat(source);
+      const packageDefinition = sourceStats.isDirectory()
+        ? await stat(path.join(source, "package.json")).catch(() => null)
+        : null;
+      if (packageDefinition?.isFile()) {
+        await materializePackage(source, entryPath);
+      } else {
+        await rm(entryPath, { recursive: true, force: true });
+        await cp(source, entryPath, {
+          recursive: sourceStats.isDirectory(),
+          dereference: true,
+        });
+      }
+    }
+    if ((await stat(entryPath)).isDirectory()) {
+      await materializeSymlinks(entryPath);
+    }
+  }
+}
+
+const runtimeNodeModules = path.join(runtimeDirectory, "node_modules");
+for (const packageName of await packageEntries(runtimeNodeModules)) {
+  const destination = path.join(runtimeNodeModules, packageName);
+  await materializePackage(destination, destination);
+}
+await materializeSymlinks(runtimeDirectory);
+await rm(path.join(runtimeNodeModules, ".pnpm"), {
+  recursive: true,
+  force: true,
+});
 await mkdir(path.join(runtimeDirectory, ".next"), { recursive: true });
 await cp(
   path.join(projectDirectory, ".next", "static"),
@@ -171,13 +239,7 @@ const archivePath = path.join(releaseAssetsDirectory, archiveName);
 await rm(archivePath, { force: true });
 const archive = spawnSync(
   "tar",
-  [
-    process.platform === "win32" ? "-czhf" : "-czf",
-    archivePath,
-    "-C",
-    runtimeDirectory,
-    ".",
-  ],
+  ["-czf", archivePath, "-C", runtimeDirectory, "."],
   { stdio: "inherit" }
 );
 if (archive.status !== 0) {

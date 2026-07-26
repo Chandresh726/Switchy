@@ -113,7 +113,7 @@ describe("Switchy CLI release handling", () => {
   });
 
   it("uses the executing CLI version unless an app version is requested", () => {
-    expect(resolveApplicationVersion()).toBe("1.0.3");
+    expect(resolveApplicationVersion()).toBe("1.0.4");
     expect(resolveApplicationVersion("1.0.1")).toBe("1.0.1");
   });
 
