@@ -7,7 +7,6 @@ type Theme = "dark" | "light";
 interface UseThemeReturn {
   theme: Theme;
   toggleTheme: () => void;
-  setTheme: (theme: Theme) => void;
 }
 
 function getSystemPreference(): Theme {
@@ -78,13 +77,8 @@ export function useTheme(): UseThemeReturn {
     setThemeInternal(currentTheme === "dark" ? "light" : "dark");
   }, []);
 
-  const setTheme = useCallback((newTheme: Theme) => {
-    setThemeInternal(newTheme);
-  }, []);
-
   return {
     theme: isHydrated ? theme : "dark",
     toggleTheme,
-    setTheme,
   };
 }

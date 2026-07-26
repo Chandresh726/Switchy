@@ -1,6 +1,6 @@
 import { Navbar } from "@/components/navbar";
 import { Hero } from "@/components/hero";
-import { Screenshots } from "@/components/screenshots";
+import { ProductDemo } from "@/components/product-demo";
 import { Features } from "@/components/features";
 import { HowItWorks } from "@/components/how-it-works";
 import { TechStack } from "@/components/tech-stack";
@@ -15,7 +15,7 @@ export default function LandingPage() {
     <main className="relative">
       <Navbar />
       <Hero />
-      <Screenshots />
+      <ProductDemo />
       <SectionDivider top="grid" bottom="plain" />
       <Features />
       <SectionDivider top="plain" bottom="grid" />

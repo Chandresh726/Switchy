@@ -18,7 +18,3 @@ export const SITE_CONFIG = {
   ],
   author: "Chandresh",
 } as const;
-
-export const SOCIAL_LINKS = {
-  github: SITE_CONFIG.github,
-} as const;

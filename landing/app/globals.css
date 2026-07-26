@@ -26,6 +26,7 @@
     --text-secondary: #a1a1aa;
     --border-color: #ffffff;
     --grid-color: rgba(255,255,255,0.1);
+    --video-glow-rgb: 255 255 255;
   }
   
   html:not(.dark) {
@@ -36,6 +37,7 @@
     --text-secondary: #52525b;
     --border-color: #000000;
     --grid-color: rgba(0,0,0,0.03);
+    --video-glow-rgb: 0 0 0;
   }
   
   body {
@@ -88,21 +90,9 @@
     background-attachment: fixed;
   }
   
-  .marquee {
-    animation: marquee 20s linear infinite;
+  .video-glow {
+    position: relative;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 0 24px 4px rgb(var(--video-glow-rgb) / 0.36);
   }
-  
-  .marquee-reverse {
-    animation: marquee-reverse 20s linear infinite;
-  }
-}
-
-@keyframes marquee {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
-}
-
-@keyframes marquee-reverse {
-  0% { transform: translateX(-50%); }
-  100% { transform: translateX(0); }
 }

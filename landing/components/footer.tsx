@@ -3,7 +3,7 @@
 import Image from "next/image";
 
 import { GithubIcon } from "@/components/icons";
-import { SITE_CONFIG, SOCIAL_LINKS } from "@/lib/constants";
+import { SITE_CONFIG } from "@/lib/constants";
 
 export function Footer() {
   return (
@@ -28,7 +28,7 @@ export function Footer() {
           </button>
           
           <div className="hidden sm:flex items-center gap-4">
-            <a href={SOCIAL_LINKS.github} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-[var(--text-primary)] hover:text-[#10b981] transition-colors font-bold text-sm">
+            <a href={SITE_CONFIG.github} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-[var(--text-primary)] hover:text-[#10b981] transition-colors font-bold text-sm">
               <GithubIcon className="w-4 h-4" />
               GitHub
             </a>

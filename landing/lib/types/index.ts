@@ -34,18 +34,6 @@ export interface PlatformItem {
   logo: string;
 }
 
-export interface ScreenshotImage {
-  darkSrc: string;
-  lightSrc: string;
-  url: string;
-}
-
-export interface ScreenshotItem {
-  images: ScreenshotImage[];
-  title: string;
-  description: string;
-}
-
 export interface SetupStep {
   step: string;
   title: string;
