@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
+import { createRequire } from "node:module";
 import {
   cp,
   mkdir,
@@ -85,7 +86,25 @@ await cp(
 const projectPlaywrightSource = await realpath(
   path.join(projectDirectory, "node_modules", "playwright")
 );
+const projectBetterSqliteSource = await realpath(
+  path.join(projectDirectory, "node_modules", "better-sqlite3")
+);
+const projectBetterSqliteRequire = createRequire(
+  path.join(projectBetterSqliteSource, "package.json")
+);
+const projectBindingsSource = path.dirname(
+  projectBetterSqliteRequire.resolve("bindings/package.json")
+);
+const projectBindingsRequire = createRequire(
+  path.join(projectBindingsSource, "package.json")
+);
+const projectFileUriToPathSource = path.dirname(
+  projectBindingsRequire.resolve("file-uri-to-path/package.json")
+);
 const preferredPackageSources = new Map([
+  ["better-sqlite3", projectBetterSqliteSource],
+  ["bindings", projectBindingsSource],
+  ["file-uri-to-path", projectFileUriToPathSource],
   ["playwright", projectPlaywrightSource],
   [
     "playwright-core",
@@ -113,6 +132,33 @@ async function packageEntries(nodeModulesDirectory) {
     }
   }
   return packages;
+}
+
+async function resolvePackageDependency(packageDirectory, dependency) {
+  const packageRequire = createRequire(
+    path.join(packageDirectory, "package.json")
+  );
+  try {
+    return path.dirname(packageRequire.resolve(`${dependency}/package.json`));
+  } catch {
+    let entryPoint;
+    try {
+      entryPoint = packageRequire.resolve(dependency);
+    } catch {
+      return null;
+    }
+    let candidate = path.dirname(entryPoint);
+    while (true) {
+      const definitionPath = path.join(candidate, "package.json");
+      const definition = await readFile(definitionPath, "utf8")
+        .then((value) => JSON.parse(value))
+        .catch(() => null);
+      if (definition?.name === dependency) return candidate;
+      const parent = path.dirname(candidate);
+      if (parent === candidate) return null;
+      candidate = parent;
+    }
+  }
 }
 
 async function materializePackage(source, destination, ancestors = new Set()) {
@@ -144,13 +190,13 @@ async function materializePackage(source, destination, ancestors = new Set()) {
     ...Object.keys(packageDefinition.optionalDependencies ?? {}),
     ...Object.keys(packageDefinition.peerDependencies ?? {}),
   ]);
-  const dependencyDirectory = path.dirname(resolvedSource);
   const nextAncestors = new Set(ancestors).add(resolvedSource);
   for (const dependency of dependencies) {
-    const dependencySource = path.join(dependencyDirectory, dependency);
-    if (!(await stat(dependencySource).catch(() => null))?.isDirectory()) {
-      continue;
-    }
+    const dependencySource = await resolvePackageDependency(
+      resolvedSource,
+      dependency
+    );
+    if (!dependencySource) continue;
     await materializePackage(
       dependencySource,
       path.join(destination, "node_modules", dependency),
