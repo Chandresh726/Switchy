@@ -11,6 +11,17 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
+  output: "standalone",
+  outputFileTracingExcludes: {
+    "/*": [
+      "./coverage/**/*",
+      "./demo-video/**/*",
+      "./docs/**/*",
+      "./landing/**/*",
+      "./packages/**/*",
+      "./tests/**/*",
+    ],
+  },
   async headers() {
     return [
       {

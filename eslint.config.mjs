@@ -58,6 +58,8 @@ const eslintConfig = defineConfig([
     "coverage/**",
     "out/**",
     "build/**",
+    "dist/**",
+    "packages/cli/dist/**",
     "next-env.d.ts",
     // Separate Next.js app (landing page)
     "landing/**",

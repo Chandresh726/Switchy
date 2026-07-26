@@ -4,6 +4,23 @@ Switchy is a local-first job scraping, matching, and tracking app built with Nex
 
 It helps you discover jobs from multiple ATS platforms, match them against your profile/resume with AI, generate outreach content, and track everything locally.
 
+## Run Switchy
+
+After the stable package is published, users only need Node.js 24:
+
+```bash
+npx @chandresh726/switchy@latest start
+npx @chandresh726/switchy@latest status
+npx @chandresh726/switchy@latest stop
+```
+
+The first start downloads and checksum-verifies the runtime for the current
+operating system, installs the required Chromium build, migrates the local
+database, and starts Switchy on
+[http://127.0.0.1:3000](http://127.0.0.1:3000). Later starts reuse the local
+runtime. Run `npx @chandresh726/switchy@latest update` to install the latest
+stable application release.
+
 ## Current Capabilities
 
 - Scrape jobs from `Greenhouse`, `Lever`, `Ashby`, `Eightfold`, `Workday`, `ServiceNow`, `Zwayam`, `MynextHire`, `Uber`, `Google`, `Atlassian`, `Rippling`, `Visa`, and `Nutanix`
@@ -30,13 +47,15 @@ It helps you discover jobs from multiple ATS platforms, match them against your 
 ## Prerequisites
 
 - Node.js `v24`
-- `pnpm`
-- Native build tools for `better-sqlite3` (Python + C/C++ toolchain)
-- Internet access on first install (Playwright Chromium is auto-installed)
+- Internet access on first CLI start (the runtime and Playwright Chromium are
+  downloaded automatically)
 - AI provider credentials (optional, only required for AI-powered features)
 - Optional local CLI provider: an installed and authenticated `codex` or `opencode` executable
 
-## Local Setup
+Source development additionally requires `pnpm` and native build tools for
+`better-sqlite3`.
+
+## Source Development
 
 ```bash
 pnpm install
@@ -69,16 +88,18 @@ bounded query text and paginated responses are the preferred tradeoff.
 
 ## Data Storage
 
-- Development state: `~/.switchy/dev/`
-  - DB: `~/.switchy/dev/switchy.db`
-  - Uploads: `~/.switchy/dev/uploads/`
-  - Encryption secret: `~/.switchy/dev/encryption.secret`
-- Production state: `~/.switchy/`
-  - DB: `~/.switchy/switchy.db`
-  - Uploads: `~/.switchy/uploads/`
-  - Encryption secret: `~/.switchy/encryption.secret`
+- Development data: `~/.switchy/data/development/`
+- Production data: `~/.switchy/data/production/`
+- Installed application versions: `~/.switchy/app/versions/`
+- Process metadata: `~/.switchy/runtime/`
+- Logs: `~/.switchy/logs/`
+- Download and browser caches: `~/.switchy/cache/`
+- Automatic update and migration snapshots: `~/.switchy/update-snapshots/`
 
-No `.env` setup is required for standard local usage.
+Each data directory contains its own `switchy.db`, `uploads/`, and
+`encryption.secret`. Existing `~/.switchy` and `~/.switchy/dev` data is
+snapshotted and moved into this unified layout automatically on the first
+start. No `.env` setup is required for standard local usage.
 
 ## Scraper Internals
 
@@ -114,12 +135,15 @@ existing Settings System Info card.
 | `pnpm dev` | Start local app (development mode) |
 | `pnpm build` | Build for production |
 | `pnpm start` | Start production server |
+| `pnpm distribution:verify` | Verify the CLI and local-layout distribution contracts |
+| `pnpm runtime:package` | Package the current platform's standalone runtime |
 | `pnpm lint` | Run ESLint |
 | `pnpm typecheck` | Run TypeScript without emitting files |
 | `pnpm deadcode` | Reject unused root-app files, exports, and dependencies |
 | `pnpm test:run` | Run tests once |
-| `pnpm audit` | Check dependencies for known vulnerabilities |
-| `pnpm verify` | Run lint, typecheck, tests, audit, and production build |
+| `pnpm audit` | Check all production and development dependencies |
+| `pnpm audit:prod` | Check shipped dependencies for known vulnerabilities |
+| `pnpm verify` | Run lint, typecheck, tests, production audit, and production build |
 | `pnpm verify:all` | Run root verification plus landing app verification |
 | `pnpm ai:eval` | Run deterministic AI matching, writing, and resume evaluations |
 | `pnpm db:generate` | Generate Drizzle migrations from schema changes |
@@ -133,8 +157,8 @@ existing Settings System Info card.
 
 Switchy stores the API-key encryption secret in the local state directory, not in `.env`:
 
-- Development: `~/.switchy/dev/encryption.secret`
-- Production: `~/.switchy/encryption.secret`
+- Development: `~/.switchy/data/development/encryption.secret`
+- Production: `~/.switchy/data/production/encryption.secret`
 
 Back up this file with the matching database. Losing it means stored provider API keys cannot be decrypted and must be re-entered.
 
@@ -153,7 +177,7 @@ pnpm state:backup -- --environment production --output ~/switchy-backups/product
 pnpm state:backup:verify -- --from ~/switchy-backups/production-2026-07-16
 ```
 
-Use `development` for `~/.switchy/dev`. A snapshot without an encryption secret
+Use `development` for `~/.switchy/data/development`. A snapshot without an encryption secret
 is valid only when the source state did not have one; stored encrypted provider
 keys require the secret from the same snapshot.
 
@@ -166,12 +190,12 @@ pnpm state:restore -- --environment production --from ~/switchy-backups/producti
 ```
 
 Before switching directories, restore creates a verified automatic rollback
-snapshot beside the top-level `~/.switchy` state root and prints its location. Keep that
+snapshot under `~/.switchy/update-snapshots` and prints its location. Keep that
 snapshot until the restored application starts successfully and the expected
 profile, resumes, uploads, companies, and job history are present. If restore is
 interrupted before activation or staged validation fails, the current state is
-left unchanged. Production restore preserves the separate development state in
-`~/.switchy/dev`.
+left unchanged. Production and development restore operate on separate data
+directories.
 
 ## Local Health and Recovery
 
@@ -190,3 +214,7 @@ the cause, then restart Switchy and recheck readiness. Provider availability is
 nonessential and does not make the web application unready. See the
 [Backend Architecture recovery runbook](docs/backend-architecture.md#recovery-runbook)
 for the complete sequence.
+
+## License
+
+Switchy is available under the [MIT License](LICENSE).

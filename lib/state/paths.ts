@@ -1,21 +1,14 @@
-import path from "path";
-import os from "os";
-import fs from "fs";
+import fs from "node:fs";
+import path from "node:path";
 
-/**
- * Centralized state paths for Switchy application.
- * All application state is stored in ~/.switchy to ensure persistence
- * across git operations and project directory changes.
- * 
- * Environment-specific structure:
- * - Development: ~/.switchy/dev/ (switchy.db, uploads/, etc.)
- * - Production: ~/.switchy/ (switchy.db, uploads/, etc.)
- */
+import { getStatePaths } from "./environment-paths";
+import { ensureSwitchyLayoutSync } from "./layout";
 
 const isDev = process.env.NODE_ENV === "development";
-const baseDirectory = path.join(os.homedir(), ".switchy");
-const coordinationDirectory = `${baseDirectory}.coordination`;
-const stateDirectory = isDev ? path.join(baseDirectory, "dev") : baseDirectory;
+const environment = isDev ? "development" : "production";
+const paths = getStatePaths(environment);
+const coordinationDirectory = paths.coordinationDirectory;
+const stateDirectory = paths.stateDirectory;
 const uploadsDirectory = path.join(stateDirectory, "uploads");
 const databasePath = path.join(stateDirectory, "switchy.db");
 const encryptionSecretPath = path.join(stateDirectory, "encryption.secret");
@@ -43,8 +36,12 @@ export function getEncryptionSecretPath(): string {
  * @param relativePath - path relative to uploads dir (e.g., "resumes/file.pdf")
  */
 export function getUploadFilePath(relativePath: string): string {
-  const resolvedPath = path.resolve(uploadsDirectory, relativePath);
-  const uploadRoot = path.resolve(uploadsDirectory);
+  const resolvedPath = path.resolve(
+    uploadsDirectory,
+    /* turbopackIgnore: true */
+    relativePath
+  );
+  const uploadRoot = path.normalize(uploadsDirectory);
   if (resolvedPath !== uploadRoot && !resolvedPath.startsWith(`${uploadRoot}${path.sep}`)) {
     throw new Error("Upload path escapes uploads directory");
   }
@@ -53,9 +50,10 @@ export function getUploadFilePath(relativePath: string): string {
 
 /**
  * Ensure the state directory structure exists
- * Creates ~/.switchy/dev (or ~/.switchy) and ~/.switchy/dev/uploads if missing
+ * Creates the unified ~/.switchy layout and the active environment's uploads directory
  */
 export function ensureStateDir(): void {
+  ensureSwitchyLayoutSync(paths.rootStateDirectory);
   if (!fs.existsSync(stateDirectory)) {
     fs.mkdirSync(stateDirectory, { recursive: true, mode: 0o700 });
   }

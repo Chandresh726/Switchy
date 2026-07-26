@@ -7,9 +7,9 @@ import { ensureStateDir, getDbPath } from "../state/paths";
 ensureStateDir();
 const sqlite = new Database(getDbPath());
 
-// Enable WAL mode for better performance
+// Apply the lock wait before any pragma that may need a write lock.
+sqlite.pragma("busy_timeout = 5000");
 sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON");
-sqlite.pragma("busy_timeout = 5000");
 
 export const db = drizzle(sqlite, { schema });

@@ -1,7 +1,9 @@
-export const APP_VERSION = "0.5.0";
-export const DB_PATH = process.env.NODE_ENV === "development" 
-  ? "~/.switchy/dev/switchy.db" 
-  : "~/.switchy/switchy.db";
+import packageJson from "@/package.json";
+
+export const APP_VERSION = packageJson.version;
+export const DB_PATH = process.env.NODE_ENV === "development"
+  ? "~/.switchy/data/development/switchy.db"
+  : "~/.switchy/data/production/switchy.db";
 
 export const MAX_CSV_FILE_SIZE = 10 * 1024 * 1024;
 export const MAX_RESUME_FILE_SIZE = 5 * 1024 * 1024;

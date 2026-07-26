@@ -13,7 +13,12 @@ import * as schema from "../../../lib/db/schema";
 
 const fixtures = path.join(process.cwd(), "tests", "fixtures", "ai");
 const codexExecutable = path.join(fixtures, "fake-codex-cli.mjs");
-const stateDirectory = path.join(os.homedir(), ".switchy");
+const stateDirectory = path.join(
+  os.homedir(),
+  ".switchy",
+  "data",
+  "production"
+);
 mkdirSync(stateDirectory, { recursive: true });
 
 const migrationConnection = new Database(path.join(stateDirectory, "switchy.db"));

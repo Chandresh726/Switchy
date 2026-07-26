@@ -29,14 +29,10 @@ const DENY_ALL_PERMISSIONS = [
 
 type OpenCodeSDK = typeof import("@opencode-ai/sdk/v2");
 export type OpenCodeSDKLoader = () => Promise<OpenCodeSDK>;
-const importESModule = new Function(
-  "specifier",
-  "return import(specifier)"
-) as (specifier: string) => Promise<OpenCodeSDK>;
 let sdkPromise: Promise<OpenCodeSDK> | undefined;
 
 function loadOpenCodeSDK(): Promise<OpenCodeSDK> {
-  sdkPromise ??= importESModule("@opencode-ai/sdk/v2");
+  sdkPromise ??= import("@opencode-ai/sdk/v2");
   return sdkPromise;
 }
 
@@ -613,56 +609,59 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
       }
     });
 
-    const authorization = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
-    const { createOpencodeClient } = await this.loadSDK();
-    const client = createOpencodeClient({
-      baseUrl: `http://127.0.0.1:${port}`,
-      headers: { Authorization: authorization },
-    });
-
-    const deadline = Date.now() + 10_000;
-    while (Date.now() < deadline) {
-      if (processError || child.exitCode !== null) break;
-      try {
-        const health = await client.global.health({
-          signal: AbortSignal.timeout(1_000),
-        });
-        if (health.data) {
-          this.version = health.data.version;
-          this.client = client;
-          this.scheduleIdleShutdown();
-          return client;
-        }
-        if (health.response?.status === 404) {
-          child.kill("SIGTERM");
-          this.process = null;
-          throw new AIError({
-            type: "validation",
-            message: "OpenCode CLI protocol is incompatible",
-            retryable: false,
-          });
-        }
-      } catch (error) {
-        if (error instanceof AIError && error.type === "validation") throw error;
-        // The process may still be starting.
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-
-    child.kill("SIGTERM");
-    this.process = null;
-    if (!processError && child.exitCode !== null && unsupportedStartupOptions) {
-      throw new AIError({
-        type: "validation",
-        message: "OpenCode CLI protocol is incompatible",
-        retryable: false,
+    try {
+      const authorization = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
+      const { createOpencodeClient } = await this.loadSDK();
+      const client = createOpencodeClient({
+        baseUrl: `http://127.0.0.1:${port}`,
+        headers: { Authorization: authorization },
       });
+
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline) {
+        if (processError || child.exitCode !== null) break;
+        try {
+          const health = await client.global.health({
+            signal: AbortSignal.timeout(1_000),
+          });
+          if (health.data) {
+            this.version = health.data.version;
+            this.client = client;
+            this.scheduleIdleShutdown();
+            return client;
+          }
+          if (health.response?.status === 404) {
+            throw new AIError({
+              type: "validation",
+              message: "OpenCode CLI protocol is incompatible",
+              retryable: false,
+            });
+          }
+        } catch (error) {
+          if (error instanceof AIError && error.type === "validation") throw error;
+          // The process may still be starting.
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      if (!processError && child.exitCode !== null && unsupportedStartupOptions) {
+        throw new AIError({
+          type: "validation",
+          message: "OpenCode CLI protocol is incompatible",
+          retryable: false,
+        });
+      }
+      throw new AIError({
+        type: "network",
+        message: "OpenCode server did not become ready",
+        cause: processError,
+      });
+    } catch (error) {
+      child.kill("SIGTERM");
+      if (this.process === child) this.process = null;
+      this.client = null;
+      throw error;
     }
-    throw new AIError({
-      type: "network",
-      message: "OpenCode server did not become ready",
-      cause: processError,
-    });
   }
 
   private beginOperation(): void {

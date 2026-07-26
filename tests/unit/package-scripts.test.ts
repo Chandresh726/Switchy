@@ -24,7 +24,10 @@ describe("package scripts", () => {
   it("only references script files that exist", () => {
     const packageJson = readPackageManifest();
     const referencedFiles = Object.values(packageJson.scripts).flatMap((command) =>
-      Array.from(command.matchAll(/\bscripts\/[\w./-]+/g), ([file]) => file)
+      Array.from(
+        command.matchAll(/\b(?:[\w.-]+\/)*scripts\/[\w./-]+/g),
+        ([file]) => file
+      )
     );
 
     expect(referencedFiles.length).toBeGreaterThan(0);

@@ -1,0 +1,42 @@
+{
+  "name": "@chandresh726/switchy",
+  "version": "1.0.2",
+  "description": "Install, run, update, and stop the local-first Switchy application.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "switchy": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Chandresh726/Switchy.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/Chandresh726/Switchy#readme",
+  "bugs": {
+    "url": "https://github.com/Chandresh726/Switchy/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "prepack": "pnpm build"
+  },
+  "dependencies": {
+    "tar": "^7.5.22"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.9.3"
+  }
+}

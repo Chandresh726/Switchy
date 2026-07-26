@@ -32,18 +32,20 @@ describe("local CLI production capability paths", () => {
     ]
       .filter(Boolean)
       .join(" ");
+    const environment: NodeJS.ProcessEnv = {
+      ...process.env,
+      HOME: home,
+      NODE_ENV: "test",
+      NODE_OPTIONS: nodeOptions,
+    };
+    delete environment.SWITCHY_HOME;
     const output = execFileSync(
       path.join(process.cwd(), "node_modules", ".bin", "tsx"),
       ["tests/fixtures/ai/local-cli-production-flow.mts"],
       {
         cwd: process.cwd(),
         encoding: "utf8",
-        env: {
-          ...process.env,
-          HOME: home,
-          NODE_ENV: "test",
-          NODE_OPTIONS: nodeOptions,
-        },
+        env: environment,
         timeout: 60_000,
       }
     );

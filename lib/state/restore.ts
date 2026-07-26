@@ -163,6 +163,16 @@ async function preserveNestedDevelopmentState(
 
 function rollbackSnapshotPath(statePaths: StatePaths): string {
   const timestamp = new Date().toISOString().replaceAll(/[:.]/gu, "-");
+  if (
+    path.resolve(statePaths.rootStateDirectory)
+    !== path.resolve(statePaths.stateDirectory)
+  ) {
+    return path.join(
+      statePaths.rootStateDirectory,
+      "update-snapshots",
+      `restore-rollback-${statePaths.environment}-${timestamp}-${randomUUID()}`
+    );
+  }
   return path.join(
     path.dirname(statePaths.rootStateDirectory),
     `${path.basename(statePaths.rootStateDirectory)}.rollback-${statePaths.environment}-${timestamp}-${randomUUID()}`
@@ -263,6 +273,7 @@ async function restoreStateUnderLock(
     await createStateSnapshot({
       statePaths,
       outputDirectory: rollbackSnapshotDirectory,
+      allowInsideRoot: true,
     });
   }
 

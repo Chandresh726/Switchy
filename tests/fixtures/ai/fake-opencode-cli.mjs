@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import http from "node:http";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
 
 if (process.env.SWITCHY_FAKE_OPENCODE_INCOMPATIBLE === "1") {
   process.stderr.write("unknown option: --pure\n");
@@ -16,6 +16,12 @@ if (process.env.SWITCHY_FAKE_CLI_AUDIT_PATH) {
   appendFileSync(
     process.env.SWITCHY_FAKE_CLI_AUDIT_PATH,
     `${JSON.stringify({ cli: "opencode", argv: process.argv.slice(2) })}\n`
+  );
+}
+if (process.env.SWITCHY_FAKE_OPENCODE_PID_PATH) {
+  writeFileSync(
+    process.env.SWITCHY_FAKE_OPENCODE_PID_PATH,
+    `${process.pid}\n`
   );
 }
 
@@ -308,5 +314,15 @@ const server = http.createServer((request, response) => {
   json(response, { error: "not found", path: url.pathname }, 404);
 });
 
+const parentPid = process.ppid;
+const parentWatch = setInterval(() => {
+  if (process.ppid !== parentPid) {
+    clearInterval(parentWatch);
+    server.close(() => process.exit(0));
+  }
+}, 250);
 server.listen(port, "127.0.0.1");
-process.on("SIGTERM", () => server.close(() => process.exit(0)));
+process.on("SIGTERM", () => {
+  clearInterval(parentWatch);
+  server.close(() => process.exit(0));
+});

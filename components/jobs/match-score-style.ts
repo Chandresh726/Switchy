@@ -1,6 +1,6 @@
-export type MatchScoreTier = "strong" | "good" | "moderate" | "fair" | "weak";
+type MatchScoreTier = "strong" | "good" | "moderate" | "fair" | "weak";
 
-export function getMatchScoreTier(score: number): MatchScoreTier {
+function getMatchScoreTier(score: number): MatchScoreTier {
   if (score >= 75) return "strong";
   if (score >= 60) return "good";
   if (score >= 45) return "moderate";

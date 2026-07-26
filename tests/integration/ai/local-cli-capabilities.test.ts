@@ -2,7 +2,7 @@ import { chmodSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { eq } from "drizzle-orm";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import * as openCodeSDK from "@opencode-ai/sdk/v2";
 
@@ -38,10 +38,15 @@ const fixtures = path.join(process.cwd(), "tests", "fixtures", "ai");
 const codexExecutable = path.join(fixtures, "fake-codex-cli.mjs");
 const openCodeExecutable = path.join(fixtures, "fake-opencode-cli.mjs");
 const PRIVATE_PROMPT = "PROMPT_PRIVATE_4f9f7f0e";
+const localCLIBackends: Array<CodexCLIBackend | OpenCodeCLIBackend> = [];
 
 beforeAll(() => {
   chmodSync(codexExecutable, 0o755);
   chmodSync(openCodeExecutable, 0o755);
+});
+
+afterEach(() => {
+  for (const backend of localCLIBackends.splice(0)) backend.retire();
 });
 
 function versions(name: string) {
@@ -71,6 +76,7 @@ describe("local CLI capability integration", () => {
     }).returning({ id: jobs.id }).get();
 
     const codex = new CodexCLIBackend(codexExecutable);
+    localCLIBackends.push(codex);
     const runtimeFor = (capability: AICapability) => createAICapabilityRuntime({
       capability,
       runRepository,
@@ -178,6 +184,7 @@ describe("local CLI capability integration", () => {
     expect(resume.output).toEqual({ value: "structured" });
 
     const openCode = new OpenCodeCLIBackend(openCodeExecutable, async () => openCodeSDK);
+    localCLIBackends.push(openCode);
     const openCodeRuntimeFor = (capability: AICapability) => createAICapabilityRuntime({
       capability,
       runRepository,

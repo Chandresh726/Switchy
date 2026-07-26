@@ -8,6 +8,11 @@ const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const outputDirectory = path.resolve(currentDirectory, "../public/clips");
 const baseUrl = process.env.SWITCHY_CAPTURE_URL ?? "http://localhost:3000";
 const requestedClip = process.env.SWITCHY_DEMO_CLIP;
+const requestedTheme = process.env.SWITCHY_DEMO_THEME ?? "light";
+
+if (!["light", "dark"].includes(requestedTheme)) {
+  throw new Error("SWITCHY_DEMO_THEME must be either light or dark.");
+}
 
 const DEMO_REPLACEMENTS = [
   ["Chandresh", "Alex"],
@@ -34,14 +39,23 @@ const waitForPage = async (page, delay = 1100) => {
   await page.waitForTimeout(delay);
 };
 
-const installDemoLayer = async (context) => {
+const installDemoLayer = async (context, theme = "light") => {
   await context.addInitScript(
-    ({ replacements, syntheticAnalysis }) => {
+    ({ demoTheme, replacements, syntheticAnalysis }) => {
+      try {
+        window.localStorage.setItem("switchy-theme", demoTheme);
+      } catch {
+        // Local storage is unavailable on the initial blank document.
+      }
+
       const install = () => {
         if (!document.documentElement) {
           requestAnimationFrame(install);
           return;
         }
+
+        document.documentElement.style.colorScheme = demoTheme;
+        document.documentElement.classList.toggle("dark", demoTheme === "dark");
 
         if (!document.getElementById("switchy-demo-styles")) {
           const style = document.createElement("style");
@@ -65,9 +79,26 @@ const installDemoLayer = async (context) => {
               opacity: 0;
               transform: translate3d(30px, 30px, 0);
               transition:
-                transform 520ms cubic-bezier(.22,.72,.18,1),
+                transform 680ms cubic-bezier(.16,.78,.16,1),
                 opacity 140ms ease;
               filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .28));
+            }
+
+            #switchy-demo-cursor [data-cursor-icon="pointer"] {
+              display: none;
+            }
+
+            #switchy-demo-cursor[data-kind="pointer"] {
+              width: 18px;
+              height: 24px;
+            }
+
+            #switchy-demo-cursor[data-kind="pointer"] [data-cursor-icon="default"] {
+              display: none;
+            }
+
+            #switchy-demo-cursor[data-kind="pointer"] [data-cursor-icon="pointer"] {
+              display: block;
             }
 
             #switchy-demo-cursor::before {
@@ -93,7 +124,7 @@ const installDemoLayer = async (context) => {
               position: fixed;
               inset: 0;
               z-index: 2147483647;
-              background: #f7f8fa;
+              background: ${demoTheme === "dark" ? "#09090b" : "#f7f8fa"};
             }
           `;
           document.documentElement.append(style);
@@ -112,9 +143,19 @@ const installDemoLayer = async (context) => {
           cursor = document.createElement("div");
           cursor.id = "switchy-demo-cursor";
           cursor.innerHTML = `
-            <svg viewBox="0 0 36 48" width="17" height="23" aria-hidden="true">
+            <svg data-cursor-icon="default" viewBox="0 0 36 48" width="17" height="23" aria-hidden="true">
               <path d="M4 3.2v34.4l8.7-8.2 6.2 14.3 7.1-3.2-6.2-13.9H32L4 3.2Z"
                 fill="#fff" stroke="#10131a" stroke-width="2.1" stroke-linejoin="round"/>
+            </svg>
+            <svg data-cursor-icon="pointer" viewBox="0 0 30 38" width="18" height="24" aria-hidden="true">
+              <path
+                d="M8.7 18.2V6.7c0-1.5 1-2.7 2.4-2.7s2.4 1.2 2.4 2.7v8.1-2.1c0-1.5 1-2.7 2.4-2.7s2.4 1.2 2.4 2.7v3-1.3c0-1.5 1-2.7 2.4-2.7s2.4 1.2 2.4 2.7v2.7c0-1.4 1-2.5 2.3-2.5s2.3 1.1 2.3 2.5v7.1c0 6.2-4.2 10.6-10.3 10.6h-1.3c-3.6 0-6.1-1.4-8-4.3L3.2 23c-.8-1.3-.5-2.8.7-3.6 1.2-.8 2.7-.4 3.6.8l1.2 1.8v-3.8Z"
+                fill="#fff"
+                stroke="#10131a"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
             </svg>
           `;
           document.documentElement.append(cursor);
@@ -196,15 +237,16 @@ const installDemoLayer = async (context) => {
         }
 
         window.__switchyDemo = {
-          moveCursor(x, y) {
+          moveCursor(x, y, kind = "default") {
             const cursor = ensureCursor();
             const previousX = Number(cursor.dataset.x ?? x);
             const previousY = Number(cursor.dataset.y ?? y);
             const distance = Math.hypot(x - previousX, y - previousY);
-            const duration = Math.min(760, Math.max(360, 300 + distance * 0.34));
+            const duration = Math.min(980, Math.max(480, 420 + distance * 0.42));
             cursor.style.transitionDuration = `${duration}ms, 140ms`;
             cursor.style.opacity = "1";
             cursor.style.transform = `translate3d(${x - 2}px, ${y - 1}px, 0)`;
+            cursor.dataset.kind = kind;
             cursor.dataset.x = String(x);
             cursor.dataset.y = String(y);
             return duration;
@@ -227,6 +269,7 @@ const installDemoLayer = async (context) => {
       install();
     },
     {
+      demoTheme: theme,
       replacements: DEMO_REPLACEMENTS,
       syntheticAnalysis: SYNTHETIC_ANALYSIS,
     }
@@ -246,9 +289,18 @@ const moveCursor = async (page, locator, pause = 620) => {
     throw new Error("Could not determine the target position for the demo cursor.");
   }
 
+  const kind = await locator.evaluate((element) =>
+    element.closest(
+      'a, button, [role="button"], input[type="button"], input[type="submit"]'
+    )
+      ? "pointer"
+      : "default"
+  );
   const duration = await page.evaluate(
-    ({ x, y }) => window.__switchyDemo?.moveCursor(x, y),
+    ({ cursorKind, x, y }) =>
+      window.__switchyDemo?.moveCursor(x, y, cursorKind),
     {
+      cursorKind: kind,
       x: box.x + box.width / 2,
       y: box.y + box.height / 2,
     }
@@ -342,21 +394,21 @@ const smoothScrollElementBy = async (locator, distance, duration = 1000) => {
   await locator.page().waitForTimeout(260);
 };
 
-const recordClip = async (browser, name, run) => {
+const recordClip = async (browser, name, run, theme = "light") => {
   const context = await browser.newContext({
     viewport: { width: 1600, height: 900 },
     recordVideo: {
       dir: outputDirectory,
       size: { width: 1600, height: 900 },
     },
-    colorScheme: "light",
+    colorScheme: theme,
     locale: "en-US",
     serviceWorkers: "block",
   });
-  await installDemoLayer(context);
+  await installDemoLayer(context, theme);
 
   const page = await context.newPage();
-  await page.emulateMedia({ colorScheme: "light" });
+  await page.emulateMedia({ colorScheme: theme });
   const video = page.video();
   const startedAt = performance.now();
   const timeline = {};
@@ -406,7 +458,7 @@ const browser = await chromium.launch({ headless: true });
 
 try {
   if (shouldRecord("continuous")) {
-    await recordClip(browser, "continuous-flow-v4", async (page, mark) => {
+    await recordClip(browser, `continuous-flow-${requestedTheme}-v5`, async (page, mark) => {
       await page.goto(baseUrl);
       await waitForPage(page);
       await revealPage(page);
@@ -448,12 +500,33 @@ try {
       );
       await moveCursor(page, search);
       await search.click();
-      await search.pressSequentially("AI engineer", { delay: 76 });
+      await search.pressSequentially("Senior Software Engineer", { delay: 68 });
       mark("jobsSearch");
-      await page.waitForTimeout(1450);
+      await page.waitForFunction(
+        () => {
+          const links = Array.from(
+            document.querySelectorAll('a[href^="/jobs/"]')
+          );
+          return links.some((link) =>
+            link.textContent?.toLowerCase().includes("harness")
+          );
+        },
+        undefined,
+        { timeout: 30_000 }
+      );
+      await page.waitForTimeout(650);
 
-      const jobLink = page.locator('a[href^="/jobs/"]').first();
+      const jobLink = page
+        .locator('a[href^="/jobs/"]')
+        .filter({ hasText: "Harness" })
+        .first();
       await jobLink.waitFor({ state: "visible" });
+      const selectedJobText = await jobLink.innerText();
+      if (!selectedJobText.toLowerCase().includes("harness")) {
+        throw new Error(
+          `Expected the third filtered job to be from Harness, received: ${selectedJobText}`
+        );
+      }
       const jobHref = await jobLink.getAttribute("href");
       if (!jobHref) {
         throw new Error("Could not resolve the first filtered job.");
@@ -502,21 +575,34 @@ try {
       const prompt = page.getByPlaceholder(
         "Ask for changes (e.g., 'Make it shorter', 'Use a friendlier tone')."
       );
-      await page.waitForFunction(
-        () => {
-          const editor = document.querySelector('[contenteditable="true"]');
-          const textarea = document.querySelector(
-            'textarea[placeholder^="Ask for changes"]'
-          );
-          return (
-            (editor?.textContent?.trim().length ?? 0) > 120 &&
-            textarea instanceof HTMLTextAreaElement &&
-            !textarea.disabled
-          );
-        },
-        undefined,
-        { timeout: 90_000 }
-      );
+      const generationError = page
+        .locator('[data-sonner-toast][data-type="error"]')
+        .last();
+      await Promise.race([
+        page.waitForFunction(
+          () => {
+            const editor = document.querySelector('[contenteditable="true"]');
+            const textarea = document.querySelector(
+              'textarea[placeholder^="Ask for changes"]'
+            );
+            return (
+              (editor?.textContent?.trim().length ?? 0) > 120 &&
+              textarea instanceof HTMLTextAreaElement &&
+              !textarea.disabled
+            );
+          },
+          undefined,
+          { timeout: 90_000 }
+        ),
+        generationError
+          .waitFor({ state: "attached", timeout: 90_000 })
+          .then(async () => {
+            const message = (await generationError.textContent())?.trim();
+            throw new Error(
+              `Cover-letter generation failed: ${message || "Unknown error"}`
+            );
+          }),
+      ]);
       mark("initialGenerationReady");
       await page.waitForTimeout(1900);
 
@@ -533,7 +619,7 @@ try {
       mark("refinementSent");
       await page.waitForTimeout(850);
       mark("appCut");
-    });
+    }, requestedTheme);
   }
 
   if (shouldRecord("scraper")) {

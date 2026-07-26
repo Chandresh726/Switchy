@@ -12,22 +12,65 @@ import {
 
 import switchyLogo from "../../landing/public/switchy-logo.png";
 
-const COLORS = {
-  ink: "#10131a",
-  muted: "#697386",
-  green: "#10b981",
-  paper: "#f6f7f9",
+export type ShowcaseTheme = "light" | "dark";
+
+interface Palette {
+  glow: string;
+  grid: string;
+  ink: string;
+  muted: string;
+  paper: string;
+}
+
+interface DemoConfig {
+  appDuration: number;
+  appTrimBefore: number;
+  clip: string;
+  matchLabelEnd: number;
+  scraperLabelEnd: number;
+}
+
+const PALETTES: Record<ShowcaseTheme, Palette> = {
+  light: {
+    glow: "rgba(16,185,129,0.1)",
+    grid: "rgba(16,185,129,0.055)",
+    ink: "#10131a",
+    muted: "#697386",
+    paper: "#f6f7f9",
+  },
+  dark: {
+    glow: "rgba(16,185,129,0.12)",
+    grid: "rgba(16,185,129,0.075)",
+    ink: "#f4f7fb",
+    muted: "#9aa4b5",
+    paper: "#080a0e",
+  },
+};
+
+const DEMO_CONFIGS: Record<ShowcaseTheme, DemoConfig> = {
+  light: {
+    appDuration: 1326,
+    appTrimBefore: 51,
+    clip: "clips/continuous-flow-light-v5.mp4",
+    matchLabelEnd: 779,
+    scraperLabelEnd: 442,
+  },
+  dark: {
+    appDuration: 1326,
+    appTrimBefore: 51,
+    clip: "clips/continuous-flow-dark-v5.mp4",
+    matchLabelEnd: 782,
+    scraperLabelEnd: 445,
+  },
 };
 
 const INTRO_DURATION = 75;
-const APP_TRIM_BEFORE = 51;
-const APP_DURATION = 1260;
 const OUTRO_DURATION = 120;
-const SCRAPER_LABEL_END = 428;
-const MATCH_LABEL_END = 751;
 
-export const SHOWCASE_DURATION =
-  INTRO_DURATION + APP_DURATION + OUTRO_DURATION;
+export const LIGHT_SHOWCASE_DURATION =
+  INTRO_DURATION + DEMO_CONFIGS.light.appDuration + OUTRO_DURATION;
+export const DARK_SHOWCASE_DURATION =
+  INTRO_DURATION + DEMO_CONFIGS.dark.appDuration + OUTRO_DURATION;
 
 const sceneOpacity = (
   frame: number,
@@ -45,21 +88,25 @@ const sceneOpacity = (
     }
   );
 
-const Background = () => (
+const Background = ({
+  palette,
+}: {
+  palette: Palette;
+}) => (
   <AbsoluteFill
     style={{
-      backgroundColor: COLORS.paper,
+      backgroundColor: palette.paper,
       backgroundImage: `
-        radial-gradient(circle at 50% 43%, rgba(16,185,129,0.1), transparent 34%),
-        linear-gradient(rgba(16,185,129,0.055) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(16,185,129,0.055) 1px, transparent 1px)
+        radial-gradient(circle at 50% 43%, ${palette.glow}, transparent 34%),
+        linear-gradient(${palette.grid} 1px, transparent 1px),
+        linear-gradient(90deg, ${palette.grid} 1px, transparent 1px)
       `,
       backgroundSize: "auto, 52px 52px, 52px 52px",
     }}
   />
 );
 
-const Brand = () => (
+const Brand = ({ palette }: { palette: Palette }) => (
   <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
     <Img
       src={switchyLogo}
@@ -67,7 +114,7 @@ const Brand = () => (
     />
     <span
       style={{
-        color: COLORS.ink,
+        color: palette.ink,
         fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
         fontSize: 56,
         fontWeight: 780,
@@ -79,7 +126,7 @@ const Brand = () => (
   </div>
 );
 
-const Intro = () => {
+const Intro = ({ palette }: { palette: Palette }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const entrance = spring({
@@ -92,7 +139,7 @@ const Intro = () => {
     <AbsoluteFill
       style={{ opacity: sceneOpacity(frame, INTRO_DURATION, 12, 9) }}
     >
-      <Background />
+      <Background palette={palette} />
       <div
         style={{
           position: "absolute",
@@ -109,11 +156,11 @@ const Intro = () => {
           )}px)`,
         }}
       >
-        <Brand />
+        <Brand palette={palette} />
         <h1
           style={{
             margin: "28px 0 10px",
-            color: COLORS.ink,
+            color: palette.ink,
             fontFamily: "Inter, SF Pro Display, system-ui, sans-serif",
             fontSize: 72,
             fontWeight: 790,
@@ -125,7 +172,7 @@ const Intro = () => {
         <p
           style={{
             margin: 0,
-            color: COLORS.muted,
+            color: palette.muted,
             fontFamily: "Inter, SF Pro Text, system-ui, sans-serif",
             fontSize: 27,
           }}
@@ -172,9 +219,9 @@ const FeatureLabel = ({
         padding: "10px 16px",
         border: "1px solid rgba(255,255,255,0.2)",
         borderRadius: 999,
-        background: "rgba(16,19,26,0.56)",
+        background: "rgba(5,8,12,0.66)",
         backdropFilter: "blur(14px)",
-        boxShadow: "0 10px 32px rgba(16,19,26,0.18)",
+        boxShadow: "0 10px 32px rgba(0,0,0,0.24)",
         opacity,
         transform: `translate(-50%, ${interpolate(
           opacity,
@@ -218,47 +265,51 @@ const FeatureLabel = ({
   );
 };
 
-const ContinuousDemo = () => {
+const ContinuousDemo = ({
+  config,
+}: {
+  config: DemoConfig;
+}) => {
   const frame = useCurrentFrame();
 
   return (
-    <AbsoluteFill style={{ background: "#ffffff" }}>
+    <AbsoluteFill style={{ background: "#000000" }}>
       <Video
-        src={staticFile("clips/continuous-flow-v4.mp4")}
-        trimBefore={APP_TRIM_BEFORE}
+        src={staticFile(config.clip)}
+        trimBefore={config.appTrimBefore}
         muted
         objectFit="cover"
         style={{
           width: "100%",
           height: "100%",
-          opacity: sceneOpacity(frame, APP_DURATION, 8, 8),
+          opacity: sceneOpacity(frame, config.appDuration, 8, 8),
         }}
       />
 
-      <Sequence from={0} durationInFrames={SCRAPER_LABEL_END}>
+      <Sequence from={0} durationInFrames={config.scraperLabelEnd}>
         <FeatureLabel
           chapter="01 · Job scraper"
-          duration={SCRAPER_LABEL_END}
+          duration={config.scraperLabelEnd}
           summary="Discover and search newly found opportunities"
         />
       </Sequence>
       <Sequence
-        from={SCRAPER_LABEL_END}
-        durationInFrames={MATCH_LABEL_END - SCRAPER_LABEL_END}
+        from={config.scraperLabelEnd}
+        durationInFrames={config.matchLabelEnd - config.scraperLabelEnd}
       >
         <FeatureLabel
           chapter="02 · Match analysis"
-          duration={MATCH_LABEL_END - SCRAPER_LABEL_END}
+          duration={config.matchLabelEnd - config.scraperLabelEnd}
           summary="Review strengths, evidence, and gaps"
         />
       </Sequence>
       <Sequence
-        from={MATCH_LABEL_END}
-        durationInFrames={APP_DURATION - MATCH_LABEL_END}
+        from={config.matchLabelEnd}
+        durationInFrames={config.appDuration - config.matchLabelEnd}
       >
         <FeatureLabel
           chapter="03 · Cover letters"
-          duration={APP_DURATION - MATCH_LABEL_END}
+          duration={config.appDuration - config.matchLabelEnd}
           summary="Generate and refine a tailored draft"
         />
       </Sequence>
@@ -266,7 +317,7 @@ const ContinuousDemo = () => {
   );
 };
 
-const Closing = () => {
+const Closing = ({ palette }: { palette: Palette }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const entrance = spring({
@@ -279,7 +330,7 @@ const Closing = () => {
     <AbsoluteFill
       style={{ opacity: sceneOpacity(frame, OUTRO_DURATION, 12, 12) }}
     >
-      <Background />
+      <Background palette={palette} />
       <div
         style={{
           position: "absolute",
@@ -296,11 +347,11 @@ const Closing = () => {
           )}px)`,
         }}
       >
-        <Brand />
+        <Brand palette={palette} />
         <h2
           style={{
             margin: "28px 0 10px",
-            color: COLORS.ink,
+            color: palette.ink,
             fontFamily: "Inter, SF Pro Display, system-ui, sans-serif",
             fontSize: 72,
             fontWeight: 790,
@@ -312,7 +363,7 @@ const Closing = () => {
         <p
           style={{
             margin: 0,
-            color: COLORS.muted,
+            color: palette.muted,
             fontFamily: "Inter, SF Pro Text, system-ui, sans-serif",
             fontSize: 28,
           }}
@@ -322,7 +373,7 @@ const Closing = () => {
         <div
           style={{
             marginTop: 27,
-            color: COLORS.green,
+            color: "#10b981",
             fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
             fontSize: 25,
             fontWeight: 720,
@@ -335,40 +386,50 @@ const Closing = () => {
   );
 };
 
-export const SwitchyShowcaseLive = () => (
-  <AbsoluteFill
-    style={{
-      background: COLORS.paper,
-      fontFamily: "Inter, SF Pro Text, system-ui, sans-serif",
-    }}
-  >
-    <Audio
-      src={staticFile("music/close-up.mp3")}
-      volume={(frame) =>
-        interpolate(
-          frame,
-          [0, 28, SHOWCASE_DURATION - 90, SHOWCASE_DURATION - 1],
-          [0, 0.42, 0.42, 0],
-          {
-            extrapolateLeft: "clamp",
-            extrapolateRight: "clamp",
-          }
-        )
-      }
-      trimBefore={135}
-    />
+export const SwitchyShowcaseLive = ({
+  theme,
+}: {
+  theme: ShowcaseTheme;
+}) => {
+  const config = DEMO_CONFIGS[theme];
+  const palette = PALETTES[theme];
+  const duration =
+    INTRO_DURATION + config.appDuration + OUTRO_DURATION;
 
-    <Sequence from={0} durationInFrames={INTRO_DURATION}>
-      <Intro />
-    </Sequence>
-    <Sequence from={INTRO_DURATION} durationInFrames={APP_DURATION}>
-      <ContinuousDemo />
-    </Sequence>
-    <Sequence
-      from={INTRO_DURATION + APP_DURATION}
-      durationInFrames={OUTRO_DURATION}
+  return (
+    <AbsoluteFill
+      style={{
+        background: palette.paper,
+        fontFamily: "Inter, SF Pro Text, system-ui, sans-serif",
+      }}
     >
-      <Closing />
-    </Sequence>
-  </AbsoluteFill>
-);
+      <Audio
+        src={staticFile("music/house-02.mp3")}
+        volume={(frame) =>
+          interpolate(
+            frame,
+            [0, 28, duration - 90, duration - 1],
+            [0, 0.34, 0.34, 0],
+            {
+              extrapolateLeft: "clamp",
+              extrapolateRight: "clamp",
+            }
+          )
+        }
+      />
+
+      <Sequence from={0} durationInFrames={INTRO_DURATION}>
+        <Intro palette={palette} />
+      </Sequence>
+      <Sequence from={INTRO_DURATION} durationInFrames={config.appDuration}>
+        <ContinuousDemo config={config} />
+      </Sequence>
+      <Sequence
+        from={INTRO_DURATION + config.appDuration}
+        durationInFrames={OUTRO_DURATION}
+      >
+        <Closing palette={palette} />
+      </Sequence>
+    </AbsoluteFill>
+  );
+};

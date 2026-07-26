@@ -2,6 +2,7 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   // Drizzle emits SQL and JSON rather than analyzable source entrypoints.
   // The landing workspace has its own verification gate; this gate owns the root app.
+  "ignoreBinaries": ["taskkill"],
   "ignoreWorkspaces": ["landing"],
   "workspaces": {
     ".": {

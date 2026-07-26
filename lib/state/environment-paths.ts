@@ -1,5 +1,10 @@
-import os from "node:os";
 import path from "node:path";
+
+import {
+  getEnvironmentDataDirectory,
+  getRuntimeDirectory,
+  getSwitchyRootDirectory,
+} from "./layout";
 
 export type StateEnvironment = "development" | "production";
 
@@ -14,14 +19,21 @@ export interface StatePaths {
 }
 
 export function getStatePaths(
-  environment: StateEnvironment,
-  homeDirectory = os.homedir()
+  environment: StateEnvironment
 ): StatePaths {
-  const baseDirectory = path.join(homeDirectory, ".switchy");
-  const stateDirectory =
-    environment === "development" ? path.join(baseDirectory, "dev") : baseDirectory;
-
-  return statePathsFromDirectory(environment, stateDirectory);
+  const rootStateDirectory = getSwitchyRootDirectory();
+  const stateDirectory = getEnvironmentDataDirectory(
+    environment,
+    rootStateDirectory
+  );
+  return {
+    ...statePathsFromDirectory(environment, stateDirectory),
+    rootStateDirectory,
+    coordinationDirectory: path.join(
+      getRuntimeDirectory(rootStateDirectory),
+      "coordination"
+    ),
+  };
 }
 
 export function statePathsFromDirectory(

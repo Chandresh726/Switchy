@@ -2,7 +2,11 @@ import { z } from "zod";
 
 const initializationStateSchema = z.enum(["pending", "ready", "failed"]);
 
-export const livenessResponseSchema = z.object({ status: z.literal("live") });
+export const livenessResponseSchema = z.object({
+  status: z.literal("live"),
+  version: z.string().min(1),
+  instanceId: z.string().nullable(),
+});
 
 export const readinessResponseSchema = z.object({
   ready: z.boolean(),

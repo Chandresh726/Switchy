@@ -103,7 +103,8 @@ files use `0600`.
 Verification checks paths, checksums, required artifacts, schema readability,
 foreign keys, and SQLite integrity. Restore requires a stopped application and
 `--replace`; it validates before touching current state, creates a rollback
-snapshot, validates a sibling staging state, and switches directories by rename.
+snapshot under `~/.switchy/update-snapshots`, validates a sibling staging
+state, and switches directories by rename.
 
 ## Recovery runbook
 

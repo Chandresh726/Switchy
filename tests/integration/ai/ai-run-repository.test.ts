@@ -212,18 +212,26 @@ describe("AI run migration and repository", () => {
     const home = mkdtempSync(join(tmpdir(), "switchy-fresh-home-"));
     temporaryDirectories.push(home);
     const projectRoot = process.cwd();
+    const environment: NodeJS.ProcessEnv = { ...process.env, HOME: home };
+    delete environment.SWITCHY_HOME;
 
     execFileSync(
       join(projectRoot, "node_modules", ".bin", "drizzle-kit"),
       ["migrate", "--config=drizzle.config.ts"],
       {
         cwd: projectRoot,
-        env: { ...process.env, HOME: home },
+        env: environment,
         stdio: "pipe",
       }
     );
 
-    const databasePath = join(home, ".switchy", "switchy.db");
+    const databasePath = join(
+      home,
+      ".switchy",
+      "data",
+      "production",
+      "switchy.db"
+    );
     const { connection, database } = harness.connect(databasePath);
     expect(database.select().from(aiRuns).all()).toEqual([]);
     expect(database.select().from(aiWorkItems).all()).toEqual([]);

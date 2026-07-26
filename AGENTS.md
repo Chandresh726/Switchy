@@ -20,7 +20,8 @@ pnpm test:run         # Run Vitest once
 pnpm test:unit        # Run isolated Node tests
 pnpm test:integration # Run temporary-SQLite integration tests
 pnpm test:ui          # Run jsdom UI tests
-pnpm audit            # Check dependencies for known vulnerabilities
+pnpm audit            # Check all dependencies for known vulnerabilities
+pnpm audit:prod       # Check shipped dependencies for known vulnerabilities
 pnpm verify           # Run lint, typecheck, tests, audit, and production build
 pnpm verify:all       # Run root verification plus landing app verification
 
@@ -201,8 +202,10 @@ Production modules must not import `@test/*`; the alias is reserved for files un
 
 ## Data Storage
 
-- Development state stored in `~/.switchy/dev/`
-- Production state stored in `~/.switchy/`
+- Development data stored in `~/.switchy/data/development/`
+- Production data stored in `~/.switchy/data/production/`
+- Application runtimes, process metadata, logs, caches, and snapshots also stay
+  inside the single `~/.switchy/` root
 - SQLite database: `switchy.db`
 - User uploads: `uploads/`
 - API-key encryption secret: `encryption.secret`

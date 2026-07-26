@@ -1,4 +1,11 @@
-import { chmod, realpath } from "node:fs/promises";
+import {
+  chmod,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+} from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -11,6 +18,25 @@ import { OpenCodeCLIBackend } from "@/lib/ai/local-cli/opencode-backend";
 const fixtures = path.join(process.cwd(), "tests", "fixtures", "ai");
 const codexExecutable = path.join(fixtures, "fake-codex-cli.mjs");
 const openCodeExecutable = path.join(fixtures, "fake-opencode-cli.mjs");
+const temporaryDirectories: string[] = [];
+const openCodeBackends: OpenCodeCLIBackend[] = [];
+
+function createOpenCodeBackend(
+  ...args: ConstructorParameters<typeof OpenCodeCLIBackend>
+): OpenCodeCLIBackend {
+  const backend = new OpenCodeCLIBackend(...args);
+  openCodeBackends.push(backend);
+  return backend;
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
 
 function baseInput() {
   return {
@@ -30,8 +56,14 @@ beforeAll(async () => {
   ]);
 });
 
-afterEach(() => {
+afterEach(async () => {
+  for (const backend of openCodeBackends.splice(0)) backend.retire();
   vi.unstubAllEnvs();
+  await Promise.all(
+    temporaryDirectories.splice(0).map((directory) =>
+      rm(directory, { recursive: true, force: true })
+    )
+  );
 });
 
 describe("Codex CLI backend", () => {
@@ -261,9 +293,34 @@ describe("Codex CLI backend", () => {
 });
 
 describe("OpenCode CLI backend", () => {
+  it("terminates the helper when SDK loading fails", async () => {
+    const directory = await mkdtemp(
+      path.join(os.tmpdir(), "switchy-opencode-test-")
+    );
+    temporaryDirectories.push(directory);
+    const pidPath = path.join(directory, "pid");
+    vi.stubEnv("SWITCHY_FAKE_OPENCODE_PID_PATH", pidPath);
+    const backend = createOpenCodeBackend(
+      openCodeExecutable,
+      async () => {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        throw new Error("synthetic SDK load failure");
+      }
+    );
+
+    await expect(backend.getVersion()).rejects.toThrow(
+      "synthetic SDK load failure"
+    );
+    const pid = Number((await readFile(pidPath, "utf8")).trim());
+    await expect.poll(
+      () => processIsAlive(pid),
+      { timeout: 2_000 }
+    ).toBe(false);
+  });
+
   it("reports unsupported OpenCode server startup as incompatible", async () => {
     vi.stubEnv("SWITCHY_FAKE_OPENCODE_INCOMPATIBLE", "1");
-    const backend = new OpenCodeCLIBackend(openCodeExecutable, async () => openCodeSDK);
+    const backend = createOpenCodeBackend(openCodeExecutable, async () => openCodeSDK);
     await expect(backend.getVersion()).rejects.toMatchObject({
       type: "validation",
       message: "OpenCode CLI protocol is incompatible",
@@ -272,12 +329,12 @@ describe("OpenCode CLI backend", () => {
 
   it("distinguishes transient OpenCode crashes from a confirmed missing protocol", async () => {
     vi.stubEnv("SWITCHY_FAKE_OPENCODE_STARTUP_CRASH", "1");
-    const crashed = new OpenCodeCLIBackend(openCodeExecutable, async () => openCodeSDK);
+    const crashed = createOpenCodeBackend(openCodeExecutable, async () => openCodeSDK);
     await expect(crashed.getVersion()).rejects.toMatchObject({ type: "network" });
     vi.unstubAllEnvs();
 
     vi.stubEnv("SWITCHY_FAKE_OPENCODE_MISSING_HEALTH", "1");
-    const incompatible = new OpenCodeCLIBackend(openCodeExecutable, async () => openCodeSDK);
+    const incompatible = createOpenCodeBackend(openCodeExecutable, async () => openCodeSDK);
     await expect(incompatible.getVersion()).rejects.toMatchObject({
       type: "validation",
       message: "OpenCode CLI protocol is incompatible",
@@ -286,14 +343,14 @@ describe("OpenCode CLI backend", () => {
 
   it("exposes models only from connected OpenCode providers", async () => {
     vi.stubEnv("SWITCHY_FAKE_OPENCODE_DISCONNECTED", "1");
-    const backend = new OpenCodeCLIBackend(openCodeExecutable, async () => openCodeSDK);
+    const backend = createOpenCodeBackend(openCodeExecutable, async () => openCodeSDK);
     await expect(backend.listModels()).resolves.toEqual([]);
     expect(backend.hasConnectedProviders()).toBe(false);
     backend.retire();
   });
 
   it("groups usable text models and executes isolated streaming and structured sessions", async () => {
-    const backend = new OpenCodeCLIBackend(
+    const backend = createOpenCodeBackend(
       openCodeExecutable,
       async () => openCodeSDK
     );
@@ -403,7 +460,7 @@ describe("OpenCode CLI backend", () => {
   });
 
   it("omits an unadvertised reasoning variant when the catalog is not loaded", async () => {
-    const backend = new OpenCodeCLIBackend(
+    const backend = createOpenCodeBackend(
       openCodeExecutable,
       async () => openCodeSDK
     );
@@ -415,7 +472,7 @@ describe("OpenCode CLI backend", () => {
   });
 
   it("does not apply an earlier idle deadline to active OpenCode work", async () => {
-    const backend = new OpenCodeCLIBackend(
+    const backend = createOpenCodeBackend(
       openCodeExecutable,
       async () => openCodeSDK,
       50
@@ -436,7 +493,7 @@ describe("OpenCode CLI backend", () => {
       maxOutputTokens: 100,
     })).rejects.toThrow("output-token limit");
 
-    const openCode = new OpenCodeCLIBackend(openCodeExecutable, async () => openCodeSDK);
+    const openCode = createOpenCodeBackend(openCodeExecutable, async () => openCodeSDK);
     await expect(openCode.generateText({
       ...baseInput(),
       modelId: "openai/text",

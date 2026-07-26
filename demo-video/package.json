@@ -7,7 +7,9 @@
     "capture:clips": "node capture/capture-clips.mjs",
     "studio": "remotion studio src/index.ts",
     "render": "remotion render src/index.ts SwitchyShowcase out/switchy-showcase-v1.mp4 --codec=h264 --crf=18 --pixel-format=yuv420p",
-    "render:live": "remotion render src/index.ts SwitchyShowcaseLive out/switchy-showcase-v4.mp4 --codec=h264 --crf=18 --pixel-format=yuv420p",
+    "render:light": "remotion render src/index.ts SwitchyShowcaseLight out/switchy-showcase-v5-light.mp4 --codec=h264 --crf=18 --pixel-format=yuv420p",
+    "render:dark": "remotion render src/index.ts SwitchyShowcaseDark out/switchy-showcase-v5-dark.mp4 --codec=h264 --crf=18 --pixel-format=yuv420p",
+    "render:variants": "pnpm render:light && pnpm render:dark",
     "render:poster": "remotion still src/index.ts SwitchyShowcasePoster out/switchy-showcase-poster.png",
     "typecheck": "tsc --noEmit",
     "verify": "pnpm typecheck"

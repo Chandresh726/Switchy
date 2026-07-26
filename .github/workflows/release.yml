@@ -1,0 +1,166 @@
+name: Stable release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stable-release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Verify tagged commit is on main
+        run: >-
+          git merge-base --is-ancestor
+          "${GITHUB_SHA}"
+          "origin/main"
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.12.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validate stable tag and versions
+        shell: bash
+        run: |
+          node -e '
+            const root = require("./package.json");
+            const cli = require("./packages/cli/package.json");
+            const tag = process.env.GITHUB_REF_NAME;
+            if (tag !== `v${root.version}`) throw new Error(`Tag ${tag} does not match ${root.version}`);
+            if (root.version !== cli.version) throw new Error("Application and CLI versions differ");
+            if (!/^\d+\.\d+\.\d+$/.test(root.version)) throw new Error("Release version must be stable");
+            if (!cli.license || cli.license === "UNLICENSED") throw new Error("Choose a license before releasing");
+          '
+      - run: pnpm verify:all
+
+  build-runtime:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: linux-x64
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64
+          - runner: macos-15-intel
+            target: darwin-x64
+          - runner: macos-15
+            target: darwin-arm64
+          - runner: windows-2025
+            target: win32-x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.12.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm cli:build
+      - run: pnpm build
+      - run: pnpm runtime:package
+        env:
+          SWITCHY_TARGET: ${{ matrix.target }}
+      - run: node scripts/smoke-runtime.mjs
+        env:
+          SWITCHY_TARGET: ${{ matrix.target }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: runtime-${{ matrix.target }}
+          path: |
+            dist/release-assets/*.tar.gz
+            dist/release-assets/*.artifact.json
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-github:
+    needs:
+      - validate
+      - build-runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.12.0
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: runtime-*
+          path: dist/release-assets
+          merge-multiple: true
+      - name: Create release manifest
+        run: pnpm release:manifest
+        env:
+          SWITCHY_REQUIRED_TARGETS: linux-x64,linux-arm64,darwin-x64,darwin-arm64,win32-x64
+      - run: pnpm cli:build
+      - name: Audit npm package contents
+        run: npm pack --dry-run --cache "${RUNNER_TEMP}/npm-cache" ./packages/cli
+      - name: Publish immutable GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${GITHUB_REF_NAME}"
+          dist/release-assets/*.tar.gz
+          dist/release-assets/switchy-manifest.json
+          --verify-tag
+          --generate-notes
+          --title "Switchy ${GITHUB_REF_NAME}"
+
+  publish-npm:
+    if: vars.NPM_TRUSTED_PUBLISHING_READY == 'true'
+    needs: publish-github
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.12.0
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - name: Validate npm package license
+        run: >-
+          node -e
+          'const value = require("./packages/cli/package.json").license;
+          if (!value || value === "UNLICENSED") throw new Error("Choose a license before publishing");'
+      - name: Publish npm CLI with trusted publishing
+        run: npm publish ./packages/cli --access public

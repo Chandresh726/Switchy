@@ -128,6 +128,7 @@ interface CreateStateSnapshotOptions {
   statePaths: StatePaths;
   outputDirectory: string;
   applicationVersion?: string;
+  allowInsideRoot?: boolean;
 }
 
 interface CreateStateSnapshotOperations {
@@ -341,6 +342,7 @@ export async function createStateSnapshot({
   statePaths,
   outputDirectory,
   applicationVersion = packageJson.version,
+  allowInsideRoot = false,
 }: CreateStateSnapshotOptions,
 operations: CreateStateSnapshotOperations = {}
 ): Promise<VerifiedStateSnapshot> {
@@ -362,11 +364,22 @@ operations: CreateStateSnapshotOperations = {}
   await mkdir(parentDirectory, { recursive: true, mode: DIRECTORY_MODE });
   const realOutput = path.join(await realpath(parentDirectory), path.basename(output));
   const realRepository = await realpath(repository);
-  const realStateDirectory = await realpath(statePaths.rootStateDirectory);
+  const realStateRoot = await realpath(statePaths.rootStateDirectory);
+  const realEnvironmentState = await realpath(statePaths.stateDirectory);
   if (isWithin(realRepository, realOutput)) {
     throw new Error("State snapshots must be stored outside the repository");
   }
-  if (isWithin(realStateDirectory, realOutput) || isWithin(realOutput, realStateDirectory)) {
+  if (
+    isWithin(realEnvironmentState, realOutput)
+    || isWithin(realOutput, realEnvironmentState)
+    || (
+      !allowInsideRoot
+      && (
+        isWithin(realStateRoot, realOutput)
+        || isWithin(realOutput, realStateRoot)
+      )
+    )
+  ) {
     throw new Error("Snapshot output cannot overlap the application state directory");
   }
   const stagingDirectory = path.join(

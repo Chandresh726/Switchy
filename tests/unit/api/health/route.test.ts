@@ -9,6 +9,10 @@ describe("health liveness route", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toContain("no-store");
-    expect(livenessResponseSchema.parse(await response.json())).toEqual({ status: "live" });
+    expect(livenessResponseSchema.parse(await response.json())).toEqual({
+      status: "live",
+      version: "1.0.2",
+      instanceId: null,
+    });
   });
 });

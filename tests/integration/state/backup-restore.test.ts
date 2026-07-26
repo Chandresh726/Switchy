@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 import Database from "better-sqlite3";
 import { eq } from "drizzle-orm";
@@ -652,7 +652,7 @@ describe("verified local state backup and restore", () => {
       .toBe("preserve me");
   });
 
-  it("places development rollback snapshots outside the top-level state root", async () => {
+  it("places development rollback snapshots inside the unified state root", async () => {
     const root = temporaryDirectory();
     const productionRoot = join(root, ".switchy");
     const statePaths = createState(join(productionRoot, "dev"), "current");
@@ -666,7 +666,11 @@ describe("verified local state backup and restore", () => {
 
     const result = await restoreState({ statePaths, snapshotDirectory, replace: true });
     expect(result.rollbackSnapshotDirectory).not.toBeNull();
-    expect(result.rollbackSnapshotDirectory!.startsWith(`${productionRoot}/`)).toBe(false);
+    expect(
+      result.rollbackSnapshotDirectory!.startsWith(
+        `${join(productionRoot, "update-snapshots")}${sep}`
+      )
+    ).toBe(true);
     expect(readDatabaseValue(statePaths.databasePath)).toBe("snapshot");
   });
 
