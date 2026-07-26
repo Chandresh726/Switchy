@@ -24,6 +24,6 @@ export const FAQS: FAQItem[] = [
   {
     question: "How do I get started?",
     answer:
-      "Follow the setup steps above: clone the repo, run pnpm install, then run pnpm build && pnpm start. Add an AI provider key when you want to enable AI features.",
+      "With Node.js 24 installed, run npx @chandresh726/switchy@latest start. Switchy downloads the correct runtime and starts locally; source installation remains available above for contributors.",
   },
 ];

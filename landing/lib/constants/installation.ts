@@ -1,11 +1,13 @@
-import type { SetupStep } from "@/lib/types";
+import type { InstallationStep } from "@/lib/types";
 
-export const SETUP_STEPS: SetupStep[] = [
+export const INSTALL_COMMAND = "npx @chandresh726/switchy@latest start";
+
+export const SOURCE_INSTALL_STEPS: InstallationStep[] = [
   {
     step: "1",
     title: "Clone the Repository",
     description: "Get the latest source code from GitHub.",
-    code: "git clone https://github.com/Chandresh726/Switchy.git && cd switchy",
+    code: "git clone https://github.com/Chandresh726/Switchy.git switchy && cd switchy",
   },
   {
     step: "2",

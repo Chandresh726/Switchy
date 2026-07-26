@@ -1,6 +1,6 @@
 {
   "name": "switchy",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "private": true,
   "license": "MIT",
   "packageManager": "pnpm@11.9.0",
@@ -18,7 +18,7 @@
     "distribution:verify": "pnpm cli:typecheck && pnpm cli:build && vitest run --project unit tests/unit/distribution tests/unit/state/layout.test.ts",
     "runtime:package": "node scripts/package-runtime.mjs",
     "release:manifest": "node scripts/create-release-manifest.mjs",
-    "start": "NODE_ENV=production next start --hostname 127.0.0.1",
+    "start": "NODE_ENV=production next start --hostname 127.0.0.1 --port 6767",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "deadcode": "SWITCHY_ANALYSIS=1 knip",

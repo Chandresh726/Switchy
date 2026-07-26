@@ -16,8 +16,9 @@ npx @chandresh726/switchy@latest update
 `start` resolves the requested application version, downloads the matching
 runtime when it is not already installed, verifies its SHA-256 checksum, runs
 database migrations, installs Chromium into the local cache, and starts a
-detached loopback-only server. The CLI records and verifies the process identity
-before stopping it.
+detached loopback-only server on port `6767` by default. Users can override the
+port with `start --port <port>`. The CLI records and verifies the process
+identity before stopping it.
 
 Everything remains under one local root:
 
@@ -64,7 +65,7 @@ Before the first public release:
    reviewers if release approval is desired.
 2. Keep `NPM_TRUSTED_PUBLISHING_READY` unset for the first release because npm
    trusted publishing can only be configured after the package exists.
-3. Push the stabilized commit and the matching `v1.0.6` tag. The workflow
+3. Push the stabilized commit and the matching `v1.0.7` tag. The workflow
    publishes the five runtimes, checksum manifest, and GitHub release.
 4. From an authenticated owner account, run
    `npm publish ./packages/cli --access public` at that exact tag.

@@ -34,7 +34,7 @@ export interface PlatformItem {
   logo: string;
 }
 
-export interface SetupStep {
+export interface InstallationStep {
   step: string;
   title: string;
   description: string;

@@ -17,7 +17,7 @@ npx @chandresh726/switchy@latest stop
 The first start downloads and checksum-verifies the runtime for the current
 operating system, installs the required Chromium build, migrates the local
 database, and starts Switchy on
-[http://127.0.0.1:3000](http://127.0.0.1:3000). Later starts reuse the local
+[http://127.0.0.1:6767](http://127.0.0.1:6767). Later starts reuse the local
 runtime. Run `npx @chandresh726/switchy@latest update` to install the latest
 stable application release.
 

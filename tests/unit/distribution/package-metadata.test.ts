@@ -7,7 +7,12 @@ describe("Switchy distribution metadata", () => {
   it("keeps application and CLI versions aligned", () => {
     const application = JSON.parse(
       readFileSync(path.join(process.cwd(), "package.json"), "utf8")
-    ) as { version: string; private: boolean; license: string };
+    ) as {
+      version: string;
+      private: boolean;
+      license: string;
+      scripts: Record<string, string>;
+    };
     const cli = JSON.parse(
       readFileSync(
         path.join(process.cwd(), "packages", "cli", "package.json"),
@@ -23,10 +28,13 @@ describe("Switchy distribution metadata", () => {
     };
 
     expect(application).toMatchObject({
-      version: "1.0.6",
+      version: "1.0.7",
       private: true,
       license: "MIT",
     });
+    expect(application.scripts.start).toBe(
+      "NODE_ENV=production next start --hostname 127.0.0.1 --port 6767"
+    );
     expect(cli).toMatchObject({
       name: "@chandresh726/switchy",
       version: application.version,

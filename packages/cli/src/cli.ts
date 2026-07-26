@@ -7,7 +7,7 @@ import {
   updateCommand,
   versionCommand,
 } from "./commands.js";
-import { assertSupportedNodeVersion } from "./config.js";
+import { DEFAULT_PORT, assertSupportedNodeVersion } from "./config.js";
 
 function optionValue(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
@@ -33,7 +33,7 @@ function printHelp(): void {
   console.log(`Switchy CLI
 
 Usage:
-  switchy start [--port 3000] [--foreground] [--app-version <version>]
+  switchy start [--port ${DEFAULT_PORT}] [--foreground] [--app-version <version>]
   switchy stop [--force]
   switchy status
   switchy update

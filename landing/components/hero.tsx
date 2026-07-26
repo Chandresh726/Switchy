@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Terminal } from "lucide-react";
 
 import { GithubIcon } from "@/components/icons";
 import { SITE_CONFIG } from "@/lib/constants";
@@ -52,22 +52,22 @@ export function Hero() {
           className="flex flex-col sm:flex-row items-center justify-center gap-4"
         >
           <a
+            href="#installation"
+            className="geo-card-solid inline-flex items-center gap-3 px-8 py-4 text-black font-bold text-lg"
+          >
+            <Terminal className="h-5 w-5" />
+            INSTALL SWITCHY
+            <ArrowRight className="w-5 h-5" />
+          </a>
+
+          <a
             href={SITE_CONFIG.github}
             target="_blank"
             rel="noopener noreferrer"
-            className="geo-card-solid inline-flex items-center gap-3 px-8 py-4 text-black font-bold text-lg"
-          >
-            <GithubIcon className="w-5 h-5" />
-            VIEW ON GITHUB
-            <ArrowRight className="w-5 h-5" />
-          </a>
-          
-          <a
-            href="#setup"
             className="geo-card inline-flex items-center gap-3 px-8 py-4 text-[var(--text-primary)] font-bold text-lg"
           >
-            GET STARTED
-            <ArrowRight className="w-5 h-5" />
+            <GithubIcon className="h-5 w-5" />
+            VIEW ON GITHUB
           </a>
         </motion.div>
       </div>

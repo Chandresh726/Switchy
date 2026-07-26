@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getSwitchyPaths } from "../../../packages/cli/src/paths";
 import { currentTarget } from "../../../packages/cli/src/platform";
 import {
+  DEFAULT_PORT,
   assertSupportedNodeVersion,
   resolveApplicationVersion,
 } from "../../../packages/cli/src/config";
@@ -113,8 +114,12 @@ describe("Switchy CLI release handling", () => {
   });
 
   it("uses the executing CLI version unless an app version is requested", () => {
-    expect(resolveApplicationVersion()).toBe("1.0.6");
+    expect(resolveApplicationVersion()).toBe("1.0.7");
     expect(resolveApplicationVersion("1.0.1")).toBe("1.0.1");
+  });
+
+  it("uses the dedicated production port by default", () => {
+    expect(DEFAULT_PORT).toBe(6767);
   });
 
   it("rejects Node.js versions that cannot run the packaged runtime", () => {
