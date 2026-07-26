@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
+import { createRequire } from "node:module";
 import {
   cp,
   mkdir,
@@ -81,6 +82,29 @@ await cp(
   path.join(runtimeDirectory, "node_modules"),
   { recursive: true, verbatimSymlinks: true }
 );
+const betterSqlite3Source = await realpath(
+  path.join(projectDirectory, "node_modules", "better-sqlite3")
+);
+const betterSqlite3Require = createRequire(
+  path.join(betterSqlite3Source, "package.json")
+);
+const bindingsSource = path.dirname(
+  betterSqlite3Require.resolve("bindings/package.json")
+);
+const bindingsRequire = createRequire(
+  path.join(bindingsSource, "package.json")
+);
+const fileUriToPathSource = path.dirname(
+  bindingsRequire.resolve("file-uri-to-path/package.json")
+);
+for (const [name, source] of [
+  ["bindings", bindingsSource],
+  ["file-uri-to-path", fileUriToPathSource],
+]) {
+  const destination = path.join(runtimeDirectory, "node_modules", name);
+  await rm(destination, { recursive: true, force: true });
+  await cp(source, destination, { recursive: true });
+}
 const playwrightSource = await realpath(
   path.join(projectDirectory, "node_modules", "playwright")
 );
