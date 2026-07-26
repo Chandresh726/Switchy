@@ -324,4 +324,114 @@ describe("EightfoldScraper", () => {
     expect(bootstrap).toHaveBeenCalledTimes(2);
   });
 
+  it("recovers overlapping full pages from the complete sitemap", async () => {
+    const pageAttempts = new Map<number, number>();
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/api/pcsx/search")) {
+        const offset = Number(new URL(url).searchParams.get("start"));
+        pageAttempts.set(offset, (pageAttempts.get(offset) ?? 0) + 1);
+
+        if (offset === 0) {
+          return createEightfoldSearchResponse([1, 2, 3], 6);
+        }
+        return createEightfoldSearchResponse(
+          [3, 4, 5],
+          6
+        );
+      }
+      if (url.includes("/careers/sitemap.xml")) {
+        return new Response(
+          `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${Array.from(
+            { length: 6 },
+            (_, index) =>
+              `<url><loc>https://apply.careers.microsoft.com/careers/job/${index + 1}</loc></url>`
+          ).join("")}</urlset>`,
+          {
+            status: 200,
+            headers: { "Content-Type": "application/xml" },
+          }
+        );
+      }
+
+      const requestedId = Number(new URL(url).searchParams.get("position_id"));
+      return createEightfoldDetailResponse(requestedId);
+    });
+    const scraper = new EightfoldScraper(
+      createHttpClientStub({ fetch: fetchMock }),
+      createMockBrowserClient({
+        baseUrl: "https://apply.careers.microsoft.com",
+        cookies: "session=abc",
+        domain: "microsoft.com",
+      }),
+      {
+        pageSize: 3,
+        parallelListFetches: 1,
+        detailBatchSize: 6,
+        requestDelayMs: 0,
+      }
+    );
+
+    const result = await scraper.scrape(
+      "https://apply.careers.microsoft.com/careers"
+    );
+
+    expect(result).toMatchObject({
+      outcome: "success",
+      totalListings: 6,
+      listingCompleteness: "complete",
+    });
+    expect(result.jobs).toHaveLength(6);
+    expect(pageAttempts).toEqual(new Map([[0, 1], [3, 1]]));
+  });
+
+  it("remains partial when overlapping pages have no sitemap fallback", async () => {
+    const pageAttempts = new Map<number, number>();
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/api/pcsx/search")) {
+        const offset = Number(new URL(url).searchParams.get("start"));
+        pageAttempts.set(offset, (pageAttempts.get(offset) ?? 0) + 1);
+        return createEightfoldSearchResponse(
+          offset === 0 ? [1, 2, 3] : [3, 4, 5],
+          6
+        );
+      }
+      if (url.includes("/careers/sitemap.xml")) {
+        return new Response("unavailable", { status: 404 });
+      }
+
+      const requestedId = Number(new URL(url).searchParams.get("position_id"));
+      return createEightfoldDetailResponse(requestedId);
+    });
+    const scraper = new EightfoldScraper(
+      createHttpClientStub({ fetch: fetchMock }),
+      createMockBrowserClient({
+        baseUrl: "https://apply.careers.microsoft.com",
+        cookies: "session=abc",
+        domain: "microsoft.com",
+      }),
+      {
+        pageSize: 3,
+        parallelListFetches: 1,
+        detailBatchSize: 5,
+        requestDelayMs: 0,
+      }
+    );
+
+    const result = await scraper.scrape(
+      "https://apply.careers.microsoft.com/careers"
+    );
+
+    expect(result).toMatchObject({
+      outcome: "partial",
+      totalListings: 5,
+      listingCompleteness: "partial",
+      issues: [
+        expect.objectContaining({
+          message: expect.stringContaining("5 of 6 advertised positions"),
+        }),
+      ],
+    });
+    expect(pageAttempts).toEqual(new Map([[0, 1], [3, 1]]));
+  });
+
 });

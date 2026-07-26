@@ -195,6 +195,59 @@ describe("SessionDetail", () => {
     expect(screen.getByText("one detail request failed")).toBeTruthy();
   });
 
+  it("uses the shared numbered pagination for session records", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      const offset = Number(url.searchParams.get("workOffset"));
+      const response = sessionResponse(
+        "completed",
+        [
+          queueItem({
+            id: `queue-${offset}`,
+            companyId: offset + 1,
+            companyName: `Company ${offset + 1}`,
+            status: "completed",
+            completedAt: "2026-07-13T10:01:00.000Z",
+          }),
+        ],
+        [sessionLog({ id: offset + 1, companyId: offset + 1 })],
+        false
+      );
+      response.logPagination.total = 120;
+      response.logPagination.offset = offset;
+      response.logPagination.hasMore = offset + 50 < 120;
+      response.workPagination.total = 120;
+      response.workPagination.offset = offset;
+      response.workPagination.hasMore = offset + 50 < 120;
+      return jsonResponse(response);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<SessionDetail sessionId={SESSION_ID} />);
+
+    const pagination = await screen.findByRole("navigation", {
+      name: "Session records pagination",
+    });
+    expect(screen.getByText("1-50 of 120 session records")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Next companies" })).toBeNull();
+
+    await user.click(
+      screen.getByRole("button", { name: "Page 2" })
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "logLimit=50&logOffset=50&workLimit=50&workOffset=50"
+        ),
+        expect.objectContaining({ method: "GET" })
+      );
+    });
+    expect(pagination).toBeTruthy();
+    expect(await screen.findByText("51-100 of 120 session records")).toBeTruthy();
+  });
+
   it("stops an active session through the local command contract", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === "POST") {

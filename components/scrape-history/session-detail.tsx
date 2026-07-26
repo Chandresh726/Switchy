@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ApiErrorState } from "@/components/ui/api-error-state";
+import { Pagination } from "@/components/ui/pagination";
 import {
   getScrapeHistoryDetail,
   cancelScrapeHistorySession,
@@ -40,14 +41,18 @@ interface SessionDetailProps {
 }
 
 export function SessionDetail({ sessionId }: SessionDetailProps) {
-  const [logOffset, setLogOffset] = useState(0);
-  const logLimit = 50;
-  const [workOffset, setWorkOffset] = useState(0);
-  const workLimit = 50;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const router = useRouter();
   const queryClient = useQueryClient();
-  const detailParams = { logOffset, logLimit, workOffset, workLimit };
-  const { data, isLoading, error, refetch } = useQuery({
+  const offset = (currentPage - 1) * pageSize;
+  const detailParams = {
+    logOffset: offset,
+    logLimit: pageSize,
+    workOffset: offset,
+    workLimit: pageSize,
+  };
+  const { data, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: queryKeys.scrapeHistory.detail(sessionId, detailParams),
     queryFn: async () => {
       return getScrapeHistoryDetail(sessionId, detailParams);
@@ -120,6 +125,8 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
     ? Math.round(((session.companiesCompleted || 0) / session.companiesTotal) * 100)
     : 0;
   const hasActiveQueueWork = hasActiveWork;
+  const totalRecords = Math.max(workPagination.total, logPagination.total);
+  const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
 
   return (
     <div className="space-y-6">
@@ -269,26 +276,22 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
       </div>
 
       <CompanyProgressList queueItems={queueItems} logs={logs} />
-      {workPagination.total > workLimit && (
-        <div className="flex items-center justify-end gap-2">
-          <Button variant="outline" size="sm" disabled={workOffset === 0} onClick={() => setWorkOffset(Math.max(0, workOffset - workLimit))}>Previous companies</Button>
-          <Button variant="outline" size="sm" disabled={!workPagination.hasMore} onClick={() => setWorkOffset(workOffset + workLimit)}>Next companies</Button>
-        </div>
-      )}
-      {logPagination.total > logLimit && (
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">
-            Showing {logPagination.offset + 1}-{Math.min(logPagination.offset + logs.length, logPagination.total)} of {logPagination.total} log entries
-          </span>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={logOffset === 0} onClick={() => setLogOffset(Math.max(0, logOffset - logLimit))}>
-              Previous
-            </Button>
-            <Button variant="outline" size="sm" disabled={!logPagination.hasMore} onClick={() => setLogOffset(logOffset + logLimit)}>
-              Next
-            </Button>
-          </div>
-        </div>
+      {totalRecords > 0 && (
+        <Pagination
+          ariaLabel="Session records pagination"
+          itemLabel="session records"
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalCount={totalRecords}
+          pageSize={pageSize}
+          isFetching={isFetching}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+          pageSizeOptions={[25, 50, 100]}
+        />
       )}
     </div>
   );

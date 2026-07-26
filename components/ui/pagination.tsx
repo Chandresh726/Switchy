@@ -17,6 +17,8 @@ interface PaginationProps {
   totalPages: number;
   totalCount: number;
   pageSize: number;
+  ariaLabel?: string;
+  itemLabel?: string;
   isFetching?: boolean;
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
@@ -28,6 +30,8 @@ export function Pagination({
   totalPages,
   totalCount,
   pageSize,
+  ariaLabel = "Pagination",
+  itemLabel,
   isFetching = false,
   onPageChange,
   onPageSizeChange,
@@ -38,7 +42,10 @@ export function Pagination({
   const pageNumbers = getPageNumbers(currentPage, totalPages);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border pt-3">
+    <nav
+      aria-label={ariaLabel}
+      className="flex flex-wrap items-center justify-between gap-4 border-t border-border pt-3"
+    >
       <div className="flex items-center gap-2">
         <span className="text-sm text-muted-foreground">Show:</span>
         <Select
@@ -60,6 +67,7 @@ export function Pagination({
 
       <span className="text-sm text-muted-foreground">
         {startIndex}-{endIndex} of {totalCount}
+        {itemLabel ? ` ${itemLabel}` : ""}
         {isFetching ? " (updating...)" : ""}
       </span>
 
@@ -69,13 +77,18 @@ export function Pagination({
           size="icon-sm"
           onClick={() => onPageChange(Math.max(1, currentPage - 1))}
           disabled={currentPage === 1}
+          aria-label="Previous page"
         >
-          <ChevronLeft className="h-4 w-4" />
+          <ChevronLeft data-icon="inline-start" />
         </Button>
 
         {pageNumbers.map((page, index) =>
           page === "ellipsis" ? (
-            <span key={`ellipsis-${index}`} className="px-2 text-muted-foreground">
+            <span
+              key={`ellipsis-${index}`}
+              aria-hidden="true"
+              className="px-2 text-muted-foreground"
+            >
               ...
             </span>
           ) : (
@@ -85,6 +98,8 @@ export function Pagination({
               size="sm"
               onClick={() => onPageChange(page)}
               className="min-w-[32px]"
+              aria-label={`Page ${page}`}
+              aria-current={currentPage === page ? "page" : undefined}
             >
               {page}
             </Button>
@@ -96,10 +111,11 @@ export function Pagination({
           size="icon-sm"
           onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
           disabled={currentPage === totalPages}
+          aria-label="Next page"
         >
-          <ChevronRight className="h-4 w-4" />
+          <ChevronRight data-icon="inline-end" />
         </Button>
       </div>
-    </div>
+    </nav>
   );
 }

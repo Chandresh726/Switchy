@@ -1,0 +1,29 @@
+{
+  "name": "switchy-demo-video",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "capture": "node capture/capture-scenes.mjs",
+    "capture:clips": "node capture/capture-clips.mjs",
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts SwitchyShowcase out/switchy-showcase-v1.mp4 --codec=h264 --crf=18 --pixel-format=yuv420p",
+    "render:live": "remotion render src/index.ts SwitchyShowcaseLive out/switchy-showcase-v4.mp4 --codec=h264 --crf=18 --pixel-format=yuv420p",
+    "render:poster": "remotion still src/index.ts SwitchyShowcasePoster out/switchy-showcase-poster.png",
+    "typecheck": "tsc --noEmit",
+    "verify": "pnpm typecheck"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.499",
+    "@remotion/media": "4.0.499",
+    "playwright": "^1.61.1",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "remotion": "4.0.499"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^6.0.3"
+  }
+}

@@ -528,19 +528,22 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       return null;
     }
 
-    const total = firstBatch.data.count || 0;
+    let advertisedCount = firstBatch.data.count || 0;
     const positionsById = new Map<number, EightfoldNormalizedPosition>();
     for (const position of firstBatch.data.positions) {
       const normalized = this.normalizePosition(position);
       positionsById.set(normalized.id, normalized);
     }
     const missingOffsets = new Set<number>();
-    if (firstBatch.data.positions.length < Math.min(this.config.pageSize, total)) {
+    if (
+      firstBatch.data.positions.length <
+      Math.min(this.config.pageSize, advertisedCount)
+    ) {
       missingOffsets.add(0);
     }
 
-    if (total > this.config.pageSize) {
-      const totalPages = Math.ceil(total / this.config.pageSize);
+    if (advertisedCount > this.config.pageSize) {
+      const totalPages = Math.ceil(advertisedCount / this.config.pageSize);
       const offsets: number[] = [];
 
       for (let page = 1; page < totalPages; page++) {
@@ -577,7 +580,10 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
               const normalized = this.normalizePosition(position);
               positionsById.set(normalized.id, normalized);
             }
-            const expectedCount = Math.min(this.config.pageSize, total - offset);
+            const expectedCount = Math.min(
+              this.config.pageSize,
+              advertisedCount - offset
+            );
             if (result.data.positions.length < expectedCount) {
               missingOffsets.add(offset);
             }
@@ -602,7 +608,10 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
             const normalized = this.normalizePosition(position);
             positionsById.set(normalized.id, normalized);
           }
-          const expectedCount = Math.min(this.config.pageSize, total - offset);
+          const expectedCount = Math.min(
+            this.config.pageSize,
+            advertisedCount - offset
+          );
           if (result.data.positions.length >= expectedCount) {
             missingOffsets.delete(offset);
           }
@@ -610,18 +619,106 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       }
     }
 
+    if (missingOffsets.size > 0 || positionsById.size < advertisedCount) {
+      const sitemapPositionIds = await this.fetchSitemapPositionIds(
+        baseUrl,
+        domain,
+        activeCookies
+      );
+      if (sitemapPositionIds && sitemapPositionIds.size > 0) {
+        advertisedCount = Math.max(advertisedCount, sitemapPositionIds.size);
+        const missingPositionIds = Array.from(sitemapPositionIds).filter(
+          (positionId) => !positionsById.has(positionId)
+        );
+        let sitemapHydrationFailed = false;
+
+        for (
+          let index = 0;
+          index < missingPositionIds.length;
+          index += this.config.detailBatchSize
+        ) {
+          const batch = missingPositionIds.slice(
+            index,
+            index + this.config.detailBatchSize
+          );
+          const details = await Promise.all(
+            batch.map((positionId) =>
+              this.fetchPositionDetails(
+                baseUrl,
+                domain,
+                positionId,
+                activeCookies
+              )
+            )
+          );
+          for (let detailIndex = 0; detailIndex < details.length; detailIndex++) {
+            const detail = details[detailIndex]?.position;
+            if (!detail) {
+              sitemapHydrationFailed = true;
+              continue;
+            }
+            positionsById.set(detail.id, detail);
+          }
+          if (index + this.config.detailBatchSize < missingPositionIds.length) {
+            await this.delay(this.config.requestDelayMs);
+          }
+        }
+
+        if (
+          !sitemapHydrationFailed &&
+          sitemapPositionIds.size >= advertisedCount &&
+          Array.from(sitemapPositionIds).every((positionId) =>
+            positionsById.has(positionId)
+          )
+        ) {
+          missingOffsets.clear();
+        }
+      }
+    }
+
     const allPositions = Array.from(positionsById.values());
-    if (allPositions.length >= total) {
+    if (allPositions.length >= advertisedCount) {
       missingOffsets.clear();
     }
 
     return {
       positions: allPositions,
-      isComplete: missingOffsets.size === 0 && allPositions.length >= total,
-      advertisedCount: total,
+      isComplete:
+        missingOffsets.size === 0 && allPositions.length >= advertisedCount,
+      advertisedCount,
       missingOffsets: Array.from(missingOffsets).sort((a, b) => a - b),
       sessionCookies: activeCookies,
     };
+  }
+
+  private async fetchSitemapPositionIds(
+    baseUrl: string,
+    domain: string,
+    cookies: string
+  ): Promise<Set<number> | null> {
+    const url = `${baseUrl}/careers/sitemap.xml?domain=${encodeURIComponent(domain)}`;
+    try {
+      const response = await this.httpClient.fetch(url, {
+        headers: this.createRequestHeaders("application/xml", cookies),
+        timeout: this.config.timeout,
+        retries: this.config.retries,
+        baseDelay: this.config.baseDelay,
+      });
+      if (!response.ok) return null;
+
+      const sitemap = await response.text();
+      const positionIds = new Set<number>();
+      for (const match of sitemap.matchAll(/\/careers\/job\/(\d+)/g)) {
+        const positionId = Number(match[1]);
+        if (Number.isSafeInteger(positionId) && positionId > 0) {
+          positionIds.add(positionId);
+        }
+      }
+      return positionIds;
+    } catch (error) {
+      throwIfScrapeAborted(error);
+      return null;
+    }
   }
 
   private async fetchPositionDetails(
@@ -685,7 +782,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
   }
 
   private createRequestHeaders(
-    accept: "application/json" | "text/html",
+    accept: "application/json" | "application/xml" | "text/html",
     cookies: string
   ): Record<string, string> {
     const headers: Record<string, string> = {

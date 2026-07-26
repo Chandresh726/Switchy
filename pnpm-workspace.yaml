@@ -1,5 +1,6 @@
 packages:
   - landing
+  - demo-video
 
 allowBuilds:
   better-sqlite3: true
