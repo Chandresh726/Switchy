@@ -106,6 +106,29 @@ try {
   if (!response.ok) {
     throw new Error(`Readiness returned ${response.status}`);
   }
+  const guardedMutationResponse = await fetch(
+    `http://127.0.0.1:${port}/api/jobs/0`,
+    {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        origin: `http://127.0.0.1:${port}`,
+        referer: `http://127.0.0.1:${port}/jobs/0`,
+        "x-switchy-request": "true",
+      },
+      body: "{}",
+    }
+  );
+  const guardedMutationResult = await guardedMutationResponse.json();
+  if (
+    guardedMutationResponse.status !== 400
+    || guardedMutationResult.code !== "invalid_request"
+  ) {
+    throw new Error(
+      `Loopback mutation guard returned ${guardedMutationResponse.status}: `
+      + JSON.stringify(guardedMutationResult)
+    );
+  }
   const openCodeResponse = await fetch(
     `http://127.0.0.1:${port}/api/providers/local-cli/status?provider=opencode_cli`
   );
