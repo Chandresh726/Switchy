@@ -28,7 +28,7 @@ describe("Switchy distribution metadata", () => {
     };
 
     expect(application).toMatchObject({
-      version: "1.0.8",
+      version: "1.0.9",
       private: true,
       license: "MIT",
     });
