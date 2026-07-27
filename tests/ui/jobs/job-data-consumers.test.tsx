@@ -135,6 +135,7 @@ function renderWithClient(ui: React.ReactNode) {
 
 describe("job data consumers", () => {
   beforeEach(() => {
+    localStorage.clear();
     mocks.routeId = "42";
     mocks.getJob.mockClear();
     mocks.getJobs.mockReset();
@@ -220,6 +221,26 @@ describe("job data consumers", () => {
 
     expect(await screen.findByText("Canonical Backend Engineer")).toBeTruthy();
     expect(screen.getByText("1-1 of 1")).toBeTruthy();
+    expect(mocks.getJobs).toHaveBeenCalledWith(expect.objectContaining({
+      sortBy: "discoveredAt",
+      sortOrder: "desc",
+    }));
+  });
+
+  it("migrates the previous compatibility default to date added", async () => {
+    localStorage.setItem("switchy-job-filters", JSON.stringify({
+      sortBy: "matchScore",
+      sortOrder: "desc",
+    }));
+    mocks.getJobs.mockResolvedValue({ jobs: [listJob], totalCount: 1, hasMore: false });
+
+    renderWithClient(<JobList />);
+
+    expect(await screen.findByText("Canonical Backend Engineer")).toBeTruthy();
+    expect(mocks.getJobs).toHaveBeenCalledWith(expect.objectContaining({
+      sortBy: "discoveredAt",
+      sortOrder: "desc",
+    }));
   });
 
   it("stores and renders the job-detail resource directly", async () => {

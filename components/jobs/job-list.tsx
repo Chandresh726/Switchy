@@ -17,6 +17,7 @@ import { JOB_STATUSES, type JobStatus } from "@/lib/jobs/status";
 import { queryKeys } from "@/lib/query-keys";
 
 const STORAGE_KEY = "switchy-job-filters";
+const STORAGE_VERSION = 2;
 
 const defaultFilters: Filters = {
   search: "",
@@ -29,7 +30,7 @@ const defaultFilters: Filters = {
   matchBands: "",
   department: "",
   locationSearch: "",
-  sortBy: "matchScore",
+  sortBy: "discoveredAt",
   sortOrder: "desc",
 };
 
@@ -38,8 +39,12 @@ function loadFiltersFromStorage(): Filters {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
-      const parsed = JSON.parse(saved);
-      return { ...defaultFilters, ...parsed };
+      const parsed = JSON.parse(saved) as Partial<Filters> & { version?: number };
+      const { version, ...storedFilters } = parsed;
+      if (version !== STORAGE_VERSION && storedFilters.sortBy === "matchScore") {
+        storedFilters.sortBy = defaultFilters.sortBy;
+      }
+      return { ...defaultFilters, ...storedFilters };
     }
   } catch {
     // Ignore parse errors
@@ -185,7 +190,10 @@ export function JobList() {
   // Save filters to localStorage and sync to URL when they change
   useEffect(() => {
     if (isInitialized) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(filters));
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ version: STORAGE_VERSION, ...filters })
+      );
     }
   }, [filters, isInitialized]);
   
