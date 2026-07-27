@@ -1,3 +1,5 @@
+import { NextRequest } from "next/server";
+
 import { describe, expect, it } from "vitest";
 
 import { assertAppRequest } from "@/lib/api/request-guard";
@@ -23,6 +25,32 @@ describe("assertAppRequest", () => {
     });
 
     expect(() => assertAppRequest(request)).not.toThrow();
+  });
+
+  it("uses the public Host header when the standalone runtime has a different internal origin", () => {
+    const request = new NextRequest("http://localhost:6767/api/jobs/1", {
+      headers: {
+        host: "127.0.0.1:6767",
+        origin: "http://127.0.0.1:6767",
+        referer: "http://127.0.0.1:6767/jobs/1",
+        "x-switchy-request": "true",
+      },
+    });
+
+    expect(() => assertAppRequest(request)).not.toThrow();
+  });
+
+  it("rejects callers matching the internal origin but not the public Host header", () => {
+    const request = new NextRequest("http://localhost:6767/api/jobs/1", {
+      headers: {
+        host: "127.0.0.1:6767",
+        origin: "http://localhost:6767",
+        referer: "http://localhost:6767/jobs/1",
+        "x-switchy-request": "true",
+      },
+    });
+
+    expect(() => assertAppRequest(request)).toThrow("Cross-origin requests are not allowed");
   });
 
   it("rejects app-header requests from a different origin", () => {

@@ -1,7 +1,5 @@
-import { NextRequest } from "next/server";
-
 import { ValidationError } from "./error-handler";
-import { isAllowedLocalRequestHost } from "./local-host";
+import { resolveLocalRequestOrigin } from "./local-host";
 
 const APP_REQUEST_HEADER = "x-switchy-request";
 
@@ -53,21 +51,12 @@ function resolveCallerOrigins(request: Request): CallerOrigin[] {
   return origins.length > 0 ? origins : [{ kind: "absent" }];
 }
 
-function resolveAppOrigin(request: Request): string {
-  if (request instanceof NextRequest) {
-    return request.nextUrl.origin;
-  }
-
-  return new URL(request.url).origin;
-}
-
 export function assertAppRequest(request: Request): void {
   // This validates browser mutation provenance for the loopback-only app. It is
   // request-integrity protection, not user authentication or authorization.
   const callerOrigins = resolveCallerOrigins(request);
-  const appOrigin = resolveAppOrigin(request);
+  const appOrigin = resolveLocalRequestOrigin(request);
   const hasAppHeader = request.headers.get(APP_REQUEST_HEADER) === "true";
-  const hasAllowedHost = isAllowedLocalRequestHost(request);
   const hasInvalidCaller = callerOrigins.some(
     (caller) => caller.kind === "invalid"
   );
@@ -77,7 +66,7 @@ export function assertAppRequest(request: Request): void {
 
   if (
     !hasAppHeader ||
-    !hasAllowedHost ||
+    appOrigin === null ||
     hasInvalidCaller ||
     hasMismatchedCaller
   ) {
