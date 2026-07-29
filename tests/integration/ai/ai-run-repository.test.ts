@@ -3,10 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
+import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createAIRunRepository } from "@/lib/ai/runtime/run-repository";
-import { aiRuns, aiWorkItems, settings } from "@/lib/db/schema";
+import { aiRunAttempts, aiRuns, aiWorkItems, settings } from "@/lib/db/schema";
 import { migrateLocalDatabase } from "@/lib/db/migrations";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
@@ -70,11 +71,37 @@ describe("AI run migration and repository", () => {
     const repository = createAIRunRepository(database);
     const runId = await repository.create(createRunInput());
 
+    await repository.startAttempt(runId, 1);
+    await repository.completeAttempt(runId, 1, {
+      status: "succeeded",
+      usage: {
+        inputTokens: 20,
+        inputNoCacheTokens: 12,
+        inputCacheReadTokens: 8,
+        outputTokens: 10,
+        outputTextTokens: 7,
+        outputReasoningTokens: 3,
+        totalTokens: 30,
+      },
+      durationMs: 100,
+      finishReason: "stop",
+      providerRequestId: "request-1",
+      warningCodes: ["unsupported-setting"],
+    });
     await repository.completeSuccess(runId, {
       attempts: 1,
-      usage: { inputTokens: 20, outputTokens: 10, totalTokens: 30 },
+      usage: {
+        inputTokens: 20,
+        inputNoCacheTokens: 12,
+        inputCacheReadTokens: 8,
+        outputTokens: 10,
+        outputTextTokens: 7,
+        outputReasoningTokens: 3,
+        totalTokens: 30,
+      },
       durationMs: 125,
       finishReason: "stop",
+      providerRequestId: "request-1",
       warningCodes: ["unsupported-setting"],
       qualityResult: "passed",
     });
@@ -87,14 +114,60 @@ describe("AI run migration and repository", () => {
       modelId: "gpt-test",
       attemptCount: 1,
       inputTokens: 20,
+      inputNoCacheTokens: 12,
+      inputCacheReadTokens: 8,
       outputTokens: 10,
+      outputTextTokens: 7,
+      outputReasoningTokens: 3,
       totalTokens: 30,
       durationMs: 125,
       finishReason: "stop",
       warnings: ["unsupported-setting"],
       metadata: { fileType: "pdf", pageCount: 2 },
+      attemptHistory: [
+        expect.objectContaining({
+          attemptNumber: 1,
+          status: "succeeded",
+          providerRequestId: "request-1",
+          inputCacheReadTokens: 8,
+          outputReasoningTokens: 3,
+        }),
+      ],
     });
     expect(JSON.stringify(run)).not.toContain("resume text");
+    await expect(repository.completeFailure(runId, {
+      attempts: 1,
+      usage: { totalTokens: 30 },
+      durationMs: 130,
+      error: new Error("artifact persistence failed"),
+    })).rejects.toThrow("not in a running state");
+    expect((await repository.findById(runId))?.status).toBe("succeeded");
+  });
+
+  it("reconciles runs and attempts left running by an older application instance", async () => {
+    const { database } = harness.createDatabase();
+    const repository = createAIRunRepository(database);
+    const runId = await repository.create(createRunInput());
+    await repository.startAttempt(runId, 1);
+    database.update(aiRuns).set({ runtimeInstanceId: "older-instance" })
+      .where(eq(aiRuns.id, runId)).run();
+
+    const completedAt = new Date("2026-07-29T10:00:00.000Z");
+    await expect(repository.reconcileAbandonedRuns(completedAt, "current-instance"))
+      .resolves.toBe(1);
+
+    expect(database.select().from(aiRuns).where(eq(aiRuns.id, runId)).get())
+      .toMatchObject({
+        status: "abandoned",
+        errorCode: "interrupted",
+        completedAt,
+      });
+    expect(database.select().from(aiRunAttempts)
+      .where(eq(aiRunAttempts.runId, runId)).get()).toMatchObject({
+        status: "abandoned",
+        errorCode: "interrupted",
+        completedAt,
+      });
   });
 
   it("stores generic failure details without leaking provider secrets", async () => {

@@ -65,6 +65,7 @@ function insertRun(database: ReturnType<typeof harness.createDatabase>["database
     policyVersion: "resume-normalization-policy-v2",
     inputFingerprint: "fixture-fingerprint",
     status: "succeeded",
+    completedAt: new Date(),
   }).run();
   return id;
 }

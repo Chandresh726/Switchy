@@ -9,9 +9,13 @@ import {
   clearWritingHistory,
   getWritingHistoryContents,
 } from "@/lib/ai/observability/writing-history";
-import { persistWritingVariant } from "@/lib/ai/writing/repository";
+import {
+  persistWritingVariant,
+  recordWritingVariantSignal,
+} from "@/lib/ai/writing/repository";
 import {
   aiGeneratedContent,
+  aiGenerationEvents,
   aiGenerationHistory,
   aiRuns,
   companies,
@@ -23,6 +27,15 @@ import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-writing-history-");
 const temporaryMigrationFolders: string[] = [];
+const preWritingContent = sqliteTable("aiGeneratedContent", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  jobId: integer("job_id").notNull(),
+  type: text("type").notNull(),
+  content: text("content").notNull(),
+  settingsSnapshot: text("settings_snapshot"),
+  createdAt: integer("created_at", { mode: "timestamp" }),
+  updatedAt: integer("updated_at", { mode: "timestamp" }),
+});
 const preWritingHistory = sqliteTable("aiGenerationHistory", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   contentId: integer("content_id").notNull(),
@@ -58,7 +71,7 @@ function insertJob(database: ReturnType<typeof harness.createDatabase>["database
 }
 
 describe("AI writing history persistence", () => {
-  it("persists generated and edited variants atomically with lineage and edit metadata", () => {
+  it("persists variants, current selection, and append-only feedback events", async () => {
     const { database } = harness.createDatabase();
     const job = insertJob(database);
     const initial = persistWritingVariant(database, {
@@ -94,6 +107,27 @@ describe("AI writing history persistence", () => {
     });
     expect(variants[1].editDistance).toBeGreaterThan(0);
     expect(variants[1].editDistanceRatio).toBeGreaterThan(0);
+    expect(edited.content.currentVariantId).toBe(variants[1].id);
+
+    recordWritingVariantSignal(database, variants[0].id, "selected", "navigation");
+    recordWritingVariantSignal(database, variants[0].id, "copied", "copy");
+
+    expect(database.select().from(aiGeneratedContent)
+      .where(eq(aiGeneratedContent.id, edited.content.id)).get()?.currentVariantId)
+      .toBe(variants[0].id);
+    expect(database.select().from(aiGenerationEvents)
+      .where(eq(aiGenerationEvents.variantId, variants[0].id)).all())
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ action: "selected", source: "generated" }),
+        expect.objectContaining({ action: "selected", source: "navigation" }),
+        expect.objectContaining({ action: "copied", source: "copy" }),
+      ]));
+    const history = await getWritingHistoryContents(database);
+    expect(history[0]?.history[0]?.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: "selected", source: "generated" }),
+      expect.objectContaining({ action: "selected", source: "navigation" }),
+      expect.objectContaining({ action: "copied", source: "copy" }),
+    ]));
   });
 
   it("rolls back the content insert when the history insert fails", () => {
@@ -120,10 +154,13 @@ describe("AI writing history persistence", () => {
     const { database } = harness.createDatabase({ migrate: false });
     migrateLocalDatabase(database, migrationsThrough(17));
     const job = insertJob(database);
-    const content = database.insert(aiGeneratedContent).values({
+    const createdAt = new Date("2026-01-02T03:04:05.000Z");
+    const content = database.insert(preWritingContent).values({
       jobId: job.id,
       type: "referral",
       content: "Existing local draft",
+      createdAt,
+      updatedAt: createdAt,
     }).returning().get();
     database.insert(preWritingHistory).values({
       contentId: content.id,

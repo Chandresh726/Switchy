@@ -4,6 +4,8 @@ import {
   AIContentQuerySchema,
   AIContentVariantSignalSchema,
 } from "@/lib/ai/contracts";
+import type { AICapabilityGroup } from "@/lib/ai/runtime/capability-groups";
+import type { AIUsagePeriod } from "@/lib/ai/observability";
 import {
   type AIHistoryResponse,
   type AIUsageResponse,
@@ -36,8 +38,12 @@ export const clearAllAIContent = (): Promise<ClearAIContentResponse> => apiComma
 export const deleteAIContent = (id: number) => apiCommand(`/api/ai/content/${contentPath(id)}`, "DELETE", successSchema, "Failed to delete AI content");
 export const getAIContent = (jobId: number, type: z.output<typeof AIContentQuerySchema>["type"]) => apiRequest(appendQuery("/api/ai/content", serializeQuery(AIContentQuerySchema, { jobId, type })), { method: "GET" }, aiContentEnvelopeSchema, "Failed to load saved content");
 export const saveAIContent = (id: number, body: z.output<typeof AIContentPatchBodySchema>) => apiJsonMutation(`/api/ai/content/${contentPath(id)}`, "PATCH", AIContentPatchBodySchema, body, aiContentWriteResponseSchema, "Failed to save AI content");
-export const recordAIVariantSignal = (variantId: number, action: z.output<typeof AIContentVariantSignalSchema>["action"]) => apiJsonMutation(`/api/ai/content/variants/${contentPath(variantId)}`, "PATCH", AIContentVariantSignalSchema, { action }, successSchema, `Failed to record ${action} signal`);
-export const getAIUsage = (days: 7 | 30): Promise<AIUsageResponse> => apiRequest(appendQuery("/api/ai/usage", serializeQuery(aiUsageQuerySchema, { days: String(days) as "7" | "30" })), { method: "GET", cache: "no-store" }, aiUsageResponseSchema, "Failed to fetch AI usage");
+export const recordAIVariantSignal = (
+  variantId: number,
+  action: z.output<typeof AIContentVariantSignalSchema>["action"],
+  source: NonNullable<z.output<typeof AIContentVariantSignalSchema>["source"]>
+) => apiJsonMutation(`/api/ai/content/variants/${contentPath(variantId)}`, "PATCH", AIContentVariantSignalSchema, { action, source }, successSchema, `Failed to record ${action} signal`);
+export const getAIUsage = (days: AIUsagePeriod, group?: AICapabilityGroup): Promise<AIUsageResponse> => apiRequest(appendQuery("/api/ai/usage", serializeQuery(aiUsageQuerySchema, { days: String(days) as "7" | "30" | "all", group })), { method: "GET", cache: "no-store" }, aiUsageResponseSchema, "Failed to fetch AI usage");
 export const openAIContentStream = (body: z.output<typeof AIContentPostBodySchema>, signal: AbortSignal) => apiStreamRequest("/api/ai/content/stream", {
   method: "POST",
   headers: { "Content-Type": "application/json", ...APP_REQUEST_HEADERS },

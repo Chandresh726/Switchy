@@ -40,6 +40,7 @@ interface CodexTurnResult {
   output: string;
   usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
   finishReason?: string;
+  providerRequestId?: string;
 }
 
 function codexErrorKey(value: unknown): string | undefined {
@@ -397,7 +398,12 @@ export class CodexCLIBackend implements AIGenerationBackend {
             }
             finishReason = typeof status === "string" ? status : "stop";
             void deltaDelivery.then(
-              () => settle({ output, usage, finishReason }),
+              () => settle({
+                output,
+                usage,
+                finishReason,
+                providerRequestId: turnId ? `${threadId}:${turnId}` : threadId,
+              }),
               (error) => reject(error instanceof Error ? error : new Error("Writing stream failed"))
             );
           });

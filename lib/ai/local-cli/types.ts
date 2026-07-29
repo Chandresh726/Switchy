@@ -20,6 +20,7 @@ export interface BackendResult<T> {
   output: T;
   usage: AIExecutionUsage;
   finishReason?: string;
+  providerRequestId?: string;
   warningCodes: string[];
 }
 

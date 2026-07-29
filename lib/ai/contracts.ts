@@ -44,6 +44,7 @@ export const AIContentPatchBodySchema = z.object({
 
 export const AIContentVariantSignalSchema = z.object({
   action: z.enum(["selected", "copied", "discarded"]),
+  source: z.enum(["initial_load", "navigation", "copy", "discard"]).optional(),
 });
 
 export const ProviderRouteParamsSchema = z.object({

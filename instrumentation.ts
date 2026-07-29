@@ -12,6 +12,16 @@ export async function register() {
     registerRuntimeLock();
 
     try {
+      const { aiRunRepository } = await import("@/lib/ai/runtime");
+      const abandoned = await aiRunRepository.reconcileAbandonedRuns();
+      if (abandoned > 0) {
+        console.log(`[Instrumentation] Reconciled ${abandoned} interrupted AI run(s)`);
+      }
+    } catch (error) {
+      console.error("[Instrumentation] Failed to reconcile interrupted AI runs:", error);
+    }
+
+    try {
       const { reconcileResumeStorage } = await import(
         "@/lib/application/profile-resume-service"
       );

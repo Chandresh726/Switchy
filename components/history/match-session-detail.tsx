@@ -4,50 +4,186 @@ import { useState } from "react";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { ApiErrorState } from "@/components/ui/api-error-state";
-import { MatchPipelineProgress } from "@/components/matching/match-pipeline-progress";
 import {
-  CheckCircle,
-  XCircle,
-  Clock,
-  ArrowLeft,
-  Building2,
-  Sparkles,
   AlertCircle,
+  ArrowLeft,
+  CheckCircle2,
   Loader2,
-  Play,
-  Target,
+  Sparkles,
   Square,
+  Target,
+  Timer,
   Trash2,
+  XCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
 import { toast } from "sonner";
+
+import { TRIGGER_LABELS } from "@/components/history/shared/constants";
+import {
+  MetaLine,
+  SessionStat,
+  StatusPill,
+  StatusRail,
+  statusPillClass,
+} from "@/components/history/shared/session-primitives";
+import { AIRunTelemetry } from "@/components/history/shared/ai-run-telemetry";
+import { MatchPhaseSummary } from "@/components/matching/match-pipeline-progress";
+import { ApiErrorState } from "@/components/ui/api-error-state";
+import { Button } from "@/components/ui/button";
+import { Pagination } from "@/components/ui/pagination";
 import {
   getMatchHistoryDetail,
   cancelMatchHistorySession,
   deleteMatchHistorySession,
 } from "@/lib/api/clients/history";
+import type { MatchHistoryDetailResponse } from "@/lib/api/contracts/history";
+import { cn } from "@/lib/utils";
 import { formatDurationMs, formatDurationFromDates, formatDateTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
+type MatchLog = MatchHistoryDetailResponse["logs"][number];
+
 interface MatchSessionDetailProps {
   sessionId: string;
 }
 
+function runModel(
+  run: { id: string; provider: string; modelId: string | null } | null | undefined
+): string | null {
+  if (!run) return null;
+  return `${run.provider} · ${run.modelId ?? "unknown model"}`;
+}
+
+function MatchJobLogRow({ log }: { log: MatchLog }) {
+  const failed = log.status === "failed";
+  const hasJobId = log.jobId != null;
+  const jobDisplay = log.jobTitle || (hasJobId ? `Job #${log.jobId}` : "Untitled Job");
+  const labeledRunModels = [
+    { label: "Analysis", model: runModel(log.analysisRun) },
+    { label: "Match", model: runModel(log.matchRun) },
+    { label: "Adjudication", model: runModel(log.adjudicationRun) },
+  ].filter(
+    (entry): entry is { label: string; model: string } => Boolean(entry.model)
+  );
+  const distinctRunModels = Array.from(new Set(
+    labeledRunModels.map(({ model }) => model)
+  ));
+  const runModels = distinctRunModels.length === 1
+    ? distinctRunModels
+    : labeledRunModels.map(({ label, model }) => `${label} ${model}`);
+  const hasRunModel = runModels.some(Boolean);
+
+  const body = (
+    <>
+      <StatusRail className={failed ? "bg-red-400" : "bg-emerald-400"} />
+      <div className="py-3.5 pl-5 pr-4 sm:pl-6 sm:pr-5">
+        <div className="flex items-start gap-3">
+          {log.companyLogoUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={log.companyLogoUrl}
+              alt={log.companyName || "Company"}
+              className="size-10 shrink-0 rounded-lg bg-muted object-contain p-1.5"
+            />
+          ) : (
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-medium text-muted-foreground">
+              {(log.companyName || "?").charAt(0).toUpperCase()}
+            </div>
+          )}
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-4">
+              <h4
+                className="truncate text-[15px] font-semibold text-foreground"
+                title={log.jobTitle || undefined}
+              >
+                {jobDisplay}
+              </h4>
+
+              {failed ? (
+                <StatusPill
+                  label={log.errorType || "error"}
+                  className="border-red-500/20 bg-red-500/10 text-red-400"
+                  icon={AlertCircle}
+                />
+              ) : (
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <Sparkles className="h-4 w-4 text-emerald-400" />
+                  <span className="text-lg font-semibold leading-none tabular-nums text-emerald-400">
+                    {log.score?.toFixed(0) ?? "—"}
+                  </span>
+                  <span className="text-xs text-muted-foreground">score</span>
+                </span>
+              )}
+            </div>
+
+            <div className="mt-1 flex min-w-0 items-center justify-between gap-3">
+              <MetaLine
+                items={[
+                  log.companyName,
+                  ...runModels,
+                  !hasRunModel && log.modelUsed && `Model ${log.modelUsed}`,
+                ]}
+              />
+              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                {formatDurationMs(log.duration)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {failed && log.errorMessage && (
+          <p className="ml-13 mt-2 break-words font-mono text-xs text-red-300/90">
+            {log.errorMessage}
+          </p>
+        )}
+      </div>
+    </>
+  );
+
+  const shellClass = cn(
+    "relative overflow-hidden rounded-lg border bg-card transition-colors",
+    failed ? "border-red-500/20" : "border-border",
+    hasJobId && (failed ? "hover:border-red-500/40" : "hover:border-border/60"),
+    !hasJobId && "opacity-60"
+  );
+
+  return (
+    <div className={shellClass}>
+      {hasJobId ? (
+        <Link href={`/jobs/${log.jobId}`} className="block">
+          {body}
+        </Link>
+      ) : (
+        <div aria-disabled="true">{body}</div>
+      )}
+      <AIRunTelemetry
+        runs={[
+          { label: "Job analysis", run: log.analysisRun },
+          { label: "Match evaluation", run: log.matchRun },
+          { label: "Match adjudication", run: log.adjudicationRun },
+        ]}
+      />
+    </div>
+  );
+}
+
 export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
-  const [logOffset, setLogOffset] = useState(0);
-  const logLimit = 50;
-  const [workOffset, setWorkOffset] = useState(0);
-  const workLimit = 50;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const router = useRouter();
   const queryClient = useQueryClient();
-  const detailParams = { logOffset, logLimit, workOffset, workLimit };
-  const { data, isLoading, error, refetch } = useQuery({
+  const offset = (currentPage - 1) * pageSize;
+  const detailParams = {
+    logOffset: offset,
+    logLimit: pageSize,
+    workOffset: offset,
+    workLimit: pageSize,
+  };
+  const { data, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: queryKeys.matchHistory.detail(sessionId, detailParams),
     queryFn: async () => {
       return getMatchHistoryDetail(sessionId, detailParams);
@@ -79,7 +215,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
     },
     onSuccess: () => {
       void cacheOwnership.clearMatchHistory(queryClient);
-      router.push("/history/match");
+      router.push("/history/ai/matching");
     },
     onError: (mutationError) => {
       toast.error(getApiErrorMessage(mutationError, "Failed to delete match session"));
@@ -102,7 +238,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
           fallbackMessage="Match session details could not be loaded."
           onRetry={() => void refetch()}
         />
-        <Link href="/history/match">
+        <Link href="/history/ai/matching">
           <Button variant="ghost" className="mt-2">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Match History
@@ -119,15 +255,18 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
     ? Math.round(((session.jobsCompleted || 0) / session.jobsTotal) * 100)
     : 0;
   const isActiveSession = session.status === "in_progress" || session.status === "queued";
+  const hasJobStats = (session.jobsTotal || 0) > 0;
 
-  const failedLogs = logs.filter((l) => l.status === "failed");
-  const successLogs = logs.filter((l) => l.status === "success");
+  const failedCount = logs.filter((log) => log.status === "failed").length;
+  const matchedCount = logs.length - failedCount;
+  const totalRecords = logPagination.total;
+  const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
 
   return (
     <div className="space-y-6">
       {/* Header Navigation */}
       <div className="flex items-center justify-between">
-        <Link href="/history/match">
+        <Link href="/history/ai/matching">
           <Button variant="ghost" className="text-muted-foreground hover:text-foreground -ml-2 pl-2">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Match History
@@ -160,73 +299,50 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
       </div>
 
       {/* Session Overview Card */}
-      <div className="rounded-lg border border-border bg-card p-6">
-        <div className="flex items-start justify-between gap-4 mb-6">
-          <div className="flex items-center gap-4">
-            <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${statusConfig.bgColor}`}>
-              {session.status === "in_progress" ? (
-                <Loader2 className={`h-6 w-6 ${statusConfig.color} animate-spin`} />
-              ) : (
-                <StatusIcon className={`h-6 w-6 ${statusConfig.color}`} />
+      <div className="rounded-lg border border-border bg-card">
+        <div className="flex items-start justify-between gap-4 p-5">
+          <div className="flex items-center gap-3">
+            <div
+              className={cn(
+                "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg",
+                statusConfig.bgColor
               )}
+            >
+              <StatusIcon className={cn("h-5 w-5", statusConfig.color)} />
             </div>
-            <div>
-              <h1 className="text-xl font-semibold text-foreground">
-                Match Session
-              </h1>
-              <div className="flex items-center gap-3 mt-1.5 text-sm text-muted-foreground">
-                <span className="flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5" />
-                  {formatDateTime(session.startedAt)}
-                </span>
-                <span className="text-muted-foreground">&bull;</span>
-                <span className="flex items-center gap-1.5">
-                  <Play className="h-3.5 w-3.5" />
-                  {TRIGGER_LABELS[session.triggerSource] || session.triggerSource}
-                </span>
-                {session.companyName && (
-                  <>
-                    <span className="text-muted-foreground">&bull;</span>
-                    <span className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400">
-                      <Building2 className="h-3.5 w-3.5" />
-                      {session.companyName}
-                    </span>
-                  </>
-                )}
-              </div>
+            <div className="min-w-0">
+              <h1 className="text-lg font-semibold text-foreground">Match Session</h1>
+              <MetaLine
+                className="mt-1"
+                items={[
+                  formatDateTime(session.startedAt),
+                  TRIGGER_LABELS[session.triggerSource] || session.triggerSource,
+                  session.companyName,
+                ]}
+              />
             </div>
           </div>
-          <Badge
-            variant="outline"
-            className={`${statusConfig.color} ${statusConfig.bgColor} border-transparent px-3 py-1`}
-          >
-            {statusConfig.label}
-          </Badge>
+          <StatusPill
+            label={statusConfig.label}
+            className={statusPillClass(statusConfig)}
+          />
         </div>
 
-        {/* Live pipeline progress */}
-        {pipeline.jobs.length > 0 ? (
-          <div className="mb-6">
-            <MatchPipelineProgress
+        {/* Phase rollup only; individual jobs are listed under Job results. */}
+        {pipeline.analysis.total > 0 ? (
+          <div className="border-t border-border/60 px-5 py-4">
+            <MatchPhaseSummary
               analysis={pipeline.analysis}
               matching={pipeline.matching}
-              jobs={pipeline.jobs}
-              totalJobs={pipeline.jobPagination.total}
             />
-            {pipeline.jobPagination.total > workLimit && (
-              <div className="mt-2 flex items-center justify-end gap-2">
-                <Button variant="outline" size="sm" disabled={workOffset === 0} onClick={() => setWorkOffset(Math.max(0, workOffset - workLimit))}>Previous jobs</Button>
-                <Button variant="outline" size="sm" disabled={!pipeline.jobPagination.hasMore} onClick={() => setWorkOffset(workOffset + workLimit)}>Next jobs</Button>
-              </div>
-            )}
           </div>
         ) : session.status === "in_progress" ? (
-          <div className="mb-6">
-            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
+          <div className="border-t border-border/60 px-5 py-3">
+            <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
               <span>Matching Jobs...</span>
-              <span>{progress}%</span>
+              <span className="tabular-nums">{progress}%</span>
             </div>
-            <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full bg-blue-500 transition-all duration-300"
                 style={{ width: `${progress}%` }}
@@ -235,231 +351,95 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
           </div>
         ) : null}
 
-        {/* Summary Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="rounded-lg border border-border bg-background/60 p-4">
-            <div className="flex items-center gap-2 mb-2 text-muted-foreground">
-              <Target className="h-4 w-4" />
-              <span className="text-xs font-medium uppercase tracking-wider">Total Jobs</span>
-            </div>
-            <span className="text-2xl font-semibold text-foreground">
-              {session.jobsTotal || 0}
-            </span>
-          </div>
-
-          <div className="rounded-lg border border-border bg-background/60 p-4">
-            <div className="mb-2 flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
-              <CheckCircle className="h-4 w-4" />
-              <span className="text-xs font-medium uppercase tracking-wider">Succeeded</span>
-            </div>
-            <span className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400">
-              {session.jobsSucceeded || 0}
-            </span>
-          </div>
-
-          <div className="rounded-lg border border-border bg-background/60 p-4">
-            <div className="mb-2 flex items-center gap-2 text-red-600 dark:text-red-400">
-              <XCircle className="h-4 w-4" />
-              <span className="text-xs font-medium uppercase tracking-wider">Failed</span>
-            </div>
-            <span className="text-2xl font-semibold text-red-600 dark:text-red-400">
-              {session.jobsFailed || 0}
-            </span>
-          </div>
-
-          <div className="rounded-lg border border-border bg-background/60 p-4">
-            <div className="mb-2 flex items-center gap-2 text-muted-foreground">
-              <Clock className="h-4 w-4" />
-              <span className="text-xs font-medium uppercase tracking-wider">Total Duration</span>
-            </div>
-            <span className="text-2xl font-semibold text-foreground">
-              {formatDurationFromDates(session.startedAt, session.completedAt)}
-            </span>
-          </div>
+        {/* Summary Stats */}
+        <div className="flex flex-wrap items-center gap-x-7 gap-y-2.5 border-t border-border/60 px-5 py-3.5">
+          <SessionStat
+            size="md"
+            value={`${session.jobsCompleted || 0}/${session.jobsTotal || 0}`}
+            label="jobs"
+            icon={Target}
+          />
+          {hasJobStats && (
+            <>
+              <SessionStat
+                size="md"
+                value={session.jobsSucceeded || 0}
+                label="matched"
+                icon={CheckCircle2}
+                accent="emerald"
+              />
+              <SessionStat
+                size="md"
+                value={session.jobsFailed || 0}
+                label="failed"
+                icon={XCircle}
+                accent="red"
+              />
+            </>
+          )}
+          <SessionStat
+            size="md"
+            value={formatDurationFromDates(session.startedAt, session.completedAt)}
+            label="duration"
+            icon={Timer}
+          />
         </div>
       </div>
 
-      {/* Job Logs List */}
-      <div>
-        <h3 className="text-sm font-medium text-muted-foreground mb-4 px-1">Job Match Logs</h3>
-        
-        {/* Failed Jobs Section */}
-        {failedLogs.length > 0 && (
-          <div className="mb-6">
-            <h4 className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-red-600 dark:text-red-400">
-              <AlertCircle className="h-3.5 w-3.5" />
-              Failed Jobs ({failedLogs.length})
-            </h4>
-            <div className="space-y-3">
-              {failedLogs.map((log) => {
-                const jobDisplay = log.jobTitle || (log.jobId != null ? `Job #${log.jobId}` : "Untitled Job");
-                const hasJobId = log.jobId != null;
-                return hasJobId ? (
-                  <Link
-                    key={log.id}
-                    href={`/jobs/${log.jobId}`}
-                    className="block rounded-lg border border-red-500/20 bg-red-500/5 p-4 transition-all hover:bg-red-500/10 hover:border-red-500/30"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-foreground">
-                        {jobDisplay}
-                      </span>
-                      <Badge variant="outline" className="h-5 border-red-500/30 px-1.5 text-[10px] text-red-600 dark:text-red-400">
-                        {log.errorType || "error"}
-                      </Badge>
-                    </div>
-                    {log.errorMessage && (
-                      <p className="mb-2 break-all font-mono text-[10px] text-red-700/90 dark:text-red-300">{log.errorMessage}</p>
-                    )}
-                    <div className="flex gap-4 text-muted-foreground text-xs">
-                      <span>Attempts: {log.attemptCount}</span>
-                      <span>Duration: {formatDurationMs(log.duration)}</span>
-                      {log.modelUsed && <span>Model: {log.modelUsed}</span>}
-                    </div>
-                  </Link>
-                ) : (
-                  <div
-                    key={log.id}
-                    className="block rounded-lg border border-red-500/20 bg-red-500/5 p-4 opacity-50"
-                    aria-disabled="true"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-foreground">
-                        {jobDisplay}
-                      </span>
-                      <Badge variant="outline" className="h-5 border-red-500/30 px-1.5 text-[10px] text-red-600 dark:text-red-400">
-                        {log.errorType || "error"}
-                      </Badge>
-                    </div>
-                    {log.errorMessage && (
-                      <p className="mb-2 break-all font-mono text-[10px] text-red-700/90 dark:text-red-300">{log.errorMessage}</p>
-                    )}
-                    <div className="flex gap-4 text-muted-foreground text-xs">
-                      <span>Attempts: {log.attemptCount}</span>
-                      <span>Duration: {formatDurationMs(log.duration)}</span>
-                      {log.modelUsed && <span>Model: {log.modelUsed}</span>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Successful Jobs Section */}
-        {successLogs.length > 0 && (
+      {/* Job Logs */}
+      <section aria-labelledby="match-logs-heading">
+        <div className="mb-4 flex flex-col gap-2 px-1 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h4 className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-              <CheckCircle className="h-3.5 w-3.5" />
-              Successful Jobs ({successLogs.length})
-            </h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {successLogs.map((log) => {
-                const jobDisplay = log.jobTitle || (log.jobId != null ? `Job #${log.jobId}` : "Untitled Job");
-                const hasJobId = log.jobId != null;
-                return hasJobId ? (
-                  <Link
-                    key={log.id}
-                    href={`/jobs/${log.jobId}`}
-                    className="block rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-4 transition-all hover:bg-emerald-500/10 hover:border-emerald-500/20"
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <span className="text-foreground font-medium truncate block" title={log.jobTitle || ""}>
-                        {jobDisplay}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <Sparkles className="h-3.5 w-3.5 text-emerald-500" />
-                        <span className="font-mono text-lg text-emerald-600 dark:text-emerald-400">
-                          {log.score?.toFixed(0)}
-                        </span>
-                        <span className="text-muted-foreground text-xs">compatibility score</span>
-                      </div>
-                      <span className="text-muted-foreground text-xs">
-                        {formatDurationMs(log.duration)}
-                      </span>
-                    </div>
-                    {log.modelUsed && (
-                      <div className="mt-2 text-xs text-muted-foreground">
-                        Model: {log.modelUsed}
-                      </div>
-                    )}
-                    {(log.analysisRun || log.matchRun || log.adjudicationRun) && (
-                      <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
-                        {log.analysisRun ? (
-                          <p title={`Run ${log.analysisRun.id}`}>
-                            Analysis: {log.analysisRun.modelId} · {log.analysisRun.status}
-                          </p>
-                        ) : null}
-                        {log.matchRun ? (
-                          <p title={`Run ${log.matchRun.id}`}>
-                            Match: {log.matchRun.modelId} · {log.matchRun.attempts} attempt{log.matchRun.attempts === 1 ? "" : "s"}
-                          </p>
-                        ) : log.adjudicationRun ? (
-                          <p title={`Run ${log.adjudicationRun.id}`}>
-                            Adjudication: {log.adjudicationRun.modelId} · {log.adjudicationRun.attempts} attempt{log.adjudicationRun.attempts === 1 ? "" : "s"}
-                          </p>
-                        ) : null}
-                      </div>
-                    )}
-                  </Link>
-                ) : (
-                  <div
-                    key={log.id}
-                    className="block rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-4 opacity-50"
-                    aria-disabled="true"
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <span className="text-foreground font-medium truncate block" title={log.jobTitle || ""}>
-                        {jobDisplay}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <Sparkles className="h-3.5 w-3.5 text-emerald-500" />
-                        <span className="font-mono text-lg text-emerald-600 dark:text-emerald-400">
-                          {log.score?.toFixed(0)}
-                        </span>
-                        <span className="text-muted-foreground text-xs">compatibility score</span>
-                      </div>
-                      <span className="text-muted-foreground text-xs">
-                        {formatDurationMs(log.duration)}
-                      </span>
-                    </div>
-                    {log.modelUsed && (
-                      <div className="mt-2 text-xs text-muted-foreground">
-                        Model: {log.modelUsed}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+            <h3 id="match-logs-heading" className="text-base font-medium text-foreground">
+              Job results
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Compatibility scores, models used, and failures for each job in this run.
+            </p>
           </div>
-        )}
+          {logs.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              {failedCount > 0 && (
+                <span className="rounded-full border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-red-400">
+                  {failedCount} failed
+                </span>
+              )}
+              <span className="rounded-full border border-border bg-muted/30 px-2.5 py-1 text-muted-foreground">
+                {matchedCount} matched
+              </span>
+            </div>
+          )}
+        </div>
 
-        {logs.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-8">
-            No job logs available for this session
-          </p>
-        )}
-        {logPagination.total > logLimit && (
-          <div className="mt-4 flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">
-              Showing {logPagination.offset + 1}-{Math.min(logPagination.offset + logs.length, logPagination.total)} of {logPagination.total}
-            </span>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" disabled={logOffset === 0} onClick={() => setLogOffset(Math.max(0, logOffset - logLimit))}>
-                Previous
-              </Button>
-              <Button variant="outline" size="sm" disabled={!logPagination.hasMore} onClick={() => setLogOffset(logOffset + logLimit)}>
-                Next
-              </Button>
-            </div>
+        {logs.length > 0 ? (
+          <div className="space-y-3">
+            {logs.map((log) => (
+              <MatchJobLogRow key={log.id} log={log} />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+            No job results have been recorded for this session.
           </div>
         )}
-      </div>
+      </section>
+
+      {totalPages > 1 && (
+        <Pagination
+          ariaLabel="Match session records pagination"
+          itemLabel="job records"
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalCount={totalRecords}
+          pageSize={pageSize}
+          isFetching={isFetching}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+        />
+      )}
     </div>
   );
 }

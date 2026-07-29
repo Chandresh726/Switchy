@@ -143,6 +143,7 @@ describe("shared API contracts", () => {
     expect(localCLIStatusQuerySchema.safeParse({ provider: "openai" }).success).toBe(false);
     expect(aiUsageQuerySchema.safeParse({ days: "365" }).success).toBe(false);
     expect(aiUsageQuerySchema.parse({})).toEqual({ days: 7 });
+    expect(aiUsageQuerySchema.parse({ days: "all" })).toEqual({ days: "all" });
     expect(statsQuerySchema.safeParse({ days: "365" }).success).toBe(false);
     expect(statsQuerySchema.parse({})).toEqual({ days: 7 });
     expect(historyIdParamsSchema.safeParse({ id: "" }).success).toBe(false);

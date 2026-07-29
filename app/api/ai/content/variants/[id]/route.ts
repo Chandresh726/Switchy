@@ -13,8 +13,12 @@ export async function PATCH(
   try {
     assertAppRequest(request);
     const { id: variantId } = numericIdParamsSchema.parse(await params);
-    const { action } = AIContentVariantSignalSchema.parse(await request.json());
-    const updated = await recordVariantSignal(variantId, action);
+    const { action, source } = AIContentVariantSignalSchema.parse(await request.json());
+    const updated = await recordVariantSignal(
+      variantId,
+      action,
+      source ?? (action === "copied" ? "copy" : action === "discarded" ? "discard" : "navigation")
+    );
     if (!updated) {
       throw new NotFoundError("Variant not found");
     }

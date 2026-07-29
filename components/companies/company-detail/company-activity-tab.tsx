@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { formatDurationFromDates, formatDate, formatTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
-import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
+import { TRIGGER_LABELS } from "@/components/history/shared/constants";
 import type { CompanyActivity } from "@/lib/api/contracts/companies";
 
 function parseDate(value: string | null): Date | null {

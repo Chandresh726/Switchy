@@ -4,7 +4,7 @@ import {
   getAIRunSummaries,
   getAIUsageSummary,
 } from "@/lib/ai/observability";
-import { aiRuns, matchLogs } from "@/lib/db/schema";
+import { aiCacheEvents, aiRuns, matchLogs } from "@/lib/db/schema";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-ai-observability-");
@@ -79,15 +79,40 @@ describe("AI observability", () => {
         createdAt: new Date(NOW.getTime() - 10 * 24 * 60 * 60 * 1_000),
         startedAt: new Date(NOW.getTime() - 10 * 24 * 60 * 60 * 1_000),
       }),
+      run("run-oldest", {
+        createdAt: new Date(NOW.getTime() - 45 * 24 * 60 * 60 * 1_000),
+        startedAt: new Date(NOW.getTime() - 45 * 24 * 60 * 60 * 1_000),
+      }),
     ]).run();
     database.insert(matchLogs).values({
       status: "success",
       modelUsed: "cache",
       completedAt: new Date(NOW.getTime() - 1_000),
     }).run();
+    database.insert(aiCacheEvents).values([
+      {
+        id: "cache-analysis",
+        capability: "job_analysis",
+        subjectType: "job",
+        subjectId: "1",
+        artifactType: "job_analysis",
+        artifactId: "analysis-1",
+        createdAt: new Date(NOW.getTime() - 2_000),
+      },
+      {
+        id: "cache-match",
+        capability: "match_evaluation",
+        subjectType: "job",
+        subjectId: "1",
+        artifactType: "match_result",
+        artifactId: "match-1",
+        createdAt: new Date(NOW.getTime() - 1_000),
+      },
+    ]).run();
 
-    const sevenDays = await getAIUsageSummary(7, database, NOW);
-    const thirtyDays = await getAIUsageSummary(30, database, NOW);
+    const sevenDays = await getAIUsageSummary(7, { database, now: NOW });
+    const thirtyDays = await getAIUsageSummary(30, { database, now: NOW });
+    const allTime = await getAIUsageSummary("all", { database, now: NOW });
 
     expect(sevenDays).toMatchObject({
       executions: 5,
@@ -101,6 +126,10 @@ describe("AI observability", () => {
       outputTokens: 15,
       totalTokens: 45,
       averageLatencyMs: 125,
+      cacheHits: 2,
+      terminalExecutions: 4,
+      tokenTrackedExecutions: 3,
+      tokenCoveragePercent: 75,
       fullMatchCacheReuses: 1,
       failures: [
         { code: "invalid_model", count: 1 },
@@ -112,14 +141,78 @@ describe("AI observability", () => {
       "job_analysis",
       "writing_referral",
       "match_adjudication",
+      "match_evaluation",
       "writing_cover_letter",
     ]);
     expect(sevenDays.capabilities.find((item) => item.capability === "resume_parse"))
       .toMatchObject({ executions: 1, calls: 3 });
     expect(sevenDays.capabilities.find((item) => item.capability === "match_adjudication"))
       .toMatchObject({ executions: 1, calls: 0 });
+    expect(sevenDays.capabilities.find((item) => item.capability === "match_evaluation"))
+      .toMatchObject({ executions: 0, calls: 0, cacheHits: 1 });
+    expect(sevenDays.providers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ provider: "openai", modelId: "synthetic-model" }),
+    ]));
     expect(thirtyDays).toMatchObject({ executions: 6, calls: 6 });
+    expect(allTime).toMatchObject({
+      days: "all",
+      executions: 7,
+      calls: 7,
+      periodStart: "1970-01-01T00:00:00.000Z",
+    });
     expect(JSON.stringify(sevenDays)).not.toContain("currency");
+  });
+
+  it("scopes the ledger to one capability group and keeps match reuse out of writing", async () => {
+    const { database } = harness.createDatabase();
+    database.insert(aiRuns).values([
+      run("group-analysis", { capability: "job_analysis" }),
+      run("group-evaluation", { capability: "match_evaluation", totalTokens: 40 }),
+      run("group-cover-letter", { capability: "writing_cover_letter", totalTokens: 7 }),
+      run("group-referral", {
+        capability: "writing_referral",
+        status: "failed",
+        errorCode: "timeout",
+      }),
+      run("group-resume", { capability: "resume_parse" }),
+    ]).run();
+    database.insert(matchLogs).values({
+      status: "success",
+      modelUsed: "cache",
+      completedAt: new Date(NOW.getTime() - 1_000),
+    }).run();
+    database.insert(aiCacheEvents).values({
+      id: "group-cache-analysis",
+      capability: "job_analysis",
+      subjectType: "job",
+      subjectId: "7",
+      artifactType: "job_analysis",
+      artifactId: "analysis-7",
+      createdAt: new Date(NOW.getTime() - 1_000),
+    }).run();
+
+    const matching = await getAIUsageSummary(7, { database, now: NOW, group: "matching" });
+    const writing = await getAIUsageSummary(7, { database, now: NOW, group: "writing" });
+
+    expect(matching.capabilities.map((item) => item.capability).sort())
+      .toEqual(["job_analysis", "match_evaluation"]);
+    expect(matching).toMatchObject({
+      executions: 2,
+      totalTokens: 55,
+      cacheHits: 1,
+      fullMatchCacheReuses: 1,
+      failures: [],
+    });
+
+    expect(writing.capabilities.map((item) => item.capability).sort())
+      .toEqual(["writing_cover_letter", "writing_referral"]);
+    expect(writing).toMatchObject({
+      executions: 2,
+      totalTokens: 22,
+      cacheHits: 0,
+      failures: [{ code: "timeout", count: 1 }],
+    });
+    expect(writing.fullMatchCacheReuses).toBeUndefined();
   });
 
   it("returns safe run summaries for history provenance", async () => {
@@ -142,6 +235,7 @@ describe("AI observability", () => {
     const serializedSummaries = JSON.stringify(Array.from(summaries.values()));
     expect(serializedSummaries).not.toContain("private provider detail");
     expect(Object.keys(summaries.get("run-summary") ?? {}).sort()).toEqual([
+      "attemptHistory",
       "attempts",
       "cacheStatus",
       "capability",
@@ -150,14 +244,22 @@ describe("AI observability", () => {
       "errorCode",
       "finishReason",
       "id",
+      "inputCacheReadTokens",
+      "inputCacheWriteTokens",
+      "inputNoCacheTokens",
       "inputTokens",
       "modelId",
+      "outputReasoningTokens",
+      "outputTextTokens",
       "outputTokens",
       "provider",
+      "providerConfigFingerprint",
+      "providerRequestId",
       "qualityResult",
       "startedAt",
       "status",
       "totalTokens",
+      "warningCodes",
     ]);
   });
 
@@ -196,7 +298,8 @@ describe("AI observability", () => {
       },
     ]).run();
 
-    const summary = await getAIUsageSummary(7, database, NOW);
+    const summary = await getAIUsageSummary(7, { database, now: NOW });
+    const allTime = await getAIUsageSummary("all", { database, now: NOW });
 
     expect(summary).toMatchObject({
       executions: 2,
@@ -204,6 +307,10 @@ describe("AI observability", () => {
       failed: 2,
       fullMatchCacheReuses: 1,
       failures: [{ code: "unknown", count: 2 }],
+    });
+    expect(allTime).toMatchObject({
+      executions: 2,
+      fullMatchCacheReuses: 1,
     });
   });
 

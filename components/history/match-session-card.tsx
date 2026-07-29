@@ -3,18 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  CheckCircle,
-  XCircle,
-  Clock,
+  CheckCircle2,
   Loader2,
-  Building2,
-  Trash2,
-  Play,
   Square,
   Target,
+  Trash2,
+  XCircle,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -37,7 +33,15 @@ import type {
   MatchHistoryDetailResponse,
   MatchHistorySession,
 } from "@/lib/api/contracts/history";
-import { TRIGGER_LABELS } from "@/components/scrape-history/constants";
+import { TRIGGER_LABELS } from "@/components/history/shared/constants";
+import {
+  MetaLine,
+  SessionStat,
+  StatusPill,
+  StatusRail,
+  statusPillClass,
+} from "@/components/history/shared/session-primitives";
+import { cn } from "@/lib/utils";
 import {
   formatDurationFromDates,
   formatTime,
@@ -63,6 +67,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
     ? Math.round(((session.jobsCompleted || 0) / session.jobsTotal) * 100)
     : 0;
   const isActiveSession = session.status === "in_progress" || session.status === "queued";
+  const hasJobStats = (session.jobsTotal || 0) > 0;
 
   const handleDelete = async () => {
     setIsDeleting(true);
@@ -136,62 +141,57 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
 
   return (
     <Link
-      href={`/history/match/${session.id}`}
-      className="group block rounded-lg border border-border bg-card p-4 transition-all hover:border-border"
+      href={`/history/ai/matching/${session.id}`}
+      className="group relative block overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-border/60"
     >
-        {/* Main Card Content */}
-        <div>
-          {/* Header */}
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${statusConfig.bgColor}`}>
-                {session.status === "in_progress" ? (
-                  <Loader2 className={`h-5 w-5 ${statusConfig.color} animate-spin`} />
-                ) : (
-                  <StatusIcon className={`h-5 w-5 ${statusConfig.color}`} />
-                )}
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-medium text-foreground">
-                    {formatDate(session.startedAt)} <span className="text-muted-foreground">at</span> {formatTime(session.startedAt)}
-                  </h3>
-                </div>
-
-                <div className="flex items-center gap-2 text-sm text-muted-foreground mt-0.5">
-                  <span className="flex items-center gap-1">
-                    <Play className="h-3 w-3" />
-                    {TRIGGER_LABELS[session.triggerSource] || session.triggerSource}
-                  </span>
-
-                  {session.companyName && (
-                    <>
-                      <span className="text-muted-foreground">•</span>
-                      <span className="flex items-center gap-1 text-purple-600 dark:text-purple-400">
-                        <Building2 className="h-3 w-3" />
-                        {session.companyName}
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
+      <StatusRail className={statusConfig.railColor} />
+      <div className="py-4 pl-5 pr-4 sm:pl-6 sm:pr-5">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div
+              className={cn(
+                "flex h-10 w-10 shrink-0 items-center justify-center rounded-md",
+                statusConfig.bgColor
+              )}
+            >
+              <StatusIcon className={cn("h-5 w-5", statusConfig.color)} />
             </div>
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <h3 className="truncate text-[15px] font-semibold text-foreground">
+                  {formatDate(session.startedAt)}{" "}
+                  <span className="font-normal text-muted-foreground">at</span>{" "}
+                  {formatTime(session.startedAt)}
+                </h3>
+                <span className="shrink-0 rounded border border-border bg-muted/40 px-2 py-1 text-[11px] leading-none text-muted-foreground">
+                  {TRIGGER_LABELS[session.triggerSource] || session.triggerSource}
+                </span>
+              </div>
+              <MetaLine
+                className="mt-1"
+                items={[
+                  session.companyName,
+                  session.status !== "queued" &&
+                    formatDurationFromDates(session.startedAt, session.completedAt),
+                  session.completedAt && `Finished ${formatTime(session.completedAt)}`,
+                ]}
+              />
+            </div>
+          </div>
 
-            <div className="flex items-center gap-2" onClick={handleDeleteAreaClick}>
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="flex items-center gap-1" onClick={handleDeleteAreaClick}>
               {isActiveSession && (
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="h-8 w-8 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="text-amber-400 opacity-0 transition-opacity hover:bg-amber-500/10 hover:text-amber-300 group-hover:opacity-100"
                   onClick={handleStop}
                   disabled={isStopping}
                   title="Stop Session"
                 >
-                  {isStopping ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Square className="h-3.5 w-3.5" />
-                  )}
+                  {isStopping ? <Loader2 className="animate-spin" /> : <Square />}
                 </Button>
               )}
 
@@ -200,42 +200,49 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="text-muted-foreground opacity-0 transition-opacity hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
+                    title="Delete Session"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 />
                   </Button>
                 </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete Match Session?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This will permanently delete this match session and its logs.
-                    This action cannot be undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={handleDelete}
-                    className="bg-red-500 hover:bg-red-600 text-foreground"
-                    disabled={isDeleting}
-                  >
-                    {isDeleting ? "Deleting..." : "Delete"}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Match Session?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete this match session and its logs.
+                      This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDelete}
+                      className="bg-red-500 hover:bg-red-600 text-foreground"
+                      disabled={isDeleting}
+                    >
+                      {isDeleting ? "Deleting..." : "Delete"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+
+            <StatusPill
+              label={statusConfig.label}
+              className={statusPillClass(statusConfig)}
+            />
           </div>
         </div>
 
         {/* Progress Bar */}
         {session.status === "in_progress" && (
-          <div className="mt-4">
-            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+          <div className="mt-3 border-t border-border/60 pt-3">
+            <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
               <span>Matching Jobs...</span>
-              <span>{progress}%</span>
+              <span className="tabular-nums">{progress}%</span>
             </div>
-            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full bg-blue-500 transition-all duration-300"
                 style={{ width: `${progress}%` }}
@@ -245,37 +252,27 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
         )}
 
         {/* Meta Stats */}
-        <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            <Target className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-foreground/80 font-medium">{session.jobsTotal || 0}</span> Total
-          </span>
-          <span className="flex items-center gap-1.5">
-            <CheckCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span className="font-medium text-emerald-600 dark:text-emerald-400">{session.jobsSucceeded || 0}</span> Success
-          </span>
-          {(session.jobsFailed || 0) > 0 && (
-            <span className="flex items-center gap-1.5">
-              <XCircle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
-              <span className="font-medium text-red-600 dark:text-red-400">{session.jobsFailed || 0}</span> Failed
-            </span>
-          )}
-
-          <div className="ml-auto flex items-center gap-3">
-            <Badge
-              variant="outline"
-              className={`${statusConfig.color} ${statusConfig.bgColor} border-transparent text-[10px] h-5 px-1.5`}
-            >
-              {statusConfig.label}
-            </Badge>
-            {session.status !== "queued" && (
-              <span className="flex items-center gap-1.5">
-                <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                {formatDurationFromDates(session.startedAt, session.completedAt)}
-              </span>
-            )}
+        {hasJobStats && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border/60 pt-3">
+            <SessionStat
+              value={`${session.jobsCompleted || 0}/${session.jobsTotal || 0}`}
+              label="jobs"
+              icon={Target}
+            />
+            <SessionStat
+              value={session.jobsSucceeded || 0}
+              label="matched"
+              icon={CheckCircle2}
+              accent="emerald"
+            />
+            <SessionStat
+              value={session.jobsFailed || 0}
+              label="failed"
+              icon={XCircle}
+              accent="red"
+            />
           </div>
-        </div>
+        )}
       </div>
     </Link>
   );

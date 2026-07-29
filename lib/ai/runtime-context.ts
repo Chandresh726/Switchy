@@ -23,6 +23,7 @@ import {
 } from "@/lib/ai/providers/types";
 import type { AICapability, ResolvedModelSnapshot } from "@/lib/ai/runtime/types";
 import { AISDKGenerationBackend } from "@/lib/ai/runtime/ai-sdk-backend";
+import { fingerprintAIInput } from "@/lib/ai/runtime/fingerprint";
 import { db } from "@/lib/db";
 import { aiProviders, settings } from "@/lib/db/schema";
 import { decryptApiKey } from "@/lib/encryption";
@@ -47,6 +48,23 @@ interface ResolvedProviderRecord {
   apiKey?: string;
   updatedAt: Date | null;
   customConnection?: CustomProviderConnection;
+}
+
+function providerConfigFingerprint(providerRecord: ResolvedProviderRecord): string {
+  return fingerprintAIInput({
+    providerRecordId: providerRecord.id,
+    provider: providerRecord.provider,
+    updatedAt: providerRecord.updatedAt?.toISOString() ?? null,
+    customConnection: providerRecord.customConnection
+      ? {
+          apiFormat: providerRecord.customConnection.apiFormat,
+          baseUrl: providerRecord.customConnection.baseUrl,
+          headerNames: Object.keys(providerRecord.customConnection.headers).sort(),
+          manualModelIds: providerRecord.customConnection.manualModelIds,
+          reasoningEfforts: providerRecord.customConnection.reasoningEfforts,
+        }
+      : null,
+  });
 }
 
 const FEATURE_SETTING_KEYS: Record<
@@ -311,6 +329,7 @@ async function resolveAIContext(
       providerId: providerRecord.id,
       provider: providerRecord.provider,
       modelId,
+      providerConfigFingerprint: providerConfigFingerprint(providerRecord),
       reasoningEffort,
       backendKind: providerRecord.provider,
       backend: target.backend,
@@ -364,6 +383,7 @@ async function resolveAIContext(
     providerId: providerRecord.id,
     provider: providerRecord.provider,
     modelId,
+    providerConfigFingerprint: providerConfigFingerprint(providerRecord),
     reasoningEffort,
     backendKind: "ai_sdk",
     backend: new AISDKGenerationBackend(model, providerOptions),

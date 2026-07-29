@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   resolveAIContextForCapability: vi.fn(),
   createRun: vi.fn(),
   recordResolutionFailure: vi.fn(),
+  startAttempt: vi.fn(),
+  completeAttempt: vi.fn(),
   completeSuccess: vi.fn(),
   completeFailure: vi.fn(),
 }));
@@ -19,6 +21,8 @@ vi.mock("@/lib/ai/runtime/default-run-repository", () => ({
   aiRunRepository: {
     create: mocks.createRun,
     recordResolutionFailure: mocks.recordResolutionFailure,
+    startAttempt: mocks.startAttempt,
+    completeAttempt: mocks.completeAttempt,
     completeSuccess: mocks.completeSuccess,
     completeFailure: mocks.completeFailure,
   },
@@ -66,6 +70,8 @@ describe("AI capability runtime", () => {
     vi.clearAllMocks();
     mocks.createRun.mockResolvedValue("run-1");
     mocks.recordResolutionFailure.mockResolvedValue("resolution-run-1");
+    mocks.startAttempt.mockResolvedValue(undefined);
+    mocks.completeAttempt.mockResolvedValue(undefined);
     mocks.completeSuccess.mockResolvedValue(undefined);
     mocks.completeFailure.mockResolvedValue(undefined);
   });
@@ -110,12 +116,28 @@ describe("AI capability runtime", () => {
       expect.objectContaining({
         attempts: 1,
         finishReason: "stop",
-        usage: { inputTokens: 12, outputTokens: 5, totalTokens: 17 },
+        usage: expect.objectContaining({
+          inputTokens: 12,
+          outputTokens: 5,
+          totalTokens: 17,
+        }),
       })
     );
     expect(mocks.createRun).toHaveBeenCalledWith(expect.objectContaining({
       metadata: expect.objectContaining({ reasoningEffort: "medium" }),
     }));
+    expect(mocks.startAttempt).toHaveBeenCalledWith("run-1", 1);
+    expect(mocks.completeAttempt).toHaveBeenCalledWith(
+      "run-1",
+      1,
+      expect.objectContaining({
+        status: "succeeded",
+        usage: expect.objectContaining({
+          inputNoCacheTokens: 12,
+          outputTextTokens: 5,
+        }),
+      })
+    );
   });
 
   it("records provider-default reasoning and sends no effort to the backend", async () => {
@@ -308,8 +330,24 @@ describe("AI capability runtime", () => {
       "run-1",
       expect.objectContaining({
         attempts: 2,
-        usage: { inputTokens: 24, outputTokens: 10, totalTokens: 34 },
+        usage: expect.objectContaining({
+          inputTokens: 24,
+          outputTokens: 10,
+          totalTokens: 34,
+        }),
       })
+    );
+    expect(mocks.completeAttempt).toHaveBeenNthCalledWith(
+      1,
+      "run-1",
+      1,
+      expect.objectContaining({ status: "failed", retryDelayMs: 100 })
+    );
+    expect(mocks.completeAttempt).toHaveBeenNthCalledWith(
+      2,
+      "run-1",
+      2,
+      expect.objectContaining({ status: "succeeded" })
     );
   });
 
@@ -465,7 +503,11 @@ describe("AI capability runtime", () => {
       "run-1",
       expect.objectContaining({
         attempts: 2,
-        usage: { inputTokens: 24, outputTokens: 10, totalTokens: 34 },
+        usage: expect.objectContaining({
+          inputTokens: 24,
+          outputTokens: 10,
+          totalTokens: 34,
+        }),
         finishReason: "stop",
         qualityResult: "failed",
       })
@@ -492,7 +534,11 @@ describe("AI capability runtime", () => {
       "run-1",
       expect.objectContaining({
         attempts: 1,
-        usage: { inputTokens: 12, outputTokens: 5, totalTokens: 17 },
+        usage: expect.objectContaining({
+          inputTokens: 12,
+          outputTokens: 5,
+          totalTokens: 17,
+        }),
         finishReason: "stop",
       })
     );

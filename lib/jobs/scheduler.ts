@@ -26,9 +26,23 @@ const SCHEDULER_LATEST_MISSED_RUN_KEY = "scheduler.latestMissedRun";
 const LOCK_REFRESH_INTERVAL_MS = 60 * 1000;
 const MISSED_RUN_REASON = "Skipped while device was asleep or idle; queued for a later recovery run.";
 
-let schedulerTask: ScheduledTask | null = null;
-let isRunning = false;
-let currentCronExpression = DEFAULT_CRON;
+interface SchedulerRuntimeState {
+  task: ScheduledTask | null;
+  isRunning: boolean;
+  currentCronExpression: string;
+  missedExecutionHandler: ((context: TaskContext) => Promise<void>) | null;
+}
+
+const globalSchedulerState = globalThis as typeof globalThis & {
+  __switchySchedulerRuntime?: SchedulerRuntimeState;
+};
+
+const schedulerRuntime = globalSchedulerState.__switchySchedulerRuntime ??= {
+  task: null,
+  isRunning: false,
+  currentCronExpression: DEFAULT_CRON,
+  missedExecutionHandler: null,
+};
 
 interface SchedulerRecoveryState {
   pendingMissedCount: number;
@@ -227,7 +241,7 @@ function inferMissedExecutionTime(context: TaskContext): Date {
   const emittedDate = context.date instanceof Date ? context.date : new Date(context.date);
 
   try {
-    return CronExpressionParser.parse(currentCronExpression, {
+    return CronExpressionParser.parse(schedulerRuntime.currentCronExpression, {
       currentDate: emittedDate,
     }).prev().toDate();
   } catch (error) {
@@ -299,11 +313,11 @@ export async function getSchedulerStatus(): Promise<SchedulerStatus> {
     getRecoveryState(),
   ]);
 
-  if (!isEnabled && schedulerTask) {
+  if (!isEnabled && schedulerRuntime.task) {
     stopScheduler();
   }
 
-  if (isEnabled && !schedulerTask) {
+  if (isEnabled && !schedulerRuntime.task) {
     try {
       await startScheduler();
     } catch (error) {
@@ -314,8 +328,8 @@ export async function getSchedulerStatus(): Promise<SchedulerStatus> {
   const nextRun = isEnabled ? calculateNextRun(persistedCron) : null;
 
   return {
-    isActive: isEnabled && schedulerTask !== null,
-    isRunning,
+    isActive: isEnabled && schedulerRuntime.task !== null,
+    isRunning: schedulerRuntime.isRunning,
     isEnabled,
     lastRun,
     nextRun,
@@ -325,6 +339,12 @@ export async function getSchedulerStatus(): Promise<SchedulerStatus> {
 }
 
 async function handleMissedExecution(context: TaskContext): Promise<void> {
+  if (!await getSchedulerEnabled()) {
+    stopScheduler();
+    logRuntimeEvent("scheduler", "scheduler_run_skipped", { code: "disabled" });
+    return;
+  }
+
   const scheduledFor = inferMissedExecutionTime(context);
   try {
     await recordMissedExecution(scheduledFor);
@@ -344,33 +364,37 @@ export async function startScheduler(): Promise<void> {
     return;
   }
 
-  if (schedulerTask) {
+  if (schedulerRuntime.task) {
     setSchedulerInitialization("ready");
     console.log("[Scheduler] Already running");
     return;
   }
 
-  currentCronExpression = await getCronFromDB();
+  schedulerRuntime.currentCronExpression = await getCronFromDB();
 
-  if (!cron.validate(currentCronExpression)) {
-    console.error(`[Scheduler] Invalid cron expression: ${currentCronExpression}, using default`);
-    currentCronExpression = DEFAULT_CRON;
+  if (!cron.validate(schedulerRuntime.currentCronExpression)) {
+    console.error(`[Scheduler] Invalid cron expression: ${schedulerRuntime.currentCronExpression}, using default`);
+    schedulerRuntime.currentCronExpression = DEFAULT_CRON;
   }
 
-  schedulerTask = cron.schedule(currentCronExpression, async () => {
+  schedulerRuntime.task = cron.schedule(schedulerRuntime.currentCronExpression, async () => {
     await runScheduledRefresh();
   });
-  schedulerTask.on("execution:missed", handleMissedExecution);
+  schedulerRuntime.missedExecutionHandler = handleMissedExecution;
+  schedulerRuntime.task.on("execution:missed", schedulerRuntime.missedExecutionHandler);
   setSchedulerInitialization("ready");
 
-  console.log(`[Scheduler] Started with cron: ${currentCronExpression}`);
+  console.log(`[Scheduler] Started with cron: ${schedulerRuntime.currentCronExpression}`);
 }
 
 export function stopScheduler(): void {
-  if (schedulerTask) {
-    schedulerTask.off("execution:missed", handleMissedExecution);
-    schedulerTask.stop();
-    schedulerTask = null;
+  if (schedulerRuntime.task) {
+    if (schedulerRuntime.missedExecutionHandler) {
+      schedulerRuntime.task.off("execution:missed", schedulerRuntime.missedExecutionHandler);
+    }
+    schedulerRuntime.task.stop();
+    schedulerRuntime.task = null;
+    schedulerRuntime.missedExecutionHandler = null;
     console.log("[Scheduler] Stopped");
   }
 }
@@ -400,7 +424,7 @@ async function runSchedulerBatch(
   requestId?: string
 ): Promise<"started" | "already_running"> {
   const sessionId = crypto.randomUUID();
-  if (isRunning) {
+  if (schedulerRuntime.isRunning) {
     logRuntimeEvent("scheduler", "scheduler_run_skipped", { requestId, sessionId, code: "already_running" });
     return "already_running";
   }
@@ -428,7 +452,7 @@ async function runSchedulerBatch(
     return "already_running";
   }
 
-  isRunning = true;
+  schedulerRuntime.isRunning = true;
   let activeLockToken: string | null = lockToken;
   let lockLost = false;
   let refreshInFlight: Promise<void> | null = null;
@@ -494,7 +518,7 @@ async function runSchedulerBatch(
   } finally {
     clearInterval(refreshTimer);
     await refreshInFlight;
-    isRunning = false;
+    schedulerRuntime.isRunning = false;
     if (activeLockToken) {
       try {
         await leaseStore.release(activeLockToken);
@@ -514,6 +538,12 @@ async function runSchedulerBatch(
 }
 
 async function runScheduledRefresh(): Promise<void> {
+  if (!await getSchedulerEnabled()) {
+    stopScheduler();
+    logRuntimeEvent("scheduler", "scheduler_run_skipped", { code: "disabled" });
+    return;
+  }
+
   await runSchedulerBatch("scheduler");
 }
 

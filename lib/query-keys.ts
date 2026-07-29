@@ -1,6 +1,8 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 
 import type { AIContentType } from "@/lib/ai/contracts";
+import type { AIUsagePeriod } from "@/lib/ai/observability";
+import type { AICapabilityGroup } from "@/lib/ai/runtime/capability-groups";
 import type { JobsQueryInput } from "@/lib/api/clients/jobs";
 import type {
   HistoryDetailQueryInput,
@@ -207,7 +209,8 @@ export const queryKeys = {
     all: ["ai"] as const,
     history: () => ["ai", "history"] as const,
     usages: () => ["ai", "usage"] as const,
-    usage: (days: 7 | 30) => ["ai", "usage", days] as const,
+    usage: (days: AIUsagePeriod, group: AICapabilityGroup | "all" = "all") =>
+      ["ai", "usage", days, group] as const,
     contents: () => ["ai", "content"] as const,
     content: (jobId: number, type: AIContentType) => ["ai", "content", jobId, type] as const,
   },

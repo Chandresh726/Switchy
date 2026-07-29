@@ -24,7 +24,37 @@ describe("AI usage API", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toContain("no-store");
     expect(await response.json()).toEqual({ days: 30, calls: 4 });
-    expect(mocks.getAIUsageSummary).toHaveBeenCalledWith(30);
+    expect(mocks.getAIUsageSummary).toHaveBeenCalledWith(30, { group: undefined });
+  });
+
+  it("scopes the ledger to a capability group when asked", async () => {
+    const response = await GET(
+      new Request("http://localhost/api/ai/usage?days=7&group=writing")
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.getAIUsageSummary).toHaveBeenCalledWith(7, { group: "writing" });
+  });
+
+  it("supports an all-time usage period", async () => {
+    mocks.getAIUsageSummary.mockResolvedValue({ days: "all", calls: 12 });
+
+    const response = await GET(
+      new Request("http://localhost/api/ai/usage?days=all&group=matching")
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ days: "all", calls: 12 });
+    expect(mocks.getAIUsageSummary).toHaveBeenCalledWith("all", { group: "matching" });
+  });
+
+  it("rejects unknown capability groups", async () => {
+    const response = await GET(
+      new Request("http://localhost/api/ai/usage?days=7&group=scraping")
+    );
+
+    expect(response.status).toBe(400);
+    expect(mocks.getAIUsageSummary).not.toHaveBeenCalled();
   });
 
   it("rejects unsupported periods", async () => {

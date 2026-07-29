@@ -21,6 +21,7 @@ export interface ResolvedModelSnapshot {
   provider: AIProvider;
   modelId: string;
   backendKind: "ai_sdk" | "codex_cli" | "opencode_cli";
+  providerConfigFingerprint?: string;
   cliVersion?: string;
   upstreamProvider?: string;
   structuredGenerationStrategy?: "native" | "portable_json";
@@ -28,7 +29,12 @@ export interface ResolvedModelSnapshot {
 
 export interface AIExecutionUsage {
   inputTokens?: number;
+  inputNoCacheTokens?: number;
+  inputCacheReadTokens?: number;
+  inputCacheWriteTokens?: number;
   outputTokens?: number;
+  outputTextTokens?: number;
+  outputReasoningTokens?: number;
   totalTokens?: number;
 }
 
@@ -38,6 +44,7 @@ export interface AIExecutionResult<T> {
   usage: AIExecutionUsage;
   durationMs: number;
   finishReason?: string;
+  providerRequestId?: string;
   attempts: number;
 }
 

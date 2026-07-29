@@ -9,6 +9,7 @@ const content = {
   type: "cover_letter" as const,
   content: "Hello",
   settingsSnapshot: null,
+  currentVariantId: null,
   createdAt: "2026-07-17T00:00:00.000Z",
   updatedAt: "2026-07-17T00:00:00.000Z",
   history: [],

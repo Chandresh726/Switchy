@@ -3,7 +3,11 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
 import type { AIContentType } from "@/lib/ai/contracts";
 import type * as databaseSchema from "@/lib/db/schema";
-import { aiGeneratedContent, aiGenerationHistory } from "@/lib/db/schema";
+import {
+  aiGeneratedContent,
+  aiGenerationEvents,
+  aiGenerationHistory,
+} from "@/lib/db/schema";
 
 const MAX_EDIT_DISTANCE_CELLS = 25_000_000;
 
@@ -91,10 +95,11 @@ export function persistWritingVariant(
         updatedAt: now,
       }).returning().get();
     }
+    if (!content) throw new Error("Failed to create writing content");
     const edit = input.parentVariant
       ? calculateEditDistance(input.parentVariant.variant, input.text)
       : { distance: null, ratio: null };
-    tx.insert(aiGenerationHistory).values({
+    const insertedVariant = tx.insert(aiGenerationHistory).values({
       contentId: content.id,
       variant: input.text,
       userPrompt: input.userPrompt,
@@ -105,6 +110,15 @@ export function persistWritingVariant(
       editDistance: edit.distance,
       editDistanceRatio: edit.ratio,
       createdAt: now,
+    }).returning({ id: aiGenerationHistory.id }).get();
+    tx.update(aiGeneratedContent).set({
+      currentVariantId: insertedVariant.id,
+    }).where(eq(aiGeneratedContent.id, content.id)).run();
+    tx.insert(aiGenerationEvents).values({
+      variantId: insertedVariant.id,
+      action: "selected",
+      source: "generated",
+      createdAt: now,
     }).run();
     const savedContent = tx.select().from(aiGeneratedContent)
       .where(eq(aiGeneratedContent.id, content.id)).get();
@@ -114,5 +128,52 @@ export function persistWritingVariant(
       .orderBy(aiGenerationHistory.createdAt, aiGenerationHistory.id)
       .all();
     return { content: savedContent, history };
+  });
+}
+
+export function recordWritingVariantSignal(
+  database: BetterSQLite3Database<typeof databaseSchema>,
+  variantId: number,
+  action: "selected" | "copied" | "discarded",
+  source: "initial_load" | "navigation" | "copy" | "discard"
+): boolean {
+  return database.transaction((tx) => {
+    const variant = tx.select({
+      contentId: aiGenerationHistory.contentId,
+    }).from(aiGenerationHistory)
+      .where(eq(aiGenerationHistory.id, variantId))
+      .get();
+    if (!variant) return false;
+    const now = new Date();
+    const timestampColumn = action === "selected"
+      ? { selectedAt: now }
+      : action === "copied"
+        ? { copiedAt: now }
+        : { discardedAt: now };
+    tx.update(aiGenerationHistory)
+      .set(timestampColumn)
+      .where(eq(aiGenerationHistory.id, variantId))
+      .run();
+    tx.insert(aiGenerationEvents).values({
+      variantId,
+      action,
+      source,
+      createdAt: now,
+    }).run();
+    if (action === "selected") {
+      tx.update(aiGeneratedContent).set({
+        currentVariantId: variantId,
+        updatedAt: now,
+      }).where(eq(aiGeneratedContent.id, variant.contentId)).run();
+    } else if (action === "discarded") {
+      tx.update(aiGeneratedContent).set({
+        currentVariantId: null,
+        updatedAt: now,
+      }).where(and(
+        eq(aiGeneratedContent.id, variant.contentId),
+        eq(aiGeneratedContent.currentVariantId, variantId)
+      )).run();
+    }
+    return true;
   });
 }

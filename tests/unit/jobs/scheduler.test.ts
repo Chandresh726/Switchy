@@ -159,6 +159,9 @@ describe("scheduler recovery", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    delete (globalThis as typeof globalThis & {
+      __switchySchedulerRuntime?: unknown;
+    }).__switchySchedulerRuntime;
     store.settings.clear();
     store.sessions.length = 0;
     store.task = null;
@@ -307,6 +310,56 @@ describe("scheduler recovery", () => {
     );
   });
 
+  it("stops without scraping when disabled after the cron task was registered", async () => {
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    await scheduler.startScheduler();
+    const registeredTask = store.task;
+    store.settings.set("scheduler_enabled", {
+      key: "scheduler_enabled",
+      value: "false",
+    });
+
+    await registeredTask?.execute();
+
+    expect(registeredTask?.stop).toHaveBeenCalledTimes(1);
+    expect(store.acquireSchedulerLock).not.toHaveBeenCalled();
+    expect(store.scrapeAllCompanies).not.toHaveBeenCalled();
+    expect(store.settings.has("scheduler.lastRun")).toBe(false);
+  });
+
+  it("does not record missed work when disabled after the cron task was registered", async () => {
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    await scheduler.startScheduler();
+    const registeredTask = store.task;
+    store.settings.set("scheduler_enabled", {
+      key: "scheduler_enabled",
+      value: "false",
+    });
+
+    await registeredTask?.listeners.get("execution:missed")?.({
+      date: new Date("2026-04-05T06:30:00.000Z"),
+    });
+
+    expect(registeredTask?.stop).toHaveBeenCalledTimes(1);
+    expect(store.sessions).toEqual([]);
+    expect(store.settings.has("scheduler.recovery.v1")).toBe(false);
+  });
+
+  it("shares the active cron task across scheduler module instances", async () => {
+    const instrumentationScheduler = await import("@/lib/jobs/scheduler");
+
+    await instrumentationScheduler.startScheduler();
+    const registeredTask = store.task;
+    vi.resetModules();
+    const settingsRouteScheduler = await import("@/lib/jobs/scheduler");
+
+    settingsRouteScheduler.stopScheduler();
+
+    expect(registeredTask?.stop).toHaveBeenCalledTimes(1);
+  });
+
   it("releases the scheduler lock when a normal refresh fails", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     store.scrapeAllCompanies.mockRejectedValue(new Error("refresh failed"));
@@ -349,9 +402,9 @@ describe("scheduler recovery", () => {
 
     await scheduler.startScheduler();
     const run = store.task?.execute();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(store.scrapeAllCompanies).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(store.scrapeAllCompanies).toHaveBeenCalledTimes(1);
+    });
 
     await vi.advanceTimersByTimeAsync(60_000);
     expect(store.refreshSchedulerLock).toHaveBeenCalledWith("lock-token");

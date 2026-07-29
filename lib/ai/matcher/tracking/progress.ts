@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
+import { insertAICacheHit } from "@/lib/ai/observability/cache-events";
 import { db } from "@/lib/db";
 import {
   companies,
@@ -24,6 +25,8 @@ interface MatchSessionJobProgress {
   companyName: string | null;
   analysisStatus: MatchSessionJob["analysisStatus"];
   matchStatus: MatchSessionJob["matchStatus"];
+  analysisRunId: string | null;
+  matchRunId: string | null;
   errorStage: MatchSessionJob["errorStage"];
   errorCode: string | null;
   errorMessage: string | null;
@@ -84,17 +87,28 @@ export async function markJobAnalysisReady(
   database: typeof db = db
 ): Promise<void> {
   const now = new Date();
-  await database.update(matchSessionJobs).set({
-    analysisStatus: input.cached ? "cached" : "ready",
-    matchStatus: "queued",
-    jobAnalysisId: input.jobAnalysisId,
-    analysisRunId: input.analysisRunId ?? null,
-    analysisCompletedAt: now,
-    errorStage: null,
-    errorCode: null,
-    errorMessage: null,
-    updatedAt: now,
-  }).where(sessionJobsWhere(sessionId, [input.jobId]));
+  database.transaction((tx) => {
+    tx.update(matchSessionJobs).set({
+      analysisStatus: input.cached ? "cached" : "ready",
+      matchStatus: "queued",
+      jobAnalysisId: input.jobAnalysisId,
+      analysisRunId: input.analysisRunId ?? null,
+      analysisCompletedAt: now,
+      errorStage: null,
+      errorCode: null,
+      errorMessage: null,
+      updatedAt: now,
+    }).where(sessionJobsWhere(sessionId, [input.jobId])).run();
+    if (input.cached) {
+      insertAICacheHit({
+        capability: "job_analysis",
+        subject: { type: "job", id: String(input.jobId) },
+        sourceRunId: input.analysisRunId ?? null,
+        artifact: { type: "job_analysis", id: input.jobAnalysisId },
+        sessionId,
+      }, tx, { createdAt: now });
+    }
+  }, { behavior: "immediate" });
 }
 
 export async function markJobMatchStarted(
@@ -138,6 +152,8 @@ export async function getMatchPipelineProgress(
     companyName: companies.name,
     analysisStatus: matchSessionJobs.analysisStatus,
     matchStatus: matchSessionJobs.matchStatus,
+    analysisRunId: matchSessionJobs.analysisRunId,
+    matchRunId: matchSessionJobs.matchRunId,
     errorStage: matchSessionJobs.errorStage,
     errorCode: matchSessionJobs.errorCode,
     errorMessage: matchSessionJobs.errorMessage,

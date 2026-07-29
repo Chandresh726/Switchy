@@ -37,6 +37,8 @@ vi.mock("@/lib/ai/matcher/execution/work-executor", () => ({ executeMatchWork: v
 const runtimeMocks = vi.hoisted(() => ({
   create: vi.fn(),
   recordResolutionFailure: vi.fn(),
+  startAttempt: vi.fn(),
+  completeAttempt: vi.fn(),
   completeSuccess: vi.fn(),
   completeFailure: vi.fn(),
 }));

@@ -88,6 +88,7 @@ function sessionLog(overrides: Record<string, unknown> = {}) {
     matcherJobsCompleted: null,
     matcherDuration: null,
     matcherErrorCount: null,
+    matchSessionId: null,
     attemptNumber: 1,
     attemptsTotal: 2,
     isFinalAttempt: false,
@@ -193,6 +194,31 @@ describe("SessionDetail", () => {
     expect(await screen.findByText("Attempt 1 · superseded")).toBeTruthy();
     expect(screen.getByText("Attempt 2 · final")).toBeTruthy();
     expect(screen.getByText("one detail request failed")).toBeTruthy();
+  });
+
+  it("deep-links the matching summary to its own match session", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(
+          sessionResponse("completed", [], [
+            sessionLog({
+              status: "success",
+              errorMessage: null,
+              matcherStatus: "completed",
+              matcherJobsTotal: 3,
+              matcherJobsCompleted: 3,
+              matchSessionId: "match-session-1",
+            }),
+          ])
+        )
+      )
+    );
+
+    renderWithQueryClient(<SessionDetail sessionId={SESSION_ID} />);
+
+    const link = await screen.findByRole("link", { name: /Open match session/ });
+    expect(link.getAttribute("href")).toBe("/history/ai/matching/match-session-1");
   });
 
   it("uses the shared numbered pagination for session records", async () => {

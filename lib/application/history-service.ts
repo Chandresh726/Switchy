@@ -1,4 +1,4 @@
-import { count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { MatchBreakdownSchema, MatchEvidenceSchema } from "@/lib/ai/artifacts/schemas";
 import { getMatchPresentations } from "@/lib/ai/matcher/presentation";
@@ -12,6 +12,7 @@ import {
   jobs,
   matchLogs,
   matchResults,
+  matchSessionJobs,
   matchSessions,
 } from "@/lib/db/schema";
 import { loadSqliteParameterChunks } from "@/lib/db/sqlite-utils";
@@ -97,6 +98,7 @@ export async function getMatchHistoryDetail(
     jobId: matchLogs.jobId,
     jobTitle: jobs.title,
     companyName: companies.name,
+    companyLogoUrl: companies.logoUrl,
     status: matchLogs.status,
     score: matchLogs.score,
     matchResultId: matchLogs.matchResultId,
@@ -125,9 +127,27 @@ export async function getMatchHistoryDetail(
       .from(jobAnalyses).where(inArray(jobAnalyses.id, ids))
   );
   const analysisById = new Map(analyses.map((analysis) => [analysis.id, analysis]));
-  const runSummaries = await getAIRunSummaries(results.flatMap((result) => {
-    const analysisRunId = result.jobAnalysisId ? analysisById.get(result.jobAnalysisId)?.aiRunId : null;
-    return [result.matchRunId, result.adjudicationRunId, analysisRunId]
+  const workItems = await loadSqliteParameterChunks(jobIds, (ids) =>
+    db.select({
+      jobId: matchSessionJobs.jobId,
+      analysisRunId: matchSessionJobs.analysisRunId,
+      matchRunId: matchSessionJobs.matchRunId,
+    }).from(matchSessionJobs).where(and(
+      eq(matchSessionJobs.sessionId, sessionId),
+      inArray(matchSessionJobs.jobId, ids)
+    ))
+  );
+  const workByJobId = new Map(workItems.map((item) => [item.jobId, item]));
+  const resultsById = new Map(results.map((result) => [result.id, result]));
+  const runSummaries = await getAIRunSummaries(logs.flatMap((log) => {
+    const result = log.status === "success" && log.matchResultId
+      ? resultsById.get(log.matchResultId)
+      : undefined;
+    const workItem = log.jobId === null ? undefined : workByJobId.get(log.jobId);
+    const analysisRunId = result?.jobAnalysisId
+      ? analysisById.get(result.jobAnalysisId)?.aiRunId
+      : workItem?.analysisRunId;
+    return [result?.matchRunId ?? workItem?.matchRunId, result?.adjudicationRunId, analysisRunId]
       .filter((id): id is string => Boolean(id));
   }));
   const currentJobs = await loadSqliteParameterChunks(jobIds, (ids) =>
@@ -147,12 +167,14 @@ export async function getMatchHistoryDetail(
     }).from(jobs).where(inArray(jobs.id, ids))
   );
   const currentPresentations = await getMatchPresentations(currentJobs, undefined, { includeStale: false });
-  const resultsById = new Map(results.map((result) => [result.id, result]));
   const presentedLogs = logs.map((log) => {
     const result = log.status === "success" && log.matchResultId
       ? resultsById.get(log.matchResultId)
       : undefined;
+    const workItem = log.jobId === null ? undefined : workByJobId.get(log.jobId);
     if (!result) {
+      const analysisRunId = workItem?.analysisRunId ?? null;
+      const matchRunId = workItem?.matchRunId ?? null;
       return {
         ...log,
         matchResultId: null,
@@ -162,12 +184,12 @@ export async function getMatchHistoryDetail(
         matchReasoning: [],
         matchedSkills: [],
         scoringPolicyVersion: null,
-        analysisRunId: null,
-        analysisRun: null,
+        analysisRunId,
+        analysisRun: analysisRunId ? runSummaries.get(analysisRunId) ?? null : null,
         adjudicationRunId: null,
         adjudicationRun: null,
-        matchRunId: null,
-        matchRun: null,
+        matchRunId,
+        matchRun: matchRunId ? runSummaries.get(matchRunId) ?? null : null,
       };
     }
     const evidence = MatchEvidenceSchema.parse(JSON.parse(result.evidenceJson));

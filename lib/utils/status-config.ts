@@ -12,6 +12,8 @@ export interface StatusConfig {
   color: string;
   bgColor: string;
   borderColor?: string;
+  /** Solid colour for the leading-edge rail on session cards. */
+  railColor: string;
 }
 
 const SESSION_STATUS_CONFIG: Record<string, StatusConfig> = {
@@ -21,6 +23,7 @@ const SESSION_STATUS_CONFIG: Record<string, StatusConfig> = {
     color: "text-emerald-400",
     bgColor: "bg-emerald-500/10",
     borderColor: "border-emerald-500/20",
+    railColor: "bg-emerald-400",
   },
   failed: {
     icon: XCircle,
@@ -28,6 +31,7 @@ const SESSION_STATUS_CONFIG: Record<string, StatusConfig> = {
     color: "text-red-400",
     bgColor: "bg-red-500/10",
     borderColor: "border-red-500/20",
+    railColor: "bg-red-400",
   },
   cancelled: {
     icon: XCircle,
@@ -35,6 +39,7 @@ const SESSION_STATUS_CONFIG: Record<string, StatusConfig> = {
     color: "text-zinc-400",
     bgColor: "bg-zinc-500/10",
     borderColor: "border-zinc-500/20",
+    railColor: "bg-zinc-500",
   },
   in_progress: {
     icon: Clock,
@@ -42,6 +47,7 @@ const SESSION_STATUS_CONFIG: Record<string, StatusConfig> = {
     color: "text-blue-400",
     bgColor: "bg-blue-500/10",
     borderColor: "border-blue-500/20",
+    railColor: "bg-blue-400",
   },
   partial: {
     icon: AlertCircle,
@@ -49,6 +55,7 @@ const SESSION_STATUS_CONFIG: Record<string, StatusConfig> = {
     color: "text-yellow-400",
     bgColor: "bg-yellow-500/10",
     borderColor: "border-yellow-500/20",
+    railColor: "bg-amber-400",
   },
   skipped: {
     icon: AlertCircle,
@@ -56,6 +63,7 @@ const SESSION_STATUS_CONFIG: Record<string, StatusConfig> = {
     color: "text-amber-400",
     bgColor: "bg-amber-500/10",
     borderColor: "border-amber-500/20",
+    railColor: "bg-amber-400",
   },
   queued: {
     icon: Clock,
@@ -63,6 +71,7 @@ const SESSION_STATUS_CONFIG: Record<string, StatusConfig> = {
     color: "text-zinc-400",
     bgColor: "bg-zinc-500/10",
     borderColor: "border-zinc-500/20",
+    railColor: "bg-zinc-500",
   },
 };
 

@@ -4,22 +4,27 @@ import { useState } from "react";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Clock,
-  ArrowLeft,
-  Building2,
-  Briefcase,
-  Filter,
   Archive,
-  Sparkles,
+  ArrowLeft,
+  Briefcase,
+  Building2,
+  Filter,
   Loader2,
-  Trash2,
+  Plus,
   Square,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
+import { TRIGGER_LABELS } from "@/components/history/shared/constants";
+import {
+  MetaLine,
+  SessionStat,
+  StatusPill,
+  statusPillClass,
+} from "@/components/history/shared/session-primitives";
 import { Button } from "@/components/ui/button";
 import { ApiErrorState } from "@/components/ui/api-error-state";
 import { Pagination } from "@/components/ui/pagination";
@@ -28,13 +33,13 @@ import {
   cancelScrapeHistorySession,
   deleteScrapeHistorySession,
 } from "@/lib/api/clients/history";
+import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 import { CompanyProgressList } from "./company-progress-list";
-import { TRIGGER_LABELS } from "./constants";
 
 interface SessionDetailProps {
   sessionId: string;
@@ -125,6 +130,12 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
     ? Math.round(((session.companiesCompleted || 0) / session.companiesTotal) * 100)
     : 0;
   const hasActiveQueueWork = hasActiveWork;
+  const hasJobStats = [
+    session.totalJobsFound,
+    session.totalJobsAdded,
+    session.totalJobsFiltered,
+    session.totalJobsArchived,
+  ].some((value) => (value ?? 0) > 0);
   const totalRecords = Math.max(workPagination.total, logPagination.total);
   const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
 
@@ -166,48 +177,50 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
       </div>
 
       {/* Session Overview Card */}
-      <div className="rounded-lg border border-border bg-card p-6">
-        <div className="flex items-start justify-between gap-4 mb-6">
-          <div className="flex items-center gap-4">
-            <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${sessionStatusConfig.bgColor}`}>
-              <SessionStatusIcon className={`h-6 w-6 ${sessionStatusConfig.color}`} />
+      <div className="rounded-lg border border-border bg-card">
+        <div className="flex items-start justify-between gap-4 p-5">
+          <div className="flex items-center gap-3">
+            <div
+              className={cn(
+                "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg",
+                sessionStatusConfig.bgColor
+              )}
+            >
+              <SessionStatusIcon className={cn("h-5 w-5", sessionStatusConfig.color)} />
             </div>
-            <div>
-              <h1 className="text-xl font-semibold text-foreground">
+            <div className="min-w-0">
+              <h1 className="text-lg font-semibold text-foreground">
                 Scrape Session
               </h1>
-              <div className="flex items-center gap-3 mt-1.5 text-sm text-muted-foreground">
-                <span className="flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5" />
-                  {formatDateTime(sessionDisplayTime)}
-                </span>
-                <span className="text-muted-foreground">&bull;</span>
-                <span>{TRIGGER_LABELS[session.triggerSource] || session.triggerSource}</span>
-              </div>
+              <MetaLine
+                className="mt-1"
+                items={[
+                  formatDateTime(sessionDisplayTime),
+                  TRIGGER_LABELS[session.triggerSource] || session.triggerSource,
+                ]}
+              />
             </div>
           </div>
-          <Badge
-            variant="outline"
-            className={`${sessionStatusConfig.color} ${sessionStatusConfig.bgColor} border-transparent px-3 py-1`}
-          >
-            {sessionStatusConfig.label}
-          </Badge>
+          <StatusPill
+            label={sessionStatusConfig.label}
+            className={statusPillClass(sessionStatusConfig)}
+          />
         </div>
 
         {session.skipReason && (
-          <div className="mb-6 rounded-lg border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-300">
+          <div className="mx-5 mb-5 rounded-md border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
             {session.skipReason}
           </div>
         )}
 
         {/* Progress Bar */}
         {session.status === "in_progress" && (
-          <div className="mb-6">
-            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
+          <div className="border-t border-border/60 px-5 py-3">
+            <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
               <span>Processing Companies...</span>
-              <span>{progress}%</span>
+              <span className="tabular-nums">{progress}%</span>
             </div>
-            <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full bg-blue-500 transition-all duration-300"
                 style={{ width: `${progress}%` }}
@@ -216,67 +229,48 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
           </div>
         )}
 
-        {/* Summary Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <div className="rounded-lg border border-border bg-background/60 p-4">
-            <div className="flex items-center gap-2 mb-2 text-muted-foreground">
-              <Building2 className="h-4 w-4" />
-              <span className="text-xs font-medium uppercase tracking-wider">Companies</span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-semibold text-foreground">
-                {session.companiesCompleted || 0}
-              </span>
-              <span className="text-sm text-muted-foreground">
-                / {session.companiesTotal || 0}
-              </span>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-border bg-background/60 p-4">
-            <div className="flex items-center gap-2 mb-2 text-muted-foreground">
-              <Briefcase className="h-4 w-4" />
-              <span className="text-xs font-medium uppercase tracking-wider">Jobs Found</span>
-            </div>
-            <span className="text-2xl font-semibold text-foreground">
-              {session.totalJobsFound || 0}
-            </span>
-          </div>
-
-          <div className="rounded-lg border border-border bg-background/60 p-4">
-            <div className="mb-2 flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
-              <Sparkles className="h-4 w-4" />
-              <span className="text-xs font-medium uppercase tracking-wider">New Jobs</span>
-            </div>
-            <span className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400">
-              +{session.totalJobsAdded || 0}
-            </span>
-          </div>
-
-          <div className="rounded-lg border border-border bg-background/60 p-4">
-            <div className="flex items-center gap-2 mb-2 text-muted-foreground">
-              <Filter className="h-4 w-4" />
-              <span className="text-xs font-medium uppercase tracking-wider">Filtered</span>
-            </div>
-            <span className="text-2xl font-semibold text-muted-foreground">
-              {session.totalJobsFiltered || 0}
-            </span>
-          </div>
-
-          <div className="rounded-lg border border-border bg-background/60 p-4">
-            <div className="flex items-center gap-2 mb-2 text-muted-foreground">
-              <Archive className="h-4 w-4" />
-              <span className="text-xs font-medium uppercase tracking-wider">Archived</span>
-            </div>
-            <span className="text-2xl font-semibold text-muted-foreground">
-              {session.totalJobsArchived || 0}
-            </span>
-          </div>
+        {/* Summary Stats */}
+        <div className="flex flex-wrap items-center gap-x-7 gap-y-2.5 border-t border-border/60 px-5 py-3.5">
+          <SessionStat
+            size="md"
+            value={`${session.companiesCompleted || 0}/${session.companiesTotal || 0}`}
+            label="companies"
+            icon={Building2}
+          />
+          {hasJobStats && (
+            <>
+              <SessionStat
+                size="md"
+                value={session.totalJobsFound || 0}
+                label="jobs found"
+                icon={Briefcase}
+              />
+              <SessionStat
+                size="md"
+                value={session.totalJobsAdded || 0}
+                label="new"
+                icon={Plus}
+                accent="emerald"
+              />
+              <SessionStat
+                size="md"
+                value={session.totalJobsFiltered || 0}
+                label="filtered"
+                icon={Filter}
+              />
+              <SessionStat
+                size="md"
+                value={session.totalJobsArchived || 0}
+                label="archived"
+                icon={Archive}
+              />
+            </>
+          )}
         </div>
       </div>
 
       <CompanyProgressList queueItems={queueItems} logs={logs} />
-      {totalRecords > 0 && (
+      {totalPages > 1 && (
         <Pagination
           ariaLabel="Session records pagination"
           itemLabel="session records"

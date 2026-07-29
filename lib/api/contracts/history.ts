@@ -68,8 +68,14 @@ export const scrapeHistoryListResponseSchema = z.object({
   }),
   stats: z.object({
     totalSessions: z.number().int().nonnegative(),
+    completedSessions: z.number().int().nonnegative().default(0),
+    failedSessions: z.number().int().nonnegative().default(0),
     successRate: z.number().nonnegative(),
     avgDuration: z.number().nonnegative(),
+    companiesScraped: z.number().int().nonnegative().default(0),
+    totalJobsFound: z.number().int().nonnegative().default(0),
+    totalJobsAdded: z.number().int().nonnegative().default(0),
+    lastRunAt: z.coerce.date().nullish(),
   }),
 });
 export const matchHistoryListResponseSchema = z.object({
@@ -105,6 +111,7 @@ export const scrapeHistoryDetailResponseSchema = z.object({
     matcherJobsCompleted: z.number().int().nullable(),
     matcherDuration: z.number().nullable(),
     matcherErrorCount: z.number().int().nullable(),
+    matchSessionId: z.string().nullish(),
     attemptNumber: z.number().int().positive(),
     attemptsTotal: z.number().int().positive(),
     isFinalAttempt: z.boolean(),
@@ -141,6 +148,7 @@ export const matchHistoryDetailResponseSchema = z.object({
     jobId: z.number().int().positive().nullable(),
     jobTitle: z.string().nullable(),
     companyName: z.string().nullable(),
+    companyLogoUrl: z.string().nullable(),
     status: z.string(),
     score: z.number().nullable(),
     attemptCount: z.number().int().nullable(),

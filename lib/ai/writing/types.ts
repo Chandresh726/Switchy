@@ -22,6 +22,7 @@ export interface GeneratedContent {
   jobId: number;
   type: AIContentType;
   content: string;
+  currentVariantId: number | null;
   createdAt: string;
   updatedAt: string;
   history: HistoryVariant[];
@@ -35,6 +36,7 @@ export interface ContentResponse {
   jobId: number;
   type: AIContentType;
   content: string;
+  currentVariantId: number | null;
   settingsSnapshot: string | null;
   createdAt: string;
   updatedAt: string;

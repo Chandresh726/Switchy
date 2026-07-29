@@ -1,9 +1,15 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { Briefcase, CheckCircle2, History, Loader2, Timer } from "lucide-react";
+
 import { SessionCard } from "./session-card";
-import { Loader2, History } from "lucide-react";
-import { formatDurationMs, groupSessionsByDate } from "@/lib/utils/format";
+import { OverviewCard } from "@/components/history/shared/overview-card";
+import {
+  formatDurationMs,
+  formatRelativeTime,
+  groupSessionsByDate,
+} from "@/lib/utils/format";
 import { getScrapeHistoryList } from "@/lib/api/clients/history";
 import { queryKeys } from "@/lib/query-keys";
 import { historyPollingInterval } from "@/lib/hooks/history-polling";
@@ -61,19 +67,36 @@ export function SessionList() {
     <div className="space-y-6">
       {/* Summary Stats */}
       {stats && stats.totalSessions > 0 && (
-        <div className="grid grid-cols-3 gap-4">
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-2xl font-semibold text-foreground">{stats.totalSessions}</p>
-            <p className="text-sm text-muted-foreground">Total Scrapes</p>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400">{stats.successRate}%</p>
-            <p className="text-sm text-muted-foreground">Success Rate</p>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-2xl font-semibold text-foreground">{formatDurationMs(stats.avgDuration)}</p>
-            <p className="text-sm text-muted-foreground">Avg Duration</p>
-          </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <OverviewCard
+            label="Scrapes"
+            value={stats.totalSessions}
+            icon={History}
+            detail={
+              stats.lastRunAt
+                ? `Last run ${formatRelativeTime(new Date(stats.lastRunAt))}`
+                : undefined
+            }
+          />
+          <OverviewCard
+            label="Success rate"
+            value={`${stats.successRate}%`}
+            icon={CheckCircle2}
+            accent="text-emerald-400"
+            detail={`${stats.completedSessions} completed · ${stats.failedSessions} failed`}
+          />
+          <OverviewCard
+            label="Jobs found"
+            value={stats.totalJobsFound}
+            icon={Briefcase}
+            detail={`${stats.totalJobsAdded} new jobs added`}
+          />
+          <OverviewCard
+            label="Avg duration"
+            value={formatDurationMs(stats.avgDuration)}
+            icon={Timer}
+            detail={`${stats.companiesScraped} companies scraped`}
+          />
         </div>
       )}
 

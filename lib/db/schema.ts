@@ -8,6 +8,7 @@ import {
   index,
   check,
   primaryKey,
+  type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
 import { relations, sql } from "drizzle-orm";
 
@@ -392,10 +393,18 @@ export const aiRuns = sqliteTable("ai_runs", {
   status: text("status").notNull().default("running"),
   attemptCount: integer("attempt_count").notNull().default(0),
   inputTokens: integer("input_tokens"),
+  inputNoCacheTokens: integer("input_no_cache_tokens"),
+  inputCacheReadTokens: integer("input_cache_read_tokens"),
+  inputCacheWriteTokens: integer("input_cache_write_tokens"),
   outputTokens: integer("output_tokens"),
+  outputTextTokens: integer("output_text_tokens"),
+  outputReasoningTokens: integer("output_reasoning_tokens"),
   totalTokens: integer("total_tokens"),
   durationMs: integer("duration_ms"),
   finishReason: text("finish_reason"),
+  providerRequestId: text("provider_request_id"),
+  providerConfigFingerprint: text("provider_config_fingerprint"),
+  runtimeInstanceId: text("runtime_instance_id"),
   cacheStatus: text("cache_status").notNull().default("miss"),
   qualityResult: text("quality_result").notNull().default("not_checked"),
   warningsJson: text("warnings_json"),
@@ -413,6 +422,132 @@ export const aiRuns = sqliteTable("ai_runs", {
   subjectIdx: index("ai_runs_subject_idx").on(table.subjectType, table.subjectId),
   statusCreatedIdx: index("ai_runs_status_created_idx").on(table.status, table.createdAt),
   createdAtIdx: index("ai_runs_created_at_idx").on(table.createdAt),
+  capabilityCheck: check(
+    "ai_runs_capability_check",
+    sql`${table.capability} in ('job_analysis', 'match_adjudication', 'match_evaluation', 'writing_cover_letter', 'writing_referral', 'writing_recruiter_follow_up', 'resume_parse')`
+  ),
+  statusCheck: check(
+    "ai_runs_status_check",
+    sql`${table.status} in ('running', 'succeeded', 'failed', 'cancelled', 'abandoned')`
+  ),
+  attemptCountCheck: check("ai_runs_attempt_count_check", sql`${table.attemptCount} >= 0`),
+  tokenCountsCheck: check(
+    "ai_runs_token_counts_check",
+    sql`(${table.inputTokens} is null or ${table.inputTokens} >= 0)
+      and (${table.inputNoCacheTokens} is null or ${table.inputNoCacheTokens} >= 0)
+      and (${table.inputCacheReadTokens} is null or ${table.inputCacheReadTokens} >= 0)
+      and (${table.inputCacheWriteTokens} is null or ${table.inputCacheWriteTokens} >= 0)
+      and (${table.outputTokens} is null or ${table.outputTokens} >= 0)
+      and (${table.outputTextTokens} is null or ${table.outputTextTokens} >= 0)
+      and (${table.outputReasoningTokens} is null or ${table.outputReasoningTokens} >= 0)
+      and (${table.totalTokens} is null or ${table.totalTokens} >= 0)`
+  ),
+  durationCheck: check(
+    "ai_runs_duration_check",
+    sql`${table.durationMs} is null or ${table.durationMs} >= 0`
+  ),
+  subjectPairCheck: check(
+    "ai_runs_subject_pair_check",
+    sql`(${table.subjectType} is null) = (${table.subjectId} is null)`
+  ),
+  completionCheck: check(
+    "ai_runs_completion_check",
+    sql`(${table.status} = 'running' and ${table.completedAt} is null)
+      or (${table.status} <> 'running' and ${table.completedAt} is not null)`
+  ),
+}));
+
+export const aiRunAttempts = sqliteTable("ai_run_attempts", {
+  id: text("id").primaryKey(),
+  runId: text("run_id").references(() => aiRuns.id, { onDelete: "cascade" }).notNull(),
+  attemptNumber: integer("attempt_number").notNull(),
+  status: text("status").notNull().default("running"),
+  inputTokens: integer("input_tokens"),
+  inputNoCacheTokens: integer("input_no_cache_tokens"),
+  inputCacheReadTokens: integer("input_cache_read_tokens"),
+  inputCacheWriteTokens: integer("input_cache_write_tokens"),
+  outputTokens: integer("output_tokens"),
+  outputTextTokens: integer("output_text_tokens"),
+  outputReasoningTokens: integer("output_reasoning_tokens"),
+  totalTokens: integer("total_tokens"),
+  durationMs: integer("duration_ms"),
+  finishReason: text("finish_reason"),
+  providerRequestId: text("provider_request_id"),
+  warningCodesJson: text("warning_codes_json"),
+  errorCode: text("error_code"),
+  errorMessage: text("error_message"),
+  retryDelayMs: integer("retry_delay_ms"),
+  startedAt: integer("started_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+}, (table) => ({
+  runAttemptUnique: unique("ai_run_attempts_run_attempt_unique").on(
+    table.runId,
+    table.attemptNumber
+  ),
+  runIdx: index("ai_run_attempts_run_idx").on(table.runId, table.attemptNumber),
+  statusStartedIdx: index("ai_run_attempts_status_started_idx").on(
+    table.status,
+    table.startedAt
+  ),
+  attemptNumberCheck: check(
+    "ai_run_attempts_number_check",
+    sql`${table.attemptNumber} > 0`
+  ),
+  statusCheck: check(
+    "ai_run_attempts_status_check",
+    sql`${table.status} in ('running', 'succeeded', 'failed', 'cancelled', 'abandoned')`
+  ),
+  durationCheck: check(
+    "ai_run_attempts_duration_check",
+    sql`${table.durationMs} is null or ${table.durationMs} >= 0`
+  ),
+  retryDelayCheck: check(
+    "ai_run_attempts_retry_delay_check",
+    sql`${table.retryDelayMs} is null or ${table.retryDelayMs} >= 0`
+  ),
+  tokenCountsCheck: check(
+    "ai_run_attempts_token_counts_check",
+    sql`(${table.inputTokens} is null or ${table.inputTokens} >= 0)
+      and (${table.inputNoCacheTokens} is null or ${table.inputNoCacheTokens} >= 0)
+      and (${table.inputCacheReadTokens} is null or ${table.inputCacheReadTokens} >= 0)
+      and (${table.inputCacheWriteTokens} is null or ${table.inputCacheWriteTokens} >= 0)
+      and (${table.outputTokens} is null or ${table.outputTokens} >= 0)
+      and (${table.outputTextTokens} is null or ${table.outputTextTokens} >= 0)
+      and (${table.outputReasoningTokens} is null or ${table.outputReasoningTokens} >= 0)
+      and (${table.totalTokens} is null or ${table.totalTokens} >= 0)`
+  ),
+  completionCheck: check(
+    "ai_run_attempts_completion_check",
+    sql`(${table.status} = 'running' and ${table.completedAt} is null)
+      or (${table.status} <> 'running' and ${table.completedAt} is not null)`
+  ),
+}));
+
+export const aiCacheEvents = sqliteTable("ai_cache_events", {
+  id: text("id").primaryKey(),
+  capability: text("capability").notNull(),
+  subjectType: text("subject_type").notNull(),
+  subjectId: text("subject_id").notNull(),
+  sourceRunId: text("source_run_id").references(() => aiRuns.id, { onDelete: "set null" }),
+  artifactType: text("artifact_type").notNull(),
+  artifactId: text("artifact_id").notNull(),
+  sessionId: text("session_id").references(() => matchSessions.id, { onDelete: "cascade" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  capabilityCreatedIdx: index("ai_cache_events_capability_created_idx").on(
+    table.capability,
+    table.createdAt
+  ),
+  subjectCreatedIdx: index("ai_cache_events_subject_created_idx").on(
+    table.subjectType,
+    table.subjectId,
+    table.createdAt
+  ),
+  sessionIdx: index("ai_cache_events_session_idx").on(table.sessionId),
+  capabilityCheck: check(
+    "ai_cache_events_capability_check",
+    sql`${table.capability} in ('job_analysis', 'match_adjudication', 'match_evaluation', 'writing_cover_letter', 'writing_referral', 'writing_recruiter_follow_up', 'resume_parse')`
+  ),
 }));
 
 // Immutable normalized candidate evidence used by versioned matching.
@@ -573,23 +708,34 @@ export const matchSessionJobs = sqliteTable("match_session_jobs", {
   jobIdx: index("match_session_jobs_job_idx").on(table.jobId),
 }));
 
+const aiGeneratedContentCurrentVariantRef = (): AnySQLiteColumn =>
+  aiGenerationHistory.id;
+const aiGenerationHistoryContentRef = (): AnySQLiteColumn =>
+  aiGeneratedContent.id;
+
 export const aiGeneratedContent = sqliteTable("aiGeneratedContent", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   jobId: integer("job_id").references(() => jobs.id, { onDelete: "cascade" }).notNull(),
   type: text("type").notNull(), // "cover_letter" | "referral" | "recruiter_follow_up"
   content: text("content").notNull(),
+  currentVariantId: integer("current_variant_id")
+    .references(aiGeneratedContentCurrentVariantRef, { onDelete: "set null" }),
   settingsSnapshot: text("settings_snapshot"), // JSON - stores tone, length, focus used
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 }, (table) => ({
   jobTypeUnique: unique("aiGeneratedContentJobTypeUnique").on(table.jobId, table.type),
+  currentVariantCheck: check(
+    "ai_generated_content_current_variant_check",
+    sql`${table.currentVariantId} is null or ${table.currentVariantId} > 0`
+  ),
 }));
 
 // AI Generation History - Stores all variants/history of generated content
 const aiGenHistParentVariantRef = () => aiGenerationHistory.id;
 export const aiGenerationHistory = sqliteTable("aiGenerationHistory", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  contentId: integer("content_id").references(() => aiGeneratedContent.id, { onDelete: "cascade" }).notNull(),
+  contentId: integer("content_id").references(aiGenerationHistoryContentRef, { onDelete: "cascade" }).notNull(),
   variant: text("variant").notNull(),
   userPrompt: text("user_prompt"), // If user asked for modifications
   parentVariantId: integer("parent_variant_id").references(aiGenHistParentVariantRef, { onDelete: "cascade" }), // If derived from another variant
@@ -602,6 +748,33 @@ export const aiGenerationHistory = sqliteTable("aiGenerationHistory", {
   editDistanceRatio: real("edit_distance_ratio"),
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
+
+export const aiGenerationEvents = sqliteTable("ai_generation_events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  variantId: integer("variant_id")
+    .references(() => aiGenerationHistory.id, { onDelete: "cascade" })
+    .notNull(),
+  action: text("action").notNull(),
+  source: text("source").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  variantCreatedIdx: index("ai_generation_events_variant_created_idx").on(
+    table.variantId,
+    table.createdAt
+  ),
+  actionCreatedIdx: index("ai_generation_events_action_created_idx").on(
+    table.action,
+    table.createdAt
+  ),
+  actionCheck: check(
+    "ai_generation_events_action_check",
+    sql`${table.action} in ('selected', 'copied', 'discarded')`
+  ),
+  sourceCheck: check(
+    "ai_generation_events_source_check",
+    sql`${table.source} in ('generated', 'initial_load', 'navigation', 'copy', 'discard')`
+  ),
+}));
 
 export const people = sqliteTable("linkedin_connections", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -896,16 +1069,32 @@ export const aiGeneratedContentRelations = relations(aiGeneratedContent, ({ one,
     fields: [aiGeneratedContent.jobId],
     references: [jobs.id],
   }),
+  currentVariant: one(aiGenerationHistory, {
+    fields: [aiGeneratedContent.currentVariantId],
+    references: [aiGenerationHistory.id],
+    relationName: "currentWritingVariant",
+  }),
   history: many(aiGenerationHistory),
 }));
 
-export const aiGenerationHistoryRelations = relations(aiGenerationHistory, ({ one }) => ({
+export const aiGenerationHistoryRelations = relations(aiGenerationHistory, ({ one, many }) => ({
   content: one(aiGeneratedContent, {
     fields: [aiGenerationHistory.contentId],
     references: [aiGeneratedContent.id],
   }),
+  selectedForContent: many(aiGeneratedContent, {
+    relationName: "currentWritingVariant",
+  }),
   parentVariant: one(aiGenerationHistory, {
     fields: [aiGenerationHistory.parentVariantId],
+    references: [aiGenerationHistory.id],
+  }),
+  events: many(aiGenerationEvents),
+}));
+
+export const aiGenerationEventsRelations = relations(aiGenerationEvents, ({ one }) => ({
+  variant: one(aiGenerationHistory, {
+    fields: [aiGenerationEvents.variantId],
     references: [aiGenerationHistory.id],
   }),
 }));
@@ -988,6 +1177,12 @@ export type PersistedMatchResult = typeof matchResults.$inferSelect;
 export type NewPersistedMatchResult = typeof matchResults.$inferInsert;
 export type AIRun = typeof aiRuns.$inferSelect;
 export type NewAIRun = typeof aiRuns.$inferInsert;
+export type AIRunAttempt = typeof aiRunAttempts.$inferSelect;
+export type NewAIRunAttempt = typeof aiRunAttempts.$inferInsert;
+export type AICacheEvent = typeof aiCacheEvents.$inferSelect;
+export type NewAICacheEvent = typeof aiCacheEvents.$inferInsert;
+export type AIGenerationEvent = typeof aiGenerationEvents.$inferSelect;
+export type NewAIGenerationEvent = typeof aiGenerationEvents.$inferInsert;
 export type Person = typeof people.$inferSelect;
 export type NewPerson = typeof people.$inferInsert;
 export type PersonSourceRecord = typeof personSourceRecords.$inferSelect;

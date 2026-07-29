@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { History, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { History, Sparkles, Trash2, Wand2, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -14,7 +14,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
@@ -24,10 +24,74 @@ import {
   clearScrapeHistory,
 } from "@/lib/api/clients/history";
 import { cacheOwnership } from "@/lib/query-keys";
+import { cn } from "@/lib/utils";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface HistoryLayoutClientProps {
   children: React.ReactNode;
+}
+
+interface HistoryTab {
+  id: string;
+  label: string;
+  href: string;
+  icon: LucideIcon;
+  activeBorder: string;
+  /** What "Clear <label> History" wipes, and what it deletes. */
+  clearLabel: string;
+  clearDescription: string;
+  clear: (queryClient: QueryClient) => Promise<unknown>;
+}
+
+const HISTORY_TABS: HistoryTab[] = [
+  {
+    id: "scrape",
+    label: "Scrape",
+    href: "/history/scrape",
+    icon: History,
+    activeBorder: "border-emerald-500",
+    clearLabel: "Scrape",
+    clearDescription: "all scrape sessions and their company logs",
+    clear: async (queryClient) => {
+      await clearScrapeHistory();
+      await cacheOwnership.clearScrapeHistory(queryClient);
+    },
+  },
+  {
+    id: "matching",
+    label: "Matching",
+    href: "/history/ai/matching",
+    icon: Sparkles,
+    activeBorder: "border-purple-500",
+    clearLabel: "Match",
+    clearDescription: "all match sessions and their per-job results",
+    clear: async (queryClient) => {
+      await clearMatchHistory();
+      await cacheOwnership.clearMatchHistory(queryClient);
+    },
+  },
+  {
+    id: "writing",
+    label: "Writing",
+    href: "/history/ai/writing",
+    icon: Wand2,
+    activeBorder: "border-blue-500",
+    clearLabel: "Writing",
+    clearDescription: "all generated content and its variant history",
+    clear: async (queryClient) => {
+      await clearAIHistory();
+      await cacheOwnership.clearAIContent(queryClient);
+    },
+  },
+];
+
+// Only scrape and match sessions have detail pages; writing links out to the
+// job workspace instead.
+const DETAIL_PATH = /^\/history\/(scrape|ai\/matching)\/[^/]+$/;
+
+function resolveActiveTab(pathname: string | null): HistoryTab {
+  const match = HISTORY_TABS.find((tab) => pathname?.startsWith(tab.href));
+  return match ?? HISTORY_TABS[0];
 }
 
 export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
@@ -35,58 +99,14 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
   const queryClient = useQueryClient();
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Determine active tab from pathname
-  // Handle base /history path explicitly - default to scrape tab
-  const isScrapeTab = pathname === "/history" || (pathname?.startsWith("/history/scrape") ?? false);
-  const isMatchTab = pathname?.startsWith("/history/match") ?? false;
-  const isAITab = pathname?.startsWith("/history/ai") ?? false;
-  const activeTab = isMatchTab ? "match" : isAITab ? "ai" : "scrape";
-
-  // Check if we're on a detail page (has an ID after match, scrape, or ai)
-  const isDetailPage = /^\/history\/(match|scrape|ai)\/[^/]+$/.test(pathname ?? "");
-
-  const getTabLabel = () => {
-    switch (activeTab) {
-      case "scrape":
-        return "Scrape";
-      case "match":
-        return "Match";
-      case "ai":
-        return "AI";
-      default:
-        return "Scrape";
-    }
-  };
+  const activeTab = resolveActiveTab(pathname);
+  const isDetailPage = DETAIL_PATH.test(pathname ?? "");
 
   const handleClearHistory = async () => {
     setIsDeleting(true);
     try {
-      let clearRequest: Promise<unknown>;
-      let invalidate: () => Promise<void>;
-
-      switch (activeTab) {
-        case "scrape":
-          clearRequest = clearScrapeHistory();
-          invalidate = () => cacheOwnership.clearScrapeHistory(queryClient);
-          break;
-        case "match":
-          clearRequest = clearMatchHistory();
-          invalidate = () => cacheOwnership.clearMatchHistory(queryClient);
-          break;
-        case "ai":
-          clearRequest = clearAIHistory();
-          invalidate = () => cacheOwnership.clearAIContent(queryClient);
-          break;
-        default:
-          clearRequest = clearScrapeHistory();
-          invalidate = () => cacheOwnership.clearScrapeHistory(queryClient);
-      }
-
-      await clearRequest;
-
-      await invalidate();
-
-      toast.success(`${getTabLabel()} history cleared successfully`);
+      await activeTab.clear(queryClient);
+      toast.success(`${activeTab.clearLabel} history cleared successfully`);
     } catch (error) {
       console.error("Failed to clear history:", error);
       toast.error(getApiErrorMessage(error, "Failed to clear history"));
@@ -103,7 +123,7 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
           <div>
             <h1 className="text-2xl font-semibold text-foreground">History</h1>
             <p className="mt-1 text-muted-foreground">
-              View scraping and matching operation history
+              Scraping runs, AI matching, and AI writing activity
             </p>
           </div>
           <AlertDialog>
@@ -114,15 +134,16 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
                 className="border-red-500/20 text-red-400 hover:bg-red-500/10 hover:text-red-300"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
-                Clear {getTabLabel()} History
+                Clear {activeTab.clearLabel} History
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will permanently delete all {activeTab === "scrape" ? "scrape" : activeTab === "match" ? "match" : "AI"} history records.
-                  This action cannot be undone.
+                  This will permanently delete {activeTab.clearDescription}. AI
+                  usage totals are kept, since they record model spend rather
+                  than content. This action cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -143,39 +164,26 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
       {/* Tabs - Hide on detail pages */}
       {!isDetailPage && (
         <div className="mb-6 flex items-center gap-1 border-b border-border">
-          <Link
-            href="/history/scrape"
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
-              isScrapeTab
-                ? "text-foreground border-emerald-500"
-                : "text-muted-foreground border-transparent hover:text-foreground"
-            }`}
-          >
-            <History className="h-4 w-4" />
-            Scrape History
-          </Link>
-          <Link
-            href="/history/match"
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
-              isMatchTab
-                ? "text-foreground border-purple-500"
-                : "text-muted-foreground border-transparent hover:text-foreground"
-            }`}
-          >
-            <Sparkles className="h-4 w-4" />
-            Match History
-          </Link>
-          <Link
-            href="/history/ai"
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
-              isAITab
-                ? "text-foreground border-blue-500"
-                : "text-muted-foreground border-transparent hover:text-foreground"
-            }`}
-          >
-            <Wand2 className="h-4 w-4" />
-            AI History
-          </Link>
+          {HISTORY_TABS.map((tab) => {
+            const TabIcon = tab.icon;
+            const isActive = tab.id === activeTab.id;
+            return (
+              <Link
+                key={tab.id}
+                href={tab.href}
+                aria-current={isActive ? "page" : undefined}
+                className={cn(
+                  "-mb-px flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors",
+                  isActive
+                    ? cn("text-foreground", tab.activeBorder)
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <TabIcon className="h-4 w-4" />
+                {tab.label}
+              </Link>
+            );
+          })}
         </div>
       )}
 

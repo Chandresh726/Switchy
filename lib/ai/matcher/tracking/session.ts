@@ -1,9 +1,15 @@
 import { and, eq, inArray } from "drizzle-orm";
 
+import { insertAICacheHit } from "@/lib/ai/observability/cache-events";
 import { fetchCandidateProfileSnapshot } from "@/lib/ai/profile/profile-snapshot";
 import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { db } from "@/lib/db";
-import { jobs, matchLogs, matchSessionJobs, matchSessions } from "@/lib/db/schema";
+import {
+  jobs,
+  matchLogs,
+  matchSessionJobs,
+  matchSessions,
+} from "@/lib/db/schema";
 import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
 
 import type { UnmatchedJobFilter } from "../presentation";
@@ -79,6 +85,15 @@ export async function persistMatchSuccess(
       eq(matchSessionJobs.sessionId, sessionId),
       eq(matchSessionJobs.jobId, jobId)
     )).run();
+    if (input.cached) {
+      insertAICacheHit({
+        capability: "match_evaluation",
+        subject: { type: "job", id: String(jobId) },
+        sourceRunId: input.matchRunId ?? null,
+        artifact: { type: "match_result", id: matchResultId },
+        sessionId,
+      }, tx, { createdAt: now });
+    }
   }, { behavior: "immediate" });
 }
 
@@ -104,7 +119,8 @@ export async function logMatchFailure(
   attemptCount: number,
   modelUsed: string,
   database: typeof db = db,
-  stage: "analysis" | "matching" = "matching"
+  stage: "analysis" | "matching" = "matching",
+  aiRunId?: string | null
 ): Promise<void> {
   const sanitized = sanitizeAIError(error);
   const now = new Date();
@@ -124,7 +140,10 @@ export async function logMatchFailure(
       ...(stage === "analysis" ? {
         analysisStatus: "failed" as const,
         analysisCompletedAt: now,
-      } : {}),
+        analysisRunId: aiRunId ?? null,
+      } : {
+        matchRunId: aiRunId ?? null,
+      }),
       matchStatus: "failed",
       matchCompletedAt: now,
       errorStage: stage,
