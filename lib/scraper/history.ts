@@ -28,6 +28,8 @@ export interface ScrapeHistoryRetentionStore {
 
 type ScrapeSession = typeof scrapeSessions.$inferSelect;
 
+const HISTORY_LOOKUP_BATCH_SIZE = 200;
+
 export interface ScrapeHistoryDetail {
   session: ScrapeSession;
   logs: Array<{
@@ -51,6 +53,7 @@ export interface ScrapeHistoryDetail {
     matcherJobsCompleted: number | null;
     matcherDuration: number | null;
     matcherErrorCount: number | null;
+    matchSessionId: string | null;
     attemptNumber: number;
     attemptsTotal: number;
     isFinalAttempt: boolean;
@@ -100,8 +103,14 @@ export interface ScrapeHistoryPage {
   };
   stats: {
     totalSessions: number;
+    completedSessions: number;
+    failedSessions: number;
     successRate: number;
     avgDuration: number;
+    companiesScraped: number;
+    totalJobsFound: number;
+    totalJobsAdded: number;
+    lastRunAt: Date | null;
   };
 }
 
@@ -212,10 +221,15 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
       inArray(scrapeQueueItems.companyId, logCompanyIds)
     )).all();
     const queueStatusByCompany = new Map(queueStates.map((item) => [item.companyId, item.status]));
+    const matchSessionByLogId = this.getMatchSessionIdsByLog(
+      rawLogs.map((log) => log.id)
+    );
     const logs = rawLogs.map((log) => {
+      const matchSessionId = matchSessionByLogId.get(log.id) ?? null;
       if (log.companyId === null) {
         return {
           ...log,
+          matchSessionId,
           attemptNumber: 1,
           attemptsTotal: 1,
           isFinalAttempt: true,
@@ -227,6 +241,7 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
         ["completed", "failed", "cancelled"].includes(queueStatus);
       return {
         ...log,
+        matchSessionId,
         isFinalAttempt:
           queueIsTerminal &&
           log.attemptNumber === log.attemptsTotal,
@@ -253,6 +268,48 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
     };
   }
 
+  /**
+   * Resolves the match session that each scraping log handed its jobs to, so the
+   * UI can deep-link into that match session. Reads the current durable work
+   * table first and falls back to the legacy outbox for pre-migration rows.
+   */
+  private getMatchSessionIdsByLog(logIds: number[]): Map<number, string> {
+    const byLogId = new Map<number, string>();
+    if (logIds.length === 0) return byLogId;
+
+    for (const batch of chunkSqliteParameters(logIds, HISTORY_LOOKUP_BATCH_SIZE)) {
+      for (const row of this.database
+        .select({
+          logId: scrapeMatchOutbox.scrapingLogId,
+          matchSessionId: scrapeMatchOutbox.id,
+        })
+        .from(scrapeMatchOutbox)
+        .where(inArray(scrapeMatchOutbox.scrapingLogId, batch))
+        .all()) {
+        byLogId.set(row.logId, row.matchSessionId);
+      }
+
+      for (const row of this.database
+        .select({
+          logId: aiWorkItems.scrapingLogId,
+          matchSessionId: aiWorkItems.matchSessionId,
+        })
+        .from(aiWorkItems)
+        .where(
+          and(
+            inArray(aiWorkItems.scrapingLogId, batch),
+            eq(aiWorkItems.workType, "match_jobs")
+          )
+        )
+        .all()) {
+        if (row.logId === null || row.matchSessionId === null) continue;
+        byLogId.set(row.logId, row.matchSessionId);
+      }
+    }
+
+    return byLogId;
+  }
+
   list({ limit, offset }: { limit: number; offset: number }): ScrapeHistoryPage {
     const sessions = this.database
       .select()
@@ -270,8 +327,14 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
     const stats = this.database
       .select({
         totalSessions: sql<number>`count(*)`,
+        completedSessions: sql<number>`SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)`,
+        failedSessions: sql<number>`SUM(CASE WHEN status IN ('failed', 'cancelled') THEN 1 ELSE 0 END)`,
         successRate: sql<number>`ROUND(CAST(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(COUNT(*), 0) * 100, 1)`,
         avgDuration: sql<number>`ROUND(AVG((completed_at - started_at) * 1000), 0)`,
+        companiesScraped: sql<number>`SUM(COALESCE(companies_completed, 0))`,
+        totalJobsFound: sql<number>`SUM(COALESCE(total_jobs_found, 0))`,
+        totalJobsAdded: sql<number>`SUM(COALESCE(total_jobs_added, 0))`,
+        lastRunAt: sql<number | null>`MAX(started_at)`,
       })
       .from(scrapeSessions)
       .get();
@@ -286,8 +349,17 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
       },
       stats: {
         totalSessions: Number(stats?.totalSessions ?? 0),
+        completedSessions: Number(stats?.completedSessions ?? 0),
+        failedSessions: Number(stats?.failedSessions ?? 0),
         successRate: Number(stats?.successRate ?? 0),
         avgDuration: Number(stats?.avgDuration ?? 0),
+        companiesScraped: Number(stats?.companiesScraped ?? 0),
+        totalJobsFound: Number(stats?.totalJobsFound ?? 0),
+        totalJobsAdded: Number(stats?.totalJobsAdded ?? 0),
+        lastRunAt:
+          stats?.lastRunAt === null || stats?.lastRunAt === undefined
+            ? null
+            : new Date(Number(stats.lastRunAt) * 1000),
       },
     };
   }

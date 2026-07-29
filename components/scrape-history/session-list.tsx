@@ -1,13 +1,60 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import {
+  Briefcase,
+  CheckCircle2,
+  History,
+  Loader2,
+  Timer,
+  type LucideIcon,
+} from "lucide-react";
+
 import { SessionCard } from "./session-card";
-import { Loader2, History } from "lucide-react";
-import { formatDurationMs, groupSessionsByDate } from "@/lib/utils/format";
+import { cn } from "@/lib/utils";
+import {
+  formatDurationMs,
+  formatRelativeTime,
+  groupSessionsByDate,
+} from "@/lib/utils/format";
 import { getScrapeHistoryList } from "@/lib/api/clients/history";
 import { queryKeys } from "@/lib/query-keys";
 import { historyPollingInterval } from "@/lib/hooks/history-polling";
 import { ApiErrorState } from "@/components/ui/api-error-state";
+
+function OverviewCard({
+  label,
+  value,
+  detail,
+  icon: Icon,
+  accent,
+}: {
+  label: string;
+  value: string | number;
+  detail?: string;
+  icon: LucideIcon;
+  accent?: string;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+        <Icon className="h-3.5 w-3.5 shrink-0" />
+        {label}
+      </div>
+      <p
+        className={cn(
+          "mt-2 text-2xl font-semibold leading-none tabular-nums text-foreground",
+          accent
+        )}
+      >
+        {value}
+      </p>
+      {detail && (
+        <p className="mt-2 truncate text-xs text-muted-foreground">{detail}</p>
+      )}
+    </div>
+  );
+}
 
 export function SessionList() {
   const { data, isLoading, error, refetch } = useQuery({
@@ -61,19 +108,36 @@ export function SessionList() {
     <div className="space-y-6">
       {/* Summary Stats */}
       {stats && stats.totalSessions > 0 && (
-        <div className="grid grid-cols-3 gap-4">
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-2xl font-semibold text-foreground">{stats.totalSessions}</p>
-            <p className="text-sm text-muted-foreground">Total Scrapes</p>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400">{stats.successRate}%</p>
-            <p className="text-sm text-muted-foreground">Success Rate</p>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-2xl font-semibold text-foreground">{formatDurationMs(stats.avgDuration)}</p>
-            <p className="text-sm text-muted-foreground">Avg Duration</p>
-          </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <OverviewCard
+            label="Scrapes"
+            value={stats.totalSessions}
+            icon={History}
+            detail={
+              stats.lastRunAt
+                ? `Last run ${formatRelativeTime(new Date(stats.lastRunAt))}`
+                : undefined
+            }
+          />
+          <OverviewCard
+            label="Success rate"
+            value={`${stats.successRate}%`}
+            icon={CheckCircle2}
+            accent="text-emerald-400"
+            detail={`${stats.completedSessions} completed · ${stats.failedSessions} failed`}
+          />
+          <OverviewCard
+            label="Jobs found"
+            value={stats.totalJobsFound}
+            icon={Briefcase}
+            detail={`${stats.totalJobsAdded} new jobs added`}
+          />
+          <OverviewCard
+            label="Avg duration"
+            value={formatDurationMs(stats.avgDuration)}
+            icon={Timer}
+            detail={`${stats.companiesScraped} companies scraped`}
+          />
         </div>
       )}
 

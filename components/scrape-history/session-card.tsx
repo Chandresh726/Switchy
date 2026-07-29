@@ -2,19 +2,17 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Clock,
-  Building2,
-  Briefcase,
-  Filter,
   Archive,
-  Trash2,
-  Play,
+  Briefcase,
+  Building2,
+  Filter,
+  Loader2,
   Plus,
   Square,
-  Loader2,
+  Trash2,
+  type LucideIcon,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -39,6 +37,7 @@ import type {
   ScrapeHistoryDetailResponse,
   ScrapeHistorySession,
 } from "@/lib/api/contracts/history";
+import { cn } from "@/lib/utils";
 import {
   formatDurationFromDates,
   formatTime,
@@ -52,6 +51,50 @@ interface SessionCardProps {
   session: ScrapeHistorySession;
 }
 
+const STATUS_RAILS: Record<string, string> = {
+  completed: "bg-emerald-400",
+  success: "bg-emerald-400",
+  in_progress: "bg-blue-400",
+  partial: "bg-amber-400",
+  skipped: "bg-amber-400",
+  queued: "bg-zinc-500",
+  failed: "bg-red-400",
+  error: "bg-red-400",
+  cancelled: "bg-zinc-500",
+};
+
+function CardStat({
+  value,
+  label,
+  icon: Icon,
+  accent,
+}: {
+  value: string | number;
+  label: string;
+  icon: LucideIcon;
+  accent?: boolean;
+}) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <Icon
+        className={cn(
+          "h-3.5 w-3.5 shrink-0 text-muted-foreground",
+          accent && "text-emerald-400"
+        )}
+      />
+      <span
+        className={cn(
+          "text-sm font-semibold leading-none tabular-nums text-foreground",
+          accent && "text-emerald-400"
+        )}
+      >
+        {value}
+      </span>
+      <span className="text-xs text-muted-foreground">{label}</span>
+    </span>
+  );
+}
+
 export function SessionCard({ session }: SessionCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -63,6 +106,12 @@ export function SessionCard({ session }: SessionCardProps) {
   const progress = session.companiesTotal
     ? Math.round(((session.companiesCompleted || 0) / session.companiesTotal) * 100)
     : 0;
+  const hasJobStats = [
+    session.totalJobsFound,
+    session.totalJobsAdded,
+    session.totalJobsFiltered,
+    session.totalJobsArchived,
+  ].some((value) => (value ?? 0) > 0);
 
   const handleDelete = async () => {
     setIsDeleting(true);
@@ -137,131 +186,171 @@ export function SessionCard({ session }: SessionCardProps) {
   return (
     <Link
       href={`/history/scrape/${session.id}`}
-      className="group block rounded-lg border border-border bg-card p-4 mb-3 transition-all hover:border-border"
+      className="group relative block overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-border/60"
     >
+      <div
+        className={cn(
+          "absolute inset-y-0 left-0 w-[3px]",
+          STATUS_RAILS[session.status] ?? "bg-muted-foreground"
+        )}
+      />
+      <div className="py-4 pl-5 pr-4 sm:pl-6 sm:pr-5">
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${statusConfig.bgColor}`}>
-              <StatusIcon className={`h-5 w-5 ${statusConfig.color}`} />
-            </div>
-            <div>
-              <h3 className="font-medium text-foreground">
-                {formatDate(displayTime)} <span className="text-muted-foreground">at</span> {formatTime(displayTime)}
-              </h3>
-              <p className="flex items-center gap-1 text-sm text-muted-foreground">
-                <Play className="h-3 w-3" />
-                {TRIGGER_LABELS[session.triggerSource] || session.triggerSource}
-              </p>
-              {session.skipReason && (
-                <p className="mt-1 max-w-xl text-xs text-amber-400">
-                  {session.skipReason}
-                </p>
+          <div className="flex min-w-0 items-center gap-3">
+            <div
+              className={cn(
+                "flex h-10 w-10 shrink-0 items-center justify-center rounded-md",
+                statusConfig.bgColor
               )}
+            >
+              <StatusIcon className={cn("h-5 w-5", statusConfig.color)} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <h3 className="truncate text-[15px] font-semibold text-foreground">
+                  {formatDate(displayTime)}{" "}
+                  <span className="font-normal text-muted-foreground">at</span>{" "}
+                  {formatTime(displayTime)}
+                </h3>
+                <span className="shrink-0 rounded border border-border bg-muted/40 px-2 py-1 text-[11px] leading-none text-muted-foreground">
+                  {TRIGGER_LABELS[session.triggerSource] || session.triggerSource}
+                </span>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                <span>
+                  {formatDurationFromDates(session.startedAt, session.completedAt)}
+                </span>
+                {session.completedAt && (
+                  <>
+                    <span aria-hidden className="text-border">
+                      &middot;
+                    </span>
+                    <span>Finished {formatTime(session.completedAt)}</span>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2" onClick={handleDeleteAreaClick}>
-            {session.status === "in_progress" && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="h-8 w-8 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={handleStop}
-                disabled={isStopping}
-                title="Stop Session"
-              >
-                {isStopping ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Square className="h-3.5 w-3.5" />
-                )}
-              </Button>
-            )}
-
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="flex items-center gap-1" onClick={handleDeleteAreaClick}>
+              {session.status === "in_progress" && (
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="text-amber-400 opacity-0 transition-opacity hover:bg-amber-500/10 hover:text-amber-300 group-hover:opacity-100"
+                  onClick={handleStop}
+                  disabled={isStopping}
+                  title="Stop Session"
                 >
-                  <Trash2 className="h-4 w-4" />
+                  {isStopping ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <Square />
+                  )}
                 </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete Session?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This will permanently delete this scrape session and its logs.
-                    This action cannot be undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={handleDelete}
-                    className="bg-red-500 hover:bg-red-600 text-foreground"
-                    disabled={isDeleting}
+              )}
+
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-muted-foreground opacity-0 transition-opacity hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
+                    title="Delete Session"
                   >
-                    {isDeleting ? "Deleting..." : "Delete"}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-        </div>
-      </div>
+                    <Trash2 />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Session?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete this scrape session and its logs.
+                      This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDelete}
+                      className="bg-red-500 hover:bg-red-600 text-foreground"
+                      disabled={isDeleting}
+                    >
+                      {isDeleting ? "Deleting..." : "Delete"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
 
-      {/* Progress Bar */}
-      {session.status === "in_progress" && (
-        <div className="mt-4">
-          <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-            <span>Processing Companies...</span>
-            <span>{progress}%</span>
+            <span
+              className={cn(
+                "rounded-md border border-transparent px-2.5 py-1 text-xs font-medium",
+                statusConfig.color,
+                statusConfig.bgColor
+              )}
+            >
+              {statusConfig.label}
+            </span>
           </div>
-          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full bg-blue-500 transition-all duration-300"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
         </div>
-      )}
 
-      {/* Meta Stats */}
-      <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-foreground/80 font-medium">{session.companiesCompleted || 0}/{session.companiesTotal || 0}</span> Companies
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Briefcase className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-foreground/80 font-medium">{session.totalJobsFound || 0}</span> Found
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Plus className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-          <span className="font-medium text-emerald-600 dark:text-emerald-400">{session.totalJobsAdded || 0}</span> New
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-foreground/80 font-medium">{session.totalJobsFiltered || 0}</span> Filtered
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Archive className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-foreground/80 font-medium">{session.totalJobsArchived || 0}</span> Archived
-        </span>
+        {session.skipReason && (
+          <div className="mt-3 rounded-md border border-amber-500/15 bg-amber-500/5 px-3 py-2 text-xs text-amber-300">
+            {session.skipReason}
+          </div>
+        )}
 
-        <div className="ml-auto flex items-center gap-3">
-          <Badge
-            variant="outline"
-            className={`${statusConfig.color} ${statusConfig.bgColor} border-transparent text-[10px] h-5 px-1.5`}
-          >
-            {statusConfig.label}
-          </Badge>
-          <span className="flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-            {formatDurationFromDates(session.startedAt, session.completedAt)}
-          </span>
+        {/* Progress Bar */}
+        {session.status === "in_progress" && (
+          <div className="mt-3 border-t border-border/60 pt-3">
+            <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+              <span>Processing Companies...</span>
+              <span className="tabular-nums">{progress}%</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full bg-blue-500 transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Meta Stats */}
+        <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border/60 pt-3">
+          <CardStat
+            value={`${session.companiesCompleted || 0}/${session.companiesTotal || 0}`}
+            label="companies"
+            icon={Building2}
+          />
+          {hasJobStats && (
+            <>
+              <CardStat
+                value={session.totalJobsFound || 0}
+                label="found"
+                icon={Briefcase}
+              />
+              <CardStat
+                value={session.totalJobsAdded || 0}
+                label="new"
+                icon={Plus}
+                accent={(session.totalJobsAdded || 0) > 0}
+              />
+              <CardStat
+                value={session.totalJobsFiltered || 0}
+                label="filtered"
+                icon={Filter}
+              />
+              <CardStat
+                value={session.totalJobsArchived || 0}
+                label="archived"
+                icon={Archive}
+              />
+            </>
+          )}
         </div>
       </div>
     </Link>

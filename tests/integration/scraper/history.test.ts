@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  aiWorkItems,
   companies,
   matchSessions,
   scrapeMatchOutbox,
@@ -186,6 +187,106 @@ describe("DrizzleScrapeHistoryStore", () => {
       pagination: { total: 1, limit: 20, offset: 0, hasMore: false },
       stats: { totalSessions: 1, successRate: 100 },
     });
+  });
+
+  it("aggregates portfolio-wide stats for the history list", () => {
+    const database = createTestDatabase();
+    const firstStart = new Date("2026-07-13T10:00:00.000Z");
+    const lastStart = new Date("2026-07-13T11:00:00.000Z");
+    database.insert(scrapeSessions).values([
+      {
+        id: "stats-completed",
+        triggerSource: "manual",
+        status: "completed",
+        companiesTotal: 2,
+        companiesCompleted: 2,
+        totalJobsFound: 10,
+        totalJobsAdded: 4,
+        startedAt: firstStart,
+        completedAt: new Date(firstStart.getTime() + 2_000),
+      },
+      {
+        id: "stats-failed",
+        triggerSource: "scheduler",
+        status: "failed",
+        companiesTotal: 1,
+        companiesCompleted: 0,
+        totalJobsFound: 0,
+        totalJobsAdded: 0,
+        startedAt: lastStart,
+        completedAt: new Date(lastStart.getTime() + 4_000),
+      },
+    ]).run();
+
+    expect(new DrizzleScrapeHistoryStore(database).list({ limit: 20, offset: 0 }).stats)
+      .toEqual({
+        totalSessions: 2,
+        completedSessions: 1,
+        failedSessions: 1,
+        successRate: 50,
+        avgDuration: 3_000,
+        companiesScraped: 2,
+        totalJobsFound: 10,
+        totalJobsAdded: 4,
+        lastRunAt: lastStart,
+      });
+  });
+
+  it("resolves the match session each company log handed its jobs to", () => {
+    const database = createTestDatabase();
+    const company = database
+      .insert(companies)
+      .values({ name: "Matched Co", careersUrl: "https://example.com/matched" })
+      .returning({ id: companies.id })
+      .get();
+    database.insert(scrapeSessions).values({
+      id: "match-link-session",
+      triggerSource: "manual",
+      status: "completed",
+      companiesTotal: 2,
+      companiesCompleted: 2,
+      completedAt: new Date(),
+    }).run();
+    const durableLog = database.insert(scrapingLogs).values({
+      companyId: company.id,
+      sessionId: "match-link-session",
+      triggerSource: "manual",
+      status: "success",
+      jobsAdded: 2,
+    }).returning({ id: scrapingLogs.id }).get();
+    const legacyLog = database.insert(scrapingLogs).values({
+      companyId: company.id,
+      sessionId: "match-link-session",
+      triggerSource: "manual",
+      status: "success",
+      jobsAdded: 1,
+    }).returning({ id: scrapingLogs.id }).get();
+    database.insert(matchSessions).values([
+      { id: "durable-match-session", triggerSource: "company_refresh", status: "completed" },
+      { id: "legacy-match-session", triggerSource: "company_refresh", status: "completed" },
+    ]).run();
+    database.insert(aiWorkItems).values({
+      id: "durable-match-session",
+      workType: "match_jobs",
+      matchSessionId: "durable-match-session",
+      scrapingLogId: durableLog.id,
+      companyId: company.id,
+      payloadJson: "{}",
+      status: "completed",
+    }).run();
+    database.insert(scrapeMatchOutbox).values({
+      id: "legacy-match-session",
+      scrapingLogId: legacyLog.id,
+      companyId: company.id,
+      jobIdsJson: "[]",
+      status: "completed",
+    }).run();
+
+    expect(new DrizzleScrapeHistoryStore(database).getDetail("match-link-session")?.logs)
+      .toMatchObject([
+        { id: durableLog.id, matchSessionId: "durable-match-session" },
+        { id: legacyLog.id, matchSessionId: "legacy-match-session" },
+      ]);
   });
 
   it("labels superseded retry logs and the final company attempt", () => {
