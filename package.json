@@ -10,7 +10,7 @@
   "scripts": {
     "postinstall": "playwright install chromium",
     "predev": "NODE_ENV=development pnpm db:migrate",
-    "dev": "NODE_ENV=development next dev --hostname 127.0.0.1",
+    "dev": "NODE_ENV=development SWITCHY_PROCESS_TITLE='Switchy Dev' NODE_OPTIONS=\"$NODE_OPTIONS --require=./scripts/switchy-process-title.cjs\" next dev --hostname 127.0.0.1",
     "prestart": "NODE_ENV=production pnpm db:migrate",
     "build": "node scripts/build-production.mjs",
     "cli:build": "node packages/cli/scripts/build.mjs",
@@ -18,7 +18,7 @@
     "distribution:verify": "pnpm cli:typecheck && pnpm cli:build && vitest run --project unit tests/unit/distribution tests/unit/state/layout.test.ts",
     "runtime:package": "node scripts/package-runtime.mjs",
     "release:manifest": "node scripts/create-release-manifest.mjs",
-    "start": "NODE_ENV=production next start --hostname 127.0.0.1 --port 6767",
+    "start": "NODE_ENV=production SWITCHY_PROCESS_TITLE=Switchy NODE_OPTIONS=\"$NODE_OPTIONS --require=./scripts/switchy-process-title.cjs\" next start --hostname 127.0.0.1 --port 6767",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "deadcode": "SWITCHY_ANALYSIS=1 knip",

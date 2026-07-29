@@ -16,6 +16,8 @@ import { spawnSync } from "node:child_process";
 
 import { build } from "esbuild";
 
+import { brandStandaloneServer } from "./runtime-server-branding.mjs";
+
 const projectDirectory = process.cwd();
 const packageJson = JSON.parse(
   await readFile(path.join(projectDirectory, "package.json"), "utf8")
@@ -78,6 +80,11 @@ for (const entry of ["server.js", "package.json", ".next"]) {
     verbatimSymlinks: true,
   });
 }
+const runtimeServerPath = path.join(runtimeDirectory, "server.js");
+await writeFile(
+  runtimeServerPath,
+  brandStandaloneServer(await readFile(runtimeServerPath, "utf8"))
+);
 await cp(
   path.join(standaloneDirectory, "node_modules"),
   path.join(runtimeDirectory, "node_modules"),

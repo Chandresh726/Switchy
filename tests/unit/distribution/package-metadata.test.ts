@@ -32,8 +32,17 @@ describe("Switchy distribution metadata", () => {
       private: true,
       license: "MIT",
     });
+    expect(application.scripts.dev).toBe(
+      "NODE_ENV=development SWITCHY_PROCESS_TITLE='Switchy Dev' "
+      + "NODE_OPTIONS=\"$NODE_OPTIONS "
+      + "--require=./scripts/switchy-process-title.cjs\" "
+      + "next dev --hostname 127.0.0.1"
+    );
     expect(application.scripts.start).toBe(
-      "NODE_ENV=production next start --hostname 127.0.0.1 --port 6767"
+      "NODE_ENV=production SWITCHY_PROCESS_TITLE=Switchy "
+      + "NODE_OPTIONS=\"$NODE_OPTIONS "
+      + "--require=./scripts/switchy-process-title.cjs\" "
+      + "next start --hostname 127.0.0.1 --port 6767"
     );
     expect(cli).toMatchObject({
       name: "@chandresh726/switchy",
