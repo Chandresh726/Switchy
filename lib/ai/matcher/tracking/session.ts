@@ -1,12 +1,10 @@
-import { randomUUID } from "node:crypto";
-
 import { and, eq, inArray } from "drizzle-orm";
 
+import { insertAICacheHit } from "@/lib/ai/observability/cache-events";
 import { fetchCandidateProfileSnapshot } from "@/lib/ai/profile/profile-snapshot";
 import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { db } from "@/lib/db";
 import {
-  aiCacheEvents,
   jobs,
   matchLogs,
   matchSessionJobs,
@@ -88,17 +86,13 @@ export async function persistMatchSuccess(
       eq(matchSessionJobs.jobId, jobId)
     )).run();
     if (input.cached) {
-      tx.insert(aiCacheEvents).values({
-        id: randomUUID(),
+      insertAICacheHit({
         capability: "match_evaluation",
-        subjectType: "job",
-        subjectId: String(jobId),
+        subject: { type: "job", id: String(jobId) },
         sourceRunId: input.matchRunId ?? null,
-        artifactType: "match_result",
-        artifactId: matchResultId,
+        artifact: { type: "match_result", id: matchResultId },
         sessionId,
-        createdAt: now,
-      }).run();
+      }, tx, { createdAt: now });
     }
   }, { behavior: "immediate" });
 }

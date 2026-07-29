@@ -10,11 +10,9 @@ import {
   DatabaseZap,
   Gauge,
   Layers3,
-  Loader2,
   Timer,
 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -35,7 +33,6 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AIUsagePeriod, AIUsageSummary } from "@/lib/ai/observability";
-import type { AICapabilityGroup } from "@/lib/ai/runtime/capability-groups";
 import { getAIUsage } from "@/lib/api/clients/ai";
 import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
@@ -70,32 +67,8 @@ function capabilityBreakdownLabel(
     : capabilityLabel(value);
 }
 
-const GROUP_COPY: Record<AICapabilityGroup | "all", { title: string; description: string }> = {
-  all: {
-    title: "Local AI usage",
-    description:
-      "Provider calls, tokens, latency, and failures across every capability. Currency is not estimated.",
-  },
-  matching: {
-    title: "Matching AI usage",
-    description:
-      "Provider calls, tokens, latency, full match reuse, and failures for job analysis and match scoring. Currency is not estimated.",
-  },
-  writing: {
-    title: "Writing AI usage",
-    description:
-      "Provider calls, tokens, latency, and failures for generated cover letters, referrals, and follow-ups. Currency is not estimated.",
-  },
-  profile: {
-    title: "Profile AI usage",
-    description:
-      "Provider calls, tokens, latency, and failures for resume parsing. Currency is not estimated.",
-  },
-};
-
 interface AIUsageOverviewProps {
-  /** Scopes the ledger to one product area. Omit to report every capability. */
-  group?: AICapabilityGroup;
+  group: "matching" | "writing";
 }
 
 interface UsagePeriodSelectorProps {
@@ -125,26 +98,6 @@ function UsagePeriodSelector({ period, onChange }: UsagePeriodSelectorProps) {
         </SelectGroup>
       </SelectContent>
     </Select>
-  );
-}
-
-function UsagePeriodButtons({ period, onChange }: UsagePeriodSelectorProps) {
-  return (
-    <div className="flex items-center rounded-lg border border-border bg-background p-0.5">
-      {([7, 30] as const).map((days) => (
-        <Button
-          key={days}
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-pressed={period === days}
-          className="h-7 rounded-md px-2.5 text-xs aria-pressed:bg-muted aria-pressed:text-foreground"
-          onClick={() => onChange(days)}
-        >
-          {days} days
-        </Button>
-      ))}
-    </div>
   );
 }
 
@@ -579,211 +532,26 @@ function DetailedUsageOverview({
   );
 }
 
-export function AIUsageOverview({ group }: AIUsageOverviewProps = {}) {
+export function AIUsageOverview({ group }: AIUsageOverviewProps) {
   const [period, setPeriod] = useState<AIUsagePeriod>(7);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const { data, isError, isLoading, refetch } = useQuery<AIUsageSummary>({
-    queryKey: queryKeys.ai.usage(period, group ?? "all"),
-    queryFn: async () => {
-      return getAIUsage(period, group);
-    },
-    placeholderData: group === "matching" || group === "writing"
-      ? keepPreviousData
-      : undefined,
+    queryKey: queryKeys.ai.usage(period, group),
+    queryFn: () => getAIUsage(period, group),
+    placeholderData: keepPreviousData,
   });
-  const copy = GROUP_COPY[group ?? "all"];
-  const retries = data ? Math.max(0, data.calls - data.executions) : 0;
-
-  if (group === "matching" || group === "writing") {
-    return (
-      <DetailedUsageOverview
-        group={group}
-        data={data}
-        period={period}
-        detailsOpen={detailsOpen}
-        isError={isError}
-        isLoading={isLoading}
-        onPeriodChange={setPeriod}
-        onDetailsChange={() => setDetailsOpen((open) => !open)}
-        onRetry={() => void refetch()}
-      />
-    );
-  }
 
   return (
-    <section className="overflow-hidden rounded-xl border border-border bg-card/50">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <div>
-          <h2 className="text-sm font-medium text-foreground">{copy.title}</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">{copy.description}</p>
-        </div>
-        <UsagePeriodButtons period={period} onChange={setPeriod} />
-      </div>
-
-      {isLoading ? (
-        <div className="flex h-32 items-center justify-center">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-        </div>
-      ) : isError || !data ? (
-        <div className="flex h-32 flex-col items-center justify-center gap-2 px-4 text-center">
-          <p role="alert" className="text-sm text-muted-foreground">
-            AI usage could not be loaded.
-          </p>
-          <Button type="button" variant="outline" size="sm" onClick={() => void refetch()}>
-            Try again
-          </Button>
-        </div>
-      ) : (
-        <>
-          <div className="grid divide-y divide-border sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
-            {[
-              { label: "Provider calls", value: formatNumber(data.calls), icon: Activity },
-              { label: "Success rate", value: `${data.successRate}%`, icon: Gauge },
-              { label: "Total tokens", value: formatNumber(data.totalTokens), icon: DatabaseZap },
-              { label: "Average latency", value: formatLatency(data.averageLatencyMs), icon: Timer },
-            ].map(({ label, value, icon: Icon }) => (
-              <div key={label} className="px-4 py-3">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Icon className="h-3.5 w-3.5" />
-                  {label}
-                </div>
-                <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">{value}</p>
-              </div>
-            ))}
-          </div>
-          <dl className="grid grid-cols-2 border-t border-border sm:grid-cols-3 lg:grid-cols-6">
-            {[
-              { label: "Executions", value: formatNumber(data.executions) },
-              { label: "Retries", value: formatNumber(retries) },
-              { label: "Cache hits", value: formatNumber(data.cacheHits) },
-              { label: "Token coverage", value: `${data.tokenCoveragePercent}%` },
-              { label: "Running", value: formatNumber(data.running) },
-              { label: "Interrupted", value: formatNumber(data.abandoned) },
-            ].map(({ label, value }) => (
-              <div key={label} className="border-b border-border px-4 py-3 sm:border-b-0 sm:border-r last:border-r-0">
-                <dt className="text-xs text-muted-foreground">{label}</dt>
-                <dd className="mt-0.5 font-medium tabular-nums text-foreground">{value}</dd>
-              </div>
-            ))}
-          </dl>
-
-          <div className="border-t border-border px-4 py-3">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Capabilities
-            </p>
-            {data.capabilities.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No AI calls in this period.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {data.capabilities.map((capability) => (
-                  <Badge key={capability.capability} variant="outline">
-                    {capabilityLabel(capability.capability)} · {capability.calls} calls
-                    {capability.cacheHits > 0 ? ` · ${capability.cacheHits} cached` : ""}
-                  </Badge>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="grid border-t border-border lg:grid-cols-3 lg:divide-x lg:divide-border">
-            <section className="flex flex-col gap-2 px-4 py-3" aria-labelledby={`providers-${group ?? "all"}`}>
-              <p
-                id={`providers-${group ?? "all"}`}
-                className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-              >
-                Providers and models
-              </p>
-              {data.providers.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No provider calls recorded.</p>
-              ) : data.providers.map((provider) => (
-                <div
-                  key={`${provider.provider}:${provider.modelId}`}
-                  className="flex items-start justify-between gap-3 text-xs"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-foreground">{provider.modelId}</p>
-                    <p className="truncate text-muted-foreground">{provider.provider}</p>
-                  </div>
-                  <div className="shrink-0 text-right tabular-nums text-muted-foreground">
-                    <p>{provider.calls} calls · {formatNumber(provider.totalTokens)} tokens</p>
-                    <p>
-                      {provider.succeeded} succeeded · {provider.failed} failed
-                      {provider.abandoned > 0 ? ` · ${provider.abandoned} interrupted` : ""}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </section>
-
-            <section className="flex flex-col gap-2 border-t border-border px-4 py-3 lg:border-t-0" aria-labelledby={`tokens-${group ?? "all"}`}>
-              <p
-                id={`tokens-${group ?? "all"}`}
-                className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-              >
-                Token accounting
-              </p>
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                {[
-                  ["Input", data.inputTokens],
-                  ["Uncached input", data.inputNoCacheTokens],
-                  ["Cache read", data.inputCacheReadTokens],
-                  ["Cache write", data.inputCacheWriteTokens],
-                  ["Output", data.outputTokens],
-                  ["Text output", data.outputTextTokens],
-                  ["Reasoning output", data.outputReasoningTokens],
-                ].map(([label, value]) => (
-                  <div key={String(label)} className="contents">
-                    <dt className="text-muted-foreground">{label}</dt>
-                    <dd className="text-right tabular-nums text-foreground">
-                      {formatNumber(Number(value))}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-
-            <section className="flex flex-col gap-2 border-t border-border px-4 py-3 lg:border-t-0" aria-labelledby={`outcomes-${group ?? "all"}`}>
-              <p
-                id={`outcomes-${group ?? "all"}`}
-                className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-              >
-                Outcomes
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="secondary">{data.succeeded} succeeded</Badge>
-                {data.failed > 0 ? (
-                  <Badge variant="destructive">{data.failed} failed</Badge>
-                ) : null}
-                {data.cancelled > 0 ? (
-                  <Badge variant="outline">{data.cancelled} cancelled</Badge>
-                ) : null}
-                {data.abandoned > 0 ? (
-                  <Badge variant="outline">{data.abandoned} interrupted</Badge>
-                ) : null}
-              </div>
-              {data.failures.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {data.failures.map((failure) => (
-                    <Badge key={failure.code} variant="outline">
-                      {capabilityLabel(failure.code)} · {failure.count}
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">No failures recorded.</p>
-              )}
-              {data.fullMatchCacheReuses !== undefined ? (
-                <p className="text-xs text-muted-foreground">
-                  Full match reuse{" "}
-                  <strong className="font-medium text-foreground">
-                    {data.fullMatchCacheReuses}
-                  </strong>
-                </p>
-              ) : null}
-            </section>
-          </div>
-        </>
-      )}
-    </section>
+    <DetailedUsageOverview
+      group={group}
+      data={data}
+      period={period}
+      detailsOpen={detailsOpen}
+      isError={isError}
+      isLoading={isLoading}
+      onPeriodChange={setPeriod}
+      onDetailsChange={() => setDetailsOpen((open) => !open)}
+      onRetry={() => void refetch()}
+    />
   );
 }

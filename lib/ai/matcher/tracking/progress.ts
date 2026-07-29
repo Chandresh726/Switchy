@@ -1,10 +1,8 @@
-import { randomUUID } from "node:crypto";
-
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
+import { insertAICacheHit } from "@/lib/ai/observability/cache-events";
 import { db } from "@/lib/db";
 import {
-  aiCacheEvents,
   companies,
   jobs,
   matchSessionJobs,
@@ -102,17 +100,13 @@ export async function markJobAnalysisReady(
       updatedAt: now,
     }).where(sessionJobsWhere(sessionId, [input.jobId])).run();
     if (input.cached) {
-      tx.insert(aiCacheEvents).values({
-        id: randomUUID(),
+      insertAICacheHit({
         capability: "job_analysis",
-        subjectType: "job",
-        subjectId: String(input.jobId),
+        subject: { type: "job", id: String(input.jobId) },
         sourceRunId: input.analysisRunId ?? null,
-        artifactType: "job_analysis",
-        artifactId: input.jobAnalysisId,
+        artifact: { type: "job_analysis", id: input.jobAnalysisId },
         sessionId,
-        createdAt: now,
-      }).run();
+      }, tx, { createdAt: now });
     }
   }, { behavior: "immediate" });
 }

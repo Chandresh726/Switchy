@@ -99,39 +99,6 @@ function usage(
 describe("AIUsageOverview", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("shows local telemetry and switches between seven and thirty days", async () => {
-    const requests: string[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      requests.push(url);
-      return Response.json(usage(
-        url.includes("days=all") ? "all" : url.includes("days=30") ? 30 : 7
-      ));
-    }));
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <AIUsageOverview />
-      </QueryClientProvider>
-    );
-
-    expect(await screen.findByText("12")).toBeTruthy();
-    expect(screen.getByText("1.5K")).toBeTruthy();
-    expect(screen.getByText("Full match reuse")).toBeTruthy();
-    expect(screen.getByText(/Currency is not estimated/)).toBeTruthy();
-    expect(screen.getByText("Token coverage")).toBeTruthy();
-    expect(screen.getByText("90%")).toBeTruthy();
-    expect(screen.getByText("Cache hits")).toBeTruthy();
-    expect(screen.getByText("gpt-5")).toBeTruthy();
-    expect(screen.getByText("openai")).toBeTruthy();
-    expect(screen.getByText(/2 cached/)).toBeTruthy();
-    expect(screen.getByText("1 interrupted")).toBeTruthy();
-
-    await userEvent.click(screen.getByRole("button", { name: "30 days" }));
-    await waitFor(() => expect(requests).toContain("/api/ai/usage?days=30"));
-    expect(await screen.findByText("30")).toBeTruthy();
-  });
-
   it("keeps matching usage compact until details are requested", async () => {
     const requests: string[] = [];
     Element.prototype.scrollIntoView = vi.fn();
@@ -348,7 +315,7 @@ describe("AIUsageOverview", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={queryClient}>
-        <AIUsageOverview />
+        <AIUsageOverview group="matching" />
       </QueryClientProvider>
     );
 

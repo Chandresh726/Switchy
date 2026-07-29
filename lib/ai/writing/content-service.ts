@@ -361,23 +361,19 @@ async function persistExecution(
   input: GenerateContentInput,
   result: AIExecutionResult<string>
 ): Promise<ContentResponse> {
-  try {
-    input.signal?.throwIfAborted();
-    const text = result.output.trim();
-    const persisted = persistWritingVariant(db, {
-      jobId: input.jobId,
-      type: input.type,
-      text,
-      settingsSnapshot: prepared.settingsSnapshot,
-      userPrompt: prepared.userPrompt,
-      parentVariant: prepared.parentVariant,
-      aiRunId: result.runId,
-      source: "generated",
-    });
-    return toContentResponse(persisted.content, persisted.history);
-  } catch (error) {
-    throw error;
-  }
+  input.signal?.throwIfAborted();
+  const text = result.output.trim();
+  const persisted = persistWritingVariant(db, {
+    jobId: input.jobId,
+    type: input.type,
+    text,
+    settingsSnapshot: prepared.settingsSnapshot,
+    userPrompt: prepared.userPrompt,
+    parentVariant: prepared.parentVariant,
+    aiRunId: result.runId,
+    source: "generated",
+  });
+  return toContentResponse(persisted.content, persisted.history);
 }
 
 export async function getContentByJobAndType(
