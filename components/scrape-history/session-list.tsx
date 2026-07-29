@@ -1,17 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import {
-  Briefcase,
-  CheckCircle2,
-  History,
-  Loader2,
-  Timer,
-  type LucideIcon,
-} from "lucide-react";
+import { Briefcase, CheckCircle2, History, Loader2, Timer } from "lucide-react";
 
 import { SessionCard } from "./session-card";
-import { cn } from "@/lib/utils";
+import { OverviewCard } from "@/components/history/shared/overview-card";
 import {
   formatDurationMs,
   formatRelativeTime,
@@ -21,40 +14,6 @@ import { getScrapeHistoryList } from "@/lib/api/clients/history";
 import { queryKeys } from "@/lib/query-keys";
 import { historyPollingInterval } from "@/lib/hooks/history-polling";
 import { ApiErrorState } from "@/components/ui/api-error-state";
-
-function OverviewCard({
-  label,
-  value,
-  detail,
-  icon: Icon,
-  accent,
-}: {
-  label: string;
-  value: string | number;
-  detail?: string;
-  icon: LucideIcon;
-  accent?: string;
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-        <Icon className="h-3.5 w-3.5 shrink-0" />
-        {label}
-      </div>
-      <p
-        className={cn(
-          "mt-2 text-2xl font-semibold leading-none tabular-nums text-foreground",
-          accent
-        )}
-      >
-        {value}
-      </p>
-      {detail && (
-        <p className="mt-2 truncate text-xs text-muted-foreground">{detail}</p>
-      )}
-    </div>
-  );
-}
 
 export function SessionList() {
   const { data, isLoading, error, refetch } = useQuery({

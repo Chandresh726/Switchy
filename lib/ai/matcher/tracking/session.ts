@@ -1,9 +1,17 @@
+import { randomUUID } from "node:crypto";
+
 import { and, eq, inArray } from "drizzle-orm";
 
 import { fetchCandidateProfileSnapshot } from "@/lib/ai/profile/profile-snapshot";
 import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { db } from "@/lib/db";
-import { jobs, matchLogs, matchSessionJobs, matchSessions } from "@/lib/db/schema";
+import {
+  aiCacheEvents,
+  jobs,
+  matchLogs,
+  matchSessionJobs,
+  matchSessions,
+} from "@/lib/db/schema";
 import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
 
 import type { UnmatchedJobFilter } from "../presentation";
@@ -79,6 +87,19 @@ export async function persistMatchSuccess(
       eq(matchSessionJobs.sessionId, sessionId),
       eq(matchSessionJobs.jobId, jobId)
     )).run();
+    if (input.cached) {
+      tx.insert(aiCacheEvents).values({
+        id: randomUUID(),
+        capability: "match_evaluation",
+        subjectType: "job",
+        subjectId: String(jobId),
+        sourceRunId: input.matchRunId ?? null,
+        artifactType: "match_result",
+        artifactId: matchResultId,
+        sessionId,
+        createdAt: now,
+      }).run();
+    }
   }, { behavior: "immediate" });
 }
 
@@ -104,7 +125,8 @@ export async function logMatchFailure(
   attemptCount: number,
   modelUsed: string,
   database: typeof db = db,
-  stage: "analysis" | "matching" = "matching"
+  stage: "analysis" | "matching" = "matching",
+  aiRunId?: string | null
 ): Promise<void> {
   const sanitized = sanitizeAIError(error);
   const now = new Date();
@@ -124,7 +146,10 @@ export async function logMatchFailure(
       ...(stage === "analysis" ? {
         analysisStatus: "failed" as const,
         analysisCompletedAt: now,
-      } : {}),
+        analysisRunId: aiRunId ?? null,
+      } : {
+        matchRunId: aiRunId ?? null,
+      }),
       matchStatus: "failed",
       matchCompletedAt: now,
       errorStage: stage,

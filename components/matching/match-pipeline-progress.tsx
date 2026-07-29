@@ -90,6 +90,27 @@ function stageLabel(job: MatchJobProgress): {
   return { label: "Waiting for analysis", icon: Clock3, className: "text-muted-foreground" };
 }
 
+/**
+ * Phase-level rollup on its own, for callers that already list the individual
+ * jobs elsewhere on the page.
+ */
+export function MatchPhaseSummary({
+  analysis,
+  matching,
+  className,
+}: {
+  analysis: MatchPhaseProgress;
+  matching: MatchPhaseProgress;
+  className?: string;
+}) {
+  return (
+    <div className={cn("grid gap-4 sm:grid-cols-2", className)}>
+      <PhaseProgress label="Job analysis" value={analysis} color="bg-violet-500" />
+      <PhaseProgress label="Final matching" value={matching} color="bg-blue-500" />
+    </div>
+  );
+}
+
 export function MatchPipelineProgress({
   analysis,
   matching,
@@ -100,10 +121,7 @@ export function MatchPipelineProgress({
   const displayedJobs = compact ? jobs.slice(0, 6) : jobs;
   return (
     <div className="space-y-4 rounded-lg border border-border bg-background/40 p-4">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <PhaseProgress label="Job analysis" value={analysis} color="bg-violet-500" />
-        <PhaseProgress label="Final matching" value={matching} color="bg-blue-500" />
-      </div>
+      <MatchPhaseSummary analysis={analysis} matching={matching} />
 
       {displayedJobs.length > 0 ? (
         <div className={cn("divide-y divide-border border-t border-border", !compact && "max-h-[28rem] overflow-y-auto")}>

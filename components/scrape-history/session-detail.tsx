@@ -13,12 +13,18 @@ import {
   Plus,
   Square,
   Trash2,
-  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+import { TRIGGER_LABELS } from "@/components/history/shared/constants";
+import {
+  MetaLine,
+  SessionStat,
+  StatusPill,
+  statusPillClass,
+} from "@/components/history/shared/session-primitives";
 import { Button } from "@/components/ui/button";
 import { ApiErrorState } from "@/components/ui/api-error-state";
 import { Pagination } from "@/components/ui/pagination";
@@ -34,42 +40,9 @@ import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 import { CompanyProgressList } from "./company-progress-list";
-import { TRIGGER_LABELS } from "./constants";
 
 interface SessionDetailProps {
   sessionId: string;
-}
-
-function SummaryStat({
-  value,
-  label,
-  icon: Icon,
-  accent,
-}: {
-  value: string | number;
-  label: string;
-  icon: LucideIcon;
-  accent?: boolean;
-}) {
-  return (
-    <span className="flex items-center gap-1.5">
-      <Icon
-        className={cn(
-          "h-4 w-4 shrink-0 text-muted-foreground",
-          accent && "text-emerald-400"
-        )}
-      />
-      <span
-        className={cn(
-          "text-lg font-semibold leading-none tabular-nums text-foreground",
-          accent && "text-emerald-400"
-        )}
-      >
-        {value}
-      </span>
-      <span className="text-xs text-muted-foreground">{label}</span>
-    </span>
-  );
 }
 
 export function SessionDetail({ sessionId }: SessionDetailProps) {
@@ -219,24 +192,19 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
               <h1 className="text-lg font-semibold text-foreground">
                 Scrape Session
               </h1>
-              <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-                <span>{formatDateTime(sessionDisplayTime)}</span>
-                <span aria-hidden className="text-border">
-                  &middot;
-                </span>
-                <span>{TRIGGER_LABELS[session.triggerSource] || session.triggerSource}</span>
-              </div>
+              <MetaLine
+                className="mt-1"
+                items={[
+                  formatDateTime(sessionDisplayTime),
+                  TRIGGER_LABELS[session.triggerSource] || session.triggerSource,
+                ]}
+              />
             </div>
           </div>
-          <span
-            className={cn(
-              "shrink-0 rounded-md border border-transparent px-3 py-1 text-xs font-medium",
-              sessionStatusConfig.color,
-              sessionStatusConfig.bgColor
-            )}
-          >
-            {sessionStatusConfig.label}
-          </span>
+          <StatusPill
+            label={sessionStatusConfig.label}
+            className={statusPillClass(sessionStatusConfig)}
+          />
         </div>
 
         {session.skipReason && (
@@ -263,30 +231,35 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
 
         {/* Summary Stats */}
         <div className="flex flex-wrap items-center gap-x-7 gap-y-2.5 border-t border-border/60 px-5 py-3.5">
-          <SummaryStat
+          <SessionStat
+            size="md"
             value={`${session.companiesCompleted || 0}/${session.companiesTotal || 0}`}
             label="companies"
             icon={Building2}
           />
           {hasJobStats && (
             <>
-              <SummaryStat
+              <SessionStat
+                size="md"
                 value={session.totalJobsFound || 0}
                 label="jobs found"
                 icon={Briefcase}
               />
-              <SummaryStat
+              <SessionStat
+                size="md"
                 value={session.totalJobsAdded || 0}
                 label="new"
                 icon={Plus}
-                accent={(session.totalJobsAdded || 0) > 0}
+                accent="emerald"
               />
-              <SummaryStat
+              <SessionStat
+                size="md"
                 value={session.totalJobsFiltered || 0}
                 label="filtered"
                 icon={Filter}
               />
-              <SummaryStat
+              <SessionStat
+                size="md"
                 value={session.totalJobsArchived || 0}
                 label="archived"
                 icon={Archive}

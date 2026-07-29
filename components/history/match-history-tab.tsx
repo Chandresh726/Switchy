@@ -1,9 +1,15 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { CheckCircle2, History, Loader2, Sparkles, Timer } from "lucide-react";
+import { AIUsageOverview } from "./ai-usage-overview";
 import { MatchSessionCard } from "./match-session-card";
-import { Loader2, Sparkles } from "lucide-react";
-import { formatDurationMs, groupSessionsByDate } from "@/lib/utils/format";
+import { OverviewCard } from "@/components/history/shared/overview-card";
+import {
+  formatDurationMs,
+  formatRelativeTime,
+  groupSessionsByDate,
+} from "@/lib/utils/format";
 import { getMatchHistoryList } from "@/lib/api/clients/history";
 import { queryKeys } from "@/lib/query-keys";
 import { historyPollingInterval } from "@/lib/hooks/history-polling";
@@ -45,39 +51,57 @@ export function MatchHistoryTab() {
 
   if (sessions.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12">
-        <Sparkles className="h-12 w-12 text-muted-foreground" />
-        <h3 className="mt-4 text-lg font-medium text-foreground">No match history yet</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Match jobs from the Settings page to start tracking match history
-        </p>
+      <div className="space-y-6">
+        <AIUsageOverview group="matching" />
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12">
+          <Sparkles className="h-12 w-12 text-muted-foreground" />
+          <h3 className="mt-4 text-lg font-medium text-foreground">No match history yet</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Match jobs from the Settings page to start tracking match history
+          </p>
+        </div>
       </div>
     );
   }
 
   const groupedSessions = groupSessionsByDate(sessions);
+  // Sessions come back newest-first, so the first row is the latest run overall.
+  const lastRunAt = sessions[0]?.startedAt ? new Date(sessions[0].startedAt) : null;
 
   return (
     <div className="space-y-6">
+      <AIUsageOverview group="matching" />
+
       {/* Summary Stats */}
       {stats && stats.totalSessions > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-2xl font-semibold text-foreground">{stats.totalSessions}</p>
-            <p className="text-sm text-muted-foreground">Total Sessions</p>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400">{stats.successRate}%</p>
-            <p className="text-sm text-muted-foreground">Success Rate</p>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-2xl font-semibold text-foreground">{formatDurationMs(stats.avgDuration)}</p>
-            <p className="text-sm text-muted-foreground">Avg Duration</p>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-2xl font-semibold text-purple-600 dark:text-purple-400">{stats.totalJobsMatched}</p>
-            <p className="text-sm text-muted-foreground">Jobs Matched</p>
-          </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <OverviewCard
+            label="Sessions"
+            value={stats.totalSessions}
+            icon={History}
+            detail={
+              lastRunAt ? `Last run ${formatRelativeTime(lastRunAt)}` : undefined
+            }
+          />
+          <OverviewCard
+            label="Match rate"
+            value={`${stats.successRate}%`}
+            icon={CheckCircle2}
+            accent="text-emerald-400"
+            detail="Share of attempted jobs matched"
+          />
+          <OverviewCard
+            label="Jobs matched"
+            value={stats.totalJobsMatched}
+            icon={Sparkles}
+            accent="text-purple-400"
+          />
+          <OverviewCard
+            label="Avg duration"
+            value={formatDurationMs(stats.avgDuration)}
+            icon={Timer}
+            detail="Per completed session"
+          />
         </div>
       )}
 

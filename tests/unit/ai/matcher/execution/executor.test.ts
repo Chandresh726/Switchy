@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   findFreshMatch: vi.fn(),
   createMatchResult: vi.fn(),
   createAICapabilityRuntime: vi.fn(),
+  getAIExecutionErrorContext: vi.fn(() => ({})),
   fetchJobsData: vi.fn(),
   fetchProfileData: vi.fn(),
   logMatchFailure: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock("@/lib/ai/artifacts", () => ({
 
 vi.mock("@/lib/ai/runtime", () => ({
   createAICapabilityRuntime: mocks.createAICapabilityRuntime,
+  getAIExecutionErrorContext: mocks.getAIExecutionErrorContext,
 }));
 
 vi.mock("@/lib/ai/matcher/tracking", () => ({

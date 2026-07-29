@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, ne, or } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { z } from "zod";
 
 import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { isReasoningEffort } from "@/lib/ai/providers/types";
 import type * as databaseSchema from "@/lib/db/schema";
-import { aiRuns } from "@/lib/db/schema";
+import { aiRunAttempts, aiRuns } from "@/lib/db/schema";
 
 import type {
   AICapability,
@@ -116,6 +116,12 @@ const ModelIdentifierSchema = z
   .regex(/^[a-zA-Z0-9._:/@+-]+$/);
 
 const WarningCodesSchema = z.array(z.string().min(1).max(120)).max(20);
+const ProviderRequestIdSchema = z.string().min(1).max(500);
+const runtimeGlobal = globalThis as typeof globalThis & {
+  switchyAIRuntimeInstanceId?: string;
+};
+const RUNTIME_INSTANCE_ID = runtimeGlobal.switchyAIRuntimeInstanceId ?? randomUUID();
+runtimeGlobal.switchyAIRuntimeInstanceId = RUNTIME_INSTANCE_ID;
 
 type AIRunDatabase = BetterSQLite3Database<typeof databaseSchema>;
 
@@ -134,6 +140,7 @@ interface CompleteAIRunSuccessInput {
   usage: AIExecutionUsage;
   durationMs: number;
   finishReason?: string;
+  providerRequestId?: string;
   warningCodes: string[];
   qualityResult: AIRunQualityResult;
 }
@@ -143,6 +150,7 @@ interface CompleteAIRunFailureInput {
   usage: AIExecutionUsage;
   durationMs: number;
   finishReason?: string;
+  providerRequestId?: string;
   error: unknown;
   warningCodes?: string[];
   qualityResult?: AIRunQualityResult;
@@ -152,6 +160,17 @@ interface RecordResolutionFailureInput {
   capability: AICapability;
   inputFingerprint: string;
   error: unknown;
+}
+
+interface CompleteAIRunAttemptInput {
+  status: "succeeded" | "failed" | "cancelled";
+  usage: AIExecutionUsage;
+  durationMs: number;
+  finishReason?: string;
+  providerRequestId?: string;
+  warningCodes?: string[];
+  error?: unknown;
+  retryDelayMs?: number;
 }
 
 function serializeMetadata(
@@ -166,6 +185,29 @@ function serializeMetadata(
 function serializeWarningCodes(warningCodes: string[]): string | null {
   const validated = WarningCodesSchema.parse(warningCodes);
   return validated.length > 0 ? JSON.stringify(validated) : null;
+}
+
+function validatedProviderRequestId(providerRequestId?: string): string | null {
+  return providerRequestId
+    ? ProviderRequestIdSchema.parse(providerRequestId)
+    : null;
+}
+
+function usageColumns(usage: AIExecutionUsage) {
+  return {
+    inputTokens: usage.inputTokens,
+    inputNoCacheTokens: usage.inputNoCacheTokens,
+    inputCacheReadTokens: usage.inputCacheReadTokens,
+    inputCacheWriteTokens: usage.inputCacheWriteTokens,
+    outputTokens: usage.outputTokens,
+    outputTextTokens: usage.outputTextTokens,
+    outputReasoningTokens: usage.outputReasoningTokens,
+    totalTokens: usage.totalTokens,
+  };
+}
+
+function attemptId(runId: string, attemptNumber: number): string {
+  return `${runId}:${attemptNumber}`;
 }
 
 export function createAIRunRepository(database: AIRunDatabase) {
@@ -189,6 +231,9 @@ export function createAIRunRepository(database: AIRunDatabase) {
         providerRecordId,
         provider: input.snapshot.provider,
         modelId,
+        providerConfigFingerprint: input.snapshot.providerConfigFingerprint
+          ? InputFingerprintSchema.parse(input.snapshot.providerConfigFingerprint)
+          : undefined,
         promptVersion: versions.prompt,
         schemaVersion: versions.schema,
         policyVersion: versions.policy,
@@ -196,6 +241,7 @@ export function createAIRunRepository(database: AIRunDatabase) {
         cacheStatus: input.cacheStatus,
         metadataJson: serializeMetadata(input.capability, input.metadata),
         status: "running",
+        runtimeInstanceId: RUNTIME_INSTANCE_ID,
         startedAt: new Date(),
         createdAt: new Date(),
       });
@@ -221,6 +267,7 @@ export function createAIRunRepository(database: AIRunDatabase) {
         durationMs: 0,
         cacheStatus: "bypass",
         qualityResult: "not_checked",
+        runtimeInstanceId: RUNTIME_INSTANCE_ID,
         errorCode: sanitized.code,
         errorMessage: sanitized.message,
         startedAt: now,
@@ -230,49 +277,135 @@ export function createAIRunRepository(database: AIRunDatabase) {
       return id;
     },
 
+    async startAttempt(runId: string, attemptNumber: number): Promise<void> {
+      await database.insert(aiRunAttempts).values({
+        id: attemptId(runId, attemptNumber),
+        runId,
+        attemptNumber,
+        status: "running",
+        startedAt: new Date(),
+      });
+    },
+
+    async completeAttempt(
+      runId: string,
+      attemptNumber: number,
+      input: CompleteAIRunAttemptInput
+    ): Promise<void> {
+      const sanitized = input.error === undefined
+        ? null
+        : sanitizeAIError(input.error);
+      const result = await database.update(aiRunAttempts).set({
+        status: input.status,
+        ...usageColumns(input.usage),
+        durationMs: input.durationMs,
+        finishReason: input.finishReason,
+        providerRequestId: validatedProviderRequestId(input.providerRequestId),
+        warningCodesJson: serializeWarningCodes(input.warningCodes ?? []),
+        errorCode: sanitized?.code ?? null,
+        errorMessage: sanitized?.message ?? null,
+        retryDelayMs: input.retryDelayMs,
+        completedAt: new Date(),
+      }).where(and(
+        eq(aiRunAttempts.id, attemptId(runId, attemptNumber)),
+        eq(aiRunAttempts.status, "running")
+      ));
+      if (result.changes === 0) {
+        throw new Error("AI run attempt was not in a running state");
+      }
+    },
+
     async completeSuccess(id: string, input: CompleteAIRunSuccessInput): Promise<void> {
-      await database
+      const result = await database
         .update(aiRuns)
         .set({
           status: "succeeded",
           attemptCount: input.attempts,
-          inputTokens: input.usage.inputTokens,
-          outputTokens: input.usage.outputTokens,
-          totalTokens: input.usage.totalTokens,
+          ...usageColumns(input.usage),
           durationMs: input.durationMs,
           finishReason: input.finishReason,
+          providerRequestId: validatedProviderRequestId(input.providerRequestId),
           warningsJson: serializeWarningCodes(input.warningCodes),
           qualityResult: input.qualityResult,
           errorCode: null,
           errorMessage: null,
           completedAt: new Date(),
         })
-        .where(eq(aiRuns.id, id));
+        .where(and(eq(aiRuns.id, id), eq(aiRuns.status, "running")));
+      if (result.changes === 0) {
+        throw new Error("AI run was not in a running state");
+      }
     },
 
     async completeFailure(id: string, input: CompleteAIRunFailureInput): Promise<void> {
       const sanitized = sanitizeAIError(input.error);
-      await database
+      const result = await database
         .update(aiRuns)
         .set({
           status: sanitized.code === "aborted" ? "cancelled" : "failed",
           attemptCount: input.attempts,
-          inputTokens: input.usage.inputTokens,
-          outputTokens: input.usage.outputTokens,
-          totalTokens: input.usage.totalTokens,
+          ...usageColumns(input.usage),
           durationMs: input.durationMs,
           finishReason: input.finishReason,
+          providerRequestId: validatedProviderRequestId(input.providerRequestId),
           warningsJson: serializeWarningCodes(input.warningCodes ?? []),
           qualityResult: input.qualityResult ?? "not_checked",
           errorCode: sanitized.code,
           errorMessage: sanitized.message,
           completedAt: new Date(),
         })
-        .where(eq(aiRuns.id, id));
+        .where(and(eq(aiRuns.id, id), eq(aiRuns.status, "running")));
+      if (result.changes === 0) {
+        throw new Error("AI run was not in a running state");
+      }
+    },
+
+    async reconcileAbandonedRuns(
+      now = new Date(),
+      runtimeInstanceId = RUNTIME_INSTANCE_ID
+    ): Promise<number> {
+      const abandoned = await database.select({
+        id: aiRuns.id,
+        startedAt: aiRuns.startedAt,
+      }).from(aiRuns).where(and(
+        eq(aiRuns.status, "running"),
+        or(
+          isNull(aiRuns.runtimeInstanceId),
+          ne(aiRuns.runtimeInstanceId, runtimeInstanceId)
+        )
+      ));
+      if (abandoned.length === 0) return 0;
+
+      database.transaction((tx) => {
+        for (const run of abandoned) {
+          tx.update(aiRuns).set({
+            status: "abandoned",
+            durationMs: Math.max(0, now.getTime() - run.startedAt.getTime()),
+            errorCode: "interrupted",
+            errorMessage: "The AI execution was interrupted by an application restart.",
+            completedAt: now,
+          }).where(and(eq(aiRuns.id, run.id), eq(aiRuns.status, "running"))).run();
+          tx.update(aiRunAttempts).set({
+            status: "abandoned",
+            errorCode: "interrupted",
+            errorMessage: "The AI attempt was interrupted by an application restart.",
+            completedAt: now,
+          }).where(and(
+            eq(aiRunAttempts.runId, run.id),
+            eq(aiRunAttempts.status, "running")
+          )).run();
+        }
+      });
+      return abandoned.length;
     },
 
     async findById(id: string) {
-      const rows = await database.select().from(aiRuns).where(eq(aiRuns.id, id)).limit(1);
+      const [rows, attempts] = await Promise.all([
+        database.select().from(aiRuns).where(eq(aiRuns.id, id)).limit(1),
+        database.select().from(aiRunAttempts)
+          .where(eq(aiRunAttempts.runId, id))
+          .orderBy(aiRunAttempts.attemptNumber),
+      ]);
       const row = rows[0];
       if (!row) return null;
 
@@ -286,6 +419,12 @@ export function createAIRunRepository(database: AIRunDatabase) {
               AICapabilitySchema.parse(row.capability)
             ].parse(JSON.parse(row.metadataJson))
           : {},
+        attemptHistory: attempts.map((attempt) => ({
+          ...attempt,
+          warningCodes: attempt.warningCodesJson
+            ? WarningCodesSchema.parse(JSON.parse(attempt.warningCodesJson))
+            : [],
+        })),
       };
     },
   };

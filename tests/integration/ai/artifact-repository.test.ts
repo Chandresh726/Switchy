@@ -148,6 +148,7 @@ function insertAIRun(
     policyVersion: "policy-v1",
     inputFingerprint: "a".repeat(64),
     status,
+    completedAt: new Date(),
   }).run();
   return id;
 }

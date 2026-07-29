@@ -148,6 +148,7 @@ export const matchHistoryDetailResponseSchema = z.object({
     jobId: z.number().int().positive().nullable(),
     jobTitle: z.string().nullable(),
     companyName: z.string().nullable(),
+    companyLogoUrl: z.string().nullable(),
     status: z.string(),
     score: z.number().nullable(),
     attemptCount: z.number().int().nullable(),

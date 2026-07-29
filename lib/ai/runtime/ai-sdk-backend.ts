@@ -19,7 +19,12 @@ import type {
 function normalizeUsage(usage: LanguageModelUsage) {
   return {
     inputTokens: usage.inputTokens,
+    inputNoCacheTokens: usage.inputTokenDetails.noCacheTokens,
+    inputCacheReadTokens: usage.inputTokenDetails.cacheReadTokens,
+    inputCacheWriteTokens: usage.inputTokenDetails.cacheWriteTokens,
     outputTokens: usage.outputTokens,
+    outputTextTokens: usage.outputTokenDetails.textTokens,
+    outputReasoningTokens: usage.outputTokenDetails.reasoningTokens,
     totalTokens: usage.totalTokens,
   };
 }
@@ -49,6 +54,7 @@ export class AISDKGenerationBackend implements AIGenerationBackend {
       output: result.text,
       usage: normalizeUsage(result.usage),
       finishReason: result.finishReason,
+      providerRequestId: result.response.id,
       warningCodes: normalizeWarnings(result.warnings),
     };
   }
@@ -69,15 +75,17 @@ export class AISDKGenerationBackend implements AIGenerationBackend {
       output += delta;
       await input.onDelta(delta);
     }
-    const [usage, finishReason, warnings] = await Promise.all([
+    const [usage, finishReason, warnings, response] = await Promise.all([
       result.usage,
       result.finishReason,
       result.warnings,
+      result.response,
     ]);
     return {
       output,
       usage: normalizeUsage(usage),
       finishReason,
+      providerRequestId: response.id,
       warningCodes: normalizeWarnings(warnings),
     };
   }
@@ -109,6 +117,7 @@ export class AISDKGenerationBackend implements AIGenerationBackend {
       output: result.output,
       usage: normalizeUsage(result.usage),
       finishReason: result.finishReason,
+      providerRequestId: result.response.id,
       warningCodes: normalizeWarnings(result.warnings),
     };
   }

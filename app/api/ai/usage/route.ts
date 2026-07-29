@@ -7,10 +7,10 @@ import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
 export async function GET(request: Request) {
   try {
-    const { days } = aiUsageQuerySchema.parse(
+    const { days, group } = aiUsageQuerySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams)
     );
-    return NextResponse.json(await getAIUsageSummary(days), {
+    return NextResponse.json(await getAIUsageSummary(days, { group }), {
       headers: NO_STORE_HEADERS,
     });
   } catch (error) {

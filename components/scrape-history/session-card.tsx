@@ -12,7 +12,6 @@ import {
   Plus,
   Square,
   Trash2,
-  type LucideIcon,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -27,7 +26,14 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { TRIGGER_LABELS } from "./constants";
+import { TRIGGER_LABELS } from "@/components/history/shared/constants";
+import {
+  MetaLine,
+  SessionStat,
+  StatusPill,
+  StatusRail,
+  statusPillClass,
+} from "@/components/history/shared/session-primitives";
 import {
   cancelScrapeHistorySession,
   deleteScrapeHistorySession,
@@ -49,50 +55,6 @@ import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface SessionCardProps {
   session: ScrapeHistorySession;
-}
-
-const STATUS_RAILS: Record<string, string> = {
-  completed: "bg-emerald-400",
-  success: "bg-emerald-400",
-  in_progress: "bg-blue-400",
-  partial: "bg-amber-400",
-  skipped: "bg-amber-400",
-  queued: "bg-zinc-500",
-  failed: "bg-red-400",
-  error: "bg-red-400",
-  cancelled: "bg-zinc-500",
-};
-
-function CardStat({
-  value,
-  label,
-  icon: Icon,
-  accent,
-}: {
-  value: string | number;
-  label: string;
-  icon: LucideIcon;
-  accent?: boolean;
-}) {
-  return (
-    <span className="flex items-center gap-1.5">
-      <Icon
-        className={cn(
-          "h-3.5 w-3.5 shrink-0 text-muted-foreground",
-          accent && "text-emerald-400"
-        )}
-      />
-      <span
-        className={cn(
-          "text-sm font-semibold leading-none tabular-nums text-foreground",
-          accent && "text-emerald-400"
-        )}
-      >
-        {value}
-      </span>
-      <span className="text-xs text-muted-foreground">{label}</span>
-    </span>
-  );
 }
 
 export function SessionCard({ session }: SessionCardProps) {
@@ -188,12 +150,7 @@ export function SessionCard({ session }: SessionCardProps) {
       href={`/history/scrape/${session.id}`}
       className="group relative block overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-border/60"
     >
-      <div
-        className={cn(
-          "absolute inset-y-0 left-0 w-[3px]",
-          STATUS_RAILS[session.status] ?? "bg-muted-foreground"
-        )}
-      />
+      <StatusRail className={statusConfig.railColor} />
       <div className="py-4 pl-5 pr-4 sm:pl-6 sm:pr-5">
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
@@ -217,19 +174,13 @@ export function SessionCard({ session }: SessionCardProps) {
                   {TRIGGER_LABELS[session.triggerSource] || session.triggerSource}
                 </span>
               </div>
-              <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-                <span>
-                  {formatDurationFromDates(session.startedAt, session.completedAt)}
-                </span>
-                {session.completedAt && (
-                  <>
-                    <span aria-hidden className="text-border">
-                      &middot;
-                    </span>
-                    <span>Finished {formatTime(session.completedAt)}</span>
-                  </>
-                )}
-              </div>
+              <MetaLine
+                className="mt-1"
+                items={[
+                  formatDurationFromDates(session.startedAt, session.completedAt),
+                  session.completedAt && `Finished ${formatTime(session.completedAt)}`,
+                ]}
+              />
             </div>
           </div>
 
@@ -285,15 +236,10 @@ export function SessionCard({ session }: SessionCardProps) {
               </AlertDialog>
             </div>
 
-            <span
-              className={cn(
-                "rounded-md border border-transparent px-2.5 py-1 text-xs font-medium",
-                statusConfig.color,
-                statusConfig.bgColor
-              )}
-            >
-              {statusConfig.label}
-            </span>
+            <StatusPill
+              label={statusConfig.label}
+              className={statusPillClass(statusConfig)}
+            />
           </div>
         </div>
 
@@ -321,30 +267,30 @@ export function SessionCard({ session }: SessionCardProps) {
 
         {/* Meta Stats */}
         <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border/60 pt-3">
-          <CardStat
+          <SessionStat
             value={`${session.companiesCompleted || 0}/${session.companiesTotal || 0}`}
             label="companies"
             icon={Building2}
           />
           {hasJobStats && (
             <>
-              <CardStat
+              <SessionStat
                 value={session.totalJobsFound || 0}
                 label="found"
                 icon={Briefcase}
               />
-              <CardStat
+              <SessionStat
                 value={session.totalJobsAdded || 0}
                 label="new"
                 icon={Plus}
-                accent={(session.totalJobsAdded || 0) > 0}
+                accent="emerald"
               />
-              <CardStat
+              <SessionStat
                 value={session.totalJobsFiltered || 0}
                 label="filtered"
                 icon={Filter}
               />
-              <CardStat
+              <SessionStat
                 value={session.totalJobsArchived || 0}
                 label="archived"
                 icon={Archive}

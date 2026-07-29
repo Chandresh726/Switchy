@@ -93,9 +93,10 @@ export function useAIContentWorkspace({
 
   const recordVariantSignal = useCallback(async (
     variantId: number,
-    action: "selected" | "copied" | "discarded"
+    action: "selected" | "copied" | "discarded",
+    source: "initial_load" | "navigation" | "copy" | "discard"
   ) => {
-    await recordAIVariantSignal(variantId, action);
+    await recordAIVariantSignal(variantId, action, source);
   }, []);
 
   const generateContent = useCallback(
@@ -168,7 +169,7 @@ export function useAIContentWorkspace({
         selectVariantByIndex(targetIndex, nextContent);
         const selectedVariantId = nextContent.history[targetIndex]?.id;
         if (selectedVariantId) {
-          void recordVariantSignal(selectedVariantId, "selected").catch((error) => {
+          void recordVariantSignal(selectedVariantId, "selected", "initial_load").catch((error) => {
             console.error("Failed to record selected variant:", error);
           });
         }
@@ -256,7 +257,7 @@ export function useAIContentWorkspace({
       selectVariantByIndex(nextIndex);
       const nextVariantId = content.history[nextIndex]?.id;
       if (nextVariantId) {
-        void recordVariantSignal(nextVariantId, "selected").catch((error) => {
+        void recordVariantSignal(nextVariantId, "selected", "navigation").catch((error) => {
           console.error("Failed to record selected variant:", error);
         });
       }
@@ -276,7 +277,7 @@ export function useAIContentWorkspace({
       throw new Error("Save or cancel manual edits before copying");
     }
     const variantId = content?.history[currentVariantIndex]?.id;
-    if (variantId) await recordVariantSignal(variantId, "copied");
+    if (variantId) await recordVariantSignal(variantId, "copied", "copy");
   }, [content, currentVariantIndex, hasChanges, recordVariantSignal]);
 
   const discardCurrentVariant = useCallback(async () => {
@@ -288,7 +289,7 @@ export function useAIContentWorkspace({
     }
     setIsDiscarding(true);
     try {
-      await recordVariantSignal(variantId, "discarded");
+      await recordVariantSignal(variantId, "discarded", "discard");
       const discardedAt = new Date().toISOString();
       const nextContent = {
         ...content,
@@ -303,6 +304,10 @@ export function useAIContentWorkspace({
       );
       setContent(nextContent);
       selectVariantByIndex(nextIndex, nextContent);
+      const nextVariantId = nextContent.history[nextIndex]?.id;
+      if (nextVariantId) {
+        await recordVariantSignal(nextVariantId, "selected", "navigation");
+      }
       toast.success("Variant marked as discarded");
     } catch (error) {
       console.error("Failed to discard writing variant:", error);

@@ -158,6 +158,7 @@ describe("match history detail", () => {
       .mockImplementationOnce(() => selectLogs(logs))
       .mockImplementationOnce(() => selectWhere([result]))
       .mockImplementationOnce(() => selectWhere([{ id: "analysis-1", aiRunId: "analysis-run" }]))
+      .mockImplementationOnce(() => selectWhere([]))
       .mockImplementationOnce(() => selectWhere([job]));
     mocks.getMatchPresentations.mockResolvedValue(new Map([[42, {
       matchResultId: "result-linked",
@@ -210,6 +211,11 @@ describe("match history detail", () => {
       .mockImplementationOnce(() => selectWhere([{ value: logs.length }]))
       .mockImplementationOnce(() => selectLogs(logs))
       .mockImplementationOnce(() => selectWhere([{ id: "result-from-another-attempt" }]))
+      .mockImplementationOnce(() => selectWhere([{
+        jobId: 42,
+        analysisRunId: "analysis-run",
+        matchRunId: null,
+      }]))
       .mockImplementationOnce(() => selectWhere([]));
     mocks.getMatchPresentations.mockResolvedValue(new Map());
 
@@ -221,7 +227,13 @@ describe("match history detail", () => {
       score: null,
       matchResultId: null,
       matchStale: false,
+      analysisRunId: "analysis-run",
+      analysisRun: {
+        capability: "job_analysis",
+        status: "succeeded",
+      },
     });
+    expect(mocks.getAIRunSummaries).toHaveBeenCalledWith(["analysis-run"]);
   });
 
   it("bounds history provenance work to the requested log page", async () => {
@@ -271,6 +283,7 @@ describe("match history detail", () => {
       .mockImplementationOnce(() => selectLogs(logs))
       .mockImplementationOnce(() => selectWhere(results))
       .mockImplementationOnce(() => selectWhere(analyses))
+      .mockImplementationOnce(() => selectWhere([]))
       .mockImplementationOnce(() => selectWhere(jobRows));
     mocks.getMatchPresentations.mockResolvedValue(new Map(results.map((result) => [
       result.jobId,
@@ -295,7 +308,7 @@ describe("match history detail", () => {
     expect(response.status).toBe(200);
     expect(body.logs).toHaveLength(count);
     expect(body.logPagination).toEqual({ total: 401, limit: 50, offset: 0, hasMore: true });
-    expect(mocks.select).toHaveBeenCalledTimes(6);
+    expect(mocks.select).toHaveBeenCalledTimes(7);
     expect(mocks.getAIRunSummaries).toHaveBeenCalledWith(
       Array.from({ length: count }, (_, index) => [
         `adjudication-run-${index + 1}`,

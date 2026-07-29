@@ -9,10 +9,12 @@ import {
   type AICapabilityRuntime,
   type AIExecutionResult,
 } from "@/lib/ai/runtime";
-import { aiRunRepository } from "@/lib/ai/runtime/default-run-repository";
-import { AIError } from "@/lib/ai/shared/errors";
 import { db } from "@/lib/db";
-import { aiGeneratedContent, aiGenerationHistory, settings } from "@/lib/db/schema";
+import {
+  aiGeneratedContent,
+  aiGenerationHistory,
+  settings,
+} from "@/lib/db/schema";
 
 import {
   COVER_LETTER_SYSTEM_PROMPT,
@@ -25,7 +27,10 @@ import {
 } from "../prompts/recruiter-follow-up";
 import { preserveWritingGenerationError } from "./errors";
 import { buildWritingEvidencePacket, type WritingEvidencePacket } from "./evidence-packet";
-import { persistWritingVariant } from "./repository";
+import {
+  persistWritingVariant,
+  recordWritingVariantSignal,
+} from "./repository";
 import type { ContentResponse } from "./types";
 import { isValidWritingOutput } from "./validation";
 
@@ -225,6 +230,7 @@ function toContentResponse(
     jobId: content.jobId,
     type: content.type as AIContentType,
     content: content.content,
+    currentVariantId: content.currentVariantId,
     settingsSnapshot: content.settingsSnapshot,
     createdAt: formatDate(content.createdAt),
     updatedAt: formatDate(content.updatedAt),
@@ -370,22 +376,6 @@ async function persistExecution(
     });
     return toContentResponse(persisted.content, persisted.history);
   } catch (error) {
-    const runError = input.signal?.aborted
-      ? input.signal.reason ?? error
-      : new AIError({
-          type: "generation_failed",
-          message: "Validated writing output could not be persisted",
-          cause: error instanceof Error ? error : undefined,
-          retryable: false,
-        });
-    await aiRunRepository.completeFailure(result.runId, {
-      attempts: result.attempts,
-      usage: result.usage,
-      durationMs: result.durationMs,
-      finishReason: result.finishReason,
-      error: runError,
-      qualityResult: "passed",
-    });
     throw error;
   }
 }
@@ -474,17 +464,11 @@ export async function saveManualVariant(input: {
 
 export async function recordVariantSignal(
   variantId: number,
-  action: "selected" | "copied" | "discarded"
+  action: "selected" | "copied" | "discarded",
+  source: "initial_load" | "navigation" | "copy" | "discard",
+  database: typeof db = db
 ): Promise<boolean> {
-  const timestampColumn = action === "selected"
-    ? { selectedAt: new Date() }
-    : action === "copied"
-      ? { copiedAt: new Date() }
-      : { discardedAt: new Date() };
-  const result = await db.update(aiGenerationHistory)
-    .set(timestampColumn)
-    .where(eq(aiGenerationHistory.id, variantId));
-  return result.changes > 0;
+  return recordWritingVariantSignal(database, variantId, action, source);
 }
 
 export async function clearAllGeneratedContent(): Promise<{

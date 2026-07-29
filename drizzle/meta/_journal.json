@@ -246,6 +246,27 @@
       "when": 1784727409372,
       "tag": "0034_hot_timeslip",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1785320942500,
+      "tag": "0035_glorious_hawkeye",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1785321071970,
+      "tag": "0036_heavy_vindicator",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1785321101023,
+      "tag": "0037_secret_the_renegades",
+      "breakpoints": true
     }
   ]
 }

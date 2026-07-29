@@ -95,14 +95,23 @@ export async function uploadResume(file: File, shouldAutofill: boolean, signal: 
     throw new ValidationError("Unsupported file format. Please upload PDF, DOCX, DOC, TXT, or MD.", "unsupported_resume_format");
   }
   let resumeText = "";
+  let resumeFileType: "pdf" | "doc" | "docx" | "txt" | "md" | undefined;
   if (shouldAutofill) {
-    try { resumeText = (await extractResumeText(file)).text; } catch {
+    try {
+      const extracted = await extractResumeText(file);
+      resumeText = extracted.text;
+      resumeFileType = extracted.format === "text"
+        ? fileName.endsWith(".md") ? "md" : "txt"
+        : extracted.format;
+    } catch {
       throw new ValidationError("Could not extract resume text.", "resume_text_extraction_failed");
     }
     if (resumeText.trim().length < 50) throw new ValidationError("Could not extract text from file. Please ensure the file contains readable text.", "resume_text_empty");
     if (resumeText.length > MAX_RESUME_TEXT_LENGTH) throw new ValidationError("Resume text is too long to parse safely. Please upload a shorter resume.", "resume_text_too_long");
   }
-  const parseResult = shouldAutofill ? await parseResumeWithProvenance(resumeText, { signal }) : null;
+  const parseResult = shouldAutofill
+    ? await parseResumeWithProvenance(resumeText, { signal, fileType: resumeFileType })
+    : null;
   const parsedData = parseResult?.parsedData ?? null;
   const stagedFile = await stageResumeFile(file);
   let resumeRecord: ResumeRecord | null = null;

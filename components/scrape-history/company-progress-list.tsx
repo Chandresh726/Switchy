@@ -1,4 +1,3 @@
-import { Fragment } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -13,6 +12,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import {
+  MetaLine,
+  SessionStat,
+  StatusPill,
+  StatusRail,
+} from "@/components/history/shared/session-primitives";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatDateTime, formatDurationMs } from "@/lib/utils/format";
@@ -168,67 +173,24 @@ function getCompanyName(progress: CompanyProgress): string {
 function buildMetaItems(
   queueItem: ScrapeQueueItem | undefined,
   latestLog: SessionLog | undefined
-): Array<{ key: string; text: string }> {
-  const meta: Array<{ key: string; text: string }> = [];
-
-  if (queueItem) {
-    meta.push({
-      key: "attempt",
-      text:
-        queueItem.attemptCount === 0
-          ? "Not started"
-          : `Attempt ${queueItem.attemptCount} of ${queueItem.maxAttempts}`,
-    });
-  }
-  if (latestLog?.duration !== null && latestLog?.duration !== undefined) {
-    meta.push({ key: "duration", text: formatDurationMs(latestLog.duration) });
-  }
-  if (queueItem?.startedAt) {
-    meta.push({
-      key: "started",
-      text: `Started ${formatDateTime(new Date(queueItem.startedAt))}`,
-    });
-  }
-  if (queueItem?.status === "queued" && queueItem.attemptCount > 0) {
-    meta.push({
-      key: "retry",
-      text: `Retry at ${formatDateTime(new Date(queueItem.availableAt))}`,
-    });
-  }
-  if (queueItem?.status === "running" && queueItem.leaseExpiresAt) {
-    meta.push({
-      key: "lease",
-      text: `Lease until ${formatDateTime(new Date(queueItem.leaseExpiresAt))}`,
-    });
-  }
-
-  return meta;
-}
-
-function Metric({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: number | null | undefined;
-  accent?: boolean;
-}) {
-  const empty = value === null || value === undefined;
-  return (
-    <span className="flex items-baseline gap-1.5">
-      <span
-        className={cn(
-          "text-sm font-semibold tabular-nums text-foreground",
-          empty && "text-muted-foreground",
-          !empty && accent && value ? "text-emerald-400" : ""
-        )}
-      >
-        {empty ? "—" : value}
-      </span>
-      <span className="text-xs text-muted-foreground">{label}</span>
-    </span>
-  );
+): Array<string | false | null | undefined> {
+  return [
+    queueItem &&
+      (queueItem.attemptCount === 0
+        ? "Not started"
+        : `Attempt ${queueItem.attemptCount} of ${queueItem.maxAttempts}`),
+    latestLog?.duration !== null &&
+      latestLog?.duration !== undefined &&
+      formatDurationMs(latestLog.duration),
+    queueItem?.startedAt &&
+      `Started ${formatDateTime(new Date(queueItem.startedAt))}`,
+    queueItem?.status === "queued" &&
+      queueItem.attemptCount > 0 &&
+      `Retry at ${formatDateTime(new Date(queueItem.availableAt))}`,
+    queueItem?.status === "running" &&
+      queueItem.leaseExpiresAt &&
+      `Lease until ${formatDateTime(new Date(queueItem.leaseExpiresAt))}`,
+  ];
 }
 
 function CompanyProgressRow({ progress }: { progress: CompanyProgress }) {
@@ -247,8 +209,8 @@ function CompanyProgressRow({ progress }: { progress: CompanyProgress }) {
       ? MATCHER_STATUS_CONFIG[latestLog.matcherStatus] ?? MATCHER_STATUS_CONFIG.pending
       : null;
   const matchHref = latestLog?.matchSessionId
-    ? `/history/match/${encodeURIComponent(latestLog.matchSessionId)}`
-    : "/history/match";
+    ? `/history/ai/matching/${encodeURIComponent(latestLog.matchSessionId)}`
+    : "/history/ai/matching";
   const issueLogs = progress.logs.filter((log) => log.errorMessage);
   const hasMetrics = [
     latestLog?.jobsFound,
@@ -263,7 +225,7 @@ function CompanyProgressRow({ progress }: { progress: CompanyProgress }) {
 
   return (
     <article className="relative overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-border/60">
-      <div className={cn("absolute inset-y-0 left-0 w-[3px]", statusStyle.rail)} />
+      <StatusRail className={statusStyle.rail} />
       <div className="py-4 pl-5 pr-4 sm:pl-6 sm:pr-5">
         <div className="flex items-start justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
@@ -291,45 +253,25 @@ function CompanyProgressRow({ progress }: { progress: CompanyProgress }) {
                   </span>
                 )}
               </div>
-              {meta.length > 0 && (
-                <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-                  {meta.map((item, index) => (
-                    <Fragment key={item.key}>
-                      {index > 0 && (
-                        <span aria-hidden className="text-border">
-                          ·
-                        </span>
-                      )}
-                      <span>{item.text}</span>
-                    </Fragment>
-                  ))}
-                </div>
-              )}
+              <MetaLine className="mt-1" items={meta} />
             </div>
           </div>
 
-          <div className="shrink-0">
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium",
-                statusStyle.badge
-              )}
-            >
-              <StatusIcon
-                className={cn("h-3.5 w-3.5", status === "running" && "animate-spin")}
-              />
-              {statusStyle.label}
-            </span>
-          </div>
+          <StatusPill
+            label={statusStyle.label}
+            className={statusStyle.badge}
+            icon={StatusIcon}
+            spin={status === "running"}
+          />
         </div>
 
         {latestLog && hasMetrics && (
-          <div className="mt-3 flex flex-wrap items-baseline gap-x-6 gap-y-1.5 border-t border-border/60 pt-3">
-            <Metric label="found" value={latestLog.jobsFound} />
-            <Metric label="new" value={latestLog.jobsAdded} accent />
-            <Metric label="updated" value={latestLog.jobsUpdated} />
-            <Metric label="filtered" value={latestLog.jobsFiltered} />
-            <Metric label="archived" value={latestLog.jobsArchived} />
+          <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1.5 border-t border-border/60 pt-3">
+            <SessionStat label="found" value={latestLog.jobsFound} />
+            <SessionStat label="new" value={latestLog.jobsAdded} accent="emerald" />
+            <SessionStat label="updated" value={latestLog.jobsUpdated} />
+            <SessionStat label="filtered" value={latestLog.jobsFiltered} />
+            <SessionStat label="archived" value={latestLog.jobsArchived} />
           </div>
         )}
 

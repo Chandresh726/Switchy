@@ -2,7 +2,14 @@ import { APICallError } from "ai";
 import { describe, expect, it } from "vitest";
 
 import { logMatchFailure } from "@/lib/ai/matcher/tracking/session";
-import { companies, jobs, matchLogs, matchSessions } from "@/lib/db/schema";
+import {
+  aiRuns,
+  companies,
+  jobs,
+  matchLogs,
+  matchSessionJobs,
+  matchSessions,
+} from "@/lib/db/schema";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-match-failure-sanitization-");
@@ -25,6 +32,29 @@ describe("match failure persistence", () => {
       status: "in_progress",
       jobsTotal: 1,
     }).run();
+    database.insert(matchSessionJobs).values({
+      sessionId: "session-1",
+      jobId: job.id,
+    }).run();
+    database.insert(aiRuns).values({
+      id: "failed-run",
+      capability: "match_evaluation",
+      subjectType: "job",
+      subjectId: String(job.id),
+      providerRecordId: "provider-1",
+      provider: "openai",
+      modelId: "synthetic-model",
+      promptVersion: "p1",
+      schemaVersion: "s1",
+      policyVersion: "e1",
+      inputFingerprint: "a".repeat(64),
+      status: "failed",
+      errorCode: "generation_failed",
+      errorMessage: "The AI provider could not complete the request.",
+      startedAt: new Date(),
+      completedAt: new Date(),
+      createdAt: new Date(),
+    }).run();
     const providerError = new APICallError({
       message: "Provider rejected SENTINEL_CANDIDATE_DATA",
       url: "https://provider.invalid/generate",
@@ -42,7 +72,9 @@ describe("match failure persistence", () => {
       providerError,
       1,
       "synthetic-model",
-      database
+      database,
+      "matching",
+      "failed-run"
     );
 
     const persisted = database.select().from(matchLogs).get();
@@ -52,5 +84,6 @@ describe("match failure persistence", () => {
     });
     expect(JSON.stringify(persisted)).not.toContain("SENTINEL_CANDIDATE_DATA");
     expect(JSON.stringify(persisted)).not.toContain("SENTINEL_JOB_DESCRIPTION");
+    expect(database.select().from(matchSessionJobs).get()?.matchRunId).toBe("failed-run");
   });
 });

@@ -5,7 +5,11 @@ import {
   buildCandidateEvidence,
   type MatchEvidence,
 } from "@/lib/ai/artifacts";
-import { createAICapabilityRuntime } from "@/lib/ai/runtime";
+import { recordAICacheHit } from "@/lib/ai/observability";
+import {
+  createAICapabilityRuntime,
+  getAIExecutionErrorContext,
+} from "@/lib/ai/runtime";
 import { AIError } from "@/lib/ai/shared/errors";
 
 import {
@@ -98,17 +102,19 @@ async function persistFailure(input: {
   stage?: "analysis" | "matching";
 }): Promise<void> {
   if (!input.sessionId) return;
+  const execution = getAIExecutionErrorContext(input.error);
   await logMatchFailure(
     input.sessionId,
     input.jobId,
     input.duration,
     input.error,
     input.attemptCount
-      ?? (input.error as Error & { attemptCount?: number }).attemptCount
+      ?? execution.attemptCount
       ?? 1,
     input.modelUsed,
     undefined,
-    input.stage
+    input.stage,
+    execution.aiRunId
   );
 }
 
@@ -159,26 +165,52 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
     .filter((job): job is JobData => job !== undefined);
   if (shouldStop && await shouldStop()) return new Map();
 
-  const [analysisRuntime, matchRuntime] = await Promise.all([
-    createAICapabilityRuntime({
-      capability: "job_analysis",
-      model: {
-        providerId: config.jobAnalysisProviderId,
-        modelId: config.jobAnalysisModel,
-        reasoningEffort: config.jobAnalysisReasoningEffort,
-      },
-      providerConcurrencyLimit: config.concurrencyLimit,
-    }),
-    createAICapabilityRuntime({
-      capability: "match_evaluation",
-      model: {
-        providerId: config.providerId,
-        modelId: config.model,
-        reasoningEffort: config.reasoningEffort,
-      },
-      providerConcurrencyLimit: config.concurrencyLimit,
-    }),
-  ]);
+  const results: MatchResultMap = new Map();
+  let analysisRuntime: Awaited<ReturnType<typeof createAICapabilityRuntime>>;
+  let matchRuntime: Awaited<ReturnType<typeof createAICapabilityRuntime>>;
+  try {
+    [analysisRuntime, matchRuntime] = await Promise.all([
+      createAICapabilityRuntime({
+        capability: "job_analysis",
+        model: {
+          providerId: config.jobAnalysisProviderId,
+          modelId: config.jobAnalysisModel,
+          reasoningEffort: config.jobAnalysisReasoningEffort,
+        },
+        providerConcurrencyLimit: config.concurrencyLimit,
+      }),
+      createAICapabilityRuntime({
+        capability: "match_evaluation",
+        model: {
+          providerId: config.providerId,
+          modelId: config.model,
+          reasoningEffort: config.reasoningEffort,
+        },
+        providerConcurrencyLimit: config.concurrencyLimit,
+      }),
+    ]);
+  } catch (error) {
+    const normalized = error instanceof Error ? error : new Error(String(error));
+    const execution = getAIExecutionErrorContext(normalized);
+    const stage = execution.aiCapability === "match_evaluation" ? "matching" : "analysis";
+    const modelUsed = (stage === "matching" ? config.model : config.jobAnalysisModel)
+      ?? "unresolved";
+    let completed = 0;
+    for (const job of availableJobs) {
+      results.set(job.id, normalized);
+      await persistFailure({
+        jobId: job.id,
+        error: normalized,
+        sessionId,
+        duration: 0,
+        modelUsed,
+        stage,
+      });
+      completed += 1;
+      onProgress?.(completed, availableJobs.length, 0, completed);
+    }
+    return results;
+  }
   const concreteConfig: MatcherConfig = {
     ...config,
     jobAnalysisProviderId: analysisRuntime.snapshot.providerRecordId,
@@ -191,7 +223,6 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
 
   const analysisVersion = buildJobAnalysisVersion(concreteConfig);
   const matchPolicyVersion = buildMatchPolicyVersion(concreteConfig, analysisVersion);
-  const results: MatchResultMap = new Map();
   let completed = 0;
   let succeeded = 0;
   let failed = 0;
@@ -246,6 +277,14 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
       });
       if (cached) {
         const publicResult = toPublicMatchResult(cached.score, cached.evidence);
+        if (!sessionId) {
+          await recordAICacheHit({
+            capability: "match_evaluation",
+            subject: { type: "job", id: String(jobId) },
+            artifact: { type: "match_result", id: cached.id },
+            sourceRunId: cached.matchRunId,
+          });
+        }
         await persistPublicResult({
           jobId,
           matchResultId: cached.id,
@@ -347,6 +386,13 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
             jobAnalysisId: analyzed.jobAnalysisId,
             analysisRunId: analyzed.analysisRunId,
             cached: source === "cached",
+          });
+        } else if (source === "cached") {
+          await recordAICacheHit({
+            capability: "job_analysis",
+            subject: { type: "job", id: String(analyzed.job.id) },
+            artifact: { type: "job_analysis", id: analyzed.jobAnalysisId },
+            sourceRunId: analyzed.analysisRunId,
           });
         }
         scheduleMatch(analyzed);

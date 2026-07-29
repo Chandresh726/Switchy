@@ -218,7 +218,7 @@ describe("SessionDetail", () => {
     renderWithQueryClient(<SessionDetail sessionId={SESSION_ID} />);
 
     const link = await screen.findByRole("link", { name: /Open match session/ });
-    expect(link.getAttribute("href")).toBe("/history/match/match-session-1");
+    expect(link.getAttribute("href")).toBe("/history/ai/matching/match-session-1");
   });
 
   it("uses the shared numbered pagination for session records", async () => {

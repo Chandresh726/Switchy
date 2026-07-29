@@ -33,7 +33,10 @@ export interface ParsedResumeResult {
 
 export async function parseResumeWithProvenance(
   resumeText: string,
-  options: { signal?: AbortSignal } = {}
+  options: {
+    signal?: AbortSignal;
+    fileType?: "pdf" | "doc" | "docx" | "txt" | "md";
+  } = {}
 ): Promise<ParsedResumeResult> {
   const runtime = await createAICapabilityRuntime({ capability: "resume_parse" });
   const result = await runtime.executeStructured({
@@ -57,6 +60,7 @@ export async function parseResumeWithProvenance(
       promptVersion: RESUME_PROMPT_VERSION,
       parserVersion: RESUME_PARSER_VERSION,
     }),
+    metadata: options.fileType ? { fileType: options.fileType } : undefined,
   });
   return {
     ...normalizeResumeData(result.output),

@@ -202,6 +202,8 @@ describe("MatcherSection", () => {
         companyName: "Acme",
         analysisStatus: "ready",
         matchStatus: "matching",
+        analysisRunId: null,
+        matchRunId: null,
         errorStage: null,
         errorCode: null,
         errorMessage: null,

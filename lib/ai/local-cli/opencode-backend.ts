@@ -503,6 +503,7 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
             totalTokens: response.info.tokens.total,
           },
           finishReason: response.info.finish,
+          providerRequestId: sessionID,
           warningCodes: [],
         };
       } finally {

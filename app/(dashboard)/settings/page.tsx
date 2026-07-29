@@ -1312,7 +1312,7 @@ function SettingsContent() {
       toast.success(`${data.total} ${data.total === 1 ? "job" : "jobs"} queued for matching`, {
         action: {
           label: "Details",
-          onClick: () => router.push("/history/match"),
+          onClick: () => router.push("/history/ai/matching"),
         },
       });
       if (data.sessionId) {

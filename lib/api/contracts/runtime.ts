@@ -37,6 +37,8 @@ export const matchJobProgressSchema = z.object({
   companyName: z.string().nullable(),
   analysisStatus: z.enum(["queued", "analyzing", "ready", "cached", "failed"]),
   matchStatus: z.enum(["blocked", "queued", "matching", "completed", "cached", "failed"]),
+  analysisRunId: z.string().nullable().default(null),
+  matchRunId: z.string().nullable().default(null),
   errorStage: z.enum(["analysis", "matching"]).nullable(),
   errorCode: z.string().nullable(),
   errorMessage: z.string().nullable(),

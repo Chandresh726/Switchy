@@ -1,7 +1,13 @@
 import { desc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { aiGeneratedContent, aiGenerationHistory, companies, jobs } from "@/lib/db/schema";
+import {
+  aiGeneratedContent,
+  aiGenerationEvents,
+  aiGenerationHistory,
+  companies,
+  jobs,
+} from "@/lib/db/schema";
 import {
   chunkSqliteParameters,
   loadSqliteParameterChunks,
@@ -16,6 +22,7 @@ export async function getWritingHistoryContents(database: typeof db = db) {
       jobId: aiGeneratedContent.jobId,
       type: aiGeneratedContent.type,
       content: aiGeneratedContent.content,
+      currentVariantId: aiGeneratedContent.currentVariantId,
       settingsSnapshot: aiGeneratedContent.settingsSnapshot,
       createdAt: aiGeneratedContent.createdAt,
       updatedAt: aiGeneratedContent.updatedAt,
@@ -39,6 +46,27 @@ export async function getWritingHistoryContents(database: typeof db = db) {
     const byCreatedAt = (left.createdAt?.getTime() ?? 0) - (right.createdAt?.getTime() ?? 0);
     return byCreatedAt || left.id - right.id;
   });
+  const [allEvents, runSummaries] = await Promise.all([
+    loadSqliteParameterChunks(
+      allHistory.map((history) => history.id),
+      (variantIdChunk) => database.select().from(aiGenerationEvents)
+        .where(inArray(aiGenerationEvents.variantId, variantIdChunk))
+    ),
+    getAIRunSummaries(
+      allHistory.flatMap((history) => history.aiRunId ? [history.aiRunId] : []),
+      database
+    ),
+  ]);
+  allEvents.sort((left, right) => {
+    const byCreatedAt = left.createdAt.getTime() - right.createdAt.getTime();
+    return byCreatedAt || left.id - right.id;
+  });
+  const eventsByVariantId = new Map<number, typeof allEvents>();
+  for (const event of allEvents) {
+    const existing = eventsByVariantId.get(event.variantId) ?? [];
+    existing.push(event);
+    eventsByVariantId.set(event.variantId, existing);
+  }
 
   const historyByContentId = new Map<number, typeof allHistory>();
   for (const history of allHistory) {
@@ -46,11 +74,6 @@ export async function getWritingHistoryContents(database: typeof db = db) {
     existing.push(history);
     historyByContentId.set(history.contentId, existing);
   }
-  const runSummaries = await getAIRunSummaries(
-    allHistory.flatMap((history) => history.aiRunId ? [history.aiRunId] : []),
-    database
-  );
-
   return contents.map((content) => ({
     ...content,
     history: (historyByContentId.get(content.id) ?? []).map((history) => ({
@@ -70,6 +93,12 @@ export async function getWritingHistoryContents(database: typeof db = db) {
         ?? content.createdAt?.toISOString()
         ?? content.updatedAt?.toISOString()
         ?? null,
+      events: (eventsByVariantId.get(history.id) ?? []).map((event) => ({
+        id: event.id,
+        action: event.action as "selected" | "copied" | "discarded",
+        source: event.source as "generated" | "initial_load" | "navigation" | "copy" | "discard",
+        createdAt: event.createdAt.toISOString(),
+      })),
     })),
   }));
 }
