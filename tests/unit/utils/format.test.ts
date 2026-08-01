@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { groupSessionsByDate } from "@/lib/utils/format";
+import { formatFileSize, groupSessionsByDate } from "@/lib/utils/format";
+
+describe("formatFileSize", () => {
+  it("formats byte, kilobyte, and megabyte values", () => {
+    expect(formatFileSize(512)).toBe("512 B");
+    expect(formatFileSize(2_048)).toBe("2.0 KB");
+    expect(formatFileSize(2 * 1_024 * 1_024)).toBe("2.0 MB");
+    expect(formatFileSize(null)).toBe("-");
+  });
+});
 
 describe("groupSessionsByDate", () => {
   afterEach(() => {

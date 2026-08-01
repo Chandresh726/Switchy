@@ -37,6 +37,8 @@ describe("resume parser provenance", () => {
     const result = await parseResumeWithProvenance("Synthetic resume text", {
       signal: controller.signal,
       fileType: "pdf",
+      fileName: "alex-resume.pdf",
+      fileSizeBytes: 2_048,
     });
 
     expect(executeStructured).toHaveBeenCalledWith(expect.objectContaining({
@@ -46,7 +48,12 @@ describe("resume parser provenance", () => {
         schema: RESUME_SCHEMA_VERSION,
         policy: RESUME_POLICY_VERSION,
       },
-      metadata: { fileType: "pdf" },
+      metadata: {
+        fileType: "pdf",
+        fileName: "alex-resume.pdf",
+        fileSizeBytes: 2_048,
+        parserVersion: RESUME_PARSER_VERSION,
+      },
     }));
     expect(result).toMatchObject({
       aiRunId: "run-resume-1",

@@ -1,6 +1,6 @@
 {
   "name": "switchy",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "private": true,
   "license": "MIT",
   "packageManager": "pnpm@11.9.0",

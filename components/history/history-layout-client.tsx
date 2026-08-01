@@ -1,8 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { History, Sparkles, Trash2, Wand2, type LucideIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { usePathname } from "next/navigation";
+import { useState } from "react";
+
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import {
+  FileText,
+  History,
+  Sparkles,
+  Trash2,
+  Wand2,
+  type LucideIcon,
+} from "lucide-react";
+import { toast } from "sonner";
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,18 +26,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
-import { useState } from "react";
-import { usePathname } from "next/navigation";
+import { Button } from "@/components/ui/button";
 import { clearAIHistory } from "@/lib/api/clients/ai";
 import {
   clearMatchHistory,
   clearScrapeHistory,
 } from "@/lib/api/clients/history";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
 import { cacheOwnership } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
-import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface HistoryLayoutClientProps {
   children: React.ReactNode;
@@ -37,10 +46,13 @@ interface HistoryTab {
   href: string;
   icon: LucideIcon;
   activeBorder: string;
-  /** What "Clear <label> History" wipes, and what it deletes. */
-  clearLabel: string;
-  clearDescription: string;
-  clear: (queryClient: QueryClient) => Promise<unknown>;
+  /**
+   * What "Clear <label> History" wipes, and what it deletes. Omitted on tabs
+   * with nothing safe to wipe, which hides the button entirely.
+   */
+  clearLabel?: string;
+  clearDescription?: string;
+  clear?: (queryClient: QueryClient) => Promise<unknown>;
 }
 
 const HISTORY_TABS: HistoryTab[] = [
@@ -83,11 +95,20 @@ const HISTORY_TABS: HistoryTab[] = [
       await cacheOwnership.clearAIContent(queryClient);
     },
   },
+  {
+    id: "resume",
+    label: "Resume",
+    href: "/history/ai/resume",
+    icon: FileText,
+    activeBorder: "border-amber-500",
+    // Resume history is derived from stored uploads, so clearing it here would
+    // delete the files the profile depends on. Deletion stays on the profile.
+  },
 ];
 
 // Only scrape and match sessions have detail pages; writing links out to the
 // job workspace instead.
-const DETAIL_PATH = /^\/history\/(scrape|ai\/matching)\/[^/]+$/;
+const DETAIL_PATH = /^\/history\/(scrape|ai\/(matching|resume))\/[^/]+$/;
 
 function resolveActiveTab(pathname: string | null): HistoryTab {
   const match = HISTORY_TABS.find((tab) => pathname?.startsWith(tab.href));
@@ -103,6 +124,7 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
   const isDetailPage = DETAIL_PATH.test(pathname ?? "");
 
   const handleClearHistory = async () => {
+    if (!activeTab.clear) return;
     setIsDeleting(true);
     try {
       await activeTab.clear(queryClient);
@@ -123,41 +145,43 @@ export function HistoryLayoutClient({ children }: HistoryLayoutClientProps) {
           <div>
             <h1 className="text-2xl font-semibold text-foreground">History</h1>
             <p className="mt-1 text-muted-foreground">
-              Scraping runs, AI matching, and AI writing activity
+              Scraping runs, AI matching, AI writing, and resume parsing activity
             </p>
           </div>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-red-500/20 text-red-400 hover:bg-red-500/10 hover:text-red-300"
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Clear {activeTab.clearLabel} History
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will permanently delete {activeTab.clearDescription}. AI
-                  usage totals are kept, since they record model spend rather
-                  than content. This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleClearHistory}
-                  className="bg-red-500 hover:bg-red-600 text-foreground"
-                  disabled={isDeleting}
+          {activeTab.clear ? (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-red-500/20 text-red-400 hover:bg-red-500/10 hover:text-red-300"
                 >
-                  {isDeleting ? "Clearing..." : "Yes, clear all"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Clear {activeTab.clearLabel} History
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete {activeTab.clearDescription}. AI
+                    usage totals are kept, since they record model spend rather
+                    than content. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleClearHistory}
+                    className="bg-red-500 hover:bg-red-600 text-foreground"
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? "Clearing..." : "Yes, clear all"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : null}
         </div>
       )}
 

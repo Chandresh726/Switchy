@@ -7,6 +7,7 @@ import type { JobsQueryInput } from "@/lib/api/clients/jobs";
 import type {
   HistoryDetailQueryInput,
   HistoryQueryInput,
+  ResumeHistoryQueryInput,
   ScrapeHistoryQueryInput,
 } from "@/lib/api/clients/history";
 import type {
@@ -21,6 +22,7 @@ import type {
 import {
   historyDetailQuerySchema,
   historyQuerySchema,
+  resumeHistoryQuerySchema,
   scrapeHistoryQuerySchema,
 } from "@/lib/api/contracts/history";
 import { jobsQuerySchema } from "@/lib/api/contracts/jobs";
@@ -195,6 +197,18 @@ export const queryKeys = {
       canonicalSchemaParams(historyDetailQuerySchema, params),
     ] as const,
   },
+  resumeHistory: {
+    all: ["history", "resume"] as const,
+    lists: () => ["history", "resume", "list"] as const,
+    list: (params: ResumeHistoryQueryInput = {}) => [
+      "history",
+      "resume",
+      "list",
+      canonicalSchemaParams(resumeHistoryQuerySchema, params),
+    ] as const,
+    details: () => ["history", "resume", "detail"] as const,
+    detail: (id: string) => ["history", "resume", "detail", id] as const,
+  },
   runtime: {
     scheduler: () => ["runtime", "scheduler"] as const,
     matchSessions: () => ["runtime", "match-session"] as const,
@@ -283,6 +297,14 @@ export const cacheOwnership = {
       queryKeys.companies.overviews(),
       queryKeys.matchHistory.all,
       queryKeys.runtime.unmatchedJobs(),
+    ]);
+  },
+
+  resumeMutation(queryClient: QueryClient): Promise<void> {
+    return invalidateMany(queryClient, [
+      queryKeys.profile.detail(),
+      queryKeys.resumeHistory.all,
+      queryKeys.ai.usages(),
     ]);
   },
 

@@ -6,8 +6,10 @@ import {
   apiFileRequest,
   apiGet,
   apiJsonMutation,
+  serializePathParam,
   serializeQuery,
 } from "@/lib/api/client";
+import { resumeHistoryIdParamsSchema } from "@/lib/api/contracts/history";
 import { APIClientError } from "@/lib/api/errors";
 
 describe("validated API client", () => {
@@ -87,6 +89,18 @@ describe("validated API client", () => {
       "ids=3%2C1&limit=25&search=jobs"
     );
     expect(() => serializeQuery(schema, { limit: 101 })).toThrow();
+  });
+
+  it("canonicalizes encoded resume history IDs before path serialization", () => {
+    expect(resumeHistoryIdParamsSchema.parse({ id: "resume%3A3" })).toEqual({
+      id: "resume:3",
+    });
+    expect(
+      serializePathParam(resumeHistoryIdParamsSchema, { id: "resume%3A3" })
+    ).toBe("resume%3A3");
+    expect(
+      serializePathParam(resumeHistoryIdParamsSchema, { id: "run:run-1" })
+    ).toBe("run%3Arun-1");
   });
 
   it("rejects invalid mutation input before making a request", async () => {

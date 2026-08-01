@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { ResumeDataSchema } from "@/lib/ai/resume/contracts";
+
 import { aiRunSummarySchema } from "./ai";
 import { matchJobProgressSchema, matchPhaseProgressSchema } from "./runtime";
 
@@ -10,7 +12,28 @@ export const historyQuerySchema = z.object({
 export const historyIdParamsSchema = z.object({
   id: z.string().trim().min(1).max(200),
 });
+const resumeHistoryIdSchema = z.string().trim().min(1).max(300).transform(
+  (value, context) => {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      context.addIssue({
+        code: "custom",
+        message: "Resume history ID must be URL-decodable",
+      });
+      return z.NEVER;
+    }
+  }
+).pipe(
+  z.string().max(200).regex(/^(?:resume:[1-9]\d*|run:[^/?#]+)$/)
+);
+export const resumeHistoryIdParamsSchema = z.object({
+  id: resumeHistoryIdSchema,
+});
 export const scrapeHistoryQuerySchema = historyQuerySchema.extend({
+  limit: historyQuerySchema.shape.limit.default(20),
+});
+export const resumeHistoryQuerySchema = historyQuerySchema.extend({
   limit: historyQuerySchema.shape.limit.default(20),
 });
 export const historyDetailQuerySchema = z.object({
@@ -172,6 +195,51 @@ export const matchHistoryDetailResponseSchema = z.object({
     jobPagination: paginationResponseSchema,
   }),
 });
+const resumeParseHistoryEntrySchema = z.object({
+  id: z.string(),
+  source: z.enum(["resume", "run"]),
+  resumeId: z.number().int().positive().nullable(),
+  fileName: z.string().nullable(),
+  fileType: z.string().nullable(),
+  fileSizeBytes: z.number().int().nonnegative().nullable(),
+  version: z.number().int().positive().nullable(),
+  isCurrent: z.boolean(),
+  storageState: z.string().nullable(),
+  parseState: z.enum(["parsed", "upload_only", "failed", "running", "detached"]),
+  parserVersion: z.string().nullable(),
+  parsedSummary: z.object({
+    skillCount: z.number().int().nonnegative(),
+    experienceCount: z.number().int().nonnegative(),
+    educationCount: z.number().int().nonnegative(),
+  }).nullable(),
+  warnings: z.array(z.object({
+    code: z.string(),
+    path: z.string(),
+    message: z.string(),
+  })),
+  aiRunId: z.string().nullable(),
+  aiRun: aiRunSummarySchema.nullable(),
+  createdAt: z.string().nullable(),
+});
+
+export const resumeHistoryListResponseSchema = z.object({
+  entries: z.array(resumeParseHistoryEntrySchema),
+  pagination: paginationResponseSchema,
+  stats: z.object({
+    totalUploads: z.number().int().nonnegative(),
+    uploadOnly: z.number().int().nonnegative(),
+    failedParses: z.number().int().nonnegative(),
+    successRate: z.number().nonnegative(),
+    avgDuration: z.number().nonnegative(),
+    lastUploadAt: z.string().nullable(),
+  }),
+});
+
+export const resumeHistoryDetailResponseSchema = z.object({
+  entry: resumeParseHistoryEntrySchema,
+  parsedData: ResumeDataSchema.nullable(),
+});
+
 export const historyMutationResponseSchema = z.object({ success: z.boolean() }).passthrough();
 
 export type MatchHistoryResponse = z.infer<typeof matchHistoryListResponseSchema>;
@@ -180,3 +248,6 @@ export type MatchHistoryDetailResponse = z.infer<typeof matchHistoryDetailRespon
 export type ScrapeHistoryResponse = z.infer<typeof scrapeHistoryListResponseSchema>;
 export type ScrapeHistorySession = ScrapeHistoryResponse["sessions"][number];
 export type ScrapeHistoryDetailResponse = z.infer<typeof scrapeHistoryDetailResponseSchema>;
+export type ResumeHistoryResponse = z.infer<typeof resumeHistoryListResponseSchema>;
+export type ResumeHistoryEntry = ResumeHistoryResponse["entries"][number];
+export type ResumeHistoryDetailResponse = z.infer<typeof resumeHistoryDetailResponseSchema>;

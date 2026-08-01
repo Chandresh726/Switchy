@@ -75,6 +75,11 @@ const CAPABILITY_METADATA_SCHEMAS: Record<
   resume_parse: RuntimeMetadataSchema.extend({
     fileType: z.enum(["pdf", "doc", "docx", "txt", "md"]).optional(),
     pageCount: z.number().int().min(1).max(10_000).optional(),
+    // Failed parses never reach the resumes table, so the run itself has to
+    // carry enough file identity for history to name the upload it came from.
+    fileName: z.string().min(1).max(255).optional(),
+    fileSizeBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+    parserVersion: z.string().min(1).max(100).regex(/^[a-zA-Z0-9._:-]+$/).optional(),
   }).strict(),
 };
 

@@ -307,6 +307,99 @@ describe("AIUsageOverview", () => {
     expect(requests).toContain("/api/ai/usage?days=7&group=writing");
   });
 
+  it("omits the details action when every detail section is empty", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      ...usage(7),
+      executions: 0,
+      calls: 0,
+      succeeded: 0,
+      failed: 0,
+      running: 0,
+      cancelled: 0,
+      abandoned: 0,
+      successRate: 0,
+      terminalExecutions: 0,
+      tokenTrackedExecutions: 0,
+      tokenCoveragePercent: 0,
+      inputTokens: 0,
+      inputNoCacheTokens: 0,
+      inputCacheReadTokens: 0,
+      inputCacheWriteTokens: 0,
+      outputTokens: 0,
+      outputTextTokens: 0,
+      outputReasoningTokens: 0,
+      totalTokens: 0,
+      averageLatencyMs: 0,
+      cacheHits: 0,
+      fullMatchCacheReuses: 0,
+      capabilities: [],
+      providers: [],
+      failures: [],
+    })));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AIUsageOverview group="matching" />
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByText("Provider calls")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "View details" })).toBeNull();
+    expect(screen.queryByText("Run overview")).toBeNull();
+    expect(screen.queryByText("Token usage")).toBeNull();
+    expect(screen.queryByText("Providers and models")).toBeNull();
+    expect(screen.queryByText("Capability breakdown")).toBeNull();
+  });
+
+  it("renders only meaningful detail sections and fields", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      ...usage(7),
+      executions: 0,
+      calls: 0,
+      succeeded: 0,
+      failed: 0,
+      cancelled: 0,
+      abandoned: 0,
+      inputTokens: 125,
+      inputCacheReadTokens: 0,
+      outputTokens: 0,
+      outputReasoningTokens: 0,
+      totalTokens: 125,
+      capabilities: [{
+        capability: "job_analysis",
+        executions: 0,
+        calls: 0,
+        succeeded: 0,
+        failed: 0,
+        abandoned: 0,
+        cacheHits: 3,
+        tokenTrackedExecutions: 0,
+        totalTokens: 0,
+        averageLatencyMs: 0,
+      }],
+      providers: [],
+    })));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AIUsageOverview group="matching" />
+      </QueryClientProvider>
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "View details" }));
+
+    expect(screen.getByText("Token usage")).toBeTruthy();
+    expect(screen.getByText("Input")).toBeTruthy();
+    expect(screen.queryByText("Cache read")).toBeNull();
+    expect(screen.queryByText("Output")).toBeNull();
+    expect(screen.queryByText("Reasoning")).toBeNull();
+    expect(screen.queryByText("Run overview")).toBeNull();
+    expect(screen.queryByText("Providers and models")).toBeNull();
+    expect(screen.queryByText("Capability breakdown")).toBeNull();
+  });
+
   it("shows a retry action when usage cannot be loaded", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(null, { status: 500 }))

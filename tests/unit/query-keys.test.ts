@@ -36,6 +36,12 @@ describe("query key registry", () => {
     expect(queryKeys.people.list({ limit: 25, offset: 0 })).not.toEqual(
       queryKeys.people.list({ limit: 25, offset: 25 })
     );
+    expect(queryKeys.resumeHistory.list({ limit: 20, offset: 0 })).not.toEqual(
+      queryKeys.resumeHistory.list({ limit: 20, offset: 20 })
+    );
+    expect(queryKeys.resumeHistory.detail("resume:1")).not.toEqual(
+      queryKeys.resumeHistory.detail("run:resume-run-1")
+    );
   });
 
   it("does not throw while constructing keys for invalid external filter values", () => {
@@ -119,6 +125,14 @@ describe("cache ownership", () => {
       queryKeys.companies.overviews(),
       queryKeys.matchHistory.all,
       queryKeys.runtime.unmatchedJobs(),
+    ]);
+
+    invalidate.mockClear();
+    await cacheOwnership.resumeMutation(client);
+    expect(invalidatedKeys(invalidate)).toEqual([
+      queryKeys.profile.detail(),
+      queryKeys.resumeHistory.all,
+      queryKeys.ai.usages(),
     ]);
 
     invalidate.mockClear();

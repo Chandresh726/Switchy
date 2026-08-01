@@ -33,6 +33,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AIUsagePeriod, AIUsageSummary } from "@/lib/ai/observability";
+import type { AICapabilityGroup } from "@/lib/ai/runtime/capability-groups";
 import { getAIUsage } from "@/lib/api/clients/ai";
 import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
@@ -46,29 +47,47 @@ function formatLatency(value: number): string {
   return `${(value / 1_000).toFixed(1)} s`;
 }
 
+function joinMetricParts(parts: Array<string | null>): string {
+  return parts.filter((part): part is string => part !== null).join(" · ");
+}
+
 function capabilityLabel(value: string): string {
   return value.split("_").map((part) => (
     part.charAt(0).toUpperCase() + part.slice(1)
   )).join(" ");
 }
 
-const WRITING_CAPABILITY_LABELS: Record<string, string> = {
+const CAPABILITY_LABELS: Record<string, string> = {
   writing_cover_letter: "Cover letter",
   writing_referral: "Referral",
   writing_recruiter_follow_up: "Follow-up",
+  resume_parse: "Resume parse",
 };
 
-function capabilityBreakdownLabel(
-  value: string,
-  group: "matching" | "writing"
-): string {
-  return group === "writing"
-    ? WRITING_CAPABILITY_LABELS[value] ?? capabilityLabel(value)
-    : capabilityLabel(value);
+function capabilityBreakdownLabel(value: string): string {
+  return CAPABILITY_LABELS[value] ?? capabilityLabel(value);
 }
 
+const GROUP_COPY: Record<
+  AICapabilityGroup,
+  { title: string; description: string }
+> = {
+  matching: {
+    title: "Matching AI usage",
+    description: "Job analysis and match scoring telemetry.",
+  },
+  writing: {
+    title: "Writing AI usage",
+    description: "Cover letters, referrals, and follow-up telemetry.",
+  },
+  profile: {
+    title: "Resume parsing AI usage",
+    description: "Resume normalization telemetry.",
+  },
+};
+
 interface AIUsageOverviewProps {
-  group: "matching" | "writing";
+  group: AICapabilityGroup;
 }
 
 interface UsagePeriodSelectorProps {
@@ -102,7 +121,7 @@ function UsagePeriodSelector({ period, onChange }: UsagePeriodSelectorProps) {
 }
 
 interface DetailedUsageOverviewProps {
-  group: "matching" | "writing";
+  group: AICapabilityGroup;
   data: AIUsageSummary | undefined;
   period: AIUsagePeriod;
   detailsOpen: boolean;
@@ -124,27 +143,17 @@ function DetailedUsageOverview({
   onDetailsChange,
   onRetry,
 }: DetailedUsageOverviewProps) {
-  const isMatching = group === "matching";
-  const title = isMatching ? "Matching AI usage" : "Writing AI usage";
-  const description = isMatching
-    ? "Job analysis and match scoring telemetry."
-    : "Cover letters, referrals, and follow-up telemetry.";
+  const { title, description } = GROUP_COPY[group];
   const retries = data ? Math.max(0, data.calls - data.executions) : 0;
   const runMetrics = data
     ? [
         { label: "Executions", value: data.executions },
         { label: "Succeeded", value: data.succeeded },
         { label: "Retries", value: retries },
-        ...(data.failed > 0
-          ? [{ label: "Failed", value: data.failed }]
-          : []),
-        ...(data.cancelled > 0
-          ? [{ label: "Cancelled", value: data.cancelled }]
-          : []),
-        ...(data.abandoned > 0
-          ? [{ label: "Interrupted", value: data.abandoned }]
-          : []),
-      ]
+        { label: "Failed", value: data.failed },
+        { label: "Cancelled", value: data.cancelled },
+        { label: "Interrupted", value: data.abandoned },
+      ].filter(({ value }) => value > 0)
     : [];
   const tokenMetrics = data
     ? [
@@ -152,8 +161,23 @@ function DetailedUsageOverview({
         { label: "Cache read", value: data.inputCacheReadTokens },
         { label: "Output", value: data.outputTokens },
         { label: "Reasoning", value: data.outputReasoningTokens },
-      ]
+      ].filter(({ value }) => value > 0)
     : [];
+  const providers = data?.providers.filter((provider) => (
+    provider.executions > 0 ||
+    provider.calls > 0 ||
+    provider.totalTokens > 0
+  )) ?? [];
+  const capabilities = data?.capabilities.filter((capability) => (
+    capability.executions > 0 ||
+    capability.calls > 0 ||
+    capability.totalTokens > 0 ||
+    capability.averageLatencyMs > 0
+  )) ?? [];
+  const hasOverview = runMetrics.length > 0 || tokenMetrics.length > 0;
+  const hasProviders = providers.length > 0;
+  const hasCapabilities = capabilities.length > 0;
+  const hasDetails = hasOverview || hasProviders || hasCapabilities;
   const detailsId = `${group}-ai-usage-details`;
   const sectionId = (section: string) => `${group}-usage-${section}`;
 
@@ -258,7 +282,7 @@ function DetailedUsageOverview({
           <CardFooter
             className={cn(
               "flex-wrap justify-between gap-2 py-1",
-              detailsOpen && "border-b"
+              detailsOpen && hasDetails && "border-b"
             )}
           >
             <p className="flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
@@ -283,114 +307,137 @@ function DetailedUsageOverview({
                 succeeded
               </span>
             </p>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-expanded={detailsOpen}
-              aria-controls={detailsId}
-              onClick={onDetailsChange}
-            >
-              {detailsOpen ? "Hide details" : "View details"}
-              <ChevronDown
-                data-icon="inline-end"
-                className={cn("transition-transform", detailsOpen && "rotate-180")}
-              />
-            </Button>
+            {hasDetails ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-expanded={detailsOpen}
+                aria-controls={detailsId}
+                onClick={onDetailsChange}
+              >
+                {detailsOpen ? "Hide details" : "View details"}
+                <ChevronDown
+                  data-icon="inline-end"
+                  className={cn("transition-transform", detailsOpen && "rotate-180")}
+                />
+              </Button>
+            ) : null}
           </CardFooter>
 
-          {detailsOpen ? (
+          {detailsOpen && hasDetails ? (
             <div
               id={detailsId}
               className="contents"
             >
-              <CardContent
-                data-overview-split
-                className="overflow-x-auto p-0"
-              >
-                <div
-                  data-overview-grid
-                  className="grid min-w-[48rem]"
-                  style={{
-                    gridTemplateColumns:
-                      `minmax(0, ${runMetrics.length}fr) auto minmax(0, ${tokenMetrics.length}fr)`,
-                  }}
+              {hasOverview ? (
+                <CardContent
+                  data-overview-split
+                  className="overflow-x-auto p-0"
                 >
-                  <section
-                    role="region"
-                    className="flex min-w-0 flex-col gap-1.5 px-3 py-2"
-                    aria-labelledby={sectionId("run-overview")}
+                  <div
+                    data-overview-grid
+                    className={cn(
+                      "grid",
+                      runMetrics.length > 0 && tokenMetrics.length > 0 && "min-w-[48rem]"
+                    )}
+                    style={{
+                      gridTemplateColumns: [
+                        ...(runMetrics.length > 0
+                          ? [`minmax(0, ${runMetrics.length}fr)`]
+                          : []),
+                        ...(runMetrics.length > 0 && tokenMetrics.length > 0
+                          ? ["auto"]
+                          : []),
+                        ...(tokenMetrics.length > 0
+                          ? [`minmax(0, ${tokenMetrics.length}fr)`]
+                          : []),
+                      ].join(" "),
+                    }}
                   >
-                    <div className="flex items-center gap-1.5">
-                      <Activity className="size-3.5 text-blue-400" />
-                      <p
-                        id={sectionId("run-overview")}
-                        className="text-xs font-medium text-foreground"
+                    {runMetrics.length > 0 ? (
+                      <section
+                        role="region"
+                        className="flex min-w-0 flex-col gap-1.5 px-3 py-2"
+                        aria-labelledby={sectionId("run-overview")}
                       >
-                        Run overview
-                      </p>
-                    </div>
-                    <dl
-                      className="grid gap-x-4"
-                      style={{
-                        gridTemplateColumns:
-                          `repeat(${runMetrics.length}, minmax(0, 1fr))`,
-                      }}
-                    >
-                      {runMetrics.map(({ label, value }) => (
-                        <div key={label} className="min-w-0">
-                          <dt className="truncate text-xs text-muted-foreground">{label}</dt>
-                          <dd className="mt-0.5 text-base font-semibold tabular-nums text-foreground">
-                            {formatNumber(value)}
-                          </dd>
+                        <div className="flex items-center gap-1.5">
+                          <Activity className="size-3.5 text-blue-400" />
+                          <p
+                            id={sectionId("run-overview")}
+                            className="text-xs font-medium text-foreground"
+                          >
+                            Run overview
+                          </p>
                         </div>
-                      ))}
-                    </dl>
-                  </section>
+                        <dl
+                          className="grid gap-x-4"
+                          style={{
+                            gridTemplateColumns:
+                              `repeat(${runMetrics.length}, minmax(0, 1fr))`,
+                          }}
+                        >
+                          {runMetrics.map(({ label, value }) => (
+                            <div key={label} className="min-w-0">
+                              <dt className="truncate text-xs text-muted-foreground">{label}</dt>
+                              <dd className="mt-0.5 text-base font-semibold tabular-nums text-foreground">
+                                {formatNumber(value)}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </section>
+                    ) : null}
 
-                  <Separator orientation="vertical" />
+                    {runMetrics.length > 0 && tokenMetrics.length > 0 ? (
+                      <Separator orientation="vertical" />
+                    ) : null}
 
-                  <section
-                    role="region"
-                    className="flex min-w-0 flex-col gap-1.5 px-3 py-2"
-                    aria-labelledby={sectionId("tokens")}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <DatabaseZap className="size-3.5 text-purple-400" />
-                      <p
-                        id={sectionId("tokens")}
-                        className="text-xs font-medium text-foreground"
+                    {tokenMetrics.length > 0 ? (
+                      <section
+                        role="region"
+                        className="flex min-w-0 flex-col gap-1.5 px-3 py-2"
+                        aria-labelledby={sectionId("tokens")}
                       >
-                        Token usage
-                      </p>
-                    </div>
-                    <dl
-                      className="grid gap-x-4"
-                      style={{
-                        gridTemplateColumns:
-                          `repeat(${tokenMetrics.length}, minmax(0, 1fr))`,
-                      }}
-                    >
-                      {tokenMetrics.map(({ label, value }) => (
-                        <div key={label} className="min-w-0">
-                          <dt className="truncate text-xs text-muted-foreground">{label}</dt>
-                          <dd className="mt-0.5 font-medium tabular-nums text-foreground">
-                            {formatNumber(value)}
-                          </dd>
+                        <div className="flex items-center gap-1.5">
+                          <DatabaseZap className="size-3.5 text-purple-400" />
+                          <p
+                            id={sectionId("tokens")}
+                            className="text-xs font-medium text-foreground"
+                          >
+                            Token usage
+                          </p>
                         </div>
-                      ))}
-                    </dl>
-                  </section>
-                </div>
-              </CardContent>
+                        <dl
+                          className="grid gap-x-4"
+                          style={{
+                            gridTemplateColumns:
+                              `repeat(${tokenMetrics.length}, minmax(0, 1fr))`,
+                          }}
+                        >
+                          {tokenMetrics.map(({ label, value }) => (
+                            <div key={label} className="min-w-0">
+                              <dt className="truncate text-xs text-muted-foreground">{label}</dt>
+                              <dd className="mt-0.5 font-medium tabular-nums text-foreground">
+                                {formatNumber(value)}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </section>
+                    ) : null}
+                  </div>
+                </CardContent>
+              ) : null}
 
-              <Separator />
+              {hasOverview && hasProviders ? <Separator /> : null}
 
-              <CardContent
-                role="region"
-                className="flex min-w-0 flex-col gap-2 py-1.5"
-                aria-labelledby={sectionId("providers")}
-              >
+              {hasProviders ? (
+                <CardContent
+                  role="region"
+                  className="flex min-w-0 flex-col gap-2 py-1.5"
+                  aria-labelledby={sectionId("providers")}
+                >
                   <div className="flex items-center gap-1.5">
                     <Cpu className="size-3.5 text-amber-400" />
                     <p
@@ -400,56 +447,69 @@ function DetailedUsageOverview({
                       Providers and models
                     </p>
                   </div>
-                  {data.providers.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      No provider calls recorded.
-                    </p>
-                  ) : (
-                    <Card
-                      size="sm"
-                      data-detail-list-card
-                      className="gap-0 rounded-md bg-background/60 py-0 data-[size=sm]:py-0"
-                    >
-                      <CardContent className="flex flex-col divide-y divide-border">
-                        {data.providers.map((provider) => (
-                          <div
-                            key={`${provider.provider}:${provider.modelId}`}
-                            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-1.5 text-xs"
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate font-medium text-foreground">
-                                {provider.modelId}
-                              </p>
-                              <p className="truncate text-muted-foreground">
-                                {provider.provider} · {formatNumber(provider.executions)} executions
-                              </p>
-                            </div>
-                            <div className="text-right tabular-nums">
-                              <p className="font-medium text-foreground">
-                                {formatNumber(provider.calls)} calls ·{" "}
-                                {formatNumber(provider.totalTokens)} tokens
-                              </p>
-                              <p className="text-muted-foreground">
-                                {provider.succeeded} succeeded · {provider.failed} failed
-                                {provider.abandoned > 0
-                                  ? ` · ${provider.abandoned} interrupted`
-                                  : ""}
-                              </p>
-                            </div>
+                  <Card
+                    size="sm"
+                    data-detail-list-card
+                    className="gap-0 rounded-md bg-background/60 py-0 data-[size=sm]:py-0"
+                  >
+                    <CardContent className="flex flex-col divide-y divide-border">
+                      {providers.map((provider) => (
+                        <div
+                          key={`${provider.provider}:${provider.modelId}`}
+                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-1.5 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-foreground">
+                              {provider.modelId}
+                            </p>
+                            <p className="truncate text-muted-foreground">
+                              {provider.provider} · {formatNumber(provider.executions)} executions
+                            </p>
                           </div>
-                        ))}
-                      </CardContent>
-                    </Card>
-                  )}
-              </CardContent>
+                          <div className="text-right tabular-nums">
+                            {provider.calls > 0 || provider.totalTokens > 0 ? (
+                              <p className="font-medium text-foreground">
+                                {joinMetricParts([
+                                  provider.calls > 0
+                                    ? `${formatNumber(provider.calls)} calls`
+                                    : null,
+                                  provider.totalTokens > 0
+                                    ? `${formatNumber(provider.totalTokens)} tokens`
+                                    : null,
+                                ])}
+                              </p>
+                            ) : null}
+                            {provider.succeeded > 0 || provider.failed > 0 || provider.abandoned > 0 ? (
+                              <p className="text-muted-foreground">
+                                {joinMetricParts([
+                                  provider.succeeded > 0
+                                    ? `${provider.succeeded} succeeded`
+                                    : null,
+                                  provider.failed > 0
+                                    ? `${provider.failed} failed`
+                                    : null,
+                                  provider.abandoned > 0
+                                    ? `${provider.abandoned} interrupted`
+                                    : null,
+                                ])}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </CardContent>
+              ) : null}
 
-              <Separator />
+              {(hasOverview || hasProviders) && hasCapabilities ? <Separator /> : null}
 
-              <CardContent
-                role="region"
-                className="flex min-w-0 flex-col gap-2 py-1.5"
-                aria-labelledby={sectionId("capabilities")}
-              >
+              {hasCapabilities ? (
+                <CardContent
+                  role="region"
+                  className="flex min-w-0 flex-col gap-2 py-1.5"
+                  aria-labelledby={sectionId("capabilities")}
+                >
                   <div className="flex items-center gap-1.5">
                     <Layers3 className="size-3.5 text-emerald-400" />
                     <p
@@ -459,71 +519,72 @@ function DetailedUsageOverview({
                       Capability breakdown
                     </p>
                   </div>
-                  {data.capabilities.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      No {group} calls in this period.
-                    </p>
-                  ) : (
+                  <div
+                    data-capability-strip
+                    className="overflow-x-auto"
+                  >
                     <div
-                      data-capability-strip
-                      className="overflow-x-auto"
+                      data-capability-grid
+                      className="grid w-full"
+                      style={{
+                        gridTemplateColumns: capabilities
+                          .map((_, index) => (
+                            index === 0
+                              ? "minmax(0, 1fr)"
+                              : "auto minmax(0, 1fr)"
+                          ))
+                          .join(" "),
+                        minWidth: `${capabilities.length * 16}rem`,
+                      }}
                     >
-                      <div
-                        data-capability-grid
-                        className="grid w-full"
-                        style={{
-                          gridTemplateColumns: data.capabilities
-                            .map((_, index) => (
-                              index === 0
-                                ? "minmax(0, 1fr)"
-                                : "auto minmax(0, 1fr)"
-                            ))
-                            .join(" "),
-                          minWidth: `${data.capabilities.length * 16}rem`,
-                        }}
-                      >
-                        {data.capabilities.map((capability, index) => (
-                          <Fragment key={capability.capability}>
-                            {index > 0 ? <Separator orientation="vertical" /> : null}
-                            <section
-                              data-capability-item
-                              className={cn(
-                                "grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 text-xs",
-                                index === 0 && "pl-0",
-                                index === data.capabilities.length - 1 && "pr-0"
-                              )}
-                              aria-label={capabilityBreakdownLabel(
-                                capability.capability,
-                                group
-                              )}
-                            >
-                              <div className="min-w-0">
-                                <p className="truncate font-medium text-foreground">
-                                  {capabilityBreakdownLabel(
-                                    capability.capability,
-                                    group
-                                  )}
-                                </p>
+                      {capabilities.map((capability, index) => (
+                        <Fragment key={capability.capability}>
+                          {index > 0 ? <Separator orientation="vertical" /> : null}
+                          <section
+                            data-capability-item
+                            className={cn(
+                              "grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 text-xs",
+                              index === 0 && "pl-0",
+                              index === capabilities.length - 1 && "pr-0"
+                            )}
+                            aria-label={capabilityBreakdownLabel(capability.capability)}
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-foreground">
+                                {capabilityBreakdownLabel(capability.capability)}
+                              </p>
+                              {capability.executions > 0 ? (
                                 <p className="truncate text-muted-foreground">
                                   {formatNumber(capability.executions)} executions
                                 </p>
-                              </div>
-                              <div className="text-right tabular-nums">
+                              ) : null}
+                            </div>
+                            <div className="text-right tabular-nums">
+                              {capability.calls > 0 ? (
                                 <p className="font-medium text-foreground">
                                   {formatNumber(capability.calls)} calls
                                 </p>
+                              ) : null}
+                              {capability.totalTokens > 0 || capability.averageLatencyMs > 0 ? (
                                 <p className="text-muted-foreground">
-                                  {formatNumber(capability.totalTokens)} tokens ·{" "}
-                                  {formatLatency(capability.averageLatencyMs)}
+                                  {joinMetricParts([
+                                    capability.totalTokens > 0
+                                      ? `${formatNumber(capability.totalTokens)} tokens`
+                                      : null,
+                                    capability.averageLatencyMs > 0
+                                      ? formatLatency(capability.averageLatencyMs)
+                                      : null,
+                                  ])}
                                 </p>
-                              </div>
-                            </section>
-                          </Fragment>
-                        ))}
-                      </div>
+                              ) : null}
+                            </div>
+                          </section>
+                        </Fragment>
+                      ))}
                     </div>
-                  )}
-              </CardContent>
+                  </div>
+                </CardContent>
+              ) : null}
             </div>
           ) : null}
         </>

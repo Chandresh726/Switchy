@@ -1,3 +1,8 @@
+import type {
+  ResumeData,
+  ResumeValidationWarning,
+} from "@/lib/ai/resume/contracts";
+
 interface AIRunAttemptSummary {
   attemptNumber: number;
   status: string;
@@ -45,6 +50,71 @@ export interface AIRunSummary {
   startedAt: string;
   completedAt: string | null;
   attemptHistory: AIRunAttemptSummary[];
+}
+
+export interface ResumeParsedSummary {
+  skillCount: number;
+  experienceCount: number;
+  educationCount: number;
+}
+
+/**
+ * How far an upload got through parsing.
+ * - `parsed`: stored resume with a completed parse run
+ * - `upload_only`: stored with autofill turned off, so no model ever ran
+ * - `failed`: the parse run ended badly and no resume was stored
+ * - `running`: a parse is still in flight
+ * - `detached`: the parse succeeded but its resume row is gone (deleted upload)
+ */
+type ResumeParseState =
+  | "parsed"
+  | "upload_only"
+  | "failed"
+  | "running"
+  | "detached";
+
+export interface ResumeParseHistoryEntry {
+  id: string;
+  source: "resume" | "run";
+  resumeId: number | null;
+  fileName: string | null;
+  fileType: string | null;
+  fileSizeBytes: number | null;
+  version: number | null;
+  isCurrent: boolean;
+  storageState: string | null;
+  parseState: ResumeParseState;
+  parserVersion: string | null;
+  parsedSummary: ResumeParsedSummary | null;
+  warnings: ResumeValidationWarning[];
+  aiRunId: string | null;
+  aiRun: AIRunSummary | null;
+  createdAt: string | null;
+}
+
+export interface ResumeParseHistoryStats {
+  totalUploads: number;
+  uploadOnly: number;
+  failedParses: number;
+  successRate: number;
+  avgDuration: number;
+  lastUploadAt: string | null;
+}
+
+export interface ResumeParseHistoryPage {
+  entries: ResumeParseHistoryEntry[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+  stats: ResumeParseHistoryStats;
+}
+
+export interface ResumeParseHistoryDetail {
+  entry: ResumeParseHistoryEntry;
+  parsedData: ResumeData | null;
 }
 
 export interface AIUsageCapabilitySummary {

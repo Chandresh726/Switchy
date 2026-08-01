@@ -110,7 +110,12 @@ export async function uploadResume(file: File, shouldAutofill: boolean, signal: 
     if (resumeText.length > MAX_RESUME_TEXT_LENGTH) throw new ValidationError("Resume text is too long to parse safely. Please upload a shorter resume.", "resume_text_too_long");
   }
   const parseResult = shouldAutofill
-    ? await parseResumeWithProvenance(resumeText, { signal, fileType: resumeFileType })
+    ? await parseResumeWithProvenance(resumeText, {
+      signal,
+      fileType: resumeFileType,
+      fileName: file.name,
+      fileSizeBytes: file.size,
+    })
     : null;
   const parsedData = parseResult?.parsedData ?? null;
   const stagedFile = await stageResumeFile(file);

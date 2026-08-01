@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { EducationEditor } from "@/components/profile/education-editor";
@@ -15,7 +15,7 @@ import type { ResumeData } from "@/lib/ai/resume/contracts";
 import { deleteResume, getProfile } from "@/lib/api/clients/profile";
 import type { Resume } from "@/lib/api/contracts/profile";
 import { buildResumeReview } from "@/lib/profile/resume-review";
-import { queryKeys } from "@/lib/query-keys";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
 type ReviewSection = "profile" | "education" | "experience" | "skills";
 
@@ -29,6 +29,8 @@ interface PendingResumeReview {
 export default function ProfilePage() {
   const [pendingResumeReview, setPendingResumeReview] =
     useState<PendingResumeReview | null>(null);
+
+  const queryClient = useQueryClient();
 
   const profileQuery = useQuery({
     queryKey: queryKeys.profile.detail(),
@@ -125,7 +127,7 @@ export default function ProfilePage() {
           resumes={profileQuery.data?.resumes || []}
           onParsed={handleResumeParsed}
           onDelete={handleDeleteResume}
-          onRefresh={() => void profileQuery.refetch()}
+          onRefresh={() => void cacheOwnership.resumeMutation(queryClient)}
         />
       )}
 

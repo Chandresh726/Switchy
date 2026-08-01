@@ -36,6 +36,8 @@ export async function parseResumeWithProvenance(
   options: {
     signal?: AbortSignal;
     fileType?: "pdf" | "doc" | "docx" | "txt" | "md";
+    fileName?: string;
+    fileSizeBytes?: number;
   } = {}
 ): Promise<ParsedResumeResult> {
   const runtime = await createAICapabilityRuntime({ capability: "resume_parse" });
@@ -60,7 +62,14 @@ export async function parseResumeWithProvenance(
       promptVersion: RESUME_PROMPT_VERSION,
       parserVersion: RESUME_PARSER_VERSION,
     }),
-    metadata: options.fileType ? { fileType: options.fileType } : undefined,
+    metadata: {
+      ...(options.fileType ? { fileType: options.fileType } : {}),
+      ...(options.fileName ? { fileName: options.fileName.slice(0, 255) } : {}),
+      ...(options.fileSizeBytes === undefined
+        ? {}
+        : { fileSizeBytes: options.fileSizeBytes }),
+      parserVersion: RESUME_PARSER_VERSION,
+    },
   });
   return {
     ...normalizeResumeData(result.output),
