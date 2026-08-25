@@ -22,7 +22,7 @@ export interface EarlyFilterResult<T extends FilterableItem> {
   breakdown: EarlyFilterBreakdown;
 }
 
-export function hasEarlyFilters(filters?: JobFilters): boolean {
+function hasEarlyFilters(filters?: JobFilters): boolean {
   return Boolean(
     filters &&
       (filters.country ||

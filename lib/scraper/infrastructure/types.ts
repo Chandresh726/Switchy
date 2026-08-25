@@ -40,6 +40,9 @@ export interface ScrapingLogCreate {
   jobsArchived: number;
   errorMessage?: string;
   duration: number;
+  fetchDuration?: number;
+  processingDuration?: number;
+  persistenceDuration?: number;
   completedAt: Date;
   matcherStatus?: Extract<MatcherStatus, "pending"> | null;
   matcherJobsTotal?: number | null;
@@ -71,6 +74,7 @@ export interface PersistScrapeResultInput {
   existingJobUpdates: Array<{ existingJobId: number; job: ScrapedJob }>;
   companyBoardToken?: string;
   startedAtMs: number;
+  persistenceStartedAtMs?: number;
   enableMatching: boolean;
   log: ScrapeResultLogCreate;
 }

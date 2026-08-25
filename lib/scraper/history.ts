@@ -46,6 +46,9 @@ export interface ScrapeHistoryDetail {
     jobsArchived: number | null;
     errorMessage: string | null;
     duration: number | null;
+    fetchDuration: number | null;
+    processingDuration: number | null;
+    persistenceDuration: number | null;
     startedAt: Date | null;
     completedAt: Date | null;
     matcherStatus: string | null;
@@ -155,6 +158,9 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
         jobsArchived: scrapingLogs.jobsArchived,
         errorMessage: scrapingLogs.errorMessage,
         duration: scrapingLogs.duration,
+        fetchDuration: scrapingLogs.fetchDuration,
+        processingDuration: scrapingLogs.processingDuration,
+        persistenceDuration: scrapingLogs.persistenceDuration,
         startedAt: scrapingLogs.startedAt,
         completedAt: scrapingLogs.completedAt,
         matcherStatus: scrapingLogs.matcherStatus,

@@ -30,7 +30,7 @@ Identical company batches are coalesced while they are in flight even when manua
 `createLocalScrapeQueueService()` and `getLocalScrapeQueueService()` are the public composition boundary. The queue service is a thin façade for enqueueing, waiting, recovery, and cancellation; batch work never bypasses the durable queue.
 
 - `application/` owns the one-company pipeline, work handler, session projection, and retention policy.
-- `runtime/` owns transport-independent leased work, heartbeats, bounded retry, single-flight dispatch, shared/exclusive resource coordination, and keyed company locks. Scraping and matching use the same runtime.
+- `runtime/` owns transport-independent leased work, heartbeats, bounded retry, single-flight dispatch, scoped scraper resource coordination, and keyed company locks. Scraping and matching use the same runtime.
 - `queue/`, `history.ts`, and `maintenance.ts` adapt scraper persistence ports to the existing SQLite schema. `lib/ai/work-items/` owns durable matching work.
 - `platforms/` owns extraction only. Shared listing selection preserves platform object identity while applying early filters and existing-ID exclusion; detail hydration is bounded and cancellation-aware.
 - `settings/` is the typed source for scraper concurrency, filters, and retention defaults.
@@ -50,7 +50,9 @@ This hybrid approach remains the right fit for a local application. Replacing ev
 
 External payload validation is strict for the response envelope and job identity fields, but tolerant of optional, nullable, and polymorphic metadata. When some jobs are malformed, adapters retain usable jobs, mark listing completeness as partial, and prevent missing-job archival.
 
-Each scraper declares whether it can run in parallel or must run exclusively. Workday-like browser-heavy adapters remain serial; API adapters share the user-configured concurrency budget. Separate sessions cannot scrape the same company simultaneously.
+Queue items use a static platform priority derived from production history. Eightfold is ranked first, Workday next, and fast HTTP adapters follow. The ordered queue interleaves one fast adapter after every two browser-heavy items so the browser cap cannot consume every leased worker. This starts long jobs early, keeps an HTTP lane busy, and remains deterministic.
+
+All adapters share the user-configured total concurrency budget. Eightfold and Workday additionally share a two-job browser-heavy budget, so they can overlap each other without blocking unrelated HTTP adapters. Separate sessions cannot scrape the same company simultaneously.
 
 ## Reliability guarantees
 
@@ -60,9 +62,11 @@ Each scraper declares whether it can run in parallel or must run exclusively. Wo
 - Job synchronization, company metadata, audit logging, and the matching handoff commit atomically.
 - If the process stops after job persistence but before queue completion, the queue result is rebuilt from the committed scrape log instead of scraping again.
 - Startup recovery handles expired work and schedules future retry or lease times.
+- A large heartbeat clock gap aborts and retries active leased work after system suspension instead of letting a stale browser request continue indefinitely.
 - Browser-session bootstrap failures identify the sanitized launch, navigation, settle, or session-extraction stage without persisting cookies, tokens, headers, or response bodies.
 - Timer drift only marks scheduler recovery as pending. Recovery waits until the app has remained visible, focused, and online for ten seconds, preventing DarkWake from starting network work.
 - Eightfold and Workday retry missing list offsets with one refreshed browser session before committing a partial result. Workday also retries failed details once and retains listing-only jobs when hydration remains unavailable.
+- Uber follows the current server-rendered jobs pagination and hydrates details only for new jobs that pass early filters; verification pages are classified as retryable network failures.
 - ServiceNow follows all advertised listing pages up to a 100-page safety cap, retries failed navigation, and applies early filtering before detail hydration.
 - Cancellation stops the parent session, cancels queued items immediately, and signals running items.
 - Job or company deletion terminates related scrape and match work before data is removed.

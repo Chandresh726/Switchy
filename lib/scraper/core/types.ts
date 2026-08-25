@@ -14,7 +14,7 @@ export type {
 
 export interface ScraperCapabilities {
   transport: "http" | "browser";
-  concurrency: "parallel" | "serial";
+  concurrency: "parallel" | "browser_limited";
   supportsCancellation: boolean;
 }
 

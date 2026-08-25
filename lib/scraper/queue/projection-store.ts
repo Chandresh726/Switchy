@@ -18,6 +18,7 @@ export interface ScrapeSessionSnapshot {
   triggerSource: string;
   status: string;
   startedAt: Date | null;
+  companiesCompleted?: number | null;
 }
 
 export interface ScrapeSessionProjectionStore {
@@ -42,6 +43,7 @@ export class DrizzleScrapeSessionProjectionStore
           triggerSource: scrapeSessions.triggerSource,
           status: scrapeSessions.status,
           startedAt: scrapeSessions.startedAt,
+          companiesCompleted: scrapeSessions.companiesCompleted,
         })
         .from(scrapeSessions)
         .where(eq(scrapeSessions.id, sessionId))
@@ -52,12 +54,8 @@ export class DrizzleScrapeSessionProjectionStore
 
   async listInProgressSessionIds(): Promise<string[]> {
     const sessions = await this.database
-      .selectDistinct({ id: scrapeSessions.id })
+      .select({ id: scrapeSessions.id })
       .from(scrapeSessions)
-      .innerJoin(
-        scrapeQueueItems,
-        eq(scrapeQueueItems.sessionId, scrapeSessions.id)
-      )
       .where(eq(scrapeSessions.status, "in_progress"));
     return sessions.map((session) => session.id);
   }

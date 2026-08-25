@@ -182,6 +182,12 @@ function buildMetaItems(
     latestLog?.duration !== null &&
       latestLog?.duration !== undefined &&
       formatDurationMs(latestLog.duration),
+    latestLog?.fetchDuration != null &&
+      `fetch ${formatDurationMs(latestLog.fetchDuration)}`,
+    latestLog?.processingDuration != null &&
+      `process ${formatDurationMs(latestLog.processingDuration)}`,
+    latestLog?.persistenceDuration != null &&
+      `save ${formatDurationMs(latestLog.persistenceDuration)}`,
     queueItem?.startedAt &&
       `Started ${formatDateTime(new Date(queueItem.startedAt))}`,
     queueItem?.status === "queued" &&
@@ -222,6 +228,7 @@ function CompanyProgressRow({ progress }: { progress: CompanyProgress }) {
   const queueErrorIsDistinct =
     queueItem?.lastError &&
     !issueLogs.some((log) => log.errorMessage === queueItem.lastError);
+  const queueErrorResolved = queueItem?.status === "completed";
 
   return (
     <article className="relative overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-border/60">
@@ -343,10 +350,18 @@ function CompanyProgressRow({ progress }: { progress: CompanyProgress }) {
               );
             })}
             {queueErrorIsDistinct && (
-              <div className="flex gap-2 rounded-md border border-red-500/15 bg-red-500/5 px-3 py-2 text-red-300">
+              <div
+                className={cn(
+                  "flex gap-2 rounded-md border px-3 py-2",
+                  queueErrorResolved
+                    ? "border-amber-500/15 bg-amber-500/5 text-amber-300"
+                    : "border-red-500/15 bg-red-500/5 text-red-300"
+                )}
+              >
                 <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <p className="min-w-0 break-words font-mono text-xs opacity-90">
-                  {queueItem?.lastError}
+                  {queueErrorResolved && <span>Earlier queue attempt: </span>}
+                  <span>{queueItem?.lastError}</span>
                 </p>
               </div>
             )}

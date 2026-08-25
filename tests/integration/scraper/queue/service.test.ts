@@ -741,7 +741,7 @@ describe("LocalScrapeQueueService", () => {
     expect(maxActive).toBe(1);
   });
 
-  it("runs serial scraper capabilities exclusively without sacrificing shared concurrency", async () => {
+  it("bounds browser-heavy scrapers without blocking API scraper overlap", async () => {
     const database = createTestDatabase();
     const storedCompanies = database
       .insert(companies)
@@ -764,22 +764,18 @@ describe("LocalScrapeQueueService", () => {
       ])
       .returning({ id: companies.id })
       .all();
-    let activeShared = 0;
     let serialActive = false;
     let overlapDetected = false;
     const serialCompanyId = storedCompanies[1]?.id;
     const scrapeCompany = vi.fn<ScrapeCompanyPipeline["scrape"]>(
       async (companyId) => {
         if (companyId === serialCompanyId) {
-          if (activeShared > 0) overlapDetected = true;
           serialActive = true;
         } else {
           if (serialActive) overlapDetected = true;
-          activeShared += 1;
         }
         await new Promise((resolve) => setTimeout(resolve, 5));
         if (companyId === serialCompanyId) serialActive = false;
-        else activeShared -= 1;
         return {
           companyId,
           companyName: `Company ${companyId}`,
@@ -798,7 +794,8 @@ describe("LocalScrapeQueueService", () => {
     const registry = {
       getScraperByPlatform: vi.fn((platform: string) => ({
         capabilities: {
-          concurrency: platform === "workday" ? "serial" : "parallel",
+          concurrency:
+            platform === "workday" ? "browser_limited" : "parallel",
         },
       })),
     } as unknown as IScraperRegistry;
@@ -813,7 +810,68 @@ describe("LocalScrapeQueueService", () => {
       "manual"
     );
 
-    expect(overlapDetected).toBe(false);
+    expect(overlapDetected).toBe(true);
+  });
+
+  it("uses the static longest-platform-first queue priority", async () => {
+    const database = createTestDatabase();
+    const storedCompanies = database
+      .insert(companies)
+      .values([
+        {
+          name: "Fast API",
+          careersUrl: "https://boards.greenhouse.io/fast",
+          platform: "greenhouse",
+        },
+        {
+          name: "Workday",
+          careersUrl: "https://example.myworkdayjobs.com/jobs",
+          platform: "workday",
+        },
+        {
+          name: "Eightfold",
+          careersUrl: "https://example.eightfold.ai/careers",
+          platform: "eightfold",
+        },
+      ])
+      .returning({ id: companies.id, platform: companies.platform })
+      .all();
+    const executionOrder: number[] = [];
+    const pipeline = {
+      scrape: vi.fn<ScrapeCompanyPipeline["scrape"]>(async (companyId) => {
+        executionOrder.push(companyId);
+        const company = storedCompanies.find((item) => item.id === companyId);
+        return {
+          companyId,
+          companyName: `Company ${companyId}`,
+          success: true,
+          outcome: "success",
+          jobsFound: 0,
+          jobsAdded: 0,
+          jobsUpdated: 0,
+          jobsFiltered: 0,
+          jobsArchived: 0,
+          platform:
+            company?.platform === "eightfold" || company?.platform === "workday"
+              ? company.platform
+              : "greenhouse",
+          duration: 1,
+        };
+      }),
+    };
+    const { service } = createService(database, {
+      pipeline,
+      runnerConfig: { concurrency: 1 },
+    });
+
+    await service.scrapeAllCompanies("manual");
+
+    expect(
+      executionOrder.map(
+        (companyId) =>
+          storedCompanies.find((company) => company.id === companyId)?.platform
+      )
+    ).toEqual(["eightfold", "workday", "greenhouse"]);
   });
 
   it("never scrapes the same company concurrently across different sessions", async () => {

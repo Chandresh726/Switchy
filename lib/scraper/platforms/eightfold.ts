@@ -42,7 +42,7 @@ interface EightfoldPosition {
   name: string;
   locations: string[];
   department?: string;
-  workLocationOption?: "onsite" | "hybrid" | "remote_local";
+  workLocationOption?: string;
   postedTs?: number;
   positionUrl?: string;
 }
@@ -56,7 +56,7 @@ interface EightfoldPositionDetails {
     jobDescription: string;
     publicUrl: string;
     department?: string;
-    workLocationOption?: "onsite" | "hybrid" | "remote_local";
+    workLocationOption?: string;
     efcustomTextTimeType?: string[];
   };
 }
@@ -67,7 +67,7 @@ const EightfoldPositionSchema = z
     name: z.string(),
     locations: z.array(z.string()),
     department: z.string().optional(),
-    workLocationOption: z.enum(["onsite", "hybrid", "remote_local"]).optional(),
+    workLocationOption: z.string().optional(),
     postedTs: z.number().optional(),
     positionUrl: z.string().optional(),
   })
@@ -97,7 +97,7 @@ const EightfoldPositionDetailsSchema = z
         jobDescription: z.string(),
         publicUrl: z.string(),
         department: z.string().optional(),
-        workLocationOption: z.enum(["onsite", "hybrid", "remote_local"]).optional(),
+        workLocationOption: z.string().optional(),
         efcustomTextTimeType: z.array(z.string()).optional(),
       })
       .passthrough()
@@ -149,7 +149,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
   readonly platform = "eightfold" as const;
   override readonly capabilities = {
     transport: "browser",
-    concurrency: "serial",
+    concurrency: "browser_limited",
     supportsCancellation: true,
   } as const;
 

@@ -153,4 +153,16 @@ describe("ScrapeSessionProjector", () => {
 
     await rejection;
   });
+
+  it("closes a legacy in-progress session that has no durable queue items", async () => {
+    const { projector, sessionStore, setItems } = createProjector();
+    setItems([]);
+
+    await projector.reconcileSession("session-1");
+
+    expect(sessionStore.completeSession).toHaveBeenCalledWith(
+      "session-1",
+      "failed"
+    );
+  });
 });

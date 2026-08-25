@@ -55,7 +55,7 @@ describe("createScraperRegistry", () => {
     });
     expect(registry.getScraperByPlatform("workday")?.capabilities).toEqual({
       transport: "browser",
-      concurrency: "serial",
+      concurrency: "browser_limited",
       supportsCancellation: true,
     });
   });

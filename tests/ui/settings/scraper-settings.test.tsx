@@ -28,7 +28,10 @@ describe("ScraperSettings", () => {
   it("clamps scrape history retention to the persisted 7-3650 day range", () => {
     const props = createProps();
     render(<ScraperSettings {...props} />);
-    const input = screen.getByLabelText("History Retention") as HTMLInputElement;
+    fireEvent.click(screen.getByRole("button", { name: "Show advanced" }));
+    const input = screen.getByLabelText(
+      "History Retention (days)"
+    ) as HTMLInputElement;
 
     fireEvent.change(input, { target: { value: "2" } });
     fireEvent.change(input, { target: { value: "9999" } });
@@ -46,6 +49,7 @@ describe("ScraperSettings", () => {
   it("keeps local scrape parallelism within its supported range", () => {
     const props = createProps();
     render(<ScraperSettings {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Show advanced" }));
     const input = screen.getByLabelText(
       "Max Parallel Scrapes"
     ) as HTMLInputElement;
@@ -56,11 +60,33 @@ describe("ScraperSettings", () => {
     expect(props.onMaxParallelScrapesChange.mock.calls).toEqual([[1], [10]]);
   });
 
-  it("uses compact copy and has no save control", () => {
+  it("keeps operational tuning behind Advanced settings", () => {
     render(<ScraperSettings {...createProps()} />);
 
+    expect(screen.getByLabelText("Scheduler Frequency")).toBeTruthy();
+    expect(screen.getByRole("checkbox", {
+      name: "Keep Mac awake while scraping",
+    })).toBeTruthy();
+    expect(screen.getByLabelText("Country")).toBeTruthy();
+    expect(screen.getByLabelText("City")).toBeTruthy();
+    expect(screen.getByLabelText("Job Title Keywords")).toBeTruthy();
+    expect(
+      screen.getByText("Tune throughput and retained run history.")
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Max Parallel Scrapes")).toBeNull();
+    expect(screen.queryByLabelText("History Retention (days)")).toBeNull();
+
+    const advancedButton = screen.getByRole("button", {
+      name: "Show advanced",
+    });
+    expect(advancedButton.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(advancedButton);
+
+    expect(screen.getByLabelText("Max Parallel Scrapes")).toBeTruthy();
+    expect(screen.getByLabelText("History Retention (days)")).toBeTruthy();
     expect(screen.getByText("1–10 concurrent scrapes.")).toBeTruthy();
     expect(screen.getByText("Logs expire; jobs stay.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Hide advanced" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /save/i })).toBeNull();
   });
 

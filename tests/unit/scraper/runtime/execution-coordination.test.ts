@@ -1,49 +1,45 @@
 import { describe, expect, it } from "vitest";
 
 import { KeyedExecutionLock } from "@/lib/scraper/runtime/keyed-lock";
-import { SharedExclusiveExecutionGate } from "@/lib/scraper/runtime/shared-exclusive-gate";
+import { ScrapeResourceExecutionGate } from "@/lib/scraper/runtime/resource-execution-gate";
 
-describe("SharedExclusiveExecutionGate", () => {
-  it("honors shared capacity and gives queued exclusive work a barrier", async () => {
-    const gate = new SharedExclusiveExecutionGate(2);
+describe("ScrapeResourceExecutionGate", () => {
+  it("limits browser-heavy work while allowing standard work to use free capacity", async () => {
+    const gate = new ScrapeResourceExecutionGate(3, 1);
     const signal = new AbortController().signal;
-    const releaseFirst = await gate.acquire("shared", signal);
-    const releaseSecond = await gate.acquire("shared", signal);
-    let exclusiveStarted = false;
-    const exclusive = gate.acquire("exclusive", signal).then((release) => {
-      exclusiveStarted = true;
+    const releaseBrowser = await gate.acquire("browser_heavy", signal);
+    let secondBrowserStarted = false;
+    const secondBrowser = gate.acquire("browser_heavy", signal).then((release) => {
+      secondBrowserStarted = true;
       return release;
     });
-    let trailingSharedStarted = false;
-    const trailingShared = gate.acquire("shared", signal).then((release) => {
-      trailingSharedStarted = true;
+    let standardStarted = false;
+    const standard = gate.acquire("standard", signal).then((release) => {
+      standardStarted = true;
       return release;
     });
 
-    releaseFirst();
     await Promise.resolve();
-    expect(exclusiveStarted).toBe(false);
-    expect(trailingSharedStarted).toBe(false);
-    releaseSecond();
-    const releaseExclusive = await exclusive;
-    expect(exclusiveStarted).toBe(true);
-    expect(trailingSharedStarted).toBe(false);
-    releaseExclusive();
-    const releaseTrailing = await trailingShared;
-    expect(trailingSharedStarted).toBe(true);
-    releaseTrailing();
+    expect(secondBrowserStarted).toBe(false);
+    expect(standardStarted).toBe(true);
+    const releaseStandard = await standard;
+    releaseStandard();
+    releaseBrowser();
+    const releaseSecondBrowser = await secondBrowser;
+    expect(secondBrowserStarted).toBe(true);
+    releaseSecondBrowser();
   });
 
   it("removes an aborted waiter without blocking later work", async () => {
-    const gate = new SharedExclusiveExecutionGate(1);
+    const gate = new ScrapeResourceExecutionGate(1, 1);
     const activeController = new AbortController();
-    const releaseActive = await gate.acquire("shared", activeController.signal);
+    const releaseActive = await gate.acquire("browser_heavy", activeController.signal);
     const cancelledController = new AbortController();
-    const cancelled = gate.acquire("exclusive", cancelledController.signal);
+    const cancelled = gate.acquire("browser_heavy", cancelledController.signal);
     cancelledController.abort(new Error("cancelled"));
     await expect(cancelled).rejects.toMatchObject({ message: "cancelled" });
 
-    const next = gate.acquire("shared", new AbortController().signal);
+    const next = gate.acquire("standard", new AbortController().signal);
     releaseActive();
     const releaseNext = await next;
     releaseNext();

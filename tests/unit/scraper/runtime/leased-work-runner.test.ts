@@ -236,6 +236,49 @@ describe("LocalLeasedWorkRunner", () => {
     }
   });
 
+  it("retries work after detecting a suspended-system clock gap", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(0));
+      const repository = createRepository([createScrapeQueueItem()]);
+      const handlerStarted = Promise.withResolvers<void>();
+      const runner = new LocalLeasedWorkRunner(
+        repository,
+        async (_item, { signal }) => {
+          handlerStarted.resolve();
+          return new Promise((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(signal.reason), {
+              once: true,
+            });
+          });
+        },
+        {
+          concurrency: 1,
+          heartbeatIntervalMs: 100,
+          maxClockGapMs: 500,
+        }
+      );
+
+      const runPromise = runner.runAvailable();
+      await handlerStarted.promise;
+      vi.setSystemTime(new Date(10_000));
+      await vi.advanceTimersByTimeAsync(100);
+      const summary = await runPromise;
+
+      expect(repository.retry).toHaveBeenCalledWith(
+        "item-1",
+        expect.any(String),
+        "System suspension detected; retrying local work",
+        expect.any(Date),
+        expect.any(Date)
+      );
+      expect(repository.heartbeat).not.toHaveBeenCalled();
+      expect(summary.retried).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("stops and awaits sibling workers before surfacing a worker failure", async () => {
     const repository = createRepository([
       createScrapeQueueItem({ id: "item-1" }),

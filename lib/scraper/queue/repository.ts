@@ -64,12 +64,12 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
         return tx
           .insert(scrapeQueueItems)
           .values(
-            input.companyIds.map((companyId) => ({
+            input.companyIds.map((companyId, index) => ({
               id: crypto.randomUUID(),
               sessionId: input.sessionId,
               companyId,
               status: "queued",
-              priority: input.priority ?? 100,
+              priority: (input.priority ?? 100) + index,
               maxAttempts: input.maxAttempts ?? 3,
               availableAt: input.availableAt ?? now,
               createdAt: now,
@@ -95,7 +95,11 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
               lte(scrapeQueueItems.availableAt, now)
             )
           )
-          .orderBy(asc(scrapeQueueItems.priority), asc(scrapeQueueItems.createdAt))
+          .orderBy(
+            asc(scrapeQueueItems.priority),
+            asc(scrapeQueueItems.createdAt),
+            asc(scrapeQueueItems.id)
+          )
           .limit(1)
           .get();
 
@@ -167,7 +171,6 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
     return this.finishOwnedItem(itemId, workerId, {
       status: "completed",
       resultJson,
-      lastError: null,
       completedAt: now,
       updatedAt: now,
     }, true);

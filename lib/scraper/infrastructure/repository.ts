@@ -265,6 +265,11 @@ export class DrizzleScraperRepository implements IScraperRepository {
           matcherJobsTotal: matchableJobIds.length > 0 ? matchableJobIds.length : null,
           matcherJobsCompleted: 0,
           duration: Math.max(0, completedAt.getTime() - input.startedAtMs),
+          persistenceDuration: Math.max(
+            0,
+            completedAt.getTime() -
+              (input.persistenceStartedAtMs ?? input.startedAtMs)
+          ),
           completedAt,
         })
         .returning({ id: scrapingLogs.id })
@@ -364,6 +369,9 @@ export class DrizzleScraperRepository implements IScraperRepository {
         jobsArchived: log.jobsArchived,
         errorMessage: log.errorMessage,
         duration: log.duration,
+        fetchDuration: log.fetchDuration,
+        processingDuration: log.processingDuration,
+        persistenceDuration: log.persistenceDuration,
         completedAt: log.completedAt,
         matcherStatus: log.matcherStatus,
         matcherJobsTotal: log.matcherJobsTotal,

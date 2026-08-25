@@ -2,10 +2,17 @@
 
 import { useMemo, useState } from "react";
 
-import { Timer, X } from "lucide-react";
+import { Settings2, Timer, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -16,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 
 import { ScrapeCountdown } from "./scrape-countdown";
@@ -67,6 +75,7 @@ export function ScraperSettings({
   onFilterTitleKeywordsChange,
 }: ScraperSettingsProps) {
   const [keywordInput, setKeywordInput] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [isCustomSelected, setIsCustomSelected] = useState<boolean>(() =>
     !CRON_PRESETS.some((p) => p.value === schedulerCron)
   );
@@ -118,13 +127,16 @@ export function ScraperSettings({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-3">
-          <Label>Scheduler Frequency</Label>
+          <Label htmlFor="scheduler-frequency">Scheduler Frequency</Label>
           <div className="flex items-center gap-3">
             <Select
               value={selectedPreset}
               onValueChange={handlePresetChange}
             >
-              <SelectTrigger className="bg-background/60 border-border flex-1">
+              <SelectTrigger
+                id="scheduler-frequency"
+                className="bg-background/60 border-border flex-1"
+              >
                 <SelectValue placeholder="Select schedule" />
               </SelectTrigger>
               <SelectContent>
@@ -141,6 +153,7 @@ export function ScraperSettings({
               <Input
                 value={schedulerCron}
                 onChange={(e) => onSchedulerCronChange(e.target.value)}
+                aria-label="Custom cron expression"
                 placeholder="0 */6 * * *"
                 className="bg-background/60 border-border w-[160px]"
               />
@@ -149,27 +162,6 @@ export function ScraperSettings({
               <ScrapeCountdown />
             )}
           </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-6 pt-4 border-t border-border">
-          <div className="space-y-1">
-            <Label htmlFor="max-parallel-scrapes">Max Parallel Scrapes</Label>
-            <p className="text-xs text-muted-foreground">
-              1–10 concurrent scrapes.
-            </p>
-          </div>
-          <Input
-            id="max-parallel-scrapes"
-            type="number"
-            min={1}
-            max={10}
-            value={maxParallelScrapes}
-            onChange={(e) => {
-              const parsed = parseInt(e.target.value, 10);
-              onMaxParallelScrapesChange(Math.min(10, Math.max(1, Number.isNaN(parsed) ? 1 : parsed)));
-            }}
-            className="bg-background/60 border-border w-[100px] text-center shrink-0"
-          />
         </div>
 
         <div className="flex items-center justify-between gap-6 pt-4 border-t border-border">
@@ -192,32 +184,6 @@ export function ScraperSettings({
             aria-label="Keep Mac awake while scraping"
             className="h-4 w-4 shrink-0 rounded border-border bg-muted text-emerald-500 focus:ring-emerald-500 focus:ring-offset-background"
           />
-        </div>
-
-        <div className="flex items-center justify-between gap-6 pt-4 border-t border-border">
-          <div className="space-y-1">
-            <Label htmlFor="scrape-history-retention">History Retention</Label>
-            <p className="text-xs text-muted-foreground">
-              Logs expire; jobs stay.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Input
-              id="scrape-history-retention"
-              type="number"
-              min={7}
-              max={3650}
-              value={historyRetentionDays}
-              onChange={(e) => {
-                const parsed = parseInt(e.target.value, 10);
-                onHistoryRetentionDaysChange(
-                  Math.min(3650, Math.max(7, Number.isNaN(parsed) ? 7 : parsed))
-                );
-              }}
-              className="bg-background/60 border-border w-[100px] text-center"
-            />
-            <span className="text-xs text-muted-foreground">days</span>
-          </div>
         </div>
 
         <div className="space-y-4 pt-4 border-t border-border">
@@ -289,6 +255,96 @@ export function ScraperSettings({
               ))}
             </div>
           )}
+        </div>
+
+        <Separator className="bg-muted" />
+
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-1">
+              <Label className="text-base">Advanced</Label>
+              <p className="text-xs text-muted-foreground">
+                Tune throughput and retained run history.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-controls="advanced-scraper-settings"
+              aria-expanded={showAdvanced}
+              onClick={() => setShowAdvanced((current) => !current)}
+              className="h-8 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <Settings2 data-icon="inline-start" />
+              {showAdvanced ? "Hide advanced" : "Show advanced"}
+            </Button>
+          </div>
+
+          {showAdvanced ? (
+            <FieldGroup
+              id="advanced-scraper-settings"
+              className="grid gap-4 rounded-lg border border-border bg-background/30 p-4 sm:grid-cols-2"
+            >
+              <Field>
+                <FieldLabel
+                  htmlFor="max-parallel-scrapes"
+                  className="text-xs text-muted-foreground"
+                >
+                  Max Parallel Scrapes
+                </FieldLabel>
+                <Input
+                  id="max-parallel-scrapes"
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={maxParallelScrapes}
+                  onChange={(e) => {
+                    const parsed = parseInt(e.target.value, 10);
+                    onMaxParallelScrapesChange(
+                      Math.min(
+                        10,
+                        Math.max(1, Number.isNaN(parsed) ? 1 : parsed)
+                      )
+                    );
+                  }}
+                  className="bg-background/60 border-border"
+                />
+                <FieldDescription>
+                  1–10 concurrent scrapes.
+                </FieldDescription>
+              </Field>
+
+              <Field>
+                <FieldLabel
+                  htmlFor="scrape-history-retention"
+                  className="text-xs text-muted-foreground"
+                >
+                  History Retention (days)
+                </FieldLabel>
+                <Input
+                  id="scrape-history-retention"
+                  type="number"
+                  min={7}
+                  max={3650}
+                  value={historyRetentionDays}
+                  onChange={(e) => {
+                    const parsed = parseInt(e.target.value, 10);
+                    onHistoryRetentionDaysChange(
+                      Math.min(
+                        3650,
+                        Math.max(7, Number.isNaN(parsed) ? 7 : parsed)
+                      )
+                    );
+                  }}
+                  className="bg-background/60 border-border"
+                />
+                <FieldDescription>
+                  Logs expire; jobs stay.
+                </FieldDescription>
+              </Field>
+            </FieldGroup>
+          ) : null}
         </div>
       </CardContent>
     </Card>

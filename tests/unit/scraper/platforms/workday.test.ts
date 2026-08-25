@@ -92,6 +92,84 @@ function createPaginatedHttpClient(failSecondPage = false): IHttpClient {
 }
 
 describe("WorkdayScraper", () => {
+  it("retries an incomplete initial browser session once", async () => {
+    const bootstrap = vi
+      .fn()
+      .mockResolvedValueOnce({
+        baseUrl: "https://acme.wd5.myworkdayjobs.com",
+        cookies: "",
+      })
+      .mockResolvedValueOnce({
+        baseUrl: "https://acme.wd5.myworkdayjobs.com",
+        cookies: "session=recovered",
+        csrfToken: "csrf-recovered",
+      });
+    const scraper = new FastWorkdayScraper(
+      createHttpClient(),
+      createBrowserClientStub({ bootstrap }),
+      { requestDelayBaseMs: 0, requestDelayJitterMs: 0 }
+    );
+
+    const result = await scraper.scrape(
+      "https://acme.wd5.myworkdayjobs.com/Acme"
+    );
+
+    expect(result.outcome).toBe("success");
+    expect(bootstrap).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns a retryable browser error after two incomplete sessions", async () => {
+    const bootstrap = vi.fn(async () => ({
+      baseUrl: "https://acme.wd5.myworkdayjobs.com",
+      cookies: "",
+    }));
+    const scraper = new FastWorkdayScraper(
+      createHttpClient(),
+      createBrowserClientStub({ bootstrap }),
+      { requestDelayBaseMs: 0, requestDelayJitterMs: 0 }
+    );
+
+    const result = await scraper.scrape(
+      "https://acme.wd5.myworkdayjobs.com/Acme"
+    );
+
+    expect(result).toMatchObject({
+      outcome: "error",
+      error: { code: "browser_error", retryable: true },
+    });
+    expect(bootstrap).toHaveBeenCalledTimes(2);
+  });
+
+  it("retains valid jobs and marks the listing partial when one item is malformed", async () => {
+    const httpClient = createHttpClient();
+    vi.mocked(httpClient.post).mockResolvedValue({
+      total: 2,
+      jobPostings: [
+        createWorkdayListResponse().jobPostings[0],
+        { externalPath: "/job/REQ-BROKEN" },
+      ],
+    });
+    const scraper = new FastWorkdayScraper(httpClient, createBrowserClient(), {
+      requestDelayBaseMs: 0,
+      requestDelayJitterMs: 0,
+    });
+
+    const result = await scraper.scrape(
+      "https://acme.wd5.myworkdayjobs.com/Acme"
+    );
+
+    expect(result).toMatchObject({
+      outcome: "partial",
+      totalListings: 1,
+      listingCompleteness: "partial",
+    });
+    expect(result.jobs).toHaveLength(1);
+    if (result.outcome !== "partial") throw new Error("Expected partial result");
+    expect(result.issues?.[0]?.message).toContain(
+      "1 malformed listing was discarded"
+    );
+  });
+
   it("bootstraps a session and hydrates an authoritative listing", async () => {
     const httpClient = createHttpClient();
     const browserClient = createBrowserClient();

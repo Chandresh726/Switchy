@@ -30,6 +30,44 @@ function getFetchCalls(fetchMock: FetchMock): FetchCall[] {
 }
 
 describe("EightfoldScraper", () => {
+  it("tolerates new work-location values without rejecting the page", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/api/pcsx/search")) {
+        const response = await createEightfoldSearchResponse([1]).json();
+        response.data.positions[0].workLocationOption = "flexible_hybrid";
+        return new Response(JSON.stringify(response), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const response = await createEightfoldDetailResponse(1).json();
+      response.data.workLocationOption = "flexible_hybrid";
+      return new Response(JSON.stringify(response), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const scraper = new EightfoldScraper(
+      createHttpClientStub({ fetch: fetchMock }),
+      createMockBrowserClient({
+        baseUrl: "https://apply.careers.microsoft.com",
+        cookies: "session=abc",
+        domain: "microsoft.com",
+      }),
+      { requestDelayMs: 0 }
+    );
+
+    const result = await scraper.scrape(
+      "https://apply.careers.microsoft.com/careers"
+    );
+
+    expect(result).toMatchObject({
+      outcome: "success",
+      listingCompleteness: "complete",
+    });
+    expect(result.jobs).toHaveLength(1);
+  });
+
   it("uses bootstrapped cookies and returns partial when detail endpoints are blocked", async () => {
     const positionIds = [1, 2, 3, 4];
     const fetchMock = vi.fn(async (url: string) => {

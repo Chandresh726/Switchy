@@ -47,7 +47,16 @@ export class ScrapeSessionProjector {
   async reconcileSession(sessionId: string): Promise<void> {
     try {
       const items = await this.queueStore.listSessionItems(sessionId);
-      if (items.length === 0) return;
+      if (items.length === 0) {
+        const session = await this.projectionStore.getSession(sessionId);
+        if (session?.status === "in_progress") {
+          await this.sessionStore.completeSession(
+            sessionId,
+            (session.companiesCompleted ?? 0) > 0 ? "partial" : "failed"
+          );
+        }
+        return;
+      }
       const terminalItems = items.filter((item) => this.isTerminal(item.status));
       const results = await Promise.all(
         terminalItems.map((item) => this.toFetchResult(item))

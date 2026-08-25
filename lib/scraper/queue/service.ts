@@ -37,6 +37,13 @@ import type {
 } from "./types";
 
 const DISPATCH_FAILURE_RETRY_MS = 5_000;
+const PLATFORM_QUEUE_PRIORITY: Record<string, number> = {
+  eightfold: 10,
+  workday: 20,
+};
+const DEFAULT_QUEUE_PRIORITY = 100;
+const BROWSER_HEAVY_PLATFORMS = new Set(["eightfold", "workday"]);
+const BROWSER_HEAVY_PRIORITY_BURST = 2;
 
 export interface LocalScrapeQueueServiceDependencies {
   companyCatalog: CompanyCatalog;
@@ -97,8 +104,9 @@ export class LocalScrapeQueueService {
 
   async scrapeAllCompanies(triggerSource: TriggerSource): Promise<BatchFetchResult> {
     const companies = await this.dependencies.companyCatalog.getActiveCompanies();
+    const orderedCompanyIds = this.orderByStaticPriority(companies);
     return this.runCoalescedBatch(
-      companies.map((company) => company.id),
+      orderedCompanyIds,
       triggerSource
     );
   }
@@ -109,20 +117,48 @@ export class LocalScrapeQueueService {
   ): Promise<BatchFetchResult> {
     const requestedIds = new Set(companyIds);
     const companies = await this.dependencies.companyCatalog.getActiveCompanies();
+    const orderedCompanyIds = this.orderByStaticPriority(
+      companies.filter((company) => requestedIds.has(company.id))
+    );
     return this.runCoalescedBatch(
-      companies
-        .filter((company) => requestedIds.has(company.id))
-        .map((company) => company.id),
+      orderedCompanyIds,
       triggerSource
     );
+  }
+
+  private orderByStaticPriority(
+    companies: Awaited<ReturnType<CompanyCatalog["getActiveCompanies"]>>
+  ): number[] {
+    const byPriority = [...companies].sort((left, right) => {
+      const leftPriority =
+        PLATFORM_QUEUE_PRIORITY[left.platform ?? ""] ??
+        DEFAULT_QUEUE_PRIORITY;
+      const rightPriority =
+        PLATFORM_QUEUE_PRIORITY[right.platform ?? ""] ??
+        DEFAULT_QUEUE_PRIORITY;
+      return leftPriority - rightPriority || left.id - right.id;
+    });
+    const browserHeavy = byPriority.filter((company) =>
+      BROWSER_HEAVY_PLATFORMS.has(company.platform ?? "")
+    );
+    const standard = byPriority.filter(
+      (company) => !BROWSER_HEAVY_PLATFORMS.has(company.platform ?? "")
+    );
+    const ordered: typeof byPriority = [];
+    while (browserHeavy.length > 0 || standard.length > 0) {
+      ordered.push(...browserHeavy.splice(0, BROWSER_HEAVY_PRIORITY_BURST));
+      const nextStandard = standard.shift();
+      if (nextStandard) ordered.push(nextStandard);
+    }
+    return ordered.map((company) => company.id);
   }
 
   private runCoalescedBatch(
     companyIds: number[],
     triggerSource: TriggerSource
   ): Promise<BatchFetchResult> {
-    const uniqueCompanyIds = Array.from(new Set(companyIds)).sort((a, b) => a - b);
-    const key = uniqueCompanyIds.join(",");
+    const uniqueCompanyIds = Array.from(new Set(companyIds));
+    const key = [...uniqueCompanyIds].sort((a, b) => a - b).join(",");
     const existing = this.inFlightBatches.get(key);
     if (existing) return existing;
 

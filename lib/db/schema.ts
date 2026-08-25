@@ -242,6 +242,9 @@ export const scrapingLogs = sqliteTable("scraping_logs", {
   platform: text("platform"), // "greenhouse" | "lever" etc.
   errorMessage: text("error_message"),
   duration: integer("duration"), // milliseconds
+  fetchDuration: integer("fetch_duration"),
+  processingDuration: integer("processing_duration"),
+  persistenceDuration: integer("persistence_duration"),
   startedAt: integer("started_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   completedAt: integer("completed_at", { mode: "timestamp" }),
   // Matcher tracking

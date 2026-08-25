@@ -86,6 +86,7 @@ export interface LocalLeasedWorkRunnerConfig {
   concurrency: number;
   leaseDurationMs: number;
   heartbeatIntervalMs: number;
+  maxClockGapMs: number;
   baseRetryDelayMs: number;
   maxRetryDelayMs: number;
 }
@@ -95,6 +96,7 @@ const DEFAULT_LOCAL_LEASED_WORK_RUNNER_CONFIG: LocalLeasedWorkRunnerConfig = {
   concurrency: 3,
   leaseDurationMs: 2 * 60 * 1000,
   heartbeatIntervalMs: 15 * 1000,
+  maxClockGapMs: 60 * 1000,
   baseRetryDelayMs: 5 * 1000,
   maxRetryDelayMs: 5 * 60 * 1000,
 };
@@ -127,6 +129,10 @@ export class LocalLeasedWorkRunner<
       heartbeatIntervalMs: Math.min(
         Math.max(100, merged.heartbeatIntervalMs),
         maxHeartbeatIntervalMs
+      ),
+      maxClockGapMs: Math.max(
+        Math.min(Math.max(100, merged.heartbeatIntervalMs), maxHeartbeatIntervalMs) * 2,
+        merged.maxClockGapMs
       ),
       baseRetryDelayMs: Math.max(0, merged.baseRetryDelayMs),
       maxRetryDelayMs: Math.max(0, merged.maxRetryDelayMs),
@@ -220,6 +226,7 @@ export class LocalLeasedWorkRunner<
     let monitorStopped = false;
     let cancellationRequested = false;
     let leaseLost = false;
+    let lastMonitorTickAt = Date.now();
 
     const monitor = async () => {
       try {
@@ -252,6 +259,18 @@ export class LocalLeasedWorkRunner<
     };
     const monitorTimer = setInterval(() => {
       if (monitorStopped || monitorPromise) return;
+      const currentTickAt = Date.now();
+      const clockGapMs = currentTickAt - lastMonitorTickAt;
+      lastMonitorTickAt = currentTickAt;
+      if (clockGapMs > this.config.maxClockGapMs) {
+        controller.abort(
+          new DOMException(
+            "System suspension detected; retrying local work",
+            "AbortError"
+          )
+        );
+        return;
+      }
       const currentMonitor = monitor();
       monitorPromise = currentMonitor;
       void currentMonitor.finally(() => {

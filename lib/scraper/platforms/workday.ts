@@ -13,6 +13,7 @@ import {
 import {
   createScraperError,
   parseEmploymentType,
+  parseExternalItems,
   parseExternalPayload,
   ScraperPayloadError,
   type BrowserScraperConfig,
@@ -37,6 +38,7 @@ type WorkdayJobListItem = {
 type WorkdayJobListResponse = {
   total: number;
   jobPostings: WorkdayJobListItem[];
+  invalidCount: number;
 };
 
 type WorkdayListFetchResult = {
@@ -45,6 +47,7 @@ type WorkdayListFetchResult = {
   advertisedCount: number;
   missingOffsets: number[];
   unidentifiedCount: number;
+  invalidCount: number;
   session: WorkdaySession;
 };
 
@@ -56,21 +59,21 @@ type WorkdayJobDetailResponse = {
   };
 };
 
-const WorkdayJobListResponseSchema = z
+const WorkdayJobListItemSchema = z
+  .object({
+    title: z.string(),
+    externalPath: z.string(),
+    locationsText: z.string().default(""),
+    postedOn: z.string().default(""),
+    remoteType: z.string().default(""),
+    bulletFields: z.array(z.string()).default([]),
+  })
+  .passthrough();
+
+const WorkdayJobListEnvelopeSchema = z
   .object({
     total: z.number(),
-    jobPostings: z.array(
-      z
-        .object({
-          title: z.string(),
-          externalPath: z.string(),
-          locationsText: z.string().default(""),
-          postedOn: z.string().default(""),
-          remoteType: z.string().default(""),
-          bulletFields: z.array(z.string()).default([]),
-        })
-        .passthrough()
-    ),
+    jobPostings: z.array(z.unknown()),
   })
   .passthrough();
 
@@ -113,7 +116,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
   readonly platform = "workday" as const;
   override readonly capabilities = {
     transport: "browser",
-    concurrency: "serial",
+    concurrency: "browser_limited",
     supportsCancellation: true,
   } as const;
 
@@ -161,14 +164,18 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         detectedBoardToken = `${parsedUrl.tenant}/${parsedUrl.board}`;
       }
 
-      const session = await this.bootstrapSession(
-        `${parsedUrl.baseUrl}/${parsedUrl.board}`
-      );
+      const boardUrl = `${parsedUrl.baseUrl}/${parsedUrl.board}`;
+      let session = await this.bootstrapSession(boardUrl);
+
+      if (!session || !session.csrfToken || !session.cookies) {
+        await this.delayWithJitter();
+        session = await this.bootstrapSession(boardUrl);
+      }
 
       if (!session || !session.csrfToken || !session.cookies) {
         return this.failure(
-          "auth_required",
-          "Failed to establish session with Workday. The site may have bot protection enabled."
+          "browser_error",
+          "Failed to establish a complete Workday browser session after retry."
         );
       }
 
@@ -408,11 +415,21 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         }
       );
 
-      return parseExternalPayload(
-        WorkdayJobListResponseSchema,
+      const envelope = parseExternalPayload(
+        WorkdayJobListEnvelopeSchema,
         payload,
         "Workday job list"
       );
+      const parsedItems = parseExternalItems(
+        WorkdayJobListItemSchema,
+        envelope.jobPostings,
+        "Workday job list items"
+      );
+      return {
+        total: envelope.total,
+        jobPostings: parsedItems.items,
+        invalidCount: parsedItems.invalidCount,
+      };
     } catch (error) {
       if (error instanceof HttpError || error instanceof ScraperPayloadError) throw error;
       throwIfScrapeAborted(error);
@@ -460,6 +477,9 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
 
     const total = firstBatch.total || 0;
     const jobsById = new Map<string, WorkdayJobListItem>();
+    const invalidCountByOffset = new Map<number, number>([
+      [0, firstBatch.invalidCount],
+    ]);
     const addJobs = (jobs: WorkdayJobListItem[], offset: number) => {
       for (let index = 0; index < jobs.length; index++) {
         const job = jobs[index];
@@ -512,6 +532,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           if (!result || !Array.isArray(result.jobPostings)) {
             missingOffsets.add(offset);
           } else {
+            invalidCountByOffset.set(offset, result.invalidCount);
             addJobs(result.jobPostings, offset);
             const expectedCount = Math.min(this.config.listPageSize, total - offset);
             if (result.jobPostings.length < expectedCount) {
@@ -534,6 +555,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           const result = await fetchSafely(activeSession, offset);
           if (!result || !Array.isArray(result.jobPostings)) continue;
 
+          invalidCountByOffset.set(offset, result.invalidCount);
           addJobs(result.jobPostings, offset);
           const expectedCount = Math.min(this.config.listPageSize, total - offset);
           if (result.jobPostings.length >= expectedCount) {
@@ -547,7 +569,11 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
     const unidentifiedCount = allJobs.filter(
       (job) => !this.getJobPostingId(job)
     ).length;
-    if (allJobs.length >= total) {
+    const invalidCount = Array.from(invalidCountByOffset.values()).reduce(
+      (sum, count) => sum + count,
+      0
+    );
+    if (allJobs.length >= total && invalidCount === 0) {
       missingOffsets.clear();
     }
 
@@ -556,10 +582,12 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       isComplete:
         missingOffsets.size === 0 &&
         allJobs.length >= total &&
-        unidentifiedCount === 0,
+        unidentifiedCount === 0 &&
+        invalidCount === 0,
       advertisedCount: total,
       missingOffsets: Array.from(missingOffsets).sort((a, b) => a - b),
       unidentifiedCount,
+      invalidCount,
       session: activeSession,
     };
   }
@@ -674,9 +702,13 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       result.unidentifiedCount > 0
         ? `; ${result.unidentifiedCount} listing${result.unidentifiedCount === 1 ? "" : "s"} lacked a stable Workday ID`
         : "";
+    const invalidSuffix =
+      result.invalidCount > 0
+        ? `; ${result.invalidCount} malformed listing${result.invalidCount === 1 ? " was" : "s were"} discarded`
+        : "";
     return createScraperError(
       "network_error",
-      `Workday listings were only partially fetched (${result.jobs.length} of ${result.advertisedCount} advertised jobs; ${result.missingOffsets.length} page offset${result.missingOffsets.length === 1 ? "" : "s"} unresolved${unidentifiedSuffix}).`
+      `Workday listings were only partially fetched (${result.jobs.length} of ${result.advertisedCount} advertised jobs; ${result.missingOffsets.length} page offset${result.missingOffsets.length === 1 ? "" : "s"} unresolved${unidentifiedSuffix}${invalidSuffix}).`
     );
   }
 

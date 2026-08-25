@@ -9,9 +9,9 @@ import {
 } from "@/lib/scraper/runtime/data-operation-gate";
 import { KeyedExecutionLock } from "@/lib/scraper/runtime/keyed-lock";
 import {
-  SharedExclusiveExecutionGate,
-  type ExecutionMode,
-} from "@/lib/scraper/runtime/shared-exclusive-gate";
+  ScrapeResourceExecutionGate,
+  type ScrapeResourceClass,
+} from "@/lib/scraper/runtime/resource-execution-gate";
 import { SCRAPER_SETTINGS } from "@/lib/scraper/settings/definitions";
 import type { ScrapeSettingsProvider } from "@/lib/scraper/settings/provider";
 import type { IScraperRegistry } from "@/lib/scraper/services";
@@ -32,7 +32,7 @@ class RetryableScrapeError extends Error {
 }
 
 export class ScrapeWorkHandler {
-  private readonly executionGate = new SharedExclusiveExecutionGate(
+  private readonly executionGate = new ScrapeResourceExecutionGate(
     SCRAPER_SETTINGS.maxParallelScrapes.defaultValue
   );
   private readonly companyLocks = new KeyedExecutionLock<number>();
@@ -53,7 +53,7 @@ export class ScrapeWorkHandler {
   ) {}
 
   async refreshParallelLimit(): Promise<void> {
-    this.executionGate.setSharedLimit(
+    this.executionGate.setTotalLimit(
       await this.settingsProvider.getMaxParallelScrapes()
     );
   }
@@ -110,18 +110,20 @@ export class ScrapeWorkHandler {
     }
   }
 
-  private async resolveExecutionMode(companyId: number): Promise<ExecutionMode> {
-    if (!this.registry) return "shared";
+  private async resolveExecutionMode(
+    companyId: number
+  ): Promise<ScrapeResourceClass> {
+    if (!this.registry) return "standard";
     const company = await this.companyCatalog.getCompany(companyId);
-    if (!company) return "shared";
+    if (!company) return "standard";
     const detected =
       company.platform && isPlatform(company.platform)
         ? company.platform
         : detectPlatformFromUrl(company.careersUrl);
-    if (detected === "custom") return "shared";
+    if (detected === "custom") return "standard";
     const scraper = this.registry.getScraperByPlatform(detected);
-    return scraper?.capabilities.concurrency === "serial"
-      ? "exclusive"
-      : "shared";
+    return scraper?.capabilities.concurrency === "browser_limited"
+      ? "browser_heavy"
+      : "standard";
   }
 }

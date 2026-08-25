@@ -267,6 +267,13 @@
       "when": 1785321101023,
       "tag": "0037_secret_the_renegades",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1787634831647,
+      "tag": "0038_brief_reptil",
+      "breakpoints": true
     }
   ]
 }

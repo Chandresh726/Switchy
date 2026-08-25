@@ -118,6 +118,9 @@ export class ScrapeCompanyPipeline {
     }
   ): Promise<FetchResult> {
     const startTime = Date.now();
+    let fetchStartedAt: number | null = null;
+    let fetchDuration: number | undefined;
+    let processingStartedAt: number | null = null;
     const logger = new ScraperLogger(companyName, platform || "auto-detect");
 
     logger.start();
@@ -139,11 +142,14 @@ export class ScrapeCompanyPipeline {
         options.signal
       );
 
+      fetchStartedAt = Date.now();
       const scraperResult = await this.registry.scrape(
         careersUrl,
         platform ?? undefined,
         scraperOptions
       );
+      fetchDuration = Date.now() - fetchStartedAt;
+      processingStartedAt = Date.now();
 
       const executionResult = await this.processScraperResult({
         scraperResult,
@@ -155,6 +161,8 @@ export class ScrapeCompanyPipeline {
         sessionId: options.sessionId,
         triggerSource: options.triggerSource,
         startTime,
+        fetchDuration,
+        processingStartedAt,
         logger,
       });
 
@@ -183,6 +191,13 @@ export class ScrapeCompanyPipeline {
           jobsArchived: 0,
           errorMessage,
           duration: Date.now() - startTime,
+          fetchDuration:
+            fetchDuration ??
+            (fetchStartedAt === null ? undefined : Date.now() - fetchStartedAt),
+          processingDuration:
+            processingStartedAt === null
+              ? undefined
+              : Date.now() - processingStartedAt,
           completedAt: new Date(),
         });
       }
@@ -239,6 +254,8 @@ export class ScrapeCompanyPipeline {
     sessionId: string;
     triggerSource: TriggerSource;
     startTime: number;
+    fetchDuration: number;
+    processingStartedAt: number;
     logger: ScraperLogger;
   }): Promise<ScrapeExecutionResult> {
     const {
@@ -251,6 +268,8 @@ export class ScrapeCompanyPipeline {
       sessionId,
       triggerSource,
       startTime,
+      fetchDuration,
+      processingStartedAt,
       logger,
     } = params;
 
@@ -274,6 +293,8 @@ export class ScrapeCompanyPipeline {
           jobsArchived: 0,
           errorMessage,
           duration: Date.now() - startTime,
+          fetchDuration,
+          processingDuration: Date.now() - processingStartedAt,
           completedAt: new Date(),
         });
       } catch (error) {
@@ -348,6 +369,7 @@ export class ScrapeCompanyPipeline {
         ? scraperResult.issues?.map((issue) => issue.message)
         : undefined;
     const jobsFiltered = filterResult.filteredOut + (scraperResult.earlyFiltered?.total || 0);
+    const persistenceStartedAtMs = Date.now();
     const persistenceResult = await this.repository.persistScrapeResult({
       companyId,
       openExternalIds,
@@ -374,6 +396,7 @@ export class ScrapeCompanyPipeline {
           ? scraperResult.detectedBoardToken
           : undefined,
       startedAtMs: startTime,
+      persistenceStartedAtMs,
       enableMatching:
         this.config.autoMatchAfterScrape && matcherConfig.autoMatchAfterScrape,
       log: {
@@ -384,6 +407,8 @@ export class ScrapeCompanyPipeline {
         jobsFound: totalFetched,
         jobsFiltered,
         errorMessage: warnings?.join("; "),
+        fetchDuration,
+        processingDuration: persistenceStartedAtMs - processingStartedAt,
       },
     });
 
