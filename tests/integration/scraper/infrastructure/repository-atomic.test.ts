@@ -262,6 +262,85 @@ describe("DrizzleScraperRepository atomic persistence", () => {
     expect(storedLogs).toHaveLength(0);
   });
 
+  it("reconciles a current external id with a stale archived canonical URL", async () => {
+    const database = createTestDatabase();
+    const company = seedCompanyAndSession(database);
+    const viewedAt = new Date("2026-08-25T12:00:00.000Z");
+    const [archivedJob, currentJob] = database
+      .insert(jobs)
+      .values([
+        {
+          companyId: company.id,
+          externalId: "stale-listing-id",
+          title: "Senior Engineer",
+          url: "https://jobs.example.com/careers/job/123",
+          description: "Previously hydrated description",
+          status: "archived",
+          archiveSource: "scraper",
+          archivedAt: new Date("2026-08-24T12:00:00.000Z"),
+        },
+        {
+          companyId: company.id,
+          externalId: "current-listing-id",
+          title: "Senior Engineer",
+          url: "https://tenant.example.com/careers/job/123",
+          status: "viewed",
+          viewedAt,
+        },
+      ])
+      .returning({ id: jobs.id })
+      .all();
+    if (!archivedJob || !currentJob) throw new Error("Failed to seed identity collision.");
+
+    const repository = new DrizzleScraperRepository(database);
+    const result = await repository.persistScrapeResult({
+      companyId: company.id,
+      openExternalIds: ["current-listing-id"],
+      archiveMissing: true,
+      statusesToArchive: ["new", "viewed", "interested", "rejected"],
+      jobsToInsert: [],
+      existingJobUpdates: [
+        {
+          existingJobId: currentJob.id,
+          job: {
+            externalId: "current-listing-id",
+            title: "Senior Engineer",
+            url: "https://jobs.example.com/careers/job/123",
+            description: "Current hydrated description",
+          },
+        },
+      ],
+      startedAtMs: Date.now(),
+      enableMatching: false,
+      log: {
+        sessionId: "session-1",
+        triggerSource: "manual",
+        platform: "eightfold",
+        status: "success",
+        jobsFound: 1,
+        jobsFiltered: 0,
+      },
+    });
+
+    const storedArchivedJob = database.select().from(jobs).where(eq(jobs.id, archivedJob.id)).get();
+    const storedCurrentJob = database.select().from(jobs).where(eq(jobs.id, currentJob.id)).get();
+
+    expect(result.jobsUpdated).toBe(1);
+    expect(storedArchivedJob).toMatchObject({
+      externalId: "stale-listing-id",
+      status: "archived",
+      description: "Previously hydrated description",
+      url: `https://jobs.example.com/careers/job/123#switchy-archived-${archivedJob.id}`,
+    });
+    expect(storedCurrentJob).toMatchObject({
+      externalId: "current-listing-id",
+      status: "viewed",
+      viewedAt,
+      url: "https://jobs.example.com/careers/job/123",
+      description: "Current hydrated description",
+    });
+  });
+
   it("rejects persistence after its scrape session has been stopped", async () => {
     const database = createTestDatabase();
     const company = seedCompanyAndSession(database);

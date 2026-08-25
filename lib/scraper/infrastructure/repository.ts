@@ -26,6 +26,12 @@ import type {
 
 const SQLITE_INSERT_CHUNK_SIZE = 50;
 
+function buildArchivedIdentityUrl(url: string, jobId: number): string {
+  const archivedUrl = new URL(url);
+  archivedUrl.hash = `switchy-archived-${jobId}`;
+  return archivedUrl.toString();
+}
+
 function buildScrapedJobFingerprint(job: {
   title: string;
   description?: string | null;
@@ -112,6 +118,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
         .select({
           id: jobs.id,
           externalId: jobs.externalId,
+          url: jobs.url,
           status: jobs.status,
           archiveSource: jobs.archiveSource,
           title: jobs.title,
@@ -127,6 +134,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
         .where(eq(jobs.companyId, input.companyId))
         .all();
       const currentJobsById = new Map(currentJobs.map((job) => [job.id, job]));
+      const currentJobsByUrl = new Map(currentJobs.map((job) => [job.url, job]));
 
       const jobIdsToReopen = currentJobs
         .filter(
@@ -191,6 +199,26 @@ export class DrizzleScraperRepository implements IScraperRepository {
       let jobsUpdated = 0;
       for (const { existingJobId, job } of input.existingJobUpdates) {
         const existingJob = currentJobsById.get(existingJobId);
+        const urlOwner = currentJobsByUrl.get(job.url);
+        if (existingJob && urlOwner && urlOwner.id !== existingJobId) {
+          if (urlOwner.status !== "archived" || urlOwner.archiveSource !== "scraper") {
+            throw new Error(
+              `Cannot reconcile job ${existingJobId} with URL owned by active job ${urlOwner.id}.`
+            );
+          }
+
+          const archivedIdentityUrl = buildArchivedIdentityUrl(urlOwner.url, urlOwner.id);
+          tx.update(jobs)
+            .set({ url: archivedIdentityUrl, updatedAt: writeStartedAt })
+            .where(and(eq(jobs.id, urlOwner.id), eq(jobs.companyId, input.companyId)))
+            .run();
+          currentJobsByUrl.delete(urlOwner.url);
+          currentJobsByUrl.set(archivedIdentityUrl, {
+            ...urlOwner,
+            url: archivedIdentityUrl,
+          });
+        }
+
         jobsUpdated += tx
           .update(jobs)
           .set({
@@ -220,6 +248,10 @@ export class DrizzleScraperRepository implements IScraperRepository {
           .where(and(eq(jobs.id, existingJobId), eq(jobs.companyId, input.companyId)))
           .returning({ id: jobs.id })
           .all().length;
+        if (existingJob) {
+          currentJobsByUrl.delete(existingJob.url);
+          currentJobsByUrl.set(job.url, { ...existingJob, url: job.url });
+        }
       }
 
       const insertedJobs: Array<{ id: number; description: string | null }> = [];
