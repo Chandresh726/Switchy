@@ -3,58 +3,98 @@ import { describe, expect, it, vi } from "vitest";
 import { UberScraper } from "@/lib/scraper/platforms/uber";
 import { createHttpClientStub } from "@test/helpers/scraper-clients";
 
-function createListingPage(
-  jobs: Array<{ id: number; title: string; location: string; team: string }>,
-  totalPages = 1
-): string {
-  return `<!doctype html><html><body><main>${jobs
-    .map(
-      (job) => `<div data-slot="card" data-id="${job.id}">
-        <a class="js-view-job" href="/en/jobs/${job.id}/">${job.title}</a>
-        <div data-slot="card-description"><div>
-          <div><svg></svg><div>${job.location}</div></div>
-          <div><svg></svg>${job.team}</div>
-        </div></div>
-      </div>`
-    )
-    .join("")}${Array.from(
-      { length: totalPages },
-      (_value, index) =>
-        `<a href="/en/jobs?page=${index + 1}&pagesize=10">${index + 1}</a>`
-    ).join("")}</main></body></html>`;
+interface TestListing {
+  id: number;
+  title: string;
+  location?: string;
+  category?: string;
 }
 
-function createDetailPage(id: number): string {
-  return `<!doctype html><html><body><main>
-    <h1>Role ${id}</h1><div>Posted on Aug 25, 2026</div>
-    <h2>About the role and team</h2><p>Build dependable systems.</p>
-    <h2>What you'll do</h2><ul><li>Ship reliable software.</li></ul>
-  </main></body></html>`;
+function createListingPayload(
+  jobs: TestListing[],
+  totalJobs: number,
+  offset: number,
+  limit: number
+) {
+  return {
+    count: 1,
+    hasMore: false,
+    items: [
+      {
+        Limit: limit,
+        Offset: offset,
+        TotalJobsCount: totalJobs,
+        requisitionList: jobs.map((job) => ({
+          Id: String(job.id),
+          Title: job.title,
+          PrimaryLocation: job.location ?? "Bengaluru, Karnataka, India",
+          PrimaryLocationCountry: "IN",
+          PostedDate: "2026-08-25",
+          WorkplaceType: "",
+          Category: job.category ?? null,
+          Department: null,
+          Organization: null,
+          otherWorkLocations: [],
+          secondaryLocations: [],
+        })),
+      },
+    ],
+  };
+}
+
+function createDetailPayload(id: number) {
+  return {
+    count: 1,
+    items: [
+      {
+        Id: String(id),
+        Title: `Role ${id}`,
+        PrimaryLocation: "Bengaluru, Karnataka, India",
+        ExternalDescriptionStr:
+          "<h2>About the role</h2><p>Build dependable systems.</p>",
+        ExternalResponsibilitiesStr: "",
+        ExternalQualificationsStr: "",
+        ShortDescriptionStr: "",
+        Category: "Engineering",
+        Department: null,
+        Organization: null,
+        WorkplaceType: "",
+      },
+    ],
+  };
+}
+
+function getFinder(url: string): string {
+  return new URL(url).searchParams.get("finder") ?? "";
+}
+
+function getOffset(url: string): number {
+  return Number(getFinder(url).match(/(?:^|,)offset=(\d+)/)?.[1] ?? 0);
+}
+
+function getDetailId(url: string): number {
+  return Number(getFinder(url).match(/Id="(\d+)"/)?.[1]);
 }
 
 describe("UberScraper", () => {
-  it("paginates the current server-rendered careers site and hydrates details", async () => {
+  it("paginates the official Oracle careers API and hydrates details", async () => {
+    const listings = [
+      { id: 1, title: "Role 1" },
+      { id: 2, title: "Role 2" },
+      { id: 3, title: "Role 3" },
+    ];
     const fetchMock = vi.fn(async (url: string) => {
       const parsed = new URL(url);
-      if (/\/en\/jobs\/\d+\/$/.test(parsed.pathname)) {
-        return new Response(createDetailPage(Number(parsed.pathname.split("/")[3])));
+      if (parsed.pathname.endsWith("recruitingCEJobRequisitionDetails")) {
+        return Response.json(createDetailPayload(getDetailId(url)));
       }
-      const page = Number(parsed.searchParams.get("page") ?? 1);
-      return new Response(
-        createListingPage(
-          [
-            {
-              id: page,
-              title: `Role ${page}`,
-              location: "Bengaluru, Karnataka",
-              team: "Engineering",
-            },
-          ],
-          2
-        )
+      const offset = getOffset(url);
+      return Response.json(
+        createListingPayload(listings.slice(offset, offset + 2), 3, offset, 2)
       );
     });
     const scraper = new UberScraper(createHttpClientStub({ fetch: fetchMock }), {
+      listingPageSize: 2,
       detailDelayMs: 0,
     });
 
@@ -64,30 +104,56 @@ describe("UberScraper", () => {
 
     expect(result).toMatchObject({
       outcome: "success",
-      totalListings: 2,
+      totalListings: 3,
       listingCompleteness: "complete",
-      openExternalIds: ["uber-1", "uber-2"],
+      openExternalIds: ["uber-1", "uber-2", "uber-3"],
     });
-    expect(result.jobs).toHaveLength(2);
+    expect(result.jobs).toHaveLength(3);
     expect(result.jobs[0]).toMatchObject({
       externalId: "uber-1",
-      location: "Bengaluru, Karnataka",
+      title: "Role 1",
+      location: "Bengaluru, Karnataka, India",
       department: "Engineering",
       descriptionFormat: "markdown",
+      url: "https://jobs.uber.com/en/jobs/1/",
     });
+    expect(result.jobs[0]?.postedDate?.toISOString()).toBe(
+      "2026-08-25T00:00:00.000Z"
+    );
+
+    const listingCalls = fetchMock.mock.calls
+      .map(([url]) => new URL(String(url)))
+      .filter((url) => url.pathname.endsWith("recruitingCEJobRequisitions"));
+    expect(listingCalls).toHaveLength(2);
+    expect(listingCalls.map((url) => getOffset(url.toString())).sort()).toEqual([
+      0, 2,
+    ]);
+    expect(
+      listingCalls.every(
+        (url) =>
+          url.hostname === "iaziqy.fa.ocs.oraclecloud.com" &&
+          getFinder(url.toString()).includes("siteNumber=CX_1") &&
+          getFinder(url.toString()).includes("limit=2")
+      )
+    ).toBe(true);
   });
 
-  it("hydrates only new jobs while retaining all authoritative open IDs", async () => {
+  it("hydrates only new jobs while retaining every authoritative open ID", async () => {
     const fetchMock = vi.fn(async (url: string) => {
       const parsed = new URL(url);
-      if (/\/en\/jobs\/2\/$/.test(parsed.pathname)) {
-        return new Response(createDetailPage(2));
+      if (parsed.pathname.endsWith("recruitingCEJobRequisitionDetails")) {
+        return Response.json(createDetailPayload(getDetailId(url)));
       }
-      return new Response(
-        createListingPage([
-          { id: 1, title: "Existing", location: "Pune", team: "Data" },
-          { id: 2, title: "New", location: "Pune", team: "Data" },
-        ])
+      return Response.json(
+        createListingPayload(
+          [
+            { id: 1, title: "Existing" },
+            { id: 2, title: "New" },
+          ],
+          2,
+          0,
+          200
+        )
       );
     });
     const scraper = new UberScraper(createHttpClientStub({ fetch: fetchMock }), {
@@ -103,35 +169,71 @@ describe("UberScraper", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("returns a retryable error for a verification page", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response("<html><title>Just a moment...</title></html>")
+  it("retains successful pages and reports the exact failed offset", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      const offset = getOffset(url);
+      if (offset === 2) return new Response("unavailable", { status: 503 });
+      return Response.json(
+        createListingPayload(
+          [
+            { id: 1, title: "Role 1" },
+            { id: 2, title: "Role 2" },
+          ],
+          3,
+          0,
+          2
+        )
+      );
+    });
+    const scraper = new UberScraper(createHttpClientStub({ fetch: fetchMock }), {
+      listingPageSize: 2,
+    });
+
+    const result = await scraper.scrape("https://jobs.uber.com/en/jobs/", {
+      existingExternalIds: new Set(["uber-1", "uber-2"]),
+    });
+
+    expect(result).toMatchObject({
+      outcome: "partial",
+      totalListings: 2,
+      listingCompleteness: "partial",
+      openExternalIds: ["uber-1", "uber-2"],
+    });
+    if (result.outcome !== "partial") throw new Error("Expected a partial result");
+    expect(result.issues?.[0]?.message).toContain("2 (HTTP 503)");
+    expect(result.issues?.[0]?.message).toContain("received 2 of 3");
+  });
+
+  it("returns a parse error for an unrecognized API payload", async () => {
+    const scraper = new UberScraper(
+      createHttpClientStub({
+        fetch: vi.fn(async () => Response.json({ jobs: [] })),
+      })
     );
-    const scraper = new UberScraper(createHttpClientStub({ fetch: fetchMock }));
 
     const result = await scraper.scrape("https://jobs.uber.com/en/jobs/");
 
     expect(result).toMatchObject({
       outcome: "error",
-      error: { code: "network_error", retryable: true },
+      error: { code: "parse_error", retryable: false },
     });
   });
 
-  it("retains listing data and reports partial when a detail page is blocked", async () => {
-    const fetchMock = vi.fn(async (url: string) =>
-      /\/en\/jobs\/1\/$/.test(new URL(url).pathname)
-        ? new Response("blocked", { status: 403 })
-        : new Response(
-            createListingPage([
-              {
-                id: 1,
-                title: "Engineer",
-                location: "Remote",
-                team: "Engineering",
-              },
-            ])
-          )
-    );
+  it("retains listing data and reports partial when a detail call is blocked", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith("recruitingCEJobRequisitionDetails")) {
+        return new Response("blocked", { status: 403 });
+      }
+      return Response.json(
+        createListingPayload(
+          [{ id: 1, title: "Engineer", category: "Engineering" }],
+          1,
+          0,
+          200
+        )
+      );
+    });
     const scraper = new UberScraper(createHttpClientStub({ fetch: fetchMock }), {
       detailDelayMs: 0,
     });
@@ -143,5 +245,11 @@ describe("UberScraper", () => {
       listingCompleteness: "complete",
     });
     expect(result.jobs).toHaveLength(1);
+    expect(result.jobs[0]).toMatchObject({
+      externalId: "uber-1",
+      department: "Engineering",
+    });
+    if (result.outcome !== "partial") throw new Error("Expected a partial result");
+    expect(result.issues?.[0]?.message).toContain("listing data was retained");
   });
 });

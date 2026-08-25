@@ -58,6 +58,11 @@ describe("createScraperRegistry", () => {
       concurrency: "browser_limited",
       supportsCancellation: true,
     });
+    expect(registry.getScraperByPlatform("uber")?.capabilities).toEqual({
+      transport: "http",
+      concurrency: "parallel",
+      supportsCancellation: true,
+    });
   });
 
   it("binds a scrape signal to the shared infrastructure context", async () => {

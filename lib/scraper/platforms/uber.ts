@@ -1,9 +1,12 @@
-import { load, type CheerioAPI } from "cheerio";
+import { z } from "zod";
 
 import { containsHtml, processDescription } from "@/lib/jobs/description-processor";
+import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import {
   createScraperError,
+  parseExternalItems,
+  parseExternalPayload,
   type ApiScraperConfig,
   type ScrapedJob,
   type ScrapeOptions,
@@ -12,11 +15,68 @@ import {
 } from "@/lib/scraper/types";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
-import {
-  fetchPaginatedHtmlByPageParam,
-  resolveUrl,
-} from "./shared/html-pagination";
 import { selectListingsForHydration } from "./shared/listing-selection";
+
+const NullableStringSchema = z.string().nullable().optional();
+const UberLocationSchema = z
+  .object({
+    LocationName: NullableStringSchema,
+  })
+  .passthrough();
+const UberListingSchema = z
+  .object({
+    Id: z.union([z.string(), z.number()]).transform(String),
+    Title: z.string().min(1),
+    PrimaryLocation: NullableStringSchema,
+    PrimaryLocationCountry: NullableStringSchema,
+    PostedDate: NullableStringSchema,
+    WorkplaceType: NullableStringSchema,
+    Category: NullableStringSchema,
+    Department: NullableStringSchema,
+    Organization: NullableStringSchema,
+    otherWorkLocations: z.array(UberLocationSchema).optional(),
+    secondaryLocations: z.array(UberLocationSchema).optional(),
+  })
+  .passthrough();
+const UberListingPayloadSchema = z
+  .object({
+    items: z
+      .array(
+        z
+          .object({
+            Limit: z.number().int().positive(),
+            Offset: z.number().int().nonnegative(),
+            TotalJobsCount: z.number().int().nonnegative(),
+            requisitionList: z.array(z.unknown()),
+          })
+          .passthrough()
+      )
+      .min(1),
+  })
+  .passthrough();
+const UberDetailSchema = z
+  .object({
+    Id: z.union([z.string(), z.number()]).transform(String),
+    Title: z.string().min(1),
+    PrimaryLocation: NullableStringSchema,
+    ExternalDescriptionStr: NullableStringSchema,
+    ExternalResponsibilitiesStr: NullableStringSchema,
+    ExternalQualificationsStr: NullableStringSchema,
+    ShortDescriptionStr: NullableStringSchema,
+    Category: NullableStringSchema,
+    Department: NullableStringSchema,
+    Organization: NullableStringSchema,
+    WorkplaceType: NullableStringSchema,
+  })
+  .passthrough();
+const UberDetailPayloadSchema = z
+  .object({
+    items: z.array(UberDetailSchema),
+  })
+  .passthrough();
+
+type UberListingRecord = z.infer<typeof UberListingSchema>;
+type UberDetailRecord = z.infer<typeof UberDetailSchema>;
 
 interface UberListingJob {
   id: string;
@@ -24,6 +84,7 @@ interface UberListingJob {
   url: string;
   location?: string;
   department?: string;
+  postedDate?: Date;
   seniority?: SeniorityLevel;
 }
 
@@ -32,18 +93,50 @@ interface UberHydratedJob {
   failed: boolean;
 }
 
+interface UberListingPageSuccess {
+  ok: true;
+  offset: number;
+  totalJobs: number;
+  listings: UberListingJob[];
+  invalidListings: number;
+}
+
+interface UberListingPageFailure {
+  ok: false;
+  offset: number;
+  status?: number;
+  error?: unknown;
+}
+
+type UberListingPageResult = UberListingPageSuccess | UberListingPageFailure;
+
+interface UberListingFetchResult {
+  listings: UberListingJob[];
+  advertisedTotal: number;
+  failedOffsets: UberListingPageFailure[];
+  invalidListings: number;
+  truncatedByMaxPages: boolean;
+  isComplete: boolean;
+}
+
 export type UberConfig = ApiScraperConfig & {
+  apiBaseUrl: string;
+  siteNumber: string;
+  listingPageSize: number;
+  maxListingPages: number;
   detailBatchSize: number;
   detailDelayMs: number;
-  maxPages: number;
 };
 
 const DEFAULT_UBER_CONFIG: UberConfig = {
   ...DEFAULT_API_CONFIG,
   baseUrl: "https://jobs.uber.com",
+  apiBaseUrl: "https://iaziqy.fa.ocs.oraclecloud.com",
+  siteNumber: "CX_1",
+  listingPageSize: 200,
+  maxListingPages: 10,
   detailBatchSize: 4,
   detailDelayMs: 400,
-  maxPages: 150,
 };
 
 export class UberScraper extends AbstractApiScraper<UberConfig> {
@@ -66,42 +159,40 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
     return "global";
   }
 
-  async scrape(_url: string, options?: ScrapeOptions): Promise<ScraperResult> {
+  async scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult> {
     try {
-      const listingUrl = `${this.config.baseUrl}/en/jobs/`;
-      const pagedResult = await fetchPaginatedHtmlByPageParam({
-        httpClient: this.httpClient,
-        startUrl: listingUrl,
-        headers: this.requestHeaders("text/html"),
-        timeout: this.config.timeout,
-        retries: this.config.retries,
-        baseDelay: this.config.baseDelay,
-        maxPages: this.config.maxPages,
-      });
-
-      if (pagedResult.pages.length === 0) {
-        const message = "Failed to fetch Uber Careers listing pages.";
-        return pagedResult.firstFailureStatus
-          ? this.failureForHttpStatus(pagedResult.firstFailureStatus, message)
-          : this.failure("network_error", message);
+      if (!this.parseSourceUrl(url)) {
+        return this.failure("invalid_url", "Invalid Uber Careers URL.");
       }
 
-      const extractedByPage = pagedResult.pages.map((page) =>
-        this.extractListings(page.html, page.url)
-      );
-      const hasUnrecognizedPage = extractedByPage.some(
-        (listings) => listings.length === 0
-      );
-      const listings = this.dedupeListings(extractedByPage.flat());
-
-      if (listings.length === 0) {
+      const listingResult = await this.fetchAllListings();
+      if (listingResult.listings.length === 0) {
+        const firstFailure = listingResult.failedOffsets[0];
+        if (firstFailure?.status) {
+          return this.failureForHttpStatus(
+            firstFailure.status,
+            "Failed to fetch Uber jobs from the official careers API."
+          );
+        }
+        if (firstFailure?.error) {
+          return this.failureFromUnknown(firstFailure.error);
+        }
+        if (listingResult.advertisedTotal === 0 && listingResult.isComplete) {
+          return {
+            outcome: "success",
+            jobs: [],
+            totalListings: 0,
+            openExternalIds: [],
+            listingCompleteness: "complete",
+          };
+        }
         return this.failure(
-          "network_error",
-          "Uber Careers returned no recognized job cards; the site may be serving a verification page."
+          "parse_error",
+          "Uber careers API returned no usable job listings."
         );
       }
 
-      const listingIsComplete = pagedResult.isComplete && !hasUnrecognizedPage;
+      const listings = this.dedupeListings(listingResult.listings);
       const openExternalIds = listings.map((listing) =>
         this.generateExternalId(this.platform, listing.id)
       );
@@ -119,15 +210,15 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
 
       if (selection.listings.length === 0) {
         return {
-          outcome: listingIsComplete ? "success" : "partial",
+          outcome: listingResult.isComplete ? "success" : "partial",
           jobs: [],
           totalListings: listings.length,
           earlyFiltered: selection.earlyFiltered,
           openExternalIds,
-          listingCompleteness: listingIsComplete ? "complete" : "partial",
-          issues: listingIsComplete
+          listingCompleteness: listingResult.isComplete ? "complete" : "partial",
+          issues: listingResult.isComplete
             ? undefined
-            : [this.createListingIssue(pagedResult.failedPages.length)],
+            : [this.createListingIssue(listingResult, listings.length)],
         };
       }
 
@@ -145,10 +236,10 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
         if (result.failed) detailFailures++;
         return result.job;
       });
-      const isPartial = detailFailures > 0 || !listingIsComplete;
+      const isPartial = detailFailures > 0 || !listingResult.isComplete;
       const issues = [];
-      if (!listingIsComplete) {
-        issues.push(this.createListingIssue(pagedResult.failedPages.length));
+      if (!listingResult.isComplete) {
+        issues.push(this.createListingIssue(listingResult, listings.length));
       }
       if (detailFailures > 0) {
         issues.push(
@@ -165,7 +256,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
         totalListings: listings.length,
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,
-        listingCompleteness: listingIsComplete ? "complete" : "partial",
+        listingCompleteness: listingResult.isComplete ? "complete" : "partial",
         issues: issues.length > 0 ? issues : undefined,
       };
     } catch (error) {
@@ -173,37 +264,142 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
     }
   }
 
-  private extractListings(html: string, pageUrl: string): UberListingJob[] {
-    const $ = load(html);
-    const listings: UberListingJob[] = [];
+  private async fetchAllListings(): Promise<UberListingFetchResult> {
+    const firstPage = await this.fetchListingPage(0);
+    if (!firstPage.ok) {
+      return {
+        listings: [],
+        advertisedTotal: 0,
+        failedOffsets: [firstPage],
+        invalidListings: 0,
+        truncatedByMaxPages: false,
+        isComplete: false,
+      };
+    }
 
-    $('[data-slot="card"][data-id]').each((_index, element) => {
-      const card = $(element);
-      const link = card.find("a.js-view-job[href]").first();
-      const href = link.attr("href");
-      const id = card.attr("data-id")?.trim();
-      const title = link.text().replace(/\s+/g, " ").trim();
-      if (!href || !id || !title) return;
+    const requiredPages = Math.ceil(
+      firstPage.totalJobs / this.config.listingPageSize
+    );
+    const pageCount = Math.min(requiredPages, this.config.maxListingPages);
+    const offsets = Array.from(
+      { length: Math.max(0, pageCount - 1) },
+      (_value, index) => (index + 1) * this.config.listingPageSize
+    );
+    const remainingPages = await Promise.all(
+      offsets.map((offset) => this.fetchListingPage(offset))
+    );
+    const successfulPages = [
+      firstPage,
+      ...remainingPages.filter(
+        (page): page is UberListingPageSuccess => page.ok
+      ),
+    ];
+    const failedOffsets = remainingPages.filter(
+      (page): page is UberListingPageFailure => !page.ok
+    );
+    const advertisedTotal = Math.max(
+      ...successfulPages.map((page) => page.totalJobs)
+    );
+    const listings = successfulPages.flatMap((page) => page.listings);
+    const invalidListings = successfulPages.reduce(
+      (total, page) => total + page.invalidListings,
+      0
+    );
+    const truncatedByMaxPages = requiredPages > this.config.maxListingPages;
+    const uniqueListingCount = this.dedupeListings(listings).length;
+    const isComplete =
+      failedOffsets.length === 0 &&
+      invalidListings === 0 &&
+      !truncatedByMaxPages &&
+      uniqueListingCount >= advertisedTotal;
 
-      const badges = card
-        .find('[data-slot="card-description"] > div > div')
-        .map((_badgeIndex, badge) =>
-          $(badge).text().replace(/\s+/g, " ").trim()
-        )
-        .get()
-        .filter(Boolean);
+    return {
+      listings,
+      advertisedTotal,
+      failedOffsets,
+      invalidListings,
+      truncatedByMaxPages,
+      isComplete,
+    };
+  }
 
-      listings.push({
-        id,
-        title,
-        url: resolveUrl(pageUrl, href),
-        location: badges[0],
-        department: badges[1],
-        seniority: this.mapSeniority(title),
+  private async fetchListingPage(offset: number): Promise<UberListingPageResult> {
+    try {
+      const response = await this.fetchResponse(this.createListingApiUrl(offset), {
+        headers: this.jsonRequestHeaders(),
       });
-    });
+      if (!response.ok) {
+        return { ok: false, offset, status: response.status };
+      }
 
-    return listings;
+      const payload = parseExternalPayload(
+        UberListingPayloadSchema,
+        await response.json(),
+        `Uber listings at offset ${offset}`
+      );
+      const page = payload.items[0];
+      if (!page) {
+        return {
+          ok: false,
+          offset,
+          error: new TypeError("Uber careers API returned no listing page."),
+        };
+      }
+      const parsedListings = parseExternalItems(
+        UberListingSchema,
+        page.requisitionList,
+        `Uber listings at offset ${offset}`
+      );
+
+      return {
+        ok: true,
+        offset,
+        totalJobs: page.TotalJobsCount,
+        listings: parsedListings.items.map((listing) =>
+          this.mapOracleListing(listing)
+        ),
+        invalidListings: parsedListings.invalidCount,
+      };
+    } catch (error) {
+      throwIfScrapeAborted(error);
+      return { ok: false, offset, error };
+    }
+  }
+
+  private createListingApiUrl(offset: number): string {
+    const endpoint = new URL(
+      "/hcmRestApi/resources/latest/recruitingCEJobRequisitions",
+      this.config.apiBaseUrl
+    );
+    endpoint.searchParams.set("onlyData", "true");
+    endpoint.searchParams.set(
+      "expand",
+      "requisitionList.workLocation,requisitionList.otherWorkLocations,requisitionList.secondaryLocations"
+    );
+    endpoint.searchParams.set(
+      "finder",
+      `findReqs;${[
+        `siteNumber=${this.config.siteNumber}`,
+        "facetsList=WORK_LOCATIONS;WORKPLACE_TYPES;TITLES;CATEGORIES;ORGANIZATIONS;POSTING_DATES;FLEX_FIELDS;LOCATIONS",
+        `limit=${this.config.listingPageSize}`,
+        `offset=${offset}`,
+        "sortBy=POSTING_DATES_DESC",
+      ].join(",")}`
+    );
+    return endpoint.toString();
+  }
+
+  private mapOracleListing(listing: UberListingRecord): UberListingJob {
+    return {
+      id: listing.Id,
+      title: listing.Title.trim(),
+      url: new URL(`/en/jobs/${listing.Id}/`, this.config.baseUrl).toString(),
+      location: listing.PrimaryLocation ?? undefined,
+      department:
+        listing.Category ?? listing.Department ?? listing.Organization ?? undefined,
+      postedDate: this.parseDate(listing.PostedDate),
+      seniority: this.mapSeniority(listing.Title),
+    };
   }
 
   private dedupeListings(listings: UberListingJob[]): UberListingJob[] {
@@ -216,30 +412,70 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
     listing: UberListingJob
   ): Promise<UberHydratedJob> {
     const fallback = this.mapListingToJob(listing);
-    const response = await this.fetchResponse(listing.url, {
-      headers: this.requestHeaders("text/html"),
-    });
-    if (!response.ok) return { job: fallback, failed: true };
 
-    const html = await response.text();
-    const $ = load(html);
-    const rawDescription = this.extractDescriptionHtml($);
-    if (!rawDescription) return { job: fallback, failed: true };
-    const processed = processDescription(
-      rawDescription,
-      containsHtml(rawDescription) ? "html" : "plain"
+    try {
+      const response = await this.fetchResponse(this.createDetailApiUrl(listing.id), {
+        headers: this.jsonRequestHeaders(),
+      });
+      if (!response.ok) return { job: fallback, failed: true };
+
+      const payload = parseExternalPayload(
+        UberDetailPayloadSchema,
+        await response.json(),
+        `Uber job detail ${listing.id}`
+      );
+      const detail = payload.items[0];
+      if (!detail) return { job: fallback, failed: true };
+
+      return { job: this.mapDetailToJob(listing, detail), failed: false };
+    } catch (error) {
+      throwIfScrapeAborted(error);
+      return { job: fallback, failed: true };
+    }
+  }
+
+  private createDetailApiUrl(id: string): string {
+    const endpoint = new URL(
+      "/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails",
+      this.config.apiBaseUrl
     );
-    const detailTitle = $("main h1").first().text().trim();
+    endpoint.searchParams.set("onlyData", "true");
+    endpoint.searchParams.set("expand", "all");
+    endpoint.searchParams.set(
+      "finder",
+      `ById;Id="${id}",siteNumber=${this.config.siteNumber}`
+    );
+    return endpoint.toString();
+  }
+
+  private mapDetailToJob(
+    listing: UberListingJob,
+    detail: UberDetailRecord
+  ): ScrapedJob {
+    const fallback = this.mapListingToJob(listing);
+    const rawDescription = this.extractDescription(detail);
+    const processed = rawDescription
+      ? processDescription(
+          rawDescription,
+          containsHtml(rawDescription) ? "html" : "plain"
+        )
+      : null;
+    const normalizedLocation = this.normalizeLocation(
+      detail.PrimaryLocation ?? listing.location ?? ""
+    );
 
     return {
-      failed: false,
-      job: {
-        ...fallback,
-        title: detailTitle || fallback.title,
-        description: processed.text ?? undefined,
-        descriptionFormat: processed.format,
-        postedDate: this.extractPostedDate($("main").first().text()),
-      },
+      ...fallback,
+      title: detail.Title.trim() || fallback.title,
+      location: normalizedLocation.location,
+      locationType: normalizedLocation.locationType,
+      department:
+        detail.Category ??
+        detail.Department ??
+        detail.Organization ??
+        fallback.department,
+      description: processed?.text ?? fallback.description,
+      descriptionFormat: processed?.format ?? fallback.descriptionFormat,
     };
   }
 
@@ -252,35 +488,28 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
       location: normalizedLocation.location,
       locationType: normalizedLocation.locationType,
       department: listing.department,
+      postedDate: listing.postedDate,
       seniorityLevel: listing.seniority,
     };
   }
 
-  private extractDescriptionHtml($: CheerioAPI): string {
-    const relevantHeading =
-      /about the role|what you.ll do|basic qualifications|preferred qualifications/i;
-    const headings = $("main h2, main h3")
-      .filter((_index, element) => relevantHeading.test($(element).text().trim()))
-      .toArray();
-    if (headings.length === 0) return "";
+  private extractDescription(detail: UberDetailRecord): string {
+    if (detail.ExternalDescriptionStr?.trim()) {
+      return detail.ExternalDescriptionStr;
+    }
 
-    return headings
-      .map((heading) => {
-        const headingElement = $(heading);
-        const body = headingElement
-          .nextUntil("h2, h3")
-          .toArray()
-          .map((node) => $.html(node))
-          .join("\n");
-        return `${$.html(headingElement)}\n${body}`;
-      })
-      .join("\n");
+    return [
+      detail.ShortDescriptionStr,
+      detail.ExternalResponsibilitiesStr,
+      detail.ExternalQualificationsStr,
+    ]
+      .filter((value): value is string => Boolean(value?.trim()))
+      .join("\n\n");
   }
 
-  private extractPostedDate(text: string): Date | undefined {
-    const match = text.match(/Posted on\s+([A-Z][a-z]{2}\s+\d{1,2},\s+\d{4})/);
-    if (!match?.[1]) return undefined;
-    const parsed = new Date(match[1]);
+  private parseDate(value?: string | null): Date | undefined {
+    if (!value) return undefined;
+    const parsed = new Date(value);
     return Number.isNaN(parsed.getTime()) ? undefined : parsed;
   }
 
@@ -294,10 +523,29 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
     return undefined;
   }
 
-  private createListingIssue(failedPageCount: number) {
+  private createListingIssue(result: UberListingFetchResult, fetched: number) {
+    const details = [
+      result.failedOffsets.length > 0
+        ? `failed offsets: ${result.failedOffsets
+            .map((failure) =>
+              failure.status ? `${failure.offset} (HTTP ${failure.status})` : failure.offset
+            )
+            .join(", ")}`
+        : null,
+      result.invalidListings > 0
+        ? `${result.invalidListings} invalid listing${result.invalidListings === 1 ? "" : "s"}`
+        : null,
+      result.truncatedByMaxPages
+        ? `truncated at ${this.config.maxListingPages} pages`
+        : null,
+      fetched < result.advertisedTotal
+        ? `received ${fetched} of ${result.advertisedTotal} advertised jobs`
+        : null,
+    ].filter((detail): detail is string => detail !== null);
+
     return createScraperError(
       "network_error",
-      `Uber listings were only partially fetched (${failedPageCount} page${failedPageCount === 1 ? "" : "s"} failed or returned an unrecognized layout).`
+      `Uber listings were only partially fetched (${details.join("; ") || "unknown API pagination failure"}).`
     );
   }
 }
