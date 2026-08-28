@@ -45,6 +45,8 @@ describe("SystemInfo runtime health", () => {
 
     expect(screen.getAllByText("Ready")).toHaveLength(3);
     expect(screen.getByText("Available")).toBeTruthy();
+    expect(screen.getByText("v1.0.0")).toBeTruthy();
+    expect(screen.queryByText("Platforms")).toBeNull();
   });
 
   it("shows failed initialization and recovery state", () => {

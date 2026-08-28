@@ -19,6 +19,11 @@ Node.js 24 is required. The first start downloads the runtime for the current
 platform and Playwright Chromium. Supported targets are macOS Intel and Apple
 Silicon, Linux x64 and arm64, and Windows x64.
 
+Native job-match notifications are macOS-only. The macOS runtime ships a
+headless helper that Switchy launches when notification permission is
+requested; users do not install or open a separate application. On Linux and
+Windows the settings page reports notifications as unavailable.
+
 ## License
 
 MIT

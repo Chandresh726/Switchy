@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { JobCard } from "./job-card";
 import { JobFilters, type JobFilters as Filters } from "./job-filters";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { Briefcase, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { Briefcase, ChevronLeft, ChevronRight, Loader2, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ApiErrorState } from "@/components/ui/api-error-state";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -114,8 +114,9 @@ function parseTabFromSearchParams(searchParams: URLSearchParams): TabType {
   return tab === "saved" || tab === "applied" || tab === "archived" ? tab : "all";
 }
 
-function buildQueryString(filters: Filters, tab: TabType): string {
+function buildQueryString(filters: Filters, tab: TabType, scrapeSessionId?: string): string {
   const params = new URLSearchParams();
+  if (scrapeSessionId) params.set("scrapeSessionId", scrapeSessionId);
   
   if (tab !== "all") params.set("tab", tab);
   if (filters.search) params.set("search", filters.search);
@@ -152,6 +153,7 @@ export function JobList() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [debouncedLocationSearch, setDebouncedLocationSearch] = useState("");
   const [debouncedDepartment, setDebouncedDepartment] = useState("");
+  const scrapeSessionId = searchParams.get("scrapeSessionId") ?? undefined;
 
   // Ref to track if initialization has occurred (prevents re-parsing on URL changes)
   const hasInitializedRef = useRef(false);
@@ -199,14 +201,14 @@ export function JobList() {
   
   // Debounced URL update to avoid history spam
   const updateUrl = useCallback((newFilters: Filters, newTab: TabType) => {
-    const queryString = buildQueryString(newFilters, newTab);
+    const queryString = buildQueryString(newFilters, newTab, scrapeSessionId);
     const currentUrl = `/jobs${queryString}`;
     
     // Only update if the URL is different from current
     if (typeof window !== 'undefined' && window.location.pathname + window.location.search !== currentUrl) {
       router.replace(currentUrl, { scroll: false });
     }
-  }, [router]);
+  }, [router, scrapeSessionId]);
   
   // Debounced URL sync
   useEffect(() => {
@@ -280,6 +282,7 @@ export function JobList() {
   const queryParams = useMemo<JobsQueryInput>(() => {
     return {
       search: debouncedSearch || undefined,
+      scrapeSessionId,
       status: effectiveStatus || undefined,
       excludeStatus: !effectiveStatus && activeTab === "all" ? ["archived" as const] : undefined,
       companyIds: filters.companyIds.length > 0
@@ -303,6 +306,7 @@ export function JobList() {
     };
   }, [
     debouncedSearch,
+    scrapeSessionId,
     effectiveStatus,
     activeTab,
     filters.companyIds,
@@ -472,6 +476,27 @@ export function JobList() {
         totalCount={totalCount}
         isFetching={isFetching}
       />
+
+      {scrapeSessionId && (
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-500/25 bg-emerald-500/5 px-3 py-2">
+          <Sparkles className="size-4 shrink-0 text-emerald-500" aria-hidden="true" />
+          <p className="min-w-0 flex-1 text-xs">
+            Showing jobs matched in one automatic scrape.
+          </p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => {
+              router.replace(`/jobs${buildQueryString(filters, activeTab)}`, { scroll: false });
+            }}
+          >
+            <X data-icon="inline-start" aria-hidden="true" />
+            Show all jobs
+          </Button>
+        </div>
+      )}
 
       {/* Job List and Pagination - scrollable together */}
       <div className="mt-4 space-y-2.5">

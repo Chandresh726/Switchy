@@ -106,6 +106,22 @@ try {
   if (!response.ok) {
     throw new Error(`Readiness returned ${response.status}`);
   }
+  if (target.startsWith("darwin-")) {
+    const notificationResponse = await fetch(
+      `http://127.0.0.1:${port}/api/notifications/native`
+    );
+    const notificationStatus = await notificationResponse.json();
+    if (
+      !notificationResponse.ok
+      || notificationStatus.success !== true
+      || !["granted", "denied", "not_determined", "unavailable"]
+        .includes(notificationStatus.permission)
+    ) {
+      throw new Error(
+        `Unexpected native notification status: ${JSON.stringify(notificationStatus)}`
+      );
+    }
+  }
   const guardedMutationResponse = await fetch(
     `http://127.0.0.1:${port}/api/jobs/0`,
     {

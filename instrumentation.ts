@@ -126,6 +126,8 @@ export async function register() {
           code: "queue_recovery_failed",
         });
       }
+      const { reconcileMatchNotifications } = await import("@/lib/notifications/service");
+      await reconcileMatchNotifications();
     })();
   }
 }

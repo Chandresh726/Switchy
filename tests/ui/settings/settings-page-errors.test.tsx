@@ -68,6 +68,7 @@ vi.mock("@/lib/api/clients/ai", () => ({ clearAllAIContent: vi.fn() }));
 vi.mock("@/components/settings/matcher-section", () => ({ MatcherSection: () => <div>Matcher</div> }));
 vi.mock("@/components/settings/danger-zone", () => ({ DangerZone: () => <div>Danger zone</div> }));
 vi.mock("@/components/settings/resume-parser-section", () => ({ ResumeParserSection: () => <div>Resume parser</div> }));
+vi.mock("@/components/settings/notifications-section", () => ({ NotificationsSection: () => <div>Notifications</div> }));
 vi.mock("@/components/settings/system-info", () => ({ SystemInfo: () => <div>System info</div> }));
 vi.mock("@/components/settings/ai-writing-section", () => ({ AIWritingSection: () => <div>AI writing</div> }));
 vi.mock("@/components/settings/ai-providers-manager", () => ({
@@ -127,6 +128,9 @@ const settings = settingsResponseSchema.parse({
   matcher_auto_match_after_scrape: "true",
   scheduler_enabled: "false",
   scheduler_cron: "0 */6 * * *",
+  notifications_enabled: "false",
+  notifications_enabled_at: "",
+  notifications_match_score_threshold: "75",
   scraper_max_parallel_scrapes: "3",
   scraper_keep_device_awake: "true",
   scraper_history_retention_days: "90",

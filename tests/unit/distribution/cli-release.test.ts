@@ -14,6 +14,7 @@ import {
 import {
   assertStableVersion,
   installRuntime,
+  notificationRuntimeFiles,
   parseReleaseManifest,
   setCurrentVersion,
 } from "../../../packages/cli/src/release";
@@ -32,6 +33,22 @@ async function temporaryDirectory(): Promise<string> {
   return directory;
 }
 
+async function writeRuntimeFiles(source: string): Promise<void> {
+  const files = [
+    "server.js",
+    "bin/migrate.cjs",
+    "drizzle/meta/_journal.json",
+    ...notificationRuntimeFiles(currentTarget()),
+  ];
+  for (const file of files) {
+    const destination = path.join(source, file);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await writeFile(destination, "{}", {
+      mode: file.endsWith("/SwitchyNotifier") ? 0o700 : 0o600,
+    });
+  }
+}
+
 afterEach(async () => {
   vi.unstubAllEnvs();
   await Promise.all(
@@ -48,6 +65,14 @@ describe("Switchy CLI release handling", () => {
     expect(() => currentTarget("aix", "ppc64")).toThrow(
       "does not provide a runtime"
     );
+  });
+
+  it("requires the notification helper on macOS and nothing elsewhere", () => {
+    expect(notificationRuntimeFiles("darwin-arm64")).toContain(
+      "bin/Switchy Notifications.app/Contents/MacOS/SwitchyNotifier"
+    );
+    expect(notificationRuntimeFiles("linux-x64")).toEqual([]);
+    expect(notificationRuntimeFiles("win32-x64")).toEqual([]);
   });
 
   it("requires an absolute Switchy home override", () => {
@@ -114,7 +139,7 @@ describe("Switchy CLI release handling", () => {
   });
 
   it("uses the executing CLI version unless an app version is requested", () => {
-    expect(resolveApplicationVersion()).toBe("1.0.14");
+    expect(resolveApplicationVersion()).toBe("1.0.15");
     expect(resolveApplicationVersion("1.0.1")).toBe("1.0.1");
   });
 
@@ -135,15 +160,7 @@ describe("Switchy CLI release handling", () => {
   it("installs a validated local runtime and records it as current", async () => {
     const root = await temporaryDirectory();
     const source = await temporaryDirectory();
-    await mkdir(path.join(source, "bin"), { recursive: true });
-    await mkdir(path.join(source, "drizzle", "meta"), { recursive: true });
-    for (const file of [
-      "server.js",
-      "bin/migrate.cjs",
-      "drizzle/meta/_journal.json",
-    ]) {
-      await writeFile(path.join(source, file), "{}");
-    }
+    await writeRuntimeFiles(source);
     await writeFile(
       path.join(source, "switchy-runtime.json"),
       JSON.stringify({
@@ -169,15 +186,7 @@ describe("Switchy CLI release handling", () => {
   it("rejects runtime metadata for another version or platform", async () => {
     const root = await temporaryDirectory();
     const source = await temporaryDirectory();
-    await mkdir(path.join(source, "bin"), { recursive: true });
-    await mkdir(path.join(source, "drizzle", "meta"), { recursive: true });
-    for (const file of [
-      "server.js",
-      "bin/migrate.cjs",
-      "drizzle/meta/_journal.json",
-    ]) {
-      await writeFile(path.join(source, file), "{}");
-    }
+    await writeRuntimeFiles(source);
     await writeFile(
       path.join(source, "switchy-runtime.json"),
       JSON.stringify({

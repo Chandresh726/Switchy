@@ -177,7 +177,7 @@ export async function apiJsonMutation<
 
 export async function apiCommand<TSchema extends z.ZodType>(
   input: string,
-  method: "POST" | "DELETE",
+  method: "POST" | "PUT" | "DELETE",
   responseSchema: TSchema,
   fallbackErrorMessage: string
 ): Promise<z.infer<TSchema>> {

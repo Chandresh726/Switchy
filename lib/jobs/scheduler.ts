@@ -503,6 +503,9 @@ async function runSchedulerBatch(
   try {
     await queueService.scrapeAllCompanies(triggerSource);
 
+    const { reconcileMatchNotifications } = await import("@/lib/notifications/service");
+    await reconcileMatchNotifications();
+
     if (!lockLost) {
       await saveLastRun(startTime);
       await clearRecoveryState();

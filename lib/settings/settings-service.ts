@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
 import { ValidationError } from "@/lib/api";
@@ -29,6 +29,9 @@ export const DEFAULT_SETTINGS = {
   matcher_auto_match_after_scrape: "true",
   scheduler_enabled: "true",
   scheduler_cron: "0 */6 * * *",
+  notifications_enabled: "false",
+  notifications_enabled_at: "",
+  notifications_match_score_threshold: "75",
   scraper_max_parallel_scrapes: String(
     SCRAPER_SETTINGS.maxParallelScrapes.defaultValue
   ),
@@ -72,6 +75,9 @@ export interface ParsedSettingsUpdateResult {
 function isSettingKey(value: string): value is SettingKey {
   return value in DEFAULT_SETTINGS;
 }
+
+/** Written by the server on state transitions; never accepted from a request. */
+const SERVER_MANAGED_SETTING_KEYS = new Set<SettingKey>(["notifications_enabled_at"]);
 
 function parseBooleanValue(value: unknown): string {
   return value === true || value === "true" ? "true" : "false";
@@ -216,7 +222,10 @@ function parseSettingValue(
       return { value: parseNumberInRange(key, value, 5_000, 120_000), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     case "matcher_auto_match_after_scrape":
     case "scraper_keep_device_awake":
+    case "notifications_enabled":
       return { value: parseBooleanValue(value), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
+    case "notifications_match_score_threshold":
+      return { value: parseNumberInRange(key, value, 0, 100), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     case "scheduler_cron": {
       const cronExpr = String(value ?? "").trim();
       if (!cron.validate(cronExpr)) {
@@ -311,7 +320,7 @@ export function parseSettingsUpdateBody(body: unknown): ParsedSettingsUpdateResu
   let newEnabledValue: boolean | null = null;
 
   for (const [rawKey, rawValue] of Object.entries(body)) {
-    if (!isSettingKey(rawKey)) {
+    if (!isSettingKey(rawKey) || SERVER_MANAGED_SETTING_KEYS.has(rawKey)) {
       continue;
     }
 
@@ -336,7 +345,22 @@ export async function upsertSettings(updates: ParsedSettingUpdate[]): Promise<vo
   if (updates.length === 0) return;
   const updatedAt = new Date();
   db.transaction((tx) => {
-    for (const { key, value } of updates) {
+    const applied = [...updates];
+    if (updates.some((update) =>
+      update.key === "notifications_enabled" && update.value === "true"
+    )) {
+      const current = tx.select({ value: settings.value })
+        .from(settings)
+        .where(eq(settings.key, "notifications_enabled"))
+        .get();
+      // Stamp the activation time only on a real off -> on transition. Deriving
+      // it from settings.updatedAt would let any repeated save silently drop
+      // scrapes that completed while notifications were already enabled.
+      if (current?.value !== "true") {
+        applied.push({ key: "notifications_enabled_at", value: updatedAt.toISOString() });
+      }
+    }
+    for (const { key, value } of applied) {
       tx.insert(settings).values({ key, value, updatedAt }).onConflictDoUpdate({
         target: settings.key,
         set: { value, updatedAt },

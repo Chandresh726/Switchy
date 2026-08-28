@@ -95,6 +95,8 @@ For each later stable release:
 1. update both package versions;
 2. update release notes and run `pnpm verify:all`;
 3. test a locally packaged runtime with `node scripts/smoke-runtime.mjs`;
+   macOS notification helpers are always ad-hoc signed and require no Apple
+   developer credentials;
 4. merge the release commit;
 5. create and push the exact matching stable tag;
 6. approve the GitHub `production` environment if protection is enabled;

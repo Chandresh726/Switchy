@@ -25,6 +25,7 @@ const nullableIsoDateSchema = z.iso.datetime().nullable();
 export const jobsQuerySchema = z
   .object({
     companyId: z.coerce.number().int().positive().optional(),
+    scrapeSessionId: z.string().uuid().optional(),
     companyIds: commaSeparated(z.coerce.number().int().positive(), 100).optional(),
     status: jobStatusSchema.optional(),
     excludeStatus: commaSeparated(jobStatusSchema, 6).optional(),

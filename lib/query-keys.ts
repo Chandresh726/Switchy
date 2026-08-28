@@ -158,6 +158,9 @@ export const queryKeys = {
     all: ["settings"] as const,
     detail: () => ["settings", "detail"] as const,
   },
+  notifications: {
+    permission: () => ["notifications", "permission"] as const,
+  },
   providers: {
     all: ["providers"] as const,
     list: () => ["providers", "list"] as const,

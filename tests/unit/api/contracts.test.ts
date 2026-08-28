@@ -20,6 +20,9 @@ import {
 } from "@/lib/api/contracts/history";
 import { matchCompanyIdsBodySchema } from "@/lib/api/contracts/matching";
 import {
+  notificationPermissionResponseSchema,
+} from "@/lib/api/contracts/notifications";
+import {
   peopleListQuerySchema,
   peopleImportSessionsQuerySchema,
   personIdParamsSchema,
@@ -57,6 +60,8 @@ describe("shared API contracts", () => {
     expect(jobsQuerySchema.safeParse({ limit: "101" }).success).toBe(false);
     expect(jobsQuerySchema.safeParse({ offset: "-1" }).success).toBe(false);
     expect(jobsQuerySchema.safeParse({ status: "unknown" }).success).toBe(false);
+    expect(jobsQuerySchema.safeParse({ scrapeSessionId: "not-a-uuid" }).success).toBe(false);
+    expect(jobsQuerySchema.safeParse({ scrapeSessionId: "00000000-0000-4000-8000-000000000001" }).success).toBe(true);
     expect(
       jobsQuerySchema.safeParse({ minScore: "80", maxScore: "20" }).success
     ).toBe(false);
@@ -135,6 +140,16 @@ describe("shared API contracts", () => {
     expect(matchSessionProgressResponseSchema.safeParse({ sessionId: "x" }).success).toBe(false);
     expect(statsResponseSchema.safeParse({ totalJobs: -1 }).success).toBe(false);
     expect(settingsUpdateBodySchema.safeParse({ theme: "dark" }).success).toBe(false);
+    expect(settingsUpdateBodySchema.safeParse({ notifications_enabled: true }).success).toBe(true);
+    expect(settingsUpdateBodySchema.safeParse({ notifications_match_score_threshold: 75 }).success).toBe(true);
+    expect(notificationPermissionResponseSchema.safeParse({
+      success: true,
+      permission: "denied",
+    }).success).toBe(true);
+    expect(notificationPermissionResponseSchema.safeParse({
+      success: true,
+      permission: "prompting",
+    }).success).toBe(false);
   });
 
   it("validates remaining diagnostic and history query boundaries", () => {

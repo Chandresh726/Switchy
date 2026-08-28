@@ -170,6 +170,8 @@ export const scrapeSessions = sqliteTable("scrape_sessions", {
   completedAt: integer("completed_at", { mode: "timestamp" }),
 }, (table) => ({
   startedIdIdx: index("scrape_sessions_started_id_idx").on(table.startedAt, table.id),
+  notificationCandidateIdx: index("scrape_sessions_notification_candidate_idx")
+    .on(table.triggerSource, table.status, table.completedAt),
   companiesTotalCheck: check("scrape_sessions_companies_total_check", sql`${table.companiesTotal} is null or ${table.companiesTotal} >= 0`),
   companiesCompletedCheck: check("scrape_sessions_companies_completed_check", sql`${table.companiesCompleted} is null or ${table.companiesCompleted} >= 0`),
   totalJobsFoundCheck: check("scrape_sessions_jobs_found_check", sql`${table.totalJobsFound} is null or ${table.totalJobsFound} >= 0`),
@@ -358,6 +360,32 @@ export const settings = sqliteTable("settings", {
   value: text("value"),
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 });
+
+// Internal idempotency ledger only; Switchy intentionally has no in-app notification inbox.
+export const notificationDeliveries = sqliteTable("notification_deliveries", {
+  id: text("id").primaryKey(),
+  scrapeSessionId: text("scrape_session_id")
+    .references(() => scrapeSessions.id, { onDelete: "cascade" })
+    .notNull(),
+  threshold: integer("threshold").notNull(),
+  matchCount: integer("match_count").notNull(),
+  bestJobId: integer("best_job_id").references(() => jobs.id, { onDelete: "set null" }),
+  status: text("status", {
+    enum: ["pending", "sent", "failed", "skipped"],
+  }).notNull().default("pending"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  lastError: text("last_error"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  deliveredAt: integer("delivered_at", { mode: "timestamp" }),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => ({
+  scrapeSessionUnique: unique("notification_deliveries_scrape_session_unique").on(table.scrapeSessionId),
+  statusIdx: index("notification_deliveries_status_idx").on(table.status, table.createdAt),
+  statusCheck: check("notification_deliveries_status_check", sql`${table.status} in ('pending', 'sent', 'failed', 'skipped')`),
+  thresholdCheck: check("notification_deliveries_threshold_check", sql`${table.threshold} >= 0 and ${table.threshold} <= 100`),
+  matchCountCheck: check("notification_deliveries_match_count_check", sql`${table.matchCount} >= 0`),
+  attemptCountCheck: check("notification_deliveries_attempt_count_check", sql`${table.attemptCount} >= 0`),
+}));
 
 // AI Providers - User-configured AI provider instances
 export const aiProviders = sqliteTable("aiProviders", {

@@ -30,6 +30,7 @@ stable application release.
 - Configure evidence-based AI matching with Economy, Balanced, or Quality presets and advanced retry, concurrency, and timeout controls
 - Generate AI referral messages and cover letters per job, with editable AI history
 - Run scheduled scraping through a crash-recoverable local queue and review scrape/match/AI histories
+- Receive native macOS alerts for strong matches found by automatic scrape runs
 - Keep data local in `~/.switchy` (database, uploads, encryption secret)
 
 ## Supported AI Providers
@@ -51,9 +52,12 @@ stable application release.
   downloaded automatically)
 - AI provider credentials (optional, only required for AI-powered features)
 - Optional local CLI provider: an installed and authenticated `codex` or `opencode` executable
+- Native job-match notifications require macOS 12 or newer; other platforms
+  report notifications as unavailable
 
 Source development additionally requires `pnpm` and native build tools for
-`better-sqlite3`.
+`better-sqlite3`. On macOS, `pnpm dev` also builds a headless Switchy
+notification helper automatically; it does not install a separate application.
 
 ## Source Development
 

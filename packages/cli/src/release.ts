@@ -36,6 +36,21 @@ import type {
 
 const STABLE_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
 
+const MACOS_NOTIFIER_EXECUTABLE =
+  "bin/Switchy Notifications.app/Contents/MacOS/SwitchyNotifier";
+
+/**
+ * Native notifications ship on macOS only. Other targets run without a helper
+ * and report notifications as unavailable.
+ */
+export function notificationRuntimeFiles(target: string): string[] {
+  if (!target.startsWith("darwin-")) return [];
+  return [
+    "bin/Switchy Notifications.app/Contents/Info.plist",
+    MACOS_NOTIFIER_EXECUTABLE,
+  ];
+}
+
 export function assertStableVersion(version: string): string {
   if (!STABLE_VERSION_PATTERN.test(version)) {
     throw new Error(`Invalid stable Switchy version: ${version}`);
@@ -202,16 +217,24 @@ async function validateRuntimeDirectory(
   version: string,
   target: string
 ): Promise<void> {
+  const platformFiles = notificationRuntimeFiles(target);
   for (const relativePath of [
     "server.js",
     "bin/migrate.cjs",
     "drizzle/meta/_journal.json",
     "switchy-runtime.json",
+    ...platformFiles,
   ]) {
     const fileStats = await stat(path.join(runtimeDirectory, relativePath))
       .catch(() => null);
     if (!fileStats?.isFile()) {
       throw new Error(`Runtime is missing ${relativePath}`);
+    }
+  }
+  if (platformFiles.length > 0) {
+    const helper = await stat(path.join(runtimeDirectory, MACOS_NOTIFIER_EXECUTABLE));
+    if ((helper.mode & 0o111) === 0) {
+      throw new Error("Runtime native notification helper is not executable");
     }
   }
   let metadata: {

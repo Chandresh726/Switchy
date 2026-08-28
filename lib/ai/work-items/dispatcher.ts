@@ -1,5 +1,6 @@
 import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { db } from "@/lib/db";
+import { reconcileMatchNotifications } from "@/lib/notifications/service";
 import type { AIWorkItem } from "@/lib/db/schema";
 import {
   LocalLeasedWorkRunner,
@@ -61,6 +62,7 @@ const defaultDispatcher = new AIWorkDispatcher();
 const scheduledDispatcher = new ScheduledSingleFlightDispatcher({
   run: async () => {
     const summary = await defaultDispatcher.runAvailable();
+    await reconcileMatchNotifications();
     recordDispatchSuccess();
     setMatcherDispatchRecovery("ready");
     return summary;

@@ -24,6 +24,7 @@ import {
 import { getSettings, patchSettings } from "@/lib/api/clients/settings";
 import { AppearanceSection } from "@/components/settings/appearance-section";
 import { MatcherSection } from "@/components/settings/matcher-section";
+import { NotificationsSection } from "@/components/settings/notifications-section";
 import { ScraperSettings } from "@/components/settings/scraper-settings";
 import { DangerZone } from "@/components/settings/danger-zone";
 import { ResumeParserSection } from "@/components/settings/resume-parser-section";
@@ -1529,6 +1530,11 @@ function SettingsContent() {
             onResumeParserModelChange={setResumeParserModel}
             resumeParserReasoningEffort={resumeParserReasoningEffort}
             onResumeParserReasoningEffortChange={setResumeParserReasoningEffort}
+          />
+
+          <NotificationsSection
+            enabled={settings?.notifications_enabled === "true"}
+            threshold={Number(settings?.notifications_match_score_threshold ?? "75")}
           />
 
           <AppearanceSection />

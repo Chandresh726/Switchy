@@ -209,6 +209,14 @@ export async function startSwitchyProcess({
     PORT: String(port),
     SWITCHY_HOME: paths.root,
     SWITCHY_INSTANCE_ID: instanceId,
+    SWITCHY_MACOS_NOTIFICATION_HELPER: path.join(
+      runtimeDirectory,
+      "bin",
+      "Switchy Notifications.app",
+      "Contents",
+      "MacOS",
+      "SwitchyNotifier"
+    ),
     PLAYWRIGHT_BROWSERS_PATH: paths.playwright,
   };
   const serverPath = path.join(runtimeDirectory, "server.js");

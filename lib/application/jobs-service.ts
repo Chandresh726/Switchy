@@ -4,6 +4,7 @@ import {
   count,
   desc,
   eq,
+  exists,
   gte,
   like,
   lt,
@@ -26,7 +27,15 @@ import { completeEmptyMatchSession, getAIWorkSession, queueMatchWork } from "@/l
 import { NotFoundError } from "@/lib/api";
 import type { jobResourceUpdateBodySchema, jobsQuerySchema } from "@/lib/api/contracts/jobs";
 import { db } from "@/lib/db";
-import { companies, jobAnalyses, jobs, matchResults } from "@/lib/db/schema";
+import {
+  aiWorkItems,
+  companies,
+  jobAnalyses,
+  jobs,
+  matchLogs,
+  matchResults,
+  scrapingLogs,
+} from "@/lib/db/schema";
 import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 
 type JobUpdate = z.infer<typeof jobResourceUpdateBodySchema>;
@@ -146,6 +155,20 @@ async function getStoredJobIntelligence(jobId: number, matchResultId: string | n
 
 export async function listJobs(query: JobsQuery) {
   const conditions = baseConditions(query);
+  if (query.scrapeSessionId) {
+    conditions.push(exists(
+      db.select({ id: matchLogs.id })
+        .from(matchLogs)
+        .innerJoin(aiWorkItems, eq(matchLogs.sessionId, aiWorkItems.matchSessionId))
+        .innerJoin(scrapingLogs, eq(aiWorkItems.scrapingLogId, scrapingLogs.id))
+        .where(and(
+          eq(scrapingLogs.sessionId, query.scrapeSessionId),
+          eq(aiWorkItems.workType, "match_jobs"),
+          eq(matchLogs.jobId, jobs.id),
+          eq(matchLogs.status, "success")
+        ))
+    ));
+  }
   const requestedBands: MatchBand[] = query.matchBands ?? [];
   const scoreAware = query.sortBy === "matchScore" || query.minScore !== undefined
     || query.maxScore !== undefined || requestedBands.length > 0;

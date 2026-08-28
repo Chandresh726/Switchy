@@ -16,6 +16,7 @@ import { spawnSync } from "node:child_process";
 
 import { build } from "esbuild";
 
+import { buildMacOSNotifierBundle } from "./build-macos-notifier.mjs";
 import { brandStandaloneServer } from "./runtime-server-branding.mjs";
 
 const projectDirectory = process.cwd();
@@ -265,6 +266,12 @@ await cp(
   { recursive: true }
 );
 await mkdir(path.join(runtimeDirectory, "bin"), { recursive: true });
+if (target.startsWith("darwin-")) {
+  await buildMacOSNotifierBundle({
+    outputDirectory: path.join(runtimeDirectory, "bin"),
+    projectDirectory,
+  });
+}
 await build({
   entryPoints: [path.join(projectDirectory, "scripts", "migrate-database.ts")],
   outfile: path.join(runtimeDirectory, "bin", "migrate.cjs"),

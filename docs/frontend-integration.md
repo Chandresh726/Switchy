@@ -92,6 +92,8 @@ Backup and restore are CLI-only package scripts and are not HTTP APIs.
 | `/api/match-history` | GET | JSON client | `clients/history` |
 | `/api/match` | POST | JSON client | `clients/runtime` |
 | `/api/match/sessions/[id]` | GET; DELETE retained without a current UI caller | JSON client / server-only | `clients/runtime` |
+| `/api/notifications/native` | GET, POST, PUT, DELETE | JSON client | `clients/notifications` |
+| `/api/notifications/test` | POST | JSON client | `clients/notifications` |
 | `/api/people/[id]/merge` | POST | JSON client / server-only | `clients/people` |
 | `/api/people/[id]/purge` | DELETE | JSON client / server-only | `clients/people` |
 | `/api/people/[id]/restore` | POST | JSON client / server-only | `clients/people` |
