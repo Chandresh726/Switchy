@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -10,6 +13,19 @@ import {
 import { normalizeCareersUrl } from "@/lib/companies/normalization";
 
 describe("preset companies utils", () => {
+  it("configures PhonePe for its branded SmartRecruiters board", () => {
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), "public/companies.json"), "utf8")
+    ) as unknown;
+    const phonePe = parsePresetCompanies(raw).find((company) => company.name === "PhonePe");
+
+    expect(phonePe).toMatchObject({
+      careersUrl: "https://www.phonepe.com/careers/job-openings/",
+      platform: "smartrecruiters",
+      boardToken: "PHONEPELIMITED",
+    });
+  });
+
   it("normalizes careers URLs for dedupe matching", () => {
     expect(
       normalizeCareersUrl("HTTPS://Jobs.Lever.co/acme/?team=eng")
@@ -48,9 +64,15 @@ describe("preset companies utils", () => {
         careersUrl: "https://job-boards.greenhouse.io/beta",
         platform: "greenhouse",
       },
+      {
+        name: "PhonePe",
+        careersUrl: "https://www.phonepe.com/careers/job-openings/",
+        platform: "smartrecruiters",
+        boardToken: "PHONEPELIMITED",
+      },
     ]);
 
-    expect(parsed).toHaveLength(2);
+    expect(parsed).toHaveLength(3);
     expect(parsed[0]).toMatchObject({
       name: "Acme",
       careersUrl: "https://jobs.lever.co/acme",
@@ -61,6 +83,11 @@ describe("preset companies utils", () => {
     expect(parsed[1]).toMatchObject({
       name: "Beta",
       platform: "greenhouse",
+    });
+    expect(parsed[2]).toMatchObject({
+      name: "PhonePe",
+      platform: "smartrecruiters",
+      boardToken: "PHONEPELIMITED",
     });
   });
 

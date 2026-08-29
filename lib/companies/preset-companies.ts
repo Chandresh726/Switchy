@@ -4,6 +4,7 @@ import { normalizeCareersUrl } from "./normalization";
 
 const PLATFORM_VALUES = [
   "greenhouse",
+  "smartrecruiters",
   "lever",
   "ashby",
   "workday",

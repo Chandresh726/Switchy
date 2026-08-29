@@ -103,4 +103,34 @@ describe("CompanyForm create fields", () => {
     fireEvent.error(preview);
     expect(screen.getByLabelText("Logo preview unavailable")).toBeTruthy();
   });
+
+  it("supports a manual SmartRecruiters identifier for a branded careers URL", async () => {
+    renderForm();
+
+    fireEvent.change(screen.getByLabelText("Company Name *"), {
+      target: { value: "PhonePe" },
+    });
+    fireEvent.change(screen.getByLabelText("Careers Page URL *"), {
+      target: { value: "https://www.phonepe.com/careers/job-openings/" },
+    });
+    fireEvent.click(screen.getByLabelText("This company uses a known ATS"));
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "smartrecruiters" },
+    });
+
+    expect(screen.getByPlaceholderText("Company identifier")).toBeTruthy();
+    expect(screen.getByText(/case-sensitive company identifier/i)).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText("Company identifier"), {
+      target: { value: "PHONEPELIMITED" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add Company" }));
+
+    await waitFor(() => expect(mocks.createCompanies).toHaveBeenCalledTimes(1));
+    expect(mocks.createCompanies).toHaveBeenCalledWith(expect.objectContaining({
+      name: "PhonePe",
+      careersUrl: "https://www.phonepe.com/careers/job-openings/",
+      platform: "smartrecruiters",
+      boardToken: "PHONEPELIMITED",
+    }));
+  });
 });

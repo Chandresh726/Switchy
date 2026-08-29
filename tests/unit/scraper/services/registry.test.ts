@@ -30,13 +30,14 @@ function createBrowserClient(): IBrowserClient {
 }
 
 describe("createScraperRegistry", () => {
-  it("registers the new ServiceNow, Zwayam, MynextHire, and Visa scrapers", () => {
+  it("registers the supported reusable platform scrapers", () => {
     const registry = createScraperRegistry({
       httpClient: createHttpClient(),
       browserClient: createBrowserClient(),
     });
 
     expect(registry.getScraperByPlatform("servicenow")?.platform).toBe("servicenow");
+    expect(registry.getScraperByPlatform("smartrecruiters")?.platform).toBe("smartrecruiters");
     expect(registry.getScraperByPlatform("zwayam")?.platform).toBe("zwayam");
     expect(registry.getScraperByPlatform("mynexthire")?.platform).toBe("mynexthire");
     expect(registry.getScraperByPlatform("visa")?.platform).toBe("visa");
@@ -49,6 +50,11 @@ describe("createScraperRegistry", () => {
     });
 
     expect(registry.getScraperByPlatform("greenhouse")?.capabilities).toEqual({
+      transport: "http",
+      concurrency: "parallel",
+      supportsCancellation: true,
+    });
+    expect(registry.getScraperByPlatform("smartrecruiters")?.capabilities).toEqual({
       transport: "http",
       concurrency: "parallel",
       supportsCancellation: true,

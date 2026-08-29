@@ -5,6 +5,18 @@ export type DetectedPlatform = Platform | "custom";
 export function detectPlatformFromUrl(url: string): DetectedPlatform {
   const urlLower = url.toLowerCase();
 
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    if (
+      hostname === "careers.smartrecruiters.com" ||
+      hostname === "jobs.smartrecruiters.com"
+    ) {
+      return "smartrecruiters";
+    }
+  } catch {
+    // Fall through to the existing string-based checks.
+  }
+
   if (
     urlLower.includes("google.com/about/careers/applications/jobs") ||
     urlLower.includes("google.com/about/careers") ||
@@ -87,6 +99,7 @@ export function detectPlatformFromUrl(url: string): DetectedPlatform {
 export function getPlatformLabel(platform: DetectedPlatform): string {
   const labels: Record<DetectedPlatform, string> = {
     greenhouse: "Greenhouse",
+    smartrecruiters: "SmartRecruiters",
     lever: "Lever",
     ashby: "Ashby",
     eightfold: "Eightfold",

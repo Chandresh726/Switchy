@@ -253,10 +253,10 @@
   },
   {
     "name": "PhonePe",
-    "careersUrl": "https://job-boards.greenhouse.io/phonepe",
+    "careersUrl": "https://www.phonepe.com/careers/job-openings/",
     "logoUrl": "https://uxwing.com/wp-content/themes/uxwing/download/brands-and-social-media/phonepe-icon.png",
-    "platform": "greenhouse",
-    "boardToken": "phonepe",
+    "platform": "smartrecruiters",
+    "boardToken": "PHONEPELIMITED",
     "isActive": true
   },
   {

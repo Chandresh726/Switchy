@@ -5,6 +5,7 @@ import { jobStatusSchema } from "./jobs";
 
 export const companyPlatformSchema = z.enum([
   "greenhouse",
+  "smartrecruiters",
   "lever",
   "ashby",
   "workday",

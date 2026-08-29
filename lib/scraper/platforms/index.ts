@@ -8,6 +8,7 @@ export { MynextHireScraper } from "./mynexthire";
 export { NutanixScraper } from "./nutanix";
 export { RipplingScraper } from "./rippling";
 export { ServiceNowScraper } from "./servicenow";
+export { SmartRecruitersScraper } from "./smartrecruiters";
 export { UberScraper } from "./uber";
 export { VisaScraper } from "./visa";
 export { WorkdayScraper } from "./workday";

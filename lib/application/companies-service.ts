@@ -38,7 +38,12 @@ type CompanyPatchInput = z.infer<typeof companyPatchBodySchema>;
 type CompanyUpdatePayload = Partial<CompanyReplaceInput> & { updatedAt: Date };
 type PreparedCompany = CompanyInput & { careersUrl: string; normalizedCareersUrl: string };
 
-const MANUAL_BOARD_TOKEN_REQUIRED = new Set(["greenhouse", "lever", "ashby"]);
+const MANUAL_BOARD_TOKEN_REQUIRED = new Set([
+  "greenhouse",
+  "smartrecruiters",
+  "lever",
+  "ashby",
+]);
 const COMPANY_JOB_SELECTION = {
   id: jobs.id, title: jobs.title, url: jobs.url,
   status: jobs.status, location: jobs.location, locationType: jobs.locationType,

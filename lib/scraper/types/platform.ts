@@ -1,5 +1,6 @@
 export type Platform =
   | "greenhouse"
+  | "smartrecruiters"
   | "lever"
   | "ashby"
   | "eightfold"
@@ -32,6 +33,7 @@ export type MatcherStatus = "pending" | "in_progress" | "completed" | "failed";
 
 export const PLATFORMS = [
   "greenhouse",
+  "smartrecruiters",
   "lever",
   "ashby",
   "eightfold",

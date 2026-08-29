@@ -138,8 +138,12 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
   const logoPreviewFailed = logoPreviewUrl === failedLogoPreviewUrl;
   const requiresBoardToken =
     selectedManualPlatform === "greenhouse" ||
+    selectedManualPlatform === "smartrecruiters" ||
     selectedManualPlatform === "lever" ||
     selectedManualPlatform === "ashby";
+  const boardTokenPlaceholder = selectedManualPlatform === "smartrecruiters"
+    ? "Company identifier"
+    : "Board token";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
@@ -247,7 +251,7 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
                   onChange={(e) =>
                     setFormData((prev) => ({ ...prev, boardToken: e.target.value }))
                   }
-                  placeholder="Board token"
+                  placeholder={boardTokenPlaceholder}
                   required
                   autoComplete="off"
                   data-form-type="other"
@@ -272,6 +276,12 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
               </select>
             )}
           </div>
+          {manualPlatformOverride && selectedManualPlatform === "smartrecruiters" ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Enter the case-sensitive company identifier from its canonical SmartRecruiters
+              URL, for example PHONEPELIMITED in careers.smartrecruiters.com/PHONEPELIMITED.
+            </p>
+          ) : null}
         </div>
       )}
 

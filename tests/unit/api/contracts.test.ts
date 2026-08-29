@@ -107,6 +107,12 @@ describe("shared API contracts", () => {
 
   it("validates company and matching commands before execution", () => {
     expect(companyCreateBodySchema.safeParse({ name: "A", careersUrl: "not-a-url" }).success).toBe(false);
+    expect(companyCreateBodySchema.safeParse({
+      name: "PhonePe",
+      careersUrl: "https://www.phonepe.com/careers/job-openings/",
+      platform: "smartrecruiters",
+      boardToken: "PHONEPELIMITED",
+    }).success).toBe(true);
     expect(companyIdsBodySchema.safeParse({ companyIds: [] }).success).toBe(false);
     expect(matchCompanyIdsBodySchema.safeParse({ companyIds: ["invalid"] }).success).toBe(false);
     expect(matchCompanyIdsBodySchema.safeParse({ companyIds: [1, 2] }).success).toBe(true);

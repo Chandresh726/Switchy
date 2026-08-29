@@ -7,6 +7,8 @@ import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 describe("platform detection", () => {
   it("detects known platforms from careers URLs", () => {
     expect(detectPlatformFromUrl("https://boards.greenhouse.io/acme")).toBe("greenhouse");
+    expect(detectPlatformFromUrl("https://careers.smartrecruiters.com/Acme")).toBe("smartrecruiters");
+    expect(detectPlatformFromUrl("https://jobs.smartrecruiters.com/Acme/123-role")).toBe("smartrecruiters");
     expect(detectPlatformFromUrl("https://jobs.lever.co/acme")).toBe("lever");
     expect(detectPlatformFromUrl("https://jobs.ashbyhq.com/acme")).toBe("ashby");
     expect(detectPlatformFromUrl("https://acme.wd5.myworkdayjobs.com/en-US/careers")).toBe("workday");
@@ -29,6 +31,8 @@ describe("platform detection", () => {
     expect(detectPlatformFromUrl("https://www.atlassian.com/company/careers")).toBe("atlassian");
     expect(detectPlatformFromUrl("https://www.uber.com/global/en/careers/list/")).toBe("uber");
     expect(detectPlatformFromUrl("https://careers.example.com")).toBe("custom");
+    expect(detectPlatformFromUrl("https://careers.smartrecruiters.com.example.com/Acme")).toBe("custom");
+    expect(detectPlatformFromUrl("https://smartrecruiters.example.com/Acme")).toBe("custom");
   });
 
   it("is shared by API and UI callers", () => {

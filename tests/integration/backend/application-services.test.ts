@@ -146,6 +146,30 @@ describe("backend application services", () => {
     expect(deleteCompanies).toHaveBeenCalledWith([created.id]);
   });
 
+  it("requires a SmartRecruiters identifier for a branded careers URL", async () => {
+    const { database } = harness.createDatabase();
+    vi.doMock("@/lib/db", () => ({ db: database }));
+    vi.doMock("@/lib/people/sync", () => ({ refreshUnmatchedCompanyMappings: vi.fn() }));
+    const service = await import("@/lib/application/companies-service");
+    const context = { requestId: "smartrecruiters-company-test" };
+
+    await expect(service.importCompanies({
+      name: "PhonePe",
+      careersUrl: "https://www.phonepe.com/careers/job-openings/",
+      platform: "smartrecruiters",
+    }, context)).rejects.toMatchObject({ code: "board_token_required" });
+
+    await expect(service.importCompanies({
+      name: "PhonePe",
+      careersUrl: "https://www.phonepe.com/careers/job-openings/",
+      platform: "smartrecruiters",
+      boardToken: "PHONEPELIMITED",
+    }, context)).resolves.toMatchObject({
+      platform: "smartrecruiters",
+      boardToken: "PHONEPELIMITED",
+    });
+  });
+
   it("normalizes retried company imports and rejects duplicate syncs without partial writes", async () => {
     const { database } = harness.createDatabase();
     vi.doMock("@/lib/db", () => ({ db: database }));
