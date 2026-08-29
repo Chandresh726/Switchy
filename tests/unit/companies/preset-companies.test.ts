@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   excludeExistingPresetCompanies,
+  getAddablePresetCompanies,
+  getDefaultAddCompanyTab,
   parsePresetCompanies,
   searchPresetCompanies,
 } from "@/lib/companies/preset-companies";
@@ -102,5 +104,42 @@ describe("preset companies utils", () => {
 
     expect(filtered).toHaveLength(1);
     expect(filtered[0]?.name).toBe("Beta");
+  });
+
+  it("excludes presets already added by careers URL or company name", () => {
+    const items = parsePresetCompanies([
+      {
+        name: "Acme",
+        careersUrl: "https://jobs.lever.co/acme",
+      },
+      {
+        name: "Beta",
+        careersUrl: "https://job-boards.greenhouse.io/beta",
+      },
+      {
+        name: "Gamma",
+        careersUrl: "https://jobs.ashbyhq.com/gamma",
+      },
+    ]);
+
+    expect(getAddablePresetCompanies(items, [
+      { name: "Acme Renamed", careersUrl: "https://jobs.lever.co/acme/" },
+      { name: "Beta", careersUrl: "https://example.com/beta-careers" },
+    ])).toEqual([expect.objectContaining({ name: "Gamma" })]);
+  });
+
+  it("defaults to Custom Company only when every preset is already added", () => {
+    const items = parsePresetCompanies([
+      {
+        name: "Acme",
+        careersUrl: "https://jobs.lever.co/acme",
+      },
+    ]);
+
+    expect(getDefaultAddCompanyTab(undefined, [])).toBe("quick");
+    expect(getDefaultAddCompanyTab(items, [])).toBe("quick");
+    expect(getDefaultAddCompanyTab(items, [
+      { name: "Acme", careersUrl: "https://jobs.lever.co/acme" },
+    ])).toBe("manual");
   });
 });

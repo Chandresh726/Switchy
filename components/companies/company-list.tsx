@@ -44,6 +44,7 @@ import type {
   Company,
   CompanyOverviewResponse,
 } from "@/lib/api/contracts/companies";
+import { formatCompanyUrl } from "@/lib/companies/display";
 import { isCompanyScrapeSupported } from "@/lib/companies/scrape-support";
 import { PLATFORM_COLORS } from "@/lib/constants";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
@@ -60,19 +61,6 @@ interface CompanyListProps {
   onRefreshMatches: (companyId: number) => void;
   isRefreshing: boolean;
   isMatching: boolean;
-}
-
-function truncateUrl(url: string, maxLength: number = 30): string {
-  try {
-    const parsed = new URL(url);
-    const display = parsed.hostname + parsed.pathname;
-    if (display.length > maxLength) {
-      return display.substring(0, maxLength - 3) + "...";
-    }
-    return display;
-  } catch {
-    return url.length > maxLength ? url.substring(0, maxLength - 3) + "..." : url;
-  }
 }
 
 function getRelativeTime(dateString: string | null): string {
@@ -302,7 +290,7 @@ const CompanyCard = memo(function CompanyCard({
           onClick={(event) => event.stopPropagation()}
         >
           <ExternalLink className="h-3 w-3" />
-          {truncateUrl(company.careersUrl)}
+          {formatCompanyUrl(company.careersUrl)}
         </a>
       </div>
 

@@ -8,9 +8,16 @@ import { toast } from "sonner";
 
 import { ApiErrorState } from "@/components/ui/api-error-state";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { getProfile, saveProfile } from "@/lib/api/clients/profile";
 import type { ProfileResponse } from "@/lib/api/contracts/profile";
@@ -128,8 +135,7 @@ export function ProfileForm({
     return (Object.keys(PROFILE_FIELD_LABELS) as Array<keyof ProfileData>)
       .filter((key) => formData[key] !== originalData[key]);
   }, [formData, originalData]);
-  const changedFields = changedFieldKeys.map((key) => PROFILE_FIELD_LABELS[key]);
-  const hasUnsavedChanges = changedFields.length > 0;
+  const hasUnsavedChanges = changedFieldKeys.length > 0;
   const validationErrors = useMemo(() => {
     const result = profileWriteBodySchema.safeParse(formData);
     if (result.success) return [];
@@ -226,9 +232,43 @@ export function ProfileForm({
           </div>
           <CardTitle className="text-lg font-medium text-foreground">Basic Information</CardTitle>
         </div>
+        {hasUnsavedChanges ? (
+          <CardAction className="col-span-2 col-start-1 row-span-1 row-start-2 mt-2 flex w-full justify-end gap-2 sm:col-span-1 sm:col-start-2 sm:row-start-1 sm:mt-0 sm:w-auto">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleRevert}
+              disabled={mutation.isPending}
+            >
+              <Undo2 data-icon="inline-start" />
+              Revert
+            </Button>
+            <Button
+              type="submit"
+              form="basic-information-form"
+              size="sm"
+              disabled={mutation.isPending || !formIsValid}
+              className="min-w-[120px] bg-blue-600 text-foreground hover:bg-blue-500"
+            >
+              {mutation.isPending ? (
+                <Loader2 data-icon="inline-start" className="animate-spin" />
+              ) : (
+                <Save data-icon="inline-start" />
+              )}
+              {mutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </CardAction>
+        ) : null}
       </CardHeader>
-      <form onSubmit={handleSubmit}>
+      <Separator />
+      <form id="basic-information-form" onSubmit={handleSubmit}>
         <CardContent className="space-y-6">
+          {hasUnsavedChanges && validationErrors.length > 0 ? (
+            <p role="alert" className="text-xs text-destructive">
+              Fix before saving: {validationErrors.join("; ")}
+            </p>
+          ) : null}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="name">Full Name *</Label>
@@ -319,50 +359,12 @@ export function ProfileForm({
               name="summary"
               value={formData.summary}
               onChange={handleChange}
-              rows={4}
+              rows={2}
+              className="min-h-0"
               placeholder="Briefly describe your professional background and career goals..."
             />
           </div>
         </CardContent>
-
-        {hasUnsavedChanges ? (
-          <CardFooter className="flex items-center justify-between border-t border-border bg-card px-6 py-4">
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">
-                {changedFields.length} pending {changedFields.length === 1 ? "change" : "changes"}:{" "}
-                {changedFields.join(", ")}
-              </p>
-              {validationErrors.length > 0 ? (
-                <p role="alert" className="text-xs text-destructive">
-                  Fix before saving: {validationErrors.join("; ")}
-                </p>
-              ) : null}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleRevert}
-                disabled={mutation.isPending}
-              >
-                <Undo2 data-icon="inline-start" />
-                Revert
-              </Button>
-              <Button
-                type="submit"
-                disabled={mutation.isPending || !formIsValid}
-                className="min-w-[120px] bg-blue-600 text-foreground hover:bg-blue-500"
-              >
-                {mutation.isPending ? (
-                  <Loader2 data-icon="inline-start" className="animate-spin" />
-                ) : (
-                  <Save data-icon="inline-start" />
-                )}
-                {mutation.isPending ? "Saving..." : "Save Changes"}
-              </Button>
-            </div>
-          </CardFooter>
-        ) : null}
       </form>
     </Card>
   );

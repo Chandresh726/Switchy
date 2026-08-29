@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, Save } from "lucide-react";
+import { ImageOff, Loader2, Plus, Save } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,20 @@ const PLATFORMS = [
   ...PLATFORM_OPTIONS.filter((platform) => platform.value !== "uber"),
 ];
 
+function getLogoPreviewUrl(value: string): string | null {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) return null;
+
+  try {
+    const url = new URL(trimmedValue);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? trimmedValue
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
   const queryClient = useQueryClient();
   const isEditing = !!company;
@@ -42,6 +56,7 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
   });
   const [detectedPlatform, setDetectedPlatform] = useState<string | null>(null);
   const [manualPlatformOverride, setManualPlatformOverride] = useState(false);
+  const [failedLogoPreviewUrl, setFailedLogoPreviewUrl] = useState<string | null>(null);
 
   const handleUrlChange = (url: string) => {
     setFormData((prev) => ({ ...prev, careersUrl: url }));
@@ -77,7 +92,13 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      return createCompanies(companyCreateBodySchema.parse(data));
+      return createCompanies(companyCreateBodySchema.parse({
+        name: data.name,
+        careersUrl: data.careersUrl,
+        logoUrl: data.logoUrl,
+        platform: data.platform,
+        boardToken: data.boardToken,
+      }));
     },
     onSuccess: () => {
       void cacheOwnership.companyMutation(queryClient, { affectsMappings: true });
@@ -111,9 +132,10 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
     mutation.mutate(formData);
   };
 
-  const title = isEditing ? "Edit Company" : "Add Company";
   const submitLabel = isEditing ? "Save" : "Add Company";
   const selectedManualPlatform = formData.platform || "custom";
+  const logoPreviewUrl = getLogoPreviewUrl(formData.logoUrl);
+  const logoPreviewFailed = logoPreviewUrl === failedLogoPreviewUrl;
   const requiresBoardToken =
     selectedManualPlatform === "greenhouse" ||
     selectedManualPlatform === "lever" ||
@@ -121,8 +143,6 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
-      <h3 className="text-lg font-medium text-foreground">{title}</h3>
-
       {/* Required Fields Only */}
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
@@ -160,16 +180,18 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
         </div>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="notes">Notes</Label>
-        <Textarea
-          id="notes"
-          value={formData.notes}
-          onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
-          placeholder="Anything useful about this company..."
-          rows={5}
-        />
-      </div>
+      {isEditing ? (
+        <div className="space-y-2">
+          <Label htmlFor="notes">Notes</Label>
+          <Textarea
+            id="notes"
+            value={formData.notes}
+            onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
+            placeholder="Anything useful about this company..."
+            rows={5}
+          />
+        </div>
+      ) : null}
 
       {/* Platform Override Section */}
       {detectedPlatform === "Custom" && (
@@ -256,14 +278,39 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
       <div className="flex items-end gap-3">
         <div className="flex-1 space-y-2">
           <Label htmlFor="logoUrl">Logo URL (Optional)</Label>
-          <Input
-            id="logoUrl"
-            value={formData.logoUrl}
-            onChange={(e) => setFormData((prev) => ({ ...prev, logoUrl: e.target.value }))}
-            placeholder="https://..."
-            autoComplete="off"
-            data-form-type="other"
-          />
+          <div className="flex items-center gap-2">
+            {logoPreviewUrl ? (
+              <div className="flex size-9 shrink-0 items-center justify-center rounded border border-border bg-muted p-1">
+                {logoPreviewFailed ? (
+                  <ImageOff
+                    className="size-4 text-muted-foreground"
+                    aria-label="Logo preview unavailable"
+                  />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={logoPreviewUrl}
+                    src={logoPreviewUrl}
+                    alt={`${formData.name.trim() || "Company"} logo preview`}
+                    className="size-full object-contain"
+                    onError={() => setFailedLogoPreviewUrl(logoPreviewUrl)}
+                  />
+                )}
+              </div>
+            ) : null}
+            <Input
+              id="logoUrl"
+              value={formData.logoUrl}
+              onChange={(e) => {
+                setFailedLogoPreviewUrl(null);
+                setFormData((prev) => ({ ...prev, logoUrl: e.target.value }));
+              }}
+              placeholder="https://..."
+              autoComplete="off"
+              data-form-type="other"
+              className="min-w-0 flex-1"
+            />
+          </div>
         </div>
         <Button
           type="submit"

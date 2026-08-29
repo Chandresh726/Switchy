@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import PeoplePage from "@/app/(dashboard)/people/page";
@@ -286,6 +286,22 @@ describe("contract-shaped frontend resources", () => {
     expect(await screen.findByText("TypeScript")).toBeTruthy();
     expect(await screen.findByText("Contract Company")).toBeTruthy();
     expect(await screen.findByText("Contract University")).toBeTruthy();
+    expect(screen.queryByText("resume.pdf")).toBeNull();
+
+    for (const sectionName of [
+      "Basic Information",
+      "Education",
+      "Work Experience",
+      "Skills",
+    ]) {
+      const header = screen.getByText(sectionName).closest('[data-slot="card-header"]');
+      expect(header?.nextElementSibling?.getAttribute("data-slot")).toBe("separator");
+    }
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "Resume Manager, 1 resume",
+    }));
+
     expect(screen.getByText("resume.pdf")).toBeTruthy();
   });
 

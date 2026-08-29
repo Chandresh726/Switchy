@@ -1,16 +1,18 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Upload, Loader2, Check, AlertCircle, FileText, ChevronDown, ChevronUp, Download, Trash2, History } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import { useCallback, useState } from "react";
+import {
+  AlertCircle,
+  Check,
+  ChevronDown,
+  Download,
+  FileText,
+  Loader2,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { toast } from "sonner";
-import type { ResumeData } from "@/lib/ai/resume/contracts";
-import { downloadResume, uploadResume } from "@/lib/api/clients/profile";
-import type { Resume } from "@/lib/api/contracts/profile";
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,7 +22,28 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import type { ResumeData } from "@/lib/ai/resume/contracts";
+import { downloadResume, uploadResume } from "@/lib/api/clients/profile";
+import type { Resume } from "@/lib/api/contracts/profile";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
+import { cn } from "@/lib/utils";
 
 interface ResumeManagerProps {
   resumes: Resume[];
@@ -36,13 +59,14 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [autofill, setAutofill] = useState(true);
-  const [showHistory, setShowHistory] = useState(false);
+  const [isResumeManagerOpen, setIsResumeManagerOpen] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
-  const currentResume = resumes.find((resume) => resume.isCurrent && resume.storageState === "ready");
-  const previousResumes = resumes
-    .filter((resume) => resume.id !== currentResume?.id)
-    .sort((a, b) => b.version - a.version);
+  const managedResumes = [...resumes].sort((a, b) => {
+    if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1;
+    return b.version - a.version;
+  });
+  const resumeCountLabel = `${resumes.length} ${resumes.length === 1 ? "resume" : "resumes"}`;
 
   const handleFile = useCallback(
     async (file: File) => {
@@ -160,15 +184,7 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
             </div>
           </div>
           <div className="flex flex-col items-end gap-3 sm:flex-row sm:items-center">
-            {currentResume && (
-              <Badge
-                variant="outline"
-                className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-              >
-                v{currentResume.version} Current
-              </Badge>
-            )}
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center gap-2">
               <Switch
                 id="autofill-mode"
                 checked={autofill}
@@ -183,7 +199,7 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-6">
+      <CardContent className="flex flex-col gap-6">
         {/* Upload Area */}
         <div
           onDrop={handleDrop}
@@ -240,104 +256,109 @@ export function ResumeManager({ resumes, onParsed, onDelete, onRefresh }: Resume
           )}
         </div>
 
-        {/* Current Resume */}
-        {currentResume && (
-          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded bg-emerald-500/20">
-                  <FileText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                </div>
-                <div>
-                  <p className="font-medium text-emerald-700 dark:text-emerald-300">{currentResume.fileName}</p>
-                  <p className="text-xs text-emerald-600/80 dark:text-emerald-400/90">{formatDate(currentResume.createdAt)}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="h-8 w-8"
-                  aria-label={`Download ${currentResume.fileName}`}
-                  onClick={() => void handleDownload(currentResume.id)}
-                >
-                  <Download className="h-4 w-4 text-muted-foreground" />
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
+        {managedResumes.length > 0 ? (
+          <Collapsible
+            open={isResumeManagerOpen}
+            onOpenChange={setIsResumeManagerOpen}
+            className="overflow-hidden rounded-lg border border-border bg-card"
+          >
+            <CollapsibleTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-auto w-full justify-start rounded-none px-3 py-3 aria-expanded:bg-transparent"
+                aria-label={`Resume Manager, ${resumeCountLabel}`}
+              >
+                <span>Resume Manager</span>
+                <Badge variant="secondary">{resumeCountLabel}</Badge>
+                <ChevronDown
+                  data-icon="inline-end"
+                  className={cn(
+                    "ml-auto transition-transform",
+                    isResumeManagerOpen ? "rotate-180" : null
+                  )}
+                />
+              </Button>
+            </CollapsibleTrigger>
 
-        {/* Previous Versions */}
-        {previousResumes.length > 0 && (
-          <div>
-            <button
-              onClick={() => setShowHistory(!showHistory)}
-              className="flex w-full items-center justify-between rounded-lg border border-border bg-card p-3 text-sm font-medium text-foreground hover:bg-muted/70 transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                <History className="h-4 w-4 text-muted-foreground" />
-                <span>Previous Versions ({previousResumes.length})</span>
-              </div>
-              {showHistory ? (
-                <ChevronUp className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              )}
-            </button>
-
-            {showHistory && (
-              <div className="mt-2 space-y-2">
-                {previousResumes.map((resume) => (
+            <CollapsibleContent>
+              <Separator />
+              <div className="flex flex-col p-1">
+                {managedResumes.map((resume) => (
                   <div
                     key={resume.id}
-                    className="flex items-center justify-between rounded-lg border border-border bg-card p-3"
+                    className={cn(
+                      "flex flex-col gap-3 rounded-md px-3 py-3 sm:flex-row sm:items-center sm:justify-between",
+                      resume.isCurrent ? "bg-emerald-500/10" : null
+                    )}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded bg-muted">
-                        <FileText className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div
+                        className={cn(
+                          "flex size-8 shrink-0 items-center justify-center rounded bg-muted",
+                          resume.isCurrent ? "text-emerald-500" : "text-muted-foreground"
+                        )}
+                      >
+                        <FileText className="size-4" />
                       </div>
-                      <div>
-                        <p className="font-medium text-foreground">{resume.fileName}</p>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground">v{resume.version}</span>
-                          <span className="text-xs text-muted-foreground">•</span>
-                          <span className="text-xs text-muted-foreground">{formatDate(resume.createdAt)}</span>
-                          {resume.storageState !== "ready" && (
-                            <Badge variant="outline" className="text-xs">
-                              {resume.storageState === "missing" ? "File missing" : "Recovering"}
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate font-medium text-foreground">
+                            {resume.fileName}
+                          </p>
+                          {resume.isCurrent ? (
+                            <Badge
+                              variant="outline"
+                              className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                            >
+                              Current
                             </Badge>
-                          )}
+                          ) : null}
+                          {resume.storageState !== "ready" ? (
+                            <Badge variant="outline">
+                              {resume.storageState === "missing"
+                                ? "File missing"
+                                : "Recovering"}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span>v{resume.version}</span>
+                          <span aria-hidden="true">•</span>
+                          <span>{formatDate(resume.createdAt)}</span>
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      {resume.storageState === "ready" && (
+                    <div className="flex items-center justify-end gap-1">
+                      {resume.storageState === "ready" ? (
                         <Button
+                          type="button"
                           variant="ghost"
                           size="icon-sm"
-                          className="h-8 w-8"
                           aria-label={`Download ${resume.fileName}`}
                           onClick={() => void handleDownload(resume.id)}
                         >
-                          <Download className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                          <Download data-icon="inline-start" />
                         </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="h-8 w-8"
-                        onClick={() => setDeleteConfirmId(resume.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-muted-foreground hover:text-red-400" />
-                      </Button>
+                      ) : null}
+                      {!resume.isCurrent ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Delete ${resume.fileName}`}
+                          onClick={() => setDeleteConfirmId(resume.id)}
+                        >
+                          <Trash2 data-icon="inline-start" />
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 ))}
               </div>
-            )}
-          </div>
-        )}
+            </CollapsibleContent>
+          </Collapsible>
+        ) : null}
       </CardContent>
 
       {/* Delete Confirmation Dialog */}

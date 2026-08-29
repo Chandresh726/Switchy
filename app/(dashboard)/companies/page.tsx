@@ -8,6 +8,8 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { ApiErrorState } from "@/components/ui/api-error-state";
+import { Separator } from "@/components/ui/separator";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { CompanyFilters, type CompanyFilters as CompanyFiltersType } from "@/components/companies/company-filters";
 import { CompanyForm } from "@/components/companies/company-form";
 import { CompanyQuickAdd } from "@/components/companies/company-quick-add";
@@ -25,6 +27,11 @@ import {
 import { CUSTOM_SCRAPER_PLATFORMS } from "@/lib/constants";
 import { companyImportBodySchema } from "@/lib/api/contracts/companies";
 import type { Company } from "@/lib/api/contracts/companies";
+import {
+  getDefaultAddCompanyTab,
+  type AddCompanyTab,
+} from "@/lib/companies/preset-companies";
+import { usePresetCompanies } from "@/lib/hooks/use-preset-companies";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
@@ -77,7 +84,7 @@ function CompaniesPageContent() {
   );
   const [view, setView] = useState<"list" | "json">("list");
   const [isAdding, setIsAdding] = useState(false);
-  const [addPanelTab, setAddPanelTab] = useState<"quick" | "manual">("quick");
+  const [selectedAddPanelTab, setSelectedAddPanelTab] = useState<AddCompanyTab | null>(null);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -141,15 +148,9 @@ function CompaniesPageContent() {
     }, 320);
   }, []);
 
-  const openAddCompanyPanel = useCallback(() => {
-    setEditingCompany(null);
-    setAddPanelTab("quick");
-    setIsAdding(true);
-  }, []);
-
   const openEditCompanyPanel = useCallback((company: Company) => {
     setEditingCompany(company);
-    setAddPanelTab("manual");
+    setSelectedAddPanelTab("manual");
     setIsAdding(true);
     scrollToPageTop();
   }, [scrollToPageTop]);
@@ -157,6 +158,7 @@ function CompaniesPageContent() {
   const closeAddPanel = useCallback(() => {
     setIsAdding(false);
     setEditingCompany(null);
+    setSelectedAddPanelTab(null);
   }, []);
 
   const toggleSelection = useCallback((id: number) => {
@@ -172,6 +174,18 @@ function CompaniesPageContent() {
     },
   });
   const companies = useMemo(() => companiesQuery.data ?? [], [companiesQuery.data]);
+  const presetCompaniesQuery = usePresetCompanies();
+  const defaultAddPanelTab = useMemo(
+    () => getDefaultAddCompanyTab(presetCompaniesQuery.data, companies),
+    [presetCompaniesQuery.data, companies]
+  );
+  const addPanelTab = selectedAddPanelTab ?? defaultAddPanelTab;
+
+  const openAddCompanyPanel = useCallback(() => {
+    setEditingCompany(null);
+    setSelectedAddPanelTab(null);
+    setIsAdding(true);
+  }, []);
 
   const filteredAndSortedCompanies = useMemo(() => {
     let result = [...companies];
@@ -466,30 +480,33 @@ function CompaniesPageContent() {
 
       {view === "list" && isAdding && (
         <div className="rounded-xl border border-border bg-card/70 p-4 sm:p-6">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center rounded-md border border-border bg-card p-1">
-              <Button
-                type="button"
-                size="sm"
-                variant={addPanelTab === "quick" ? "secondary" : "ghost"}
-                className="h-7 px-3"
-                onClick={() => {
-                  setEditingCompany(null);
-                  setAddPanelTab("quick");
-                }}
+          <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <ToggleGroup
+              type="single"
+              value={addPanelTab}
+              onValueChange={(value) => {
+                if (value !== "quick" && value !== "manual") return;
+                if (value === "quick") setEditingCompany(null);
+                setSelectedAddPanelTab(value);
+              }}
+              size="sm"
+              spacing={1}
+              aria-label="Company add method"
+              className="rounded-md border border-border bg-card p-1"
+            >
+              <ToggleGroupItem
+                value="quick"
+                className="rounded-sm px-3 data-[state=on]:bg-secondary data-[state=on]:text-secondary-foreground"
               >
                 Quick Add
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={addPanelTab === "manual" ? "secondary" : "ghost"}
-                className="h-7 px-3"
-                onClick={() => setAddPanelTab("manual")}
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="manual"
+                className="rounded-sm px-3 data-[state=on]:bg-secondary data-[state=on]:text-secondary-foreground"
               >
-                Manual
-              </Button>
-            </div>
+                Custom Company
+              </ToggleGroupItem>
+            </ToggleGroup>
 
             <Button
               type="button"
@@ -502,6 +519,8 @@ function CompaniesPageContent() {
               Close
             </Button>
           </div>
+
+          <Separator className="mb-5" />
 
           {addPanelTab === "quick" ? (
             <CompanyQuickAdd existingCompanies={companies} />

@@ -26,6 +26,27 @@ vi.mock("@/lib/api/clients/profile", () => ({
 }));
 
 describe("EducationEditor", () => {
+  it("places add and cancel actions in the education form header", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <EducationEditor profileId={1} />
+      </QueryClientProvider>
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add Education" }));
+
+    const form = screen.getByRole("heading", { name: "Add Education" }).closest("form");
+    const buttons = [...(form?.querySelectorAll("button") ?? [])];
+    expect(buttons).toHaveLength(2);
+    expect(buttons.map((button) => button.textContent?.trim())).toEqual([
+      "Add Education",
+      "Cancel",
+    ]);
+  });
+
   it("saves parsed education without dates as one batch", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -66,7 +87,10 @@ describe("EducationEditor", () => {
       </QueryClientProvider>
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "Save Changes" }));
+    const saveButton = await screen.findByRole("button", { name: "Save Changes" });
+    expect(saveButton.closest('[data-slot="card-header"]')).not.toBeNull();
+    expect(saveButton.closest('[data-slot="card-footer"]')).toBeNull();
+    fireEvent.click(saveButton);
 
     await waitFor(() => {
       expect(applyResumeSection).toHaveBeenCalledOnce();
@@ -110,6 +134,8 @@ describe("EducationEditor", () => {
     );
 
     await screen.findByText("Original University");
+    const degree = screen.getByText("BS");
+    expect(degree.className).toContain("text-sm");
     const educationCard = screen.getByText("Original University").closest(".group");
     const editButton = educationCard?.querySelector("button");
     expect(editButton).not.toBeNull();
@@ -117,6 +143,15 @@ describe("EducationEditor", () => {
     const institution = container.querySelector<HTMLInputElement>("#institution");
     expect(institution).not.toBeNull();
     fireEvent.change(institution!, { target: { value: "Renamed University" } });
+
+    const editForm = screen.getByRole("heading", { name: "Edit Education" }).closest("form");
+    const editButtons = [...(editForm?.querySelectorAll("button") ?? [])];
+    expect(editButtons).toHaveLength(2);
+    expect(editButtons.map((button) => button.textContent?.trim())).toEqual([
+      "Save Changes",
+      "Cancel",
+    ]);
+
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
     await waitFor(() => {

@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, Loader2, Plus, Search } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { AlertCircle, CheckCircle2, ExternalLink, Loader2, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -10,14 +10,15 @@ import { Input } from "@/components/ui/input";
 import { createCompanies } from "@/lib/api/clients/companies";
 import { companyImportBodySchema } from "@/lib/api/contracts/companies";
 import {
-  excludeExistingPresetCompanies,
-  parsePresetCompanies,
+  getAddablePresetCompanies,
   searchPresetCompanies,
   type PresetCompany,
 } from "@/lib/companies/preset-companies";
+import { formatCompanyUrl } from "@/lib/companies/display";
 import { normalizeCareersUrl } from "@/lib/companies/normalization";
 import { useDebounce } from "@/lib/hooks/use-debounce";
-import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import { usePresetCompanies } from "@/lib/hooks/use-preset-companies";
+import { cacheOwnership } from "@/lib/query-keys";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
 interface ExistingCompany {
@@ -64,22 +65,7 @@ export function CompanyQuickAdd({ existingCompanies }: CompanyQuickAddProps) {
   );
   const debouncedSearch = useDebounce(searchQuery, 180);
 
-  const presetCompaniesQuery = useQuery({
-    queryKey: queryKeys.companies.presets(),
-    queryFn: async (): Promise<PresetCompany[]> => {
-      const response = await fetch("/companies.json", { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error("Failed to load preset companies");
-      }
-
-      const raw = await response.json();
-      if (!Array.isArray(raw)) {
-        throw new Error("Invalid companies.json format");
-      }
-
-      return parsePresetCompanies(raw);
-    },
-  });
+  const presetCompaniesQuery = usePresetCompanies();
 
   const addMutation = useMutation({
     mutationFn: async (payload: Record<string, unknown> | Record<string, unknown>[]) => {
@@ -87,34 +73,13 @@ export function CompanyQuickAdd({ existingCompanies }: CompanyQuickAddProps) {
     },
   });
 
-  const existingNormalizedUrls = useMemo(() => {
-    return new Set(
-      existingCompanies.map((company) => normalizeCareersUrl(company.careersUrl))
-    );
-  }, [existingCompanies]);
-
-  const existingNormalizedNames = useMemo(() => {
-    return new Set(
-      existingCompanies
-        .map((company) => company.name.trim().toLowerCase())
-        .filter((name) => name.length > 0)
-    );
-  }, [existingCompanies]);
-
-  const hiddenUrls = useMemo(() => {
-    return new Set([...existingNormalizedUrls, ...locallyHiddenUrls]);
-  }, [existingNormalizedUrls, locallyHiddenUrls]);
-
   const addableCompanies = useMemo(() => {
-    const nonExistingByUrl = excludeExistingPresetCompanies(
+    return getAddablePresetCompanies(
       presetCompaniesQuery.data ?? [],
-      hiddenUrls
+      existingCompanies,
+      locallyHiddenUrls
     );
-
-    return nonExistingByUrl.filter(
-      (company) => !existingNormalizedNames.has(company.name.trim().toLowerCase())
-    );
-  }, [presetCompaniesQuery.data, hiddenUrls, existingNormalizedNames]);
+  }, [presetCompaniesQuery.data, existingCompanies, locallyHiddenUrls]);
 
   const filteredCompanies = useMemo(() => {
     return searchPresetCompanies(addableCompanies, debouncedSearch);
@@ -291,7 +256,7 @@ export function CompanyQuickAdd({ existingCompanies }: CompanyQuickAddProps) {
           All preset companies are already added
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Use the Manual tab to add a company that is not in the preset list.
+          Use the Custom Company tab to add a company that is not in the preset list.
         </p>
       </div>
     );
@@ -317,7 +282,7 @@ export function CompanyQuickAdd({ existingCompanies }: CompanyQuickAddProps) {
             onClick={handleSelectAllVisible}
             disabled={filteredCompanies.length === 0 || addMutation.isPending}
           >
-            Select Visible
+            Select All
           </Button>
           <Button
             type="button"
@@ -326,7 +291,7 @@ export function CompanyQuickAdd({ existingCompanies }: CompanyQuickAddProps) {
             onClick={handleClearVisibleSelection}
             disabled={selectedVisibleCount === 0 || addMutation.isPending}
           >
-            Clear Visible
+            Clear
           </Button>
           <Button
             type="button"
@@ -342,14 +307,6 @@ export function CompanyQuickAdd({ existingCompanies }: CompanyQuickAddProps) {
             Add Selected ({selectedCompanies.length})
           </Button>
         </div>
-      </div>
-
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <p>
-          Showing {filteredCompanies.length} of {addableCompanies.length} preset
-          companies
-        </p>
-        <p>{selectedCompanies.length} selected</p>
       </div>
 
       {filteredCompanies.length === 0 ? (
@@ -397,36 +354,36 @@ export function CompanyQuickAdd({ existingCompanies }: CompanyQuickAddProps) {
                 }`}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
                     {company.logoUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={company.logoUrl}
                         alt={company.name}
-                        className="h-9 w-9 rounded bg-muted object-contain p-1"
+                        className="size-10 rounded bg-muted object-contain p-1"
                       />
                     ) : (
-                      <div className="flex h-9 w-9 items-center justify-center rounded bg-muted text-sm font-medium text-muted-foreground">
+                      <div className="flex size-10 items-center justify-center rounded bg-muted text-sm font-medium text-muted-foreground">
                         {company.name.charAt(0).toUpperCase()}
                       </div>
                     )}
 
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {company.name}
-                        </p>
-                        <span className="text-muted-foreground/60">|</span>
-                        <a
-                          href={company.careersUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(event) => event.stopPropagation()}
-                          className="shrink-0 text-xs text-emerald-400 hover:text-emerald-300 hover:underline"
-                        >
-                          Visit careers page
-                        </a>
-                      </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {company.name}
+                      </p>
+                      <a
+                        href={company.careersUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(event) => event.stopPropagation()}
+                        className="mt-1 flex w-fit max-w-full items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 hover:underline"
+                      >
+                        <ExternalLink className="size-3 shrink-0" />
+                        <span className="truncate">
+                          {formatCompanyUrl(company.careersUrl)}
+                        </span>
+                      </a>
                     </div>
                   </div>
 

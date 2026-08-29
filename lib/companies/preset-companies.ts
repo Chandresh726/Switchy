@@ -50,6 +50,13 @@ const PresetCompanySchema = z
 
 export type PresetCompany = z.infer<typeof PresetCompanySchema>;
 
+export interface ExistingPresetCompany {
+  name: string;
+  careersUrl: string;
+}
+
+export type AddCompanyTab = "quick" | "manual";
+
 function normalizeOptionalText(value?: string | null): string | undefined {
   if (!value) return undefined;
   const trimmed = value.trim();
@@ -121,4 +128,34 @@ export function excludeExistingPresetCompanies(
   return items.filter(
     (company) => !existingUrls.has(normalizeCareersUrl(company.careersUrl))
   );
+}
+
+export function getAddablePresetCompanies(
+  items: PresetCompany[],
+  existingCompanies: ExistingPresetCompany[],
+  additionallyExcludedCareersUrls: Iterable<string> = []
+): PresetCompany[] {
+  const excludedCareersUrls = [
+    ...existingCompanies.map((company) => company.careersUrl),
+    ...additionallyExcludedCareersUrls,
+  ];
+  const existingNames = new Set(
+    existingCompanies
+      .map((company) => company.name.trim().toLowerCase())
+      .filter((name) => name.length > 0)
+  );
+
+  return excludeExistingPresetCompanies(items, excludedCareersUrls).filter(
+    (company) => !existingNames.has(company.name.trim().toLowerCase())
+  );
+}
+
+export function getDefaultAddCompanyTab(
+  presetCompanies: PresetCompany[] | undefined,
+  existingCompanies: ExistingPresetCompany[]
+): AddCompanyTab {
+  if (!presetCompanies) return "quick";
+  return getAddablePresetCompanies(presetCompanies, existingCompanies).length > 0
+    ? "quick"
+    : "manual";
 }

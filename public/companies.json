@@ -39,7 +39,7 @@
   {
     "name": "Rubrik",
     "careersUrl": "https://www.rubrik.com/company/careers/departments/engineering",
-    "logoUrl": "https://www.rubrik.com/content/dam/rubrik/brand/logos/logomark/Rubrik_Logomark_Gradient.png",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=rubrik.com&sz=128",
     "platform": "greenhouse",
     "boardToken": "rubrik",
     "isActive": true
@@ -342,7 +342,7 @@
   {
     "name": "Apollo.io",
     "careersUrl": "https://job-boards.greenhouse.io/apolloio",
-    "logoUrl": "https://media.glassdoor.com/sqll/1468521/apollo-io-squareLogo-1740860866018.png",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=apollo.io&sz=128",
     "platform": "greenhouse",
     "boardToken": "apolloio",
     "isActive": true
@@ -506,7 +506,7 @@
   {
     "name": "Intuit",
     "careersUrl": "https://careers.intuit.com/",
-    "logoUrl": "https://images.seeklogo.com/logo-png/27/2/intuit-logo-png_seeklogo-270874.png",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=intuit.com&sz=128",
     "platform": "custom",
     "isActive": true
   },
@@ -623,7 +623,7 @@
   {
     "name": "JioStar",
     "careersUrl": "https://jiostar.wd102.myworkdayjobs.com/en-US/JioStar?jobFamilyGroup=8df5dc1586541000539b236955f10000",
-    "logoUrl": "https://cdn.brandfetch.io/domain/viacom18.com/fallback/lettermark/theme/dark/h/400/w/400/icon?c=1bfwsmEH20zzEfSNTed",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=jiostar.com&sz=128",
     "platform": "workday",
     "boardToken": "jiostar/JioStar",
     "isActive": true
@@ -737,6 +737,22 @@
     "logoUrl": "https://www.google.com/s2/favicons?domain=zscaler.com&sz=128",
     "platform": "greenhouse",
     "boardToken": "zscaler",
+    "isActive": true
+  },
+  {
+    "name": "SolarWinds",
+    "careersUrl": "https://jobs.solarwinds.com/jobs/",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=solarwinds.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "solarwinds",
+    "isActive": true
+  },
+  {
+    "name": "PayPay",
+    "careersUrl": "https://job-boards.greenhouse.io/paypay",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=paypay.ne.jp&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "paypay",
     "isActive": true
   }
 ]

@@ -22,9 +22,17 @@ import { toast } from "sonner";
 import { ApiErrorState } from "@/components/ui/api-error-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
   applyResumeSection,
@@ -88,13 +96,25 @@ function ExperienceForm({
       onSubmit={onSubmit}
       className="space-y-4 rounded-lg border border-border bg-card p-4"
     >
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h4 className="text-sm font-medium text-foreground">
           {isEdit ? "Edit Experience" : "Add Experience"}
         </h4>
-        <Button type="button" variant="ghost" size="icon-sm" onClick={onCancel}>
-          <X className="h-4 w-4" />
-        </Button>
+        <div className="flex justify-end gap-2">
+          <Button type="submit" size="sm" disabled={isPending}>
+            {isPending ? (
+              <Loader2 data-icon="inline-start" className="animate-spin" />
+            ) : isEdit ? (
+              <Save data-icon="inline-start" />
+            ) : (
+              <Plus data-icon="inline-start" />
+            )}
+            {isEdit ? "Save Changes" : "Add Experience"}
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -180,22 +200,6 @@ function ExperienceForm({
           rows={3}
           placeholder="Describe your role and responsibilities..."
         />
-      </div>
-
-      <div className="flex justify-end gap-2">
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={isPending}>
-          {isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : isEdit ? (
-            <Save className="h-4 w-4" />
-          ) : (
-            <Plus className="h-4 w-4" />
-          )}
-          {isEdit ? "Save Changes" : "Add Experience"}
-        </Button>
       </div>
     </form>
   );
@@ -407,7 +411,47 @@ export function ExperienceList({
             Work Experience
           </CardTitle>
         </div>
+        {pendingChanges.length > 0 ? (
+          <>
+            <CardDescription>
+              {pendingChanges.filter(({ kind }) => kind === "add").length} to add ·{" "}
+              {pendingChanges.filter(({ kind }) => kind === "update").length} to update
+              {resumeReview?.review.unchangedCount
+                ? ` · ${resumeReview.review.unchangedCount} already current`
+                : ""}
+            </CardDescription>
+            <CardAction className="col-span-2 col-start-1 row-span-1 row-start-3 mt-2 flex w-full justify-end gap-2 sm:col-span-1 sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:mt-0 sm:w-auto">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleRevertReview}
+                disabled={reviewMutation.isPending}
+              >
+                <Undo2 data-icon="inline-start" />
+                Revert
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => reviewMutation.mutate(
+                  pendingChanges.map(({ value }) => value)
+                )}
+                disabled={reviewMutation.isPending}
+                className="min-w-[120px] bg-amber-600 text-foreground hover:bg-amber-500"
+              >
+                {reviewMutation.isPending ? (
+                  <Loader2 data-icon="inline-start" className="animate-spin" />
+                ) : (
+                  <Save data-icon="inline-start" />
+                )}
+                {reviewMutation.isPending ? "Saving..." : "Save Changes"}
+              </Button>
+            </CardAction>
+          </>
+        ) : null}
       </CardHeader>
+      <Separator />
       <CardContent className="space-y-4">
         {pendingChanges.length > 0 ? (
           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
@@ -475,7 +519,7 @@ export function ExperienceList({
           >
             <div className="flex items-start justify-between">
               <div className="space-y-1">
-                <h4 className="font-medium text-foreground">{item.title}</h4>
+                <h4 className="text-sm font-medium text-foreground">{item.title}</h4>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Building2 className="h-3.5 w-3.5" />
@@ -493,7 +537,7 @@ export function ExperienceList({
                   </span>
                 </div>
                 {item.description ? (
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-foreground/80">
+                  <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-foreground/80">
                     {item.description}
                   </p>
                 ) : null}
@@ -539,43 +583,6 @@ export function ExperienceList({
         ) : null}
       </CardContent>
 
-      {pendingChanges.length > 0 ? (
-        <CardFooter className="flex items-center justify-between border-t border-border bg-card px-6 py-4">
-          <p className="text-xs text-muted-foreground">
-            {pendingChanges.filter(({ kind }) => kind === "add").length} to add ·{" "}
-            {pendingChanges.filter(({ kind }) => kind === "update").length} to update
-            {resumeReview?.review.unchangedCount
-              ? ` · ${resumeReview.review.unchangedCount} already current`
-              : ""}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleRevertReview}
-              disabled={reviewMutation.isPending}
-            >
-              <Undo2 data-icon="inline-start" />
-              Revert
-            </Button>
-            <Button
-              type="button"
-              onClick={() => reviewMutation.mutate(
-                pendingChanges.map(({ value }) => value)
-              )}
-              disabled={reviewMutation.isPending}
-              className="min-w-[120px] bg-amber-600 text-foreground hover:bg-amber-500"
-            >
-              {reviewMutation.isPending ? (
-                <Loader2 data-icon="inline-start" className="animate-spin" />
-              ) : (
-                <Save data-icon="inline-start" />
-              )}
-              {reviewMutation.isPending ? "Saving..." : "Save Changes"}
-            </Button>
-          </div>
-        </CardFooter>
-      ) : null}
     </Card>
   );
 }

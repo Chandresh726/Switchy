@@ -9,8 +9,24 @@ import { toast } from "sonner";
 import { ApiErrorState } from "@/components/ui/api-error-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import {
   applyResumeSection,
   createSkill,
@@ -207,7 +223,45 @@ export function SkillsEditor({
           </div>
           <CardTitle className="text-lg font-medium text-foreground">Skills</CardTitle>
         </div>
+        {pendingChanges.length > 0 ? (
+          <>
+            <CardDescription>
+              {pendingChanges.filter(({ kind }) => kind === "add").length} to add ·{" "}
+              {pendingChanges.filter(({ kind }) => kind === "update").length} to update
+              {resumeReview?.review.unchangedCount
+                ? ` · ${resumeReview.review.unchangedCount} already current`
+                : ""}
+            </CardDescription>
+            <CardAction className="col-span-2 col-start-1 row-span-1 row-start-3 mt-2 flex w-full justify-end gap-2 sm:col-span-1 sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:mt-0 sm:w-auto">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleRevertReview}
+                disabled={reviewMutation.isPending}
+              >
+                <Undo2 data-icon="inline-start" />
+                Revert
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleApplyReview}
+                disabled={reviewMutation.isPending}
+                className="min-w-[120px] bg-violet-600 text-foreground hover:bg-violet-500"
+              >
+                {reviewMutation.isPending ? (
+                  <Loader2 data-icon="inline-start" className="animate-spin" />
+                ) : (
+                  <Save data-icon="inline-start" />
+                )}
+                {reviewMutation.isPending ? "Saving..." : "Save Changes"}
+              </Button>
+            </CardAction>
+          </>
+        ) : null}
       </CardHeader>
+      <Separator />
       <CardContent className="space-y-6">
         {pendingChanges.length > 0 ? (
           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
@@ -252,20 +306,26 @@ export function SkillsEditor({
             }))}
             className="flex-1"
           />
-          <select
+          <Select
             value={newSkill.category}
-            onChange={(event) => setNewSkill((current) => ({
+            onValueChange={(category) => setNewSkill((current) => ({
               ...current,
-              category: event.target.value,
+              category,
             }))}
-            className="h-8 rounded border border-border bg-card px-2 text-xs text-foreground"
           >
-            {SKILL_CATEGORIES.map((category) => (
-              <option key={category} value={category}>
-                {category.charAt(0).toUpperCase() + category.slice(1)}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="w-36 shrink-0" aria-label="Skill category">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start">
+              <SelectGroup>
+                {SKILL_CATEGORIES.map((category) => (
+                  <SelectItem key={category} value={category}>
+                    {category.charAt(0).toUpperCase() + category.slice(1)}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
           <Button type="submit" disabled={addMutation.isPending || !newSkill.name.trim()}>
             {addMutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -283,13 +343,23 @@ export function SkillsEditor({
             </p>
           </div>
         ) : (
-          <div className="gap-6 space-y-4 sm:columns-2">
+          <div
+            data-skills-category-layout
+            className="flex flex-wrap items-start gap-x-6 gap-y-4"
+          >
             {Object.entries(skillsByCategory).map(([category, categorySkills]) => (
-              <div key={category} className="mb-4 break-inside-avoid">
+              <div
+                key={category}
+                data-skills-category
+                className="w-max max-w-full flex-none"
+              >
                 <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   {category}
                 </h4>
-                <div className="flex flex-wrap gap-2">
+                <div
+                  data-skills-category-items
+                  className="flex w-max max-w-full flex-nowrap gap-2 overflow-x-auto"
+                >
                   {categorySkills.map((skill) => (
                     <Badge
                       key={skill.id}
@@ -314,41 +384,6 @@ export function SkillsEditor({
         )}
       </CardContent>
 
-      {pendingChanges.length > 0 ? (
-        <CardFooter className="flex items-center justify-between border-t border-border bg-card px-6 py-4">
-          <p className="text-xs text-muted-foreground">
-            {pendingChanges.filter(({ kind }) => kind === "add").length} to add ·{" "}
-            {pendingChanges.filter(({ kind }) => kind === "update").length} to update
-            {resumeReview?.review.unchangedCount
-              ? ` · ${resumeReview.review.unchangedCount} already current`
-              : ""}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleRevertReview}
-              disabled={reviewMutation.isPending}
-            >
-              <Undo2 data-icon="inline-start" />
-              Revert
-            </Button>
-            <Button
-              type="button"
-              onClick={handleApplyReview}
-              disabled={reviewMutation.isPending}
-              className="min-w-[120px] bg-violet-600 text-foreground hover:bg-violet-500"
-            >
-              {reviewMutation.isPending ? (
-                <Loader2 data-icon="inline-start" className="animate-spin" />
-              ) : (
-                <Save data-icon="inline-start" />
-              )}
-              {reviewMutation.isPending ? "Saving..." : "Save Changes"}
-            </Button>
-          </div>
-        </CardFooter>
-      ) : null}
     </Card>
   );
 }

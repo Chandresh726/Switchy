@@ -67,6 +67,14 @@ describe("ProfileForm review workflow", () => {
     mocks.saveProfile.mockImplementation(async (data) => ({ ...profile, ...data }));
   });
 
+  it("shows the professional summary as a two-line textarea by default", () => {
+    renderProfileForm();
+
+    const summary = screen.getByLabelText("Professional Summary") as HTMLTextAreaElement;
+    expect(summary.rows).toBe(2);
+    expect(summary.className).toContain("min-h-0");
+  });
+
   it("stages extracted profile changes until the user saves them", async () => {
     const onReviewResolved = vi.fn();
     renderProfileForm({
@@ -79,10 +87,15 @@ describe("ProfileForm review workflow", () => {
     });
 
     expect(screen.getByDisplayValue("new@example.com")).toBeTruthy();
-    expect(screen.getByText(/2 pending changes: Email, Location/)).toBeTruthy();
+    expect(screen.queryByText(/pending changes/i)).toBeNull();
+    expect(screen.queryByText(/Email, Location/)).toBeNull();
     expect(mocks.saveProfile).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    const saveButton = screen.getByRole("button", { name: "Save Changes" });
+    expect(saveButton.closest('[data-slot="card-header"]')).not.toBeNull();
+    expect(saveButton.closest('[data-slot="card-footer"]')).toBeNull();
+
+    fireEvent.click(saveButton);
 
     await waitFor(() => {
       expect(mocks.saveProfile).toHaveBeenCalledOnce();
