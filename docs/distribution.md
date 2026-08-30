@@ -45,16 +45,19 @@ path. It is primarily intended for automated tests and isolated installations.
 
 The `release.yml` workflow runs only for stable `vMAJOR.MINOR.PATCH` tags. It:
 
-1. verifies that the tag, application version, and CLI version match;
-2. runs the complete root and landing verification;
+1. verifies that the tag matches the CLI package version and points to a commit
+   that already passed the complete `main` CI workflow;
+2. reuses that successful CI result instead of rerunning the same verification;
 3. builds and smoke-tests native runtimes on Linux x64/arm64, macOS
    x64/arm64, and Windows x64;
-4. creates one checksum manifest and immutable GitHub release;
-5. publishes `@chandresh726/switchy` through npm trusted publishing when the
+4. builds and audits the npm tarball once, then publishes that exact artifact;
+5. creates one checksum manifest and immutable GitHub release;
+6. publishes `@chandresh726/switchy` through npm trusted publishing when the
    repository variable `NPM_TRUSTED_PUBLISHING_READY` is `true`.
 
-The Git tag, root `package.json`, CLI `package.json`, runtime metadata, GitHub
-release, and npm package must all use the same version. Pre-release tags are
+`packages/cli/package.json` is the single source of truth for the release
+version. The application, runtime metadata, native helper, GitHub release, and
+npm package all derive their version from that manifest. Pre-release tags are
 rejected.
 
 ## One-time platform setup
@@ -92,7 +95,8 @@ workflow publishes both GitHub assets and npm automatically through OIDC.
 
 For each later stable release:
 
-1. update both package versions;
+1. bump the single release version with `pnpm release:version patch` (or pass
+   `minor`, `major`, or an exact stable version);
 2. update release notes and run `pnpm verify:all`;
 3. test a locally packaged runtime with `node scripts/smoke-runtime.mjs`;
    macOS notification helpers are always ad-hoc signed and require no Apple

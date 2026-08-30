@@ -1122,5 +1122,117 @@
     "platform": "smartrecruiters",
     "boardToken": "Canva",
     "isActive": true
+  },
+  {
+    "name": "Intel",
+    "careersUrl": "https://intel.wd1.myworkdayjobs.com/External",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=intel.com&sz=128",
+    "platform": "workday",
+    "boardToken": "intel/External",
+    "isActive": true
+  },
+  {
+    "name": "Palo Alto Networks",
+    "careersUrl": "https://paloaltonetworks.wd5.myworkdayjobs.com/panwexternalcareers",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=jobs.paloaltonetworks.com&sz=128",
+    "platform": "workday",
+    "boardToken": "paloaltonetworks/panwexternalcareers",
+    "isActive": true
+  },
+  {
+    "name": "BrowserStack",
+    "careersUrl": "https://browserstack.wd3.myworkdayjobs.com/External",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=browserstack.com&sz=128",
+    "platform": "workday",
+    "boardToken": "browserstack/External",
+    "isActive": true
+  },
+  {
+    "name": "Freshworks",
+    "careersUrl": "https://careers.smartrecruiters.com/Freshworks",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=freshworks.com&sz=128",
+    "platform": "smartrecruiters",
+    "boardToken": "Freshworks",
+    "isActive": true
+  },
+  {
+    "name": "Samsung R&D",
+    "careersUrl": "https://sec.wd3.myworkdayjobs.com/Samsung_Careers",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=samsung.com&sz=128",
+    "platform": "workday",
+    "boardToken": "sec/Samsung_Careers",
+    "isActive": true
+  },
+  {
+    "name": "Barclays",
+    "careersUrl": "https://barclays.wd3.myworkdayjobs.com/External_Career_Site_Barclays",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=barclays.com&sz=128",
+    "platform": "workday",
+    "boardToken": "barclays/External_Career_Site_Barclays",
+    "isActive": true
+  },
+  {
+    "name": "Citi",
+    "careersUrl": "https://citi.wd5.myworkdayjobs.com/2",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=citi.com&sz=128",
+    "platform": "workday",
+    "boardToken": "citi/2",
+    "isActive": true
+  },
+  {
+    "name": "Target India",
+    "careersUrl": "https://target.wd5.myworkdayjobs.com/targetcareers",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=target.com&sz=128",
+    "platform": "workday",
+    "boardToken": "target/targetcareers",
+    "isActive": true
+  },
+  {
+    "name": "Sprinklr",
+    "careersUrl": "https://sprinklr.wd1.myworkdayjobs.com/careers",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=sprinklr.com&sz=128",
+    "platform": "workday",
+    "boardToken": "sprinklr/careers",
+    "isActive": true
+  },
+  {
+    "name": "Arcesium",
+    "careersUrl": "https://job-boards.greenhouse.io/arcesiumllc",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=arcesium.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "arcesiumllc",
+    "isActive": true
+  },
+  {
+    "name": "Expedia Group",
+    "careersUrl": "https://expedia.wd108.myworkdayjobs.com/search",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=expediagroup.com&sz=128",
+    "platform": "workday",
+    "boardToken": "expedia/search",
+    "isActive": true
+  },
+  {
+    "name": "Kraken",
+    "careersUrl": "https://jobs.ashbyhq.com/kraken.com",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=kraken.com&sz=128",
+    "platform": "ashby",
+    "boardToken": "kraken.com",
+    "isActive": true
+  },
+  {
+    "name": "Sourcegraph",
+    "careersUrl": "https://job-boards.greenhouse.io/sourcegraph91",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=sourcegraph.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "sourcegraph91",
+    "isActive": true
+  },
+  {
+    "name": "Palantir",
+    "careersUrl": "https://jobs.lever.co/palantir",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=palantir.com&sz=128",
+    "platform": "lever",
+    "boardToken": "palantir",
+    "isActive": true
   }
 ]

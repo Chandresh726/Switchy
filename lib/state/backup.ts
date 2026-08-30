@@ -19,8 +19,8 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { z } from "zod";
 
-import packageJson from "@/package.json";
 import { resumes } from "@/lib/db/schema";
+import releasePackageJson from "@/packages/cli/package.json";
 
 import type { StatePaths } from "./environment-paths";
 
@@ -341,7 +341,7 @@ async function listSnapshotDirectories(
 export async function createStateSnapshot({
   statePaths,
   outputDirectory,
-  applicationVersion = packageJson.version,
+  applicationVersion = releasePackageJson.version,
   allowInsideRoot = false,
 }: CreateStateSnapshotOptions,
 operations: CreateStateSnapshotOperations = {}

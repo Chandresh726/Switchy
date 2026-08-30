@@ -1,6 +1,6 @@
-import packageJson from "@/package.json";
+import releasePackageJson from "@/packages/cli/package.json";
 
-export const APP_VERSION = packageJson.version;
+export const APP_VERSION = releasePackageJson.version;
 export const DB_PATH = process.env.NODE_ENV === "development"
   ? "~/.switchy/data/development/switchy.db"
   : "~/.switchy/data/production/switchy.db";

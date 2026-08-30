@@ -4,11 +4,11 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("Switchy distribution metadata", () => {
-  it("keeps application and CLI versions aligned", () => {
+  it("uses the publishable CLI package as the release version source", () => {
     const application = JSON.parse(
       readFileSync(path.join(process.cwd(), "package.json"), "utf8")
     ) as {
-      version: string;
+      version?: string;
       private: boolean;
       license: string;
       scripts: Record<string, string>;
@@ -28,10 +28,13 @@ describe("Switchy distribution metadata", () => {
     };
 
     expect(application).toMatchObject({
-      version: "1.0.18",
       private: true,
       license: "MIT",
     });
+    expect(application.version).toBeUndefined();
+    expect(application.scripts["release:version"]).toBe(
+      "pnpm --filter @chandresh726/switchy version --no-git-checks --no-git-tag-version"
+    );
     expect(application.scripts.dev).toBe(
       "NODE_ENV=development "
       + "SWITCHY_MACOS_NOTIFICATION_HELPER='./.switchy-build/native/macos/"
@@ -57,11 +60,11 @@ describe("Switchy distribution metadata", () => {
     );
     expect(cli).toMatchObject({
       name: "@chandresh726/switchy",
-      version: application.version,
       license: application.license,
       bin: { switchy: "dist/cli.js" },
       publishConfig: { access: "public" },
     });
+    expect(cli.version).toMatch(/^\d+\.\d+\.\d+$/u);
     expect(cli.private).not.toBe(true);
   });
 
@@ -78,5 +81,28 @@ describe("Switchy distribution metadata", () => {
     expect(workflow).not.toContain("scripts/configure-macos-release-");
     expect(builder).not.toContain("notarytool");
     expect(builder).toContain('["--force", "--deep", "--sign", "-", bundle]');
+  });
+
+  it("reuses successful CI and one audited npm tarball for releases", () => {
+    const ciWorkflow = readFileSync(
+      path.join(process.cwd(), ".github", "workflows", "ci.yml"),
+      "utf8"
+    );
+    const releaseWorkflow = readFileSync(
+      path.join(process.cwd(), ".github", "workflows", "release.yml"),
+      "utf8"
+    );
+
+    expect(ciWorkflow).toContain("static-analysis:");
+    expect(ciWorkflow).toContain("tests-and-distribution:");
+    expect(ciWorkflow).toContain("application-build:");
+    expect(ciWorkflow).toContain("landing:");
+    expect(releaseWorkflow).toContain(
+      "Require successful main CI for tagged commit"
+    );
+    expect(releaseWorkflow).toContain("actions/workflows/ci.yml/runs?");
+    expect(releaseWorkflow).not.toContain("pnpm verify:all");
+    expect(releaseWorkflow).toContain("name: npm-package");
+    expect(releaseWorkflow).toContain("npm publish dist/npm/*.tgz --access public");
   });
 });

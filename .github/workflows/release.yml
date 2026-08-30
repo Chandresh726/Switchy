@@ -6,6 +6,7 @@ on:
       - "v*.*.*"
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -25,6 +26,36 @@ jobs:
           git merge-base --is-ancestor
           "${GITHUB_SHA}"
           "origin/main"
+      - name: Validate stable tag and versions
+        shell: bash
+        run: |
+          node -e '
+            const root = require("./package.json");
+            const cli = require("./packages/cli/package.json");
+            const tag = process.env.GITHUB_REF_NAME;
+            if (Object.hasOwn(root, "version")) throw new Error("The private root package must not define a release version");
+            if (tag !== `v${cli.version}`) throw new Error(`Tag ${tag} does not match ${cli.version}`);
+            if (!/^\d+\.\d+\.\d+$/.test(cli.version)) throw new Error("Release version must be stable");
+            if (!cli.license || cli.license === "UNLICENSED") throw new Error("Choose a license before releasing");
+          '
+      - name: Require successful main CI for tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_count="$(gh api \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&branch=main&event=push&status=success&per_page=1" \
+            --jq '.total_count')"
+          if [ "${run_count}" -lt 1 ]; then
+            echo "No successful main CI run found for ${GITHUB_SHA}" >&2
+            exit 1
+          fi
+
+  package-cli:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
         with:
           version: 11.9.0
@@ -33,20 +64,23 @@ jobs:
         with:
           node-version: 24.12.0
           cache: pnpm
+          registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
-      - name: Validate stable tag and versions
-        shell: bash
+      - name: Build npm package once
         run: |
-          node -e '
-            const root = require("./package.json");
-            const cli = require("./packages/cli/package.json");
-            const tag = process.env.GITHUB_REF_NAME;
-            if (tag !== `v${root.version}`) throw new Error(`Tag ${tag} does not match ${root.version}`);
-            if (root.version !== cli.version) throw new Error("Application and CLI versions differ");
-            if (!/^\d+\.\d+\.\d+$/.test(root.version)) throw new Error("Release version must be stable");
-            if (!cli.license || cli.license === "UNLICENSED") throw new Error("Choose a license before releasing");
-          '
-      - run: pnpm verify:all
+          mkdir -p dist/npm
+          npm pack \
+            --cache "${RUNNER_TEMP}/npm-cache" \
+            --pack-destination dist/npm \
+            ./packages/cli
+      - name: Audit npm package contents
+        run: tar -tzf dist/npm/*.tgz
+      - uses: actions/upload-artifact@v7
+        with:
+          name: npm-package
+          path: dist/npm/*.tgz
+          if-no-files-found: error
+          retention-days: 7
 
   build-runtime:
     needs: validate
@@ -98,34 +132,31 @@ jobs:
     needs:
       - validate
       - build-runtime
+      - package-cli
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: production
     permissions:
+      actions: read
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 11.9.0
-          run_install: false
       - uses: actions/setup-node@v6
         with:
           node-version: 24.12.0
-          registry-url: https://registry.npmjs.org
-      - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v7
         with:
           pattern: runtime-*
           path: dist/release-assets
           merge-multiple: true
+      - uses: actions/download-artifact@v7
+        with:
+          name: npm-package
+          path: dist/npm
       - name: Create release manifest
-        run: pnpm release:manifest
+        run: node scripts/create-release-manifest.mjs
         env:
           SWITCHY_REQUIRED_TARGETS: linux-x64,linux-arm64,darwin-x64,darwin-arm64,win32-x64
-      - run: pnpm cli:build
-      - name: Audit npm package contents
-        run: npm pack --dry-run --cache "${RUNNER_TEMP}/npm-cache" ./packages/cli
       - name: Publish immutable GitHub release assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -133,6 +164,7 @@ jobs:
           gh release create "${GITHUB_REF_NAME}"
           dist/release-assets/*.tar.gz
           dist/release-assets/switchy-manifest.json
+          dist/npm/*.tgz
           --verify-tag
           --generate-notes
           --title "Switchy ${GITHUB_REF_NAME}"
@@ -144,23 +176,17 @@ jobs:
     timeout-minutes: 10
     environment: production
     permissions:
+      actions: read
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 11.9.0
-          run_install: false
       - uses: actions/setup-node@v6
         with:
           node-version: 24.12.0
           registry-url: https://registry.npmjs.org
-      - run: pnpm install --frozen-lockfile
-      - name: Validate npm package license
-        run: >-
-          node -e
-          'const value = require("./packages/cli/package.json").license;
-          if (!value || value === "UNLICENSED") throw new Error("Choose a license before publishing");'
+      - uses: actions/download-artifact@v7
+        with:
+          name: npm-package
+          path: dist/npm
       - name: Publish npm CLI with trusted publishing
-        run: npm publish ./packages/cli --access public
+        run: npm publish dist/npm/*.tgz --access public

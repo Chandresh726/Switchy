@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { GET } from "@/app/api/health/live/route";
 import { livenessResponseSchema } from "@/lib/api/contracts/health";
+import { APP_VERSION } from "@/lib/constants";
 
 describe("health liveness route", () => {
   it("reports process liveness without depending on runtime readiness", async () => {
@@ -11,7 +12,7 @@ describe("health liveness route", () => {
     expect(response.headers.get("cache-control")).toContain("no-store");
     expect(livenessResponseSchema.parse(await response.json())).toEqual({
       status: "live",
-      version: "1.0.18",
+      version: APP_VERSION,
       instanceId: null,
     });
   });

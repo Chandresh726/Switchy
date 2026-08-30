@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getSwitchyPaths } from "../../../packages/cli/src/paths";
 import { currentTarget } from "../../../packages/cli/src/platform";
 import {
+  CLI_VERSION,
   DEFAULT_PORT,
   assertSupportedNodeVersion,
   resolveApplicationVersion,
@@ -139,7 +140,7 @@ describe("Switchy CLI release handling", () => {
   });
 
   it("uses the executing CLI version unless an app version is requested", () => {
-    expect(resolveApplicationVersion()).toBe("1.0.18");
+    expect(resolveApplicationVersion()).toBe(CLI_VERSION);
     expect(resolveApplicationVersion("1.0.1")).toBe("1.0.1");
   });
 

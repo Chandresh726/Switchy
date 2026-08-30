@@ -19,7 +19,10 @@ const runtimeArchive = path.join(
   "dist",
   "release-assets",
   `switchy-${JSON.parse(
-    await readFile(path.join(projectDirectory, "package.json"), "utf8")
+    await readFile(
+      path.join(projectDirectory, "packages", "cli", "package.json"),
+      "utf8"
+    )
   ).version}-${target}.tar.gz`
 );
 const cli = path.join(projectDirectory, "packages", "cli", "dist", "cli.js");

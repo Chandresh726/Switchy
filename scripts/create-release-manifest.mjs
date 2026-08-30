@@ -28,8 +28,11 @@ const releaseAssetsDirectory = path.join(
   "dist",
   "release-assets"
 );
-const packageJson = JSON.parse(
-  await readFile(path.join(projectDirectory, "package.json"), "utf8")
+const releasePackageJson = JSON.parse(
+  await readFile(
+    path.join(projectDirectory, "packages", "cli", "package.json"),
+    "utf8"
+  )
 );
 const artifactFiles = (await readdir(releaseAssetsDirectory))
   .filter((name) => name.endsWith(".artifact.json"))
@@ -52,7 +55,7 @@ for (const artifactFile of artifactFiles) {
   ) {
     throw new Error(`${artifactFile} is invalid`);
   }
-  const expectedFile = `switchy-${packageJson.version}-${artifact.target}.tar.gz`;
+  const expectedFile = `switchy-${releasePackageJson.version}-${artifact.target}.tar.gz`;
   if (artifact.file !== expectedFile || artifacts[artifact.target]) {
     throw new Error(`${artifactFile} has inconsistent release metadata`);
   }
@@ -83,7 +86,7 @@ if (missingTargets.length > 0) {
 
 const manifest = {
   schemaVersion: 1,
-  version: packageJson.version,
+  version: releasePackageJson.version,
   publishedAt: new Date().toISOString(),
   nodeVersion: process.versions.node,
   artifacts,

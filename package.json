@@ -1,6 +1,5 @@
 {
   "name": "switchy",
-  "version": "1.0.18",
   "private": true,
   "license": "MIT",
   "packageManager": "pnpm@11.9.0",
@@ -8,7 +7,7 @@
     "node": ">=24 <25"
   },
   "scripts": {
-    "postinstall": "playwright install chromium",
+    "postinstall": "node scripts/install-playwright-browser.mjs",
     "predev": "NODE_ENV=development pnpm db:migrate && pnpm native:prepare",
     "dev": "NODE_ENV=development SWITCHY_MACOS_NOTIFICATION_HELPER='./.switchy-build/native/macos/Switchy Notifications.app/Contents/MacOS/SwitchyNotifier' SWITCHY_PROCESS_TITLE='Switchy Dev' NODE_OPTIONS=\"$NODE_OPTIONS --require=./scripts/switchy-process-title.cjs\" next dev --hostname 127.0.0.1",
     "prestart": "NODE_ENV=production pnpm db:migrate && pnpm native:prepare",
@@ -18,6 +17,7 @@
     "distribution:verify": "pnpm cli:typecheck && pnpm cli:build && vitest run --project unit tests/unit/distribution tests/unit/state/layout.test.ts",
     "runtime:package": "node scripts/package-runtime.mjs",
     "release:manifest": "node scripts/create-release-manifest.mjs",
+    "release:version": "pnpm --filter @chandresh726/switchy version --no-git-checks --no-git-tag-version",
     "start": "NODE_ENV=production SWITCHY_MACOS_NOTIFICATION_HELPER='./.switchy-build/native/macos/Switchy Notifications.app/Contents/MacOS/SwitchyNotifier' SWITCHY_PROCESS_TITLE=Switchy NODE_OPTIONS=\"$NODE_OPTIONS --require=./scripts/switchy-process-title.cjs\" next start --hostname 127.0.0.1 --port 6767",
     "native:prepare": "node scripts/build-macos-notifier.mjs",
     "lint": "eslint",

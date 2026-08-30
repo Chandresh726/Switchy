@@ -105,7 +105,10 @@ export async function buildMacOSNotifierBundle({
   if (process.platform !== "darwin") return null;
 
   const definition = JSON.parse(
-    await readFile(path.join(projectDirectory, "package.json"), "utf8")
+    await readFile(
+      path.join(projectDirectory, "packages", "cli", "package.json"),
+      "utf8"
+    )
   );
   const destinationRoot = outputDirectory
     ?? path.join(projectDirectory, ".switchy-build", "native", "macos");

@@ -103,6 +103,101 @@ describe("preset companies utils", () => {
     }
   });
 
+  it("includes the live-validated ATS discovery batch", () => {
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), "public/companies.json"), "utf8")
+    ) as unknown;
+    const presets = parsePresetCompanies(raw);
+    const expectedByPlatform = {
+      smartrecruiters: ["Freshworks"],
+      workday: [
+        "Intel",
+        "Palo Alto Networks",
+        "BrowserStack",
+        "Samsung R&D",
+        "Barclays",
+        "Citi",
+        "Target India",
+        "Sprinklr",
+        "Expedia Group",
+      ],
+      greenhouse: ["Arcesium", "Sourcegraph"],
+      ashby: ["Kraken"],
+      lever: ["Palantir"],
+    } as const;
+
+    const expectedNames = Object.values(expectedByPlatform).flat();
+    expect(expectedNames).toHaveLength(14);
+
+    const expectedBoards = {
+      Intel: ["https://intel.wd1.myworkdayjobs.com/External", "intel/External"],
+      "Palo Alto Networks": [
+        "https://paloaltonetworks.wd5.myworkdayjobs.com/panwexternalcareers",
+        "paloaltonetworks/panwexternalcareers",
+      ],
+      BrowserStack: [
+        "https://browserstack.wd3.myworkdayjobs.com/External",
+        "browserstack/External",
+      ],
+      Freshworks: ["https://careers.smartrecruiters.com/Freshworks", "Freshworks"],
+      "Samsung R&D": [
+        "https://sec.wd3.myworkdayjobs.com/Samsung_Careers",
+        "sec/Samsung_Careers",
+      ],
+      Barclays: [
+        "https://barclays.wd3.myworkdayjobs.com/External_Career_Site_Barclays",
+        "barclays/External_Career_Site_Barclays",
+      ],
+      Citi: ["https://citi.wd5.myworkdayjobs.com/2", "citi/2"],
+      "Target India": [
+        "https://target.wd5.myworkdayjobs.com/targetcareers",
+        "target/targetcareers",
+      ],
+      Sprinklr: [
+        "https://sprinklr.wd1.myworkdayjobs.com/careers",
+        "sprinklr/careers",
+      ],
+      Arcesium: [
+        "https://job-boards.greenhouse.io/arcesiumllc",
+        "arcesiumllc",
+      ],
+      "Expedia Group": [
+        "https://expedia.wd108.myworkdayjobs.com/search",
+        "expedia/search",
+      ],
+      Kraken: ["https://jobs.ashbyhq.com/kraken.com", "kraken.com"],
+      Sourcegraph: [
+        "https://job-boards.greenhouse.io/sourcegraph91",
+        "sourcegraph91",
+      ],
+      Palantir: ["https://jobs.lever.co/palantir", "palantir"],
+    } as const;
+
+    for (const [name, [careersUrl, boardToken]] of Object.entries(expectedBoards)) {
+      expect(presets.find((preset) => preset.name === name)).toMatchObject({
+        careersUrl,
+        boardToken,
+      });
+    }
+
+    for (const [platform, names] of Object.entries(expectedByPlatform)) {
+      for (const name of names) {
+        const company = presets.find((preset) => preset.name === name);
+
+        expect(company, `${name} should be present`).toBeDefined();
+        expect(company).toMatchObject({
+          platform,
+          isActive: true,
+        });
+        expect(company?.logoUrl).toMatch(
+          /^https:\/\/www\.google\.com\/s2\/favicons\?domain=.+&sz=128$/u
+        );
+        expect(company?.boardToken).toBeTruthy();
+        expect(detectPlatformFromUrl(company?.careersUrl ?? "")).toBe(platform);
+      }
+    }
+  });
+
   it("normalizes careers URLs for dedupe matching", () => {
     expect(
       normalizeCareersUrl("HTTPS://Jobs.Lever.co/acme/?team=eng")

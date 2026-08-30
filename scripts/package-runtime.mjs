@@ -20,8 +20,11 @@ import { buildMacOSNotifierBundle } from "./build-macos-notifier.mjs";
 import { brandStandaloneServer } from "./runtime-server-branding.mjs";
 
 const projectDirectory = process.cwd();
-const packageJson = JSON.parse(
-  await readFile(path.join(projectDirectory, "package.json"), "utf8")
+const releasePackageJson = JSON.parse(
+  await readFile(
+    path.join(projectDirectory, "packages", "cli", "package.json"),
+    "utf8"
+  )
 );
 const target = process.env.SWITCHY_TARGET
   ?? `${process.platform}-${process.arch}`;
@@ -287,14 +290,14 @@ await writeFile(
   path.join(runtimeDirectory, "switchy-runtime.json"),
   `${JSON.stringify({
     schemaVersion: 1,
-    version: packageJson.version,
+    version: releasePackageJson.version,
     target,
     nodeVersion: process.versions.node,
     builtAt: new Date().toISOString(),
   }, null, 2)}\n`
 );
 
-const archiveName = `switchy-${packageJson.version}-${target}.tar.gz`;
+const archiveName = `switchy-${releasePackageJson.version}-${target}.tar.gz`;
 const archivePath = path.join(releaseAssetsDirectory, archiveName);
 await rm(archivePath, { force: true });
 const archive = spawnSync(
