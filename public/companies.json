@@ -754,5 +754,373 @@
     "platform": "greenhouse",
     "boardToken": "paypay",
     "isActive": true
+  },
+  {
+    "name": "Adobe",
+    "careersUrl": "https://careers.smartrecruiters.com/Adobe1",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=adobe.com&sz=128",
+    "platform": "smartrecruiters",
+    "boardToken": "Adobe1",
+    "isActive": true
+  },
+  {
+    "name": "Workday",
+    "careersUrl": "https://workday.wd5.myworkdayjobs.com/Workday",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=workday.com&sz=128",
+    "platform": "workday",
+    "boardToken": "workday/Workday",
+    "isActive": true
+  },
+  {
+    "name": "Broadcom",
+    "careersUrl": "https://broadcom.wd1.myworkdayjobs.com/External_Career",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=broadcom.com&sz=128",
+    "platform": "workday",
+    "boardToken": "broadcom/External_Career",
+    "isActive": true
+  },
+  {
+    "name": "Nium",
+    "careersUrl": "https://jobs.lever.co/nium",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=nium.com&sz=128",
+    "platform": "lever",
+    "boardToken": "nium",
+    "isActive": true
+  },
+  {
+    "name": "Meesho",
+    "careersUrl": "https://jobs.lever.co/meesho",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=meesho.com&sz=128",
+    "platform": "lever",
+    "boardToken": "meesho",
+    "isActive": true
+  },
+  {
+    "name": "InMobi",
+    "careersUrl": "https://job-boards.greenhouse.io/inmobi",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=inmobi.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "inmobi",
+    "isActive": true
+  },
+  {
+    "name": "Navi",
+    "careersUrl": "https://jobs.ashbyhq.com/navi",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=navi.com&sz=128",
+    "platform": "ashby",
+    "boardToken": "navi",
+    "isActive": true
+  },
+  {
+    "name": "CRED",
+    "careersUrl": "https://jobs.lever.co/cred",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=cred.club&sz=128",
+    "platform": "lever",
+    "boardToken": "cred",
+    "isActive": true
+  },
+  {
+    "name": "Sarvam AI",
+    "careersUrl": "https://jobs.ashbyhq.com/sarvam",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=sarvam.ai&sz=128",
+    "platform": "ashby",
+    "boardToken": "sarvam",
+    "isActive": true
+  },
+  {
+    "name": "Fi Money",
+    "careersUrl": "https://jobs.lever.co/epifi",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=fi.money&sz=128",
+    "platform": "lever",
+    "boardToken": "epifi",
+    "isActive": true
+  },
+  {
+    "name": "Tekion",
+    "careersUrl": "https://jobs.ashbyhq.com/tekion",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=tekion.com&sz=128",
+    "platform": "ashby",
+    "boardToken": "tekion",
+    "isActive": true
+  },
+  {
+    "name": "Druva",
+    "careersUrl": "https://job-boards.greenhouse.io/druva",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=druva.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "druva",
+    "isActive": true
+  },
+  {
+    "name": "Mindtickle",
+    "careersUrl": "https://jobs.lever.co/mindtickle",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=mindtickle.com&sz=128",
+    "platform": "lever",
+    "boardToken": "mindtickle",
+    "isActive": true
+  },
+  {
+    "name": "Truecaller",
+    "careersUrl": "https://job-boards.greenhouse.io/truecaller",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=truecaller.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "truecaller",
+    "isActive": true
+  },
+  {
+    "name": "Mastercard",
+    "careersUrl": "https://mastercard.wd1.myworkdayjobs.com/CorporateCareers",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=mastercard.com&sz=128",
+    "platform": "workday",
+    "boardToken": "mastercard/CorporateCareers",
+    "isActive": true
+  },
+  {
+    "name": "Dell",
+    "careersUrl": "https://dell.wd1.myworkdayjobs.com/External",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=dell.com&sz=128",
+    "platform": "workday",
+    "boardToken": "dell/External",
+    "isActive": true
+  },
+  {
+    "name": "Snowflake",
+    "careersUrl": "https://jobs.ashbyhq.com/snowflake",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=snowflake.com&sz=128",
+    "platform": "ashby",
+    "boardToken": "snowflake",
+    "isActive": true
+  },
+  {
+    "name": "Elastic",
+    "careersUrl": "https://job-boards.greenhouse.io/elastic",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=elastic.co&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "elastic",
+    "isActive": true
+  },
+  {
+    "name": "MongoDB",
+    "careersUrl": "https://job-boards.greenhouse.io/mongodb",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=mongodb.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "mongodb",
+    "isActive": true
+  },
+  {
+    "name": "Deel",
+    "careersUrl": "https://jobs.ashbyhq.com/Deel",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=deel.com&sz=128",
+    "platform": "ashby",
+    "boardToken": "Deel",
+    "isActive": true
+  },
+  {
+    "name": "Remote",
+    "careersUrl": "https://job-boards.greenhouse.io/remotecom",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=remote.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "remotecom",
+    "isActive": true
+  },
+  {
+    "name": "Canonical",
+    "careersUrl": "https://job-boards.greenhouse.io/canonical",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=canonical.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "canonical",
+    "isActive": true
+  },
+  {
+    "name": "Grafana Labs",
+    "careersUrl": "https://job-boards.greenhouse.io/grafanalabs",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=grafana.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "grafanalabs",
+    "isActive": true
+  },
+  {
+    "name": "JumpCloud",
+    "careersUrl": "https://jobs.lever.co/jumpcloud",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=jumpcloud.com&sz=128",
+    "platform": "lever",
+    "boardToken": "jumpcloud",
+    "isActive": true
+  },
+  {
+    "name": "H1",
+    "careersUrl": "https://jobs.lever.co/h1",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=h1.co&sz=128",
+    "platform": "lever",
+    "boardToken": "h1",
+    "isActive": true
+  },
+  {
+    "name": "Zimperium",
+    "careersUrl": "https://jobs.lever.co/zimperium",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=zimperium.com&sz=128",
+    "platform": "lever",
+    "boardToken": "zimperium",
+    "isActive": true
+  },
+  {
+    "name": "Dscout",
+    "careersUrl": "https://job-boards.greenhouse.io/dscout",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=dscout.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "dscout",
+    "isActive": true
+  },
+  {
+    "name": "PostHog",
+    "careersUrl": "https://jobs.ashbyhq.com/posthog",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=posthog.com&sz=128",
+    "platform": "ashby",
+    "boardToken": "posthog",
+    "isActive": true
+  },
+  {
+    "name": "Customer.io",
+    "careersUrl": "https://job-boards.greenhouse.io/customerio",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=customer.io&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "customerio",
+    "isActive": true
+  },
+  {
+    "name": "GitBook",
+    "careersUrl": "https://jobs.ashbyhq.com/gitbook",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=gitbook.com&sz=128",
+    "platform": "ashby",
+    "boardToken": "gitbook",
+    "isActive": true
+  },
+  {
+    "name": "Docker",
+    "careersUrl": "https://jobs.ashbyhq.com/docker",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=docker.com&sz=128",
+    "platform": "ashby",
+    "boardToken": "docker",
+    "isActive": true
+  },
+  {
+    "name": "Sentry",
+    "careersUrl": "https://jobs.ashbyhq.com/sentry",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=sentry.io&sz=128",
+    "platform": "ashby",
+    "boardToken": "sentry",
+    "isActive": true
+  },
+  {
+    "name": "Tailscale",
+    "careersUrl": "https://job-boards.greenhouse.io/tailscale",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=tailscale.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "tailscale",
+    "isActive": true
+  },
+  {
+    "name": "Wikimedia Foundation",
+    "careersUrl": "https://job-boards.greenhouse.io/wikimedia",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=wikimediafoundation.org&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "wikimedia",
+    "isActive": true
+  },
+  {
+    "name": "Apollo Research",
+    "careersUrl": "https://jobs.lever.co/apolloresearch",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=apolloresearch.ai&sz=128",
+    "platform": "lever",
+    "boardToken": "apolloresearch",
+    "isActive": true
+  },
+  {
+    "name": "Institute of Foundation Models",
+    "careersUrl": "https://jobs.lever.co/ifm-us",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=mbzuai.ac.ae&sz=128",
+    "platform": "lever",
+    "boardToken": "ifm-us",
+    "isActive": true
+  },
+  {
+    "name": "PQShield",
+    "careersUrl": "https://job-boards.greenhouse.io/pqshield",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=pqshield.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "pqshield",
+    "isActive": true
+  },
+  {
+    "name": "Adyen",
+    "careersUrl": "https://job-boards.greenhouse.io/adyen",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=adyen.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "adyen",
+    "isActive": true
+  },
+  {
+    "name": "ASML",
+    "careersUrl": "https://asml.wd3.myworkdayjobs.com/ASMLEXT1",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=asml.com&sz=128",
+    "platform": "workday",
+    "boardToken": "asml/ASMLEXT1",
+    "isActive": true
+  },
+  {
+    "name": "IMC Trading",
+    "careersUrl": "https://job-boards.greenhouse.io/imc",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=imc.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "imc",
+    "isActive": true
+  },
+  {
+    "name": "Jane Street",
+    "careersUrl": "https://job-boards.greenhouse.io/janestreet",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=janestreet.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "janestreet",
+    "isActive": true
+  },
+  {
+    "name": "Spotify",
+    "careersUrl": "https://jobs.lever.co/spotify",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=spotify.com&sz=128",
+    "platform": "lever",
+    "boardToken": "spotify",
+    "isActive": true
+  },
+  {
+    "name": "Wise",
+    "careersUrl": "https://job-boards.greenhouse.io/wise",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=wise.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "wise",
+    "isActive": true
+  },
+  {
+    "name": "N26",
+    "careersUrl": "https://job-boards.greenhouse.io/n26",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=n26.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "n26",
+    "isActive": true
+  },
+  {
+    "name": "Wolt",
+    "careersUrl": "https://job-boards.greenhouse.io/wolt",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=wolt.com&sz=128",
+    "platform": "greenhouse",
+    "boardToken": "wolt",
+    "isActive": true
+  },
+  {
+    "name": "Canva",
+    "careersUrl": "https://careers.smartrecruiters.com/Canva",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=canva.com&sz=128",
+    "platform": "smartrecruiters",
+    "boardToken": "Canva",
+    "isActive": true
   }
 ]

@@ -11,6 +11,7 @@ import {
   searchPresetCompanies,
 } from "@/lib/companies/preset-companies";
 import { normalizeCareersUrl } from "@/lib/companies/normalization";
+import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 
 describe("preset companies utils", () => {
   it("configures PhonePe for its branded SmartRecruiters board", () => {
@@ -24,6 +25,82 @@ describe("preset companies utils", () => {
       platform: "smartrecruiters",
       boardToken: "PHONEPELIMITED",
     });
+  });
+
+  it("includes the researched quick-add batch with logos and supported scrapers", () => {
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), "public/companies.json"), "utf8")
+    ) as unknown;
+    const presets = parsePresetCompanies(raw);
+    const expectedByPlatform = {
+      smartrecruiters: ["Adobe", "Canva"],
+      workday: ["Workday", "Broadcom", "Mastercard", "Dell", "ASML"],
+      lever: [
+        "Nium",
+        "Meesho",
+        "CRED",
+        "Fi Money",
+        "Mindtickle",
+        "JumpCloud",
+        "H1",
+        "Zimperium",
+        "Apollo Research",
+        "Institute of Foundation Models",
+        "Spotify",
+      ],
+      ashby: [
+        "Navi",
+        "Sarvam AI",
+        "Tekion",
+        "Snowflake",
+        "Deel",
+        "PostHog",
+        "GitBook",
+        "Docker",
+        "Sentry",
+      ],
+      greenhouse: [
+        "InMobi",
+        "Druva",
+        "Truecaller",
+        "Elastic",
+        "MongoDB",
+        "Remote",
+        "Canonical",
+        "Grafana Labs",
+        "Dscout",
+        "Customer.io",
+        "Tailscale",
+        "Wikimedia Foundation",
+        "PQShield",
+        "Adyen",
+        "IMC Trading",
+        "Jane Street",
+        "Wise",
+        "N26",
+        "Wolt",
+      ],
+    } as const;
+
+    const expectedNames = Object.values(expectedByPlatform).flat();
+    expect(expectedNames).toHaveLength(46);
+
+    for (const [platform, names] of Object.entries(expectedByPlatform)) {
+      for (const name of names) {
+        const company = presets.find((preset) => preset.name === name);
+
+        expect(company, `${name} should be present`).toBeDefined();
+        expect(company).toMatchObject({
+          platform,
+          isActive: true,
+        });
+        expect(company?.logoUrl).toMatch(
+          /^https:\/\/www\.google\.com\/s2\/favicons\?domain=.+&sz=128$/u
+        );
+        expect(company?.boardToken).toBeTruthy();
+        expect(detectPlatformFromUrl(company?.careersUrl ?? "")).toBe(platform);
+      }
+    }
   });
 
   it("normalizes careers URLs for dedupe matching", () => {
