@@ -189,6 +189,91 @@ describe("DrizzleScrapeHistoryStore", () => {
     });
   });
 
+  it("paginates queue state and scrape logs as one company progress record", () => {
+    const database = createTestDatabase();
+    const companyRows = database
+      .insert(companies)
+      .values([
+        { name: "Airbnb", careersUrl: "https://example.com/airbnb" },
+        { name: "Bloomreach", careersUrl: "https://example.com/bloomreach" },
+        { name: "Adyen", careersUrl: "https://example.com/adyen" },
+      ])
+      .returning({ id: companies.id, name: companies.name })
+      .all();
+    const companyIdByName = new Map(companyRows.map((company) => [company.name, company.id]));
+    database.insert(scrapeSessions).values({
+      id: "company-progress-session",
+      triggerSource: "manual",
+      status: "completed",
+      companiesTotal: 3,
+      companiesCompleted: 3,
+      completedAt: new Date("2026-08-30T09:00:00.000Z"),
+    }).run();
+    database.insert(scrapeQueueItems).values([
+      {
+        id: "queue-airbnb",
+        sessionId: "company-progress-session",
+        companyId: companyIdByName.get("Airbnb")!,
+        status: "completed",
+      },
+      {
+        id: "queue-bloomreach",
+        sessionId: "company-progress-session",
+        companyId: companyIdByName.get("Bloomreach")!,
+        status: "completed",
+      },
+      {
+        id: "queue-adyen",
+        sessionId: "company-progress-session",
+        companyId: companyIdByName.get("Adyen")!,
+        status: "completed",
+      },
+    ]).run();
+    database.insert(scrapingLogs).values([
+      {
+        companyId: companyIdByName.get("Airbnb")!,
+        sessionId: "company-progress-session",
+        status: "success",
+        jobsFound: 171,
+        startedAt: new Date("2026-08-30T08:00:00.000Z"),
+      },
+      {
+        companyId: companyIdByName.get("Bloomreach")!,
+        sessionId: "company-progress-session",
+        status: "success",
+        jobsFound: 65,
+        startedAt: new Date("2026-08-30T08:01:00.000Z"),
+      },
+      {
+        companyId: companyIdByName.get("Adyen")!,
+        sessionId: "company-progress-session",
+        status: "success",
+        jobsFound: 224,
+        startedAt: new Date("2026-08-30T08:02:00.000Z"),
+      },
+    ]).run();
+    const store = new DrizzleScrapeHistoryStore(database);
+
+    expect(store.getDetail("company-progress-session", { limit: 1, offset: 0 }))
+      .toMatchObject({
+        queueItems: [{ companyName: "Adyen" }],
+        logs: [{ companyName: "Adyen", jobsFound: 224 }],
+        pagination: { total: 3, limit: 1, offset: 0, hasMore: true },
+      });
+    expect(store.getDetail("company-progress-session", { limit: 1, offset: 1 }))
+      .toMatchObject({
+        queueItems: [{ companyName: "Airbnb" }],
+        logs: [{ companyName: "Airbnb", jobsFound: 171 }],
+        pagination: { total: 3, limit: 1, offset: 1, hasMore: true },
+      });
+    expect(store.getDetail("company-progress-session", { limit: 1, offset: 2 }))
+      .toMatchObject({
+        queueItems: [{ companyName: "Bloomreach" }],
+        logs: [{ companyName: "Bloomreach", jobsFound: 65 }],
+        pagination: { total: 3, limit: 1, offset: 2, hasMore: false },
+      });
+  });
+
   it("aggregates portfolio-wide stats for the history list", () => {
     const database = createTestDatabase();
     const firstStart = new Date("2026-07-13T10:00:00.000Z");
@@ -345,8 +430,8 @@ describe("DrizzleScrapeHistoryStore", () => {
       "retry-session",
       { limit: 1, offset: 1 }
     )).toMatchObject({
-      logs: [{ attemptNumber: 2, attemptsTotal: 2, isFinalAttempt: true }],
-      logPagination: { total: 2, limit: 1, offset: 1, hasMore: false },
+      logs: [],
+      pagination: { total: 1, limit: 1, offset: 1, hasMore: false },
     });
   });
 

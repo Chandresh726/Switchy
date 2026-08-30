@@ -246,15 +246,12 @@ export async function cancelMatchHistorySession(sessionId: string) {
 
 export function getScrapeHistoryDetail(
   sessionId: string,
-  logLimit: number,
-  logOffset: number,
-  workLimit: number,
-  workOffset: number
+  limit: number,
+  offset: number
 ) {
   const detail = getScrapeHistoryStore().getDetail(
     sessionId,
-    { limit: logLimit, offset: logOffset },
-    { limit: workLimit, offset: workOffset }
+    { limit, offset }
   );
   if (!detail) throw new NotFoundError("Session not found", "scrape_session_not_found");
   return detail;

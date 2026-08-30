@@ -52,10 +52,8 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
   const queryClient = useQueryClient();
   const offset = (currentPage - 1) * pageSize;
   const detailParams = {
-    logOffset: offset,
-    logLimit: pageSize,
-    workOffset: offset,
-    workLimit: pageSize,
+    offset,
+    limit: pageSize,
   };
   const { data, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: queryKeys.scrapeHistory.detail(sessionId, detailParams),
@@ -122,7 +120,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
     );
   }
 
-  const { session, logs, logPagination, workPagination, hasActiveWork, queueItems } = data;
+  const { session, logs, pagination, hasActiveWork, queueItems } = data;
   const sessionStatusConfig = getSessionStatusConfig(session.status);
   const SessionStatusIcon = sessionStatusConfig.icon;
   const sessionDisplayTime = session.scheduledForAt ? new Date(session.scheduledForAt) : session.startedAt;
@@ -136,8 +134,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
     session.totalJobsFiltered,
     session.totalJobsArchived,
   ].some((value) => (value ?? 0) > 0);
-  const totalRecords = Math.max(workPagination.total, logPagination.total);
-  const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
+  const totalPages = Math.max(1, Math.ceil(pagination.total / pageSize));
 
   return (
     <div className="space-y-6">
@@ -276,7 +273,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
           itemLabel="session records"
           currentPage={currentPage}
           totalPages={totalPages}
-          totalCount={totalRecords}
+          totalCount={pagination.total}
           pageSize={pageSize}
           isFetching={isFetching}
           onPageChange={setCurrentPage}

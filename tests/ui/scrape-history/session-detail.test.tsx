@@ -49,14 +49,11 @@ function sessionResponse(
         status === "in_progress" ? null : "2026-07-13T10:01:00.000Z",
     },
     logs,
-    logPagination: {
-      total: logs.length,
-      limit: 50,
-      offset: 0,
-      hasMore: false,
-    },
-    workPagination: {
-      total: queueItems.length,
+    pagination: {
+      total: new Set([
+        ...queueItems.map((item) => `company-${item.companyId}`),
+        ...logs.map((log) => log.companyId == null ? `log-${log.id}` : `company-${log.companyId}`),
+      ]).size,
       limit: 50,
       offset: 0,
       hasMore: false,
@@ -224,7 +221,7 @@ describe("SessionDetail", () => {
   it("uses the shared numbered pagination for session records", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input), "http://localhost");
-      const offset = Number(url.searchParams.get("workOffset"));
+      const offset = Number(url.searchParams.get("offset"));
       const response = sessionResponse(
         "completed",
         [
@@ -239,12 +236,9 @@ describe("SessionDetail", () => {
         [sessionLog({ id: offset + 1, companyId: offset + 1 })],
         false
       );
-      response.logPagination.total = 120;
-      response.logPagination.offset = offset;
-      response.logPagination.hasMore = offset + 50 < 120;
-      response.workPagination.total = 120;
-      response.workPagination.offset = offset;
-      response.workPagination.hasMore = offset + 50 < 120;
+      response.pagination.total = 120;
+      response.pagination.offset = offset;
+      response.pagination.hasMore = offset + 50 < 120;
       return jsonResponse(response);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -265,7 +259,7 @@ describe("SessionDetail", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         expect.stringContaining(
-          "logLimit=50&logOffset=50&workLimit=50&workOffset=50"
+          "limit=50&offset=50"
         ),
         expect.objectContaining({ method: "GET" })
       );

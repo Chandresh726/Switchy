@@ -1,6 +1,6 @@
 {
   "name": "@chandresh726/switchy",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "description": "Install, run, update, and stop the local-first Switchy application.",
   "license": "MIT",
   "type": "module",

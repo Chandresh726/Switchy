@@ -42,6 +42,10 @@ export const historyDetailQuerySchema = z.object({
   workLimit: z.coerce.number().int().positive().max(100).default(50),
   workOffset: z.coerce.number().int().nonnegative().max(1_000_000).default(0),
 });
+export const scrapeHistoryDetailQuerySchema = z.object({
+  limit: historyQuerySchema.shape.limit,
+  offset: historyQuerySchema.shape.offset,
+});
 
 const paginationResponseSchema = z.object({
   total: z.number().int().nonnegative(),
@@ -142,8 +146,7 @@ export const scrapeHistoryDetailResponseSchema = z.object({
     attemptsTotal: z.number().int().positive(),
     isFinalAttempt: z.boolean(),
   })),
-  logPagination: paginationResponseSchema,
-  workPagination: paginationResponseSchema,
+  pagination: paginationResponseSchema,
   hasActiveWork: z.boolean(),
   queueItems: z.array(z.object({
     id: z.string(),

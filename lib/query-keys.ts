@@ -8,6 +8,7 @@ import type {
   HistoryDetailQueryInput,
   HistoryQueryInput,
   ResumeHistoryQueryInput,
+  ScrapeHistoryDetailQueryInput,
   ScrapeHistoryQueryInput,
 } from "@/lib/api/clients/history";
 import type {
@@ -23,6 +24,7 @@ import {
   historyDetailQuerySchema,
   historyQuerySchema,
   resumeHistoryQuerySchema,
+  scrapeHistoryDetailQuerySchema,
   scrapeHistoryQuerySchema,
 } from "@/lib/api/contracts/history";
 import { jobsQuerySchema } from "@/lib/api/contracts/jobs";
@@ -195,9 +197,9 @@ export const queryKeys = {
     ] as const,
     details: () => ["history", "scrape", "detail"] as const,
     detailRoot: (id: string) => ["history", "scrape", "detail", id] as const,
-    detail: (id: string, params: HistoryDetailQueryInput = {}) => [
+    detail: (id: string, params: ScrapeHistoryDetailQueryInput = {}) => [
       ...queryKeys.scrapeHistory.detailRoot(id),
-      canonicalSchemaParams(historyDetailQuerySchema, params),
+      canonicalSchemaParams(scrapeHistoryDetailQuerySchema, params),
     ] as const,
   },
   resumeHistory: {

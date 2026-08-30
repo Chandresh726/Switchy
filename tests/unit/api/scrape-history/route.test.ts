@@ -91,9 +91,8 @@ describe("scrape history route", () => {
       leaseExpiresAt: new Date("2026-07-13T12:00:00.000Z"),
       lastError: "previous attempt failed",
     };
-    const logPagination = { total: 1, limit: 50, offset: 0, hasMore: false };
-    const workPagination = { total: 1, limit: 50, offset: 0, hasMore: false };
-    store.getDetail.mockReturnValue({ session, logs: [log], logPagination, workPagination, hasActiveWork: true, queueItems: [queueItem] });
+    const pagination = { total: 1, limit: 50, offset: 0, hasMore: false };
+    store.getDetail.mockReturnValue({ session, logs: [log], pagination, hasActiveWork: true, queueItems: [queueItem] });
 
     const response = await getDetail(createRequest("GET", "/session-1"), { params: Promise.resolve({ id: "session-1" }) });
 
@@ -101,8 +100,7 @@ describe("scrape history route", () => {
     await expect(response.json()).resolves.toEqual({
       session,
       logs: [log],
-      logPagination,
-      workPagination,
+      pagination,
       hasActiveWork: true,
       queueItems: [
         {
@@ -113,7 +111,6 @@ describe("scrape history route", () => {
     });
     expect(store.getDetail).toHaveBeenCalledWith(
       "session-1",
-      { limit: 50, offset: 0 },
       { limit: 50, offset: 0 }
     );
     expect(response.headers.get("cache-control")).toContain("no-store");

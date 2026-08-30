@@ -17,6 +17,7 @@ import {
   historyDetailQuerySchema,
   historyQuerySchema,
   matchHistoryDetailResponseSchema,
+  scrapeHistoryDetailQuerySchema,
 } from "@/lib/api/contracts/history";
 import { matchCompanyIdsBodySchema } from "@/lib/api/contracts/matching";
 import {
@@ -101,6 +102,8 @@ describe("shared API contracts", () => {
     expect(peopleListQuerySchema.safeParse({ offset: "-1" }).success).toBe(false);
     expect(historyDetailQuerySchema.safeParse({ logLimit: "101" }).success).toBe(false);
     expect(historyDetailQuerySchema.safeParse({ logOffset: "-1" }).success).toBe(false);
+    expect(scrapeHistoryDetailQuerySchema.safeParse({ limit: "101" }).success).toBe(false);
+    expect(scrapeHistoryDetailQuerySchema.safeParse({ offset: "-1" }).success).toBe(false);
     expect(peopleImportSessionsQuerySchema.safeParse({ limit: "51" }).success).toBe(false);
     expect(peopleImportSessionsQuerySchema.safeParse({ offset: "-1" }).success).toBe(false);
   });

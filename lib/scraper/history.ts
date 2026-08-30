@@ -30,6 +30,14 @@ type ScrapeSession = typeof scrapeSessions.$inferSelect;
 
 const HISTORY_LOOKUP_BATCH_SIZE = 200;
 
+interface ScrapeProgressKey {
+  key: string;
+  companyId: number | null;
+  companyName: string | null;
+  queueItemId: string | null;
+  standaloneLogId: number | null;
+}
+
 export interface ScrapeHistoryDetail {
   session: ScrapeSession;
   logs: Array<{
@@ -61,13 +69,7 @@ export interface ScrapeHistoryDetail {
     attemptsTotal: number;
     isFinalAttempt: boolean;
   }>;
-  logPagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  };
-  workPagination: {
+  pagination: {
     total: number;
     limit: number;
     offset: number;
@@ -120,8 +122,7 @@ export interface ScrapeHistoryPage {
 export interface ScrapeHistoryStore extends ScrapeHistoryRetentionStore {
   getDetail(
     sessionId: string,
-    logPage: { limit: number; offset: number },
-    workPage: { limit: number; offset: number }
+    page: { limit: number; offset: number }
   ): ScrapeHistoryDetail | null;
   list(options: { limit: number; offset: number }): ScrapeHistoryPage;
   getSessionStatus(sessionId: string): { id: string; status: string } | null;
@@ -133,8 +134,7 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
 
   getDetail(
     sessionId: string,
-    logPage: { limit: number; offset: number } = { limit: 50, offset: 0 },
-    workPage: { limit: number; offset: number } = { limit: 50, offset: 0 }
+    page: { limit: number; offset: number } = { limit: 50, offset: 0 }
   ): ScrapeHistoryDetail | null {
     const session = this.database
       .select()
@@ -142,6 +142,18 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
       .where(eq(scrapeSessions.id, sessionId))
       .get();
     if (!session) return null;
+
+    const progressKeys = this.getProgressKeys(sessionId);
+    const pageKeys = progressKeys.slice(page.offset, page.offset + page.limit);
+    const selectedQueueItemIds = pageKeys.flatMap((item) =>
+      item.queueItemId === null ? [] : [item.queueItemId]
+    );
+    const selectedCompanyIds = Array.from(new Set(pageKeys.flatMap((item) =>
+      item.companyId === null ? [] : [item.companyId]
+    )));
+    const selectedStandaloneLogIds = pageKeys.flatMap((item) =>
+      item.standaloneLogId === null ? [] : [item.standaloneLogId]
+    );
 
     const rawLogs = this.database
       .select({
@@ -173,13 +185,15 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
       })
       .from(scrapingLogs)
       .leftJoin(companies, eq(scrapingLogs.companyId, companies.id))
-      .where(eq(scrapingLogs.sessionId, sessionId))
+      .where(and(
+        eq(scrapingLogs.sessionId, sessionId),
+        or(
+          inArray(scrapingLogs.companyId, selectedCompanyIds),
+          inArray(scrapingLogs.id, selectedStandaloneLogIds)
+        )
+      ))
       .orderBy(scrapingLogs.startedAt, scrapingLogs.id)
-      .limit(logPage.limit)
-      .offset(logPage.offset)
       .all();
-    const totalLogs = Number(this.database.select({ value: sql<number>`count(*)` })
-      .from(scrapingLogs).where(eq(scrapingLogs.sessionId, sessionId)).get()?.value ?? 0);
     const queueItems = this.database
       .select({
         id: scrapeQueueItems.id,
@@ -203,30 +217,20 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
       })
       .from(scrapeQueueItems)
       .leftJoin(companies, eq(companies.id, scrapeQueueItems.companyId))
-      .where(eq(scrapeQueueItems.sessionId, sessionId))
-      .orderBy(scrapeQueueItems.createdAt, scrapeQueueItems.id)
-      .limit(workPage.limit)
-      .offset(workPage.offset)
+      .where(and(
+        eq(scrapeQueueItems.sessionId, sessionId),
+        inArray(scrapeQueueItems.id, selectedQueueItemIds)
+      ))
       .all();
-    const totalQueueItems = Number(this.database.select({ value: sql<number>`count(*)` })
-      .from(scrapeQueueItems).where(eq(scrapeQueueItems.sessionId, sessionId)).get()?.value ?? 0);
     const activeQueueItems = Number(this.database.select({ value: sql<number>`count(*)` })
       .from(scrapeQueueItems).where(and(
         eq(scrapeQueueItems.sessionId, sessionId),
         inArray(scrapeQueueItems.status, ["queued", "running"])
       )).get()?.value ?? 0);
 
-    const logCompanyIds = Array.from(new Set(rawLogs.flatMap((log) =>
-      log.companyId === null ? [] : [log.companyId]
-    )));
-    const queueStates = logCompanyIds.length === 0 ? [] : this.database.select({
-      companyId: scrapeQueueItems.companyId,
-      status: scrapeQueueItems.status,
-    }).from(scrapeQueueItems).where(and(
-      eq(scrapeQueueItems.sessionId, sessionId),
-      inArray(scrapeQueueItems.companyId, logCompanyIds)
-    )).all();
-    const queueStatusByCompany = new Map(queueStates.map((item) => [item.companyId, item.status]));
+    const queueStatusByCompany = new Map(
+      queueItems.map((item) => [item.companyId, item.status])
+    );
     const matchSessionByLogId = this.getMatchSessionIdsByLog(
       rawLogs.map((log) => log.id)
     );
@@ -257,21 +261,70 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
     return {
       session,
       logs,
-      logPagination: {
-        total: totalLogs,
-        limit: logPage.limit,
-        offset: logPage.offset,
-        hasMore: logPage.offset + logs.length < totalLogs,
-      },
-      workPagination: {
-        total: totalQueueItems,
-        limit: workPage.limit,
-        offset: workPage.offset,
-        hasMore: workPage.offset + queueItems.length < totalQueueItems,
+      pagination: {
+        total: progressKeys.length,
+        limit: page.limit,
+        offset: page.offset,
+        hasMore: page.offset + pageKeys.length < progressKeys.length,
       },
       hasActiveWork: activeQueueItems > 0,
       queueItems,
     };
+  }
+
+  private getProgressKeys(sessionId: string): ScrapeProgressKey[] {
+    const queueKeys = this.database
+      .select({
+        queueItemId: scrapeQueueItems.id,
+        companyId: scrapeQueueItems.companyId,
+        companyName: companies.name,
+      })
+      .from(scrapeQueueItems)
+      .leftJoin(companies, eq(companies.id, scrapeQueueItems.companyId))
+      .where(eq(scrapeQueueItems.sessionId, sessionId))
+      .all();
+    const logKeys = this.database
+      .select({
+        logId: scrapingLogs.id,
+        companyId: scrapingLogs.companyId,
+        companyName: companies.name,
+      })
+      .from(scrapingLogs)
+      .leftJoin(companies, eq(companies.id, scrapingLogs.companyId))
+      .where(eq(scrapingLogs.sessionId, sessionId))
+      .orderBy(scrapingLogs.startedAt, scrapingLogs.id)
+      .all();
+    const progress = new Map<string, ScrapeProgressKey>();
+
+    for (const item of queueKeys) {
+      const key = `company-${item.companyId}`;
+      progress.set(key, {
+        key,
+        companyId: item.companyId,
+        companyName: item.companyName,
+        queueItemId: item.queueItemId,
+        standaloneLogId: null,
+      });
+    }
+
+    for (const log of logKeys) {
+      const key = log.companyId === null ? `log-${log.logId}` : `company-${log.companyId}`;
+      if (progress.has(key)) continue;
+      progress.set(key, {
+        key,
+        companyId: log.companyId,
+        companyName: log.companyName,
+        queueItemId: null,
+        standaloneLogId: log.companyId === null ? log.logId : null,
+      });
+    }
+
+    return Array.from(progress.values()).sort((left, right) => {
+      const companyDifference = (left.companyName ?? "Unknown company").localeCompare(
+        right.companyName ?? "Unknown company"
+      );
+      return companyDifference === 0 ? left.key.localeCompare(right.key) : companyDifference;
+    });
   }
 
   /**
