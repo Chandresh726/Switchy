@@ -436,10 +436,10 @@
   },
   {
     "name": "Flipkart",
-    "careersUrl": "https://www.flipkartcareers.com/flipkart/jobslist",
+    "careersUrl": "https://flipkart.turbohire.co/careerpage/4d757ba0-3d57-448a-b82c-238ed87ac90f",
     "logoUrl": "https://www.citypng.com/public/uploads/preview/hd-flipkart-round-logo-icon-transparent-png-701751694966204grvmunpzzf.png",
-    "platform": "zwayam",
-    "boardToken": "flipkart",
+    "platform": "turbohire",
+    "boardToken": "4d757ba0-3d57-448a-b82c-238ed87ac90f",
     "isActive": true
   },
   {
@@ -551,7 +551,7 @@
   },
   {
     "name": "Alteryx",
-    "careersUrl": "http://alteryx.wd108.myworkdayjobs.com/AlteryxCareers",
+    "careersUrl": "https://alteryx.wd108.myworkdayjobs.com/AlteryxCareers",
     "logoUrl": "https://www.google.com/s2/favicons?domain=alteryx.com&sz=128",
     "platform": "workday",
     "isActive": true

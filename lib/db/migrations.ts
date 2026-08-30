@@ -11,11 +11,18 @@ import {
   aiGenerationHistory,
   aiProviders,
   aiRuns,
+  companies,
   matchLogs,
   matchResults,
   matchSessionJobs,
   settings,
 } from "./schema";
+
+const FLIPKART_TURBOHIRE_URL =
+  "https://flipkart.turbohire.co/careerpage/4d757ba0-3d57-448a-b82c-238ed87ac90f";
+const FLIPKART_TURBOHIRE_ORGANIZATION_ID =
+  "4d757ba0-3d57-448a-b82c-238ed87ac90f";
+const LEGACY_FLIPKART_URL = "https://www.flipkartcareers.com/flipkart/jobslist";
 
 interface ProviderMigrationRecord {
   id: string;
@@ -219,6 +226,69 @@ function backfillWritingEvents(
   });
 }
 
+export function migrateLegacyScraperCompanies(
+  database: BetterSQLite3Database<typeof databaseSchema>
+): void {
+  let storedCompanies: Array<typeof companies.$inferSelect>;
+  try {
+    storedCompanies = database.select().from(companies).all();
+  } catch (error) {
+    if (isMissingTableError(error)) return;
+    throw error;
+  }
+
+  const legacyCompanies = storedCompanies.filter(
+    (company) => company.platform?.trim().toLowerCase() === "zwayam"
+  );
+  if (legacyCompanies.length === 0) return;
+
+  const canonicalFlipkart = storedCompanies.find(
+    (company) => company.careersUrl === FLIPKART_TURBOHIRE_URL
+  );
+  const legacyFlipkart = legacyCompanies.find(
+    (company) =>
+      company.careersUrl === LEGACY_FLIPKART_URL ||
+      company.name.trim().toLowerCase() === "flipkart"
+  );
+  const now = new Date();
+
+  database.transaction((tx) => {
+    if (canonicalFlipkart) {
+      tx.update(companies)
+        .set({
+          platform: "turbohire",
+          boardToken: FLIPKART_TURBOHIRE_ORGANIZATION_ID,
+          updatedAt: now,
+        })
+        .where(eq(companies.id, canonicalFlipkart.id))
+        .run();
+    } else if (legacyFlipkart) {
+      tx.update(companies)
+        .set({
+          careersUrl: FLIPKART_TURBOHIRE_URL,
+          platform: "turbohire",
+          boardToken: FLIPKART_TURBOHIRE_ORGANIZATION_ID,
+          updatedAt: now,
+        })
+        .where(eq(companies.id, legacyFlipkart.id))
+        .run();
+    }
+
+    for (const company of legacyCompanies) {
+      if (company.id === canonicalFlipkart?.id) continue;
+      if (!canonicalFlipkart && company.id === legacyFlipkart?.id) continue;
+      tx.update(companies)
+        .set({
+          platform: "custom",
+          isActive: false,
+          updatedAt: now,
+        })
+        .where(eq(companies.id, company.id))
+        .run();
+    }
+  });
+}
+
 export function migrateLocalDatabase(
   database: BetterSQLite3Database<typeof databaseSchema>,
   migrationsFolder: string
@@ -228,6 +298,7 @@ export function migrateLocalDatabase(
   try {
     reconcileDuplicateNonCustomProviders(database);
     migrate(database, { migrationsFolder });
+    migrateLegacyScraperCompanies(database);
     backfillAICacheEvents(database);
     backfillWritingEvents(database);
   } finally {

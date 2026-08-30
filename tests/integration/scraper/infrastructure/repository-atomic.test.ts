@@ -148,6 +148,9 @@ describe("DrizzleScraperRepository atomic persistence", () => {
       matchOutboxId: storedOutbox.id,
     });
     expect(result.matchableJobIds).toHaveLength(1);
+    expect(storedLog.startedAt?.getTime()).toBe(
+      Math.floor(startedAtMs / 1_000) * 1_000
+    );
     expect(storedJobs.find((job) => job.externalId === "open-again")).toMatchObject({
       status: "new",
       archiveSource: null,

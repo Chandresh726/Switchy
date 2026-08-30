@@ -1,5 +1,5 @@
 import type { Platform } from "../types";
-import type { ScraperConfig, ScrapeOptions, ApiScraperConfig, BrowserScraperConfig } from "../types/config";
+import type { ScraperConfig, ScrapeOptions, ApiScraperConfig } from "../types/config";
 import type { ScraperResult } from "../types/result";
 import type { ScrapedJob } from "../types/job";
 
@@ -7,7 +7,6 @@ export type {
   ScraperConfig,
   ScrapeOptions,
   ApiScraperConfig,
-  BrowserScraperConfig,
   ScraperResult,
   ScrapedJob,
 };

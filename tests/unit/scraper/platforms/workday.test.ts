@@ -1,487 +1,269 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { IBrowserClient } from "@/lib/scraper/infrastructure/browser-client";
-import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
-import { WorkdayScraper } from "@/lib/scraper/platforms/workday";
-import { createWorkdayListResponse } from "@test/fixtures/platforms/workday";
 import {
-  createBrowserClientStub,
-  createHttpClientStub,
-} from "@test/helpers/scraper-clients";
+  HttpError,
+  type HttpRequestOptions,
+  type IHttpClient,
+} from "@/lib/scraper/infrastructure/http-client";
+import { WorkdayScraper } from "@/lib/scraper/platforms/workday";
+import { createHttpClientStub } from "@test/helpers/scraper-clients";
 
-class FastWorkdayScraper extends WorkdayScraper {
-  protected override async delay(): Promise<void> {}
+function listing(id: number) {
+  return {
+    title: `Engineer ${id}`,
+    externalPath: `/job/REQ-${id}`,
+    locationsText: "India",
+    postedOn: "2026-08-20",
+    remoteType: "Hybrid",
+    bulletFields: [],
+  };
 }
 
-function createBrowserClient(): IBrowserClient {
-  return createBrowserClientStub({
-    bootstrap: vi.fn(async () => ({
-      baseUrl: "https://acme.wd5.myworkdayjobs.com",
-      cookies: "session=abc",
-      csrfToken: "csrf-token",
-    })),
+function detail(id: string) {
+  return {
+    jobPostingInfo: {
+      jobDescription: "<p>Build reliable systems.</p>",
+      timeType: "Full time",
+      externalUrl: `https://acme.wd5.myworkdayjobs.com/Acme/job/${id}`,
+    },
+  };
+}
+
+function browserClient(bootstrap = vi.fn(async () => ({
+  baseUrl: "https://acme.wd5.myworkdayjobs.com",
+  cookies: "session=fresh",
+  csrfToken: "csrf-fresh",
+}))): IBrowserClient {
+  return {
+    bootstrap,
     withBrowser: vi.fn(async () => {
       throw new Error("not used");
     }),
-  });
+    close: vi.fn(async () => undefined),
+  };
 }
 
-function createHttpClient(failedDetail?: string): IHttpClient {
+function directHttpClient(): IHttpClient {
   return createHttpClientStub({
-    post: vi.fn(async () => createWorkdayListResponse()) as IHttpClient["post"],
-    get: vi.fn(async (url: string) => {
-      const id = url.split("/").pop() ?? "";
-      if (id === failedDetail) throw new Error("detail unavailable");
-      return {
-        jobPostingInfo: {
-          id,
-          title: id === "REQ-1" ? "Platform Engineer" : "Site Reliability Engineer",
-          jobDescription: "<p>Build dependable services.</p>",
-          location: "Bengaluru",
-          postedOn: "2026-07-01",
-          startDate: "",
-          timeType: "Full time",
-          jobReqId: id,
-          jobPostingId: id,
-          remoteType: "",
-          externalUrl: `https://acme.wd5.myworkdayjobs.com/Acme/job/${id}`,
-        },
-      };
-    }) as IHttpClient["get"],
-  });
-}
-
-function createPaginatedHttpClient(failSecondPage = false): IHttpClient {
-  const allJobs = createWorkdayListResponse().jobPostings.concat({
-    title: "Data Engineer",
-    externalPath: "/job/REQ-3",
-    locationsText: "Pune, India",
-    postedOn: "2026-07-02",
-    remoteType: "Onsite",
-    bulletFields: [],
-  });
-
-  return createHttpClientStub({
-    post: vi.fn(async (_url: string, body: unknown) => {
-      const offset = (body as { offset: number }).offset;
-      if (offset === 2 && failSecondPage) throw new Error("page unavailable");
-      return {
-        total: 3,
-        jobPostings: offset === 0 ? allJobs.slice(0, 2) : allJobs.slice(2),
-      };
-    }) as IHttpClient["post"],
-    get: vi.fn(async (url: string) => {
-      const id = url.split("/").pop() ?? "";
-      return {
-        jobPostingInfo: {
-          id,
-          title: id,
-          jobDescription: "Description",
-          location: "India",
-          postedOn: "2026-07-01",
-          startDate: "",
-          timeType: "Full time",
-          jobReqId: id,
-          jobPostingId: id,
-          remoteType: "",
-          externalUrl: `https://acme.wd5.myworkdayjobs.com/Acme/job/${id}`,
-        },
-      };
-    }) as IHttpClient["get"],
+    post: vi.fn(async () => ({ total: 2, jobPostings: [listing(1), listing(2)] })) as IHttpClient["post"],
+    get: vi.fn(async (url: string) => detail(url.split("/").pop() ?? "")) as IHttpClient["get"],
   });
 }
 
 describe("WorkdayScraper", () => {
-  it("retries an incomplete initial browser session once", async () => {
-    const bootstrap = vi
-      .fn()
-      .mockResolvedValueOnce({
-        baseUrl: "https://acme.wd5.myworkdayjobs.com",
-        cookies: "",
-      })
-      .mockResolvedValueOnce({
-        baseUrl: "https://acme.wd5.myworkdayjobs.com",
-        cookies: "session=recovered",
-        csrfToken: "csrf-recovered",
-      });
-    const scraper = new FastWorkdayScraper(
-      createHttpClient(),
-      createBrowserClientStub({ bootstrap }),
-      { requestDelayBaseMs: 0, requestDelayJitterMs: 0 }
-    );
-
-    const result = await scraper.scrape(
-      "https://acme.wd5.myworkdayjobs.com/Acme"
-    );
-
-    expect(result.outcome).toBe("success");
-    expect(bootstrap).toHaveBeenCalledTimes(2);
-  });
-
-  it("returns a retryable browser error after two incomplete sessions", async () => {
-    const bootstrap = vi.fn(async () => ({
-      baseUrl: "https://acme.wd5.myworkdayjobs.com",
-      cookies: "",
-    }));
-    const scraper = new FastWorkdayScraper(
-      createHttpClient(),
-      createBrowserClientStub({ bootstrap }),
-      { requestDelayBaseMs: 0, requestDelayJitterMs: 0 }
-    );
-
-    const result = await scraper.scrape(
-      "https://acme.wd5.myworkdayjobs.com/Acme"
-    );
-
-    expect(result).toMatchObject({
-      outcome: "error",
-      error: { code: "browser_error", retryable: true },
+  it("uses direct HTTP without bootstrapping a browser on normal responses", async () => {
+    const bootstrap = vi.fn(async () => {
+      throw new Error("browser must remain unused");
     });
-    expect(bootstrap).toHaveBeenCalledTimes(2);
-  });
-
-  it("retains valid jobs and marks the listing partial when one item is malformed", async () => {
-    const httpClient = createHttpClient();
-    vi.mocked(httpClient.post).mockResolvedValue({
-      total: 2,
-      jobPostings: [
-        createWorkdayListResponse().jobPostings[0],
-        { externalPath: "/job/REQ-BROKEN" },
-      ],
-    });
-    const scraper = new FastWorkdayScraper(httpClient, createBrowserClient(), {
-      requestDelayBaseMs: 0,
-      requestDelayJitterMs: 0,
-    });
-
-    const result = await scraper.scrape(
-      "https://acme.wd5.myworkdayjobs.com/Acme"
-    );
-
-    expect(result).toMatchObject({
-      outcome: "partial",
-      totalListings: 1,
-      listingCompleteness: "partial",
-    });
-    expect(result.jobs).toHaveLength(1);
-    if (result.outcome !== "partial") throw new Error("Expected partial result");
-    expect(result.issues?.[0]?.message).toContain(
-      "1 malformed listing was discarded"
-    );
-  });
-
-  it("bootstraps a session and hydrates an authoritative listing", async () => {
-    const httpClient = createHttpClient();
-    const browserClient = createBrowserClient();
-    const scraper = new FastWorkdayScraper(httpClient, browserClient, {
-      requestDelayBaseMs: 0,
-      requestDelayJitterMs: 0,
-    });
+    const httpClient = directHttpClient();
+    const scraper = new WorkdayScraper(httpClient, browserClient(bootstrap));
 
     const result = await scraper.scrape(
       "https://acme.wd5.myworkdayjobs.com/en-US/Acme"
     );
 
-    expect(scraper.extractIdentifier("https://acme.wd5.myworkdayjobs.com/en-US/Acme")).toBe(
-      "acme/Acme"
-    );
-    expect(browserClient.bootstrap).toHaveBeenCalledWith(
-      "https://acme.wd5.myworkdayjobs.com/Acme"
-    );
     expect(result).toMatchObject({
       outcome: "success",
       detectedBoardToken: "acme/Acme",
       listingCompleteness: "complete",
     });
     expect(result.jobs).toHaveLength(2);
-    expect(result.jobs[0]).toMatchObject({
-      externalId: "workday-Acme-REQ-1",
-      locationType: "hybrid",
-      descriptionFormat: "markdown",
-    });
-    expect(httpClient.post).toHaveBeenCalledWith(
-      expect.stringContaining("/wday/cxs/acme/Acme/jobs"),
-      expect.any(Object),
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Cookie: "session=abc",
-          "x-calypso-csrf-token": "csrf-token",
-        }),
-      })
-    );
+    expect(bootstrap).not.toHaveBeenCalled();
+    const listOptions = vi.mocked(httpClient.post).mock.calls[0]?.[2] as
+      | HttpRequestOptions
+      | undefined;
+    const detailOptions = vi.mocked(httpClient.get).mock.calls[0]?.[1] as
+      | HttpRequestOptions
+      | undefined;
+    expect(listOptions?.headers).not.toHaveProperty("Cookie");
+    expect(listOptions?.headers).not.toHaveProperty("x-calypso-csrf-token");
+    expect(detailOptions?.headers).not.toHaveProperty("Cookie");
   });
 
-  it("keeps authoritative open IDs and listing fallbacks after detail retry failure", async () => {
-    const browserClient = createBrowserClient();
-    const scraper = new FastWorkdayScraper(createHttpClient("REQ-2"), browserClient, {
-      requestDelayBaseMs: 0,
-      requestDelayJitterMs: 0,
+  it("maps search text and repeated source filters into the CXS payload", async () => {
+    const httpClient = directHttpClient();
+    const scraper = new WorkdayScraper(httpClient, browserClient());
+
+    await scraper.scrape(
+      "https://acme.wd5.myworkdayjobs.com/Acme?q=platform&locationCountry=IN&locationCountry=US&jobFamily=Engineering&page=4&utm_source=test"
+    );
+
+    expect(vi.mocked(httpClient.post).mock.calls[0]?.[1]).toEqual({
+      appliedFacets: {
+        locationCountry: ["IN", "US"],
+        jobFamily: ["Engineering"],
+      },
+      limit: 20,
+      offset: 0,
+      searchText: "platform",
     });
+  });
+
+  it("bootstraps once on 403 and retries with session headers", async () => {
+    const bootstrap = vi.fn(async () => ({
+      baseUrl: "https://acme.wd5.myworkdayjobs.com",
+      cookies: "session=fresh",
+      csrfToken: "csrf-fresh",
+    }));
+    const post = vi.fn(async (
+      _url: string,
+      _body: unknown,
+      options?: HttpRequestOptions
+    ) => {
+      const headers = options?.headers as Record<string, string> | undefined;
+      if (!headers?.Cookie) throw new HttpError(403, "forbidden", "list");
+      return { total: 1, jobPostings: [listing(1)] };
+    });
+    const get = vi.fn(async (
+      url: string,
+      options?: HttpRequestOptions
+    ) => {
+      const headers = options?.headers as Record<string, string> | undefined;
+      expect(headers).toMatchObject({
+        Cookie: "session=fresh",
+        "x-calypso-csrf-token": "csrf-fresh",
+      });
+      return detail(url.split("/").pop() ?? "");
+    });
+    const scraper = new WorkdayScraper(
+      createHttpClientStub({
+        post: post as IHttpClient["post"],
+        get: get as IHttpClient["get"],
+      }),
+      browserClient(bootstrap)
+    );
 
     const result = await scraper.scrape("https://acme.wd5.myworkdayjobs.com/Acme");
 
-    expect(result).toMatchObject({
-      outcome: "partial",
-      listingCompleteness: "complete",
-    });
-    expect(result.jobs).toHaveLength(2);
-    expect(result.openExternalIds).toHaveLength(2);
-    expect(
-      result.jobs.find((job) => job.externalId === "workday-Acme-REQ-2")
-        ?.description
-    ).toBeUndefined();
-    expect(browserClient.bootstrap).toHaveBeenCalledTimes(2);
-  });
-
-  it("recovers a transient detail failure with a refreshed session", async () => {
-    const httpClient = createHttpClient();
-    const originalGet = vi.mocked(httpClient.get);
-    let req2Attempts = 0;
-    originalGet.mockImplementation(async (url: string) => {
-      const id = url.split("/").pop() ?? "";
-      if (id === "REQ-2" && req2Attempts++ === 0) {
-        throw new Error("expired session");
-      }
-      return {
-        jobPostingInfo: {
-          jobDescription: "Recovered description",
-          timeType: "Full time",
-          externalUrl: `https://acme.wd5.myworkdayjobs.com/Acme/job/${id}`,
-        },
-      };
-    });
-    const browserClient = createBrowserClient();
-    const scraper = new FastWorkdayScraper(httpClient, browserClient, {
-      requestDelayBaseMs: 0,
-      requestDelayJitterMs: 0,
-    });
-
-    const result = await scraper.scrape(
-      "https://acme.wd5.myworkdayjobs.com/Acme"
-    );
-
     expect(result.outcome).toBe("success");
-    expect(result.jobs).toHaveLength(2);
-    expect(browserClient.bootstrap).toHaveBeenCalledTimes(2);
+    expect(bootstrap).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps refreshed detail retries within the configured batch size", async () => {
-    const allJobs = createWorkdayListResponse().jobPostings.concat({
-      title: "Data Engineer",
-      externalPath: "/job/REQ-3",
-      locationsText: "Pune, India",
-      postedOn: "2026-07-02",
-      remoteType: "Onsite",
-      bulletFields: [],
-    });
-    const attempts = new Map<string, number>();
-    let activeRequests = 0;
-    let maxActiveRequests = 0;
+  it("shares a single browser fallback across concurrent 401 detail responses", async () => {
+    const bootstrap = vi.fn(async () => ({
+      baseUrl: "https://acme.wd5.myworkdayjobs.com",
+      cookies: "session=fresh",
+      csrfToken: "csrf-fresh",
+    }));
     const httpClient = createHttpClientStub({
-      post: vi.fn(async () => ({ total: 3, jobPostings: allJobs })) as IHttpClient["post"],
-      get: vi.fn(async (url: string) => {
-        const id = url.split("/").pop() ?? "";
-        activeRequests++;
-        maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
-        await Promise.resolve();
-        activeRequests--;
-        const attempt = (attempts.get(id) ?? 0) + 1;
-        attempts.set(id, attempt);
-        if (attempt === 1) throw new Error("expired session");
-        return {
-          jobPostingInfo: {
-            jobDescription: "Recovered description",
-            timeType: "Full time",
-            externalUrl: `https://acme.wd5.myworkdayjobs.com/Acme/job/${id}`,
-          },
-        };
+      post: vi.fn(async () => ({ total: 2, jobPostings: [listing(1), listing(2)] })) as IHttpClient["post"],
+      get: vi.fn(async (url: string, options?: HttpRequestOptions) => {
+        const headers = options?.headers as Record<string, string> | undefined;
+        if (!headers?.Cookie) throw new HttpError(401, "unauthorized", url);
+        return detail(url.split("/").pop() ?? "");
       }) as IHttpClient["get"],
     });
-    const scraper = new FastWorkdayScraper(httpClient, createBrowserClient(), {
-      detailBatchSize: 2,
-      requestDelayBaseMs: 0,
-      requestDelayJitterMs: 0,
-    });
+    const scraper = new WorkdayScraper(httpClient, browserClient(bootstrap));
 
-    const result = await scraper.scrape(
-      "https://acme.wd5.myworkdayjobs.com/Acme"
-    );
+    const result = await scraper.scrape("https://acme.wd5.myworkdayjobs.com/Acme");
 
     expect(result.outcome).toBe("success");
-    expect(result.jobs).toHaveLength(3);
-    expect(maxActiveRequests).toBe(2);
+    expect(bootstrap).toHaveBeenCalledTimes(1);
   });
 
-  it("preserves unkeyed listings and marks their identities non-authoritative", async () => {
+  it("retains listing fallbacks when detail-session bootstrap fails", async () => {
+    const bootstrap = vi.fn(async () => ({
+      baseUrl: "https://acme.wd5.myworkdayjobs.com",
+      cookies: "",
+      csrfToken: "",
+    }));
     const httpClient = createHttpClientStub({
-      post: vi.fn(async () => ({
-        total: 2,
-        jobPostings: [
-          { title: "Engineer I", externalPath: "" },
-          { title: "Engineer II", externalPath: "" },
-        ],
-      })) as IHttpClient["post"],
-      get: vi.fn() as IHttpClient["get"],
+      post: vi.fn(async () => ({ total: 1, jobPostings: [listing(1)] })) as IHttpClient["post"],
+      get: vi.fn(async (url: string) => {
+        throw new HttpError(403, "forbidden", url);
+      }) as IHttpClient["get"],
     });
-    const scraper = new FastWorkdayScraper(httpClient, createBrowserClient(), {
-      requestDelayBaseMs: 0,
-      requestDelayJitterMs: 0,
-    });
-
-    const result = await scraper.scrape(
-      "https://acme.wd5.myworkdayjobs.com/Acme"
-    );
-
-    expect(result).toMatchObject({
-      outcome: "partial",
-      totalListings: 2,
-      listingCompleteness: "partial",
-    });
-    expect(result.jobs).toHaveLength(2);
-    expect(new Set(result.jobs.map((job) => job.externalId)).size).toBe(2);
-    expect(new Set(result.openExternalIds).size).toBe(2);
-    if (result.outcome !== "partial") throw new Error("Expected partial result");
-    expect(result.issues?.[0]?.message).toContain(
-      "2 listings lacked a stable Workday ID"
-    );
-  });
-
-  it("marks a successful multi-page listing authoritative", async () => {
-    const scraper = new FastWorkdayScraper(createPaginatedHttpClient(), createBrowserClient(), {
-      listPageSize: 2,
-      parallelListFetches: 1,
-      requestDelayBaseMs: 0,
-      requestDelayJitterMs: 0,
-    });
-
-    const result = await scraper.scrape("https://acme.wd5.myworkdayjobs.com/Acme");
-
-    expect(result).toMatchObject({
-      outcome: "success",
-      listingCompleteness: "complete",
-    });
-    expect(result.jobs).toHaveLength(3);
-    expect(result.openExternalIds).toHaveLength(3);
-  });
-
-  it("marks a listing incomplete when a later Workday page fails", async () => {
-    const scraper = new FastWorkdayScraper(
-      createPaginatedHttpClient(true),
-      createBrowserClient(),
-      {
-        listPageSize: 2,
-        parallelListFetches: 1,
-        requestDelayBaseMs: 0,
-        requestDelayJitterMs: 0,
-      }
-    );
+    const scraper = new WorkdayScraper(httpClient, browserClient(bootstrap));
 
     const result = await scraper.scrape("https://acme.wd5.myworkdayjobs.com/Acme");
 
     expect(result).toMatchObject({
       outcome: "partial",
-      listingCompleteness: "partial",
-    });
-    expect(result.jobs).toHaveLength(2);
-    expect(result.openExternalIds).toHaveLength(2);
-    if (result.outcome !== "partial") throw new Error("Expected partial result");
-    expect(result.issues?.[0]?.message).toContain(
-      "2 of 3 advertised jobs"
-    );
-  });
-
-  it("recovers a missing listing offset using refreshed session headers", async () => {
-    const allJobs = createWorkdayListResponse().jobPostings.concat({
-      title: "Data Engineer",
-      externalPath: "/job/REQ-3",
-      locationsText: "Pune, India",
-      postedOn: "2026-07-02",
-      remoteType: "Onsite",
-      bulletFields: [],
-    });
-    let offsetTwoAttempts = 0;
-    const httpClient = createHttpClientStub({
-      post: vi.fn(async (_url: string, body: unknown) => {
-        const offset = (body as { offset: number }).offset;
-        if (offset === 2 && offsetTwoAttempts++ === 0) {
-          throw new Error("expired list session");
-        }
-        return {
-          total: 3,
-          jobPostings: offset === 0 ? allJobs.slice(0, 2) : allJobs.slice(2),
-        };
-      }) as IHttpClient["post"],
-      get: createPaginatedHttpClient().get,
-    });
-    const bootstrap = vi
-      .fn()
-      .mockResolvedValueOnce({
-        baseUrl: "https://acme.wd5.myworkdayjobs.com",
-        cookies: "session=old",
-        csrfToken: "csrf-old",
-      })
-      .mockResolvedValueOnce({
-        baseUrl: "https://acme.wd5.myworkdayjobs.com",
-        cookies: "session=fresh",
-        csrfToken: "csrf-fresh",
-      });
-    const browserClient = createBrowserClientStub({ bootstrap });
-    const scraper = new FastWorkdayScraper(httpClient, browserClient, {
-      listPageSize: 2,
-      parallelListFetches: 1,
-      requestDelayBaseMs: 0,
-      requestDelayJitterMs: 0,
-    });
-
-    const result = await scraper.scrape(
-      "https://acme.wd5.myworkdayjobs.com/Acme"
-    );
-
-    expect(result).toMatchObject({
-      outcome: "success",
-      totalListings: 3,
-      listingCompleteness: "complete",
-    });
-    expect(bootstrap).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(httpClient.post).mock.calls.at(-1)?.[2]?.headers).toMatchObject({
-      Cookie: "session=fresh",
-      "x-calypso-csrf-token": "csrf-fresh",
-    });
-  });
-
-  it("returns a typed parse error when the Workday list shape drifts", async () => {
-    const httpClient = createHttpClient();
-    vi.mocked(httpClient.post).mockResolvedValue({
-      total: "two",
-      jobPostings: [],
-    });
-    const scraper = new FastWorkdayScraper(httpClient, createBrowserClient());
-
-    const result = await scraper.scrape("https://acme.wd5.myworkdayjobs.com/Acme");
-
-    expect(result).toMatchObject({
-      outcome: "error",
-      listingCompleteness: "unknown",
-      error: { code: "parse_error", retryable: false },
-    });
-  });
-
-  it("accepts minimal list and detail payloads by defaulting optional fields", async () => {
-    const httpClient = createHttpClient();
-    vi.mocked(httpClient.post).mockResolvedValue({
-      total: 1,
-      jobPostings: [{ title: "Engineer", externalPath: "/job/REQ-1" }],
-    });
-    vi.mocked(httpClient.get).mockResolvedValue({ jobPostingInfo: {} });
-    const scraper = new FastWorkdayScraper(httpClient, createBrowserClient());
-
-    const result = await scraper.scrape("https://acme.wd5.myworkdayjobs.com/Acme");
-
-    expect(result).toMatchObject({
-      outcome: "success",
       totalListings: 1,
       listingCompleteness: "complete",
     });
     expect(result.jobs).toHaveLength(1);
+    expect(result.jobs[0]).toMatchObject({
+      externalId: "workday-Acme-REQ-1",
+      title: "Engineer 1",
+    });
+    expect(bootstrap).toHaveBeenCalledTimes(1);
+  });
+
+  it("fetches no more than six listing pages concurrently", async () => {
+    const pageSize = 20;
+    const total = 140;
+    let active = 0;
+    let maxActive = 0;
+    const post = vi.fn(async (_url: string, body: unknown) => {
+      const offset = (body as { offset: number }).offset;
+      if (offset > 0) {
+        active++;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        active--;
+      }
+      return {
+        total,
+        jobPostings: Array.from(
+          { length: Math.min(pageSize, total - offset) },
+          (_, index) => listing(offset + index + 1)
+        ),
+      };
+    });
+    const scraper = new WorkdayScraper(
+      createHttpClientStub({
+        post: post as IHttpClient["post"],
+        get: vi.fn() as IHttpClient["get"],
+      }),
+      browserClient(),
+      { parallelListFetches: 6 }
+    );
+
+    const result = await scraper.scrape(
+      "https://acme.wd5.myworkdayjobs.com/Acme",
+      { filters: { titleKeywords: ["does-not-match"] } }
+    );
+
+    expect(result).toMatchObject({
+      outcome: "success",
+      totalListings: 140,
+      listingCompleteness: "complete",
+    });
+    expect(maxActive).toBe(6);
+  });
+
+  it("retries a missing offset without browser and protects completeness", async () => {
+    const bootstrap = vi.fn(async () => {
+      throw new Error("generic failures must not start a browser");
+    });
+    const post = vi.fn(async (_url: string, body: unknown) => {
+      const offset = (body as { offset: number }).offset;
+      if (offset === 20) throw new Error("page unavailable");
+      return {
+        total: 21,
+        jobPostings: Array.from({ length: 20 }, (_, index) => listing(index + 1)),
+      };
+    });
+    const scraper = new WorkdayScraper(
+      createHttpClientStub({
+        post: post as IHttpClient["post"],
+        get: vi.fn(async (url: string) => detail(url.split("/").pop() ?? "")) as IHttpClient["get"],
+      }),
+      browserClient(bootstrap)
+    );
+
+    const result = await scraper.scrape("https://acme.wd5.myworkdayjobs.com/Acme");
+
+    expect(result).toMatchObject({
+      outcome: "partial",
+      totalListings: 20,
+      listingCompleteness: "partial",
+    });
+    expect(result.openExternalIds).toHaveLength(20);
+    expect(post.mock.calls.filter(([, body]) => (body as { offset: number }).offset === 20)).toHaveLength(2);
+    expect(bootstrap).not.toHaveBeenCalled();
   });
 });

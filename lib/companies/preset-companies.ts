@@ -10,7 +10,7 @@ const PLATFORM_VALUES = [
   "workday",
   "eightfold",
   "servicenow",
-  "zwayam",
+  "turbohire",
   "mynexthire",
   "uber",
   "google",

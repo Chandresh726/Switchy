@@ -14,7 +14,17 @@ describe("platform detection", () => {
     expect(detectPlatformFromUrl("https://acme.wd5.myworkdayjobs.com/en-US/careers")).toBe("workday");
     expect(detectPlatformFromUrl("https://acme.eightfold.ai/careers")).toBe("eightfold");
     expect(detectPlatformFromUrl("https://careers.servicenow.com/jobs")).toBe("servicenow");
-    expect(detectPlatformFromUrl("https://www.flipkartcareers.com/flipkart/jobslist")).toBe("zwayam");
+    expect(detectPlatformFromUrl("https://www.flipkartcareers.com/flipkart/jobslist")).toBe("turbohire");
+    expect(
+      detectPlatformFromUrl(
+        "https://flipkart.turbohire.co/careerpage/4d757ba0-3d57-448a-b82c-238ed87ac90f"
+      )
+    ).toBe("turbohire");
+    expect(
+      detectPlatformFromUrl(
+        "https://flipkart.turbohire.co/careerpage/not-an-organization-id"
+      )
+    ).toBe("custom");
     expect(detectPlatformFromUrl("https://swiggy.mynexthire.com/employer/careers")).toBe("mynexthire");
     expect(detectPlatformFromUrl("https://careers.swiggy.com/#/careers")).toBe("mynexthire");
     expect(detectPlatformFromUrl("https://www.visa.co.uk/en_gb/jobs/?functions=Technology")).toBe("visa");

@@ -38,7 +38,7 @@ describe("createScraperRegistry", () => {
 
     expect(registry.getScraperByPlatform("servicenow")?.platform).toBe("servicenow");
     expect(registry.getScraperByPlatform("smartrecruiters")?.platform).toBe("smartrecruiters");
-    expect(registry.getScraperByPlatform("zwayam")?.platform).toBe("zwayam");
+    expect(registry.getScraperByPlatform("turbohire")?.platform).toBe("turbohire");
     expect(registry.getScraperByPlatform("mynexthire")?.platform).toBe("mynexthire");
     expect(registry.getScraperByPlatform("visa")?.platform).toBe("visa");
   });
@@ -57,6 +57,16 @@ describe("createScraperRegistry", () => {
     expect(registry.getScraperByPlatform("smartrecruiters")?.capabilities).toEqual({
       transport: "http",
       concurrency: "parallel",
+      supportsCancellation: true,
+    });
+    expect(registry.getScraperByPlatform("servicenow")?.capabilities).toEqual({
+      transport: "http",
+      concurrency: "parallel",
+      supportsCancellation: true,
+    });
+    expect(registry.getScraperByPlatform("eightfold")?.capabilities).toEqual({
+      transport: "browser",
+      concurrency: "browser_limited",
       supportsCancellation: true,
     });
     expect(registry.getScraperByPlatform("workday")?.capabilities).toEqual({

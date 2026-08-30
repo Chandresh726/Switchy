@@ -12,7 +12,7 @@ import {
   WorkdayScraper,
   ServiceNowScraper,
   SmartRecruitersScraper,
-  ZwayamScraper,
+  TurboHireScraper,
   MynextHireScraper,
   VisaScraper,
   UberScraper,
@@ -103,9 +103,9 @@ export function createScraperRegistry(config: ScraperRegistryConfig): IScraperRe
   registry.register(new AshbyScraper(config.httpClient));
   registry.register(new EightfoldScraper(config.httpClient, config.browserClient));
   registry.register(new WorkdayScraper(config.httpClient, config.browserClient));
-  registry.register(new ServiceNowScraper(config.httpClient, config.browserClient));
+  registry.register(new ServiceNowScraper(config.httpClient));
   registry.register(new SmartRecruitersScraper(config.httpClient));
-  registry.register(new ZwayamScraper(config.httpClient));
+  registry.register(new TurboHireScraper(config.httpClient));
   registry.register(new MynextHireScraper(config.httpClient));
   registry.register(new VisaScraper(config.httpClient));
   registry.register(new UberScraper(config.httpClient));

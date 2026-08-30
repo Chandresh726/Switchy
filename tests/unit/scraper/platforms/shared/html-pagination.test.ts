@@ -89,6 +89,34 @@ describe("HTML pagination", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("expands the pending range when a later page reveals another page", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      const page = new URL(url).searchParams.get("page");
+      if (page === "2") {
+        return htmlResponse('<a href="?query=engineer&page=3">3</a>');
+      }
+      if (page === "3") return htmlResponse("final page");
+      return htmlResponse('<a href="?query=engineer&page=2">2</a>');
+    });
+
+    const result = await fetchPaginatedHtmlByPageParam({
+      ...fetchOptions,
+      httpClient: createHttpClientStub({ fetch: fetchMock }),
+    });
+
+    expect(result.pages.map((page) => page.page)).toEqual([1, 2, 3]);
+    expect(result).toMatchObject({
+      totalPages: 3,
+      discoveredTotalPages: 3,
+      isComplete: true,
+    });
+    expect(fetchMock.mock.calls.map(([url]) => new URL(String(url)).searchParams.get("query"))).toEqual([
+      "engineer",
+      "engineer",
+      "engineer",
+    ]);
+  });
+
   it("marks a successful bounded crawl as intentionally truncated", async () => {
     const fetchMock = vi
       .fn()
@@ -106,6 +134,27 @@ describe("HTML pagination", () => {
       discoveredTotalPages: 5,
       truncatedByMaxPages: true,
       isComplete: false,
+      failedPages: [],
+    });
+  });
+
+  it("keeps a crawl complete when the discovered total equals the page limit", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(htmlResponse('<a href="?page=2">2</a>'))
+      .mockResolvedValueOnce(htmlResponse("page two"));
+
+    const result = await fetchPaginatedHtmlByPageParam({
+      ...fetchOptions,
+      httpClient: createHttpClientStub({ fetch: fetchMock }),
+      maxPages: 2,
+    });
+
+    expect(result).toMatchObject({
+      totalPages: 2,
+      discoveredTotalPages: 2,
+      truncatedByMaxPages: false,
+      isComplete: true,
       failedPages: [],
     });
   });

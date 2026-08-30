@@ -296,6 +296,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
           matcherStatus: matchableJobIds.length > 0 ? "pending" : null,
           matcherJobsTotal: matchableJobIds.length > 0 ? matchableJobIds.length : null,
           matcherJobsCompleted: 0,
+          startedAt: new Date(input.startedAtMs),
           duration: Math.max(0, completedAt.getTime() - input.startedAtMs),
           persistenceDuration: Math.max(
             0,

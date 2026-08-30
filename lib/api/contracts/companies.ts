@@ -11,7 +11,7 @@ export const companyPlatformSchema = z.enum([
   "workday",
   "eightfold",
   "servicenow",
-  "zwayam",
+  "turbohire",
   "mynexthire",
   "uber",
   "google",

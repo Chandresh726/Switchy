@@ -14,6 +14,22 @@ import { normalizeCareersUrl } from "@/lib/companies/normalization";
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 
 describe("preset companies utils", () => {
+  it("configures Flipkart for its canonical TurboHire organization", () => {
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), "public/companies.json"), "utf8")
+    ) as unknown;
+    const flipkart = parsePresetCompanies(raw).find(
+      (company) => company.name === "Flipkart"
+    );
+
+    expect(flipkart).toMatchObject({
+      careersUrl:
+        "https://flipkart.turbohire.co/careerpage/4d757ba0-3d57-448a-b82c-238ed87ac90f",
+      platform: "turbohire",
+      boardToken: "4d757ba0-3d57-448a-b82c-238ed87ac90f",
+    });
+  });
+
   it("configures PhonePe for its branded SmartRecruiters board", () => {
     const raw = JSON.parse(
       fs.readFileSync(path.join(process.cwd(), "public/companies.json"), "utf8")

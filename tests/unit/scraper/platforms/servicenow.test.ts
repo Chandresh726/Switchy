@@ -1,533 +1,104 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Page } from "playwright";
 
 import { ServiceNowScraper } from "@/lib/scraper/platforms/servicenow";
-import {
-  createBrowserClientStub,
-  createHttpClientStub,
-} from "@test/helpers/scraper-clients";
+import { createHttpClientStub } from "@test/helpers/scraper-clients";
 
-const createBrowserClient = (page: Page) =>
-  createBrowserClientStub({
-    withBrowser: vi.fn(
-      async (callback: (currentPage: Page) => Promise<unknown>) => callback(page)
-    ) as ReturnType<typeof createBrowserClientStub>["withBrowser"],
+const validJob = `
+  <job>
+    <title>Senior Software Engineer</title>
+    <date>2026-08-20</date>
+    <apijobid>JB0071234</apijobid>
+    <url>https://careers.servicenow.com/jobs/JB0071234</url>
+    <city>Hyderabad</city><state>Telangana</state><country>India</country>
+    <description><![CDATA[<p>Build reliable workflows.</p>]]></description>
+    <category>Engineering</category><jobtype>Full time</jobtype><remotetype>Hybrid</remotetype>
+  </job>`;
+
+function response(xml: string, status = 200): Response {
+  return new Response(xml, {
+    status,
+    headers: { "Content-Type": "application/xml" },
   });
-
-function listingHtml(jobs: Array<{ id: string; slug: string; title: string; city: string }>): string {
-  const cards = jobs
-    .map(
-      (j) => `
-        <div>
-          <h2><a href="/jobs/${j.id}/${j.slug}/">${j.title}</a></h2>
-          <ul><li>${j.city}</li></ul>
-        </div>`
-    )
-    .join("");
-  return `<main>${cards}</main>`;
-}
-
-function detailHtml(opts: {
-  title: string;
-  locationText: string;
-  locationHref: string;
-  remote?: boolean;
-  hybrid?: boolean;
-  requiredInOffice?: boolean;
-  flexible?: boolean;
-  description: string;
-  additionalInfo?: string;
-}): string {
-  const locationLi = `<li><a href="${opts.locationHref}">${opts.locationText}</a></li>`;
-  const remoteLi = opts.remote ? "<li>Remote</li>" : "";
-  const hybridLi = opts.hybrid ? "<li>Hybrid</li>" : "";
-  const officeLi = opts.requiredInOffice ? "<li>Required in Office</li>" : "";
-  const flexibleLi = opts.flexible ? "<li>Flexible</li>" : "";
-  const teamLi = '<li><a href="/teams/engineering/">Engineering</a></li>';
-
-  return `<main>
-    <h1>${opts.title}</h1>
-    <ul>${teamLi}${locationLi}${remoteLi}${hybridLi}${officeLi}${flexibleLi}</ul>
-    <article>
-      <section><h3>Company Description</h3><p>Some company info.</p></section>
-      <section><h3>Job Description</h3><p>${opts.description}</p></section>
-      ${opts.additionalInfo ? `<section><h3>Additional Information</h3><p>${opts.additionalInfo}</p></section>` : ""}
-    </article>
-  </main>`;
 }
 
 describe("ServiceNowScraper", () => {
-  it("extracts listings with h2 selector and enriches location from detail page", async () => {
-    const scraper = new ServiceNowScraper(createHttpClientStub(), createBrowserClient({} as Page));
-
-    const listings = (scraper as unknown as {
-      extractListingItems: (baseUrl: string, html: string) => Array<{ id: string; title: string; url: string; location?: string }>;
-    }).extractListingItems(
-      "https://careers.servicenow.com/jobs",
-      listingHtml([
-        { id: "744000113467268", slug: "staff-software-engineer", title: "Staff Software Engineer", city: "Hyderabad" },
-      ])
+  it("maps the authoritative XML feed without browser infrastructure", async () => {
+    const fetchMock = vi.fn(async () => response(`<jobs>${validJob}</jobs>`));
+    const scraper = new ServiceNowScraper(
+      createHttpClientStub({ fetch: fetchMock })
     );
 
-    expect(listings).toEqual([
-      {
-        id: "744000113467268",
-        title: "Staff Software Engineer",
-        url: "https://careers.servicenow.com/jobs/744000113467268/staff-software-engineer/",
-        location: "Hyderabad",
-      },
-    ]);
+    const result = await scraper.scrape("https://careers.servicenow.com/jobs/");
 
-    const detailHtmlStr = detailHtml({
-      title: "Staff Software Engineer",
-      locationText: "Hyderabad, India",
-      locationHref: "/locations/apj/hyderabad-india/",
-      hybrid: true,
-      description: "Design backend systems.",
-      additionalInfo: "Equal opportunity employer.",
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://careers.servicenow.com/jobs/xml/?rss=true",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Accept: expect.stringContaining("xml") }),
+      })
+    );
+    expect(result).toMatchObject({
+      outcome: "success",
+      totalListings: 1,
+      openExternalIds: ["servicenow-JB0071234"],
+      listingCompleteness: "complete",
     });
-
-    const job = (scraper as unknown as {
-      parseDetailHtml: (
-        item: { id: string; title: string; url: string; location?: string },
-        html: string
-      ) => { description?: string; descriptionFormat?: string; locationType?: string; location?: string };
-    }).parseDetailHtml(listings[0], detailHtmlStr);
-
-    expect(job.location).toBe("Hyderabad, India");
-    expect(job.locationType).toBe("hybrid");
-    expect(job.descriptionFormat).toBe("markdown");
-    expect(job.description).toContain("Design backend systems.");
-    expect(job.description).toContain("Additional Information");
-    expect(job.description).not.toContain("Company Description");
-  });
-
-  it("detects remote location type from detail page", async () => {
-    const scraper = new ServiceNowScraper(createHttpClientStub(), createBrowserClient({} as Page));
-
-    const listings = (scraper as unknown as {
-      extractListingItems: (baseUrl: string, html: string) => Array<{ id: string; title: string; url: string; location?: string }>;
-    }).extractListingItems(
-      "https://careers.servicenow.com/jobs",
-      listingHtml([
-        { id: "1", slug: "remote-engineer", title: "Remote Engineer", city: "Bengaluru" },
-      ])
-    );
-
-    const job = (scraper as unknown as {
-      parseDetailHtml: (item: { id: string; title: string; url: string; location?: string }, html: string) => { locationType?: string; location?: string };
-    }).parseDetailHtml(listings[0], detailHtml({
-      title: "Remote Engineer",
-      locationText: "Bengaluru, India",
-      locationHref: "/locations/apj/bengaluru-india/",
-      remote: true,
-      description: "Work from anywhere.",
-    }));
-
-    expect(job.location).toBe("Bengaluru, India");
-    expect(job.locationType).toBe("remote");
-  });
-
-  it("detects onsite location type when no remote/hybrid text", async () => {
-    const scraper = new ServiceNowScraper(createHttpClientStub(), createBrowserClient({} as Page));
-
-    const listings = (scraper as unknown as {
-      extractListingItems: (baseUrl: string, html: string) => Array<{ id: string; title: string; url: string; location?: string }>;
-    }).extractListingItems(
-      "https://careers.servicenow.com/jobs",
-      listingHtml([
-        { id: "3", slug: "onsite-role", title: "Onsite Role", city: "Chicago" },
-      ])
-    );
-
-    const job = (scraper as unknown as {
-      parseDetailHtml: (item: { id: string; title: string; url: string; location?: string }, html: string) => { locationType?: string; location?: string };
-    }).parseDetailHtml(listings[0], detailHtml({
-      title: "Onsite Role",
-      locationText: "Chicago, IL",
-      locationHref: "/locations/ams/chicago-il/",
-      description: "Come to the office.",
-    }));
-
-    expect(job.location).toBe("Chicago, IL");
-    expect(job.locationType).toBe("onsite");
-  });
-
-  it("paginates through multiple pages and deduplicates", async () => {
-    const page1Html = listingHtml([
-      { id: "1", slug: "engineer-1", title: "Engineer 1", city: "Chicago" },
-      { id: "2", slug: "engineer-2", title: "Engineer 2", city: "Hyderabad" },
-    ]) + '<nav aria-label="Pagination"><a href="/jobs?page=2">2</a><a href="/jobs?page=3">3</a></nav>';
-
-    const page2Html = listingHtml([
-      { id: "2", slug: "engineer-2", title: "Engineer 2", city: "Hyderabad" },
-      { id: "3", slug: "engineer-3", title: "Engineer 3", city: "Dublin" },
-    ]) + '<nav aria-label="Pagination"><a href="/jobs?page=1">1</a><a href="/jobs?page=3">3</a></nav>';
-
-    const page3Html = listingHtml([]) + '<nav aria-label="Pagination"><a href="/jobs?page=1">1</a><a href="/jobs?page=2">2</a></nav>';
-
-    const detail1Html = detailHtml({ title: "Engineer 1", locationText: "Chicago, IL", locationHref: "/locations/ams/chicago-il/", description: "Build stuff." });
-    const detail2Html = detailHtml({ title: "Engineer 2", locationText: "Hyderabad, India", locationHref: "/locations/apj/hyderabad-india/", description: "Build more stuff." });
-    const detail3Html = detailHtml({ title: "Engineer 3", locationText: "Dublin, Ireland", locationHref: "/locations/emea/dublin-ireland/", description: "Build things." });
-
-    let contentCallCount = 0;
-
-    const page = {
-      goto: vi.fn(async () => undefined),
-      waitForTimeout: vi.fn(async () => undefined),
-      content: vi
-        .fn()
-        .mockImplementation(async () => {
-          const callIndex = contentCallCount++;
-          return [page1Html, page2Html, page3Html, detail1Html, detail2Html, detail3Html][callIndex] ?? "";
-        }),
-      url: vi.fn(() => "https://careers.servicenow.com/jobs"),
-    } as unknown as Page;
-
-    const scraper = new ServiceNowScraper(createHttpClientStub(), createBrowserClient(page), {
-      timeout: 1000,
-      requestDelayMs: 0,
-      maxPages: 5,
+    expect(result.jobs[0]).toMatchObject({
+      externalId: "servicenow-JB0071234",
+      title: "Senior Software Engineer",
+      location: "Hyderabad, Telangana, India",
+      locationType: "hybrid",
+      department: "Engineering",
+      employmentType: "full-time",
+      descriptionFormat: "markdown",
     });
-
-    const result = await scraper.scrape("https://careers.servicenow.com/jobs");
-
-    expect(result.outcome).not.toBe("error");
-    expect(result.outcome).toBe("partial");
-    expect(result.jobs).toHaveLength(3);
-    expect(result.jobs[0]?.externalId).toBe("servicenow-1");
-    expect(result.jobs[0]?.location).toBe("Chicago, IL");
-    expect(result.jobs[1]?.externalId).toBe("servicenow-2");
-    expect(result.jobs[1]?.location).toBe("Hyderabad, India");
-    expect(result.jobs[2]?.externalId).toBe("servicenow-3");
-    expect(result.jobs[2]?.location).toBe("Dublin, Ireland");
-    expect(result.listingCompleteness).toBe("partial");
   });
 
-  it("rejects a 200 challenge page without recognized listings or empty state", async () => {
-    const page = {
-      goto: vi.fn(async () => undefined),
-      waitForTimeout: vi.fn(async () => undefined),
-      content: vi.fn(async () => "<html><main>Verify you are human</main></html>"),
-      url: vi.fn(() => "https://careers.servicenow.com/jobs"),
-    } as unknown as Page;
-    const scraper = new ServiceNowScraper(createHttpClientStub(), createBrowserClient(page));
+  it("retains valid entries and marks malformed entries partial", async () => {
+    const malformed = `<job><title>Missing identifiers</title></job>`;
+    const scraper = new ServiceNowScraper(
+      createHttpClientStub({
+        fetch: vi.fn(async () => response(`<jobs>${validJob}${malformed}</jobs>`)),
+      })
+    );
 
-    const result = await scraper.scrape("https://careers.servicenow.com/jobs");
+    const result = await scraper.scrape("https://careers.servicenow.com/jobs/");
+
+    expect(result).toMatchObject({
+      outcome: "partial",
+      totalListings: 1,
+      listingCompleteness: "partial",
+    });
+    expect(result.jobs).toHaveLength(1);
+  });
+
+  it("treats an empty readable feed as unknown instead of authoritative", async () => {
+    const scraper = new ServiceNowScraper(
+      createHttpClientStub({ fetch: vi.fn(async () => response("<jobs />")) })
+    );
+
+    const result = await scraper.scrape("https://careers.servicenow.com/jobs/");
+
+    expect(result).toMatchObject({
+      outcome: "partial",
+      totalListings: 0,
+      listingCompleteness: "unknown",
+    });
+  });
+
+  it("rejects an unrecognized successful response", async () => {
+    const scraper = new ServiceNowScraper(
+      createHttpClientStub({
+        fetch: vi.fn(async () => response("<html>challenge</html>")),
+      })
+    );
+
+    const result = await scraper.scrape("https://careers.servicenow.com/jobs/");
 
     expect(result).toMatchObject({
       outcome: "error",
-      listingCompleteness: "unknown",
       error: { code: "parse_error" },
+      listingCompleteness: "unknown",
     });
-  });
-
-  it("accepts an explicit empty state as authoritative", async () => {
-    const page = {
-      goto: vi.fn(async () => undefined),
-      waitForTimeout: vi.fn(async () => undefined),
-      content: vi.fn(async () => "<html><main>No jobs found</main></html>"),
-      url: vi.fn(() => "https://careers.servicenow.com/jobs"),
-    } as unknown as Page;
-    const scraper = new ServiceNowScraper(createHttpClientStub(), createBrowserClient(page));
-
-    const result = await scraper.scrape("https://careers.servicenow.com/jobs");
-
-    expect(result).toMatchObject({
-      outcome: "success",
-      totalListings: 0,
-      openExternalIds: [],
-      listingCompleteness: "complete",
-    });
-  });
-
-  it("returns partial when detail pages fail after listings are collected", async () => {
-    const listingHtmlStr = listingHtml([
-      { id: "1", slug: "software-engineer", title: "Software Engineer", city: "Bengaluru" },
-      { id: "2", slug: "site-reliability-engineer", title: "Site Reliability Engineer", city: "Remote" },
-    ]) + '<nav aria-label="Pagination"><a href="/jobs?page=1">1</a></nav>';
-
-    const detail1Html = detailHtml({
-      title: "Software Engineer",
-      locationText: "Bengaluru, India",
-      locationHref: "/locations/apj/bengaluru-india/",
-      description: "Build internal platforms.",
-    });
-
-    const page = {
-      goto: vi.fn(async (url: string) => {
-        if (url.includes("/jobs/2/")) {
-          throw new Error("blocked");
-        }
-      }),
-      waitForTimeout: vi.fn(async () => undefined),
-      content: vi
-        .fn()
-        .mockResolvedValueOnce(listingHtmlStr)
-        .mockResolvedValueOnce(detail1Html),
-      url: vi.fn(() => "https://careers.servicenow.com/jobs"),
-    } as unknown as Page;
-
-    const scraper = new ServiceNowScraper(createHttpClientStub(), createBrowserClient(page), {
-      timeout: 1000,
-      requestDelayMs: 0,
-    });
-
-    const result = await scraper.scrape("https://careers.servicenow.com/jobs");
-
-    expect(result.outcome).toBe("partial");
-    expect(result.jobs).toHaveLength(2);
-    expect(result.jobs[0]?.externalId).toBe("servicenow-1");
-    expect(result.jobs[0]?.location).toBe("Bengaluru, India");
-    expect(result.jobs[0]?.description).toContain("Build internal platforms.");
-    expect(result.jobs[1]).toMatchObject({
-      externalId: "servicenow-2",
-      title: "Site Reliability Engineer",
-      location: "Remote",
-    });
-    expect(result.listingCompleteness).toBe("complete");
-  });
-
-  it("respects maxPages config", async () => {
-    const page1Html = listingHtml([
-      { id: "1", slug: "role-1", title: "Role 1", city: "SF" },
-    ]) + '<nav><a href="/jobs?page=2">2</a><a href="/jobs?page=5">5</a></nav>';
-
-    const page2Html = listingHtml([
-      { id: "2", slug: "role-2", title: "Role 2", city: "NYC" },
-    ]) + '<nav><a href="/jobs?page=1">1</a><a href="/jobs?page=5">5</a></nav>';
-
-    const detail1Html = detailHtml({ title: "Role 1", locationText: "San Francisco, CA", locationHref: "/locations/ams/san-francisco-ca/", description: "Work in SF." });
-    const detail2Html = detailHtml({ title: "Role 2", locationText: "New York, NY", locationHref: "/locations/ams/new-york-ny/", description: "Work in NYC." });
-
-    const page = {
-      goto: vi.fn(async () => undefined),
-      waitForTimeout: vi.fn(async () => undefined),
-      content: vi
-        .fn()
-        .mockResolvedValueOnce(page1Html)
-        .mockResolvedValueOnce(page2Html)
-        .mockResolvedValueOnce(detail1Html)
-        .mockResolvedValueOnce(detail2Html),
-      url: vi.fn(() => "https://careers.servicenow.com/jobs"),
-    } as unknown as Page;
-
-    const scraper = new ServiceNowScraper(createHttpClientStub(), createBrowserClient(page), {
-      timeout: 1000,
-      requestDelayMs: 0,
-      maxPages: 2,
-    });
-
-    const result = await scraper.scrape("https://careers.servicenow.com/jobs");
-
-    expect(result.outcome).not.toBe("error");
-    expect(result.jobs).toHaveLength(2);
-    expect(result.listingCompleteness).toBe("partial");
-    expect(result.outcome).toBe("partial");
-    if (result.outcome !== "partial") throw new Error("Expected partial result");
-    expect(result.issues?.[0]?.message).toContain(
-      "2 of 5 advertised pages"
-    );
-    expect(page.goto).toHaveBeenCalledWith("https://careers.servicenow.com/jobs?page=2", expect.any(Object));
-  });
-
-  it("fetches advertised listing pages beyond the previous ten-page limit", async () => {
-    let currentUrl = "https://careers.servicenow.com/jobs";
-    const page = {
-      goto: vi.fn(async (url: string) => {
-        currentUrl = url;
-      }),
-      waitForTimeout: vi.fn(async () => undefined),
-      content: vi.fn(async () => {
-        const detailMatch = currentUrl.match(/\/jobs\/(\d+)\/role-/);
-        if (detailMatch?.[1]) {
-          return detailHtml({
-            title: `Role ${detailMatch[1]}`,
-            locationText: "Bengaluru, India",
-            locationHref: "/locations/apj/bengaluru-india/",
-            description: `Description ${detailMatch[1]}`,
-          });
-        }
-        const pageNumber = Number(new URL(currentUrl).searchParams.get("page") ?? "1");
-        return (
-          listingHtml([
-            {
-              id: String(pageNumber),
-              slug: `role-${pageNumber}`,
-              title: `Role ${pageNumber}`,
-              city: "Bengaluru",
-            },
-          ]) + '<nav><a href="/jobs?page=12">12</a></nav>'
-        );
-      }),
-      url: vi.fn(() => currentUrl),
-    } as unknown as Page;
-    const scraper = new ServiceNowScraper(
-      createHttpClientStub(),
-      createBrowserClient(page),
-      { requestDelayMs: 0 }
-    );
-
-    const result = await scraper.scrape(
-      "https://careers.servicenow.com/jobs"
-    );
-
-    expect(result).toMatchObject({
-      outcome: "success",
-      totalListings: 12,
-      listingCompleteness: "complete",
-    });
-    expect(result.jobs).toHaveLength(12);
-    expect(page.goto).toHaveBeenCalledWith(
-      "https://careers.servicenow.com/jobs?page=12",
-      expect.any(Object)
-    );
-  });
-
-  it("retries failed listing-page navigation before reporting a partial run", async () => {
-    const page1Html =
-      listingHtml([
-        { id: "1", slug: "role-1", title: "Role 1", city: "Bengaluru" },
-      ]) + '<nav><a href="/jobs?page=2">2</a></nav>';
-    const page2Html = listingHtml([
-      { id: "2", slug: "role-2", title: "Role 2", city: "Bengaluru" },
-    ]);
-    let pageTwoAttempts = 0;
-    const page = {
-      goto: vi.fn(async (target: string) => {
-        if (target.includes("page=2") && pageTwoAttempts++ === 0) {
-          throw new Error("temporary navigation failure");
-        }
-      }),
-      waitForTimeout: vi.fn(async () => undefined),
-      content: vi
-        .fn()
-        .mockResolvedValueOnce(page1Html)
-        .mockResolvedValueOnce(page2Html)
-        .mockResolvedValueOnce(detailHtml({ title: "Role 1", locationText: "Bengaluru", locationHref: "/jobs/?location=Bengaluru", description: "One" }))
-        .mockResolvedValueOnce(detailHtml({ title: "Role 2", locationText: "Bengaluru", locationHref: "/jobs/?location=Bengaluru", description: "Two" })),
-      url: vi.fn(() => "https://careers.servicenow.com/jobs"),
-    } as unknown as Page;
-    const scraper = new ServiceNowScraper(
-      createHttpClientStub(),
-      createBrowserClient(page),
-      { retries: 1, baseDelay: 0, requestDelayMs: 0 }
-    );
-
-    const result = await scraper.scrape(
-      "https://careers.servicenow.com/jobs"
-    );
-
-    expect(result).toMatchObject({
-      outcome: "success",
-      listingCompleteness: "complete",
-    });
-    expect(pageTwoAttempts).toBe(2);
-  });
-
-  it("filters listings before detail hydration while retaining every open ID", async () => {
-    const listing = listingHtml([
-      { id: "1", slug: "platform-engineer", title: "Platform Engineer", city: "Bengaluru" },
-      { id: "2", slug: "backend-engineer", title: "Backend Engineer", city: "Bengaluru" },
-    ]);
-    const page = {
-      goto: vi.fn(async () => undefined),
-      waitForTimeout: vi.fn(async () => undefined),
-      content: vi
-        .fn()
-        .mockResolvedValueOnce(listing)
-        .mockResolvedValueOnce(
-          detailHtml({
-            title: "Backend Engineer",
-            locationText: "Bengaluru, India",
-            locationHref: "/locations/apj/bengaluru-india/",
-            description: "Build services.",
-          })
-        ),
-      url: vi.fn(() => "https://careers.servicenow.com/jobs"),
-    } as unknown as Page;
-    const scraper = new ServiceNowScraper(
-      createHttpClientStub(),
-      createBrowserClient(page),
-      { requestDelayMs: 0 }
-    );
-
-    const result = await scraper.scrape(
-      "https://careers.servicenow.com/jobs",
-      {
-        filters: { titleKeywords: ["engineer"] },
-        existingExternalIds: new Set(["servicenow-1"]),
-      }
-    );
-
-    expect(result.jobs).toHaveLength(1);
-    expect(result.jobs[0]?.externalId).toBe("servicenow-2");
-    expect(result.openExternalIds).toEqual([
-      "servicenow-1",
-      "servicenow-2",
-    ]);
-    expect(page.goto).not.toHaveBeenCalledWith(
-      expect.stringContaining("/jobs/1/"),
-      expect.any(Object)
-    );
-  });
-
-  it("extracts location from /jobs/?location= href pattern", async () => {
-    const scraper = new ServiceNowScraper(createHttpClientStub(), createBrowserClient({} as Page));
-
-    const job = (scraper as unknown as {
-      parseDetailHtml: (item: { id: string; title: string; url: string; location?: string }, html: string) => { location?: string; locationType?: string };
-    }).parseDetailHtml(
-      { id: "1", title: "Senior Engineer", url: "https://careers.servicenow.com/jobs/1/senior-engineer/", location: "Hyderabad" },
-      detailHtml({
-        title: "Senior Engineer",
-        locationText: "Hyderabad",
-        locationHref: "/jobs/?location=Hyderabad",
-        description: "Build things.",
-      })
-    );
-
-    expect(job.location).toBe("Hyderabad");
-    expect(job.locationType).toBe("onsite");
-  });
-
-  it("maps 'Required in Office' to onsite location type", async () => {
-    const scraper = new ServiceNowScraper(createHttpClientStub(), createBrowserClient({} as Page));
-
-    const job = (scraper as unknown as {
-      parseDetailHtml: (item: { id: string; title: string; url: string; location?: string }, html: string) => { location?: string; locationType?: string };
-    }).parseDetailHtml(
-      { id: "2", title: "Office Role", url: "https://careers.servicenow.com/jobs/2/office-role/", location: "Chicago" },
-      detailHtml({
-        title: "Office Role",
-        locationText: "Chicago",
-        locationHref: "/jobs/?location=Chicago",
-        requiredInOffice: true,
-        description: "Come to office.",
-      })
-    );
-
-    expect(job.location).toBe("Chicago");
-    expect(job.locationType).toBe("onsite");
-  });
-
-  it("maps 'Flexible' to hybrid location type", async () => {
-    const scraper = new ServiceNowScraper(createHttpClientStub(), createBrowserClient({} as Page));
-
-    const job = (scraper as unknown as {
-      parseDetailHtml: (item: { id: string; title: string; url: string; location?: string }, html: string) => { location?: string; locationType?: string };
-    }).parseDetailHtml(
-      { id: "3", title: "Flexible Role", url: "https://careers.servicenow.com/jobs/3/flexible-role/", location: "Dublin" },
-      detailHtml({
-        title: "Flexible Role",
-        locationText: "Dublin",
-        locationHref: "/jobs/?location=Dublin",
-        flexible: true,
-        description: "Work flexibly.",
-      })
-    );
-
-    expect(job.location).toBe("Dublin");
-    expect(job.locationType).toBe("hybrid");
   });
 });

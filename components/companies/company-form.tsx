@@ -140,10 +140,14 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
     selectedManualPlatform === "greenhouse" ||
     selectedManualPlatform === "smartrecruiters" ||
     selectedManualPlatform === "lever" ||
-    selectedManualPlatform === "ashby";
-  const boardTokenPlaceholder = selectedManualPlatform === "smartrecruiters"
-    ? "Company identifier"
-    : "Board token";
+    selectedManualPlatform === "ashby" ||
+    selectedManualPlatform === "turbohire";
+  const boardTokenPlaceholder =
+    selectedManualPlatform === "smartrecruiters"
+      ? "Company identifier"
+      : selectedManualPlatform === "turbohire"
+        ? "Organization UUID"
+        : "Board token";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
@@ -280,6 +284,11 @@ export function CompanyForm({ company, onSuccess }: CompanyFormProps) {
             <p className="mt-2 text-xs text-muted-foreground">
               Enter the case-sensitive company identifier from its canonical SmartRecruiters
               URL, for example PHONEPELIMITED in careers.smartrecruiters.com/PHONEPELIMITED.
+            </p>
+          ) : null}
+          {manualPlatformOverride && selectedManualPlatform === "turbohire" ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Enter the organization UUID from the canonical TurboHire career-page URL.
             </p>
           ) : null}
         </div>

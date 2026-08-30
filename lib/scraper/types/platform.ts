@@ -6,7 +6,7 @@ export type Platform =
   | "eightfold"
   | "workday"
   | "servicenow"
-  | "zwayam"
+  | "turbohire"
   | "mynexthire"
   | "uber"
   | "google"
@@ -39,7 +39,7 @@ export const PLATFORMS = [
   "eightfold",
   "workday",
   "servicenow",
-  "zwayam",
+  "turbohire",
   "mynexthire",
   "uber",
   "google",

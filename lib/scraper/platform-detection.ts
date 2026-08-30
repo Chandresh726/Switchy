@@ -48,12 +48,21 @@ export function detectPlatformFromUrl(url: string): DetectedPlatform {
   ) {
     return "mynexthire";
   }
-  if (
-    urlLower.includes(".zwayam.com") ||
-    urlLower.includes("public.zwayam.com") ||
-    urlLower.includes("flipkartcareers.com/flipkart/jobslist")
-  ) {
-    return "zwayam";
+  try {
+    const parsed = new URL(url);
+    if (
+      parsed.hostname.toLowerCase().endsWith(".turbohire.co") &&
+      /^\/careerpage\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/?$/iu.test(
+        parsed.pathname
+      )
+    ) {
+      return "turbohire";
+    }
+  } catch {
+    // Fall through to legacy URL detection.
+  }
+  if (urlLower.includes("flipkartcareers.com/flipkart/jobslist")) {
+    return "turbohire";
   }
   if (urlLower.includes("eightfold.ai")) {
     return "eightfold";
@@ -105,7 +114,7 @@ export function getPlatformLabel(platform: DetectedPlatform): string {
     eightfold: "Eightfold",
     workday: "Workday",
     servicenow: "ServiceNow",
-    zwayam: "Zwayam",
+    turbohire: "TurboHire",
     mynexthire: "MynextHire",
     uber: "Uber",
     google: "Google",

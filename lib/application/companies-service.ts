@@ -43,6 +43,7 @@ const MANUAL_BOARD_TOKEN_REQUIRED = new Set([
   "smartrecruiters",
   "lever",
   "ashby",
+  "turbohire",
 ]);
 const COMPANY_JOB_SELECTION = {
   id: jobs.id, title: jobs.title, url: jobs.url,

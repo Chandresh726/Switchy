@@ -104,9 +104,9 @@ export async function fetchPaginatedHtmlByPageParam(
   const firstHtml = await firstResponse.text();
   pages.push({ page: 1, url: firstPageUrl, html: firstHtml });
 
-  const discoveredTotal = extractMaxPageFromPagination(firstHtml, firstPageUrl);
-  const totalPages = maxPages ? Math.min(discoveredTotal, maxPages) : discoveredTotal;
-  const truncatedByMaxPages = totalPages < discoveredTotal;
+  let discoveredTotal = extractMaxPageFromPagination(firstHtml, firstPageUrl);
+  let totalPages = maxPages ? Math.min(discoveredTotal, maxPages) : discoveredTotal;
+  let truncatedByMaxPages = Boolean(maxPages && discoveredTotal > maxPages);
 
   for (let page = 2; page <= totalPages; page++) {
     const pageUrl = setPageQueryParam(startUrl, page);
@@ -130,6 +130,14 @@ export async function fetchPaginatedHtmlByPageParam(
         url: pageUrl,
         html,
       });
+      discoveredTotal = Math.max(
+        discoveredTotal,
+        extractMaxPageFromPagination(html, pageUrl)
+      );
+      totalPages = maxPages
+        ? Math.min(discoveredTotal, maxPages)
+        : discoveredTotal;
+      truncatedByMaxPages ||= Boolean(maxPages && discoveredTotal > maxPages);
     } catch (error) {
       throwIfScrapeAborted(error);
       failedPages.push(page);

@@ -25,7 +25,6 @@ import {
 import {
   AbstractBrowserScraper,
   DEFAULT_BROWSER_CONFIG,
-  SWITCHY_USER_AGENT,
 } from "../core";
 import { selectListingsForHydration } from "./shared/listing-selection";
 
@@ -136,17 +135,19 @@ interface EightfoldSessionCookieController {
 }
 
 export type EightfoldConfig = BrowserScraperConfig & {
-  pageSize: number;
   parallelListFetches: number;
   detailBatchSize: number;
   detailRecoveryAttempts: number;
   requestDelayMs: number;
 };
 
+const EIGHTFOLD_PAGE_SIZE = 10;
+const EIGHTFOLD_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
 const DEFAULT_EIGHTFOLD_CONFIG: EightfoldConfig = {
   ...DEFAULT_BROWSER_CONFIG,
-  pageSize: 10,
-  parallelListFetches: 2,
+  parallelListFetches: 6,
   detailBatchSize: 4,
   detailRecoveryAttempts: 2,
   requestDelayMs: 400,
@@ -196,42 +197,24 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         return this.failure("invalid_url", "Could not parse Eightfold URL.");
       }
 
-      const isDirectEightfold = url.toLowerCase().includes("eightfold.ai");
-      const session = await this.bootstrapSession(url);
-
-      if (!session) {
-        return this.failure("browser_error", "Failed to establish Eightfold browser session.");
-      }
-
-      let domain: string | undefined = options?.boardToken ?? session.domain;
-      const baseUrl = session.baseUrl || parsedUrl.baseUrl;
-      let detectedBoardToken: string | undefined;
-
-      if (session.domain && !options?.boardToken) {
-        detectedBoardToken = session.domain;
-        console.log(`[Scraper] Unknown - Bootstrapped browser session (domain: ${session.domain})`);
-      }
-
-      if (!domain && isDirectEightfold) {
-        const apiDetectedDomain = await this.detectDomainFromApi(baseUrl, session.cookies);
-        domain = apiDetectedDomain || (parsedUrl.subdomain ? `${parsedUrl.subdomain}.com` : parsedUrl.domain);
-      }
-
-      if (!domain) {
-        domain = parsedUrl.domain;
-      }
-
-      if (!domain) {
+      const configuredDomain = this.normalizeDomain(options?.boardToken);
+      const sourceDomain = this.normalizeDomain(parsedUrl.sourceUrl.searchParams.get("domain"));
+      const resolvedDomain = configuredDomain ?? sourceDomain ?? parsedUrl.domain;
+      if (!resolvedDomain) {
         return this.failure("board_not_found", "Could not detect Eightfold domain.");
       }
 
-      const resolvedDomain = domain;
-      const boardToken = domain.replace(/\.com$/i, "");
+      const baseUrl = parsedUrl.baseUrl;
+      const boardToken = resolvedDomain.replace(/\.com$/i, "");
       const sessionCookies = this.createSessionCookieController(
-        session.cookies,
+        "",
         async () => {
           try {
-            return (await this.bootstrapSession(url))?.cookies ?? null;
+            const browserSession = await this.bootstrapSession(url);
+            if (!browserSession?.cookies) {
+              throw new BrowserSessionBootstrapError("session_extraction");
+            }
+            return browserSession.cookies;
           } catch (error) {
             throwIfScrapeAborted(error);
             if (error instanceof BrowserSessionBootstrapError) throw error;
@@ -240,7 +223,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         }
       );
       const listResult = await this.fetchAllPositions(
-        baseUrl,
+        parsedUrl.sourceUrl,
         resolvedDomain,
         sessionCookies
       );
@@ -265,7 +248,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
           outcome: "success",
           jobs: [],
           totalListings: 0,
-          detectedBoardToken: detectedBoardToken || (options?.boardToken ? undefined : resolvedDomain),
+          detectedBoardToken: options?.boardToken ? undefined : resolvedDomain,
           openExternalIds,
           listingCompleteness: "complete",
         };
@@ -292,7 +275,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
           outcome: listResult.isComplete ? "success" : "partial",
           jobs: [],
           totalListings: allPositions.length,
-          detectedBoardToken: detectedBoardToken || (options?.boardToken ? undefined : resolvedDomain),
+          detectedBoardToken: options?.boardToken ? undefined : resolvedDomain,
           earlyFiltered: selection.earlyFiltered,
           openExternalIds,
           listingCompleteness: listResult.isComplete ? "complete" : "partial",
@@ -384,7 +367,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         outcome: isPartial ? "partial" : "success",
         jobs: scrapedJobs,
         totalListings: allPositions.length,
-        detectedBoardToken: detectedBoardToken || (options?.boardToken ? undefined : resolvedDomain),
+        detectedBoardToken: options?.boardToken ? undefined : resolvedDomain,
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,
         listingCompleteness: listResult.isComplete ? "complete" : "partial",
@@ -399,7 +382,12 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
     return this.browserClient.bootstrap(url);
   }
 
-  private parseUrl(url: string): { domain: string; subdomain: string | null; baseUrl: string } | null {
+  private parseUrl(url: string): {
+    domain: string;
+    subdomain: string | null;
+    baseUrl: string;
+    sourceUrl: URL;
+  } | null {
     try {
       const urlObj = new URL(url);
       const hostname = urlObj.hostname.toLowerCase();
@@ -410,6 +398,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
           domain: `${subdomain}.com`,
           subdomain,
           baseUrl: `${urlObj.protocol}//${hostname}`,
+          sourceUrl: urlObj,
         };
       }
 
@@ -417,66 +406,47 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         domain: hostname.replace(/^apply\./, "").replace(/^careers\./, ""),
         subdomain: null,
         baseUrl: `${urlObj.protocol}//${hostname}`,
+        sourceUrl: urlObj,
       };
     } catch {
       return null;
     }
   }
 
-  private async detectDomainFromApi(baseUrl: string, cookies: string): Promise<string | null> {
-    try {
-      const response = await this.httpClient.fetch(`${baseUrl}/api/pcsx/job_cart`, {
-        headers: this.createRequestHeaders("application/json", cookies),
-        timeout: this.config.timeout,
-        retries: this.config.retries,
-        baseDelay: this.config.baseDelay,
-      });
+  private normalizeDomain(value: string | null | undefined): string | null {
+    if (!value) return null;
+    const normalized = value.trim().toLowerCase();
+    if (!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(normalized)) return null;
+    return normalized;
+  }
 
-      if (response.ok) {
-        const text = await response.text();
-        const domainMatch = text.match(/"domain"\s*:\s*"([^"]+)"/);
-        if (domainMatch) {
-          return domainMatch[1];
-        }
+  private canUseSitemapRecovery(sourceUrl: URL): boolean {
+    const nonScopeParameters = new Set(["domain", "pid", "start", "sort_by", "hl"]);
+    for (const [key, value] of sourceUrl.searchParams) {
+      const normalizedKey = key.toLowerCase();
+      if (nonScopeParameters.has(normalizedKey)) continue;
+      if ((normalizedKey === "query" || normalizedKey === "location") && !value) {
+        continue;
       }
-
-      const pageResponse = await this.httpClient.fetch(baseUrl, {
-        headers: this.createRequestHeaders("text/html", cookies),
-        timeout: this.config.timeout,
-        retries: this.config.retries,
-        baseDelay: this.config.baseDelay,
-      });
-
-      if (pageResponse.ok) {
-        const html = await pageResponse.text();
-        const domainMatch = html.match(/domain["\s:=]+(["']?)([^"'\s,)}]+)\1/i);
-        if (domainMatch) {
-          return domainMatch[2];
-        }
-      }
-
-      return null;
-    } catch (error) {
-      throwIfScrapeAborted(error);
-      return null;
+      return false;
     }
+    return true;
   }
 
   private async fetchJobList(
-    baseUrl: string,
+    sourceUrl: URL,
     domain: string,
-    cookies: string,
+    sessionCookies: EightfoldSessionCookieController,
     start: number
   ): Promise<EightfoldSearchResponse | null> {
-    const url = `${baseUrl}/api/pcsx/search?domain=${encodeURIComponent(domain)}&query=&location=&start=${start}&sort_by=timestamp`;
+    const url = this.buildSearchUrl(sourceUrl, domain, start);
 
     try {
-      const response = await this.httpClient.fetch(url, {
-        headers: this.createRequestHeaders("application/json", cookies),
-        timeout: this.config.timeout,
-        retries: this.config.retries,
-        baseDelay: this.config.baseDelay,
-      });
+      const response = await this.fetchResponseWithCookieFallback(
+        url,
+        "application/json",
+        sessionCookies
+      );
 
       if (!response.ok) {
         throw new HttpError(
@@ -498,31 +468,28 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
   }
 
   private async fetchAllPositions(
-    baseUrl: string,
+    sourceUrl: URL,
     domain: string,
     sessionCookies: EightfoldSessionCookieController
   ): Promise<EightfoldListFetchResult | null> {
+    const baseUrl = `${sourceUrl.protocol}//${sourceUrl.hostname}`;
     const fetchSafely = async (offset: number) => {
       try {
         return await this.fetchJobList(
-          baseUrl,
+          sourceUrl,
           domain,
-          sessionCookies.cookies,
+          sessionCookies,
           offset
         );
       } catch (error) {
         if (error instanceof ScraperPayloadError) throw error;
+        if (error instanceof BrowserSessionBootstrapError) throw error;
         throwIfScrapeAborted(error);
         return null;
       }
     };
 
-    let firstBatch = await fetchSafely(0);
-
-    if (!firstBatch || firstBatch.status !== 200 || !firstBatch.data) {
-      if (!(await sessionCookies.refresh())) return null;
-      firstBatch = await fetchSafely(0);
-    }
+    const firstBatch = await fetchSafely(0);
 
     if (!firstBatch || firstBatch.status !== 200 || !firstBatch.data) {
       return null;
@@ -537,32 +504,31 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
     const missingOffsets = new Set<number>();
     if (
       firstBatch.data.positions.length <
-      Math.min(this.config.pageSize, advertisedCount)
+      Math.min(EIGHTFOLD_PAGE_SIZE, advertisedCount)
     ) {
       missingOffsets.add(0);
     }
 
-    if (advertisedCount > this.config.pageSize) {
-      const totalPages = Math.ceil(advertisedCount / this.config.pageSize);
+    if (advertisedCount > EIGHTFOLD_PAGE_SIZE) {
+      const totalPages = Math.ceil(advertisedCount / EIGHTFOLD_PAGE_SIZE);
       const offsets: number[] = [];
 
       for (let page = 1; page < totalPages; page++) {
-        offsets.push(page * this.config.pageSize);
+        offsets.push(page * EIGHTFOLD_PAGE_SIZE);
       }
 
-      const fetchWithStagger = async (
-        offset: number,
-        index: number
+      const fetchPage = async (
+        offset: number
       ): Promise<EightfoldSearchResponse | null> => {
-        await this.delay(index * 50);
         try {
           return await this.fetchJobList(
-            baseUrl,
+            sourceUrl,
             domain,
-            sessionCookies.cookies,
+            sessionCookies,
             offset
           );
         } catch (error) {
+          if (error instanceof BrowserSessionBootstrapError) throw error;
           throwIfScrapeAborted(error);
           return null;
         }
@@ -571,7 +537,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       for (let i = 0; i < offsets.length; i += this.config.parallelListFetches) {
         const batchOffsets = offsets.slice(i, i + this.config.parallelListFetches);
         const results = await Promise.all(
-          batchOffsets.map((offset, idx) => fetchWithStagger(offset, idx))
+          batchOffsets.map((offset) => fetchPage(offset))
         );
 
         for (let resultIndex = 0; resultIndex < results.length; resultIndex++) {
@@ -586,7 +552,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
               positionsById.set(normalized.id, normalized);
             }
             const expectedCount = Math.min(
-              this.config.pageSize,
+              EIGHTFOLD_PAGE_SIZE,
               advertisedCount - offset
             );
             if (result.data.positions.length < expectedCount) {
@@ -594,41 +560,38 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
             }
           }
         }
-
-        if (i + this.config.parallelListFetches < offsets.length) {
-          await this.delay(this.config.requestDelayMs);
-        }
       }
     }
 
     if (missingOffsets.size > 0) {
-      if (await sessionCookies.refresh()) {
-        for (const offset of Array.from(missingOffsets).sort((a, b) => a - b)) {
-          const result = await fetchSafely(offset);
-          if (!result?.data || !Array.isArray(result.data.positions)) continue;
+      for (const offset of Array.from(missingOffsets).sort((a, b) => a - b)) {
+        const result = await fetchSafely(offset);
+        if (!result?.data || !Array.isArray(result.data.positions)) continue;
 
-          for (const position of result.data.positions) {
-            const normalized = this.normalizePosition(position);
-            positionsById.set(normalized.id, normalized);
-          }
-          const expectedCount = Math.min(
-            this.config.pageSize,
-            advertisedCount - offset
-          );
-          if (result.data.positions.length >= expectedCount) {
-            missingOffsets.delete(offset);
-          }
+        for (const position of result.data.positions) {
+          const normalized = this.normalizePosition(position);
+          positionsById.set(normalized.id, normalized);
+        }
+        const expectedCount = Math.min(
+          EIGHTFOLD_PAGE_SIZE,
+          advertisedCount - offset
+        );
+        if (result.data.positions.length >= expectedCount) {
+          missingOffsets.delete(offset);
         }
       }
     }
 
     const sitemapRecoveryFailureStatuses: Array<number | null> = [];
     let sitemapReconciled = false;
-    if (missingOffsets.size > 0 || positionsById.size < advertisedCount) {
+    if (
+      this.canUseSitemapRecovery(sourceUrl) &&
+      (missingOffsets.size > 0 || positionsById.size < advertisedCount)
+    ) {
       const sitemapPositionIds = await this.fetchSitemapPositionIds(
         baseUrl,
         domain,
-        sessionCookies.cookies
+        sessionCookies
       );
       if (sitemapPositionIds && sitemapPositionIds.size > 0) {
         advertisedCount = Math.max(advertisedCount, sitemapPositionIds.size);
@@ -672,9 +635,6 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
             }
             positionsById.set(detail.id, detail);
           }
-          if (index + this.config.detailBatchSize < missingPositionIds.length) {
-            await this.delay(this.config.requestDelayMs);
-          }
         }
 
         const activeSitemapPositionIds = Array.from(sitemapPositionIds).filter(
@@ -715,7 +675,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
     let activeCookies = initialCookies;
     let refreshAttempts = 0;
     let refreshInFlight: Promise<boolean> | null = null;
-    const maxRefreshAttempts = Math.max(2, this.config.retries);
+    const maxRefreshAttempts = 1;
 
     return {
       get cookies() {
@@ -763,12 +723,11 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       attempt <= this.config.detailRecoveryAttempts;
       attempt++
     ) {
-      const cookiesUsed = sessionCookies.cookies;
       lastResult = await this.fetchPositionDetails(
         baseUrl,
         domain,
         positionId,
-        cookiesUsed
+        sessionCookies
       );
       if (lastResult.position) return lastResult;
       if (
@@ -778,12 +737,6 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         return lastResult;
       }
 
-      if (
-        lastResult.status === 403 &&
-        !(await sessionCookies.refresh(cookiesUsed, true))
-      ) {
-        return lastResult;
-      }
       await this.delay(
         Math.min(
           5000,
@@ -836,16 +789,15 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
   private async fetchSitemapPositionIds(
     baseUrl: string,
     domain: string,
-    cookies: string
+    sessionCookies: EightfoldSessionCookieController
   ): Promise<Set<number> | null> {
     const url = `${baseUrl}/careers/sitemap.xml?domain=${encodeURIComponent(domain)}`;
     try {
-      const response = await this.httpClient.fetch(url, {
-        headers: this.createRequestHeaders("application/xml", cookies),
-        timeout: this.config.timeout,
-        retries: this.config.retries,
-        baseDelay: this.config.baseDelay,
-      });
+      const response = await this.fetchResponseWithCookieFallback(
+        url,
+        "application/xml",
+        sessionCookies
+      );
       if (!response.ok) return null;
 
       const sitemap = await response.text();
@@ -858,6 +810,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       }
       return positionIds;
     } catch (error) {
+      if (error instanceof BrowserSessionBootstrapError) throw error;
       throwIfScrapeAborted(error);
       return null;
     }
@@ -867,17 +820,16 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
     baseUrl: string,
     domain: string,
     positionId: number,
-    cookies: string
+    sessionCookies: EightfoldSessionCookieController
   ): Promise<EightfoldDetailFetchResult> {
     const url = `${baseUrl}/api/pcsx/position_details?position_id=${positionId}&domain=${encodeURIComponent(domain)}&hl=en`;
 
     try {
-      const response = await this.httpClient.fetch(url, {
-        headers: this.createRequestHeaders("application/json", cookies),
-        timeout: this.config.timeout,
-        retries: this.config.retries,
-        baseDelay: this.config.baseDelay,
-      });
+      const response = await this.fetchResponseWithCookieFallback(
+        url,
+        "application/json",
+        sessionCookies
+      );
 
       if (!response.ok) {
         return { position: null, status: response.status };
@@ -911,6 +863,56 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
     }
   }
 
+  private buildSearchUrl(sourceUrl: URL, domain: string, start: number): string {
+    const url = new URL("/api/pcsx/search", sourceUrl.origin);
+    for (const [key, value] of sourceUrl.searchParams) {
+      if (key.toLowerCase() === "pid") continue;
+      url.searchParams.append(key, value);
+    }
+    url.searchParams.set("domain", domain);
+    url.searchParams.set("start", String(start));
+    if (!url.searchParams.has("query")) url.searchParams.set("query", "");
+    if (!url.searchParams.has("location")) url.searchParams.set("location", "");
+    if (!url.searchParams.has("sort_by")) {
+      url.searchParams.set("sort_by", "timestamp");
+    }
+    return url.toString();
+  }
+
+  private async fetchResponseWithCookieFallback(
+    url: string,
+    accept: "application/json" | "application/xml" | "text/html",
+    sessionCookies: EightfoldSessionCookieController
+  ): Promise<Response> {
+    const request = (cookies: string) =>
+      this.httpClient.fetch(url, {
+        headers: this.createRequestHeaders(accept, cookies),
+        timeout: this.config.timeout,
+        retries: this.config.retries,
+        baseDelay: this.config.baseDelay,
+      });
+
+    const cookiesUsed = sessionCookies.cookies;
+    let response = await request(cookiesUsed);
+    for (
+      let retry = 0;
+      response.status === 403 && !cookiesUsed && retry < this.config.retries;
+      retry++
+    ) {
+      await this.delay(
+        Math.min(5_000, Math.max(250, this.config.baseDelay) * 2 ** retry)
+      );
+      response = await request(cookiesUsed);
+    }
+    if (
+      (response.status === 401 || response.status === 403) &&
+      (await sessionCookies.refresh(cookiesUsed))
+    ) {
+      response = await request(sessionCookies.cookies);
+    }
+    return response;
+  }
+
   private normalizePosition(position: EightfoldPosition): EightfoldNormalizedPosition {
     return {
       id: position.id,
@@ -929,7 +931,8 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
   ): Record<string, string> {
     const headers: Record<string, string> = {
       Accept: accept,
-      "User-Agent": SWITCHY_USER_AGENT,
+      "Accept-Language": "en-US,en;q=0.9",
+      "User-Agent": EIGHTFOLD_USER_AGENT,
     };
 
     if (cookies.trim().length > 0) {

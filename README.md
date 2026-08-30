@@ -23,7 +23,7 @@ stable application release.
 
 ## Current Capabilities
 
-- Scrape jobs from `Greenhouse`, `Lever`, `Ashby`, `Eightfold`, `Workday`, `ServiceNow`, `Zwayam`, `MynextHire`, `Uber`, `Google`, `Atlassian`, `Rippling`, `Visa`, and `Nutanix`
+- Scrape jobs from `Greenhouse`, `Lever`, `Ashby`, `Eightfold`, `Workday`, `ServiceNow`, `TurboHire`, `MynextHire`, `Uber`, `Google`, `Atlassian`, `Rippling`, `Visa`, and `Nutanix`
 - Track companies (single and bulk operations), with support for custom career pages + manual ATS override
 - Manage a job pipeline with filters, search, sorting, saved/applied tabs, and match score views
 - Upload and parse resumes, then manage profile, skills, experience, and education data
