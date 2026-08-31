@@ -1,22 +1,20 @@
 "use client";
 
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { TogglePill } from "@/components/ui/toggle-pill";
+import { useMemo, useRef, useState } from "react";
+
 import {
-  Search,
-  X,
-  RefreshCw,
-  Sparkles,
-  Trash2,
   CheckCircle2,
-  Plus,
   Loader2,
-  ToggleRight,
   MoreHorizontal,
+  Plus,
+  RefreshCw,
+  Search,
+  Sparkles,
+  ToggleRight,
+  Trash2,
+  X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
-import { COMPANY_FILTER_PLATFORM_OPTIONS } from "@/lib/constants";
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,6 +25,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+} from "@/components/ui/combobox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,6 +41,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { TogglePill } from "@/components/ui/toggle-pill";
+import { COMPANY_FILTER_PLATFORM_OPTIONS } from "@/lib/constants";
 
 export interface CompanyFilters {
   search: string;
@@ -74,6 +84,10 @@ const SORT_OPTIONS = [
   { value: "lastScrapedAt", label: "Last Scraped" },
   { value: "createdAt", label: "Date Added" },
 ];
+
+function getPlatformLabel(value: string): string {
+  return COMPANY_FILTER_PLATFORM_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
 
 function FilterChip({
   label,
@@ -118,12 +132,14 @@ export function CompanyFilters({
 }: CompanyFiltersProps) {
   const [showDeleteJobsDialog, setShowDeleteJobsDialog] = useState(false);
   const [showDeleteCompaniesDialog, setShowDeleteCompaniesDialog] = useState(false);
+  const [scraperSearch, setScraperSearch] = useState("");
+  const scraperFilterAnchorRef = useRef<HTMLDivElement>(null);
 
   const activeFilters = useMemo(() => {
     const chips: { key: string; label: string; onRemove: () => void }[] = [];
 
     filters.platforms.forEach((p) => {
-      const label = COMPANY_FILTER_PLATFORM_OPTIONS.find((o) => o.value === p)?.label || p;
+      const label = getPlatformLabel(p);
       chips.push({
         key: `platform-${p}`,
         label,
@@ -154,6 +170,12 @@ export function CompanyFilters({
   const hasActiveFilters = activeFilters.length > 0;
   const hasSelection = selectedIds.length > 0;
   const isAnyLoading = isRefreshing || isMatching || isDeletingJobs || isDeletingCompanies || isTogglingActive;
+  const normalizedScraperSearch = scraperSearch.trim().toLowerCase();
+  const visibleScraperOptions = normalizedScraperSearch
+    ? COMPANY_FILTER_PLATFORM_OPTIONS.filter((option) =>
+        `${option.label} ${option.value}`.toLowerCase().includes(normalizedScraperSearch)
+      )
+    : COMPANY_FILTER_PLATFORM_OPTIONS;
 
   const clearAllFilters = () => {
     onFiltersChange({
@@ -161,14 +183,6 @@ export function CompanyFilters({
       platforms: [],
       status: [],
     });
-  };
-
-  const togglePlatform = (value: string) => {
-    const current = filters.platforms;
-    const updated = current.includes(value)
-      ? current.filter((v) => v !== value)
-      : [...current, value];
-    onFiltersChange({ ...filters, platforms: updated });
   };
 
   const toggleStatus = (value: string) => {
@@ -200,15 +214,54 @@ export function CompanyFilters({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {COMPANY_FILTER_PLATFORM_OPTIONS.map((opt) => (
-          <TogglePill
-            key={opt.value}
-            selected={filters.platforms.includes(opt.value)}
-            onClick={() => togglePlatform(opt.value)}
-          >
-            {opt.label}
-          </TogglePill>
-        ))}
+        <Combobox
+          multiple
+          value={filters.platforms}
+          onValueChange={(platforms) =>
+            onFiltersChange({ ...filters, platforms: platforms as string[] })
+          }
+          inputValue={scraperSearch}
+          onInputValueChange={(value) => setScraperSearch(value)}
+          onOpenChange={(open) => {
+            if (!open) setScraperSearch("");
+          }}
+          filter={null}
+          itemToStringLabel={getPlatformLabel}
+        >
+          <div ref={scraperFilterAnchorRef}>
+            <ComboboxTrigger
+              aria-label={
+                filters.platforms.length > 0
+                  ? `Scrapers (${filters.platforms.length})`
+                  : "Scrapers"
+              }
+              className="flex h-7 min-w-32 items-center justify-between gap-2 border border-border bg-background px-2.5 text-xs hover:bg-muted"
+            >
+              <span>
+                Scrapers{filters.platforms.length > 0 ? ` (${filters.platforms.length})` : ""}
+              </span>
+            </ComboboxTrigger>
+          </div>
+          <ComboboxContent anchor={scraperFilterAnchorRef} className="min-w-52">
+            <ComboboxInput
+              showTrigger={false}
+              placeholder="Search scrapers..."
+              aria-label="Search scrapers"
+            />
+            <ComboboxList>
+              {visibleScraperOptions.map((option) => (
+                <ComboboxItem key={option.value} value={option.value}>
+                  {option.label}
+                </ComboboxItem>
+              ))}
+              {visibleScraperOptions.length === 0 ? (
+                <div className="py-6 text-center text-xs text-muted-foreground">
+                  No scrapers found
+                </div>
+              ) : null}
+            </ComboboxList>
+          </ComboboxContent>
+        </Combobox>
 
         <div className="h-5 w-px bg-muted" />
 

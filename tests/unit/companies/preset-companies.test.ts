@@ -89,9 +89,15 @@ describe("preset companies utils", () => {
         boardToken,
         isActive: true,
       });
-      expect(preset?.logoUrl).toMatch(
-        /^https:\/\/www\.google\.com\/s2\/favicons\?domain=.+&sz=128$/u
-      );
+      if (name === "BNY") {
+        expect(preset?.logoUrl).toBe(
+          "https://www.bny.com/content/dam/bnymellon/images/about-us/bny-logo---2024-brand-update.png"
+        );
+      } else {
+        expect(preset?.logoUrl).toMatch(
+          /^https:\/\/www\.google\.com\/s2\/favicons\?domain=.+&sz=128$/u
+        );
+      }
       expect(detectPlatformFromUrl(careersUrl)).toBe(platform);
     }
   });
