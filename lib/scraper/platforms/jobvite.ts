@@ -1,4 +1,4 @@
-import { load } from "cheerio";
+import { load, type CheerioAPI } from "cheerio";
 
 import {
   containsHtml,
@@ -36,6 +36,13 @@ interface JobviteHydratedJob {
   failed: boolean;
 }
 
+interface JobviteDetailMetadata {
+  requisition?: string;
+  location?: string;
+  category?: string;
+  jobType?: string;
+}
+
 interface JobvitePage {
   html: string;
   status?: number;
@@ -60,6 +67,12 @@ const DEFAULT_JOBVITE_CONFIG: JobviteConfig = {
   unavailableRetries: 2,
   unavailableRetryDelayMs: 500,
 };
+
+const JOBVITE_DESCRIPTION_SELECTORS = [
+  "#jv-job-detail-description",
+  ".jv-job-detail-description-body",
+  ".jv-job-detail-description",
+] as const;
 
 export class JobviteScraper extends AbstractApiScraper<JobviteConfig> {
   readonly platform = "jobvite" as const;
@@ -365,7 +378,7 @@ export class JobviteScraper extends AbstractApiScraper<JobviteConfig> {
         }
         const $ = load(page.html);
         const bodyText = $("body").text().replace(/\s+/gu, " ").trim();
-        const requisition = bodyText.match(/Req\.\s*Num\.\s*:?\s*([A-Za-z0-9_-]+)/iu)?.[1];
+        const metadata = this.extractDetailMetadata($, bodyText, listing.location);
         const title =
           $(".jv-job-detail-title, .jv-header")
             .first()
@@ -374,37 +387,26 @@ export class JobviteScraper extends AbstractApiScraper<JobviteConfig> {
             .trim() ||
           $("h1").first().text().replace(/\s+/gu, " ").trim() ||
           listing.title;
-        const location = $(".jv-job-detail-location, .jv-job-detail-meta")
-          .first()
-          .text()
-          .replace(/\s+/gu, " ")
-          .replace(/^Location\s*:?\s*/iu, "")
-          .trim() || listing.location;
-        const descriptionElement = $(
-          ".jv-job-detail-description, .jv-job-detail-description-body, #jv-job-detail-description, [class*=job-description]"
-        ).first();
-        const rawDescription = descriptionElement.html()?.trim() || "";
+        const rawDescription = this.extractDescriptionHtml($);
         const processed = rawDescription
           ? processDescription(
               rawDescription,
               containsHtml(rawDescription) ? "html" : "plain"
             )
           : null;
-        const category = bodyText.match(/Category\s*:?\s*([^|]+?)(?:Job Type|Req\.|$)/iu)?.[1]?.trim();
-        const jobType = bodyText.match(/Job Type\s*:?\s*([^|]+?)(?:Req\.|$)/iu)?.[1]?.trim();
-        const normalizedLocation = this.normalizeLocation(location ?? "");
+        const normalizedLocation = this.normalizeLocation(metadata.location ?? "");
         lastJob = {
           externalId: this.generateExternalId(
             this.platform,
             slug,
-            requisition || listing.opaqueId
+            metadata.requisition || listing.opaqueId
           ),
           title,
           url: listing.url,
           location: normalizedLocation.location,
           locationType: normalizedLocation.locationType,
-          department: category || undefined,
-          employmentType: parseEmploymentType(jobType),
+          department: metadata.category,
+          employmentType: parseEmploymentType(metadata.jobType),
           description: processed?.text ?? undefined,
           descriptionFormat: processed?.format,
         };
@@ -418,6 +420,95 @@ export class JobviteScraper extends AbstractApiScraper<JobviteConfig> {
       }
     }
     return { job: lastJob, failed: true };
+  }
+
+  private extractDetailMetadata(
+    $: CheerioAPI,
+    bodyText: string,
+    fallbackLocation?: string
+  ): JobviteDetailMetadata {
+    const metaElement = $(".jv-job-detail-meta").first();
+    const metaText = metaElement.text().replace(/\s+/gu, " ").trim();
+    const segmentedMeta = metaElement.clone();
+    segmentedMeta.find(".jv-inline-separator").replaceWith("|");
+    const metaParts = segmentedMeta
+      .text()
+      .split("|")
+      .map((part) => part.replace(/\s+/gu, " ").trim())
+      .filter(Boolean);
+    const explicitLocation = $(".jv-job-detail-location")
+      .first()
+      .text()
+      .replace(/\s+/gu, " ")
+      .replace(/^Location\s*:?\s*/iu, "")
+      .trim();
+    const requisitionPattern = /\bReq\.\s*Num\.\s*:?\s*([A-Za-z0-9_-]+)/iu;
+    const categoryPattern = /\bCategory\s*:\s*(.+?)(?=\s+(?:Job Type|Req\.)\s*:|$)/iu;
+    const jobTypePattern = /\bJob Type\s*:\s*(.+?)(?=\s+Req\.\s*:|$)/iu;
+    const category =
+      metaText.match(categoryPattern)?.[1]?.trim() ||
+      bodyText.match(categoryPattern)?.[1]?.trim();
+    const jobType =
+      metaText.match(jobTypePattern)?.[1]?.trim() ||
+      bodyText.match(jobTypePattern)?.[1]?.trim();
+    const unlabeledParts = metaParts.filter(
+      (part) =>
+        !requisitionPattern.test(part) &&
+        !categoryPattern.test(part) &&
+        !jobTypePattern.test(part)
+    );
+    const impliedCategory =
+      category ||
+      (unlabeledParts.length >= 2 || explicitLocation
+        ? unlabeledParts[0]
+        : undefined);
+    const impliedLocation =
+      explicitLocation ||
+      (unlabeledParts.length >= 2
+        ? unlabeledParts.at(-1)
+        : fallbackLocation);
+
+    return {
+      requisition:
+        metaText.match(requisitionPattern)?.[1] ||
+        bodyText.match(requisitionPattern)?.[1],
+      location: impliedLocation,
+      category: impliedCategory,
+      jobType,
+    };
+  }
+
+  private extractDescriptionHtml($: CheerioAPI): string {
+    for (const selector of JOBVITE_DESCRIPTION_SELECTORS) {
+      const candidate = $(selector).first();
+      if (candidate.length > 0) return this.cleanDescriptionElement(candidate);
+    }
+
+    const genericCandidates = $("[class*=job-description]").toArray();
+    const innermostCandidate = genericCandidates.find(
+      (candidate) => $(candidate).find("[class*=job-description]").length === 0
+    );
+    if (!innermostCandidate) return "";
+
+    return this.cleanDescriptionElement($(innermostCandidate));
+  }
+
+  private cleanDescriptionElement(
+    candidate: ReturnType<CheerioAPI>
+  ): string {
+    const cleaned = candidate.clone();
+    cleaned.find("script, style, noscript, template, nav, footer").remove();
+    const html = cleaned.html()?.trim() || "";
+    return this.hasPageChromeContamination(html) ? "" : html;
+  }
+
+  private hasPageChromeContamination(html: string): boolean {
+    const normalized = html.toLowerCase();
+    return (
+      normalized.includes("jv_common_directives_") ||
+      normalized.includes("document.write(new date().getfullyear())") ||
+      (normalized.includes("jquery(") && normalized.includes("scrolltop"))
+    );
   }
 
   private mapListingToJob(

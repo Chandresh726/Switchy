@@ -77,6 +77,53 @@ describe("JobviteScraper", () => {
     expect(result.jobs[0]?.description).toContain("Build systems 1001");
   });
 
+  it("prefers the specific description over an outer page wrapper", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/job/")) {
+        return new Response(`
+          <h1 class="jv-header">Platform Engineer</h1>
+          <p class="jv-job-detail-meta">
+            Engineering
+            <span class="jv-inline-separator"></span>
+            Bangalore, India
+            <span class="jv-inline-separator"></span>
+            Req.Num.: 4242
+          </p>
+          <div class="job-description-shell">
+            <div class="jv-job-detail-description">
+              <p>Build trusted distributed systems.</p>
+            </div>
+            <footer>Back to Current Openings</footer>
+            <script>
+              const translations = { JV_COMMON_DIRECTIVES_WEEKCALENDAR_MO: "Mo" };
+              jQuery(".back-to-top").click(() => window.scrollTo(0, 0));
+            </script>
+          </div>
+        `);
+      }
+      return new Response(`
+        <table><tr><td><a href="/acme/job/opaque-wrapper">Platform Engineer</a></td></tr></table>
+      `);
+    });
+    const scraper = new JobviteScraper(createHttpClientStub({ fetch: fetchMock }), {
+      detailDelayMs: 0,
+      unavailableRetryDelayMs: 0,
+    });
+
+    const result = await scraper.scrape("https://jobs.jobvite.com/acme/jobs");
+
+    expect(result).toMatchObject({
+      outcome: "success",
+      jobs: [{
+        externalId: "jobvite-acme-4242",
+        department: "Engineering",
+        location: "Bangalore, India",
+        description: "Build trusted distributed systems.",
+        descriptionFormat: "markdown",
+      }],
+    });
+  });
+
   it("classifies a repeated Jobvite unavailable page as retryable", async () => {
     const fetchMock = vi.fn(async () =>
       new Response('<a href="/careers/info/unavailable.html">Career site is currently unavailable</a>')
