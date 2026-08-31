@@ -24,7 +24,10 @@ export const PLATFORM_OPTIONS = [
   { value: "atlassian", label: "Atlassian" },
   { value: "rippling", label: "Rippling" },
   { value: "visa", label: "Visa" },
-  { value: "nutanix", label: "Nutanix" },
+  { value: "jobvite", label: "Jobvite" },
+  { value: "talentbrew", label: "TalentBrew" },
+  { value: "oracle", label: "Oracle Recruiting" },
+  { value: "phenom", label: "Phenom" },
   { value: "custom", label: "Custom" },
 ] as const;
 
@@ -35,7 +38,6 @@ export const CUSTOM_SCRAPER_PLATFORMS = [
   "atlassian",
   "rippling",
   "visa",
-  "nutanix",
 ] as const;
 
 const CUSTOM_SCRAPER_PLATFORM_SET = new Set(CUSTOM_SCRAPER_PLATFORMS);
@@ -63,6 +65,9 @@ export const PLATFORM_COLORS: Record<string, string> = {
   atlassian: "border-blue-400/30 bg-blue-400/10 text-blue-200",
   rippling: "border-yellow-500/30 bg-yellow-500/10 text-yellow-300",
   visa: "border-indigo-500/30 bg-indigo-500/10 text-indigo-300",
-  nutanix: "border-violet-500/30 bg-violet-500/10 text-violet-300",
+  jobvite: "border-violet-500/30 bg-violet-500/10 text-violet-300",
+  talentbrew: "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-300",
+  oracle: "border-red-500/30 bg-red-500/10 text-red-300",
+  phenom: "border-lime-500/30 bg-lime-500/10 text-lime-300",
   custom: "border-border bg-muted/40 text-muted-foreground",
 };

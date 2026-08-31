@@ -23,6 +23,10 @@ describe("company scrape support", () => {
     expect(isCompanyScrapeSupported("https://www.flipkartcareers.com/flipkart/jobslist", "turbohire")).toBe(true);
     expect(isCompanyScrapeSupported("https://careers.swiggy.com/#/careers", "mynexthire")).toBe(true);
     expect(isCompanyScrapeSupported("https://www.visa.co.uk/en_gb/jobs/", "visa")).toBe(true);
+    expect(isCompanyScrapeSupported("https://jobs.jobvite.com/nutanix/jobs", "jobvite")).toBe(true);
+    expect(isCompanyScrapeSupported("https://jobs.intuit.com/search-jobs", "talentbrew")).toBe(true);
+    expect(isCompanyScrapeSupported("https://careers.ti.com/en/sites/CX/jobs", "oracle")).toBe(true);
+    expect(isCompanyScrapeSupported("https://careers.cisco.com/global/en/search-results", "phenom")).toBe(true);
   });
 
   it("detects supported platforms from URL when platform is not stored", () => {

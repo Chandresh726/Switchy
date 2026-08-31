@@ -14,6 +14,88 @@ import { normalizeCareersUrl } from "@/lib/companies/normalization";
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 
 describe("preset companies utils", () => {
+  it("maps the reusable ATS company set to canonical boards", () => {
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), "public/companies.json"), "utf8")
+    ) as unknown;
+    const presets = parsePresetCompanies(raw);
+    const expected = {
+      Nutanix: ["https://jobs.jobvite.com/nutanix/jobs", "jobvite", "nutanix"],
+      LegalZoom: ["https://jobs.jobvite.com/legalzoom/jobs", "jobvite", "legalzoom"],
+      Intuit: ["https://jobs.intuit.com/search-jobs", "talentbrew", "27595"],
+      "Goldman Sachs": [
+        "https://hdpc.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/LateralHiring/jobs",
+        "oracle",
+        "hdpc.fa.us2.oraclecloud.com/CX_3002",
+      ],
+      eBay: ["https://jobs.ebayinc.com/us/en/search-results", "phenom", "EBAEBAUS"],
+    } as const;
+
+    for (const [name, [careersUrl, platform, boardToken]] of Object.entries(expected)) {
+      expect(presets.find((company) => company.name === name)).toMatchObject({
+        careersUrl,
+        platform,
+        boardToken,
+        isActive: true,
+      });
+      expect(detectPlatformFromUrl(careersUrl)).toBe(platform);
+    }
+    expect(presets.find((company) => company.name === "Goldman Sach")).toBeUndefined();
+  });
+
+  it("includes the Oracle Recruiting and Phenom quick-add additions", () => {
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), "public/companies.json"), "utf8")
+    ) as unknown;
+    const presets = parsePresetCompanies(raw);
+    const expected = {
+      "Texas Instruments": [
+        "https://careers.ti.com/en/sites/CX/jobs",
+        "oracle",
+        "careers.ti.com/CX",
+      ],
+      Oracle: [
+        "https://careers.oracle.com/en/sites/jobsearch/jobs",
+        "oracle",
+        "careers.oracle.com/CX_45001",
+      ],
+      "JPMorgan Chase": [
+        "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/requisitions",
+        "oracle",
+        "jpmc.fa.oraclecloud.com/CX_1001",
+      ],
+      BNY: [
+        "https://eofe.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/BNY-Careers/jobs",
+        "oracle",
+        "eofe.fa.us2.oraclecloud.com/CX_3001",
+      ],
+      Cisco: [
+        "https://careers.cisco.com/global/en/search-results",
+        "phenom",
+        "CISCISGLOBAL",
+      ],
+      Splunk: [
+        "https://careers.cisco.com/global/en/splunk/search-page",
+        "phenom",
+        "CISCISGLOBAL",
+      ],
+    } as const;
+
+    for (const [name, [careersUrl, platform, boardToken]] of Object.entries(expected)) {
+      const preset = presets.find((company) => company.name === name);
+      expect(preset).toMatchObject({
+        careersUrl,
+        platform,
+        boardToken,
+        isActive: true,
+      });
+      expect(preset?.logoUrl).toMatch(
+        /^https:\/\/www\.google\.com\/s2\/favicons\?domain=.+&sz=128$/u
+      );
+      expect(detectPlatformFromUrl(careersUrl)).toBe(platform);
+    }
+  });
+
   it("configures Flipkart for its canonical TurboHire organization", () => {
     const raw = JSON.parse(
       fs.readFileSync(path.join(process.cwd(), "public/companies.json"), "utf8")

@@ -41,6 +41,10 @@ describe("createScraperRegistry", () => {
     expect(registry.getScraperByPlatform("turbohire")?.platform).toBe("turbohire");
     expect(registry.getScraperByPlatform("mynexthire")?.platform).toBe("mynexthire");
     expect(registry.getScraperByPlatform("visa")?.platform).toBe("visa");
+    expect(registry.getScraperByPlatform("jobvite")?.platform).toBe("jobvite");
+    expect(registry.getScraperByPlatform("talentbrew")?.platform).toBe("talentbrew");
+    expect(registry.getScraperByPlatform("oracle")?.platform).toBe("oracle");
+    expect(registry.getScraperByPlatform("phenom")?.platform).toBe("phenom");
   });
 
   it("publishes capability metadata used by local scheduling", () => {
@@ -79,6 +83,13 @@ describe("createScraperRegistry", () => {
       concurrency: "parallel",
       supportsCancellation: true,
     });
+    for (const platform of ["jobvite", "talentbrew", "oracle", "phenom"] as const) {
+      expect(registry.getScraperByPlatform(platform)?.capabilities).toEqual({
+        transport: "http",
+        concurrency: "parallel",
+        supportsCancellation: true,
+      });
+    }
   });
 
   it("binds a scrape signal to the shared infrastructure context", async () => {

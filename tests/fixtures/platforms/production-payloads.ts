@@ -38,17 +38,3 @@ export const mynexthireIsoDatePayload = {
     },
   ],
 };
-
-export const nutanixSourceFeed = `<?xml version="1.0" encoding="utf-8"?>
-  <source>
-    <publisher>Nutanix</publisher>
-    <job>
-      <title>Staff Engineer</title>
-      <date>2026-07-01T00:00:00.000Z</date>
-      <apijobid>source-123</apijobid>
-      <url>https://careers.nutanix.com/jobs/source-123</url>
-      <city>Bengaluru</city>
-      <state>Karnataka</state>
-      <country>India</country>
-    </job>
-  </source>`;

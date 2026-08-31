@@ -35,6 +35,23 @@ describe("platform detection", () => {
     ).toBe("google");
     expect(detectPlatformFromUrl("https://www.google.com/about/careers/")).toBe("google");
     expect(detectPlatformFromUrl("https://careers.google.com/jobs/results/")).toBe("google");
+    expect(detectPlatformFromUrl("https://jobs.jobvite.com/nutanix/jobs")).toBe("jobvite");
+    expect(detectPlatformFromUrl("https://careers.nutanix.com/en/jobs/")).toBe("jobvite");
+    expect(detectPlatformFromUrl("https://jobs.intuit.com/search-jobs")).toBe("talentbrew");
+    expect(
+      detectPlatformFromUrl(
+        "https://hdpc.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/LateralHiring/jobs"
+      )
+    ).toBe("oracle");
+    expect(detectPlatformFromUrl("https://higher.gs.com/results")).toBe("oracle");
+    expect(detectPlatformFromUrl("https://careers.ti.com/en/sites/CX/jobs")).toBe("oracle");
+    expect(
+      detectPlatformFromUrl("https://careers.oracle.com/en/sites/jobsearch/jobs")
+    ).toBe("oracle");
+    expect(detectPlatformFromUrl("https://jobs.ebayinc.com/us/en/search-results")).toBe("phenom");
+    expect(
+      detectPlatformFromUrl("https://careers.cisco.com/global/en/search-results")
+    ).toBe("phenom");
     expect(
       detectPlatformFromUrl("https://www.atlassian.com/company/careers/all-jobs?team=Engineering")
     ).toBe("atlassian");
@@ -43,6 +60,18 @@ describe("platform detection", () => {
     expect(detectPlatformFromUrl("https://careers.example.com")).toBe("custom");
     expect(detectPlatformFromUrl("https://careers.smartrecruiters.com.example.com/Acme")).toBe("custom");
     expect(detectPlatformFromUrl("https://smartrecruiters.example.com/Acme")).toBe("custom");
+    expect(detectPlatformFromUrl("https://jobs.jobvite.com.example.com/acme/jobs")).toBe("custom");
+    expect(detectPlatformFromUrl("https://jobs.intuit.com.example.com/search-jobs")).toBe("custom");
+    expect(
+      detectPlatformFromUrl(
+        "https://hdpc.fa.us2.oraclecloud.com.example.com/hcmUI/CandidateExperience/en/sites/acme/jobs"
+      )
+    ).toBe("custom");
+    expect(detectPlatformFromUrl("https://jobs.ebayinc.com.example.com/us/en/search-results")).toBe("custom");
+    expect(detectPlatformFromUrl("https://careers.ti.com.example.com/en/sites/CX/jobs")).toBe("custom");
+    expect(
+      detectPlatformFromUrl("https://careers.cisco.com.example.com/global/en/search-results")
+    ).toBe("custom");
   });
 
   it("is shared by API and UI callers", () => {

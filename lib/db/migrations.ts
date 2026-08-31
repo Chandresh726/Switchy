@@ -15,6 +15,7 @@ import {
   matchLogs,
   matchResults,
   matchSessionJobs,
+  jobs,
   settings,
 } from "./schema";
 
@@ -23,6 +24,59 @@ const FLIPKART_TURBOHIRE_URL =
 const FLIPKART_TURBOHIRE_ORGANIZATION_ID =
   "4d757ba0-3d57-448a-b82c-238ed87ac90f";
 const LEGACY_FLIPKART_URL = "https://www.flipkartcareers.com/flipkart/jobslist";
+
+interface ReusableScraperCompanyMigration {
+  canonicalName: string;
+  canonicalUrl: string;
+  platform: "jobvite" | "talentbrew" | "oracle" | "phenom";
+  boardToken: string;
+  legacyNames: string[];
+  legacyUrls: string[];
+}
+
+const REUSABLE_SCRAPER_COMPANY_MIGRATIONS: ReusableScraperCompanyMigration[] = [
+  {
+    canonicalName: "Nutanix",
+    canonicalUrl: "https://jobs.jobvite.com/nutanix/jobs",
+    platform: "jobvite",
+    boardToken: "nutanix",
+    legacyNames: ["nutanix"],
+    legacyUrls: ["https://careers.nutanix.com/en/jobs/"],
+  },
+  {
+    canonicalName: "LegalZoom",
+    canonicalUrl: "https://jobs.jobvite.com/legalzoom/jobs",
+    platform: "jobvite",
+    boardToken: "legalzoom",
+    legacyNames: ["legalzoom"],
+    legacyUrls: ["https://www.legalzoom.com/careers#open-positions"],
+  },
+  {
+    canonicalName: "Intuit",
+    canonicalUrl: "https://jobs.intuit.com/search-jobs",
+    platform: "talentbrew",
+    boardToken: "27595",
+    legacyNames: ["intuit"],
+    legacyUrls: ["https://careers.intuit.com/"],
+  },
+  {
+    canonicalName: "Goldman Sachs",
+    canonicalUrl:
+      "https://hdpc.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/LateralHiring/jobs",
+    platform: "oracle",
+    boardToken: "hdpc.fa.us2.oraclecloud.com/CX_3002",
+    legacyNames: ["goldman sach", "goldman sachs"],
+    legacyUrls: ["https://higher.gs.com/results"],
+  },
+  {
+    canonicalName: "eBay",
+    canonicalUrl: "https://jobs.ebayinc.com/us/en/search-results",
+    platform: "phenom",
+    boardToken: "EBAEBAUS",
+    legacyNames: ["ebay"],
+    legacyUrls: ["https://jobs.ebayinc.com/us/en/jobs-in-india"],
+  },
+];
 
 interface ProviderMigrationRecord {
   id: string;
@@ -240,8 +294,6 @@ export function migrateLegacyScraperCompanies(
   const legacyCompanies = storedCompanies.filter(
     (company) => company.platform?.trim().toLowerCase() === "zwayam"
   );
-  if (legacyCompanies.length === 0) return;
-
   const canonicalFlipkart = storedCompanies.find(
     (company) => company.careersUrl === FLIPKART_TURBOHIRE_URL
   );
@@ -250,10 +302,43 @@ export function migrateLegacyScraperCompanies(
       company.careersUrl === LEGACY_FLIPKART_URL ||
       company.name.trim().toLowerCase() === "flipkart"
   );
+  for (const migration of REUSABLE_SCRAPER_COMPANY_MIGRATIONS) {
+    const matches = storedCompanies.filter((company) =>
+      reusableMigrationMatchesCompany(migration, company)
+    );
+    if (matches.length > 1) {
+      throw new Error(
+        `Reusable scraper migration found ${matches.length} company rows for ${migration.canonicalName}; resolve the duplicate before migration.`
+      );
+    }
+    const target = matches[0];
+    if (migration.boardToken === "nutanix" && target) {
+      const storedJobs = database.select({
+        externalId: jobs.externalId,
+      }).from(jobs).where(eq(jobs.companyId, target.id)).all();
+      const currentExternalIds = new Set(
+        storedJobs
+          .map((job) => job.externalId)
+          .filter((externalId): externalId is string => Boolean(externalId))
+      );
+      for (const job of storedJobs) {
+        const migratedExternalId = toJobviteNutanixExternalId(job.externalId);
+        if (
+          migratedExternalId &&
+          migratedExternalId !== job.externalId &&
+          currentExternalIds.has(migratedExternalId)
+        ) {
+          throw new Error(
+            `Reusable scraper migration cannot transform Nutanix job ${job.externalId}; ${migratedExternalId} already exists.`
+          );
+        }
+      }
+    }
+  }
   const now = new Date();
 
   database.transaction((tx) => {
-    if (canonicalFlipkart) {
+    if (legacyCompanies.length > 0 && canonicalFlipkart) {
       tx.update(companies)
         .set({
           platform: "turbohire",
@@ -262,7 +347,7 @@ export function migrateLegacyScraperCompanies(
         })
         .where(eq(companies.id, canonicalFlipkart.id))
         .run();
-    } else if (legacyFlipkart) {
+    } else if (legacyCompanies.length > 0 && legacyFlipkart) {
       tx.update(companies)
         .set({
           careersUrl: FLIPKART_TURBOHIRE_URL,
@@ -286,7 +371,76 @@ export function migrateLegacyScraperCompanies(
         .where(eq(companies.id, company.id))
         .run();
     }
+
+    for (const migration of REUSABLE_SCRAPER_COMPANY_MIGRATIONS) {
+      const target = storedCompanies.find((company) =>
+        reusableMigrationMatchesCompany(migration, company)
+      );
+      if (!target) continue;
+
+      const careersUrl = migration.canonicalUrl;
+      const needsCompanyUpdate =
+        target.name !== migration.canonicalName ||
+        target.careersUrl !== careersUrl ||
+        target.platform !== migration.platform ||
+        target.boardToken !== migration.boardToken;
+
+      if (needsCompanyUpdate) {
+        tx.update(companies)
+          .set({
+            name: migration.canonicalName,
+            careersUrl,
+            platform: migration.platform,
+            boardToken: migration.boardToken,
+            updatedAt: now,
+          })
+          .where(eq(companies.id, target.id))
+          .run();
+      }
+
+      if (migration.boardToken !== "nutanix") continue;
+      const nutanixJobs = tx.select({
+        id: jobs.id,
+        externalId: jobs.externalId,
+      }).from(jobs).where(eq(jobs.companyId, target.id)).all();
+      for (const job of nutanixJobs) {
+        const externalId = toJobviteNutanixExternalId(job.externalId);
+        if (!externalId || externalId === job.externalId) continue;
+        tx.update(jobs)
+          .set({ externalId, updatedAt: now })
+          .where(eq(jobs.id, job.id))
+          .run();
+      }
+    }
   });
+}
+
+function normalizeMigrationUrl(value: string): string {
+  try {
+    const parsed = new URL(value);
+    const pathname = parsed.pathname.replace(/\/+$/u, "") || "/";
+    return `${parsed.origin.toLowerCase()}${pathname.toLowerCase()}`;
+  } catch {
+    return value.trim().toLowerCase();
+  }
+}
+
+function reusableMigrationMatchesCompany(
+  migration: ReusableScraperCompanyMigration,
+  company: typeof companies.$inferSelect
+): boolean {
+  const normalizedName = company.name.trim().toLowerCase();
+  if (migration.legacyNames.includes(normalizedName)) return true;
+
+  const normalizedUrl = normalizeMigrationUrl(company.careersUrl);
+  return [migration.canonicalUrl, ...migration.legacyUrls].some(
+    (url) => normalizedUrl === normalizeMigrationUrl(url)
+  );
+}
+
+function toJobviteNutanixExternalId(externalId: string | null): string | null {
+  if (!externalId?.startsWith("nutanix-nutanix-")) return externalId;
+  return externalId.replace(/^nutanix-nutanix-/u, "jobvite-nutanix-");
 }
 
 export function migrateLocalDatabase(

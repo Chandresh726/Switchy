@@ -8,9 +8,9 @@
   },
   {
     "name": "Nutanix",
-    "careersUrl": "https://careers.nutanix.com/en/jobs/",
+    "careersUrl": "https://jobs.jobvite.com/nutanix/jobs",
     "logoUrl": "https://yt3.googleusercontent.com/OFaWeOdCeKYSJxO6I7RnEqQlIna_PyJSIkJ4mqAUaH3U2f-YAi5A1JHWreQzeEz6-OaXxHfgkxw=s900-c-k-c0x00ffffff-no-rj",
-    "platform": "nutanix",
+    "platform": "jobvite",
     "boardToken": "nutanix",
     "isActive": true
   },
@@ -467,9 +467,10 @@
   },
   {
     "name": "eBay",
-    "careersUrl": "https://jobs.ebayinc.com/us/en/jobs-in-india?from=40&s=1&rk=l-indiabangalore",
+    "careersUrl": "https://jobs.ebayinc.com/us/en/search-results",
     "logoUrl": "https://cdn-icons-png.flaticon.com/512/5977/5977581.png",
-    "platform": "custom",
+    "platform": "phenom",
+    "boardToken": "EBAEBAUS",
     "isActive": true
   },
   {
@@ -489,10 +490,11 @@
     "isActive": true
   },
   {
-    "name": "Goldman Sach",
-    "careersUrl": "https://higher.gs.com/results?DIVISION=Engineering%20Division&EXPERIENCE_LEVEL=Associate&LOCATION=Bengaluru%7CHyderabad%7CMumbai&page=1&sort=RELEVANCE",
+    "name": "Goldman Sachs",
+    "careersUrl": "https://hdpc.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/LateralHiring/jobs",
     "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRq9S9DP4i3kJDBywUdbdTIwFx8_Mk1unaE-g&s",
-    "platform": "custom",
+    "platform": "oracle",
+    "boardToken": "hdpc.fa.us2.oraclecloud.com/CX_3002",
     "isActive": true
   },
   {
@@ -505,9 +507,10 @@
   },
   {
     "name": "Intuit",
-    "careersUrl": "https://careers.intuit.com/",
+    "careersUrl": "https://jobs.intuit.com/search-jobs",
     "logoUrl": "https://www.google.com/s2/favicons?domain=intuit.com&sz=128",
-    "platform": "custom",
+    "platform": "talentbrew",
+    "boardToken": "27595",
     "isActive": true
   },
   {
@@ -520,9 +523,10 @@
   },
   {
     "name": "LegalZoom",
-    "careersUrl": "https://www.legalzoom.com/careers#open-positions",
+    "careersUrl": "https://jobs.jobvite.com/legalzoom/jobs",
     "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTOqG7M6fWtx0wQf2v9GOpGiq3WUhBAGO9P3g&s",
-    "platform": "custom",
+    "platform": "jobvite",
+    "boardToken": "legalzoom",
     "isActive": true
   },
   {
@@ -1233,6 +1237,54 @@
     "logoUrl": "https://www.google.com/s2/favicons?domain=palantir.com&sz=128",
     "platform": "lever",
     "boardToken": "palantir",
+    "isActive": true
+  },
+  {
+    "name": "Texas Instruments",
+    "careersUrl": "https://careers.ti.com/en/sites/CX/jobs",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=ti.com&sz=128",
+    "platform": "oracle",
+    "boardToken": "careers.ti.com/CX",
+    "isActive": true
+  },
+  {
+    "name": "Oracle",
+    "careersUrl": "https://careers.oracle.com/en/sites/jobsearch/jobs",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=oracle.com&sz=128",
+    "platform": "oracle",
+    "boardToken": "careers.oracle.com/CX_45001",
+    "isActive": true
+  },
+  {
+    "name": "JPMorgan Chase",
+    "careersUrl": "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/requisitions",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=jpmorganchase.com&sz=128",
+    "platform": "oracle",
+    "boardToken": "jpmc.fa.oraclecloud.com/CX_1001",
+    "isActive": true
+  },
+  {
+    "name": "BNY",
+    "careersUrl": "https://eofe.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/BNY-Careers/jobs",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=bny.com&sz=128",
+    "platform": "oracle",
+    "boardToken": "eofe.fa.us2.oraclecloud.com/CX_3001",
+    "isActive": true
+  },
+  {
+    "name": "Cisco",
+    "careersUrl": "https://careers.cisco.com/global/en/search-results",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=cisco.com&sz=128",
+    "platform": "phenom",
+    "boardToken": "CISCISGLOBAL",
+    "isActive": true
+  },
+  {
+    "name": "Splunk",
+    "careersUrl": "https://careers.cisco.com/global/en/splunk/search-page",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=splunk.com&sz=128",
+    "platform": "phenom",
+    "boardToken": "CISCISGLOBAL",
     "isActive": true
   }
 ]

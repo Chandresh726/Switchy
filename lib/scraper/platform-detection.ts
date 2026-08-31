@@ -4,9 +4,13 @@ export type DetectedPlatform = Platform | "custom";
 
 export function detectPlatformFromUrl(url: string): DetectedPlatform {
   const urlLower = url.toLowerCase();
+  let hostname = "";
+  let pathname = "";
 
   try {
-    const hostname = new URL(url).hostname.toLowerCase();
+    const parsed = new URL(url);
+    hostname = parsed.hostname.toLowerCase();
+    pathname = parsed.pathname.toLowerCase();
     if (
       hostname === "careers.smartrecruiters.com" ||
       hostname === "jobs.smartrecruiters.com"
@@ -15,6 +19,25 @@ export function detectPlatformFromUrl(url: string): DetectedPlatform {
     }
   } catch {
     // Fall through to the existing string-based checks.
+  }
+
+  if (hostname === "jobs.jobvite.com" || hostname === "careers.nutanix.com") {
+    return "jobvite";
+  }
+  if (hostname === "jobs.intuit.com" || hostname === "careers.intuit.com") {
+    return "talentbrew";
+  }
+  if (
+    (hostname.endsWith(".oraclecloud.com") &&
+      pathname.includes("/hcmui/candidateexperience/")) ||
+    hostname === "careers.oracle.com" ||
+    hostname === "careers.ti.com" ||
+    hostname === "higher.gs.com"
+  ) {
+    return "oracle";
+  }
+  if (hostname === "jobs.ebayinc.com" || hostname === "careers.cisco.com") {
+    return "phenom";
   }
 
   if (
@@ -99,9 +122,6 @@ export function detectPlatformFromUrl(url: string): DetectedPlatform {
       // fall through
     }
   }
-  if (urlLower.includes("careers.nutanix.com") || urlLower.includes("nutanix.com") && urlLower.includes("career")) {
-    return "nutanix";
-  }
   return "custom";
 }
 
@@ -121,7 +141,10 @@ export function getPlatformLabel(platform: DetectedPlatform): string {
     atlassian: "Atlassian",
     rippling: "Rippling",
     visa: "Visa",
-    nutanix: "Nutanix",
+    jobvite: "Jobvite",
+    talentbrew: "TalentBrew",
+    oracle: "Oracle Recruiting",
+    phenom: "Phenom",
     custom: "Custom",
   };
 

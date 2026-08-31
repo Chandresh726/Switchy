@@ -19,7 +19,10 @@ import {
   GoogleScraper,
   AtlassianScraper,
   RipplingScraper,
-  NutanixScraper,
+  JobviteScraper,
+  TalentBrewScraper,
+  OracleScraper,
+  PhenomScraper,
 } from "@/lib/scraper/platforms";
 
 export interface IScraperRegistry {
@@ -112,7 +115,10 @@ export function createScraperRegistry(config: ScraperRegistryConfig): IScraperRe
   registry.register(new GoogleScraper(config.httpClient));
   registry.register(new AtlassianScraper(config.httpClient));
   registry.register(new RipplingScraper(config.httpClient));
-  registry.register(new NutanixScraper(config.httpClient));
+  registry.register(new JobviteScraper(config.httpClient));
+  registry.register(new TalentBrewScraper(config.httpClient));
+  registry.register(new OracleScraper(config.httpClient));
+  registry.register(new PhenomScraper(config.httpClient));
 
   return registry;
 }

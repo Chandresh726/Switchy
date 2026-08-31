@@ -14,4 +14,21 @@ describe("scraper platform contracts", () => {
     });
     expect(PLATFORM_COLORS.turbohire).toBeTruthy();
   });
+
+  it.each([
+    ["jobvite", "Jobvite"],
+    ["talentbrew", "TalentBrew"],
+    ["oracle", "Oracle Recruiting"],
+    ["phenom", "Phenom"],
+  ] as const)("publishes %s through every platform contract", (platform, label) => {
+    expect(companyPlatformSchema.parse(platform)).toBe(platform);
+    expect(PLATFORMS).toContain(platform);
+    expect(PLATFORM_OPTIONS).toContainEqual({ value: platform, label });
+    expect(PLATFORM_COLORS[platform]).toBeTruthy();
+  });
+
+  it("removes the dedicated Nutanix platform contract", () => {
+    expect(companyPlatformSchema.safeParse("nutanix").success).toBe(false);
+    expect(PLATFORMS).not.toContain("nutanix");
+  });
 });

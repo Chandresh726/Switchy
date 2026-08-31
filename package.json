@@ -29,6 +29,8 @@
     "test:integration": "node scripts/run-tests.mjs --run --project integration",
     "test:ui": "node scripts/run-tests.mjs --run --project ui --passWithNoTests",
     "ai:eval": "node scripts/run-tests.mjs --run --project eval",
+    "scraper:validate-live": "tsx scripts/validate-reusable-ats-boards.mts",
+    "scraper:validate-state": "tsx scripts/validate-reusable-ats-state.mts",
     "test:coverage": "node scripts/run-tests.mjs --run --coverage",
     "audit": "pnpm audit",
     "audit:prod": "pnpm audit --prod",

@@ -13,7 +13,10 @@ export type Platform =
   | "atlassian"
   | "rippling"
   | "visa"
-  | "nutanix";
+  | "jobvite"
+  | "talentbrew"
+  | "oracle"
+  | "phenom";
 
 export type TriggerSource = "manual" | "scheduler" | "scheduler_recovery" | "company_refresh";
 
@@ -46,7 +49,10 @@ export const PLATFORMS = [
   "atlassian",
   "rippling",
   "visa",
-  "nutanix",
+  "jobvite",
+  "talentbrew",
+  "oracle",
+  "phenom",
 ] as const satisfies readonly Platform[];
 
 const TRIGGER_SOURCES: readonly TriggerSource[] = [

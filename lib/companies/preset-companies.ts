@@ -17,7 +17,10 @@ const PLATFORM_VALUES = [
   "atlassian",
   "rippling",
   "visa",
-  "nutanix",
+  "jobvite",
+  "talentbrew",
+  "oracle",
+  "phenom",
   "custom",
 ] as const;
 

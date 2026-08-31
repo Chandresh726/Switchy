@@ -18,7 +18,10 @@ export const companyPlatformSchema = z.enum([
   "atlassian",
   "rippling",
   "visa",
-  "nutanix",
+  "jobvite",
+  "talentbrew",
+  "oracle",
+  "phenom",
   "custom",
 ]);
 
