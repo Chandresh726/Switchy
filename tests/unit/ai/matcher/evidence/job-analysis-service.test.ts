@@ -109,6 +109,29 @@ describe("AI-only job analysis service", () => {
     expect(mocks.getOrCreateJobAnalysis).not.toHaveBeenCalled();
   });
 
+  it("isolates invalid stored job data without aborting valid jobs", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const invalidJob = { ...job, id: 2, department: "x".repeat(501) };
+    const onFailed = vi.fn();
+
+    const results = await analyzeJobsForMatching(
+      [invalidJob, job],
+      config,
+      undefined,
+      undefined,
+      undefined,
+      { onFailed }
+    );
+
+    expect(results.has(1)).toBe(true);
+    expect(results.has(2)).toBe(false);
+    expect(onFailed).toHaveBeenCalledWith(
+      [2],
+      expect.objectContaining({ type: "validation", retryable: false })
+    );
+    expect(mocks.executeStructured).toHaveBeenCalledOnce();
+  });
+
   it("reports each ready analysis and isolates a failed multi-job batch", async () => {
     const secondJob = { ...job, id: 2, title: "Platform Engineer" };
     mocks.getOrCreateJobAnalysis.mockImplementation(async (input) => ({

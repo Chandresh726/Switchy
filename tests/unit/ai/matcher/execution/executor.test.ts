@@ -258,4 +258,42 @@ describe("AI-only matcher executor", () => {
     releaseAnalysis();
     await execution;
   });
+
+  it("settles already-started matches before propagating an analysis failure", async () => {
+    let releaseEvaluation!: () => void;
+    const evaluationBlocked = new Promise<void>((resolve) => {
+      releaseEvaluation = resolve;
+    });
+    mocks.evaluateMatchWithAI.mockImplementation(async () => {
+      await evaluationBlocked;
+      return {
+        outcome: { score: 90 },
+        runId: "match-run-1",
+        attempts: 1,
+      };
+    });
+    mocks.analyzeJobsForMatching.mockImplementation(async (
+      _jobs,
+      _config,
+      _signal,
+      _shouldStop,
+      _runtime,
+      callbacks
+    ) => {
+      await callbacks.onReady(analysis, "generated");
+      throw new Error("analysis scan failed");
+    });
+
+    const execution = executeMatch({ config, jobIds: [101], sessionId: "session-1" });
+    let settled = false;
+    void execution.then(
+      () => { settled = true; },
+      () => { settled = true; }
+    );
+    await vi.waitFor(() => expect(mocks.evaluateMatchWithAI).toHaveBeenCalledOnce());
+    expect(settled).toBe(false);
+
+    releaseEvaluation();
+    await expect(execution).rejects.toThrow("analysis scan failed");
+  });
 });

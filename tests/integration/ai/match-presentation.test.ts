@@ -165,6 +165,22 @@ describe("authoritative match presentation queries", () => {
         url: "https://example.com/jobs/older-unmatched-role",
         discoveredAt: new Date("2026-06-01T00:00:00.000Z"),
       },
+      {
+        companyId: company.id,
+        title: "Archived unmatched role",
+        description: "No longer active",
+        url: "https://example.com/jobs/archived-unmatched-role",
+        status: "archived",
+        discoveredAt: new Date("2026-07-15T00:00:00.000Z"),
+      },
+      {
+        companyId: company.id,
+        title: "Rejected unmatched role",
+        description: "No longer relevant",
+        url: "https://example.com/jobs/rejected-unmatched-role",
+        status: "rejected",
+        discoveredAt: new Date("2026-07-15T00:00:00.000Z"),
+      },
     ]).returning().all();
     const context = {
       candidateFingerprint: "d".repeat(64),
@@ -191,6 +207,11 @@ describe("authoritative match presentation queries", () => {
       olderUnmatchedJob.id,
     ]);
     expect(await getFreshUnmatchedJobCount(context)).toBe(2);
+    expect(await getFreshUnmatchedJobIds(null)).toEqual([
+      unmatchedJob.id,
+      olderUnmatchedJob.id,
+    ]);
+    expect(await getFreshUnmatchedJobCount(null)).toBe(2);
     const recentFilter = { discoveredSince: new Date("2026-07-10T00:00:00.000Z") };
     expect(await getFreshUnmatchedJobIds(context, recentFilter)).toEqual([unmatchedJob.id]);
     expect(await getFreshUnmatchedJobCount(context, recentFilter)).toBe(1);

@@ -368,40 +368,46 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
     ? Math.max(1, Math.floor(config.concurrencyLimit * 0.6))
     : Math.max(1, config.concurrencyLimit);
 
-  const analyses = await analyzeJobsForMatching(
-    availableJobs,
-    concreteConfig,
-    signal,
-    shouldStop,
-    analysisRuntime,
-    {
-      concurrencyLimit: analysisConcurrency,
-      onStarted: async (startedJobIds) => {
-        if (sessionId) await markJobAnalysisStarted(sessionId, startedJobIds);
-      },
-      onReady: async (analyzed, source) => {
-        if (sessionId) {
-          await markJobAnalysisReady(sessionId, {
-            jobId: analyzed.job.id,
-            jobAnalysisId: analyzed.jobAnalysisId,
-            analysisRunId: analyzed.analysisRunId,
-            cached: source === "cached",
-          });
-        } else if (source === "cached") {
-          await recordAICacheHit({
-            capability: "job_analysis",
-            subject: { type: "job", id: String(analyzed.job.id) },
-            artifact: { type: "job_analysis", id: analyzed.jobAnalysisId },
-            sourceRunId: analyzed.analysisRunId,
-          });
-        }
-        scheduleMatch(analyzed);
-      },
-      onFailed: async (failedJobIds, error) => {
-        for (const jobId of failedJobIds) await failAnalysis(jobId, error);
-      },
-    }
-  );
+  let analyses: Map<number, MatchingJobAnalysis>;
+  try {
+    analyses = await analyzeJobsForMatching(
+      availableJobs,
+      concreteConfig,
+      signal,
+      shouldStop,
+      analysisRuntime,
+      {
+        concurrencyLimit: analysisConcurrency,
+        onStarted: async (startedJobIds) => {
+          if (sessionId) await markJobAnalysisStarted(sessionId, startedJobIds);
+        },
+        onReady: async (analyzed, source) => {
+          if (sessionId) {
+            await markJobAnalysisReady(sessionId, {
+              jobId: analyzed.job.id,
+              jobAnalysisId: analyzed.jobAnalysisId,
+              analysisRunId: analyzed.analysisRunId,
+              cached: source === "cached",
+            });
+          } else if (source === "cached") {
+            await recordAICacheHit({
+              capability: "job_analysis",
+              subject: { type: "job", id: String(analyzed.job.id) },
+              artifact: { type: "job_analysis", id: analyzed.jobAnalysisId },
+              sourceRunId: analyzed.analysisRunId,
+            });
+          }
+          scheduleMatch(analyzed);
+        },
+        onFailed: async (failedJobIds, error) => {
+          for (const jobId of failedJobIds) await failAnalysis(jobId, error);
+        },
+      }
+    );
+  } catch (error) {
+    await Promise.allSettled(matchTasks);
+    throw error;
+  }
 
   for (const analyzed of analyses.values()) scheduleMatch(analyzed);
 
@@ -410,7 +416,11 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
       await failAnalysis(jobId);
     }
   }
-  await Promise.all(matchTasks);
+  const settledMatches = await Promise.allSettled(matchTasks);
+  const failedMatch = settledMatches.find(
+    (result): result is PromiseRejectedResult => result.status === "rejected"
+  );
+  if (failedMatch) throw failedMatch.reason;
 
   return results;
 }

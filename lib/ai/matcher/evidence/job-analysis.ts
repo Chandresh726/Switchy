@@ -15,7 +15,7 @@ import {
 import { fingerprintAIInput } from "@/lib/ai/runtime/fingerprint";
 import type { AICapabilityRuntime } from "@/lib/ai/runtime/capability-runtime";
 import type { AIExecutionResult } from "@/lib/ai/runtime/types";
-import { sanitizeAIError } from "@/lib/ai/shared/errors";
+import { AIError, sanitizeAIError } from "@/lib/ai/shared/errors";
 
 import type { JobData, MatcherConfig } from "../types";
 import { htmlToText } from "../utils";
@@ -71,6 +71,16 @@ export interface JobAnalysisPipelineCallbacks {
 function warnWithSanitizedError(message: string, error: unknown): void {
   const sanitized = sanitizeAIError(error);
   console.warn(`${message} [${sanitized.code}] ${sanitized.message}`);
+}
+
+function storedJobValidationError(jobId: number, error: z.ZodError): AIError {
+  return new AIError({
+    type: "validation",
+    message: `Stored data for job ${jobId} failed matching validation.`,
+    cause: error,
+    retryable: false,
+    context: { jobId },
+  });
 }
 
 export function buildJobAnalysisVersion(config: MatcherConfig): string {
@@ -280,9 +290,20 @@ export async function analyzeJobsForMatching(
   for (const job of jobs) {
     signal?.throwIfAborted();
     if (shouldStop && await shouldStop()) return resolved;
-    const jobEvidence = buildJobEvidenceInput(job);
-    const jobFingerprint = buildJobFingerprint(jobEvidence);
-    const cached = await artifactRepository.findJobAnalysis(jobFingerprint, analysisVersion);
+    let jobEvidence: JobEvidenceInput;
+    let jobFingerprint: string;
+    let cached: Awaited<ReturnType<typeof artifactRepository.findJobAnalysis>>;
+    try {
+      jobEvidence = buildJobEvidenceInput(job);
+      jobFingerprint = buildJobFingerprint(jobEvidence);
+      cached = await artifactRepository.findJobAnalysis(jobFingerprint, analysisVersion);
+    } catch (error) {
+      if (!(error instanceof z.ZodError)) throw error;
+      const validationError = storedJobValidationError(job.id, error);
+      warnWithSanitizedError("[JobAnalysis] Stored job data is invalid.", validationError);
+      await callbacks.onFailed?.([job.id], validationError);
+      continue;
+    }
     if (cached) {
       resolved.set(job.id, {
         job,

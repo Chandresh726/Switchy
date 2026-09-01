@@ -8,6 +8,7 @@ import {
   gte,
   inArray,
   isNull,
+  notInArray,
   sql,
 } from "drizzle-orm";
 
@@ -31,6 +32,10 @@ import { buildJobAnalysisVersion } from "./evidence/job-analysis";
 import { fetchProfileData } from "./tracking";
 
 const MATCH_RESULT_QUERY_BATCH_SIZE = 400;
+const INACTIVE_JOB_STATUSES: Array<"rejected" | "archived"> = [
+  "rejected",
+  "archived",
+];
 
 type MatchableJob = Pick<
   typeof jobs.$inferSelect,
@@ -349,6 +354,7 @@ export async function getFreshUnmatchedJobIds(
     return (await db.select({ id: jobs.id }).from(jobs)
       .where(and(
         isNull(jobs.matchScore),
+        notInArray(jobs.status, INACTIVE_JOB_STATUSES),
         filter.discoveredSince ? gte(jobs.discoveredAt, filter.discoveredSince) : undefined
       ))).map((job) => job.id);
   }
@@ -362,6 +368,7 @@ export async function getFreshUnmatchedJobIds(
     .where(and(
       isNull(matchResults.id),
       isNull(jobs.matchScore),
+      notInArray(jobs.status, INACTIVE_JOB_STATUSES),
       filter.discoveredSince ? gte(jobs.discoveredAt, filter.discoveredSince) : undefined
     ));
   return rows.map((job) => job.id);
@@ -406,6 +413,7 @@ export async function getFreshUnmatchedJobCount(
     const [result] = await db.select({ value: count() }).from(jobs)
       .where(and(
         isNull(jobs.matchScore),
+        notInArray(jobs.status, INACTIVE_JOB_STATUSES),
         filter.discoveredSince ? gte(jobs.discoveredAt, filter.discoveredSince) : undefined
       ));
     return result?.value ?? 0;
@@ -420,6 +428,7 @@ export async function getFreshUnmatchedJobCount(
     .where(and(
       isNull(matchResults.id),
       isNull(jobs.matchScore),
+      notInArray(jobs.status, INACTIVE_JOB_STATUSES),
       filter.discoveredSince ? gte(jobs.discoveredAt, filter.discoveredSince) : undefined
     ));
   return result?.value ?? 0;
