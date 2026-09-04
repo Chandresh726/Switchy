@@ -3,10 +3,7 @@ import type { NextRequest } from "next/server";
 
 import { assertAppRequest, createApiRequestContext, handleApiError, withRequestIdHeader } from "@/lib/api";
 import { recoverMissedSchedulerRuns } from "@/lib/jobs/scheduler";
-
-const NO_STORE_HEADERS = {
-  "Cache-Control": "no-store, no-cache, must-revalidate",
-};
+import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
 export async function POST(request: NextRequest) {
   const context = createApiRequestContext(request);

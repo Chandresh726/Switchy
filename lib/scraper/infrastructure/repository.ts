@@ -27,9 +27,13 @@ import type {
 const SQLITE_INSERT_CHUNK_SIZE = 50;
 
 function buildArchivedIdentityUrl(url: string, jobId: number): string {
-  const archivedUrl = new URL(url);
-  archivedUrl.hash = `switchy-archived-${jobId}`;
-  return archivedUrl.toString();
+  try {
+    const archivedUrl = new URL(url);
+    archivedUrl.hash = `switchy-archived-${jobId}`;
+    return archivedUrl.toString();
+  } catch {
+    return `${url}#switchy-archived-${jobId}`;
+  }
 }
 
 function buildScrapedJobFingerprint(job: {

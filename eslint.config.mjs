@@ -61,8 +61,9 @@ const eslintConfig = defineConfig([
     "dist/**",
     "packages/cli/dist/**",
     "next-env.d.ts",
-    // Separate Next.js app (landing page)
+    // Separate Next.js app (landing page) + Remotion video app
     "landing/**",
+    "demo-video/**",
   ]),
 ]);
 

@@ -47,8 +47,7 @@ export async function POST(request: NextRequest) {
   try {
     assertAppRequest(request);
 
-    const body = await request.json();
-    const parsedBody = providerCreateBodySchema.parse(body);
+    const parsedBody = providerCreateBodySchema.parse(await request.json());
 
     const { provider: providerType, apiKey } = parsedBody;
 
@@ -113,8 +112,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
-      ...toProviderPublic(created),
+    return NextResponse.json(
+      {
+        ...toProviderPublic(created),
       ...(localCLIStatus
         ? {
             connectionStatus: localCLIStatus.status,
@@ -124,10 +124,12 @@ export async function POST(request: NextRequest) {
             lastCheckedAt: localCLIStatus.lastCheckedAt,
           }
         : {}),
-      autoConfiguredDefaults,
-      autoConfiguredModelId,
-      autoConfiguredWarning,
-    });
+        autoConfiguredDefaults,
+        autoConfiguredModelId,
+        autoConfiguredWarning,
+      },
+      { status: 201 }
+    );
   } catch (error) {
     return handleApiError(error, { request, fallbackMessage: "Failed to create provider", fallbackCode: "provider_create_failed" });
   }

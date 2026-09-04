@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
 
 import { AIContentPatchBodySchema } from "@/lib/ai/contracts";
 import { assertAppRequest, handleApiError, NotFoundError } from "@/lib/api";
 import { numericIdParamsSchema } from "@/lib/api/contracts/matching";
-import { db } from "@/lib/db";
-import { aiGeneratedContent, aiGenerationHistory } from "@/lib/db/schema";
-import { saveManualVariant } from "@/lib/ai/writing/content-service";
+import { deleteGeneratedContent, saveManualVariant } from "@/lib/ai/writing/content-service";
 
 export async function PATCH(
   request: NextRequest,
@@ -43,11 +40,7 @@ export async function DELETE(
 
     const { id: parsedId } = numericIdParamsSchema.parse(await params);
 
-    await db.delete(aiGenerationHistory).where(eq(aiGenerationHistory.contentId, parsedId));
-    const [deleted] = await db
-      .delete(aiGeneratedContent)
-      .where(eq(aiGeneratedContent.id, parsedId))
-      .returning({ id: aiGeneratedContent.id });
+    const deleted = await deleteGeneratedContent(parsedId);
     if (!deleted) {
       throw new NotFoundError("Content not found", "ai_content_not_found");
     }

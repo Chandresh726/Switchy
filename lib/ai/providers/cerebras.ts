@@ -1,29 +1,12 @@
 import { createCerebras } from "@ai-sdk/cerebras";
-import type { LanguageModel } from "ai";
-import { BaseProvider } from "./base-provider";
-import type { AIProvider, ModelConfig, ProviderConfig } from "./types";
+
+import { makeSdkProvider } from "./base-provider";
 
 /**
- * Cerebras provider implementation
+ * Cerebras provider implementation (via shared SDK factory)
  */
-class CerebrasProvider extends BaseProvider {
-  readonly id: AIProvider = "cerebras";
-  readonly name = "Cerebras";
-  readonly requiresApiKey = true;
-
-  protected createLanguageModel(
-    config: ModelConfig,
-    _providerConfig: ProviderConfig
-  ): LanguageModel {
-    const cerebras = createCerebras({
-      apiKey: _providerConfig.apiKey,
-    });
-
-    return cerebras(config.modelId);
-  }
-}
-
-/**
- * Singleton instance
- */
-export const cerebrasProvider = new CerebrasProvider();
+export const cerebrasProvider = makeSdkProvider({
+  id: "cerebras",
+  name: "Cerebras",
+  createClient: (apiKey) => createCerebras({ apiKey }),
+});

@@ -3,8 +3,7 @@ import { NextResponse } from "next/server";
 import { MatchUnmatchedBodySchema, MatchUnmatchedQuerySchema } from "@/lib/ai/contracts";
 import { assertAppRequest, handleApiError } from "@/lib/api";
 import { getUnmatchedMatchStatus, queueUnmatchedJobs } from "@/lib/application/jobs-service";
-
-const NO_STORE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
+import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
 export async function GET(request: Request) {
   try {

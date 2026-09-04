@@ -30,14 +30,19 @@ export function useMatchSession(
     },
   });
 
+  const onSettledRef = useRef(options.onSettled);
   useEffect(() => {
-    const progress = query.data;
+    onSettledRef.current = options.onSettled;
+  }, [options.onSettled]);
+  const progress = query.data;
+
+  useEffect(() => {
     if (!progress || !TERMINAL_STATUSES.has(progress.status)) return;
     if (settledSessions.current.has(progress.sessionId)) return;
     settledSessions.current.add(progress.sessionId);
     void cacheOwnership.matchCompletion(queryClient);
-    options.onSettled?.(progress);
-  }, [options, query.data, queryClient]);
+    onSettledRef.current?.(progress);
+  }, [progress, queryClient]);
 
   return query;
 }

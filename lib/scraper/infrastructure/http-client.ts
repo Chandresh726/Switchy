@@ -44,6 +44,46 @@ interface HostWaiter {
   onAbort?: () => void;
 }
 
+function isBlockedScrapeHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (
+    normalized === "localhost" ||
+    normalized === "0.0.0.0" ||
+    normalized === "127.0.0.1" ||
+    normalized === "::1" ||
+    normalized === "::" ||
+    normalized === "169.254.169.254" ||
+    normalized.endsWith(".localhost") ||
+    normalized.endsWith(".internal") ||
+    normalized.startsWith("metadata.")
+  ) {
+    return true;
+  }
+  if (normalized.startsWith("127.")) return true;
+  if (normalized.startsWith("10.") || normalized.startsWith("192.168.")) return true;
+  const m172 = normalized.match(/^172\.(\d+)\./);
+  if (m172 && Number(m172[1]) >= 16 && Number(m172[1]) <= 31) return true;
+  return false;
+}
+
+function parseScrapeHost(url: string): string {
+  let hostname: string;
+  let host: string;
+  try {
+    const parsed = new URL(url);
+    hostname = parsed.hostname.toLowerCase();
+    host = parsed.host.toLowerCase();
+  } catch {
+    const err = new Error(`Invalid scrape URL: ${url}`);
+    (err as Error & { url?: string }).url = url;
+    throw err;
+  }
+  if (!hostname || isBlockedScrapeHostname(hostname)) {
+    throw new Error(`Blocked scrape host: ${hostname || url}`);
+  }
+  return host;
+}
+
 export class FetchHttpClient implements IHttpClient {
   private readonly defaultConfig: HttpClientConfig;
   private readonly activeByHost = new Map<string, number>();
@@ -72,21 +112,15 @@ export class FetchHttpClient implements IHttpClient {
       ...fetchOptions
     } = options;
     const signal = explicitSignal ?? getActiveScrapeSignal();
-    const release = await this.acquireHostSlot(url, signal);
-
-    try {
-      return await this.fetchWithRetry({
-        url,
-        options: fetchOptions,
-        retries,
-        baseDelay,
-        maxDelay,
-        timeout,
-        signal,
-      });
-    } finally {
-      release();
-    }
+    return await this.fetchWithRetry({
+      url,
+      options: fetchOptions,
+      retries,
+      baseDelay,
+      maxDelay,
+      timeout,
+      signal,
+    });
   }
 
   async get<T>(url: string, options: HttpRequestOptions = {}): Promise<T> {
@@ -113,6 +147,23 @@ export class FetchHttpClient implements IHttpClient {
     return response.json();
   }
 
+  private static readonly MAX_REDIRECTS = 5;
+  private static readonly REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+  private resolveRedirectTarget(currentUrl: string, location: string): string {
+    let target: string;
+    try {
+      target = new URL(location, currentUrl).toString();
+    } catch {
+      throw new HttpError(400, `Invalid redirect target: ${location}`, currentUrl);
+    }
+    // Re-validate every hop: blocks loopback/metadata/private-network targets.
+    // Note: hostname-string check only; DNS-rebinding (allowed name resolving
+    // to private IP) is out of scope and documented as a limitation.
+    parseScrapeHost(target);
+    return target;
+  }
+
   private async fetchWithRetry(args: {
     url: string;
     options: RequestInit;
@@ -123,9 +174,15 @@ export class FetchHttpClient implements IHttpClient {
     signal?: AbortSignal;
   }): Promise<Response> {
     let attempt = 0;
+    let currentUrl = args.url;
+    let currentOptions: RequestInit = { ...args.options };
+    let redirectCount = 0;
 
     while (true) {
       this.throwIfAborted(args.signal);
+      // Per-hop concurrency slot so cross-host redirects respect the target
+      // host's limit instead of reusing the origin host's slot.
+      const release = await this.acquireHostSlot(currentUrl, args.signal);
       const attemptController = new AbortController();
       const onAbort = () => attemptController.abort(args.signal?.reason);
       args.signal?.addEventListener("abort", onAbort, { once: true });
@@ -135,13 +192,44 @@ export class FetchHttpClient implements IHttpClient {
       );
 
       try {
-        const response = await fetch(args.url, {
-          ...args.options,
+        const response = await fetch(currentUrl, {
+          redirect: "manual",
+          ...currentOptions,
           signal: attemptController.signal,
         });
 
+        if (
+          FetchHttpClient.REDIRECT_STATUSES.has(response.status)
+        ) {
+          const location = response.headers.get("location");
+          const status = response.status;
+          await this.discardResponse(response);
+          if (!location) {
+            throw new HttpError(
+              status,
+              `Redirect without location from ${currentUrl}`,
+              currentUrl
+            );
+          }
+          if (redirectCount >= FetchHttpClient.MAX_REDIRECTS) {
+            throw new HttpError(400, `Too many redirects from ${args.url}`, currentUrl);
+          }
+          redirectCount += 1;
+          currentUrl = this.resolveRedirectTarget(currentUrl, location);
+          // 301/302/303 convert to GET per fetch spec (strip body + content headers).
+          // 307/308 preserve method + body.
+          if (status === 303 || ((status === 301 || status === 302) && currentOptions.method !== "GET" && currentOptions.method !== "HEAD")) {
+            const { ...rest } = currentOptions;
+            const headers = new Headers(rest.headers);
+            headers.delete("content-type");
+            headers.delete("content-length");
+            currentOptions = { ...rest, method: "GET", body: undefined, headers };
+          }
+          continue;
+        }
+
         if (!this.shouldRetryStatus(response.status) || attempt >= args.retries) {
-          return await this.bufferResponse(response, args.url);
+          return await this.bufferResponse(response, currentUrl);
         }
 
         await this.discardResponse(response);
@@ -165,6 +253,7 @@ export class FetchHttpClient implements IHttpClient {
       } finally {
         clearTimeout(timeoutId);
         args.signal?.removeEventListener("abort", onAbort);
+        release();
       }
 
       attempt += 1;
@@ -210,7 +299,7 @@ export class FetchHttpClient implements IHttpClient {
   }
 
   private async acquireHostSlot(url: string, signal?: AbortSignal): Promise<() => void> {
-    const host = new URL(url).host;
+    const host = parseScrapeHost(url);
     const active = this.activeByHost.get(host) ?? 0;
     if (active < this.defaultConfig.maxConcurrencyPerHost) {
       this.activeByHost.set(host, active + 1);

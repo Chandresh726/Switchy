@@ -28,10 +28,33 @@ function parseBoolean(value: string | null | undefined, defaultValue: boolean): 
   return value === "true";
 }
 
-function parseNumber(value: string | null | undefined, defaultValue: number): number {
+function parseNumber(
+  value: string | null | undefined,
+  defaultValue: number,
+  min?: number,
+  max?: number,
+  settingKey = "unknown"
+): number {
   if (value === undefined || value === null) return defaultValue;
-  const parsed = parseInt(value, 10);
-  return isNaN(parsed) ? defaultValue : parsed;
+  const trimmed = value.trim();
+  if (!/^-?\d+$/.test(trimmed)) {
+    console.warn(`[matcher] Invalid ${settingKey}="${value}", using default ${defaultValue}`);
+    return defaultValue;
+  }
+  const parsed = parseInt(trimmed, 10);
+  if (isNaN(parsed)) {
+    console.warn(`[matcher] Invalid ${settingKey}="${value}", using default ${defaultValue}`);
+    return defaultValue;
+  }
+  if (min !== undefined && parsed < min) {
+    console.warn(`[matcher] ${settingKey}=${parsed} below min ${min}, clamping`);
+    return min;
+  }
+  if (max !== undefined && parsed > max) {
+    console.warn(`[matcher] ${settingKey}=${parsed} above max ${max}, clamping`);
+    return max;
+  }
+  return parsed;
 }
 
 export async function getMatcherConfig(): Promise<MatcherConfig> {
@@ -61,27 +84,45 @@ export async function getMatcherConfig(): Promise<MatcherConfig> {
       DEFAULT_MATCHER_CONFIG.jobAnalysisReasoningEffort,
     batchSize: parseNumber(
       settingsMap.get("matcher_batch_size"),
-      DEFAULT_MATCHER_CONFIG.batchSize
+      DEFAULT_MATCHER_CONFIG.batchSize,
+      1,
+      10,
+      "matcher_batch_size"
     ),
     maxRetries: parseNumber(
       settingsMap.get("matcher_max_retries"),
-      DEFAULT_MATCHER_CONFIG.maxRetries
+      DEFAULT_MATCHER_CONFIG.maxRetries,
+      1,
+      10,
+      "matcher_max_retries"
     ),
     concurrencyLimit: parseNumber(
       settingsMap.get("matcher_concurrency_limit"),
-      DEFAULT_MATCHER_CONFIG.concurrencyLimit
+      DEFAULT_MATCHER_CONFIG.concurrencyLimit,
+      1,
+      10,
+      "matcher_concurrency_limit"
     ),
     timeoutMs: parseNumber(
       settingsMap.get("matcher_timeout_ms"),
-      DEFAULT_MATCHER_CONFIG.timeoutMs
+      DEFAULT_MATCHER_CONFIG.timeoutMs,
+      5000,
+      120000,
+      "matcher_timeout_ms"
     ),
     backoffBaseDelay: parseNumber(
       settingsMap.get("matcher_backoff_base_delay"),
-      DEFAULT_MATCHER_CONFIG.backoffBaseDelay
+      DEFAULT_MATCHER_CONFIG.backoffBaseDelay,
+      0,
+      60000,
+      "matcher_backoff_base_delay"
     ),
     backoffMaxDelay: parseNumber(
       settingsMap.get("matcher_backoff_max_delay"),
-      DEFAULT_MATCHER_CONFIG.backoffMaxDelay
+      DEFAULT_MATCHER_CONFIG.backoffMaxDelay,
+      0,
+      120000,
+      "matcher_backoff_max_delay"
     ),
     autoMatchAfterScrape: parseBoolean(
       settingsMap.get("matcher_auto_match_after_scrape"),

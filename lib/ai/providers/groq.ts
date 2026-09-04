@@ -1,29 +1,12 @@
 import { createGroq } from "@ai-sdk/groq";
-import type { LanguageModel } from "ai";
-import { BaseProvider } from "./base-provider";
-import type { AIProvider, ModelConfig, ProviderConfig } from "./types";
+
+import { makeSdkProvider } from "./base-provider";
 
 /**
- * Groq provider implementation
+ * Groq provider implementation (via shared SDK factory)
  */
-class GroqProvider extends BaseProvider {
-  readonly id: AIProvider = "groq";
-  readonly name = "Groq";
-  readonly requiresApiKey = true;
-
-  protected createLanguageModel(
-    config: ModelConfig,
-    _providerConfig: ProviderConfig
-  ): LanguageModel {
-    const groq = createGroq({
-      apiKey: _providerConfig.apiKey,
-    });
-
-    return groq(config.modelId);
-  }
-}
-
-/**
- * Singleton instance
- */
-export const groqProvider = new GroqProvider();
+export const groqProvider = makeSdkProvider({
+  id: "groq",
+  name: "Groq",
+  createClient: (apiKey) => createGroq({ apiKey }),
+});

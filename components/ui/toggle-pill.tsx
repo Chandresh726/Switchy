@@ -1,3 +1,5 @@
+"use client";
+
 import { cn } from "@/lib/utils";
 
 interface TogglePillProps {
@@ -5,11 +7,15 @@ interface TogglePillProps {
   onClick: () => void;
   children: React.ReactNode;
   className?: string;
+  ariaLabel?: string;
 }
 
-export function TogglePill({ selected, onClick, children, className }: TogglePillProps) {
+export function TogglePill({ selected, onClick, children, className, ariaLabel }: TogglePillProps) {
   return (
     <button
+      type="button"
+      aria-pressed={selected}
+      aria-label={ariaLabel}
       onClick={onClick}
       className={cn(
         "inline-flex h-7 items-center px-3 text-xs font-medium transition-colors",
