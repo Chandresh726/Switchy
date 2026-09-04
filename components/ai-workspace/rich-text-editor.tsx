@@ -52,19 +52,45 @@ export function RichTextEditor({
   };
 
   const handleBold = () => {
-    if (readOnly || disabled) return;
-    document.execCommand("bold");
+    if (readOnly || disabled || !editorRef.current) return;
+    editorRef.current.focus();
+    if (typeof document.queryCommandSupported !== "function" || document.queryCommandSupported("bold")) {
+      document.execCommand("bold");
+    } else {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+        const strong = document.createElement("strong");
+        try {
+          selection.getRangeAt(0).surroundContents(strong);
+        } catch {
+          // Fall back to no-op for complex selections; selection is preserved.
+        }
+      }
+    }
     emitChange();
   };
 
   const handleLink = () => {
-    if (readOnly || disabled) return;
+    if (readOnly || disabled || !editorRef.current) return;
+    editorRef.current.focus();
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) return;
+    const range = selection.getRangeAt(0);
+    if (!editorRef.current.contains(range.commonAncestorContainer)) return;
     const input = window.prompt("Enter URL", "https://");
     if (!input) return;
     const href = normalizeUrl(input);
     if (!href) return;
-
-    document.execCommand("createLink", false, href);
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    try {
+      range.surroundContents(anchor);
+    } catch {
+      return;
+    }
+    selection.removeAllRanges();
     emitChange();
   };
 
@@ -95,6 +121,7 @@ export function RichTextEditor({
             }}
             onClick={handleBold}
             title="Bold"
+            aria-label="Bold"
           >
             <Bold className="h-3.5 w-3.5" />
           </Button>
@@ -108,6 +135,7 @@ export function RichTextEditor({
             }}
             onClick={handleLink}
             title="Insert link"
+            aria-label="Insert link from selection"
           >
             <Link2 className="h-3.5 w-3.5" />
           </Button>
@@ -125,6 +153,9 @@ export function RichTextEditor({
         suppressContentEditableWarning
         onInput={emitChange}
         onClick={handleEditorClick}
+        role="textbox"
+        aria-multiline="true"
+        aria-label="Cover letter editor"
         aria-readonly={isLocked}
       />
     </div>

@@ -1,29 +1,12 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import type { LanguageModel } from "ai";
-import { BaseProvider } from "./base-provider";
-import type { AIProvider, ModelConfig, ProviderConfig } from "./types";
+
+import { makeSdkProvider } from "./base-provider";
 
 /**
- * OpenAI provider implementation
+ * OpenAI provider implementation (via shared SDK factory)
  */
-export class OpenAIProvider extends BaseProvider {
-  readonly id: AIProvider = "openai";
-  readonly name = "OpenAI";
-  readonly requiresApiKey = true;
-
-  protected createLanguageModel(
-    config: ModelConfig,
-    _providerConfig: ProviderConfig
-  ): LanguageModel {
-    const openai = createOpenAI({
-      apiKey: _providerConfig.apiKey,
-    });
-
-    return openai(config.modelId);
-  }
-}
-
-/**
- * Singleton instance
- */
-export const openaiProvider = new OpenAIProvider();
+export const openaiProvider = makeSdkProvider({
+  id: "openai",
+  name: "OpenAI",
+  createClient: (apiKey) => createOpenAI({ apiKey }),
+});

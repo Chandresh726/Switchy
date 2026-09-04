@@ -32,8 +32,8 @@ export const DEFAULT_SCRAPE_COMPANY_PIPELINE_CONFIG: ScrapeCompanyPipelineConfig
 
 const ARCHIVABLE_JOB_STATUSES = ["new", "viewed", "interested", "rejected"] as const;
 const ARCHIVABLE_JOB_STATUS_SET: ReadonlySet<string> = new Set(ARCHIVABLE_JOB_STATUSES);
-const UBER_ARCHIVE_MISSING_ABSOLUTE_THRESHOLD = 5;
-const UBER_ARCHIVE_MISSING_RATIO_THRESHOLD = 0.05;
+const PARTIAL_LISTING_MISSING_ABSOLUTE_THRESHOLD = 5;
+const PARTIAL_LISTING_MISSING_RATIO_THRESHOLD = 0.05;
 const SAFE_HYDRATION_MATCH_REASONS: DeduplicationMatchReason[] = ["externalId", "url"];
 
 class ScrapingLogWriteError extends Error {
@@ -129,7 +129,6 @@ export class ScrapeCompanyPipeline {
       const existingJobs = await this.repository.getExistingJobs(companyId);
       const existingExternalIds = new Set<string>(
         existingJobs
-          .filter((job) => this.hasNonEmptyDescription(job.description))
           .map((job) => job.externalId)
           .filter((externalId): externalId is string => Boolean(externalId))
       );
@@ -202,6 +201,32 @@ export class ScrapeCompanyPipeline {
         });
       }
 
+      const httpStatus =
+        error instanceof Error
+          ? (error as Error & { status?: unknown }).status
+          : undefined;
+      const retryableStatus =
+        typeof httpStatus === "number" &&
+        (httpStatus === 408 ||
+          httpStatus === 425 ||
+          httpStatus === 429 ||
+          httpStatus === 502 ||
+          httpStatus === 503 ||
+          httpStatus === 504 ||
+          (httpStatus >= 500 && httpStatus < 600));
+      const lowerMessage = errorMessage.toLowerCase();
+      const retryable =
+        retryableStatus ||
+        (error instanceof Error &&
+          (error.name === "ScrapeAbortError" ||
+            lowerMessage.includes("timeout") ||
+            lowerMessage.includes("timed out") ||
+            lowerMessage.includes("econnreset") ||
+            lowerMessage.includes("econnrefused") ||
+            lowerMessage.includes("econnaborted") ||
+            lowerMessage.includes("rate limit") ||
+            lowerMessage.includes("too many requests") ||
+            lowerMessage.includes("service unavailable")));
       return this.createFetchResult({
         companyId,
         companyName,
@@ -213,7 +238,7 @@ export class ScrapeCompanyPipeline {
         jobsFiltered: 0,
         jobsArchived: 0,
         error: errorMessage,
-        retryable: true,
+        retryable,
         duration: Date.now() - startTime,
       });
     }
@@ -340,8 +365,8 @@ export class ScrapeCompanyPipeline {
     const archiveMissing =
       scraperResult.listingCompleteness === "complete" &&
       !(
-        platform === "uber" &&
-        this.shouldSkipUberArchival(openExternalIds, existingJobs)
+        (platform === "uber" || platform === "oracle") &&
+        this.shouldSkipIncompleteArchival(openExternalIds, existingJobs)
       );
 
     const dedupeResult = this.deduplicationService.batchDeduplicate(
@@ -429,7 +454,7 @@ export class ScrapeCompanyPipeline {
     };
   }
 
-  private shouldSkipUberArchival(
+  private shouldSkipIncompleteArchival(
     openExternalIds: string[],
     existingJobs: Array<{
       id: number;
@@ -455,8 +480,8 @@ export class ScrapeCompanyPipeline {
     }, 0);
 
     const threshold = Math.max(
-      UBER_ARCHIVE_MISSING_ABSOLUTE_THRESHOLD,
-      Math.ceil(archivableJobs.length * UBER_ARCHIVE_MISSING_RATIO_THRESHOLD)
+      PARTIAL_LISTING_MISSING_ABSOLUTE_THRESHOLD,
+      Math.ceil(archivableJobs.length * PARTIAL_LISTING_MISSING_RATIO_THRESHOLD)
     );
 
     return missingCount > threshold;

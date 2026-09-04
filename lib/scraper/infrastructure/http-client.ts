@@ -44,6 +44,46 @@ interface HostWaiter {
   onAbort?: () => void;
 }
 
+function isBlockedScrapeHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (
+    normalized === "localhost" ||
+    normalized === "0.0.0.0" ||
+    normalized === "127.0.0.1" ||
+    normalized === "::1" ||
+    normalized === "::" ||
+    normalized === "169.254.169.254" ||
+    normalized.endsWith(".localhost") ||
+    normalized.endsWith(".internal") ||
+    normalized.startsWith("metadata.")
+  ) {
+    return true;
+  }
+  if (normalized.startsWith("127.")) return true;
+  if (normalized.startsWith("10.") || normalized.startsWith("192.168.")) return true;
+  const m172 = normalized.match(/^172\.(\d+)\./);
+  if (m172 && Number(m172[1]) >= 16 && Number(m172[1]) <= 31) return true;
+  return false;
+}
+
+function parseScrapeHost(url: string): string {
+  let hostname: string;
+  let host: string;
+  try {
+    const parsed = new URL(url);
+    hostname = parsed.hostname.toLowerCase();
+    host = parsed.host.toLowerCase();
+  } catch {
+    const err = new Error(`Invalid scrape URL: ${url}`);
+    (err as Error & { url?: string }).url = url;
+    throw err;
+  }
+  if (!hostname || isBlockedScrapeHostname(hostname)) {
+    throw new Error(`Blocked scrape host: ${hostname || url}`);
+  }
+  return host;
+}
+
 export class FetchHttpClient implements IHttpClient {
   private readonly defaultConfig: HttpClientConfig;
   private readonly activeByHost = new Map<string, number>();
@@ -210,7 +250,7 @@ export class FetchHttpClient implements IHttpClient {
   }
 
   private async acquireHostSlot(url: string, signal?: AbortSignal): Promise<() => void> {
-    const host = new URL(url).host;
+    const host = parseScrapeHost(url);
     const active = this.activeByHost.get(host) ?? 0;
     if (active < this.defaultConfig.maxConcurrencyPerHost) {
       this.activeByHost.set(host, active + 1);

@@ -458,6 +458,26 @@ export async function saveManualVariant(input: {
   return toContentResponse(persisted.content, persisted.history);
 }
 
+export async function deleteGeneratedContent(
+  contentId: number,
+  database: typeof db = db
+): Promise<boolean> {
+  const existing = await database
+    .select({ id: aiGeneratedContent.id })
+    .from(aiGeneratedContent)
+    .where(eq(aiGeneratedContent.id, contentId))
+    .limit(1);
+  if (!existing[0]) return false;
+  // Sync transaction: better-sqlite3 only. Must become async if driver changes.
+  database.transaction((tx) => {
+    tx.delete(aiGenerationHistory)
+      .where(eq(aiGenerationHistory.contentId, contentId))
+      .run();
+    tx.delete(aiGeneratedContent).where(eq(aiGeneratedContent.id, contentId)).run();
+  });
+  return true;
+}
+
 export async function recordVariantSignal(
   variantId: number,
   action: "selected" | "copied" | "discarded",

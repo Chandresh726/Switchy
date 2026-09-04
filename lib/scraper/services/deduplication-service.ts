@@ -23,12 +23,11 @@ function hasMeaningfulExternalId(externalId: string | null | undefined): externa
 }
 
 function locationsMatch(locA: string | null | undefined, locB: string | null | undefined): boolean {
-  if (!locA && !locB) return true;
-  if (!locA || !locB) return true;
+  if (!locA || !locB) return false;
   const a = locA.toLowerCase().trim();
   const b = locB.toLowerCase().trim();
-  if (a === b) return true;
-  return a.includes(b) || b.includes(a);
+  if (!a || !b) return false;
+  return a === b;
 }
 
 function compareTitleSimilarity(a: string, b: string): number {
@@ -58,7 +57,9 @@ export class TitleBasedDeduplicationService implements IDeduplicationService {
   constructor(private readonly config: DeduplicationConfig = DEFAULT_DEDUPLICATION_CONFIG) {}
 
   deduplicate(job: ScrapedJob, existingJobs: ExistingJob[]): DeduplicationResult {
-    const exactMatch = existingJobs.find((ej) => ej.externalId === job.externalId);
+    const exactMatch = hasMeaningfulExternalId(job.externalId)
+      ? existingJobs.find((ej) => ej.externalId === job.externalId)
+      : undefined;
 
     if (exactMatch) {
       return {
@@ -69,7 +70,10 @@ export class TitleBasedDeduplicationService implements IDeduplicationService {
       };
     }
 
-    const urlMatch = existingJobs.find((ej) => ej.url === job.url);
+    const normalizedUrl = job.url?.trim();
+    const urlMatch = normalizedUrl
+      ? existingJobs.find((ej) => ej.url?.trim() === normalizedUrl)
+      : undefined;
 
     if (urlMatch) {
       return {

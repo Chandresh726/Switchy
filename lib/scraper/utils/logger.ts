@@ -47,7 +47,7 @@ export class ScraperLogger {
   }
 
   error(message: string): void {
-    console.log(`[Scraper] ${this.companyName} - Error: ${message}`);
+    console.error(`[Scraper] ${this.companyName} - Error: ${message}`);
   }
 
   private formatFilterBreakdown(breakdown: FilterBreakdown): string {

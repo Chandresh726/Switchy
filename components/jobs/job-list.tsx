@@ -467,12 +467,11 @@ export function JobList() {
         </div>
       ) : null}
 
-      {/* Filters - hide status filter when on Applied/Saved tab */}
+      {/* Filters - status is driven by active tab (see effectiveStatus) */}
       <JobFilters
         filters={filters}
         onFiltersChange={handleFiltersChange}
         companies={companies}
-        hideStatusFilter={activeTab !== "all"}
         totalCount={totalCount}
         isFetching={isFetching}
       />
@@ -551,6 +550,7 @@ export function JobList() {
                   <span className="text-sm text-muted-foreground">Show:</span>
                   <select
                     value={pageSize}
+                    aria-label="Jobs per page"
                     onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
                     className="h-8 rounded border border-border bg-card px-2 text-sm text-foreground"
                   >

@@ -9,7 +9,7 @@ vi.mock("@ai-sdk/openai-compatible", () => ({
   createOpenAICompatible: mocks.createOpenAICompatible,
 }));
 
-import { NvidiaProvider } from "@/lib/ai/providers/nvidia";
+import { nvidiaProvider } from "@/lib/ai/providers/nvidia";
 
 describe("NvidiaProvider", () => {
   beforeEach(() => {
@@ -18,7 +18,7 @@ describe("NvidiaProvider", () => {
   });
 
   it("enables native JSON schema output for NVIDIA chat models", () => {
-    const provider = new NvidiaProvider();
+    const provider = nvidiaProvider;
 
     expect(provider.createModel({
       config: { modelId: "openai/gpt-oss-120b" },

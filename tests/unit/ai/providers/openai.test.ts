@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { OpenAIProvider } from "@/lib/ai/providers/openai";
+import { openaiProvider } from "@/lib/ai/providers/openai";
 
 describe("OpenAIProvider", () => {
-  const provider = new OpenAIProvider();
+  const provider = openaiProvider;
 
   it("does not guess reasoning options when the model catalog has no effort list", () => {
     expect(

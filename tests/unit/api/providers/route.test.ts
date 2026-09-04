@@ -151,7 +151,7 @@ describe("GET /api/providers", () => {
     const response = await POST(request);
     const body = await response.json();
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
     expect(mocks.createProvider).toHaveBeenCalledWith({
       provider: "custom",
       displayName: "Local proxy",
@@ -218,7 +218,7 @@ describe("GET /api/providers", () => {
     const response = await POST(request);
     const body = await response.json();
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
     expect(mocks.getLocalCLIStatus).toHaveBeenCalledWith("codex_cli", { forceRefresh: true });
     expect(mocks.createProvider).toHaveBeenCalledWith({
       provider: "codex_cli",

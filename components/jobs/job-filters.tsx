@@ -25,8 +25,6 @@ interface JobFiltersProps {
   filters: JobFilters;
   onFiltersChange: (filters: JobFilters) => void;
   companies: { id: number; name: string }[];
-  departments?: string[];
-  hideStatusFilter?: boolean;
   totalCount?: number;
   isFetching?: boolean;
 }
@@ -514,6 +512,7 @@ export function JobFilters({
         {/* Score Filter */}
         <select
           value={filters.minScore}
+          aria-label="Minimum match score"
           onChange={(e) =>
             onFiltersChange({ ...filters, minScore: e.target.value, matchBands: "" })
           }
@@ -534,6 +533,7 @@ export function JobFilters({
           <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
           <select
             value={filters.sortBy}
+            aria-label="Sort jobs by"
             onChange={(e) => {
               const selected = SORT_OPTIONS.find((option) => option.value === e.target.value);
               if (selected) {
@@ -549,6 +549,7 @@ export function JobFilters({
             ))}
           </select>
           <button
+            type="button"
             onClick={() =>
               onFiltersChange({
                 ...filters,
@@ -557,6 +558,7 @@ export function JobFilters({
             }
             className="p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             title={filters.sortOrder === "desc" ? "Descending" : "Ascending"}
+            aria-label={filters.sortOrder === "desc" ? "Sort descending" : "Sort ascending"}
           >
             {filters.sortOrder === "desc" ? "↓" : "↑"}
           </button>

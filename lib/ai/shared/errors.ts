@@ -76,18 +76,6 @@ export class AIError extends Error {
   }
 }
 
-class AITimeoutError extends AIError {
-  constructor(message: string, cause?: Error) {
-    super({
-      type: "timeout",
-      message,
-      cause,
-      retryable: true,
-    });
-    this.name = "AITimeoutError";
-  }
-}
-
 export class AIRateLimitError extends AIError {
   constructor(message: string, cause?: Error, retryAfterMs?: number) {
     super({
@@ -98,30 +86,6 @@ export class AIRateLimitError extends AIError {
       retryAfterMs: retryAfterMs ?? getRetryAfterMs(cause),
     });
     this.name = "AIRateLimitError";
-  }
-}
-
-class AIValidationError extends AIError {
-  constructor(message: string, cause?: Error) {
-    super({
-      type: "validation",
-      message,
-      cause,
-      retryable: false,
-    });
-    this.name = "AIValidationError";
-  }
-}
-
-class AINetworkError extends AIError {
-  constructor(message: string, cause?: Error) {
-    super({
-      type: "network",
-      message,
-      cause,
-      retryable: true,
-    });
-    this.name = "AINetworkError";
   }
 }
 
@@ -238,17 +202,11 @@ export function categorizeError(error: Error): AIErrorType {
     return "generation_failed";
   }
 
-  if (error instanceof AIValidationError) {
-    return "validation";
-  }
-  if (error instanceof AITimeoutError) {
-    return "timeout";
+  if (error instanceof AIError) {
+    return error.type;
   }
   if (error instanceof AIRateLimitError) {
     return "rate_limit";
-  }
-  if (error instanceof AINetworkError) {
-    return "network";
   }
   if (name.includes("NoObjectGeneratedError") || message.includes("no object generated")) {
     return "no_object";

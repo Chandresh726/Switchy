@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
 import { handleApiError } from "@/lib/api";
 import { getSchedulerStatus } from "@/lib/jobs/scheduler";
-
-const NO_STORE_HEADERS = {
-  "Cache-Control": "no-store, no-cache, must-revalidate",
-};
+import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
 export async function GET(request: Request) {
   try {

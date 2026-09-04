@@ -1,8 +1,7 @@
-import { afterEach, vi } from "vitest";
+import { afterEach } from "vitest";
+
+import { resetTestDoubles } from "./base";
 
 afterEach(() => {
-  vi.useRealTimers();
-  vi.unstubAllEnvs();
-  vi.unstubAllGlobals();
-  vi.clearAllMocks();
+  resetTestDoubles();
 });

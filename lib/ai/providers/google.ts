@@ -1,29 +1,12 @@
 import { createGoogle } from "@ai-sdk/google";
-import type { LanguageModel } from "ai";
-import { BaseProvider } from "./base-provider";
-import type { AIProvider, ModelConfig, ProviderConfig } from "./types";
+
+import { makeSdkProvider } from "./base-provider";
 
 /**
- * Google Gemini provider using API Key
+ * Google Gemini provider using API Key (via shared SDK factory)
  */
-class GoogleProvider extends BaseProvider {
-  readonly id: AIProvider = "gemini_api_key";
-  readonly name = "Google Gemini";
-  readonly requiresApiKey = true;
-
-  protected createLanguageModel(
-    config: ModelConfig,
-    _providerConfig: ProviderConfig
-  ): LanguageModel {
-    const google = createGoogle({
-      apiKey: _providerConfig.apiKey,
-    });
-
-    return google(config.modelId);
-  }
-}
-
-/**
- * Singleton instance
- */
-export const googleProvider = new GoogleProvider();
+export const googleProvider = makeSdkProvider({
+  id: "gemini_api_key",
+  name: "Google Gemini",
+  createClient: (apiKey) => createGoogle({ apiKey }),
+});

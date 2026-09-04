@@ -1,10 +1,9 @@
 import { cleanup } from "@testing-library/react";
-import { afterEach, vi } from "vitest";
+import { afterEach } from "vitest";
+
+import { resetTestDoubles } from "./base";
 
 afterEach(() => {
   cleanup();
-  vi.useRealTimers();
-  vi.unstubAllEnvs();
-  vi.unstubAllGlobals();
-  vi.clearAllMocks();
+  resetTestDoubles();
 });

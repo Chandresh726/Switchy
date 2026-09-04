@@ -117,7 +117,7 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
         );
       }
 
-      const apiUrl = `${this.config.baseUrl}/v0/postings/${companySlug}?mode=json`;
+      const apiUrl = `${this.config.baseUrl}/v0/postings/${encodeURIComponent(companySlug)}?mode=json`;
 
       const response = await this.fetchResponse(apiUrl, {
         headers: this.jsonRequestHeaders(),

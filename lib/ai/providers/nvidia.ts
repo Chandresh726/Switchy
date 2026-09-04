@@ -1,28 +1,20 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { LanguageModel } from "ai";
-import { BaseProvider } from "./base-provider";
-import type { AIProvider, ModelConfig, ProviderConfig } from "./types";
+
+import { makeSdkProvider } from "./base-provider";
 
 const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
 
-export class NvidiaProvider extends BaseProvider {
-  readonly id: AIProvider = "nvidia";
-  readonly name = "NVIDIA (NIM)";
-  readonly requiresApiKey = true;
-
-  protected createLanguageModel(
-    config: ModelConfig,
-    providerConfig: ProviderConfig
-  ): LanguageModel {
-    const nvidia = createOpenAICompatible({
+/**
+ * NVIDIA (NIM) provider (via shared SDK factory)
+ */
+export const nvidiaProvider = makeSdkProvider({
+  id: "nvidia",
+  name: "NVIDIA (NIM)",
+  createClient: (apiKey) =>
+    createOpenAICompatible({
       name: "nvidia",
       baseURL: NVIDIA_BASE_URL,
-      apiKey: providerConfig.apiKey,
+      apiKey,
       supportsStructuredOutputs: true,
-    });
-
-    return nvidia(config.modelId);
-  }
-}
-
-export const nvidiaProvider = new NvidiaProvider();
+    }),
+});

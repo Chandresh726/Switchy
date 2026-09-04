@@ -135,7 +135,7 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
         );
       }
 
-      const apiUrl = `${this.config.baseUrl}/v1/boards/${boardToken}/jobs?content=true`;
+      const apiUrl = `${this.config.baseUrl}/v1/boards/${encodeURIComponent(boardToken)}/jobs?content=true`;
 
       const response = await this.fetchResponse(apiUrl, {
         headers: this.jsonRequestHeaders(),
@@ -144,7 +144,7 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
       let payload: { jobs: unknown[] };
 
       if (!response.ok) {
-        const altApiUrl = `https://boards.greenhouse.io/${boardToken}/embed/job_board/jobs.json`;
+        const altApiUrl = `https://boards.greenhouse.io/${encodeURIComponent(boardToken)}/embed/job_board/jobs.json`;
         const altResponse = await this.fetchResponse(altApiUrl, {
           headers: this.jsonRequestHeaders(),
         });

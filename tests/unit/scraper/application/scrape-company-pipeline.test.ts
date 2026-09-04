@@ -228,7 +228,7 @@ describe("ScrapeCompanyPipeline", () => {
 
     expect(result).toMatchObject({
       outcome: "error",
-      retryable: true,
+      retryable: false,
       error: "Failed to persist scrape error log: database write failed after dispatch",
     });
     expect(repository.createScrapingLog).toHaveBeenCalledTimes(1);
@@ -588,7 +588,7 @@ describe("ScrapeCompanyPipeline", () => {
       company.careersUrl,
       company.platform,
       expect.objectContaining({
-        existingExternalIds: new Set<string>(),
+        existingExternalIds: new Set<string>(["greenhouse-acme-1"]),
       })
     );
 

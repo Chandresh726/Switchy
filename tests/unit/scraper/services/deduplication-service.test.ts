@@ -43,6 +43,7 @@ describe("deduplication service", () => {
         externalId: "existing-external-id",
         title: "Software Engineer",
         url: "https://jobs.example.com/existing",
+        location: "Remote",
         status: "new",
         description: "existing description",
       },
@@ -53,6 +54,7 @@ describe("deduplication service", () => {
         externalId: "",
         title: "Software Engineer II",
         url: "https://jobs.example.com/new",
+        location: "Remote",
       },
       existingJobs
     );
@@ -60,6 +62,44 @@ describe("deduplication service", () => {
     expect(result.isNew).toBe(false);
     expect(result.existingJobId).toBe(1);
     expect(result.matchReason).toBe("titleSimilarity");
+  });
+
+  it("treats missing or mismatched locations as non-matches for fuzzy titles", () => {
+    const service = new TitleBasedDeduplicationService({
+      titleSimilarityThreshold: 0.3,
+    });
+    const existingJobs = [
+      {
+        id: 1,
+        externalId: "",
+        title: "Software Engineer",
+        url: "https://jobs.example.com/existing",
+        location: "New York, NY",
+        status: "new",
+        description: "existing description",
+      },
+    ];
+
+    const missingLocation = service.deduplicate(
+      {
+        externalId: "",
+        title: "Software Engineer",
+        url: "https://jobs.example.com/new",
+      },
+      existingJobs
+    );
+    expect(missingLocation.isNew).toBe(true);
+
+    const yorkVsNewYork = service.deduplicate(
+      {
+        externalId: "",
+        title: "Software Engineer",
+        url: "https://jobs.example.com/new-2",
+        location: "York",
+      },
+      existingJobs
+    );
+    expect(yorkVsNewYork.isNew).toBe(true);
   });
 
   it("does not collapse distinct Greenhouse jobs with different external IDs into a fuzzy duplicate", () => {

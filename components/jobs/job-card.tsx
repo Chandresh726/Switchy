@@ -95,10 +95,7 @@ export function JobCard({ job }: JobCardProps) {
   };
 
   return (
-    <Link
-      href={`/jobs/${job.id}`}
-      className="group block rounded-lg border border-border bg-card/70 p-3 transition-all hover:border-border"
-    >
+    <article className="group block rounded-lg border border-border bg-card/70 p-3 transition-all hover:border-border">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
@@ -117,7 +114,11 @@ export function JobCard({ job }: JobCardProps) {
           )}
 
           <div className="min-w-0 flex-1">
-            <h3 className="font-medium text-foreground truncate">{job.title}</h3>
+            <h3 className="font-medium text-foreground truncate">
+              <Link href={`/jobs/${job.id}`} className="hover:underline">
+                {job.title}
+              </Link>
+            </h3>
             <p className="flex items-center gap-1 text-sm text-muted-foreground">
               <Building2 className="h-3.5 w-3.5 shrink-0" />
               {job.company.name}
@@ -179,7 +180,7 @@ export function JobCard({ job }: JobCardProps) {
       {/* Actions */}
       <div className="mt-3 flex items-center justify-between border-t border-border pt-2.5">
         {/* Left side - Save and Mark Applied buttons */}
-        <div className="flex items-center gap-2" onClick={(e) => e.preventDefault()}>
+        <div className="flex items-center gap-2">
           {/* Save/Unsave Button */}
           {job.status === "interested" ? (
             <Button
@@ -239,7 +240,7 @@ export function JobCard({ job }: JobCardProps) {
         </div>
 
         {/* Right side - Apply button */}
-        <div onClick={(e) => e.preventDefault()}>
+        <div>
           <ApplyButton
             url={job.url}
             size="xs"
@@ -257,6 +258,6 @@ export function JobCard({ job }: JobCardProps) {
           />
         </div>
       </div>
-    </Link>
+    </article>
   );
 }

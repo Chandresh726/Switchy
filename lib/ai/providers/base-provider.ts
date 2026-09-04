@@ -78,14 +78,31 @@ export abstract class BaseProvider implements AIProviderInterface {
 
     return this.createLanguageModel(options.config, options.providerConfig);
   }
+}
 
-  /**
-   * Get generation options for a specific model configuration
-   * Public wrapper around getGenerationOptions
-   */
-  getProviderOptions(config: ModelConfig): Record<string, unknown> | undefined {
-    return this.getGenerationOptions(config, { apiKey: "" });
+/**
+ * Factory for trivial SDK providers that only differ by id/name/factory.
+ * Keeps anthropic/openai/google/groq/etc DRY.
+ */
+
+export function makeSdkProvider(args: {
+  id: AIProvider;
+  name: string;
+  createClient: (apiKey: string | undefined) => (modelId: string) => LanguageModel;
+}): AIProviderInterface {
+  const { id, name, createClient } = args;
+  class SdkProvider extends BaseProvider {
+    readonly id: AIProvider = id;
+    readonly name = name;
+    readonly requiresApiKey = true;
+    protected createLanguageModel(
+      config: ModelConfig,
+      providerConfig: ProviderConfig
+    ): LanguageModel {
+      return createClient(providerConfig.apiKey)(config.modelId);
+    }
   }
+  return new SdkProvider();
 }
 
 /**

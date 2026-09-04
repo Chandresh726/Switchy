@@ -155,7 +155,8 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
     );
   }
 
-  extractIdentifier(): string {
+  extractIdentifier(url: string): string | null {
+    void url;
     return "global";
   }
 

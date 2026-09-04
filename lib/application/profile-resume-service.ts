@@ -96,6 +96,12 @@ export async function uploadResume(file: File, shouldAutofill: boolean, signal: 
   }
   let resumeText = "";
   let resumeFileType: "pdf" | "doc" | "docx" | "txt" | "md" | undefined;
+  if (shouldAutofill && fileName.endsWith(".doc") && !fileName.endsWith(".docx")) {
+    throw new ValidationError(
+      "Legacy .doc files cannot be auto-parsed. Please upload PDF, DOCX, TXT, or MD for autofill, or turn autofill off.",
+      "unsupported_resume_autofill_format"
+    );
+  }
   if (shouldAutofill) {
     try {
       const extracted = await extractResumeText(file);
