@@ -112,21 +112,15 @@ export class FetchHttpClient implements IHttpClient {
       ...fetchOptions
     } = options;
     const signal = explicitSignal ?? getActiveScrapeSignal();
-    const release = await this.acquireHostSlot(url, signal);
-
-    try {
-      return await this.fetchWithRetry({
-        url,
-        options: fetchOptions,
-        retries,
-        baseDelay,
-        maxDelay,
-        timeout,
-        signal,
-      });
-    } finally {
-      release();
-    }
+    return await this.fetchWithRetry({
+      url,
+      options: fetchOptions,
+      retries,
+      baseDelay,
+      maxDelay,
+      timeout,
+      signal,
+    });
   }
 
   async get<T>(url: string, options: HttpRequestOptions = {}): Promise<T> {
@@ -181,9 +175,14 @@ export class FetchHttpClient implements IHttpClient {
   }): Promise<Response> {
     let attempt = 0;
     let currentUrl = args.url;
+    let currentOptions: RequestInit = { ...args.options };
+    let redirectCount = 0;
 
     while (true) {
       this.throwIfAborted(args.signal);
+      // Per-hop concurrency slot so cross-host redirects respect the target
+      // host's limit instead of reusing the origin host's slot.
+      const release = await this.acquireHostSlot(currentUrl, args.signal);
       const attemptController = new AbortController();
       const onAbort = () => attemptController.abort(args.signal?.reason);
       args.signal?.addEventListener("abort", onAbort, { once: true });
@@ -195,7 +194,7 @@ export class FetchHttpClient implements IHttpClient {
       try {
         const response = await fetch(currentUrl, {
           redirect: "manual",
-          ...args.options,
+          ...currentOptions,
           signal: attemptController.signal,
         });
 
@@ -203,22 +202,29 @@ export class FetchHttpClient implements IHttpClient {
           FetchHttpClient.REDIRECT_STATUSES.has(response.status)
         ) {
           const location = response.headers.get("location");
+          const status = response.status;
           await this.discardResponse(response);
           if (!location) {
             throw new HttpError(
-              response.status,
+              status,
               `Redirect without location from ${currentUrl}`,
               currentUrl
             );
           }
-          const redirectCount = (args as { __redirects?: number }).__redirects ?? 0;
           if (redirectCount >= FetchHttpClient.MAX_REDIRECTS) {
             throw new HttpError(400, `Too many redirects from ${args.url}`, currentUrl);
           }
-          (args as { __redirects?: number }).__redirects = redirectCount + 1;
+          redirectCount += 1;
           currentUrl = this.resolveRedirectTarget(currentUrl, location);
-          // New host => new concurrency slot on next loop iteration is handled
-          // by the outer fetch(); re-validate + refetch without consuming a retry.
+          // 301/302/303 convert to GET per fetch spec (strip body + content headers).
+          // 307/308 preserve method + body.
+          if (status === 303 || ((status === 301 || status === 302) && currentOptions.method !== "GET" && currentOptions.method !== "HEAD")) {
+            const { ...rest } = currentOptions;
+            const headers = new Headers(rest.headers);
+            headers.delete("content-type");
+            headers.delete("content-length");
+            currentOptions = { ...rest, method: "GET", body: undefined, headers };
+          }
           continue;
         }
 
@@ -247,6 +253,7 @@ export class FetchHttpClient implements IHttpClient {
       } finally {
         clearTimeout(timeoutId);
         args.signal?.removeEventListener("abort", onAbort);
+        release();
       }
 
       attempt += 1;

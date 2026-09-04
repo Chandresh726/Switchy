@@ -36,7 +36,12 @@ function parseNumber(
   settingKey = "unknown"
 ): number {
   if (value === undefined || value === null) return defaultValue;
-  const parsed = parseInt(value, 10);
+  const trimmed = value.trim();
+  if (!/^-?\d+$/.test(trimmed)) {
+    console.warn(`[matcher] Invalid ${settingKey}="${value}", using default ${defaultValue}`);
+    return defaultValue;
+  }
+  const parsed = parseInt(trimmed, 10);
   if (isNaN(parsed)) {
     console.warn(`[matcher] Invalid ${settingKey}="${value}", using default ${defaultValue}`);
     return defaultValue;

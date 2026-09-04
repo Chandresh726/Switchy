@@ -558,7 +558,7 @@ export function JobFilters({
             }
             className="p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             title={filters.sortOrder === "desc" ? "Descending" : "Ascending"}
-            aria-label={filters.sortOrder === "desc" ? "Sort descending" : "Sort ascending"}
+            aria-label={filters.sortOrder === "desc" ? "Switch to ascending sort" : "Switch to descending sort"}
           >
             {filters.sortOrder === "desc" ? "↓" : "↑"}
           </button>
