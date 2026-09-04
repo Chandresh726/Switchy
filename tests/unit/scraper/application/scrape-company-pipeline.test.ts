@@ -588,7 +588,7 @@ describe("ScrapeCompanyPipeline", () => {
       company.careersUrl,
       company.platform,
       expect.objectContaining({
-        existingExternalIds: new Set<string>(["greenhouse-acme-1"]),
+        existingExternalIds: new Set<string>(),
       })
     );
 

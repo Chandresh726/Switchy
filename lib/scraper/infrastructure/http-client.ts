@@ -153,6 +153,23 @@ export class FetchHttpClient implements IHttpClient {
     return response.json();
   }
 
+  private static readonly MAX_REDIRECTS = 5;
+  private static readonly REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+  private resolveRedirectTarget(currentUrl: string, location: string): string {
+    let target: string;
+    try {
+      target = new URL(location, currentUrl).toString();
+    } catch {
+      throw new HttpError(400, `Invalid redirect target: ${location}`, currentUrl);
+    }
+    // Re-validate every hop: blocks loopback/metadata/private-network targets.
+    // Note: hostname-string check only; DNS-rebinding (allowed name resolving
+    // to private IP) is out of scope and documented as a limitation.
+    parseScrapeHost(target);
+    return target;
+  }
+
   private async fetchWithRetry(args: {
     url: string;
     options: RequestInit;
@@ -163,6 +180,7 @@ export class FetchHttpClient implements IHttpClient {
     signal?: AbortSignal;
   }): Promise<Response> {
     let attempt = 0;
+    let currentUrl = args.url;
 
     while (true) {
       this.throwIfAborted(args.signal);
@@ -175,13 +193,37 @@ export class FetchHttpClient implements IHttpClient {
       );
 
       try {
-        const response = await fetch(args.url, {
+        const response = await fetch(currentUrl, {
+          redirect: "manual",
           ...args.options,
           signal: attemptController.signal,
         });
 
+        if (
+          FetchHttpClient.REDIRECT_STATUSES.has(response.status)
+        ) {
+          const location = response.headers.get("location");
+          await this.discardResponse(response);
+          if (!location) {
+            throw new HttpError(
+              response.status,
+              `Redirect without location from ${currentUrl}`,
+              currentUrl
+            );
+          }
+          const redirectCount = (args as { __redirects?: number }).__redirects ?? 0;
+          if (redirectCount >= FetchHttpClient.MAX_REDIRECTS) {
+            throw new HttpError(400, `Too many redirects from ${args.url}`, currentUrl);
+          }
+          (args as { __redirects?: number }).__redirects = redirectCount + 1;
+          currentUrl = this.resolveRedirectTarget(currentUrl, location);
+          // New host => new concurrency slot on next loop iteration is handled
+          // by the outer fetch(); re-validate + refetch without consuming a retry.
+          continue;
+        }
+
         if (!this.shouldRetryStatus(response.status) || attempt >= args.retries) {
-          return await this.bufferResponse(response, args.url);
+          return await this.bufferResponse(response, currentUrl);
         }
 
         await this.discardResponse(response);

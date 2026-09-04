@@ -127,8 +127,11 @@ export class ScrapeCompanyPipeline {
 
     try {
       const existingJobs = await this.repository.getExistingJobs(companyId);
+      // Hydration skip-set: only jobs with descriptions. Jobs with empty
+      // descriptions stay hydratable so later scrapes can backfill them.
       const existingExternalIds = new Set<string>(
         existingJobs
+          .filter((job) => this.hasNonEmptyDescription(job.description))
           .map((job) => job.externalId)
           .filter((externalId): externalId is string => Boolean(externalId))
       );

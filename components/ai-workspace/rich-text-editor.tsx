@@ -88,7 +88,14 @@ export function RichTextEditor({
     try {
       range.surroundContents(anchor);
     } catch {
-      return;
+      // Partial element selections (e.g. across <strong>/paragraphs) throw.
+      // Fall back to extract + wrap so the link still applies.
+      try {
+        anchor.appendChild(range.extractContents());
+        range.insertNode(anchor);
+      } catch {
+        return;
+      }
     }
     selection.removeAllRanges();
     emitChange();
