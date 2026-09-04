@@ -232,9 +232,9 @@ describe("local CLI connection status", () => {
     expect(mocks.saveStoredCatalog).toHaveBeenCalledTimes(1);
   });
 
-  it("restores reasoning capabilities from durable cache without execution-time discovery", async () => {
+  it("restores reasoning capabilities from a fresh durable cache without execution-time discovery", async () => {
     mocks.loadStoredCatalog.mockResolvedValue({
-      fetchedAt: 1,
+      fetchedAt: Date.now(),
       models: [{
         modelId: "gpt",
         label: "GPT",
@@ -252,10 +252,89 @@ describe("local CLI connection status", () => {
     expect(mocks.listCodexModels).not.toHaveBeenCalled();
   });
 
-  it("fails clearly instead of discovering or replacing a model during execution", async () => {
+  it("refreshes an expired catalog even when it still contains the model", async () => {
+    mocks.loadStoredCatalog.mockResolvedValue({
+      fetchedAt: 1,
+      models: [{
+        modelId: "gpt",
+        label: "GPT",
+        description: "",
+        supportsReasoning: true,
+        supportedReasoningEfforts: ["low"],
+        defaultReasoningEffort: "low",
+      }],
+    });
+    mocks.listCodexModels.mockResolvedValue([{
+      modelId: "gpt",
+      label: "GPT",
+      description: "",
+      supportsReasoning: true,
+      supportedReasoningEfforts: ["high"],
+      defaultReasoningEffort: "high",
+    }]);
+
+    await expect(getLocalCLIExecutionTarget("codex_cli", "gpt")).resolves.toMatchObject({
+      cliVersion: "1.0.0",
+    });
+    expect(mocks.listCodexModels).toHaveBeenCalledTimes(1);
+    expect(mocks.setCodexReasoning).toHaveBeenCalledWith("gpt", ["high"]);
+  });
+
+  it("rejects a model that a successful live refresh no longer returns", async () => {
+    mocks.loadStoredCatalog.mockResolvedValue({
+      fetchedAt: 1,
+      models: [{
+        modelId: "gpt",
+        label: "GPT",
+        description: "",
+        supportsReasoning: false,
+      }],
+    });
+    mocks.listCodexModels.mockResolvedValue([{
+      modelId: "other",
+      label: "Other",
+      description: "",
+      supportsReasoning: false,
+    }]);
+
+    await expect(getLocalCLIExecutionTarget("codex_cli", "gpt"))
+      .rejects.toMatchObject({ type: "invalid_model" });
+    expect(mocks.listCodexModels).toHaveBeenCalledTimes(1);
+    expect(mocks.setCodexReasoning).not.toHaveBeenCalled();
+  });
+
+  it("attempts one live refresh before failing on an unknown execution model", async () => {
     await expect(getLocalCLIExecutionTarget("opencode_cli", "openai/missing"))
       .rejects.toMatchObject({ type: "invalid_model" });
-    expect(mocks.listOpenCodeModels).not.toHaveBeenCalled();
+    expect(mocks.listOpenCodeModels).toHaveBeenCalledTimes(1);
+  });
+
+  it("heals a stale execution catalog with a live refresh when the model reappears", async () => {
+    mocks.loadStoredCatalog.mockResolvedValue({
+      fetchedAt: 1,
+      models: [{
+        modelId: "openai/stale",
+        label: "Stale",
+        description: "",
+        supportsReasoning: false,
+        upstreamProvider: "openai",
+      }],
+    });
+    mocks.listOpenCodeModels.mockResolvedValue([{
+      modelId: "openai/healed",
+      label: "Healed",
+      description: "",
+      supportsReasoning: true,
+      supportedReasoningEfforts: ["medium"],
+      defaultReasoningEffort: "medium",
+      upstreamProvider: "openai",
+    }]);
+
+    await expect(getLocalCLIExecutionTarget("opencode_cli", "openai/healed")).resolves.toMatchObject({
+      cliVersion: "2.0.0",
+    });
+    expect(mocks.listOpenCodeModels).toHaveBeenCalledTimes(1);
+    expect(mocks.saveStoredCatalog).toHaveBeenCalled();
   });
 
   it("retires the old process and removes durable capabilities after a path change", async () => {

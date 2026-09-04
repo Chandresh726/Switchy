@@ -243,6 +243,33 @@ export async function getLocalCLIModels(
   }
 }
 
+async function refreshLocalCLIModelForExecution(
+  provider: LocalCLIProvider,
+  modelId: string
+): Promise<{ refreshed: boolean; model?: ProviderModelDefinition }> {
+  // Background workers (e.g. post-scrape auto-match) may run with a stale or
+  // empty model catalog — for example after a restart dropped the in-memory
+  // cache while the durable catalog predates the configured model. Attempt a
+  // single live refresh so execution self-heals instead of failing or running
+  // on obsolete capability metadata until someone manually refreshes in
+  // Settings. The refresh also persists the catalog for future runs.
+  // A failed refresh reports refreshed: false so the caller can fall back to
+  // its cached entry; a successful refresh is authoritative, so a model that
+  // is absent from it resolves to no model (invalid_model) rather than a
+  // stale entry for something the CLI no longer exposes.
+  try {
+    const liveModels = await getLocalCLIModels(provider, { forceRefresh: true });
+    const filtered = liveModels.find((model) => model.modelId === modelId);
+    if (filtered) return { refreshed: true, model: filtered };
+    return {
+      refreshed: true,
+      model: modelCache.get(provider)?.models.find((model) => model.modelId === modelId),
+    };
+  } catch {
+    return { refreshed: false };
+  }
+}
+
 export async function getLocalCLIExecutionTarget(
   provider: LocalCLIProvider,
   modelId: string
@@ -259,9 +286,20 @@ export async function getLocalCLIExecutionTarget(
       message: "The configured local CLI executable is unavailable",
     });
   }
-  const cachedModels = modelCache.get(provider)?.models ??
-    (await loadStoredLocalCLICatalog(provider, { allowExpired: true }))?.models;
-  const selectedModel = cachedModels?.find((model) => model.modelId === modelId);
+  const memoryEntry = modelCache.get(provider);
+  const storedCatalog = memoryEntry
+    ? null
+    : await loadStoredLocalCLICatalog(provider, { allowExpired: true });
+  const cachedModels = memoryEntry?.models ?? storedCatalog?.models;
+  const catalogIsFresh = memoryEntry
+    ? memoryEntry.expiresAt > Date.now()
+    : storedCatalog !== null
+      && storedCatalog.fetchedAt + CLI_MODEL_CACHE_TTL_MS > Date.now();
+  let selectedModel = cachedModels?.find((model) => model.modelId === modelId);
+  if (!selectedModel || !catalogIsFresh) {
+    const refresh = await refreshLocalCLIModelForExecution(provider, modelId);
+    if (refresh.refreshed) selectedModel = refresh.model;
+  }
   if (!selectedModel) {
     throw new AIError({
       type: "invalid_model",

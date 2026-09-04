@@ -92,8 +92,6 @@ jobs:
             target: linux-x64
           - runner: ubuntu-24.04-arm
             target: linux-arm64
-          - runner: macos-15-intel
-            target: darwin-x64
           - runner: macos-15
             target: darwin-arm64
           - runner: windows-2025
@@ -156,7 +154,7 @@ jobs:
       - name: Create release manifest
         run: node scripts/create-release-manifest.mjs
         env:
-          SWITCHY_REQUIRED_TARGETS: linux-x64,linux-arm64,darwin-x64,darwin-arm64,win32-x64
+          SWITCHY_REQUIRED_TARGETS: linux-x64,linux-arm64,darwin-arm64,win32-x64
       - name: Publish immutable GitHub release assets
         env:
           GH_TOKEN: ${{ github.token }}
