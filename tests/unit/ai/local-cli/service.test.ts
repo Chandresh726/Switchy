@@ -280,6 +280,29 @@ describe("local CLI connection status", () => {
     expect(mocks.setCodexReasoning).toHaveBeenCalledWith("gpt", ["high"]);
   });
 
+  it("rejects a model that a successful live refresh no longer returns", async () => {
+    mocks.loadStoredCatalog.mockResolvedValue({
+      fetchedAt: 1,
+      models: [{
+        modelId: "gpt",
+        label: "GPT",
+        description: "",
+        supportsReasoning: false,
+      }],
+    });
+    mocks.listCodexModels.mockResolvedValue([{
+      modelId: "other",
+      label: "Other",
+      description: "",
+      supportsReasoning: false,
+    }]);
+
+    await expect(getLocalCLIExecutionTarget("codex_cli", "gpt"))
+      .rejects.toMatchObject({ type: "invalid_model" });
+    expect(mocks.listCodexModels).toHaveBeenCalledTimes(1);
+    expect(mocks.setCodexReasoning).not.toHaveBeenCalled();
+  });
+
   it("attempts one live refresh before failing on an unknown execution model", async () => {
     await expect(getLocalCLIExecutionTarget("opencode_cli", "openai/missing"))
       .rejects.toMatchObject({ type: "invalid_model" });
