@@ -252,10 +252,38 @@ describe("local CLI connection status", () => {
     expect(mocks.listCodexModels).not.toHaveBeenCalled();
   });
 
-  it("fails clearly instead of discovering or replacing a model during execution", async () => {
+  it("attempts one live refresh before failing on an unknown execution model", async () => {
     await expect(getLocalCLIExecutionTarget("opencode_cli", "openai/missing"))
       .rejects.toMatchObject({ type: "invalid_model" });
-    expect(mocks.listOpenCodeModels).not.toHaveBeenCalled();
+    expect(mocks.listOpenCodeModels).toHaveBeenCalledTimes(1);
+  });
+
+  it("heals a stale execution catalog with a live refresh when the model reappears", async () => {
+    mocks.loadStoredCatalog.mockResolvedValue({
+      fetchedAt: 1,
+      models: [{
+        modelId: "openai/stale",
+        label: "Stale",
+        description: "",
+        supportsReasoning: false,
+        upstreamProvider: "openai",
+      }],
+    });
+    mocks.listOpenCodeModels.mockResolvedValue([{
+      modelId: "openai/healed",
+      label: "Healed",
+      description: "",
+      supportsReasoning: true,
+      supportedReasoningEfforts: ["medium"],
+      defaultReasoningEffort: "medium",
+      upstreamProvider: "openai",
+    }]);
+
+    await expect(getLocalCLIExecutionTarget("opencode_cli", "openai/healed")).resolves.toMatchObject({
+      cliVersion: "2.0.0",
+    });
+    expect(mocks.listOpenCodeModels).toHaveBeenCalledTimes(1);
+    expect(mocks.saveStoredCatalog).toHaveBeenCalled();
   });
 
   it("retires the old process and removes durable capabilities after a path change", async () => {

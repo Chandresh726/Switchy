@@ -49,7 +49,7 @@ The `release.yml` workflow runs only for stable `vMAJOR.MINOR.PATCH` tags. It:
    that already passed the complete `main` CI workflow;
 2. reuses that successful CI result instead of rerunning the same verification;
 3. builds and smoke-tests native runtimes on Linux x64/arm64, macOS
-   x64/arm64, and Windows x64;
+   arm64 (Apple Silicon), and Windows x64;
 4. builds and audits the npm tarball once, then publishes that exact artifact;
 5. creates one checksum manifest and immutable GitHub release;
 6. publishes `@chandresh726/switchy` through npm trusted publishing when the
@@ -69,7 +69,7 @@ Before the first public release:
 2. Keep `NPM_TRUSTED_PUBLISHING_READY` unset for the first release because npm
    trusted publishing can only be configured after the package exists.
 3. Push the stabilized commit and its matching stable version tag. The workflow
-   publishes the five runtimes, checksum manifest, and GitHub release.
+   publishes the four runtimes, checksum manifest, and GitHub release.
 4. From an authenticated owner account, run
    `npm publish ./packages/cli --access public` at that exact tag.
 5. Configure the GitHub Actions trusted publisher:

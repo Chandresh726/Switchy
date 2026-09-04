@@ -63,6 +63,9 @@ describe("Switchy CLI release handling", () => {
   it("maps supported native targets and rejects unsupported ones", () => {
     expect(currentTarget("darwin", "arm64")).toBe("darwin-arm64");
     expect(currentTarget("linux", "x64")).toBe("linux-x64");
+    expect(() => currentTarget("darwin", "x64")).toThrow(
+      "does not provide a runtime"
+    );
     expect(() => currentTarget("aix", "ppc64")).toThrow(
       "does not provide a runtime"
     );
@@ -125,6 +128,16 @@ describe("Switchy CLI release handling", () => {
         },
       },
     })).toThrow("inconsistent artifact metadata");
+    expect(() => parseReleaseManifest({
+      ...manifest,
+      artifacts: {
+        "darwin-x64": {
+          file: "switchy-1.0.2-darwin-x64.tar.gz",
+          sha256: "a".repeat(64),
+          size: 100,
+        },
+      },
+    })).toThrow("unsupported target");
     expect(() => parseReleaseManifest({
       ...manifest,
       artifacts: {

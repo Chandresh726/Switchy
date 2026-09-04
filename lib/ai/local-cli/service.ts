@@ -243,6 +243,27 @@ export async function getLocalCLIModels(
   }
 }
 
+async function refreshLocalCLIModelForExecution(
+  provider: LocalCLIProvider,
+  modelId: string
+): Promise<ProviderModelDefinition | undefined> {
+  // Background workers (e.g. post-scrape auto-match) may run with a stale or
+  // empty model catalog — for example after a restart dropped the in-memory
+  // cache while the durable catalog predates the configured model. Attempt a
+  // single live refresh so execution can self-heal instead of failing with
+  // invalid_model until someone manually refreshes in Settings. The refresh
+  // also persists the catalog for future runs. Any refresh failure falls
+  // through to the standard invalid_model error below.
+  try {
+    const liveModels = await getLocalCLIModels(provider, { forceRefresh: true });
+    const filtered = liveModels.find((model) => model.modelId === modelId);
+    if (filtered) return filtered;
+    return modelCache.get(provider)?.models.find((model) => model.modelId === modelId);
+  } catch {
+    return undefined;
+  }
+}
+
 export async function getLocalCLIExecutionTarget(
   provider: LocalCLIProvider,
   modelId: string
@@ -261,7 +282,10 @@ export async function getLocalCLIExecutionTarget(
   }
   const cachedModels = modelCache.get(provider)?.models ??
     (await loadStoredLocalCLICatalog(provider, { allowExpired: true }))?.models;
-  const selectedModel = cachedModels?.find((model) => model.modelId === modelId);
+  let selectedModel = cachedModels?.find((model) => model.modelId === modelId);
+  if (!selectedModel) {
+    selectedModel = await refreshLocalCLIModelForExecution(provider, modelId);
+  }
   if (!selectedModel) {
     throw new AIError({
       type: "invalid_model",
