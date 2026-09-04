@@ -250,10 +250,11 @@ async function refreshLocalCLIModelForExecution(
   // Background workers (e.g. post-scrape auto-match) may run with a stale or
   // empty model catalog — for example after a restart dropped the in-memory
   // cache while the durable catalog predates the configured model. Attempt a
-  // single live refresh so execution can self-heal instead of failing with
-  // invalid_model until someone manually refreshes in Settings. The refresh
-  // also persists the catalog for future runs. Any refresh failure falls
-  // through to the standard invalid_model error below.
+  // single live refresh so execution self-heals instead of failing or running
+  // on obsolete capability metadata until someone manually refreshes in
+  // Settings. The refresh also persists the catalog for future runs. Any
+  // refresh failure falls back to the cached entry (or to the standard
+  // invalid_model error when nothing was cached).
   try {
     const liveModels = await getLocalCLIModels(provider, { forceRefresh: true });
     const filtered = liveModels.find((model) => model.modelId === modelId);
@@ -280,11 +281,19 @@ export async function getLocalCLIExecutionTarget(
       message: "The configured local CLI executable is unavailable",
     });
   }
-  const cachedModels = modelCache.get(provider)?.models ??
-    (await loadStoredLocalCLICatalog(provider, { allowExpired: true }))?.models;
+  const memoryEntry = modelCache.get(provider);
+  const storedCatalog = memoryEntry
+    ? null
+    : await loadStoredLocalCLICatalog(provider, { allowExpired: true });
+  const cachedModels = memoryEntry?.models ?? storedCatalog?.models;
+  const catalogIsFresh = memoryEntry
+    ? memoryEntry.expiresAt > Date.now()
+    : storedCatalog !== null
+      && storedCatalog.fetchedAt + CLI_MODEL_CACHE_TTL_MS > Date.now();
   let selectedModel = cachedModels?.find((model) => model.modelId === modelId);
-  if (!selectedModel) {
-    selectedModel = await refreshLocalCLIModelForExecution(provider, modelId);
+  if (!selectedModel || !catalogIsFresh) {
+    const refreshed = await refreshLocalCLIModelForExecution(provider, modelId);
+    selectedModel = refreshed ?? selectedModel;
   }
   if (!selectedModel) {
     throw new AIError({

@@ -232,9 +232,9 @@ describe("local CLI connection status", () => {
     expect(mocks.saveStoredCatalog).toHaveBeenCalledTimes(1);
   });
 
-  it("restores reasoning capabilities from durable cache without execution-time discovery", async () => {
+  it("restores reasoning capabilities from a fresh durable cache without execution-time discovery", async () => {
     mocks.loadStoredCatalog.mockResolvedValue({
-      fetchedAt: 1,
+      fetchedAt: Date.now(),
       models: [{
         modelId: "gpt",
         label: "GPT",
@@ -250,6 +250,34 @@ describe("local CLI connection status", () => {
     });
     expect(mocks.setCodexReasoning).toHaveBeenCalledWith("gpt", ["low", "high"]);
     expect(mocks.listCodexModels).not.toHaveBeenCalled();
+  });
+
+  it("refreshes an expired catalog even when it still contains the model", async () => {
+    mocks.loadStoredCatalog.mockResolvedValue({
+      fetchedAt: 1,
+      models: [{
+        modelId: "gpt",
+        label: "GPT",
+        description: "",
+        supportsReasoning: true,
+        supportedReasoningEfforts: ["low"],
+        defaultReasoningEffort: "low",
+      }],
+    });
+    mocks.listCodexModels.mockResolvedValue([{
+      modelId: "gpt",
+      label: "GPT",
+      description: "",
+      supportsReasoning: true,
+      supportedReasoningEfforts: ["high"],
+      defaultReasoningEffort: "high",
+    }]);
+
+    await expect(getLocalCLIExecutionTarget("codex_cli", "gpt")).resolves.toMatchObject({
+      cliVersion: "1.0.0",
+    });
+    expect(mocks.listCodexModels).toHaveBeenCalledTimes(1);
+    expect(mocks.setCodexReasoning).toHaveBeenCalledWith("gpt", ["high"]);
   });
 
   it("attempts one live refresh before failing on an unknown execution model", async () => {
