@@ -15,34 +15,38 @@ describe("resolveListingCompleteness", () => {
     // The JPMorgan case: 7326 of 7328 must not fail the board.
     expect(resolveListingCompleteness(7326, 7328)).toEqual({ isComplete: true, missing: 2 });
     expect(resolveListingCompleteness(1999, 2000)).toEqual({ isComplete: true, missing: 1 });
+    expect(resolveListingCompleteness(9995, 10000)).toEqual({ isComplete: true, missing: 5 });
   });
 
-  it("fails boards missing more than the absolute tolerance", () => {
+  it("stays strict on small boards", () => {
+    expect(resolveListingCompleteness(9, 10)).toEqual({ isComplete: true, missing: 1 });
+    expect(resolveListingCompleteness(8, 10).isComplete).toBe(false);
+    expect(resolveListingCompleteness(5, 10).isComplete).toBe(false);
+    expect(resolveListingCompleteness(0, 1).isComplete).toBe(false);
+  });
+
+  it("fails boards missing more than the capped tolerance", () => {
     expect(resolveListingCompleteness(10, 20).isComplete).toBe(false);
     expect(resolveListingCompleteness(0, 100).isComplete).toBe(false);
-  });
-
-  it("scales tolerance to 1% on very large boards", () => {
-    // 1% of 10k = 100 tolerated; 101 missing is not.
-    expect(resolveListingCompleteness(9900, 10000).isComplete).toBe(true);
-    expect(resolveListingCompleteness(9899, 10000).isComplete).toBe(false);
+    // A lost 200-job page always exceeds the cap of 5.
+    expect(resolveListingCompleteness(9800, 10000).isComplete).toBe(false);
   });
 });
 
 describe("isDetailFailuresTolerable", () => {
-  it("tolerates zero failures and a couple of failures", () => {
+  it("tolerates zero failures and a single failure on small boards", () => {
     expect(isDetailFailuresTolerable(0, 500)).toBe(true);
     expect(isDetailFailuresTolerable(1, 1)).toBe(true);
-    expect(isDetailFailuresTolerable(2, 50)).toBe(true);
   });
 
-  it("rejects failure counts beyond the tolerance", () => {
+  it("rejects failure counts beyond the capped tolerance", () => {
+    expect(isDetailFailuresTolerable(2, 50)).toBe(false);
     expect(isDetailFailuresTolerable(3, 50)).toBe(false);
     expect(isDetailFailuresTolerable(11, 500)).toBe(false);
   });
 
-  it("scales tolerance to 1% on large hydrations", () => {
-    expect(isDetailFailuresTolerable(10, 1000)).toBe(true);
-    expect(isDetailFailuresTolerable(11, 1000)).toBe(false);
+  it("allows two failures once the board is large enough", () => {
+    expect(isDetailFailuresTolerable(2, 200)).toBe(true);
+    expect(isDetailFailuresTolerable(3, 200)).toBe(false);
   });
 });

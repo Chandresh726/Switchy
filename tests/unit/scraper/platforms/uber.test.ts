@@ -241,7 +241,7 @@ describe("UberScraper", () => {
     const result = await scraper.scrape("https://jobs.uber.com/en/jobs/");
 
     expect(result).toMatchObject({
-      outcome: "partial",
+      outcome: "success",
       listingCompleteness: "complete",
     });
     expect(result.jobs).toHaveLength(1);
@@ -249,7 +249,8 @@ describe("UberScraper", () => {
       externalId: "uber-1",
       department: "Engineering",
     });
-    if (result.outcome !== "partial") throw new Error("Expected a partial result");
-    expect(result.issues?.[0]?.message).toContain("listing data was retained");
+    // A single failed detail degrades to a warning instead of failing the board.
+    const detailWarning = "issues" in result ? result.issues?.[0]?.message : undefined;
+    expect(detailWarning).toContain("listing data was retained");
   });
 });

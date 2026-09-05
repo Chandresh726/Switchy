@@ -1,3 +1,4 @@
+import { BrowserSessionBootstrapError } from "@/lib/scraper/infrastructure/browser-session-error";
 import type { ScrapeCompanyStore } from "@/lib/scraper/infrastructure/types";
 import type { ScrapeOptions } from "@/lib/scraper/core/types";
 import {
@@ -206,6 +207,10 @@ export class ScrapeCompanyPipeline {
       const lowerMessage = errorMessage.toLowerCase();
       const retryable =
         retryableStatus ||
+        // Browser bootstrap failures map to retryable `browser_error` in
+        // createFailureFromUnknown; agree with that classification here so
+        // the log-suppression decision matches the queue-retry decision.
+        error instanceof BrowserSessionBootstrapError ||
         (error instanceof Error &&
           (error.name === "ScrapeAbortError" ||
             lowerMessage.includes("timeout") ||
@@ -296,7 +301,7 @@ export class ScrapeCompanyPipeline {
     maxAttempts?: number
   ): boolean {
     if (!retryable) return true;
-    return (attemptCount ?? 1) >= (maxAttempts ?? 1);
+    return Math.max(1, attemptCount ?? 1) >= Math.max(1, maxAttempts ?? 1);
   }
 
   private async processScraperResult(params: {
@@ -437,11 +442,9 @@ export class ScrapeCompanyPipeline {
     const matcherConfig = await getMatcherConfig();
     const logStatus = outcome === "success" ? "success" : "partial";
     // Issues on a success outcome are tolerated gaps (see completeness
-    // helper); surface them as warnings instead of dropping them.
-    const scraperWarnings =
-      "issues" in scraperResult
-        ? scraperResult.issues?.map((issue) => issue.message)
-        : undefined;
+    // helper); surface them as warnings instead of dropping them. The
+    // error branch above returns early, so only success/partial reach here.
+    const scraperWarnings = scraperResult.issues?.map((issue) => issue.message);
     const jobsFiltered = filterResult.filteredOut + (scraperResult.earlyFiltered?.total || 0);
     const persistenceStartedAtMs = Date.now();
     const persistenceResult = await this.repository.persistScrapeResult({

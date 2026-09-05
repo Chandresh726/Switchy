@@ -283,6 +283,78 @@ describe("ScrapeCompanyPipeline", () => {
     expect(repository.createScrapingLog).toHaveBeenCalledTimes(1);
   });
 
+  it("skips the error log for thrown retryable failures before the final attempt", async () => {
+    const repository = createRepositoryMock();
+    const registry = createRegistryMock(async () => {
+      throw new Error("connection timed out");
+    });
+    const pipeline = new ScrapeCompanyPipeline(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} },
+      new StoredScrapeSettingsProvider(repository)
+    );
+
+    const retried = await pipeline.scrape(company.id, {
+      sessionId: "session-throw",
+      triggerSource: "manual",
+      attemptCount: 2,
+      maxAttempts: 3,
+    });
+
+    expect(retried).toMatchObject({ outcome: "error", retryable: true });
+    expect(repository.createScrapingLog).not.toHaveBeenCalled();
+
+    const terminal = await pipeline.scrape(company.id, {
+      sessionId: "session-throw",
+      triggerSource: "manual",
+      attemptCount: 3,
+      maxAttempts: 3,
+    });
+
+    expect(terminal).toMatchObject({ outcome: "error", retryable: true });
+    expect(repository.createScrapingLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces tolerated scraper issues as warnings on success", async () => {
+    const repository = createRepositoryMock();
+    const registry = createRegistryMock({
+      outcome: "success",
+      jobs: [],
+      totalListings: 10,
+      openExternalIds: [],
+      listingCompleteness: "complete",
+      issues: [createScraperError("network_error", "1 detail request failed")],
+    });
+    const pipeline = new ScrapeCompanyPipeline(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} },
+      new StoredScrapeSettingsProvider(repository)
+    );
+
+    const result = await pipeline.scrape(company.id, {
+      sessionId: "session-success-warnings",
+      triggerSource: "manual",
+    });
+
+    expect(result.outcome).toBe("success");
+    expect(result.success).toBe(true);
+    expect(result.warnings).toEqual(["1 detail request failed"]);
+    expect(repository.persistScrapeResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        log: expect.objectContaining({
+          status: "success",
+          errorMessage: "1 detail request failed",
+        }),
+      })
+    );
+  });
+
   it("passes the queue cancellation signal into the scraper registry", async () => {
     const repository = createRepositoryMock();
     const registry = createRegistryMock({

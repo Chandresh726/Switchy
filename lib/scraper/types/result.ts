@@ -74,6 +74,11 @@ type ScraperSuccessResult<T extends ScrapedJob = ScrapedJob> =
   ScraperNonErrorResult<T> & ListingContract & {
   outcome: "success";
   error?: never;
+  /**
+   * Tolerated gaps (see the listing-completeness helper) travel as warnings
+   * on success so they stay visible without failing the board.
+   */
+  issues?: ScraperError[];
 };
 
 type ScraperPartialResult<T extends ScrapedJob = ScrapedJob> =

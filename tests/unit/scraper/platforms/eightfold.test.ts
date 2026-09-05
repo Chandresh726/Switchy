@@ -306,11 +306,12 @@ describe("EightfoldScraper", () => {
     );
 
     expect(result).toMatchObject({
-      outcome: "success",
+      outcome: "partial",
       totalListings: 10,
-      listingCompleteness: "complete",
+      listingCompleteness: "partial",
     });
-    // A small advertised-count drift without unresolved pages is tolerated.
+    // A gap beyond the small-board tolerance stays partial, and filtered
+    // searches must not trigger tenant-wide sitemap recovery.
     expect(result.openExternalIds).toHaveLength(10);
     expect(
       fetchMock.mock.calls.some(([url]) => url.includes("/careers/sitemap.xml"))

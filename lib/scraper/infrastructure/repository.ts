@@ -215,8 +215,13 @@ export class DrizzleScraperRepository implements IScraperRepository {
             // A single unresolvable URL collision must not discard the whole
             // company's fetch. Skip this hydration candidate and record a
             // warning so the collision stays visible in the scraping log.
+            const collisionReason = jobIdsToReopenSet.has(urlOwner.id)
+              ? "which is being reopened in this run"
+              : urlOwner.status !== "archived"
+                ? "which is active"
+                : `which is archived (archiveSource=${urlOwner.archiveSource ?? "unknown"})`;
             persistenceWarnings.push(
-              `Skipped hydration for job ${existingJobId}: URL owned by active job ${urlOwner.id}.`
+              `Skipped hydration for job ${existingJobId}: URL owned by job ${urlOwner.id} ${collisionReason}.`
             );
             continue;
           }
@@ -289,6 +294,15 @@ export class DrizzleScraperRepository implements IScraperRepository {
         );
       }
       const insertedJobIds = insertedJobs.map((job) => job.id);
+      // onConflictDoNothing silently drops rows racing an existing
+      // (company, externalId/URL) pair. Warn on the delta so an undercount
+      // of jobsAdded stays explainable in the scraping log.
+      const skippedInserts = input.jobsToInsert.length - insertedJobIds.length;
+      if (skippedInserts > 0) {
+        persistenceWarnings.push(
+          `Skipped ${skippedInserts} insert${skippedInserts === 1 ? "" : "s"} conflicting with existing jobs.`
+        );
+      }
       const matchableJobIds = input.enableMatching
         ? insertedJobs
             .filter(

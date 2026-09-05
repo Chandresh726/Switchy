@@ -659,6 +659,14 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
     }
 
     const allPositions = Array.from(positionsById.values());
+    // Over-fetching (or a reconciled sitemap) clears missing offsets: the
+    // pages demonstrably delivered. Tolerance-based completeness below must
+    // NOT clear them — a failed page with a small gap stays a hard failure
+    // like on Oracle/Workday.
+    const genuinelyComplete = allPositions.length >= advertisedCount;
+    if (genuinelyComplete || sitemapReconciled) {
+      missingOffsets.clear();
+    }
     // Advertised counts drift by a few positions; exact equality turned
     // small gaps into board failures.
     const { isComplete: countsComplete } = resolveListingCompleteness(
@@ -667,9 +675,6 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
     );
     const countIsComplete =
       countsComplete || sitemapReconciled;
-    if (countIsComplete) {
-      missingOffsets.clear();
-    }
 
     return {
       positions: allPositions,

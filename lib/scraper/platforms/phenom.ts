@@ -21,6 +21,10 @@ import type {
   ScraperResult,
 } from "../core/types";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
+import {
+  isDetailFailuresTolerable,
+  resolveListingCompleteness,
+} from "./shared/completeness";
 import { selectListingsForHydration } from "./shared/listing-selection";
 
 const NullableStringSchema = z.string().nullable().optional();
@@ -195,7 +199,6 @@ export class PhenomScraper extends AbstractApiScraper<PhenomConfig> {
       const pageCount = Math.min(requiredPages, this.config.maxListingPages);
       const listings = new Map<string, PhenomListing>();
       for (const listing of first.listings) listings.set(listing.reqId, listing);
-      let invalidListings = first.invalidListings;
       const failedOffsets: number[] = [];
 
       const pageResults = await Promise.all(
@@ -220,16 +223,20 @@ export class PhenomScraper extends AbstractApiScraper<PhenomConfig> {
           failedOffsets.push(offset);
           continue;
         }
-        invalidListings += result.invalidListings;
         for (const listing of result.listings) listings.set(listing.reqId, listing);
       }
 
       const allListings = Array.from(listings.values());
+      // Invalid listings are already excluded from `allListings`, so they
+      // count toward the tolerated gap instead of failing the board alone.
+      const { isComplete: countsComplete } = resolveListingCompleteness(
+        allListings.length,
+        first.totalHits
+      );
       const listingComplete =
         failedOffsets.length === 0 &&
-        invalidListings === 0 &&
         requiredPages <= this.config.maxListingPages &&
-        allListings.length === first.totalHits;
+        countsComplete;
       if (allListings.length === 0) {
         if (first.totalHits === 0 && listingComplete) {
           return {
@@ -290,7 +297,10 @@ export class PhenomScraper extends AbstractApiScraper<PhenomConfig> {
       }
 
       return {
-        outcome: listingComplete && detailFailures === 0 ? "success" : "partial",
+        outcome:
+          listingComplete && isDetailFailuresTolerable(detailFailures, jobs.length)
+            ? "success"
+            : "partial",
         jobs,
         totalListings: allListings.length,
         openExternalIds,

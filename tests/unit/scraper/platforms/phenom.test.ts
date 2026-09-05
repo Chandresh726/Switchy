@@ -230,7 +230,7 @@ describe("PhenomScraper", () => {
       createHttpClientStub({
         fetch: vi.fn(async () =>
           new Response(
-            ddoHtml(searchPayload([staticListing("R1"), { reqId: "broken" }], 2, 2))
+            ddoHtml(searchPayload([staticListing("R1"), { reqId: "broken" }], 10, 2))
           )
         ),
       })

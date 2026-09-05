@@ -20,6 +20,7 @@ import {
   type BrowserScraperConfig,
   type ScrapeOptions,
   type ScraperError,
+  type ScraperErrorResult,
   type ScrapedJob,
   type ScraperResult,
 } from "@/lib/scraper/types";
@@ -204,10 +205,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       const sessionController = this.createSessionController(parsedUrl);
       const listResult = await this.fetchAllJobListItems(sessionController);
       if (listResult instanceof WorkdayListError) {
-        return this.failure("network_error", listResult.describe());
-      }
-      if (!listResult) {
-        return this.failure("network_error", "Failed to fetch Workday jobs list.");
+        return this.toListFailure(listResult);
       }
 
       const allJobListItems = listResult.jobs;
@@ -311,12 +309,11 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         )
       );
 
+      // scrapedJobs already contains listing fallbacks for the unresolved
+      // details, so its length is the total attempted hydration count.
       const isPartial =
         !listResult.isComplete ||
-        !isDetailFailuresTolerable(
-          unresolvedDetailJobs.length,
-          scrapedJobs.length + unresolvedDetailJobs.length
-        );
+        !isDetailFailuresTolerable(unresolvedDetailJobs.length, scrapedJobs.length);
       const issues: ScraperError[] = [];
       if (!listResult.isComplete) issues.push(this.createListIssue(listResult));
       if (unresolvedDetailJobs.length > 0) {
@@ -344,6 +341,23 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
 
   protected async bootstrapSession(url: string): Promise<BrowserSession | null> {
     return this.browserClient.bootstrap(url);
+  }
+
+  /**
+   * Preserves the underlying failure classification (HTTP status codes,
+   * payload errors) instead of collapsing everything to `network_error`, so
+   * unfixable failures (auth, parse) don't burn queue retries while
+   * transient ones (5xx, bootstrap) still do.
+   */
+  private toListFailure(error: WorkdayListError): ScraperErrorResult {
+    const cause = error.cause;
+    if (cause instanceof HttpError) {
+      return this.failureForHttpStatus(cause.status, error.describe());
+    }
+    if (cause instanceof ScraperPayloadError) {
+      return this.failure("parse_error", error.describe());
+    }
+    return this.failure("network_error", error.describe());
   }
 
   private parseUrl(url: string): WorkdaySource | null {
@@ -532,7 +546,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
 
   private async fetchAllJobListItems(
     controller: WorkdaySessionController
-  ): Promise<WorkdayListFetchResult | WorkdayListError | null> {
+  ): Promise<WorkdayListFetchResult | WorkdayListError> {
     const fetchSafely = async (offset: number) => {
       try {
         return await this.fetchJobListPage(
@@ -550,16 +564,12 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       }
     };
 
-    let firstBatch: WorkdayJobListResponse | null;
+    let firstBatch: WorkdayJobListResponse;
     try {
       firstBatch = await this.fetchJobListPage(controller, 0, WORKDAY_PAGE_SIZE);
     } catch (error) {
       if (error instanceof WorkdayListError) return error;
       throw error;
-    }
-
-    if (!firstBatch || !Array.isArray(firstBatch.jobPostings)) {
-      return null;
     }
 
     const total = firstBatch.total || 0;
