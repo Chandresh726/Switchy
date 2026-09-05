@@ -10,8 +10,8 @@
  * fine; 5 of 10 is not) and genuine page failures on large boards still
  * fail (a lost 200-job page always exceeds the cap).
  */
-export const LISTING_COMPLETENESS_ABSOLUTE_TOLERANCE = 5;
-export const LISTING_COMPLETENESS_RATIO_TOLERANCE = 0.01;
+const LISTING_COMPLETENESS_ABSOLUTE_TOLERANCE = 5;
+const LISTING_COMPLETENESS_RATIO_TOLERANCE = 0.01;
 
 export function resolveListingCompleteness(
   fetched: number,
@@ -35,8 +35,8 @@ export function resolveListingCompleteness(
  * hundreds of listings either. Listings are retained as fallbacks, so small
  * failure counts degrade to warnings.
  */
-export const DETAIL_FAILURE_ABSOLUTE_TOLERANCE = 2;
-export const DETAIL_FAILURE_RATIO_TOLERANCE = 0.01;
+const DETAIL_FAILURE_ABSOLUTE_TOLERANCE = 2;
+const DETAIL_FAILURE_RATIO_TOLERANCE = 0.01;
 
 export function isDetailFailuresTolerable(
   failures: number,
