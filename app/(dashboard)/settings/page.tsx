@@ -65,12 +65,17 @@ const PROVIDER_MODELS_STALE_TIME_MS = 15 * 60 * 1000;
 const LOCAL_CLI_STATUS_STALE_TIME_MS = 30_000;
 const DEFAULT_SCRAPER_MAX_PARALLEL_SCRAPES = 3;
 const DEFAULT_SCRAPER_HISTORY_RETENTION_DAYS = 60;
+const DEFAULT_SCRAPER_STALE_JOB_ARCHIVE_DAYS = 60;
 
 function clampScraperParallelScrapes(value: number): number {
   return Math.min(10, Math.max(1, value));
 }
 
 function clampScraperHistoryRetentionDays(value: number): number {
+  return Math.min(3_650, Math.max(7, value));
+}
+
+function clampScraperStaleJobArchiveDays(value: number): number {
   return Math.min(3_650, Math.max(7, value));
 }
 
@@ -110,6 +115,7 @@ interface ScraperLocalEdits {
   maxParallelScrapes?: number;
   keepDeviceAwake?: boolean;
   historyRetentionDays?: number;
+  staleJobArchiveDays?: number;
   filterCountry?: string;
   filterCity?: string;
   filterTitleKeywords?: string[];
@@ -528,6 +534,15 @@ function SettingsContent() {
             10
           ) || DEFAULT_SCRAPER_HISTORY_RETENTION_DAYS
         ),
+      staleJobArchiveDays:
+        scraperLocalEdits.staleJobArchiveDays ??
+        clampScraperStaleJobArchiveDays(
+          parseInt(
+            settings?.scraper_stale_job_archive_days ||
+              String(DEFAULT_SCRAPER_STALE_JOB_ARCHIVE_DAYS),
+            10
+          ) || DEFAULT_SCRAPER_STALE_JOB_ARCHIVE_DAYS
+        ),
       filterCountry: scraperLocalEdits.filterCountry ?? (settings?.scraper_filter_country || "India"),
       filterCity: scraperLocalEdits.filterCity ?? (settings?.scraper_filter_city || ""),
       filterTitleKeywords: (() => {
@@ -573,7 +588,7 @@ function SettingsContent() {
   const {
     jobAnalysisModel, jobAnalysisProviderId, jobAnalysisReasoningEffort,
     matcherModel, matcherProviderId, resumeParserModel, resumeParserProviderId, matcherReasoningEffort, resumeParserReasoningEffort, batchSize, maxRetries, concurrencyLimit, timeoutMs,
-    autoMatchAfterScrape, schedulerEnabled, schedulerCron, maxParallelScrapes, keepDeviceAwake, historyRetentionDays, filterCountry, filterCity, filterTitleKeywords,
+    autoMatchAfterScrape, schedulerEnabled, schedulerCron, maxParallelScrapes, keepDeviceAwake, historyRetentionDays, staleJobArchiveDays, filterCountry, filterCity, filterTitleKeywords,
     aiWritingModel, aiWritingProviderId, aiWritingReasoningEffort, referralTone, referralLength,
     followUpTone, followUpLength, coverLetterTone, coverLetterLength, coverLetterFocus
   } = derivedValues;
@@ -797,6 +812,7 @@ function SettingsContent() {
     scraperLocalEdits.maxParallelScrapes !== undefined ||
     scraperLocalEdits.keepDeviceAwake !== undefined ||
     scraperLocalEdits.historyRetentionDays !== undefined ||
+    scraperLocalEdits.staleJobArchiveDays !== undefined ||
     scraperLocalEdits.filterCountry !== undefined ||
     scraperLocalEdits.filterCity !== undefined ||
     scraperLocalEdits.filterTitleKeywords !== undefined;
@@ -886,6 +902,11 @@ function SettingsContent() {
     setScraperLocalEdits((prev) => ({
       ...prev,
       historyRetentionDays: clampScraperHistoryRetentionDays(value),
+    }));
+  const setStaleJobArchiveDays = (value: number) =>
+    setScraperLocalEdits((prev) => ({
+      ...prev,
+      staleJobArchiveDays: clampScraperStaleJobArchiveDays(value),
     }));
   const setFilterCountry = (value: string) =>
     setScraperLocalEdits((prev) => ({ ...prev, filterCountry: value }));
@@ -1221,6 +1242,7 @@ function SettingsContent() {
           scraper_max_parallel_scrapes: maxParallelScrapes,
           scraper_keep_device_awake: keepDeviceAwake,
           scraper_history_retention_days: historyRetentionDays,
+          scraper_stale_job_archive_days: staleJobArchiveDays,
           scraper_filter_country: filterCountry,
           scraper_filter_city: filterCity,
           scraper_filter_title_keywords: filterTitleKeywords,
@@ -1233,6 +1255,7 @@ function SettingsContent() {
     filterCountry,
     filterTitleKeywords,
     historyRetentionDays,
+    staleJobArchiveDays,
     keepDeviceAwake,
     maxParallelScrapes,
     schedulerCron,
@@ -1502,6 +1525,8 @@ function SettingsContent() {
             onKeepDeviceAwakeChange={setKeepDeviceAwake}
             historyRetentionDays={historyRetentionDays}
             onHistoryRetentionDaysChange={setHistoryRetentionDays}
+            staleJobArchiveDays={staleJobArchiveDays}
+            onStaleJobArchiveDaysChange={setStaleJobArchiveDays}
             filterCountry={filterCountry}
             filterCity={filterCity}
             onFilterCountryChange={setFilterCountry}

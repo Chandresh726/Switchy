@@ -24,4 +24,10 @@ export const SCRAPER_SETTINGS = {
     minimum: 7,
     maximum: 3_650,
   },
+  staleJobArchiveDays: {
+    key: "scraper_stale_job_archive_days",
+    defaultValue: 60,
+    minimum: 7,
+    maximum: 3_650,
+  },
 } as const;

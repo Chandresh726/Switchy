@@ -136,13 +136,14 @@ export const jobs = sqliteTable("jobs", {
   discoveredAt: integer("discovered_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   archivedAt: integer("archived_at", { mode: "timestamp" }),
-  archiveSource: text("archive_source"), // "manual" | "scraper"
+  archiveSource: text("archive_source"), // "manual" | "scraper" | "stale"
   viewedAt: integer("viewed_at", { mode: "timestamp" }),
   appliedAt: integer("applied_at", { mode: "timestamp" }),
 }, (table) => ({
   companyIdIdx: index("jobs_company_id_idx").on(table.companyId),
   statusIdx: index("jobs_status_idx").on(table.status),
   statusDiscoveredIdIdx: index("jobs_status_discovered_id_idx").on(table.status, table.discoveredAt, table.id),
+  staleArchiveIdx: index("jobs_stale_archive_idx").on(table.status, table.postedDate, table.discoveredAt),
   companyDiscoveredIdIdx: index("jobs_company_discovered_id_idx").on(table.companyId, table.discoveredAt, table.id),
   discoveredIdIdx: index("jobs_discovered_id_idx").on(table.discoveredAt, table.id),
   matchScoreIdx: index("jobs_match_score_idx").on(table.matchScore),

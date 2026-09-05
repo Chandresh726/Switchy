@@ -144,10 +144,11 @@ export class DrizzleScraperRepository implements IScraperRepository {
         .filter(
           (job) =>
             job.status === "archived" &&
-            job.archiveSource === "scraper" &&
+            (job.archiveSource === "scraper" || job.archiveSource === "stale") &&
             Boolean(job.externalId && openExternalIds.has(job.externalId))
         )
         .map((job) => job.id);
+      const jobIdsToReopenSet = new Set(jobIdsToReopen);
       const jobIdsToArchive = input.archiveMissing
         ? currentJobs
             .filter((job) => {
@@ -172,7 +173,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
             and(
               eq(jobs.companyId, input.companyId),
               eq(jobs.status, "archived"),
-              eq(jobs.archiveSource, "scraper"),
+              inArray(jobs.archiveSource, ["scraper", "stale"]),
               inArray(jobs.id, jobIdChunk)
             )
           )
@@ -205,7 +206,11 @@ export class DrizzleScraperRepository implements IScraperRepository {
         const existingJob = currentJobsById.get(existingJobId);
         const urlOwner = currentJobsByUrl.get(job.url);
         if (existingJob && urlOwner && urlOwner.id !== existingJobId) {
-          if (urlOwner.status !== "archived" || urlOwner.archiveSource !== "scraper") {
+          if (
+            urlOwner.status !== "archived" ||
+            (urlOwner.archiveSource !== "scraper" && urlOwner.archiveSource !== "stale") ||
+            jobIdsToReopenSet.has(urlOwner.id)
+          ) {
             throw new Error(
               `Cannot reconcile job ${existingJobId} with URL owned by active job ${urlOwner.id}.`
             );

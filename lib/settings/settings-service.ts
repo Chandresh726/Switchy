@@ -41,6 +41,9 @@ export const DEFAULT_SETTINGS = {
   scraper_history_retention_days: String(
     SCRAPER_SETTINGS.historyRetentionDays.defaultValue
   ),
+  scraper_stale_job_archive_days: String(
+    SCRAPER_SETTINGS.staleJobArchiveDays.defaultValue
+  ),
   scraper_filter_country: "India",
   scraper_filter_city: "",
   scraper_filter_title_keywords: "[]",
@@ -266,6 +269,10 @@ function parseSettingValue(
     }
     case "scraper_history_retention_days": {
       const setting = SCRAPER_SETTINGS.historyRetentionDays;
+      return { value: parseNumberInRange(key, value, setting.minimum, setting.maximum), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
+    }
+    case "scraper_stale_job_archive_days": {
+      const setting = SCRAPER_SETTINGS.staleJobArchiveDays;
       return { value: parseNumberInRange(key, value, setting.minimum, setting.maximum), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     }
     case "scraper_filter_title_keywords":

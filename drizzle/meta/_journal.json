@@ -281,6 +281,13 @@
       "when": 1787858318858,
       "tag": "0039_sweet_justice",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1788632014986,
+      "tag": "0040_cuddly_earthquake",
+      "breakpoints": true
     }
   ]
 }
