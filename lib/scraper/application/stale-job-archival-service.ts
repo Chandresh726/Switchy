@@ -76,8 +76,8 @@ export class StaleJobArchivalService {
       const days = await this.settingsProvider.getStaleJobArchiveDays();
       if (!Number.isFinite(days) || days <= 0) return null;
       const cutoff = new Date(now.getTime() - days * DAY_MS);
-      const archived = await this.store.archiveStaleJobs(cutoff, now);
       this.lastArchiveAt = now.getTime();
+      const archived = await this.store.archiveStaleJobs(cutoff, now);
       if (archived > 0) {
         console.log(
           `[StaleJobArchivalService] Archived ${archived} job(s) older than ${cutoff.toISOString()} (${days}d)`

@@ -45,17 +45,20 @@ describe("StaleJobArchivalService", () => {
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => undefined);
+    const store = {
+      archiveStaleJobs: vi.fn(() => {
+        throw error;
+      }),
+    };
     const service = new StaleJobArchivalService(
-      {
-        archiveStaleJobs: vi.fn(() => {
-          throw error;
-        }),
-      },
+      store,
       { getStaleJobArchiveDays: vi.fn(async () => 60) },
       () => new Date("2026-07-13T00:00:00.000Z")
     );
 
     await expect(service.archiveIfDue()).resolves.toBeNull();
+    await expect(service.archiveIfDue()).resolves.toBeNull();
+    expect(store.archiveStaleJobs).toHaveBeenCalledTimes(1);
     expect(consoleError).toHaveBeenCalledWith(
       "[StaleJobArchivalService] Failed to archive stale jobs:",
       error
