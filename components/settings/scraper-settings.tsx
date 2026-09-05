@@ -48,6 +48,8 @@ interface ScraperSettingsProps {
   onKeepDeviceAwakeChange: (value: boolean) => void;
   historyRetentionDays: number;
   onHistoryRetentionDaysChange: (value: number) => void;
+  staleJobArchiveDays: number;
+  onStaleJobArchiveDaysChange: (value: number) => void;
   filterCountry: string;
   filterCity: string;
   onFilterCountryChange: (value: string) => void;
@@ -67,6 +69,8 @@ export function ScraperSettings({
   onKeepDeviceAwakeChange,
   historyRetentionDays,
   onHistoryRetentionDaysChange,
+  staleJobArchiveDays,
+  onStaleJobArchiveDaysChange,
   filterCountry,
   filterCity,
   onFilterCountryChange,
@@ -341,6 +345,35 @@ export function ScraperSettings({
                 />
                 <FieldDescription>
                   Logs expire; jobs stay.
+                </FieldDescription>
+              </Field>
+
+              <Field>
+                <FieldLabel
+                  htmlFor="stale-job-archive-days"
+                  className="text-xs text-muted-foreground"
+                >
+                  Stale Job Archive (days)
+                </FieldLabel>
+                <Input
+                  id="stale-job-archive-days"
+                  type="number"
+                  min={7}
+                  max={3650}
+                  value={staleJobArchiveDays}
+                  onChange={(e) => {
+                    const parsed = parseInt(e.target.value, 10);
+                    onStaleJobArchiveDaysChange(
+                      Math.min(
+                        3650,
+                        Math.max(7, Number.isNaN(parsed) ? 7 : parsed)
+                      )
+                    );
+                  }}
+                  className="bg-background/60 border-border"
+                />
+                <FieldDescription>
+                  Archive stale jobs; applied stays.
                 </FieldDescription>
               </Field>
             </FieldGroup>

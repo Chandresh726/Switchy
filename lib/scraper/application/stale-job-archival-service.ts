@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { jobs } from "@/lib/db/schema";
 import type { ScrapeSettingsProvider } from "@/lib/scraper/settings/provider";
 
-export const STALE_ARCHIVABLE_JOB_STATUSES = [
+const STALE_ARCHIVABLE_JOB_STATUSES = [
   "new",
   "viewed",
   "interested",
