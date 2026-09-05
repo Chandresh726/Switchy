@@ -348,7 +348,7 @@ export async function getCompanyOverview(id: number, now = new Date()) {
       eq(people.isActive, true),
       isNull(people.archivedAt)
     )),
-    db.select(COMPANY_JOB_SELECTION).from(jobs).where(eq(jobs.companyId, id)).orderBy(desc(jobs.discoveredAt), desc(jobs.id)).limit(50),
+    db.select(COMPANY_JOB_SELECTION).from(jobs).where(eq(jobs.companyId, id)).orderBy(desc(jobs.discoveredAt), desc(jobs.id)).limit(20),
     db.select({
       id: people.id, fullName: people.fullName, firstName: people.firstName,
       lastName: people.lastName, profileUrl: people.profileUrl, email: people.email,
@@ -361,7 +361,7 @@ export async function getCompanyOverview(id: number, now = new Date()) {
       eq(people.isActive, true),
       isNull(people.archivedAt)
     ))
-      .orderBy(desc(people.isStarred), people.fullName, desc(people.id)).limit(200),
+      .orderBy(desc(people.isStarred), people.fullName, desc(people.id)).limit(50),
     db.select({
       id: scrapingLogs.id, status: scrapingLogs.status, triggerSource: scrapingLogs.triggerSource,
       jobsFound: scrapingLogs.jobsFound, jobsAdded: scrapingLogs.jobsAdded,

@@ -86,6 +86,8 @@ export async function updateSettings(input: SettingsUpdateInput, context: ApiReq
   const { updates, cronUpdated, enabledChanged, newEnabledValue } = parseSettingsUpdateBody(reconciled);
   if (updates.length > 0) {
     await upsertSettings(updates);
+    const { clearMatcherConfigCache } = await import("@/lib/ai/matcher/config");
+    clearMatcherConfigCache();
     const cliProviders = updates.flatMap(({ key }) => key === "codex_cli_executable"
       ? ["codex_cli" as const]
       : key === "opencode_cli_executable" ? ["opencode_cli" as const] : []);

@@ -57,7 +57,13 @@ function parseNumber(
   return parsed;
 }
 
+const MATCHER_CONFIG_TTL_MS = 30_000;
+let cachedMatcherConfig: { expiresAt: number; value: MatcherConfig } | null = null;
+
 export async function getMatcherConfig(): Promise<MatcherConfig> {
+  if (cachedMatcherConfig && cachedMatcherConfig.expiresAt > Date.now()) {
+    return cachedMatcherConfig.value;
+  }
   const dbSettings = await db
     .select()
     .from(settings)
@@ -68,7 +74,7 @@ export async function getMatcherConfig(): Promise<MatcherConfig> {
   const storedProviderId = settingsMap.get("matcher_provider_id") || undefined;
   const storedModelId = settingsMap.get("matcher_model") || undefined;
 
-  return {
+  const config: MatcherConfig = {
     providerId: storedProviderId,
     model: storedModelId ?? "",
     reasoningEffort:
@@ -129,6 +135,13 @@ export async function getMatcherConfig(): Promise<MatcherConfig> {
       DEFAULT_MATCHER_CONFIG.autoMatchAfterScrape
     ),
   };
+
+  cachedMatcherConfig = { expiresAt: Date.now() + MATCHER_CONFIG_TTL_MS, value: config };
+  return config;
+}
+
+export function clearMatcherConfigCache(): void {
+  cachedMatcherConfig = null;
 }
 
 export function validateMatcherConfig(

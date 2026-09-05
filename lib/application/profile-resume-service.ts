@@ -1,5 +1,7 @@
 import fs from "node:fs";
 
+import { readFile } from "node:fs/promises";
+
 import { and, desc, eq } from "drizzle-orm";
 
 import { persistResumeVersion } from "@/lib/ai/resume/repository";
@@ -256,7 +258,7 @@ export async function downloadResume(id: number) {
   const safeFilename = resume.fileName.replace(/[\r\n"]/g, "") || "resume";
   const encodedFilename = encodeURIComponent(resume.fileName).replace(/['()]/g, escape);
   return {
-    body: fs.readFileSync(fullPath),
+    body: await readFile(fullPath),
     headers: {
       "Content-Type": contentTypes[extension ?? ""] ?? "application/octet-stream",
       "Content-Disposition": `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`,
