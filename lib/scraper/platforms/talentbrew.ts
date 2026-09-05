@@ -16,6 +16,10 @@ import type {
   ScraperResult,
 } from "../core/types";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
+import {
+  isDetailFailuresTolerable,
+  resolveListingCompleteness,
+} from "./shared/completeness";
 import { selectListingsForHydration } from "./shared/listing-selection";
 
 interface TalentBrewListing {
@@ -101,7 +105,6 @@ export class TalentBrewScraper extends AbstractApiScraper<TalentBrewConfig> {
 
       const listings = new Map<string, TalentBrewListing>();
       for (const listing of firstPage.listings) listings.set(listing.id, listing);
-      let invalidListings = firstPage.invalidListings;
       const failedPages: number[] = [];
       const totalPages = Math.min(firstPage.totalPages, this.config.maxListingPages);
       const truncated = firstPage.totalPages > this.config.maxListingPages;
@@ -123,7 +126,6 @@ export class TalentBrewScraper extends AbstractApiScraper<TalentBrewConfig> {
             this.extractAjaxResults(await response.text()),
             pageUrl.toString()
           );
-          invalidListings += parsed.invalidListings;
           for (const listing of parsed.listings) listings.set(listing.id, listing);
         } catch (error) {
           throwIfScrapeAborted(error);
@@ -132,12 +134,18 @@ export class TalentBrewScraper extends AbstractApiScraper<TalentBrewConfig> {
       }
 
       const allListings = Array.from(listings.values());
+      // Invalid listings are already excluded from `allListings`, so they
+      // count toward the tolerated gap. A null advertised total cannot be
+      // verified, so it stays incomplete.
+      const { isComplete: countsComplete } =
+        firstPage.advertisedTotal === null
+          ? { isComplete: false }
+          : resolveListingCompleteness(allListings.length, firstPage.advertisedTotal);
       const listingComplete =
         firstPage.advertisedTotal !== null &&
         failedPages.length === 0 &&
-        invalidListings === 0 &&
         !truncated &&
-        allListings.length === firstPage.advertisedTotal;
+        countsComplete;
       if (allListings.length === 0) {
         if (firstPage.advertisedTotal === 0 && listingComplete) {
           return {
@@ -198,9 +206,14 @@ export class TalentBrewScraper extends AbstractApiScraper<TalentBrewConfig> {
       }
 
       return {
-        outcome: listingComplete && detailFailures === 0 ? "success" : "partial",
+        outcome:
+          listingComplete &&
+          isDetailFailuresTolerable(detailFailures, selection.listings.length)
+            ? "success"
+            : "partial",
         jobs,
         totalListings: allListings.length,
+        advertisedTotal: firstPage.advertisedTotal,
         openExternalIds,
         listingCompleteness: listingComplete ? "complete" : "partial",
         earlyFiltered: selection.earlyFiltered,

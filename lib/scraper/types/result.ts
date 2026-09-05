@@ -54,6 +54,13 @@ interface ScraperResultBase<T extends ScrapedJob> {
   metadata?: ScraperMetadata;
   detectedBoardToken?: string;
   earlyFiltered?: EarlyFilterStats;
+  /**
+   * Board-advertised total, when the platform exposes one. The pipeline uses
+   * it to distinguish exact listings (safe for stale archival) from
+   * tolerance-completed ones (archival skipped: the gap may still be open).
+   * Absent means "unknown", which preserves legacy archival behavior.
+   */
+  advertisedTotal?: number | null;
 }
 
 type ListingContract =
@@ -74,6 +81,11 @@ type ScraperSuccessResult<T extends ScrapedJob = ScrapedJob> =
   ScraperNonErrorResult<T> & ListingContract & {
   outcome: "success";
   error?: never;
+  /**
+   * Tolerated gaps (see the listing-completeness helper) travel as warnings
+   * on success so they stay visible without failing the board.
+   */
+  issues?: ScraperError[];
 };
 
 type ScraperPartialResult<T extends ScrapedJob = ScrapedJob> =

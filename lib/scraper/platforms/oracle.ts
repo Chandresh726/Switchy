@@ -25,6 +25,10 @@ import type {
   ScraperResult,
 } from "../core/types";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
+import {
+  isDetailFailuresTolerable,
+  resolveListingCompleteness,
+} from "./shared/completeness";
 import { selectListingsForHydration } from "./shared/listing-selection";
 
 const NullableStringSchema = z.string().nullable().optional();
@@ -282,10 +286,15 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
         );
       }
 
+      // Near-complete listings and a handful of failed details degrade to
+      // warnings instead of failing the whole board. The denominator is the
+      // pre-hydration selection: hydrator-level nulls never reach `jobs`.
+      const detailsTolerable = isDetailFailuresTolerable(detailFailures, selection.listings.length);
       return {
-        outcome: listingResult.isComplete && detailFailures === 0 ? "success" : "partial",
+        outcome: listingResult.isComplete && detailsTolerable ? "success" : "partial",
         jobs,
         totalListings: listings.length,
+        advertisedTotal: listingResult.advertisedTotal,
         openExternalIds,
         listingCompleteness: listingResult.isComplete ? "complete" : "partial",
         earlyFiltered: selection.earlyFiltered,
@@ -438,6 +447,13 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
       (failedOffsets.length === 0 &&
         lastPage.offset + lastPage.limit < advertisedTotal);
     const uniqueCount = this.dedupeListings(listings).length;
+    // Board totals routinely drift by a few jobs; exact equality turned
+    // "7326 of 7328" into a board failure. Invalid listings are already
+    // excluded from `listings`, so they count toward the tolerated gap.
+    const { isComplete: countsComplete } = resolveListingCompleteness(
+      uniqueCount,
+      advertisedTotal
+    );
     return {
       listings,
       advertisedTotal,
@@ -446,9 +462,8 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
       truncated,
       isComplete:
         failedOffsets.length === 0 &&
-        invalidListings === 0 &&
         !truncated &&
-        uniqueCount === advertisedTotal,
+        countsComplete,
     };
   }
 

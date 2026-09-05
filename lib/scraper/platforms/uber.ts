@@ -15,6 +15,10 @@ import {
 } from "@/lib/scraper/types";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
+import {
+  isDetailFailuresTolerable,
+  resolveListingCompleteness,
+} from "./shared/completeness";
 import { selectListingsForHydration } from "./shared/listing-selection";
 
 const NullableStringSchema = z.string().nullable().optional();
@@ -237,7 +241,9 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
         if (result.failed) detailFailures++;
         return result.job;
       });
-      const isPartial = detailFailures > 0 || !listingResult.isComplete;
+      const isPartial =
+        !listingResult.isComplete ||
+        !isDetailFailuresTolerable(detailFailures, selection.listings.length);
       const issues = [];
       if (!listingResult.isComplete) {
         issues.push(this.createListingIssue(listingResult, listings.length));
@@ -255,6 +261,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
         outcome: isPartial ? "partial" : "success",
         jobs,
         totalListings: listings.length,
+        advertisedTotal: listingResult.advertisedTotal,
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,
         listingCompleteness: listingResult.isComplete ? "complete" : "partial",
@@ -308,11 +315,16 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
     );
     const truncatedByMaxPages = requiredPages > this.config.maxListingPages;
     const uniqueListingCount = this.dedupeListings(listings).length;
+    // Invalid listings are already excluded from `listings`, so they count
+    // toward the tolerated gap instead of failing the board alone.
+    const { isComplete: countsComplete } = resolveListingCompleteness(
+      uniqueListingCount,
+      advertisedTotal
+    );
     const isComplete =
       failedOffsets.length === 0 &&
-      invalidListings === 0 &&
       !truncatedByMaxPages &&
-      uniqueListingCount >= advertisedTotal;
+      countsComplete;
 
     return {
       listings,

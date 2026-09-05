@@ -329,6 +329,26 @@ describe("OracleScraper", () => {
     });
   });
 
+  it("tolerates a small advertised-count drift as success", async () => {
+    const ids = Array.from({ length: 9 }, (_, index) => String(index + 1));
+    const fetchMock = vi.fn(async (url: string) => {
+      if (new URL(url).pathname.endsWith("recruitingCEJobRequisitionDetails")) {
+        const id = finder(url).match(/Id="([^"]+)"/u)?.[1] ?? "1";
+        return Response.json(detailPayload(id));
+      }
+      return Response.json(listingPayload(ids, 10, 0, 10));
+    });
+    const scraper = new OracleScraper(createHttpClientStub({ fetch: fetchMock }), {
+      detailDelayMs: 0,
+    });
+    const result = await scraper.scrape(SOURCE_URL, { boardToken: BOARD_TOKEN });
+    expect(result).toMatchObject({
+      outcome: "success",
+      totalListings: 9,
+      listingCompleteness: "complete",
+    });
+  });
+
   it("returns partial when a later advertised page fails", async () => {
     const fetchMock = vi.fn(async (url: string) => {
       const offset = Number(finder(url).match(/offset=(\d+)/u)?.[1] ?? 0);

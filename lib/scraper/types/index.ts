@@ -21,6 +21,7 @@ export type {
   ScrapeOutcome,
   ScraperError,
   ScraperResult,
+  ScraperErrorResult,
   FetchResult,
   BatchFetchResult,
 

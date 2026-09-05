@@ -96,6 +96,8 @@ export class ScrapeWorkHandler {
         sessionId: item.sessionId,
         triggerSource: session.triggerSource,
         signal,
+        attemptCount: item.attemptCount,
+        maxAttempts: item.maxAttempts,
       });
       if (result.outcome === "error" && result.retryable) {
         throw new RetryableScrapeError(

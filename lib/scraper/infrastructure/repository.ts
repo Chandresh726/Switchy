@@ -202,6 +202,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
       }
 
       let jobsUpdated = 0;
+      const persistenceWarnings: string[] = [];
       for (const { existingJobId, job } of input.existingJobUpdates) {
         const existingJob = currentJobsById.get(existingJobId);
         const urlOwner = currentJobsByUrl.get(job.url);
@@ -211,9 +212,18 @@ export class DrizzleScraperRepository implements IScraperRepository {
             (urlOwner.archiveSource !== "scraper" && urlOwner.archiveSource !== "stale") ||
             jobIdsToReopenSet.has(urlOwner.id)
           ) {
-            throw new Error(
-              `Cannot reconcile job ${existingJobId} with URL owned by active job ${urlOwner.id}.`
+            // A single unresolvable URL collision must not discard the whole
+            // company's fetch. Skip this hydration candidate and record a
+            // warning so the collision stays visible in the scraping log.
+            const collisionReason = jobIdsToReopenSet.has(urlOwner.id)
+              ? "which is being reopened in this run"
+              : urlOwner.status !== "archived"
+                ? "which is active"
+                : `which is archived (archiveSource=${urlOwner.archiveSource ?? "unknown"})`;
+            persistenceWarnings.push(
+              `Skipped hydration for job ${existingJobId}: URL owned by job ${urlOwner.id} ${collisionReason}.`
             );
+            continue;
           }
 
           const archivedIdentityUrl = buildArchivedIdentityUrl(urlOwner.url, urlOwner.id);
@@ -284,6 +294,15 @@ export class DrizzleScraperRepository implements IScraperRepository {
         );
       }
       const insertedJobIds = insertedJobs.map((job) => job.id);
+      // onConflictDoNothing silently drops rows racing an existing
+      // (company, externalId/URL) pair. Warn on the delta so an undercount
+      // of jobsAdded stays explainable in the scraping log.
+      const skippedInserts = input.jobsToInsert.length - insertedJobIds.length;
+      if (skippedInserts > 0) {
+        persistenceWarnings.push(
+          `Skipped ${skippedInserts} insert${skippedInserts === 1 ? "" : "s"} conflicting with existing jobs.`
+        );
+      }
       const matchableJobIds = input.enableMatching
         ? insertedJobs
             .filter(
@@ -294,6 +313,10 @@ export class DrizzleScraperRepository implements IScraperRepository {
         : [];
 
       const completedAt = new Date();
+      const logErrorMessage = [input.log.errorMessage, ...persistenceWarnings]
+        .map((message) => message?.trim())
+        .filter((message): message is string => Boolean(message))
+        .join("; ");
       const insertedLog = tx
         .insert(scrapingLogs)
         .values({
@@ -302,6 +325,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
           jobsAdded: insertedJobIds.length,
           jobsUpdated,
           jobsArchived,
+          errorMessage: logErrorMessage.length > 0 ? logErrorMessage : undefined,
           matcherStatus: matchableJobIds.length > 0 ? "pending" : null,
           matcherJobsTotal: matchableJobIds.length > 0 ? matchableJobIds.length : null,
           matcherJobsCompleted: 0,
@@ -355,6 +379,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
         jobsArchived,
         logId: insertedLog.id,
         matchOutboxId,
+        warnings: persistenceWarnings,
       };
     }, { behavior: "immediate" });
   }

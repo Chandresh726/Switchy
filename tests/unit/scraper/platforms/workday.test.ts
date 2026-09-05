@@ -30,7 +30,13 @@ function detail(id: string) {
   };
 }
 
-function browserClient(bootstrap = vi.fn(async () => ({
+function browserClient(bootstrap: (
+  url: string
+) => Promise<{
+  baseUrl: string;
+  cookies: string;
+  csrfToken?: string;
+} | null> = vi.fn(async () => ({
   baseUrl: "https://acme.wd5.myworkdayjobs.com",
   cookies: "session=fresh",
   csrfToken: "csrf-fresh",
@@ -180,10 +186,13 @@ describe("WorkdayScraper", () => {
     const result = await scraper.scrape("https://acme.wd5.myworkdayjobs.com/Acme");
 
     expect(result).toMatchObject({
-      outcome: "partial",
+      outcome: "success",
       totalListings: 1,
       listingCompleteness: "complete",
     });
+    // A single failed detail degrades to a warning instead of failing the board.
+    const detailWarning = "issues" in result ? result.issues?.[0]?.message : undefined;
+    expect(detailWarning).toContain("detail request");
     expect(result.jobs).toHaveLength(1);
     expect(result.jobs[0]).toMatchObject({
       externalId: "workday-Acme-REQ-1",
@@ -233,6 +242,47 @@ describe("WorkdayScraper", () => {
       listingCompleteness: "complete",
     });
     expect(maxActive).toBe(6);
+  });
+
+  it("reports the stage and HTTP status when the first list page fails", async () => {
+    const bootstrap = vi.fn(async () => {
+      throw new Error("browser must remain unused");
+    });
+    const httpClient = createHttpClientStub({
+      post: vi.fn(async () => {
+        throw new HttpError(503, "service unavailable", "list");
+      }) as IHttpClient["post"],
+      get: vi.fn() as IHttpClient["get"],
+    });
+    const scraper = new WorkdayScraper(httpClient, browserClient(bootstrap));
+
+    const result = await scraper.scrape("https://acme.wd5.myworkdayjobs.com/Acme");
+
+    expect(result.outcome).toBe("error");
+    if (result.outcome !== "error") throw new Error("Expected an error result");
+    expect(result.error.message).toContain("stage=list-page");
+    expect(result.error.message).toContain("offset=0");
+    expect(result.error.message).toContain("HTTP 503");
+    expect(result.error.retryable).toBe(true);
+    expect(bootstrap).not.toHaveBeenCalled();
+  });
+
+  it("reports the bootstrap stage when session bootstrap fails", async () => {
+    const bootstrap = vi.fn(async () => null);
+    const httpClient = createHttpClientStub({
+      post: vi.fn(async () => {
+        throw new HttpError(403, "forbidden", "list");
+      }) as IHttpClient["post"],
+      get: vi.fn() as IHttpClient["get"],
+    });
+    const scraper = new WorkdayScraper(httpClient, browserClient(bootstrap));
+
+    const result = await scraper.scrape("https://acme.wd5.myworkdayjobs.com/Acme");
+
+    expect(result.outcome).toBe("error");
+    if (result.outcome !== "error") throw new Error("Expected an error result");
+    expect(result.error.message).toContain("stage=bootstrap");
+    expect(result.error.message).toContain("offset=0");
   });
 
   it("retries a missing offset without browser and protects completeness", async () => {

@@ -91,6 +91,7 @@ function createRepositoryMock(options: RepositoryMockOptions = {}) {
         jobsArchived,
         logId: 7,
         matchOutboxId: persistedMatchableJobIds.length > 0 ? "outbox-1" : null,
+        warnings: [] as string[],
       };
     }),
     createScrapingLog: vi.fn(async () => 7),
@@ -164,6 +165,191 @@ describe("ScrapeCompanyPipeline", () => {
         log: expect.objectContaining({
           status: "partial",
           errorMessage: "one job was skipped",
+        }),
+      })
+    );
+  });
+
+  it("surfaces persistence warnings without flipping success to partial", async () => {
+    const repository = createRepositoryMock();
+    repository.persistScrapeResult.mockResolvedValueOnce({
+      insertedJobIds: [101],
+      matchableJobIds: [],
+      jobsAdded: 1,
+      jobsUpdated: 0,
+      jobsArchived: 0,
+      logId: 7,
+      matchOutboxId: null,
+      warnings: ["Skipped hydration for job 8741: URL owned by active job 1264."],
+    });
+    const registry = createRegistryMock({
+      outcome: "success",
+      jobs: [
+        {
+          externalId: "eightfold-nvidia-1",
+          title: "Software Engineer",
+          url: "https://jobs.example.com/1",
+        },
+      ],
+      totalListings: 1,
+      openExternalIds: ["eightfold-nvidia-1"],
+      listingCompleteness: "complete",
+    });
+    const pipeline = new ScrapeCompanyPipeline(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} },
+      new StoredScrapeSettingsProvider(repository)
+    );
+
+    const result = await pipeline.scrape(company.id, {
+      sessionId: "session-persistence-warning",
+      triggerSource: "manual",
+    });
+
+    expect(result.outcome).toBe("success");
+    expect(result.success).toBe(true);
+    expect(result.warnings).toEqual([
+      "Skipped hydration for job 8741: URL owned by active job 1264.",
+    ]);
+  });
+
+  it("skips the error log for retryable failures before the final attempt", async () => {
+    const repository = createRepositoryMock();
+    const registry = createRegistryMock({
+      outcome: "error",
+      jobs: [],
+      listingCompleteness: "unknown",
+      error: createScraperError("network_error", "upstream unavailable"),
+    });
+    const pipeline = new ScrapeCompanyPipeline(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} },
+      new StoredScrapeSettingsProvider(repository)
+    );
+
+    const retried = await pipeline.scrape(company.id, {
+      sessionId: "session-retry",
+      triggerSource: "manual",
+      attemptCount: 1,
+      maxAttempts: 3,
+    });
+
+    expect(retried).toMatchObject({ outcome: "error", retryable: true });
+    expect(retried.logId).toBeUndefined();
+    expect(repository.createScrapingLog).not.toHaveBeenCalled();
+
+    const terminal = await pipeline.scrape(company.id, {
+      sessionId: "session-retry",
+      triggerSource: "manual",
+      attemptCount: 3,
+      maxAttempts: 3,
+    });
+
+    expect(terminal).toMatchObject({ outcome: "error", retryable: true });
+    expect(repository.createScrapingLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs non-retryable failures on the first attempt", async () => {
+    const repository = createRepositoryMock();
+    const registry = createRegistryMock({
+      outcome: "error",
+      jobs: [],
+      listingCompleteness: "unknown",
+      error: createScraperError("invalid_url", "bad board token"),
+    });
+    const pipeline = new ScrapeCompanyPipeline(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} },
+      new StoredScrapeSettingsProvider(repository)
+    );
+
+    const result = await pipeline.scrape(company.id, {
+      sessionId: "session-fatal",
+      triggerSource: "manual",
+      attemptCount: 1,
+      maxAttempts: 3,
+    });
+
+    expect(result).toMatchObject({ outcome: "error", retryable: false });
+    expect(repository.createScrapingLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the error log for thrown retryable failures before the final attempt", async () => {
+    const repository = createRepositoryMock();
+    const registry = createRegistryMock(async () => {
+      throw new Error("connection timed out");
+    });
+    const pipeline = new ScrapeCompanyPipeline(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} },
+      new StoredScrapeSettingsProvider(repository)
+    );
+
+    const retried = await pipeline.scrape(company.id, {
+      sessionId: "session-throw",
+      triggerSource: "manual",
+      attemptCount: 2,
+      maxAttempts: 3,
+    });
+
+    expect(retried).toMatchObject({ outcome: "error", retryable: true });
+    expect(repository.createScrapingLog).not.toHaveBeenCalled();
+
+    const terminal = await pipeline.scrape(company.id, {
+      sessionId: "session-throw",
+      triggerSource: "manual",
+      attemptCount: 3,
+      maxAttempts: 3,
+    });
+
+    expect(terminal).toMatchObject({ outcome: "error", retryable: true });
+    expect(repository.createScrapingLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces tolerated scraper issues as warnings on success", async () => {
+    const repository = createRepositoryMock();
+    const registry = createRegistryMock({
+      outcome: "success",
+      jobs: [],
+      totalListings: 10,
+      openExternalIds: [],
+      listingCompleteness: "complete",
+      issues: [createScraperError("network_error", "1 detail request failed")],
+    });
+    const pipeline = new ScrapeCompanyPipeline(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} },
+      new StoredScrapeSettingsProvider(repository)
+    );
+
+    const result = await pipeline.scrape(company.id, {
+      sessionId: "session-success-warnings",
+      triggerSource: "manual",
+    });
+
+    expect(result.outcome).toBe("success");
+    expect(result.success).toBe(true);
+    expect(result.warnings).toEqual(["1 detail request failed"]);
+    expect(repository.persistScrapeResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        log: expect.objectContaining({
+          status: "success",
+          errorMessage: "1 detail request failed",
         }),
       })
     );
@@ -450,6 +636,52 @@ describe("ScrapeCompanyPipeline", () => {
 
     expect(repository.persistScrapeResult).toHaveBeenCalledWith(
       expect.objectContaining({ archiveMissing: true })
+    );
+  });
+
+  it("skips stale archival on tolerance-completed listings", async () => {
+    const existingJobs: ExistingJob[] = Array.from({ length: 100 }, (_, index) => ({
+      id: index + 1,
+      externalId: `uber-${index + 1}`,
+      title: `Role ${index + 1}`,
+      url: `https://jobs.example.com/${index + 1}`,
+      location: null,
+      status: "new",
+      description: "Existing description",
+    }));
+    const openExternalIds = existingJobs.slice(0, 98).map((job) => job.externalId as string);
+    const repository = createRepositoryMock({
+      activeCompanies: [uberCompany],
+      existingJobs,
+      insertedJobIds: [],
+    });
+    // 98 of 100 advertised: tolerance-completed, but the gap may still be
+    // open, so archival must stay off.
+    const registry = createRegistryMock({
+      outcome: "success",
+      jobs: [],
+      totalListings: openExternalIds.length,
+      advertisedTotal: 100,
+      openExternalIds,
+      listingCompleteness: "complete",
+    });
+
+    const pipeline = new ScrapeCompanyPipeline(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} },
+      new StoredScrapeSettingsProvider(repository)
+    );
+
+    await pipeline.scrape(uberCompany.id, {
+      sessionId: "session-tolerance-no-archive",
+      triggerSource: "manual",
+    });
+
+    expect(repository.persistScrapeResult).toHaveBeenCalledWith(
+      expect.objectContaining({ archiveMissing: false })
     );
   });
 

@@ -20,10 +20,15 @@ import {
   type BrowserScraperConfig,
   type ScrapeOptions,
   type ScraperError,
+  type ScraperErrorResult,
   type ScrapedJob,
   type ScraperResult,
 } from "@/lib/scraper/types";
 import { AbstractBrowserScraper, DEFAULT_BROWSER_CONFIG } from "../core";
+import {
+  isDetailFailuresTolerable,
+  resolveListingCompleteness,
+} from "./shared/completeness";
 import { selectListingsForHydration } from "./shared/listing-selection";
 
 type WorkdayJobListItem = {
@@ -50,6 +55,26 @@ type WorkdayListFetchResult = {
   unidentifiedCount: number;
   invalidCount: number;
 };
+
+type WorkdayListFetchStage = "bootstrap" | "list-page";
+
+class WorkdayListError extends Error {
+  constructor(
+    readonly stage: WorkdayListFetchStage,
+    readonly offset: number,
+    message: string,
+    readonly status?: number,
+    options?: ErrorOptions
+  ) {
+    super(message, options);
+    this.name = "WorkdayListError";
+  }
+
+  describe(): string {
+    const statusSuffix = this.status !== undefined ? `, HTTP ${this.status}` : "";
+    return `Failed to fetch Workday jobs list (stage=${this.stage}, offset=${this.offset}${statusSuffix}): ${this.message}`;
+  }
+}
 
 type WorkdayJobDetailResponse = {
   jobPostingInfo: {
@@ -179,8 +204,8 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
 
       const sessionController = this.createSessionController(parsedUrl);
       const listResult = await this.fetchAllJobListItems(sessionController);
-      if (!listResult) {
-        return this.failure("network_error", "Failed to fetch Workday jobs list.");
+      if (listResult instanceof WorkdayListError) {
+        return this.toListFailure(listResult);
       }
 
       const allJobListItems = listResult.jobs;
@@ -284,7 +309,11 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         )
       );
 
-      const isPartial = unresolvedDetailJobs.length > 0 || !listResult.isComplete;
+      // jobsToFetch is the attempted hydration count (unresolved details
+      // are retained as listing fallbacks inside scrapedJobs).
+      const isPartial =
+        !listResult.isComplete ||
+        !isDetailFailuresTolerable(unresolvedDetailJobs.length, jobsToFetch.length);
       const issues: ScraperError[] = [];
       if (!listResult.isComplete) issues.push(this.createListIssue(listResult));
       if (unresolvedDetailJobs.length > 0) {
@@ -299,6 +328,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         outcome: isPartial ? "partial" : "success",
         jobs: scrapedJobs,
         totalListings: allJobListItems.length,
+        advertisedTotal: listResult.advertisedCount,
         detectedBoardToken,
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,
@@ -312,6 +342,26 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
 
   protected async bootstrapSession(url: string): Promise<BrowserSession | null> {
     return this.browserClient.bootstrap(url);
+  }
+
+  /**
+   * Preserves the underlying failure classification (HTTP status codes,
+   * payload errors) instead of collapsing everything to `network_error`, so
+   * unfixable failures (auth, parse) don't burn queue retries while
+   * transient ones (5xx, bootstrap) still do.
+   */
+  private toListFailure(error: WorkdayListError): ScraperErrorResult {
+    const cause = error.cause;
+    if (cause instanceof BrowserSessionBootstrapError) {
+      return this.failure("browser_error", error.describe());
+    }
+    if (cause instanceof HttpError) {
+      return this.failureForHttpStatus(cause.status, error.describe());
+    }
+    if (cause instanceof ScraperPayloadError) {
+      return this.failure("parse_error", error.describe());
+    }
+    return this.failure("network_error", error.describe());
   }
 
   private parseUrl(url: string): WorkdaySource | null {
@@ -440,7 +490,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
     controller: WorkdaySessionController,
     offset: number = 0,
     limit: number = WORKDAY_PAGE_SIZE
-  ): Promise<WorkdayJobListResponse | null> {
+  ): Promise<WorkdayJobListResponse> {
     try {
       const payload = await this.withSessionFallback(controller, (session) => {
         const url = `${session.baseUrl}/wday/cxs/${session.tenant}/${session.board}/jobs`;
@@ -472,16 +522,35 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         invalidCount: parsedItems.invalidCount,
       };
     } catch (error) {
-      if (error instanceof BrowserSessionBootstrapError) throw error;
-      if (error instanceof HttpError || error instanceof ScraperPayloadError) throw error;
       throwIfScrapeAborted(error);
-      return null;
+      if (error instanceof WorkdayListError) throw error;
+      if (error instanceof BrowserSessionBootstrapError) {
+        throw new WorkdayListError(
+          "bootstrap",
+          offset,
+          error.message,
+          undefined,
+          { cause: error }
+        );
+      }
+      if (error instanceof HttpError) {
+        throw new WorkdayListError("list-page", offset, error.message, error.status, {
+          cause: error,
+        });
+      }
+      throw new WorkdayListError(
+        "list-page",
+        offset,
+        error instanceof Error ? error.message : "Unknown list fetch error",
+        undefined,
+        { cause: error }
+      );
     }
   }
 
   private async fetchAllJobListItems(
     controller: WorkdaySessionController
-  ): Promise<WorkdayListFetchResult | null> {
+  ): Promise<WorkdayListFetchResult | WorkdayListError> {
     const fetchSafely = async (offset: number) => {
       try {
         return await this.fetchJobListPage(
@@ -490,6 +559,8 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           WORKDAY_PAGE_SIZE
         );
       } catch (error) {
+        // A broken session cannot be salvaged per-offset; fail the board.
+        if (error instanceof WorkdayListError && error.stage === "bootstrap") throw error;
         if (error instanceof BrowserSessionBootstrapError) throw error;
         if (error instanceof ScraperPayloadError) throw error;
         throwIfScrapeAborted(error);
@@ -497,10 +568,12 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       }
     };
 
-    const firstBatch = await fetchSafely(0);
-
-    if (!firstBatch || !Array.isArray(firstBatch.jobPostings)) {
-      return null;
+    let firstBatch: WorkdayJobListResponse;
+    try {
+      firstBatch = await this.fetchJobListPage(controller, 0, WORKDAY_PAGE_SIZE);
+    } catch (error) {
+      if (error instanceof WorkdayListError) return error;
+      throw error;
     }
 
     const total = firstBatch.total || 0;
@@ -539,6 +612,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         try {
           return await this.fetchJobListPage(controller, offset, WORKDAY_PAGE_SIZE);
         } catch (error) {
+          if (error instanceof WorkdayListError && error.stage === "bootstrap") throw error;
           if (error instanceof BrowserSessionBootstrapError) throw error;
           throwIfScrapeAborted(error);
           return null;
@@ -596,14 +670,21 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
     if (allJobs.length >= total && invalidCount === 0) {
       missingOffsets.clear();
     }
+    // Invalid listings are already excluded from `allJobs`, so they count
+    // toward the tolerated gap instead of failing the board on their own.
+    // Unidentified listings stay a hard failure: without a stable Workday ID
+    // they cannot be deduplicated or archived safely.
+    const { isComplete: countsComplete } = resolveListingCompleteness(
+      allJobs.length,
+      total
+    );
 
     return {
       jobs: allJobs,
       isComplete:
         missingOffsets.size === 0 &&
-        allJobs.length >= total &&
-        unidentifiedCount === 0 &&
-        invalidCount === 0,
+        countsComplete &&
+        unidentifiedCount === 0,
       advertisedCount: total,
       missingOffsets: Array.from(missingOffsets).sort((a, b) => a - b),
       unidentifiedCount,

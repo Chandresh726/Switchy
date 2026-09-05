@@ -1,3 +1,4 @@
+import { BrowserSessionBootstrapError } from "@/lib/scraper/infrastructure/browser-session-error";
 import type { ScrapeCompanyStore } from "@/lib/scraper/infrastructure/types";
 import type { ScrapeOptions } from "@/lib/scraper/core/types";
 import {
@@ -52,6 +53,13 @@ export interface ScrapeCompanyRequest {
   sessionId: string;
   triggerSource: TriggerSource;
   signal?: AbortSignal;
+  /**
+   * Queue attempt tracking. When a retryable failure happens before the final
+   * attempt, the error log write is skipped so each (session, company) pair
+   * leaves exactly one terminal log row instead of one per attempt.
+   */
+  attemptCount?: number;
+  maxAttempts?: number;
 }
 
 interface ScrapeExecutionResult {
@@ -115,6 +123,8 @@ export class ScrapeCompanyPipeline {
       sessionId: string;
       triggerSource: TriggerSource;
       signal?: AbortSignal;
+      attemptCount?: number;
+      maxAttempts?: number;
     }
   ): Promise<FetchResult> {
     const startTime = Date.now();
@@ -166,6 +176,8 @@ export class ScrapeCompanyPipeline {
         fetchDuration,
         processingStartedAt,
         logger,
+        attemptCount: options.attemptCount,
+        maxAttempts: options.maxAttempts,
       });
 
       return this.createFetchResult({
@@ -179,7 +191,46 @@ export class ScrapeCompanyPipeline {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       logger.error(errorMessage);
 
-      if (!(error instanceof ScrapingLogWriteError)) {
+      const httpStatus =
+        error instanceof Error
+          ? (error as Error & { status?: unknown }).status
+          : undefined;
+      const retryableStatus =
+        typeof httpStatus === "number" &&
+        (httpStatus === 408 ||
+          httpStatus === 425 ||
+          httpStatus === 429 ||
+          httpStatus === 502 ||
+          httpStatus === 503 ||
+          httpStatus === 504 ||
+          (httpStatus >= 500 && httpStatus < 600));
+      const lowerMessage = errorMessage.toLowerCase();
+      const retryable =
+        retryableStatus ||
+        // Browser bootstrap failures map to retryable `browser_error` in
+        // createFailureFromUnknown; agree with that classification here so
+        // the log-suppression decision matches the queue-retry decision.
+        error instanceof BrowserSessionBootstrapError ||
+        (error instanceof Error &&
+          (error.name === "ScrapeAbortError" ||
+            lowerMessage.includes("timeout") ||
+            lowerMessage.includes("timed out") ||
+            lowerMessage.includes("econnreset") ||
+            lowerMessage.includes("econnrefused") ||
+            lowerMessage.includes("econnaborted") ||
+            lowerMessage.includes("rate limit") ||
+            lowerMessage.includes("too many requests") ||
+            lowerMessage.includes("service unavailable")));
+
+      // The queue retries retryable failures, so only the terminal attempt
+      // writes an error log. Otherwise every retry leaves its own row and a
+      // single outage produces N log rows per company.
+      const terminalAttempt = this.isTerminalAttempt(
+        retryable,
+        options.attemptCount,
+        options.maxAttempts
+      );
+      if (terminalAttempt && !(error instanceof ScrapingLogWriteError)) {
         await this.repository.createScrapingLog({
           companyId,
           sessionId: options.sessionId,
@@ -203,33 +254,6 @@ export class ScrapeCompanyPipeline {
           completedAt: new Date(),
         });
       }
-
-      const httpStatus =
-        error instanceof Error
-          ? (error as Error & { status?: unknown }).status
-          : undefined;
-      const retryableStatus =
-        typeof httpStatus === "number" &&
-        (httpStatus === 408 ||
-          httpStatus === 425 ||
-          httpStatus === 429 ||
-          httpStatus === 502 ||
-          httpStatus === 503 ||
-          httpStatus === 504 ||
-          (httpStatus >= 500 && httpStatus < 600));
-      const lowerMessage = errorMessage.toLowerCase();
-      const retryable =
-        retryableStatus ||
-        (error instanceof Error &&
-          (error.name === "ScrapeAbortError" ||
-            lowerMessage.includes("timeout") ||
-            lowerMessage.includes("timed out") ||
-            lowerMessage.includes("econnreset") ||
-            lowerMessage.includes("econnrefused") ||
-            lowerMessage.includes("econnaborted") ||
-            lowerMessage.includes("rate limit") ||
-            lowerMessage.includes("too many requests") ||
-            lowerMessage.includes("service unavailable")));
       return this.createFetchResult({
         companyId,
         companyName,
@@ -265,6 +289,21 @@ export class ScrapeCompanyPipeline {
     return scraperResult.outcome;
   }
 
+  /**
+   * Mirrors the queue runner's retry predicate (`attemptCount < maxAttempts`
+   * in `LocalLeasedWorkRunner`): a retryable failure is terminal only on the
+   * final attempt. Callers without attempt tracking default to terminal so
+   * error logs are always written.
+   */
+  private isTerminalAttempt(
+    retryable: boolean,
+    attemptCount?: number,
+    maxAttempts?: number
+  ): boolean {
+    if (!retryable) return true;
+    return Math.max(1, attemptCount ?? 1) >= Math.max(1, maxAttempts ?? 1);
+  }
+
   private async processScraperResult(params: {
     scraperResult: ScraperResult<ScrapedJob>;
     companyId: number;
@@ -285,6 +324,8 @@ export class ScrapeCompanyPipeline {
     fetchDuration: number;
     processingStartedAt: number;
     logger: ScraperLogger;
+    attemptCount?: number;
+    maxAttempts?: number;
   }): Promise<ScrapeExecutionResult> {
     const {
       scraperResult,
@@ -299,6 +340,8 @@ export class ScrapeCompanyPipeline {
       fetchDuration,
       processingStartedAt,
       logger,
+      attemptCount,
+      maxAttempts,
     } = params;
 
     const outcome = this.resolveScrapeOutcome(scraperResult);
@@ -307,26 +350,32 @@ export class ScrapeCompanyPipeline {
       const errorMessage = scraperResult.error.message;
       logger.error(errorMessage);
 
-      try {
-        await this.repository.createScrapingLog({
-          companyId,
-          sessionId,
-          triggerSource,
-          platform,
-          status: "error",
-          jobsFound: 0,
-          jobsAdded: 0,
-          jobsUpdated: 0,
-          jobsFiltered: 0,
-          jobsArchived: 0,
-          errorMessage,
-          duration: Date.now() - startTime,
-          fetchDuration,
-          processingDuration: Date.now() - processingStartedAt,
-          completedAt: new Date(),
-        });
-      } catch (error) {
-        throw new ScrapingLogWriteError(error);
+      // Mirror the catch-block policy: retryable failures before the final
+      // attempt leave no log row; the terminal attempt records the outcome.
+      if (
+        this.isTerminalAttempt(scraperResult.error.retryable, attemptCount, maxAttempts)
+      ) {
+        try {
+          await this.repository.createScrapingLog({
+            companyId,
+            sessionId,
+            triggerSource,
+            platform,
+            status: "error",
+            jobsFound: 0,
+            jobsAdded: 0,
+            jobsUpdated: 0,
+            jobsFiltered: 0,
+            jobsArchived: 0,
+            errorMessage,
+            duration: Date.now() - startTime,
+            fetchDuration,
+            processingDuration: Date.now() - processingStartedAt,
+            completedAt: new Date(),
+          });
+        } catch (error) {
+          throw new ScrapingLogWriteError(error);
+        }
       }
 
       return {
@@ -365,8 +414,15 @@ export class ScrapeCompanyPipeline {
       )
     );
 
+    // Stale archival is only safe on exact listings. Tolerance-completed
+    // runs (fetched < advertised) skip it: the gap may still be open, and
+    // archiving it would flip live jobs to archived until the next run.
+    // Unknown totals (field absent) preserve legacy behavior.
+    const listingsExact =
+      scraperResult.advertisedTotal == null || totalFetched >= scraperResult.advertisedTotal;
     const archiveMissing =
       scraperResult.listingCompleteness === "complete" &&
+      listingsExact &&
       !(
         (platform === "uber" || platform === "oracle") &&
         this.shouldSkipIncompleteArchival(openExternalIds, existingJobs)
@@ -392,10 +448,10 @@ export class ScrapeCompanyPipeline {
 
     const matcherConfig = await getMatcherConfig();
     const logStatus = outcome === "success" ? "success" : "partial";
-    const warnings =
-      scraperResult.outcome === "partial"
-        ? scraperResult.issues?.map((issue) => issue.message)
-        : undefined;
+    // Issues on a success outcome are tolerated gaps (see completeness
+    // helper); surface them as warnings instead of dropping them. The
+    // error branch above returns early, so only success/partial reach here.
+    const scraperWarnings = scraperResult.issues?.map((issue) => issue.message);
     const jobsFiltered = filterResult.filteredOut + (scraperResult.earlyFiltered?.total || 0);
     const persistenceStartedAtMs = Date.now();
     const persistenceResult = await this.repository.persistScrapeResult({
@@ -434,7 +490,7 @@ export class ScrapeCompanyPipeline {
         status: logStatus,
         jobsFound: totalFetched,
         jobsFiltered,
-        errorMessage: warnings?.join("; "),
+        errorMessage: scraperWarnings?.join("; "),
         fetchDuration,
         processingDuration: persistenceStartedAtMs - processingStartedAt,
       },
@@ -445,6 +501,11 @@ export class ScrapeCompanyPipeline {
       void dispatchPendingAIWork();
     }
 
+    // Persistence-level skips (e.g. unresolvable URL collisions) are merged
+    // into the scraping log by the repository and surfaced here without
+    // flipping an otherwise successful scrape to partial.
+    const warnings = [...(scraperWarnings ?? []), ...(persistenceResult.warnings ?? [])];
+
     return {
       outcome,
       jobsFound: totalFetched,
@@ -453,7 +514,7 @@ export class ScrapeCompanyPipeline {
       jobsFiltered,
       jobsArchived: persistenceResult.jobsArchived,
       logId: persistenceResult.logId,
-      warnings,
+      warnings: warnings.length > 0 ? warnings : undefined,
     };
   }
 

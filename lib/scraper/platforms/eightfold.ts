@@ -27,6 +27,10 @@ import {
   DEFAULT_BROWSER_CONFIG,
 } from "../core";
 import { selectListingsForHydration } from "./shared/listing-selection";
+import {
+  isDetailFailuresTolerable,
+  resolveListingCompleteness,
+} from "./shared/completeness";
 
 interface EightfoldSearchResponse {
   status: number;
@@ -346,7 +350,9 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         }
       }
 
-      const isPartial = detailFailures > 0 || !listResult.isComplete;
+      const isPartial =
+        !listResult.isComplete ||
+        !isDetailFailuresTolerable(detailFailures, positionsToFetch.length);
       const issues: ScraperError[] = [];
       if (!listResult.isComplete) {
         issues.push(this.createListingIssue(listResult, allPositions.length));
@@ -367,6 +373,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         outcome: isPartial ? "partial" : "success",
         jobs: scrapedJobs,
         totalListings: allPositions.length,
+        advertisedTotal: listResult.advertisedCount,
         detectedBoardToken: options?.boardToken ? undefined : resolvedDomain,
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,
@@ -653,11 +660,22 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
     }
 
     const allPositions = Array.from(positionsById.values());
-    const countIsComplete =
-      allPositions.length >= advertisedCount || sitemapReconciled;
-    if (countIsComplete) {
+    // Over-fetching (or a reconciled sitemap) clears missing offsets: the
+    // pages demonstrably delivered. Tolerance-based completeness below must
+    // NOT clear them — a failed page with a small gap stays a hard failure
+    // like on Oracle/Workday.
+    const genuinelyComplete = allPositions.length >= advertisedCount;
+    if (genuinelyComplete || sitemapReconciled) {
       missingOffsets.clear();
     }
+    // Advertised counts drift by a few positions; exact equality turned
+    // small gaps into board failures.
+    const { isComplete: countsComplete } = resolveListingCompleteness(
+      allPositions.length,
+      advertisedCount
+    );
+    const countIsComplete =
+      countsComplete || sitemapReconciled;
 
     return {
       positions: allPositions,

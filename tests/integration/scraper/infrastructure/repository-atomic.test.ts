@@ -455,7 +455,7 @@ describe("DrizzleScraperRepository atomic persistence", () => {
     });
   });
 
-  it("rejects URL claims against a stale-archived job that is being reopened", async () => {
+  it("skips URL claims against a stale-archived job that is being reopened", async () => {
     const database = createTestDatabase();
     const company = seedCompanyAndSession(database);
     const [archivedJob, currentJob] = database
@@ -484,36 +484,124 @@ describe("DrizzleScraperRepository atomic persistence", () => {
 
     const repository = new DrizzleScraperRepository(database);
 
-    await expect(
-      repository.persistScrapeResult({
-        companyId: company.id,
-        openExternalIds: ["reopening-id", "current-listing-id"],
-        archiveMissing: false,
-        statusesToArchive: ["new"],
-        jobsToInsert: [],
-        existingJobUpdates: [
-          {
-            existingJobId: currentJob.id,
-            job: {
-              externalId: "current-listing-id",
-              title: "Current role",
-              url: "https://jobs.example.com/careers/job/123",
-              description: "Current description",
-            },
+    const result = await repository.persistScrapeResult({
+      companyId: company.id,
+      openExternalIds: ["reopening-id", "current-listing-id"],
+      archiveMissing: false,
+      statusesToArchive: ["new"],
+      jobsToInsert: [],
+      existingJobUpdates: [
+        {
+          existingJobId: currentJob.id,
+          job: {
+            externalId: "current-listing-id",
+            title: "Current role",
+            url: "https://jobs.example.com/careers/job/123",
+            description: "Current description",
           },
-        ],
-        startedAtMs: Date.now(),
-        enableMatching: false,
-        log: {
-          sessionId: "session-1",
-          triggerSource: "manual",
-          platform: "eightfold",
-          status: "success",
-          jobsFound: 2,
-          jobsFiltered: 0,
         },
-      })
-    ).rejects.toThrow("Cannot reconcile job");
+      ],
+      startedAtMs: Date.now(),
+      enableMatching: false,
+      log: {
+        sessionId: "session-1",
+        triggerSource: "manual",
+        platform: "eightfold",
+        status: "success",
+        jobsFound: 2,
+        jobsFiltered: 0,
+      },
+    });
+
+    // A single unresolvable collision skips that hydration candidate instead
+    // of discarding the whole company's fetch.
+    expect(result.jobsUpdated).toBe(0);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings?.[0]).toContain(`Skipped hydration for job ${currentJob.id}`);
+
+    const storedCurrentJob = database.select().from(jobs).where(eq(jobs.id, currentJob.id)).get();
+    expect(storedCurrentJob).toMatchObject({
+      url: "https://tenant.example.com/careers/job/123",
+    });
+    // The reopened archived job is still revived; only the colliding hydration is skipped.
+    const storedArchivedJob = database.select().from(jobs).where(eq(jobs.id, archivedJob.id)).get();
+    expect(storedArchivedJob).toMatchObject({ status: "new" });
+    const storedLog = database.select().from(scrapingLogs).where(eq(scrapingLogs.id, result.logId)).get();
+    expect(storedLog?.errorMessage).toContain(`Skipped hydration for job ${currentJob.id}`);
+  });
+
+  it("merges persistence warnings with a pre-existing log error message", async () => {
+    const database = createTestDatabase();
+    const company = seedCompanyAndSession(database);
+    const [archivedJob, currentJob] = database
+      .insert(jobs)
+      .values([
+        {
+          companyId: company.id,
+          externalId: "reopening-id",
+          title: "Reopening role",
+          url: "https://jobs.example.com/careers/job/123",
+          status: "archived",
+          archiveSource: "stale",
+          archivedAt: new Date("2026-08-24T12:00:00.000Z"),
+        },
+        {
+          companyId: company.id,
+          externalId: "current-listing-id",
+          title: "Current role",
+          url: "https://tenant.example.com/careers/job/123",
+          status: "viewed",
+        },
+      ])
+      .returning({ id: jobs.id })
+      .all();
+    if (!archivedJob || !currentJob) throw new Error("Failed to seed reopen collision.");
+
+    const repository = new DrizzleScraperRepository(database);
+    const result = await repository.persistScrapeResult({
+      companyId: company.id,
+      openExternalIds: ["reopening-id", "current-listing-id"],
+      archiveMissing: false,
+      statusesToArchive: ["new"],
+      jobsToInsert: [
+        {
+          externalId: "brand-new-id",
+          title: "Brand new role",
+          url: "https://tenant.example.com/careers/job/999",
+        },
+      ],
+      existingJobUpdates: [
+        {
+          existingJobId: currentJob.id,
+          job: {
+            externalId: "current-listing-id",
+            title: "Current role",
+            url: "https://jobs.example.com/careers/job/123",
+            description: "Current description",
+          },
+        },
+      ],
+      startedAtMs: Date.now(),
+      enableMatching: false,
+      log: {
+        sessionId: "session-1",
+        triggerSource: "manual",
+        platform: "eightfold",
+        status: "success",
+        jobsFound: 3,
+        jobsFiltered: 0,
+        errorMessage: "listings drifted by 1",
+      },
+    });
+
+    // The colliding update is skipped but the insert still commits.
+    expect(result.jobsUpdated).toBe(0);
+    expect(result.jobsAdded).toBe(1);
+    expect(result.warnings).toHaveLength(1);
+    const storedLog = database.select().from(scrapingLogs).where(eq(scrapingLogs.id, result.logId)).get();
+    expect(storedLog?.errorMessage).toBe(
+      `listings drifted by 1; Skipped hydration for job ${currentJob.id}: URL owned by job ${archivedJob.id} which is being reopened in this run.`
+    );
   });
 
   it("rejects persistence after its scrape session has been stopped", async () => {

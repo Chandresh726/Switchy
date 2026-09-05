@@ -22,6 +22,7 @@ import type {
   ScraperResult,
 } from "../core/types";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
+import { isDetailFailuresTolerable } from "./shared/completeness";
 import { selectListingsForHydration } from "./shared/listing-selection";
 
 interface JobviteListing {
@@ -157,7 +158,14 @@ export class JobviteScraper extends AbstractApiScraper<JobviteConfig> {
         toFilterable: (job) => ({ title: job.title, location: job.location }),
         getExternalId: (job) => job.externalId,
       });
-      const isComplete = listingResult.isComplete && detailFailures === 0;
+      // Failed details are dropped (not retained as fallbacks), so the
+      // attempted count includes them. Tolerance still requires at least one
+      // hydrated job: a board that produced nothing stays partial.
+      const detailsTolerable =
+        allJobs.length > 0 &&
+        isDetailFailuresTolerable(detailFailures, allJobs.length + detailFailures);
+      const isComplete =
+        listingResult.isComplete && (detailFailures === 0 || detailsTolerable);
       const issues = [];
       if (!listingResult.isComplete) {
         issues.push(
