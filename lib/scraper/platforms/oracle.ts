@@ -294,6 +294,7 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
         outcome: listingResult.isComplete && detailsTolerable ? "success" : "partial",
         jobs,
         totalListings: listings.length,
+        advertisedTotal: listingResult.advertisedTotal,
         openExternalIds,
         listingCompleteness: listingResult.isComplete ? "complete" : "partial",
         earlyFiltered: selection.earlyFiltered,

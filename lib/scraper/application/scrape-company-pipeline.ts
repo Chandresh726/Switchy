@@ -414,8 +414,15 @@ export class ScrapeCompanyPipeline {
       )
     );
 
+    // Stale archival is only safe on exact listings. Tolerance-completed
+    // runs (fetched < advertised) skip it: the gap may still be open, and
+    // archiving it would flip live jobs to archived until the next run.
+    // Unknown totals (field absent) preserve legacy behavior.
+    const listingsExact =
+      scraperResult.advertisedTotal == null || totalFetched >= scraperResult.advertisedTotal;
     const archiveMissing =
       scraperResult.listingCompleteness === "complete" &&
+      listingsExact &&
       !(
         (platform === "uber" || platform === "oracle") &&
         this.shouldSkipIncompleteArchival(openExternalIds, existingJobs)

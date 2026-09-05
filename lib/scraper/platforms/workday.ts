@@ -328,6 +328,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         outcome: isPartial ? "partial" : "success",
         jobs: scrapedJobs,
         totalListings: allJobListItems.length,
+        advertisedTotal: listResult.advertisedCount,
         detectedBoardToken,
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,

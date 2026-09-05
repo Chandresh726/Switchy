@@ -304,6 +304,7 @@ export class PhenomScraper extends AbstractApiScraper<PhenomConfig> {
             : "partial",
         jobs,
         totalListings: allListings.length,
+        advertisedTotal: first.totalHits,
         openExternalIds,
         listingCompleteness: listingComplete ? "complete" : "partial",
         earlyFiltered: selection.earlyFiltered,

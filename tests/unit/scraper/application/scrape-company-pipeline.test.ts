@@ -639,6 +639,52 @@ describe("ScrapeCompanyPipeline", () => {
     );
   });
 
+  it("skips stale archival on tolerance-completed listings", async () => {
+    const existingJobs: ExistingJob[] = Array.from({ length: 100 }, (_, index) => ({
+      id: index + 1,
+      externalId: `uber-${index + 1}`,
+      title: `Role ${index + 1}`,
+      url: `https://jobs.example.com/${index + 1}`,
+      location: null,
+      status: "new",
+      description: "Existing description",
+    }));
+    const openExternalIds = existingJobs.slice(0, 98).map((job) => job.externalId as string);
+    const repository = createRepositoryMock({
+      activeCompanies: [uberCompany],
+      existingJobs,
+      insertedJobIds: [],
+    });
+    // 98 of 100 advertised: tolerance-completed, but the gap may still be
+    // open, so archival must stay off.
+    const registry = createRegistryMock({
+      outcome: "success",
+      jobs: [],
+      totalListings: openExternalIds.length,
+      advertisedTotal: 100,
+      openExternalIds,
+      listingCompleteness: "complete",
+    });
+
+    const pipeline = new ScrapeCompanyPipeline(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: true, defaultFilters: {} },
+      new StoredScrapeSettingsProvider(repository)
+    );
+
+    await pipeline.scrape(uberCompany.id, {
+      sessionId: "session-tolerance-no-archive",
+      triggerSource: "manual",
+    });
+
+    expect(repository.persistScrapeResult).toHaveBeenCalledWith(
+      expect.objectContaining({ archiveMissing: false })
+    );
+  });
+
 
   it("does not trigger auto-match when inserted jobs have no descriptions", async () => {
     matcherMocks.getMatcherConfig.mockResolvedValue({ autoMatchAfterScrape: true });

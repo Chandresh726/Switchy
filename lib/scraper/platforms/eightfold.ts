@@ -373,6 +373,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         outcome: isPartial ? "partial" : "success",
         jobs: scrapedJobs,
         totalListings: allPositions.length,
+        advertisedTotal: listResult.advertisedCount,
         detectedBoardToken: options?.boardToken ? undefined : resolvedDomain,
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,

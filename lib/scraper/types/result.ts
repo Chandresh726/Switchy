@@ -54,6 +54,13 @@ interface ScraperResultBase<T extends ScrapedJob> {
   metadata?: ScraperMetadata;
   detectedBoardToken?: string;
   earlyFiltered?: EarlyFilterStats;
+  /**
+   * Board-advertised total, when the platform exposes one. The pipeline uses
+   * it to distinguish exact listings (safe for stale archival) from
+   * tolerance-completed ones (archival skipped: the gap may still be open).
+   * Absent means "unknown", which preserves legacy archival behavior.
+   */
+  advertisedTotal?: number | null;
 }
 
 type ListingContract =

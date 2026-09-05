@@ -213,6 +213,7 @@ export class TalentBrewScraper extends AbstractApiScraper<TalentBrewConfig> {
             : "partial",
         jobs,
         totalListings: allListings.length,
+        advertisedTotal: firstPage.advertisedTotal,
         openExternalIds,
         listingCompleteness: listingComplete ? "complete" : "partial",
         earlyFiltered: selection.earlyFiltered,

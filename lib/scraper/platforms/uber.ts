@@ -261,6 +261,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
         outcome: isPartial ? "partial" : "success",
         jobs,
         totalListings: listings.length,
+        advertisedTotal: listingResult.advertisedTotal,
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,
         listingCompleteness: listingResult.isComplete ? "complete" : "partial",
