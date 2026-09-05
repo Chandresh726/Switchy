@@ -91,6 +91,7 @@ function createRepositoryMock(options: RepositoryMockOptions = {}) {
         jobsArchived,
         logId: 7,
         matchOutboxId: persistedMatchableJobIds.length > 0 ? "outbox-1" : null,
+        warnings: [] as string[],
       };
     }),
     createScrapingLog: vi.fn(async () => 7),
@@ -167,6 +168,119 @@ describe("ScrapeCompanyPipeline", () => {
         }),
       })
     );
+  });
+
+  it("surfaces persistence warnings without flipping success to partial", async () => {
+    const repository = createRepositoryMock();
+    repository.persistScrapeResult.mockResolvedValueOnce({
+      insertedJobIds: [101],
+      matchableJobIds: [],
+      jobsAdded: 1,
+      jobsUpdated: 0,
+      jobsArchived: 0,
+      logId: 7,
+      matchOutboxId: null,
+      warnings: ["Skipped hydration for job 8741: URL owned by active job 1264."],
+    });
+    const registry = createRegistryMock({
+      outcome: "success",
+      jobs: [
+        {
+          externalId: "eightfold-nvidia-1",
+          title: "Software Engineer",
+          url: "https://jobs.example.com/1",
+        },
+      ],
+      totalListings: 1,
+      openExternalIds: ["eightfold-nvidia-1"],
+      listingCompleteness: "complete",
+    });
+    const pipeline = new ScrapeCompanyPipeline(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} },
+      new StoredScrapeSettingsProvider(repository)
+    );
+
+    const result = await pipeline.scrape(company.id, {
+      sessionId: "session-persistence-warning",
+      triggerSource: "manual",
+    });
+
+    expect(result.outcome).toBe("success");
+    expect(result.success).toBe(true);
+    expect(result.warnings).toEqual([
+      "Skipped hydration for job 8741: URL owned by active job 1264.",
+    ]);
+  });
+
+  it("skips the error log for retryable failures before the final attempt", async () => {
+    const repository = createRepositoryMock();
+    const registry = createRegistryMock({
+      outcome: "error",
+      jobs: [],
+      listingCompleteness: "unknown",
+      error: createScraperError("network_error", "upstream unavailable"),
+    });
+    const pipeline = new ScrapeCompanyPipeline(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} },
+      new StoredScrapeSettingsProvider(repository)
+    );
+
+    const retried = await pipeline.scrape(company.id, {
+      sessionId: "session-retry",
+      triggerSource: "manual",
+      attemptCount: 1,
+      maxAttempts: 3,
+    });
+
+    expect(retried).toMatchObject({ outcome: "error", retryable: true });
+    expect(retried.logId).toBeUndefined();
+    expect(repository.createScrapingLog).not.toHaveBeenCalled();
+
+    const terminal = await pipeline.scrape(company.id, {
+      sessionId: "session-retry",
+      triggerSource: "manual",
+      attemptCount: 3,
+      maxAttempts: 3,
+    });
+
+    expect(terminal).toMatchObject({ outcome: "error", retryable: true });
+    expect(repository.createScrapingLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs non-retryable failures on the first attempt", async () => {
+    const repository = createRepositoryMock();
+    const registry = createRegistryMock({
+      outcome: "error",
+      jobs: [],
+      listingCompleteness: "unknown",
+      error: createScraperError("invalid_url", "bad board token"),
+    });
+    const pipeline = new ScrapeCompanyPipeline(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} },
+      new StoredScrapeSettingsProvider(repository)
+    );
+
+    const result = await pipeline.scrape(company.id, {
+      sessionId: "session-fatal",
+      triggerSource: "manual",
+      attemptCount: 1,
+      maxAttempts: 3,
+    });
+
+    expect(result).toMatchObject({ outcome: "error", retryable: false });
+    expect(repository.createScrapingLog).toHaveBeenCalledTimes(1);
   });
 
   it("passes the queue cancellation signal into the scraper registry", async () => {

@@ -148,10 +148,13 @@ describe("EightfoldScraper", () => {
     );
 
     expect(result).toMatchObject({
-      outcome: "partial",
+      outcome: "success",
       totalListings: 1,
       listingCompleteness: "complete",
     });
+    // A single failed detail degrades to a warning instead of failing the board.
+    const detailWarning = "issues" in result ? result.issues?.[0]?.message : undefined;
+    expect(detailWarning).toContain("detail request");
     expect(result.jobs).toHaveLength(1);
     expect(result.jobs[0]).toMatchObject({
       externalId: "eightfold-microsoft-1",
@@ -303,10 +306,11 @@ describe("EightfoldScraper", () => {
     );
 
     expect(result).toMatchObject({
-      outcome: "partial",
+      outcome: "success",
       totalListings: 10,
-      listingCompleteness: "partial",
+      listingCompleteness: "complete",
     });
+    // A small advertised-count drift without unresolved pages is tolerated.
     expect(result.openExternalIds).toHaveLength(10);
     expect(
       fetchMock.mock.calls.some(([url]) => url.includes("/careers/sitemap.xml"))

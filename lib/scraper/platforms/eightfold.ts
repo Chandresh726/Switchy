@@ -27,6 +27,10 @@ import {
   DEFAULT_BROWSER_CONFIG,
 } from "../core";
 import { selectListingsForHydration } from "./shared/listing-selection";
+import {
+  isDetailFailuresTolerable,
+  resolveListingCompleteness,
+} from "./shared/completeness";
 
 interface EightfoldSearchResponse {
   status: number;
@@ -346,7 +350,9 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         }
       }
 
-      const isPartial = detailFailures > 0 || !listResult.isComplete;
+      const isPartial =
+        !listResult.isComplete ||
+        !isDetailFailuresTolerable(detailFailures, scrapedJobs.length);
       const issues: ScraperError[] = [];
       if (!listResult.isComplete) {
         issues.push(this.createListingIssue(listResult, allPositions.length));
@@ -653,8 +659,14 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
     }
 
     const allPositions = Array.from(positionsById.values());
+    // Advertised counts drift by a few positions; exact equality turned
+    // small gaps into board failures.
+    const { isComplete: countsComplete } = resolveListingCompleteness(
+      allPositions.length,
+      advertisedCount
+    );
     const countIsComplete =
-      allPositions.length >= advertisedCount || sitemapReconciled;
+      countsComplete || sitemapReconciled;
     if (countIsComplete) {
       missingOffsets.clear();
     }

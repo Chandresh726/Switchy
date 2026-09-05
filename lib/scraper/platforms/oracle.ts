@@ -25,6 +25,10 @@ import type {
   ScraperResult,
 } from "../core/types";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
+import {
+  isDetailFailuresTolerable,
+  resolveListingCompleteness,
+} from "./shared/completeness";
 import { selectListingsForHydration } from "./shared/listing-selection";
 
 const NullableStringSchema = z.string().nullable().optional();
@@ -282,8 +286,11 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
         );
       }
 
+      // Near-complete listings and a handful of failed details degrade to
+      // warnings instead of failing the whole board.
+      const detailsTolerable = isDetailFailuresTolerable(detailFailures, jobs.length);
       return {
-        outcome: listingResult.isComplete && detailFailures === 0 ? "success" : "partial",
+        outcome: listingResult.isComplete && detailsTolerable ? "success" : "partial",
         jobs,
         totalListings: listings.length,
         openExternalIds,
@@ -438,6 +445,13 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
       (failedOffsets.length === 0 &&
         lastPage.offset + lastPage.limit < advertisedTotal);
     const uniqueCount = this.dedupeListings(listings).length;
+    // Board totals routinely drift by a few jobs; exact equality turned
+    // "7326 of 7328" into a board failure. Invalid listings are already
+    // excluded from `listings`, so they count toward the tolerated gap.
+    const { isComplete: countsComplete } = resolveListingCompleteness(
+      uniqueCount,
+      advertisedTotal
+    );
     return {
       listings,
       advertisedTotal,
@@ -446,9 +460,8 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
       truncated,
       isComplete:
         failedOffsets.length === 0 &&
-        invalidListings === 0 &&
         !truncated &&
-        uniqueCount === advertisedTotal,
+        countsComplete,
     };
   }
 

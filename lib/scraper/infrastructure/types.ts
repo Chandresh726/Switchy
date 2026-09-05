@@ -87,6 +87,7 @@ export interface PersistScrapeResultOutput {
   jobsArchived: number;
   logId: number;
   matchOutboxId: string | null;
+  warnings?: string[];
 }
 
 export interface CompanyCatalog {
