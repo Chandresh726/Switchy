@@ -455,6 +455,67 @@ describe("DrizzleScraperRepository atomic persistence", () => {
     });
   });
 
+  it("rejects URL claims against a stale-archived job that is being reopened", async () => {
+    const database = createTestDatabase();
+    const company = seedCompanyAndSession(database);
+    const [archivedJob, currentJob] = database
+      .insert(jobs)
+      .values([
+        {
+          companyId: company.id,
+          externalId: "reopening-id",
+          title: "Reopening role",
+          url: "https://jobs.example.com/careers/job/123",
+          status: "archived",
+          archiveSource: "stale",
+          archivedAt: new Date("2026-08-24T12:00:00.000Z"),
+        },
+        {
+          companyId: company.id,
+          externalId: "current-listing-id",
+          title: "Current role",
+          url: "https://tenant.example.com/careers/job/123",
+          status: "viewed",
+        },
+      ])
+      .returning({ id: jobs.id })
+      .all();
+    if (!archivedJob || !currentJob) throw new Error("Failed to seed reopen collision.");
+
+    const repository = new DrizzleScraperRepository(database);
+
+    await expect(
+      repository.persistScrapeResult({
+        companyId: company.id,
+        openExternalIds: ["reopening-id", "current-listing-id"],
+        archiveMissing: false,
+        statusesToArchive: ["new"],
+        jobsToInsert: [],
+        existingJobUpdates: [
+          {
+            existingJobId: currentJob.id,
+            job: {
+              externalId: "current-listing-id",
+              title: "Current role",
+              url: "https://jobs.example.com/careers/job/123",
+              description: "Current description",
+            },
+          },
+        ],
+        startedAtMs: Date.now(),
+        enableMatching: false,
+        log: {
+          sessionId: "session-1",
+          triggerSource: "manual",
+          platform: "eightfold",
+          status: "success",
+          jobsFound: 2,
+          jobsFiltered: 0,
+        },
+      })
+    ).rejects.toThrow("Cannot reconcile job");
+  });
+
   it("rejects persistence after its scrape session has been stopped", async () => {
     const database = createTestDatabase();
     const company = seedCompanyAndSession(database);

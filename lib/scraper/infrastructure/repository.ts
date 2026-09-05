@@ -148,6 +148,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
             Boolean(job.externalId && openExternalIds.has(job.externalId))
         )
         .map((job) => job.id);
+      const jobIdsToReopenSet = new Set(jobIdsToReopen);
       const jobIdsToArchive = input.archiveMissing
         ? currentJobs
             .filter((job) => {
@@ -207,7 +208,8 @@ export class DrizzleScraperRepository implements IScraperRepository {
         if (existingJob && urlOwner && urlOwner.id !== existingJobId) {
           if (
             urlOwner.status !== "archived" ||
-            (urlOwner.archiveSource !== "scraper" && urlOwner.archiveSource !== "stale")
+            (urlOwner.archiveSource !== "scraper" && urlOwner.archiveSource !== "stale") ||
+            jobIdsToReopenSet.has(urlOwner.id)
           ) {
             throw new Error(
               `Cannot reconcile job ${existingJobId} with URL owned by active job ${urlOwner.id}.`
