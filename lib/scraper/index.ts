@@ -14,6 +14,10 @@ import {
   type ScrapeCompanyPipeline,
 } from "./application/scrape-company-pipeline";
 import { HistoryRetentionService } from "./application/history-retention-service";
+import {
+  DrizzleStaleJobArchiveStore,
+  StaleJobArchivalService,
+} from "./application/stale-job-archival-service";
 import { ScrapeSessionProjector } from "./application/scrape-session-projector";
 import { ScrapeWorkHandler } from "./application/scrape-work-handler";
 import { DrizzleScrapeHistoryStore } from "./history";
@@ -110,6 +114,10 @@ function createLocalScrapeQueueService(
     projector,
     historyRetention: new HistoryRetentionService(
       new DrizzleScrapeHistoryStore(),
+      scrapingModule.settingsProvider
+    ),
+    staleJobArchival: new StaleJobArchivalService(
+      new DrizzleStaleJobArchiveStore(),
       scrapingModule.settingsProvider
     ),
     settingsProvider: scrapingModule.settingsProvider,

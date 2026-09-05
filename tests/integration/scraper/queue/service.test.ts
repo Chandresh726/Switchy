@@ -207,6 +207,8 @@ describe("LocalScrapeQueueService", () => {
       }),
       getHistoryRetentionDays: () =>
         storedSettingsProvider.getHistoryRetentionDays(),
+      getStaleJobArchiveDays: () =>
+        storedSettingsProvider.getStaleJobArchiveDays(),
     };
     const acquire = vi.fn();
     const { service } = createService(database, {

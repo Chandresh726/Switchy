@@ -1,0 +1,1 @@
+CREATE INDEX `jobs_stale_archive_idx` ON `jobs` (`status`,`posted_date`,`discovered_at`);

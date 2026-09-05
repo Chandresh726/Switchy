@@ -5,6 +5,7 @@ import {
   setScrapeQueueRecovery,
 } from "@/lib/runtime/health";
 import { HistoryRetentionService } from "@/lib/scraper/application/history-retention-service";
+import { StaleJobArchivalService } from "@/lib/scraper/application/stale-job-archival-service";
 import { ScrapeSessionProjector } from "@/lib/scraper/application/scrape-session-projector";
 import { ScrapeWorkHandler } from "@/lib/scraper/application/scrape-work-handler";
 import type {
@@ -52,6 +53,7 @@ export interface LocalScrapeQueueServiceDependencies {
   workHandler: ScrapeWorkHandler;
   projector: ScrapeSessionProjector;
   historyRetention: HistoryRetentionService;
+  staleJobArchival?: StaleJobArchivalService;
   settingsProvider: ScrapeSettingsProvider;
   deviceSleepInhibitor?: DeviceSleepInhibitor;
   runnerConfig?: Partial<LocalLeasedWorkRunnerConfig>;
@@ -62,6 +64,7 @@ export class LocalScrapeQueueService {
   private readonly projector: ScrapeSessionProjector;
   private readonly workHandler: ScrapeWorkHandler;
   private readonly historyRetention: HistoryRetentionService;
+  private readonly staleJobArchival?: StaleJobArchivalService;
   private readonly deviceSleepInhibitor: DeviceSleepInhibitor;
   private readonly runner: LocalLeasedWorkRunner<
     ScrapeQueueItem,
@@ -76,6 +79,7 @@ export class LocalScrapeQueueService {
     this.projector = dependencies.projector;
     this.workHandler = dependencies.workHandler;
     this.historyRetention = dependencies.historyRetention;
+    this.staleJobArchival = dependencies.staleJobArchival;
     this.deviceSleepInhibitor =
       dependencies.deviceSleepInhibitor ?? createDeviceSleepInhibitor();
     this.runner = new LocalLeasedWorkRunner(
@@ -252,6 +256,7 @@ export class LocalScrapeQueueService {
       const summary = await this.runner.runAvailable();
       await this.projector.reconcileInProgressSessions();
       await this.historyRetention.pruneIfDue();
+      await this.staleJobArchival?.archiveIfDue();
       return summary;
     } finally {
       try {

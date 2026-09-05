@@ -36,6 +36,7 @@ export const settingsUpdateBodySchema = z.object({
   scraper_max_parallel_scrapes: settingIntegerInputSchema,
   scraper_keep_device_awake: settingBooleanInputSchema,
   scraper_history_retention_days: settingIntegerInputSchema,
+  scraper_stale_job_archive_days: settingIntegerInputSchema,
   scraper_filter_country: settingTextInputSchema,
   scraper_filter_city: settingTextInputSchema,
   scraper_filter_title_keywords: z.union([
@@ -90,6 +91,7 @@ export const settingsResponseSchema = z.object({
   scraper_max_parallel_scrapes: z.string(),
   scraper_keep_device_awake: z.string(),
   scraper_history_retention_days: z.string(),
+  scraper_stale_job_archive_days: z.string(),
   scraper_filter_country: z.string(),
   scraper_filter_city: z.string(),
   scraper_filter_title_keywords: z.string(),

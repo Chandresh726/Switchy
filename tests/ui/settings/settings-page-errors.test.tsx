@@ -134,6 +134,7 @@ const settings = settingsResponseSchema.parse({
   scraper_max_parallel_scrapes: "3",
   scraper_keep_device_awake: "true",
   scraper_history_retention_days: "90",
+  scraper_stale_job_archive_days: "60",
   scraper_filter_country: "India",
   scraper_filter_city: "",
   scraper_filter_title_keywords: "[]",

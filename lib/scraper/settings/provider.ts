@@ -15,6 +15,7 @@ export interface ScrapeSettingsProvider {
   getMaxParallelScrapes(): Promise<number>;
   getKeepDeviceAwake(): Promise<boolean>;
   getHistoryRetentionDays(): Promise<number>;
+  getStaleJobArchiveDays(): Promise<number>;
 }
 
 function parseTitleKeywords(value: string | null): string[] {
@@ -85,6 +86,16 @@ export class StoredScrapeSettingsProvider implements ScrapeSettingsProvider {
 
   async getHistoryRetentionDays(): Promise<number> {
     const setting = SCRAPER_SETTINGS.historyRetentionDays;
+    return parseBoundedInteger(
+      await this.source.getSetting(setting.key),
+      setting.defaultValue,
+      setting.minimum,
+      setting.maximum
+    );
+  }
+
+  async getStaleJobArchiveDays(): Promise<number> {
+    const setting = SCRAPER_SETTINGS.staleJobArchiveDays;
     return parseBoundedInteger(
       await this.source.getSetting(setting.key),
       setting.defaultValue,

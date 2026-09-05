@@ -17,6 +17,7 @@ describe("settings service", () => {
     expect(DEFAULT_SETTINGS.scraper_max_parallel_scrapes).toBe("3");
     expect(DEFAULT_SETTINGS.scraper_keep_device_awake).toBe("true");
     expect(DEFAULT_SETTINGS.scraper_history_retention_days).toBe("60");
+    expect(DEFAULT_SETTINGS.scraper_stale_job_archive_days).toBe("60");
   });
 
   it("accepts provider-native reasoning values and rejects unsafe values", () => {
@@ -103,6 +104,22 @@ describe("settings service", () => {
     ]);
     expect(() =>
       parseSettingsUpdateBody({ scraper_history_retention_days: 3 })
+    ).toThrow(ValidationError);
+  });
+
+  it("bounds stale job archival", () => {
+    const parsed = parseSettingsUpdateBody({
+      scraper_stale_job_archive_days: 90,
+    });
+
+    expect(parsed.updates).toEqual([
+      {
+        key: "scraper_stale_job_archive_days",
+        value: "90",
+      },
+    ]);
+    expect(() =>
+      parseSettingsUpdateBody({ scraper_stale_job_archive_days: 3 })
     ).toThrow(ValidationError);
   });
 

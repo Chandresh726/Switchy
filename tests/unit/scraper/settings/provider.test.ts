@@ -78,4 +78,19 @@ describe("StoredScrapeSettingsProvider", () => {
 
     await expect(provider.getHistoryRetentionDays()).resolves.toBe(expected);
   });
+
+  it.each([
+    ["7", 7],
+    ["60", 60],
+    ["3650", 3650],
+    ["6", 60],
+    ["3651", 60],
+    [null, 60],
+  ])("parses stale archive %s as %i days", async (stored, expected) => {
+    const { provider } = createProvider({
+      scraper_stale_job_archive_days: stored,
+    });
+
+    await expect(provider.getStaleJobArchiveDays()).resolves.toBe(expected);
+  });
 });
