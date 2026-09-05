@@ -365,7 +365,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
   const sameProvider = analysisRuntime.snapshot.providerRecordId ===
     matchRuntime.snapshot.providerRecordId;
   const analysisConcurrency = sameProvider
-    ? Math.max(1, Math.floor(config.concurrencyLimit * 0.6))
+    ? Math.max(1, Math.ceil(config.concurrencyLimit / 2))
     : Math.max(1, config.concurrencyLimit);
 
   let analyses: Map<number, MatchingJobAnalysis>;

@@ -411,9 +411,9 @@ export function MatcherSection({
                         id="max-retries"
                         type="number"
                         min={1}
-                        max={10}
+                        max={3}
                         value={maxRetries}
-                        onChange={(e) => onMaxRetriesChange(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
+                        onChange={(e) => onMaxRetriesChange(Math.min(3, Math.max(1, parseInt(e.target.value) || 1)))}
                         className="bg-background/60 border-border"
                       />
                     </div>

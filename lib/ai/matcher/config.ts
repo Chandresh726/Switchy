@@ -93,7 +93,7 @@ export async function getMatcherConfig(): Promise<MatcherConfig> {
       settingsMap.get("matcher_max_retries"),
       DEFAULT_MATCHER_CONFIG.maxRetries,
       1,
-      10,
+      3,
       "matcher_max_retries"
     ),
     concurrencyLimit: parseNumber(
@@ -143,8 +143,8 @@ export function validateMatcherConfig(
   }
 
   if (config.maxRetries !== undefined) {
-    if (config.maxRetries < 1 || config.maxRetries > 10) {
-      errors.push("Max attempts must be between 1 and 10");
+    if (config.maxRetries < 1 || config.maxRetries > 3) {
+      errors.push("Max attempts must be between 1 and 3");
     }
   }
 

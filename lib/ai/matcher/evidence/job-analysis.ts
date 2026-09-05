@@ -228,9 +228,21 @@ function serializeJob(job: JobData, maxChars = Number.POSITIVE_INFINITY): string
   return serialized;
 }
 
+const serializedLengthCache = new WeakMap<JobData, number>();
+
+function estimateSerializedLength(job: JobData): number {
+  const cached = serializedLengthCache.get(job);
+  if (cached !== undefined) return cached;
+  // Cheap estimate avoids a full JSON.stringify per job per candidate batch (O(n^2)).
+  const length = job.title.length + (job.description?.length ?? 0) +
+    (job.location?.length ?? 0) + (job.salary?.length ?? 0) + 128;
+  serializedLengthCache.set(job, length);
+  return length;
+}
+
 function unboundedPromptLength(batch: JobData[]): number {
   return ANALYSIS_PROMPT_HEADER.length +
-    batch.reduce((total, job) => total + serializeJob(job).length, 0) +
+    batch.reduce((total, job) => total + estimateSerializedLength(job), 0) +
     Math.max(0, batch.length - 1);
 }
 
@@ -378,7 +390,8 @@ export async function analyzeJobsForMatching(
       });
     } catch (error) {
       signal?.throwIfAborted();
-      if (batch.length > 1) {
+      const retryable = !(error instanceof AIError) || error.retryable !== false;
+      if (batch.length > 1 && retryable) {
         const middle = Math.ceil(batch.length / 2);
         await processBatch(batch.slice(0, middle));
         await processBatch(batch.slice(middle));

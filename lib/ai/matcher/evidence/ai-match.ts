@@ -54,14 +54,11 @@ export function validateAIMatchOutcome(
   );
 }
 
-function buildPrompt(
-  candidate: CandidateEvidence,
-  job: MatchingJobAnalysis
-): {
-  prompt: string;
-  candidateEvidenceIds: Set<string>;
-  jobRequirementIds: Set<string>;
-} {
+const candidateItemsCache = new WeakMap<CandidateEvidence, ReturnType<typeof buildCandidateEvidenceItems>>();
+
+function getCachedCandidateItems(candidate: CandidateEvidence) {
+  const cached = candidateItemsCache.get(candidate);
+  if (cached) return cached;
   const allCandidateItems = buildCandidateEvidenceItems(candidate);
   const coreItems = [
     ...allCandidateItems.filter((item) => item.type === "summary").slice(0, 1),
@@ -76,6 +73,19 @@ function buildPrompt(
     ...item,
     text: item.text.slice(0, item.type === "skill" ? 250 : MAX_CANDIDATE_ITEM_CHARS),
   }));
+  candidateItemsCache.set(candidate, candidateItems);
+  return candidateItems;
+}
+
+function buildPrompt(
+  candidate: CandidateEvidence,
+  job: MatchingJobAnalysis
+): {
+  prompt: string;
+  candidateEvidenceIds: Set<string>;
+  jobRequirementIds: Set<string>;
+} {
+  const candidateItems = [...getCachedCandidateItems(candidate)];
   const requirements = job.analysis.requirements.slice(0, 20);
   const payload = {
     candidate: {

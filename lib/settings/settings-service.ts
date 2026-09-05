@@ -211,7 +211,7 @@ function parseSettingValue(
     case "matcher_batch_size":
       return { value: parseNumberInRange(key, value, 1, 10), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     case "matcher_max_retries":
-      return { value: parseNumberInRange(key, value, 1, 10), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
+      return { value: parseNumberInRange(key, value, 1, 3), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     case "matcher_concurrency_limit":
       return { value: parseNumberInRange(key, value, 1, 10), cronUpdated: false, enabledChanged: false, newEnabledValue: null };
     case "matcher_timeout_ms":
