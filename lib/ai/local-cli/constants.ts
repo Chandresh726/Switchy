@@ -25,4 +25,4 @@ export const CLI_EXECUTABLE_CONFIG: Record<
 
 export const CLI_STATUS_CACHE_TTL_MS = 30_000;
 export const CLI_MODEL_CACHE_TTL_MS = 15 * 60_000;
-export const CLI_IDLE_SHUTDOWN_MS = 5 * 60_000;
+export const CLI_IDLE_SHUTDOWN_MS = 60_000;

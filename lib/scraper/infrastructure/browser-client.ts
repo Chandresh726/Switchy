@@ -1,4 +1,3 @@
-import { chromium } from "playwright";
 import type { Browser, BrowserContext, Page, Request } from "playwright";
 
 import {
@@ -84,6 +83,7 @@ abstract class PlaywrightBrowserClient implements IBrowserClient {
   protected async launchBrowser(): Promise<BrowserResources> {
     const signal = getActiveScrapeSignal();
     throwIfScrapeAborted();
+    const { chromium } = await import("playwright");
     const browser = await chromium.launch({
       headless: this.config.headless,
       args: [

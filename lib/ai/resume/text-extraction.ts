@@ -1,5 +1,3 @@
-import { extractText } from "unpdf";
-
 export type ResumeFileFormat = "pdf" | "docx" | "text";
 
 export async function extractResumeText(file: File): Promise<{
@@ -8,6 +6,7 @@ export async function extractResumeText(file: File): Promise<{
 }> {
   const fileName = file.name.toLowerCase();
   if (fileName.endsWith(".pdf")) {
+    const { extractText } = await import("unpdf");
     const result = await extractText(await file.arrayBuffer());
     return {
       text: Array.isArray(result.text) ? result.text.join("\n\n") : String(result.text || ""),
