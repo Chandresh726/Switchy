@@ -12,6 +12,16 @@ const SECURITY_HEADERS = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  experimental: {
+    optimizePackageImports: [
+      "lucide-react",
+      "radix-ui",
+      "@radix-ui/react-dialog",
+      "@radix-ui/react-switch",
+      "sonner",
+      "react-markdown",
+    ],
+  },
   outputFileTracingExcludes: {
     "/*": [
       "./coverage/**/*",

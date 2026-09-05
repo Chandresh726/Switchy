@@ -190,10 +190,10 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
     },
     refetchInterval: (query) => {
       const session = query.state.data?.session;
-      if (!session) return 1000;
-      return session.status === "in_progress" || session.status === "queued" ? 1000 : false;
+      if (!session) return 3000;
+      return session.status === "in_progress" || session.status === "queued" ? 3000 : false;
     },
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
   });
 
   const stopMutation = useMutation({

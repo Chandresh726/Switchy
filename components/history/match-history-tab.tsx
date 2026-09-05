@@ -25,7 +25,7 @@ export function MatchHistoryTab() {
       const sessions = query.state.data?.sessions || [];
       return historyPollingInterval(sessions);
     },
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
   });
 
   if (isLoading) {

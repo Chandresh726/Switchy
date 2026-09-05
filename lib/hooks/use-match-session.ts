@@ -26,8 +26,9 @@ export function useMatchSession(
     enabled: Boolean(sessionId),
     refetchInterval: ({ state }) => {
       const progress = state.data;
-      return progress && TERMINAL_STATUSES.has(progress.status) ? false : 1_000;
+      return progress && TERMINAL_STATUSES.has(progress.status) ? false : 3_000;
     },
+    refetchIntervalInBackground: false,
   });
 
   const onSettledRef = useRef(options.onSettled);

@@ -19,7 +19,7 @@ interface ParseStateConfig {
   hint?: string;
 }
 
-export const RESUME_HISTORY_POLL_INTERVAL_MS = 1_000;
+export const RESUME_HISTORY_POLL_INTERVAL_MS = 3_000;
 
 export const RESUME_PARSE_STATE_CONFIG: Record<
   ResumeHistoryEntry["parseState"],

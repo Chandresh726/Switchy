@@ -62,10 +62,10 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
     },
     refetchInterval: (query) => {
       const session = query.state.data?.session;
-      if (!session) return 1000;
-      return session.status === "in_progress" || query.state.data?.hasActiveWork ? 1000 : false;
+      if (!session) return 3000;
+      return session.status === "in_progress" || query.state.data?.hasActiveWork ? 3000 : false;
     },
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
   });
 
   const stopMutation = useMutation({

@@ -57,8 +57,8 @@ describe("query key registry", () => {
 describe("history polling ownership", () => {
   it("polls only while at least one session is nonterminal", () => {
     expect(historyPollingInterval([{ status: "completed" }, { status: "failed" }])).toBe(false);
-    expect(historyPollingInterval([{ status: "completed" }, { status: "queued" }])).toBe(1_000);
-    expect(historyPollingInterval([{ status: "in_progress" }])).toBe(1_000);
+    expect(historyPollingInterval([{ status: "completed" }, { status: "queued" }])).toBe(3_000);
+    expect(historyPollingInterval([{ status: "in_progress" }])).toBe(3_000);
   });
 });
 
