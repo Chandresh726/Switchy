@@ -29,6 +29,8 @@ export interface FetchPaginatedHtmlOptions {
   maxPages?: number;
 }
 
+const DEFAULT_MAX_PAGES = 20;
+
 export function setPageQueryParam(inputUrl: string, page: number): string {
   const url = new URL(inputUrl);
   if (page <= 1) {
@@ -78,6 +80,7 @@ export async function fetchPaginatedHtmlByPageParam(
     maxPages,
   } = options;
 
+  const effectiveMaxPages = maxPages ?? DEFAULT_MAX_PAGES;
   const pages: HtmlPageResult[] = [];
   const failedPages: number[] = [];
 
@@ -105,8 +108,8 @@ export async function fetchPaginatedHtmlByPageParam(
   pages.push({ page: 1, url: firstPageUrl, html: firstHtml });
 
   let discoveredTotal = extractMaxPageFromPagination(firstHtml, firstPageUrl);
-  let totalPages = maxPages ? Math.min(discoveredTotal, maxPages) : discoveredTotal;
-  let truncatedByMaxPages = Boolean(maxPages && discoveredTotal > maxPages);
+  let totalPages = Math.min(discoveredTotal, effectiveMaxPages);
+  let truncatedByMaxPages = discoveredTotal > effectiveMaxPages;
 
   for (let page = 2; page <= totalPages; page++) {
     const pageUrl = setPageQueryParam(startUrl, page);
@@ -134,10 +137,8 @@ export async function fetchPaginatedHtmlByPageParam(
         discoveredTotal,
         extractMaxPageFromPagination(html, pageUrl)
       );
-      totalPages = maxPages
-        ? Math.min(discoveredTotal, maxPages)
-        : discoveredTotal;
-      truncatedByMaxPages ||= Boolean(maxPages && discoveredTotal > maxPages);
+      totalPages = Math.min(discoveredTotal, effectiveMaxPages);
+      truncatedByMaxPages ||= discoveredTotal > effectiveMaxPages;
     } catch (error) {
       throwIfScrapeAborted(error);
       failedPages.push(page);

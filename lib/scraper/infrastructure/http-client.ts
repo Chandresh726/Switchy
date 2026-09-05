@@ -30,10 +30,10 @@ export interface IHttpClient {
 
 const DEFAULT_HTTP_CONFIG: HttpClientConfig = {
   timeout: 30000,
-  retries: 3,
+  retries: 2,
   baseDelay: 1000,
   maxDelay: 16000,
-  maxConcurrencyPerHost: 6,
+  maxConcurrencyPerHost: 3,
   jitterRatio: 0.2,
 };
 
@@ -244,6 +244,7 @@ export class FetchHttpClient implements IHttpClient {
         if (args.signal?.aborted) {
           this.throwIfAborted(args.signal);
         }
+        if (error instanceof HttpError && error.status === 413) throw error;
         if (attempt >= args.retries) throw error;
 
         const delayMs = this.applyJitter(
@@ -356,8 +357,13 @@ export class FetchHttpClient implements IHttpClient {
     }
   }
 
+  private static readonly MAX_BODY_BYTES = 10 * 1024 * 1024;
+
   private async bufferResponse(response: Response, requestUrl: string): Promise<Response> {
     const body = await response.arrayBuffer();
+    if (body.byteLength > FetchHttpClient.MAX_BODY_BYTES) {
+      throw new HttpError(413, `Response body exceeds 10MB limit from ${requestUrl}`, requestUrl);
+    }
     const buffered = new Response(body.byteLength > 0 ? body : null, {
       status: response.status,
       statusText: response.statusText,

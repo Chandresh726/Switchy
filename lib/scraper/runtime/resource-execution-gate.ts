@@ -16,7 +16,7 @@ export class ScrapeResourceExecutionGate {
   private browserHeavyLimit: number;
   private readonly browserHeavyCapacity: number;
 
-  constructor(totalLimit: number, browserHeavyLimit = 2) {
+  constructor(totalLimit: number, browserHeavyLimit = 1) {
     this.browserHeavyCapacity = Math.max(1, Math.floor(browserHeavyLimit));
     this.totalLimit = Math.max(1, Math.floor(totalLimit));
     this.browserHeavyLimit = Math.max(

@@ -57,8 +57,15 @@ export class TitleBasedDeduplicationService implements IDeduplicationService {
   constructor(private readonly config: DeduplicationConfig = DEFAULT_DEDUPLICATION_CONFIG) {}
 
   deduplicate(job: ScrapedJob, existingJobs: ExistingJob[]): DeduplicationResult {
+    const byExternalId = new Map<string, ExistingJob>();
+    const byUrl = new Map<string, ExistingJob>();
+    for (const ej of existingJobs) {
+      if (hasMeaningfulExternalId(ej.externalId)) byExternalId.set(ej.externalId.trim(), ej);
+      if (ej.url?.trim()) byUrl.set(ej.url.trim(), ej);
+    }
+
     const exactMatch = hasMeaningfulExternalId(job.externalId)
-      ? existingJobs.find((ej) => ej.externalId === job.externalId)
+      ? byExternalId.get(job.externalId.trim())
       : undefined;
 
     if (exactMatch) {
@@ -71,9 +78,7 @@ export class TitleBasedDeduplicationService implements IDeduplicationService {
     }
 
     const normalizedUrl = job.url?.trim();
-    const urlMatch = normalizedUrl
-      ? existingJobs.find((ej) => ej.url?.trim() === normalizedUrl)
-      : undefined;
+    const urlMatch = normalizedUrl ? byUrl.get(normalizedUrl) : undefined;
 
     if (urlMatch) {
       return {
@@ -84,11 +89,20 @@ export class TitleBasedDeduplicationService implements IDeduplicationService {
       };
     }
 
+    // When both sides carry external IDs, exact/url matching above is
+    // authoritative — skip the O(n) fuzzy pass entirely.
+    const jobHasExternalId = hasMeaningfulExternalId(job.externalId);
+    const normalizedTitle = job.title.trim().toLowerCase();
+    const firstChar = normalizedTitle.charAt(0);
     let highestSimilarity = 0;
     let mostSimilarJob: ExistingJob | null = null;
 
     for (const ej of existingJobs) {
-      const similarity = compareTitleSimilarity(job.title.toLowerCase(), ej.title.toLowerCase());
+      if (jobHasExternalId && hasMeaningfulExternalId(ej.externalId)) continue;
+      const candidate = ej.title.trim().toLowerCase();
+      // Cheap blocking: titles must share a first character to be near-duplicates.
+      if (firstChar && candidate.charAt(0) !== firstChar) continue;
+      const similarity = compareTitleSimilarity(normalizedTitle, candidate);
 
       if (similarity > highestSimilarity) {
         highestSimilarity = similarity;

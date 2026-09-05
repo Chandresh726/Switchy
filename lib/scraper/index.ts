@@ -113,7 +113,7 @@ function createLocalScrapeQueueService(
       scrapingModule.settingsProvider
     ),
     settingsProvider: scrapingModule.settingsProvider,
-    runnerConfig: { concurrency: 10, ...runnerConfig },
+    runnerConfig: { concurrency: 4, ...runnerConfig },
   });
 }
 

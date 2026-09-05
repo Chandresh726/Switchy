@@ -142,6 +142,9 @@ export const jobs = sqliteTable("jobs", {
 }, (table) => ({
   companyIdIdx: index("jobs_company_id_idx").on(table.companyId),
   statusIdx: index("jobs_status_idx").on(table.status),
+  companyStatusPostedIdx: index("jobs_company_status_posted_idx").on(table.companyId, table.status, table.postedDate, table.id),
+  locationTypeIdx: index("jobs_location_type_idx").on(table.locationType),
+  postedDateIdx: index("jobs_posted_date_idx").on(table.postedDate),
   statusDiscoveredIdIdx: index("jobs_status_discovered_id_idx").on(table.status, table.discoveredAt, table.id),
   companyDiscoveredIdIdx: index("jobs_company_discovered_id_idx").on(table.companyId, table.discoveredAt, table.id),
   discoveredIdIdx: index("jobs_discovered_id_idx").on(table.discoveredAt, table.id),
@@ -450,6 +453,10 @@ export const aiRuns = sqliteTable("ai_runs", {
     table.capability,
     table.createdAt
   ),
+  providerRecordCreatedIdx: index("ai_runs_provider_record_created_idx").on(
+    table.providerRecordId,
+    table.createdAt
+  ),
   subjectIdx: index("ai_runs_subject_idx").on(table.subjectType, table.subjectId),
   statusCreatedIdx: index("ai_runs_status_created_idx").on(table.status, table.createdAt),
   createdAtIdx: index("ai_runs_created_at_idx").on(table.createdAt),
@@ -686,6 +693,7 @@ export const matchLogs = sqliteTable("match_logs", {
   completedAt: integer("completed_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 }, (table) => ({
   sessionIdIdx: index("match_logs_session_id_idx").on(table.sessionId),
+  jobSessionStatusIdx: index("match_logs_job_session_status_idx").on(table.jobId, table.sessionId, table.status),
   sessionCompletedIdIdx: index("match_logs_session_completed_id_idx").on(table.sessionId, table.completedAt, table.id),
   modelCompletedIdx: index("match_logs_model_completed_idx").on(
     table.modelUsed,
