@@ -243,7 +243,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
       });
       const isPartial =
         !listingResult.isComplete ||
-        !isDetailFailuresTolerable(detailFailures, jobs.length);
+        !isDetailFailuresTolerable(detailFailures, selection.listings.length);
       const issues = [];
       if (!listingResult.isComplete) {
         issues.push(this.createListingIssue(listingResult, listings.length));

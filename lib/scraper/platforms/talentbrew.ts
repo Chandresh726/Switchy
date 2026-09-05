@@ -207,7 +207,8 @@ export class TalentBrewScraper extends AbstractApiScraper<TalentBrewConfig> {
 
       return {
         outcome:
-          listingComplete && isDetailFailuresTolerable(detailFailures, jobs.length)
+          listingComplete &&
+          isDetailFailuresTolerable(detailFailures, selection.listings.length)
             ? "success"
             : "partial",
         jobs,

@@ -43,6 +43,9 @@ export function isDetailFailuresTolerable(
   hydratedTotal: number
 ): boolean {
   if (failures <= 0) return true;
+  // Nothing hydrated successfully: a board that produced zero jobs stays
+  // partial regardless of tolerance.
+  if (hydratedTotal <= 0) return false;
   const tolerance = Math.max(
     1,
     Math.min(

@@ -352,7 +352,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
 
       const isPartial =
         !listResult.isComplete ||
-        !isDetailFailuresTolerable(detailFailures, scrapedJobs.length);
+        !isDetailFailuresTolerable(detailFailures, positionsToFetch.length);
       const issues: ScraperError[] = [];
       if (!listResult.isComplete) {
         issues.push(this.createListingIssue(listResult, allPositions.length));

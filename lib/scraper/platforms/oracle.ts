@@ -287,8 +287,9 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
       }
 
       // Near-complete listings and a handful of failed details degrade to
-      // warnings instead of failing the whole board.
-      const detailsTolerable = isDetailFailuresTolerable(detailFailures, jobs.length);
+      // warnings instead of failing the whole board. The denominator is the
+      // pre-hydration selection: hydrator-level nulls never reach `jobs`.
+      const detailsTolerable = isDetailFailuresTolerable(detailFailures, selection.listings.length);
       return {
         outcome: listingResult.isComplete && detailsTolerable ? "success" : "partial",
         jobs,

@@ -309,11 +309,11 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         )
       );
 
-      // scrapedJobs already contains listing fallbacks for the unresolved
-      // details, so its length is the total attempted hydration count.
+      // jobsToFetch is the attempted hydration count (unresolved details
+      // are retained as listing fallbacks inside scrapedJobs).
       const isPartial =
         !listResult.isComplete ||
-        !isDetailFailuresTolerable(unresolvedDetailJobs.length, scrapedJobs.length);
+        !isDetailFailuresTolerable(unresolvedDetailJobs.length, jobsToFetch.length);
       const issues: ScraperError[] = [];
       if (!listResult.isComplete) issues.push(this.createListIssue(listResult));
       if (unresolvedDetailJobs.length > 0) {
@@ -351,6 +351,9 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
    */
   private toListFailure(error: WorkdayListError): ScraperErrorResult {
     const cause = error.cause;
+    if (cause instanceof BrowserSessionBootstrapError) {
+      return this.failure("browser_error", error.describe());
+    }
     if (cause instanceof HttpError) {
       return this.failureForHttpStatus(cause.status, error.describe());
     }

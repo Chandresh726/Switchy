@@ -45,6 +45,11 @@ describe("isDetailFailuresTolerable", () => {
     expect(isDetailFailuresTolerable(11, 500)).toBe(false);
   });
 
+  it("never tolerates failures when nothing hydrated", () => {
+    expect(isDetailFailuresTolerable(1, 0)).toBe(false);
+    expect(isDetailFailuresTolerable(0, 0)).toBe(true);
+  });
+
   it("allows two failures once the board is large enough", () => {
     expect(isDetailFailuresTolerable(2, 200)).toBe(true);
     expect(isDetailFailuresTolerable(3, 200)).toBe(false);

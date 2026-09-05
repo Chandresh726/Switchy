@@ -298,7 +298,8 @@ export class PhenomScraper extends AbstractApiScraper<PhenomConfig> {
 
       return {
         outcome:
-          listingComplete && isDetailFailuresTolerable(detailFailures, jobs.length)
+          listingComplete &&
+          isDetailFailuresTolerable(detailFailures, selection.listings.length)
             ? "success"
             : "partial",
         jobs,
