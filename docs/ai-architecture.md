@@ -83,7 +83,7 @@ Codex CLI and OpenCode CLI are permanent keyless provider records. Switchy reuse
 
 Codex uses `codex app-server` v2 over stdio. Each execution uses an ephemeral thread in an empty temporary directory with read-only sandboxing, approvals disabled, no workspace roots, tools, skills, environments, or MCP servers. Switchy waits for the terminal turn notification even when generation exceeds the API-provider timeout. Explicit cancellation interrupts the turn and retires the process if acknowledgement is not received safely.
 
-OpenCode starts the installed `opencode serve --pure` on a protected random loopback port. Switchy uses the SDK only as a client, creates isolated sessions with tools denied, listens to events, aborts through the session API, and deletes every created session. Portable structured generation intentionally avoids OpenCode's provider-dependent native `json_schema` behavior.
+OpenCode starts the installed v2 `opencode serve` on a protected random loopback port. Switchy connects with `@opencode/client`, creates isolated sessions with ordered deny-all permissions, supplies capability instructions through the session instruction store, and listens to v2 execution events. Explicit cancellation interrupts the session, and every created session is removed after use. Portable structured generation intentionally avoids provider-dependent native schema modes.
 
 Both adapters reuse one supervised process while active and shut it down after five idle minutes. Model catalogs and connection status are cached, but normal execution never refreshes them. Provider APIs perform a cached-or-live non-generative probe if startup warming has not completed, so settings never needs a manual connectivity button.
 

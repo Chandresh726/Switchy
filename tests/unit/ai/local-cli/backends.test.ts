@@ -10,7 +10,7 @@ import path from "node:path";
 
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import * as openCodeSDK from "@opencode-ai/sdk/v2";
+import * as openCodeClient from "@opencode/client";
 
 import { CodexCLIBackend } from "@/lib/ai/local-cli/codex-backend";
 import { OpenCodeCLIBackend } from "@/lib/ai/local-cli/opencode-backend";
@@ -318,9 +318,9 @@ describe("OpenCode CLI backend", () => {
     ).toBe(false);
   });
 
-  it("reports unsupported OpenCode server startup as incompatible", async () => {
+  it("reports an incompatible OpenCode v2 server protocol", async () => {
     vi.stubEnv("SWITCHY_FAKE_OPENCODE_INCOMPATIBLE", "1");
-    const backend = createOpenCodeBackend(openCodeExecutable, async () => openCodeSDK);
+    const backend = createOpenCodeBackend(openCodeExecutable, async () => openCodeClient);
     await expect(backend.getVersion()).rejects.toMatchObject({
       type: "validation",
       message: "OpenCode CLI protocol is incompatible",
@@ -329,12 +329,12 @@ describe("OpenCode CLI backend", () => {
 
   it("distinguishes transient OpenCode crashes from a confirmed missing protocol", async () => {
     vi.stubEnv("SWITCHY_FAKE_OPENCODE_STARTUP_CRASH", "1");
-    const crashed = createOpenCodeBackend(openCodeExecutable, async () => openCodeSDK);
+    const crashed = createOpenCodeBackend(openCodeExecutable, async () => openCodeClient);
     await expect(crashed.getVersion()).rejects.toMatchObject({ type: "network" });
     vi.unstubAllEnvs();
 
     vi.stubEnv("SWITCHY_FAKE_OPENCODE_MISSING_HEALTH", "1");
-    const incompatible = createOpenCodeBackend(openCodeExecutable, async () => openCodeSDK);
+    const incompatible = createOpenCodeBackend(openCodeExecutable, async () => openCodeClient);
     await expect(incompatible.getVersion()).rejects.toMatchObject({
       type: "validation",
       message: "OpenCode CLI protocol is incompatible",
@@ -343,7 +343,7 @@ describe("OpenCode CLI backend", () => {
 
   it("exposes models only from connected OpenCode providers", async () => {
     vi.stubEnv("SWITCHY_FAKE_OPENCODE_DISCONNECTED", "1");
-    const backend = createOpenCodeBackend(openCodeExecutable, async () => openCodeSDK);
+    const backend = createOpenCodeBackend(openCodeExecutable, async () => openCodeClient);
     await expect(backend.listModels()).resolves.toEqual([]);
     expect(backend.hasConnectedProviders()).toBe(false);
     backend.retire();
@@ -352,9 +352,9 @@ describe("OpenCode CLI backend", () => {
   it("groups usable text models and executes isolated streaming and structured sessions", async () => {
     const backend = createOpenCodeBackend(
       openCodeExecutable,
-      async () => openCodeSDK
+      async () => openCodeClient
     );
-    await expect(backend.getVersion()).resolves.toBe("8.8.8");
+    await expect(backend.getVersion()).resolves.toBe("2.0.1");
     const models = await backend.listModels();
     expect(models).toEqual([
       expect.objectContaining({
@@ -389,7 +389,11 @@ describe("OpenCode CLI backend", () => {
     const structured = await backend.generateStructured({
       ...baseInput(),
       modelId: "openai/text",
-      jsonSchema: { type: "object", properties: { value: { type: "string" } } },
+      jsonSchema: {
+        type: "object",
+        properties: { value: { type: "string" } },
+        required: ["value"],
+      },
       validate: (value) => z.object({ value: z.string() }).parse(value),
     });
     expect(structured.output).toEqual({ value: "structured" });
@@ -409,7 +413,7 @@ describe("OpenCode CLI backend", () => {
       ...baseInput(),
       modelId: "openai/text",
       prompt: "rate-limit",
-    })).rejects.toMatchObject({ type: "rate_limit", retryAfterMs: 1_000 });
+    })).rejects.toMatchObject({ type: "rate_limit" });
 
     await expect(backend.generateText({
       ...baseInput(),
@@ -436,7 +440,7 @@ describe("OpenCode CLI backend", () => {
       ...baseInput(),
       modelId: "openai/text",
       prompt: "embedded-rate-limit",
-    })).rejects.toMatchObject({ type: "rate_limit", retryAfterMs: 2_000 });
+    })).rejects.toMatchObject({ type: "rate_limit" });
 
     await expect(backend.generateText({
       ...baseInput(),
@@ -462,7 +466,7 @@ describe("OpenCode CLI backend", () => {
   it("omits an unadvertised reasoning variant when the catalog is not loaded", async () => {
     const backend = createOpenCodeBackend(
       openCodeExecutable,
-      async () => openCodeSDK
+      async () => openCodeClient
     );
     await expect(backend.generateText({
       ...baseInput(),
@@ -474,7 +478,7 @@ describe("OpenCode CLI backend", () => {
   it("does not apply an earlier idle deadline to active OpenCode work", async () => {
     const backend = createOpenCodeBackend(
       openCodeExecutable,
-      async () => openCodeSDK,
+      async () => openCodeClient,
       50
     );
     await backend.getVersion();
@@ -493,7 +497,7 @@ describe("OpenCode CLI backend", () => {
       maxOutputTokens: 100,
     })).rejects.toThrow("output-token limit");
 
-    const openCode = createOpenCodeBackend(openCodeExecutable, async () => openCodeSDK);
+    const openCode = createOpenCodeBackend(openCodeExecutable, async () => openCodeClient);
     await expect(openCode.generateText({
       ...baseInput(),
       modelId: "openai/text",

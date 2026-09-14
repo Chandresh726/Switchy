@@ -5,7 +5,12 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type { OpencodeClient } from "@opencode-ai/sdk/v2";
+import type {
+  ModelInfo as OpenCodeModel,
+  OpenCodeClient,
+  SessionMessageAssistant,
+  V2Event as OpenCodeEvent,
+} from "@opencode/client";
 
 import { CLI_IDLE_SHUTDOWN_MS } from "@/lib/ai/local-cli/constants";
 import type {
@@ -24,31 +29,17 @@ import { isReasoningEffort } from "@/lib/ai/providers/types";
 import { AIError, AIRateLimitError } from "@/lib/ai/shared/errors";
 
 const DENY_ALL_PERMISSIONS = [
-  { permission: "*", pattern: "*", action: "deny" as const },
+  { action: "*", resource: "*", effect: "deny" as const },
 ];
 
-type OpenCodeSDK = typeof import("@opencode-ai/sdk/v2");
-export type OpenCodeSDKLoader = () => Promise<OpenCodeSDK>;
-let sdkPromise: Promise<OpenCodeSDK> | undefined;
+type OpenCodeClientModule = typeof import("@opencode/client");
+export type OpenCodeClientLoader = () => Promise<OpenCodeClientModule>;
+let clientModulePromise: Promise<OpenCodeClientModule> | undefined;
 
-function loadOpenCodeSDK(): Promise<OpenCodeSDK> {
-  sdkPromise ??= import("@opencode-ai/sdk/v2");
-  return sdkPromise;
+function loadOpenCodeClient(): Promise<OpenCodeClientModule> {
+  clientModulePromise ??= import("@opencode/client");
+  return clientModulePromise;
 }
-
-const DISABLED_TOOLS = {
-  bash: false,
-  read: false,
-  write: false,
-  edit: false,
-  glob: false,
-  grep: false,
-  webfetch: false,
-  websearch: false,
-  task: false,
-  skill: false,
-  question: false,
-};
 
 async function reservePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -62,44 +53,6 @@ async function reservePort(): Promise<number> {
   });
 }
 
-function unwrap<T>(
-  response: { data?: T; error?: unknown; response?: Response },
-  message: string
-): T {
-  if (response.data !== undefined) return response.data;
-  const status = response.response?.status;
-  if (status === 429) {
-    const retryAfter = Number(response.response?.headers.get("retry-after"));
-    throw new AIRateLimitError(
-      "OpenCode provider rate limit was reached",
-      undefined,
-      Number.isFinite(retryAfter) ? retryAfter * 1_000 : undefined
-    );
-  }
-  if (status === 401 || status === 403) {
-    throw new AIError({
-      type: "missing_api_key",
-      message: "OpenCode authentication is unavailable",
-      retryable: false,
-    });
-  }
-  if (status === 404) {
-    throw new AIError({
-      type: "validation",
-      message: "OpenCode CLI protocol is incompatible",
-      retryable: false,
-    });
-  }
-  if (status === 400 && message.includes("generation")) {
-    throw new AIError({
-      type: "invalid_model",
-      message: "The configured OpenCode model is unavailable",
-      retryable: false,
-    });
-  }
-  throw new AIError({ type: "generation_failed", message, retryable: false });
-}
-
 function parseModelId(modelId: string): { providerID: string; modelID: string } {
   const separator = modelId.indexOf("/");
   if (separator <= 0 || separator === modelId.length - 1) {
@@ -109,6 +62,24 @@ function parseModelId(modelId: string): { providerID: string; modelID: string } 
     });
   }
   return { providerID: modelId.slice(0, separator), modelID: modelId.slice(separator + 1) };
+}
+
+function isUsableTextModel(model: OpenCodeModel): boolean {
+  return model.enabled
+    && model.status !== "deprecated"
+    && model.capabilities.input.includes("text")
+    && model.capabilities.output.includes("text");
+}
+
+function hasOpenCodeErrorTag(error: unknown, tag: string): boolean {
+  return Boolean(error && typeof error === "object" && "_tag" in error
+    && (error as { _tag?: unknown })._tag === tag);
+}
+
+function getOpenCodeClientErrorReason(error: unknown): string | undefined {
+  if (!error || typeof error !== "object" || !("reason" in error)) return undefined;
+  const reason = (error as { reason?: unknown }).reason;
+  return typeof reason === "string" ? reason : undefined;
 }
 
 function abortReason(signal: AbortSignal): Error {
@@ -128,85 +99,97 @@ async function raceWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Prom
   });
 }
 
-function parseRetryDelay(headers: Record<string, string> | undefined): number | undefined {
-  if (!headers) return undefined;
-  const normalized = new Map(
-    Object.entries(headers).map(([key, value]) => [key.toLocaleLowerCase("en-US"), value])
-  );
-  const milliseconds = Number.parseFloat(normalized.get("retry-after-ms") ?? "");
-  if (Number.isFinite(milliseconds)) return Math.max(0, milliseconds);
-  const value = normalized.get("retry-after");
-  if (!value) return undefined;
-  const seconds = Number.parseFloat(value);
-  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1_000);
-  const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) ? Math.max(0, timestamp - Date.now()) : undefined;
-}
+function mapOpenCodeError(error: unknown): AIError {
+  if (hasOpenCodeErrorTag(error, "UnauthorizedError")) {
+    return new AIError({
+      type: "missing_api_key",
+      message: "OpenCode authentication is unavailable",
+      retryable: false,
+    });
+  }
+  if (hasOpenCodeErrorTag(error, "ProviderNotFoundError")) {
+    return new AIError({
+      type: "invalid_model",
+      message: "The configured OpenCode model is unavailable",
+      retryable: false,
+    });
+  }
+  if (hasOpenCodeErrorTag(error, "ServiceUnavailableError")) {
+    return new AIError({
+      type: "network",
+      message: "OpenCode provider service is unavailable",
+      retryable: true,
+    });
+  }
+  const clientErrorReason = getOpenCodeClientErrorReason(error);
+  if (clientErrorReason) {
+    return new AIError({
+      type: "network",
+      message: "OpenCode CLI protocol request failed",
+      retryable: clientErrorReason === "Transport",
+      cause: error instanceof Error ? error : undefined,
+    });
+  }
 
-function mapAssistantError(error: unknown): AIError {
   const record = error && typeof error === "object"
-    ? error as { name?: unknown; data?: unknown }
+    ? error as { name?: unknown; type?: unknown; message?: unknown; status?: unknown; data?: unknown }
     : {};
-  const name = typeof record.name === "string" ? record.name : "UnknownError";
+  const name = typeof record.name === "string"
+    ? record.name
+    : typeof record.type === "string" ? record.type : "UnknownError";
   const data = record.data && typeof record.data === "object"
     ? record.data as Record<string, unknown>
     : {};
+  const statusCode = typeof record.status === "number"
+    ? record.status
+    : typeof data.statusCode === "number" ? data.statusCode : undefined;
 
-  if (name === "ProviderAuthError") {
+  if (/auth|credential|unauthorized/i.test(name) || statusCode === 401 || statusCode === 403) {
     return new AIError({
       type: "missing_api_key",
       message: "OpenCode authentication is unavailable for the configured model",
       retryable: false,
     });
   }
+  if (statusCode === 429 || /rate.?limit/i.test(name)) {
+    return new AIRateLimitError("OpenCode provider rate limit was reached");
+  }
+  if (/invalid.?model|model.?not.?found/i.test(name)) {
+    return new AIError({
+      type: "invalid_model",
+      message: "The configured OpenCode model is unavailable",
+      retryable: false,
+    });
+  }
   if (name === "APIError") {
-    const statusCode = typeof data.statusCode === "number" ? data.statusCode : undefined;
-    if (statusCode === 429) {
-      return new AIRateLimitError(
-        "OpenCode provider rate limit was reached",
-        undefined,
-        parseRetryDelay(
-          data.responseHeaders && typeof data.responseHeaders === "object"
-            ? data.responseHeaders as Record<string, string>
-            : undefined
-        )
-      );
-    }
-    if (statusCode === 401 || statusCode === 403) {
-      return new AIError({
-        type: "missing_api_key",
-        message: "OpenCode authentication is unavailable for the configured model",
-        retryable: false,
-      });
-    }
     return new AIError({
       type: "generation_failed",
       message: "OpenCode provider request failed",
       retryable: data.isRetryable === true,
     });
   }
-  if (name === "MessageAbortedError") {
+  if (/abort|interrupt/i.test(name)) {
     return new AIError({
       type: "generation_failed",
       message: "OpenCode generation was aborted",
       retryable: true,
     });
   }
-  if (name === "StructuredOutputError") {
+  if (/structured.?output/i.test(name)) {
     return new AIError({
       type: "no_object",
       message: "OpenCode returned invalid structured output",
       retryable: false,
     });
   }
-  if (name === "MessageOutputLengthError" || name === "ContextOverflowError") {
+  if (/length|context.?overflow/i.test(name)) {
     return new AIError({
       type: "generation_failed",
       message: "OpenCode could not complete the response within the model limits",
       retryable: false,
     });
   }
-  if (name === "ContentFilterError") {
+  if (/content.?filter/i.test(name)) {
     return new AIError({
       type: "generation_failed",
       message: "OpenCode could not generate this response",
@@ -220,10 +203,29 @@ function mapAssistantError(error: unknown): AIError {
   });
 }
 
+async function waitForEventSubscription(
+  ready: Promise<void>,
+  signal: AbortSignal
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new AIError({
+      type: "network",
+      message: "OpenCode event stream did not become ready",
+      retryable: true,
+    })), 5_000);
+  });
+  try {
+    await raceWithSignal(Promise.race([ready, timeout]), signal);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export class OpenCodeCLIBackend implements AIGenerationBackend {
   private process: ChildProcess | null = null;
-  private client: OpencodeClient | null = null;
-  private startPromise: Promise<OpencodeClient> | null = null;
+  private client: OpenCodeClient | null = null;
+  private startPromise: Promise<OpenCodeClient> | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private version?: string;
   private readonly reasoningEffortsByModel = new Map<string, string[]>();
@@ -233,7 +235,7 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
 
   constructor(
     private readonly executable: string,
-    private readonly loadSDK: OpenCodeSDKLoader = loadOpenCodeSDK,
+    private readonly loadClient: OpenCodeClientLoader = loadOpenCodeClient,
     private readonly idleShutdownMs = CLI_IDLE_SHUTDOWN_MS
   ) {}
 
@@ -248,44 +250,41 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
     this.beginOperation();
     try {
       const client = await this.start();
-      const [catalogResponse, providerResponse] = await Promise.all([
-        client.config.providers(undefined, { signal: AbortSignal.timeout(10_000) }),
+      const [catalog, providerCatalog, defaultModel] = await Promise.all([
+        client.model.list(undefined, { signal: AbortSignal.timeout(10_000) }),
         client.provider.list(undefined, { signal: AbortSignal.timeout(10_000) }),
+        client.model.default(undefined, { signal: AbortSignal.timeout(10_000) }),
       ]);
-      const catalog = unwrap(catalogResponse, "OpenCode model discovery failed");
-      const providerState = unwrap(providerResponse, "OpenCode provider discovery failed");
-      const connectedProviders = new Set(providerState.connected);
-      this.connectedProviderIds = connectedProviders;
-
-      return catalog.providers.filter((provider) => connectedProviders.has(provider.id)).flatMap((provider) =>
-      Object.values(provider.models)
-        .filter(
-          (model) =>
-            model.capabilities.input.text &&
-            model.capabilities.output.text &&
-            model.status !== "deprecated"
-        )
-        .map((model) => {
-          const reasoningControl = createEffortReasoningControl(
-            Object.keys(model.variants ?? {})
-              .filter(isReasoningEffort)
-              .map((value) => ({ value }))
-          );
-          const variants = reasoningControl.kind === "effort"
-            ? reasoningControl.options.map(({ value }) => value)
-            : [];
-          const modelId = `${provider.id}/${model.id}`;
-          this.reasoningEffortsByModel.set(modelId, variants);
-          return withReasoningControl({
-            modelId,
-            label: model.name || model.id,
-            description: model.family ?? "",
-            group: `OpenCode · ${provider.name}`,
-            upstreamProvider: provider.id,
-            isDefault: catalog.default[provider.id] === model.id,
-          }, reasoningControl);
-        })
+      const providerNames = new Map(
+        providerCatalog.data.map((provider) => [provider.id, provider.name])
       );
+      const models = catalog.data.filter(isUsableTextModel);
+      this.connectedProviderIds = new Set(models.map((model) => model.providerID));
+
+      return models.map((model) => {
+        const reasoningControl = createEffortReasoningControl(
+          model.variants
+            .map(({ id }) => id)
+            .filter(isReasoningEffort)
+            .map((value) => ({ value }))
+        );
+        const variants = reasoningControl.kind === "effort"
+          ? reasoningControl.options.map(({ value }) => value)
+          : [];
+        const modelId = `${model.providerID}/${model.modelID}`;
+        this.reasoningEffortsByModel.set(modelId, variants);
+        return withReasoningControl({
+          modelId,
+          label: model.name || model.modelID,
+          description: model.family ?? "",
+          group: `OpenCode · ${providerNames.get(model.providerID) ?? model.providerID}`,
+          upstreamProvider: model.providerID,
+          isDefault: defaultModel.data?.providerID === model.providerID
+            && defaultModel.data.modelID === model.modelID,
+        }, reasoningControl);
+      });
+    } catch (error) {
+      throw mapOpenCodeError(error);
     } finally {
       this.endOperation();
     }
@@ -307,13 +306,16 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
     this.beginOperation();
     try {
       const client = await this.start();
-      const response = await client.provider.list(
+      const catalog = await client.model.list(
         undefined,
         { signal: AbortSignal.timeout(10_000) }
       );
-      const providerState = unwrap(response, "OpenCode provider discovery failed");
-      this.connectedProviderIds = new Set(providerState.connected);
+      this.connectedProviderIds = new Set(
+        catalog.data.filter(isUsableTextModel).map((model) => model.providerID)
+      );
       return this.getLastConnectedProviderIds();
+    } catch (error) {
+      throw mapOpenCodeError(error);
     } finally {
       this.endOperation();
     }
@@ -338,7 +340,7 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
   }
 
   async streamText(input: BackendStreamingInput): Promise<BackendResult<string>> {
-    const result = await this.runSession(input, undefined, input.onDelta);
+    const result = await this.runSession(input, input.onDelta);
     if (typeof result.output !== "string") {
       throw new AIError({ type: "generation_failed", message: "OpenCode returned invalid text output" });
     }
@@ -348,15 +350,27 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
   async generateStructured<T>(
     input: BackendStructuredInput<T>
   ): Promise<BackendResult<T>> {
-    const result = await this.runSession(input, input.jsonSchema);
-    return { ...result, output: input.validate(result.output) };
+    const result = await this.runSession({
+      ...input,
+      instructions: `${input.instructions}\n\nJSON SCHEMA:\n${JSON.stringify(input.jsonSchema)}`,
+    });
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(result.output);
+    } catch (error) {
+      throw new AIError({
+        type: "json_parse",
+        message: "OpenCode returned malformed JSON",
+        cause: error instanceof Error ? error : undefined,
+      });
+    }
+    return { ...result, output: input.validate(parsed) };
   }
 
   private async runSession(
     input: BackendTextInput,
-    jsonSchema?: Record<string, unknown>,
     onDelta?: (delta: string) => void | Promise<void>
-  ): Promise<BackendResult<unknown>> {
+  ): Promise<BackendResult<string>> {
     input.signal.throwIfAborted();
     if (input.maxOutputTokens !== undefined) {
       throw new AIError({
@@ -366,7 +380,7 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
       });
     }
     this.beginOperation();
-    let client: OpencodeClient;
+    let client: OpenCodeClient;
     let directory: string;
     try {
       client = await raceWithSignal(this.start(), input.signal);
@@ -376,28 +390,51 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
       throw error;
     }
     let sessionID: string | undefined;
-    let subscription: Awaited<ReturnType<OpencodeClient["event"]["subscribe"]>> | undefined;
+    let subscription: AsyncIterable<OpenCodeEvent> | undefined;
+    let subscriptionIterator: AsyncIterator<OpenCodeEvent> | undefined;
     const eventController = new AbortController();
     let eventPump: Promise<void> | undefined;
     let removeAbortListener: (() => void) | undefined;
 
     try {
       const model = parseModelId(input.modelId);
+      const knownReasoningEfforts = this.reasoningEffortsByModel.get(input.modelId);
+      if (input.reasoningEffort && knownReasoningEfforts && knownReasoningEfforts.length > 0
+          && !knownReasoningEfforts.includes(input.reasoningEffort)) {
+        throw new AIError({
+          type: "reasoning_not_supported",
+          message: "The selected reasoning effort is unavailable for this OpenCode model",
+          retryable: false,
+        });
+      }
+      const variant = input.reasoningEffort
+        && knownReasoningEfforts?.includes(input.reasoningEffort)
+        ? input.reasoningEffort
+        : undefined;
       const created = await client.session.create(
         {
-          directory,
           title: "Switchy AI execution",
           agent: "switchy",
-          model: { id: model.modelID, providerID: model.providerID },
-          permission: DENY_ALL_PERMISSIONS,
+          model: {
+            id: model.modelID,
+            providerID: model.providerID,
+            variant,
+          },
+          location: { directory },
+          permissions: DENY_ALL_PERMISSIONS,
         },
         { signal: input.signal }
       );
-      sessionID = unwrap(created, "OpenCode session creation failed").id;
+      sessionID = created.id;
+
+      await client.session.instructions.entry.put(
+        { sessionID, key: "switchy", value: input.instructions },
+        { signal: input.signal }
+      );
 
       const onAbort = () => {
-        if (sessionID) void client.session.abort(
-          { sessionID, directory },
+        if (sessionID) void client.session.interrupt(
+          { sessionID, continue: false },
           { signal: AbortSignal.timeout(2_000) }
         ).catch(() => undefined);
       };
@@ -405,33 +442,56 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
       removeAbortListener = () => input.signal.removeEventListener("abort", onAbort);
       if (input.signal.aborted) onAbort();
 
-      subscription = await client.event.subscribe(
-        { directory },
-        { signal: AbortSignal.any([eventController.signal, input.signal]) }
-      );
+      subscription = client.event.subscribe({
+        signal: AbortSignal.any([eventController.signal, input.signal]),
+      });
+      subscriptionIterator = subscription[Symbol.asyncIterator]();
       let streamedOutput = "";
       let eventError: Error | undefined;
+      let markReady!: () => void;
+      let rejectReady!: (error: Error) => void;
       let completeSession!: () => void;
+      const subscriptionReady = new Promise<void>((resolve, reject) => {
+        markReady = resolve;
+        rejectReady = reject;
+      });
       let terminalEventReceived = false;
       const sessionCompleted = new Promise<void>((resolve) => {
         completeSession = resolve;
       });
       let deltaDelivery = Promise.resolve();
       eventPump = (async () => {
-        for await (const rawEvent of subscription!.stream) {
-          const event = rawEvent as unknown as Record<string, unknown>;
-          const properties = (event.properties ?? event.data) as Record<string, unknown> | undefined;
-          if (properties?.sessionID !== sessionID) continue;
-          if (event.type === "message.part.delta" && properties.field === "text" && typeof properties.delta === "string") {
-            streamedOutput += properties.delta;
-            deltaDelivery = deltaDelivery.then(() => onDelta?.(properties.delta as string));
+        while (true) {
+          const next = await subscriptionIterator!.next();
+          if (next.done) break;
+          const event = next.value;
+          if (event.type === "server.connected") {
+            markReady();
+            continue;
           }
-          if (event.type === "session.error") {
-            eventError = mapAssistantError(properties.error);
+          if (event.type === "session.text.delta") {
+            if (event.data.sessionID !== sessionID) continue;
+            streamedOutput += event.data.delta;
+            deltaDelivery = deltaDelivery.then(() => onDelta?.(event.data.delta));
+          }
+          if (event.type === "session.execution.failed") {
+            if (event.data.sessionID !== sessionID) continue;
+            eventError = mapOpenCodeError(event.data.error);
             terminalEventReceived = true;
             completeSession();
           }
-          if (event.type === "session.idle") {
+          if (event.type === "session.execution.interrupted") {
+            if (event.data.sessionID !== sessionID) continue;
+            eventError = new AIError({
+              type: "generation_failed",
+              message: "OpenCode generation was interrupted",
+              retryable: true,
+            });
+            terminalEventReceived = true;
+            completeSession();
+          }
+          if (event.type === "session.execution.succeeded") {
+            if (event.data.sessionID !== sessionID) continue;
             terminalEventReceived = true;
             completeSession();
           }
@@ -445,86 +505,88 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
         }
       })().catch((error) => {
         if (!input.signal.aborted && !eventController.signal.aborted) {
-          eventError = error instanceof Error
-            ? error
-            : new AIError({ type: "network", message: "OpenCode event stream failed" });
+          eventError = mapOpenCodeError(error);
+          rejectReady(eventError);
           completeSession();
         }
       });
 
-      const knownReasoningEfforts = this.reasoningEffortsByModel.get(input.modelId);
-      if (input.reasoningEffort && knownReasoningEfforts && knownReasoningEfforts.length > 0 &&
-          !knownReasoningEfforts.includes(input.reasoningEffort)) {
-        throw new AIError({
-          type: "reasoning_not_supported",
-          message: "The selected reasoning effort is unavailable for this OpenCode model",
-          retryable: false,
-        });
-      }
       try {
-        const prompted = await client.session.prompt(
-          {
-            sessionID,
-            directory,
-            model,
-            agent: "switchy",
-            system: input.instructions,
-            variant: input.reasoningEffort && knownReasoningEfforts?.includes(input.reasoningEffort)
-              ? input.reasoningEffort
-              : undefined,
-            tools: DISABLED_TOOLS,
-            format: jsonSchema
-              ? { type: "json_schema", schema: jsonSchema, retryCount: 0 }
-              : { type: "text" },
-            parts: [{ type: "text", text: input.prompt }],
-          },
+        await waitForEventSubscription(subscriptionReady, input.signal);
+        await client.session.prompt(
+          { sessionID, text: input.prompt },
           { signal: input.signal }
         );
         input.signal.throwIfAborted();
-        const response = unwrap(prompted, "OpenCode generation failed");
-        if (response.info.error) throw mapAssistantError(response.info.error);
 
         await raceWithSignal(sessionCompleted, input.signal);
         await raceWithSignal(deltaDelivery, input.signal);
         if (eventError) throw eventError;
 
-        const output = jsonSchema
-          ? response.info.structured
-          : response.parts
-              .filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text")
-              .map((part) => part.text)
-              .join("") || streamedOutput;
+        const context = await client.session.context(
+          { sessionID },
+          { signal: input.signal }
+        );
+        const response = context.findLast(
+          (message): message is SessionMessageAssistant => message.type === "assistant"
+        );
+        if (!response) {
+          throw new AIError({
+            type: "generation_failed",
+            message: "OpenCode completed without an assistant response",
+          });
+        }
+        if (response.error) throw mapOpenCodeError(response.error);
+
+        const output = response.content
+          .filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text")
+          .map((part) => part.text)
+          .join("") || streamedOutput;
+        const tokens = response.tokens;
+        const outputTokens = tokens ? tokens.output + tokens.reasoning : undefined;
 
         return {
-          output: output ?? "",
+          output,
           usage: {
-            inputTokens: response.info.tokens.input,
-            outputTokens: response.info.tokens.output,
-            totalTokens: response.info.tokens.total,
+            inputTokens: tokens?.input,
+            inputNoCacheTokens: tokens
+              ? Math.max(0, tokens.input - tokens.cache.read)
+              : undefined,
+            inputCacheReadTokens: tokens?.cache.read,
+            inputCacheWriteTokens: tokens?.cache.write,
+            outputTokens,
+            outputTextTokens: tokens?.output,
+            outputReasoningTokens: tokens?.reasoning,
+            totalTokens: tokens
+              ? tokens.input + tokens.output + tokens.reasoning
+              : undefined,
           },
-          finishReason: response.info.finish,
+          finishReason: response.finish,
           providerRequestId: sessionID,
           warningCodes: [],
         };
+      } catch (error) {
+        if (error instanceof AIError || input.signal.aborted) throw error;
+        throw mapOpenCodeError(error);
       } finally {
         removeAbortListener?.();
       }
     } finally {
       removeAbortListener?.();
       if (sessionID) {
-        await client.session.abort(
-          { sessionID, directory },
+        await client.session.interrupt(
+          { sessionID, continue: false },
           { signal: AbortSignal.timeout(2_000) }
         ).catch(() => undefined);
-        await client.session.delete(
-          { sessionID, directory },
+        await client.session.remove(
+          { sessionID },
           { signal: AbortSignal.timeout(2_000) }
         ).catch(() => undefined);
       }
       eventController.abort();
-      if (subscription) {
+      if (subscriptionIterator) {
         await Promise.race([
-          subscription.stream.return(undefined).then(() => undefined).catch(() => undefined),
+          Promise.resolve(subscriptionIterator.return?.()).then(() => undefined).catch(() => undefined),
           new Promise<void>((resolve) => setTimeout(resolve, 2_000)),
         ]);
       }
@@ -539,7 +601,7 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
     }
   }
 
-  private async start(): Promise<OpencodeClient> {
+  private async start(): Promise<OpenCodeClient> {
     if (this.client) return this.client;
     if (this.startPromise) return this.startPromise;
     this.startPromise = this.startInternal();
@@ -550,13 +612,13 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
     }
   }
 
-  private async startInternal(): Promise<OpencodeClient> {
+  private async startInternal(): Promise<OpenCodeClient> {
     const port = await reservePort();
     const password = randomBytes(24).toString("base64url");
-    const username = "switchy";
+    const username = "opencode";
     const child = spawn(
       this.executable,
-      ["serve", "--pure", "--hostname", "127.0.0.1", "--port", String(port)],
+      ["serve", "--hostname", "127.0.0.1", "--port", String(port)],
       {
         shell: false,
         stdio: ["ignore", "pipe", "pipe"],
@@ -566,20 +628,21 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
           OPENCODE_SERVER_PASSWORD: password,
           OPENCODE_CONFIG_CONTENT: JSON.stringify({
             share: "disabled",
-            autoupdate: false,
-            plugin: [],
+            update: "disable",
+            snapshots: false,
+            formatter: false,
+            lsp: false,
+            plugins: [],
             instructions: [],
-            mcp: {},
-            tools: DISABLED_TOOLS,
-            permission: { "*": "deny" },
+            mcp: { servers: {} },
+            permissions: DENY_ALL_PERMISSIONS,
             default_agent: "switchy",
-            agent: {
+            agents: {
               switchy: {
                 description: "Isolated Switchy text generation",
                 mode: "primary",
-                prompt: "Follow only the system message supplied by Switchy. Never use tools or external context.",
-                tools: DISABLED_TOOLS,
-                permission: { "*": "deny" },
+                system: "Follow only the session instructions supplied by Switchy. Never use tools or external context.",
+                permissions: DENY_ALL_PERMISSIONS,
               },
             },
           }),
@@ -605,15 +668,15 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
     child.stdout.resume();
     child.stderr.on("data", (chunk: Buffer) => {
       const message = chunk.toString("utf8", 0, 1_024).toLowerCase();
-      if (/unknown (?:option|argument)|unrecognized (?:option|argument)|unsupported .*option|unexpected argument/.test(message)) {
+      if (/unknown (?:flag|option|argument)|unrecognized (?:flag|option|argument)|unsupported .*(?:flag|option)|unexpected argument/.test(message)) {
         unsupportedStartupOptions = true;
       }
     });
 
     try {
       const authorization = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
-      const { createOpencodeClient } = await this.loadSDK();
-      const client = createOpencodeClient({
+      const { OpenCode } = await this.loadClient();
+      const client = OpenCode.make({
         baseUrl: `http://127.0.0.1:${port}`,
         headers: { Authorization: authorization },
       });
@@ -622,24 +685,33 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
       while (Date.now() < deadline) {
         if (processError || child.exitCode !== null) break;
         try {
-          const health = await client.global.health({
+          const health = await client.health.get({
             signal: AbortSignal.timeout(1_000),
           });
-          if (health.data) {
-            this.version = health.data.version;
+          if (health.healthy) {
+            this.version = health.version;
             this.client = client;
             this.scheduleIdleShutdown();
             return client;
           }
-          if (health.response?.status === 404) {
+        } catch (error) {
+          if (hasOpenCodeErrorTag(error, "UnauthorizedError")) {
+            throw new AIError({
+              type: "validation",
+              message: "OpenCode CLI protocol authentication is incompatible",
+              retryable: false,
+            });
+          }
+          const clientErrorReason = getOpenCodeClientErrorReason(error);
+          if (clientErrorReason === "UnexpectedStatus"
+              || clientErrorReason === "UnsupportedContentType") {
             throw new AIError({
               type: "validation",
               message: "OpenCode CLI protocol is incompatible",
               retryable: false,
             });
           }
-        } catch (error) {
-          if (error instanceof AIError && error.type === "validation") throw error;
+          if (error instanceof AIError) throw error;
           // The process may still be starting.
         }
         await new Promise((resolve) => setTimeout(resolve, 100));

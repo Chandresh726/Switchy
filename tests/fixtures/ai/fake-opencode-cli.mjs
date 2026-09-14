@@ -3,12 +3,34 @@
 import http from "node:http";
 import { appendFileSync, writeFileSync } from "node:fs";
 
-if (process.env.SWITCHY_FAKE_OPENCODE_INCOMPATIBLE === "1") {
-  process.stderr.write("unknown option: --pure\n");
+const args = process.argv.slice(2);
+
+if (process.env.SWITCHY_FAKE_OPENCODE_INCOMPATIBLE === "1" || args.includes("--pure")) {
+  process.stderr.write("Unrecognized flag: --pure in command opencode serve\n");
   process.exit(2);
 }
 
 if (process.env.SWITCHY_FAKE_OPENCODE_STARTUP_CRASH === "1") {
+  process.exit(2);
+}
+
+let config;
+try {
+  config = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT ?? "null");
+} catch {
+  config = null;
+}
+const denyAll = config?.permissions?.some((rule) =>
+  rule.action === "*" && rule.resource === "*" && rule.effect === "deny"
+);
+if (config?.share !== "disabled"
+    || config?.update !== "disable"
+    || config?.snapshots !== false
+    || config?.formatter !== false
+    || config?.lsp !== false
+    || config?.default_agent !== "switchy"
+    || !denyAll) {
+  process.stderr.write("Invalid Switchy OpenCode v2 configuration\n");
   process.exit(2);
 }
 
@@ -25,13 +47,14 @@ if (process.env.SWITCHY_FAKE_OPENCODE_PID_PATH) {
   );
 }
 
-const args = process.argv.slice(2);
 const port = Number(args[args.indexOf("--port") + 1]);
 const expectedAuth = `Basic ${Buffer.from(`${process.env.OPENCODE_SERVER_USERNAME}:${process.env.OPENCODE_SERVER_PASSWORD}`).toString("base64")}`;
 const streams = new Set();
 let deletedSessions = 0;
 let sessionExists = false;
-let pendingMessageResponse;
+let sessionInstructions = "";
+let sessionModel;
+let assistantMessage;
 
 function resolveSchema(schema, root) {
   if (!schema?.$ref) return schema ?? {};
@@ -101,6 +124,48 @@ function json(response, value, status = 200) {
   response.end(JSON.stringify(value));
 }
 
+function empty(response) {
+  response.writeHead(204);
+  response.end();
+}
+
+async function readJson(request) {
+  let body = "";
+  for await (const chunk of request) body += chunk;
+  return body ? JSON.parse(body) : {};
+}
+
+function location() {
+  return {
+    directory: process.cwd(),
+    project: { id: "p", directory: process.cwd(), canonical: process.cwd() },
+  };
+}
+
+function emit(event) {
+  for (const stream of streams) {
+    stream.write(`data: ${JSON.stringify(event)}\n\n`);
+  }
+}
+
+function model({ enabled = true, output = ["text"] } = {}) {
+  return {
+    id: "openai/text",
+    modelID: output.includes("text") ? "text" : "image",
+    providerID: "openai",
+    family: "gpt",
+    name: output.includes("text") ? "Text Model" : "Image Model",
+    capabilities: { tools: false, input: ["text"], output },
+    variants: ["minimal", "low", "medium", "high", "xhigh", "max", "future_v2"]
+      .map((id) => ({ id })),
+    time: { released: Date.now() },
+    cost: [{ input: 0, output: 0, cache: { read: 0, write: 0 } }],
+    status: "active",
+    enabled,
+    limit: { context: 1_000, output: 100 },
+  };
+}
+
 const server = http.createServer((request, response) => {
   if (request.headers.authorization !== expectedAuth) {
     json(response, { error: "unauthorized" }, 401);
@@ -108,107 +173,44 @@ const server = http.createServer((request, response) => {
   }
 
   const url = new URL(request.url, `http://127.0.0.1:${port}`);
-  if (request.method === "GET" && url.pathname === "/global/health") {
+  if (request.method === "GET" && url.pathname === "/api/health") {
     if (process.env.SWITCHY_FAKE_OPENCODE_MISSING_HEALTH === "1") {
       json(response, { error: "not found" }, 404);
       return;
     }
-    json(response, { healthy: true, version: "8.8.8" });
+    json(response, { healthy: true, version: "2.0.1", pid: process.pid });
     return;
   }
-  if (request.method === "GET" && url.pathname === "/provider") {
+  if (request.method === "GET" && url.pathname === "/api/provider") {
     json(response, {
-      all: [],
-      default: { openai: "text" },
-      connected: process.env.SWITCHY_FAKE_OPENCODE_DISCONNECTED === "1"
-        ? []
-        : ["openai"],
-    });
-    return;
-  }
-  if (request.method === "GET" && url.pathname === "/config/providers") {
-    json(response, {
-      providers: [{
+      location: location(),
+      data: [{
         id: "openai",
         name: "OpenAI",
-        source: "config",
-        env: [],
-        options: {},
-        models: {
-          text: {
-            id: "text",
-            providerID: "openai",
-            api: { id: "text", url: "", npm: "" },
-            name: "Text Model",
-            family: "gpt",
-            capabilities: {
-              temperature: true,
-              reasoning: true,
-              attachment: false,
-              toolcall: false,
-              input: { text: true, audio: false, image: false, video: false, pdf: false },
-              output: { text: true, audio: false, image: false, video: false, pdf: false },
-              interleaved: false,
-            },
-            cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
-            limit: { context: 1000, output: 100 },
-            status: "active",
-            options: {},
-            headers: {},
-            release_date: "2026-01-01",
-            variants: {
-              minimal: {},
-              low: {},
-              medium: {},
-              high: {},
-              xhigh: {},
-              max: {},
-              future_v1: {},
-            },
-          },
-          image: {
-            id: "image",
-            providerID: "openai",
-            api: { id: "image", url: "", npm: "" },
-            name: "Image Model",
-            capabilities: {
-              temperature: false, reasoning: false, attachment: true, toolcall: false,
-              input: { text: true, audio: false, image: false, video: false, pdf: false },
-              output: { text: false, audio: false, image: true, video: false, pdf: false },
-              interleaved: false,
-            },
-            cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
-            limit: { context: 1000, output: 100 }, status: "active", options: {}, headers: {}, release_date: "2026-01-01",
-          },
-        },
-      }, {
-        id: "disconnected",
-        name: "Disconnected Provider",
-        source: "config",
-        env: [],
-        options: {},
-        models: {
-          unavailable: {
-            id: "unavailable",
-            providerID: "disconnected",
-            api: { id: "unavailable", url: "", npm: "" },
-            name: "Unavailable Model",
-            capabilities: {
-              temperature: true, reasoning: false, attachment: false, toolcall: false,
-              input: { text: true, audio: false, image: false, video: false, pdf: false },
-              output: { text: true, audio: false, image: false, video: false, pdf: false },
-              interleaved: false,
-            },
-            cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
-            limit: { context: 1000, output: 100 }, status: "active", options: {}, headers: {}, release_date: "2026-01-01",
-          },
-        },
+        activation: "enabled",
+        package: "@opencode/ai/providers/openai",
       }],
-      default: { openai: "text" },
     });
     return;
   }
-  if (request.method === "GET" && url.pathname === "/event") {
+  if (request.method === "GET" && url.pathname === "/api/model") {
+    json(response, {
+      location: location(),
+      data: [
+        model({ enabled: process.env.SWITCHY_FAKE_OPENCODE_DISCONNECTED !== "1" }),
+        model({ output: ["image"] }),
+      ],
+    });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/model/default") {
+    json(response, {
+      location: location(),
+      data: process.env.SWITCHY_FAKE_OPENCODE_DISCONNECTED === "1" ? null : model(),
+    });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/event") {
     response.writeHead(200, {
       "content-type": "text/event-stream",
       "cache-control": "no-cache",
@@ -216,95 +218,125 @@ const server = http.createServer((request, response) => {
     });
     response.flushHeaders();
     streams.add(response);
+    response.write(`data: ${JSON.stringify({ id: "connected", type: "server.connected", data: {} })}\n\n`);
     request.on("close", () => streams.delete(response));
     return;
   }
-  if (request.method === "POST" && url.pathname === "/session") {
+  if (request.method === "POST" && url.pathname === "/api/session") {
     if (sessionExists) {
-      json(response, { error: "previous session was not deleted" }, 409);
+      json(response, { _tag: "ConflictError", message: "previous session was not deleted" }, 409);
       return;
     }
-    sessionExists = true;
-    json(response, { id: "session-1", slug: "switchy", projectID: "p", directory: url.searchParams.get("directory") ?? "" });
+    void readJson(request).then((parsed) => {
+      sessionExists = true;
+      sessionModel = parsed.model;
+      json(response, { data: {
+        id: "session-1",
+        projectID: "p",
+        agent: parsed.agent,
+        model: parsed.model,
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        time: { created: Date.now(), updated: Date.now() },
+        title: parsed.title,
+        location: parsed.location,
+        permissions: parsed.permissions,
+      } });
+    });
     return;
   }
-  if (request.method === "POST" && url.pathname === "/session/session-1/message") {
-    let body = "";
-    request.on("data", (chunk) => { body += chunk; });
-    request.on("end", () => {
-      const parsed = JSON.parse(body);
-      const prompt = parsed.parts?.[0]?.text ?? "";
-      if (prompt.includes("unknown-support") && parsed.variant !== undefined) {
-        json(response, { error: "unexpected reasoning variant" }, 400);
+  if (request.method === "PUT" && url.pathname === "/api/session/session-1/instructions/entries/switchy") {
+    void readJson(request).then((parsed) => {
+      sessionInstructions = typeof parsed.value === "string" ? parsed.value : "";
+      empty(response);
+    });
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/api/session/session-1/prompt") {
+    void readJson(request).then((parsed) => {
+      const prompt = parsed.text ?? "";
+      if (prompt.includes("unknown-support") && sessionModel?.variant !== undefined) {
+        json(response, { _tag: "InvalidRequestError", message: "unexpected reasoning variant" }, 400);
         return;
       }
-      if (prompt.includes("require-max-effort") && parsed.variant !== "max") {
-        json(response, { error: "provider-native effort was not preserved" }, 400);
+      if (prompt.includes("require-max-effort") && sessionModel?.variant !== "max") {
+        json(response, { _tag: "InvalidRequestError", message: "provider-native effort was not preserved" }, 400);
         return;
       }
-      if (prompt === "rate-limit") {
-        response.writeHead(429, { "content-type": "application/json", "retry-after": "1" });
-        response.end(JSON.stringify({ error: "rate limited" }));
-        return;
-      }
-      if (prompt.includes("missing-model")) {
-        json(response, { error: "model unavailable" }, 400);
-        return;
-      }
-      const structured = parsed.format?.type === "json_schema";
-      const textSchema = portableSchema(parsed.system);
+      const textSchema = portableSchema(sessionInstructions);
       const textOutput = textSchema
         ? JSON.stringify(synthesizeSchema(textSchema, textSchema, "", prompt))
         : "hello";
       const embeddedError = prompt.includes("embedded-auth-error")
-        ? { name: "ProviderAuthError", data: { providerID: "openai", message: "synthetic secret" } }
-        : prompt.includes("embedded-rate-limit")
-          ? { name: "APIError", data: { message: "synthetic body", statusCode: 429, isRetryable: true, responseHeaders: { "retry-after": "2" } } }
+        ? { type: "ProviderAuthError", message: "synthetic secret", status: 401 }
+        : prompt.includes("embedded-rate-limit") || prompt === "rate-limit"
+          ? { type: "APIError", message: "synthetic body", status: 429 }
           : prompt.includes("embedded-abort")
-            ? { name: "MessageAbortedError", data: { message: "synthetic abort details" } }
+            ? { type: "MessageAbortedError", message: "synthetic abort details" }
             : prompt.includes("embedded-length")
-              ? { name: "MessageOutputLengthError", data: {} }
+              ? { type: "MessageOutputLengthError", message: "synthetic length" }
               : prompt.includes("embedded-structured")
-                ? { name: "StructuredOutputError", data: { message: "synthetic invalid JSON", retries: 0 } }
-                : undefined;
-      for (const stream of streams) {
-        stream.write(`data: ${JSON.stringify({ type: "message.part.delta", properties: { sessionID: "session-1", field: "text", delta: textOutput } })}\n\n`);
+                ? { type: "StructuredOutputError", message: "synthetic invalid JSON" }
+                : prompt.includes("missing-model")
+                  ? { type: "InvalidModelError", message: "model unavailable", status: 400 }
+                  : undefined;
+      assistantMessage = {
+        id: "assistant-1",
+        time: { created: Date.now(), completed: Date.now() },
+        type: "assistant",
+        agent: "switchy",
+        model: sessionModel,
+        content: [{ type: "text", text: textOutput }],
+        finish: "stop",
+        tokens: { input: 6, output: 3, reasoning: 0, cache: { read: 0, write: 0 } },
+        cost: 0,
+        error: embeddedError,
+      };
+      const complete = () => {
+        emit({ id: "delta", created: Date.now(), type: "session.text.delta", data: {
+          sessionID: "session-1", assistantMessageID: "assistant-1", ordinal: 0, delta: textOutput,
+        } });
         if (prompt.includes("close-event-stream")) {
-          stream.end();
+          for (const stream of streams) stream.end();
+        } else if (embeddedError) {
+          emit({ id: "failed", created: Date.now(), type: "session.execution.failed", durable: {
+            aggregateID: "session-1", seq: 1, version: 1,
+          }, data: { sessionID: "session-1", error: embeddedError } });
         } else {
-          stream.write(`data: ${JSON.stringify({ type: "session.idle", properties: { sessionID: "session-1" } })}\n\n`);
+          emit({ id: "succeeded", created: Date.now(), type: "session.execution.succeeded", durable: {
+            aggregateID: "session-1", seq: 1, version: 1,
+          }, data: { sessionID: "session-1" } });
         }
-      }
-      const complete = () => json(response, {
-        info: {
-          id: "assistant-1", sessionID: "session-1", role: "assistant",
-          time: { created: Date.now(), completed: Date.now() }, parentID: "user-1",
-          modelID: "text", providerID: "openai", mode: "build", agent: "build",
-          path: { cwd: "", root: "" }, tokens: { total: 9, input: 6, output: 3, reasoning: 0, cache: { read: 0, write: 0 } },
-          structured: structured ? { value: "structured" } : undefined, finish: "stop", error: embeddedError,
-        },
-        parts: structured ? [] : [{ id: "part-1", sessionID: "session-1", messageID: "assistant-1", type: "text", text: textOutput }],
-      });
+      };
       if (prompt.includes("slow")) {
-        pendingMessageResponse = complete;
+        // Cancellation completes this request through the interrupt endpoint.
       } else if (prompt.includes("medium-delay")) {
         setTimeout(complete, 150);
       } else {
         complete();
       }
+      json(response, { data: {
+        id: "inbox-1", sessionID: "session-1", timeCreated: Date.now(), type: "user",
+        payload: { text: prompt }, delivery: "steer",
+      } });
     });
     return;
   }
-  if (request.method === "POST" && url.pathname === "/session/session-1/abort") {
-    json(response, true);
-    pendingMessageResponse?.();
-    pendingMessageResponse = undefined;
+  if (request.method === "GET" && url.pathname === "/api/session/session-1/context") {
+    json(response, { data: assistantMessage ? [assistantMessage] : [] });
     return;
   }
-  if (request.method === "DELETE" && url.pathname === "/session/session-1") {
+  if (request.method === "POST" && url.pathname === "/api/session/session-1/interrupt") {
+    json(response, { interrupted: true });
+    return;
+  }
+  if (request.method === "DELETE" && url.pathname === "/api/session/session-1") {
     deletedSessions += 1;
     sessionExists = false;
-    json(response, true);
+    sessionInstructions = "";
+    sessionModel = undefined;
+    assistantMessage = undefined;
+    empty(response);
     return;
   }
   if (request.method === "GET" && url.pathname === "/test/cleanup") {

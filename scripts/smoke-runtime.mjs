@@ -157,7 +157,7 @@ try {
   const openCodeStatus = await openCodeResponse.json();
   let openCodePid;
   if (openCodeStatus.status === "ready") {
-    if (openCodeStatus.cliVersion !== "8.8.8") {
+    if (openCodeStatus.cliVersion !== "2.0.1") {
       throw new Error(
         `Unexpected OpenCode status: ${JSON.stringify(openCodeStatus)}`
       );

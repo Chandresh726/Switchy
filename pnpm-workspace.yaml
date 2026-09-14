@@ -6,28 +6,29 @@ packages:
 allowBuilds:
   better-sqlite3: true
   esbuild: false
+  msgpackr-extract: false
   msw: false
   sharp: false
   unrs-resolver: false
 
 minimumReleaseAgeExclude:
   - vite@7.3.6
-  - '@next/env@16.2.12'
-  - '@next/eslint-plugin-next@16.2.12'
-  - '@next/swc-darwin-arm64@16.2.12'
-  - '@next/swc-darwin-x64@16.2.12'
-  - '@next/swc-linux-arm64-gnu@16.2.12'
-  - '@next/swc-linux-arm64-musl@16.2.12'
-  - '@next/swc-linux-x64-gnu@16.2.12'
-  - '@next/swc-linux-x64-musl@16.2.12'
-  - '@next/swc-win32-arm64-msvc@16.2.12'
-  - '@next/swc-win32-x64-msvc@16.2.12'
-  - eslint-config-next@16.2.12
-  - next@16.2.12
+  - '@next/env@16.3.3'
+  - '@next/eslint-plugin-next@16.3.3'
+  - '@next/swc-darwin-arm64@16.3.3'
+  - '@next/swc-darwin-x64@16.3.3'
+  - '@next/swc-linux-arm64-gnu@16.3.3'
+  - '@next/swc-linux-arm64-musl@16.3.3'
+  - '@next/swc-linux-x64-gnu@16.3.3'
+  - '@next/swc-linux-x64-musl@16.3.3'
+  - '@next/swc-win32-arm64-msvc@16.3.3'
+  - '@next/swc-win32-x64-msvc@16.3.3'
+  - eslint-config-next@16.3.3
+  - next@16.3.3
   - postcss@8.5.23
   - undici@7.29.0
   - fast-uri@3.1.5
-  - js-yaml@4.3.1
+  - js-yaml@4.3.2
   - nanoid@3.3.18
 
 overrides:
@@ -38,9 +39,9 @@ overrides:
   "@xmldom/xmldom@>=0.7.0 <=0.8.14": ^0.8.15
   esbuild: ^0.28.1
   fast-uri@>=3.0.0 <3.1.5: ^3.1.5
-  js-yaml@>=4.0.0 <4.3.1: ^4.3.1
+  js-yaml@>=4.0.0 <4.3.2: ^4.3.2
   nanoid@<3.3.18: ^3.3.18
   postcss: 8.5.23
-  sharp: 0.35.3
+  sharp: 0.35.4
   undici@>=7.0.0 <7.29.0: ^7.29.0
   vite: ^8.1.4

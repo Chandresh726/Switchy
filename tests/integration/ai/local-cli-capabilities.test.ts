@@ -4,7 +4,7 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import * as openCodeSDK from "@opencode-ai/sdk/v2";
+import * as openCodeClient from "@opencode/client";
 
 vi.mock("@/lib/db", () => ({ db: {} }));
 vi.mock("@/lib/ai/runtime-context", () => ({
@@ -183,7 +183,7 @@ describe("local CLI capability integration", () => {
     });
     expect(resume.output).toEqual({ value: "structured" });
 
-    const openCode = new OpenCodeCLIBackend(openCodeExecutable, async () => openCodeSDK);
+    const openCode = new OpenCodeCLIBackend(openCodeExecutable, async () => openCodeClient);
     localCLIBackends.push(openCode);
     const openCodeRuntimeFor = (capability: AICapability) => createAICapabilityRuntime({
       capability,
@@ -271,6 +271,8 @@ describe("local CLI capability integration", () => {
     const argvAudit = readFileSync(auditPath, "utf8");
     expect(argvAudit).toContain('"cli":"codex"');
     expect(argvAudit).toContain('"cli":"opencode"');
+    expect(argvAudit).toContain('"serve","--hostname","127.0.0.1","--port"');
+    expect(argvAudit).not.toContain("--pure");
     expect(argvAudit).not.toContain(PRIVATE_PROMPT);
     expect(argvAudit).not.toContain("OPENCODE_SERVER_PASSWORD");
     expect(argvAudit).not.toContain("synthetic secret");
