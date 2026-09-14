@@ -35,16 +35,10 @@ interface ModelEntry {
   models: ProviderModelDefinition[];
 }
 
-interface ConnectedProviderEntry {
-  expiresAt: number;
-  providerIds: string[];
-}
-
 const backendCache = new Map<LocalCLIProvider, BackendEntry>();
 const statusCache = new Map<LocalCLIProvider, StatusEntry>();
 const modelCache = new Map<LocalCLIProvider, ModelEntry>();
-const modelFlights = new Map<LocalCLIProvider, Promise<ProviderModelDefinition[]>>();
-const openCodeConnectionCache = new Map<LocalCLIProvider, ConnectedProviderEntry>();
+const modelFlights = new Map<string, Promise<ProviderModelDefinition[]>>();
 
 export async function warmLocalCLIStatuses(
   providers: readonly LocalCLIProvider[] = ["codex_cli", "opencode_cli"]
@@ -61,33 +55,6 @@ export function getCachedLocalCLIStatus(
 ): LocalCLIStatus | undefined {
   const cached = statusCache.get(provider);
   return cached && cached.expiresAt > Date.now() ? cached.value : undefined;
-}
-
-function filterConnectedOpenCodeModels(
-  models: ProviderModelDefinition[],
-  connectedProviderIds: string[]
-): ProviderModelDefinition[] {
-  const connected = new Set(connectedProviderIds);
-  return models.filter((model) => connected.has(
-    model.upstreamProvider ?? model.modelId.split("/", 1)[0] ?? ""
-  ));
-}
-
-async function getConnectedOpenCodeProviderIds(
-  options: { forceRefresh?: boolean } = {}
-): Promise<string[]> {
-  const cached = openCodeConnectionCache.get("opencode_cli");
-  if (!options.forceRefresh && cached && cached.expiresAt > Date.now()) {
-    return cached.providerIds;
-  }
-  const entry = await getBackendEntry("opencode_cli");
-  if (!entry) return [];
-  const providerIds = await (entry.backend as OpenCodeCLIBackend).readConnectedProviderIds();
-  openCodeConnectionCache.set("opencode_cli", {
-    providerIds,
-    expiresAt: Date.now() + CLI_STATUS_CACHE_TTL_MS,
-  });
-  return providerIds;
 }
 
 async function getBackendEntry(provider: LocalCLIProvider): Promise<BackendEntry | null> {
@@ -152,23 +119,16 @@ export async function getLocalCLIStatus(
             : status("no_models", "Codex CLI did not advertise any usable text models.", version);
         }
       } else {
-        const connectedProviderIds = await getConnectedOpenCodeProviderIds({
-          forceRefresh: options.forceRefresh,
-        });
-        if (connectedProviderIds.length === 0) {
-          value = status("not_authenticated", "OpenCode has no authenticated provider with usable text models.", version);
-          statusCache.set(provider, {
-            value,
-            expiresAt: Date.now() + CLI_STATUS_CACHE_TTL_MS,
-          });
-          return value;
-        }
         const models = await getLocalCLIModels(provider, {
           forceRefresh: options.forceRefresh,
         });
-        value = models.length > 0
-          ? status("ready", `${models.length} text models available.`, version)
-          : status("no_models", "OpenCode providers are connected but expose no usable text models.", version);
+        if (models.length > 0) {
+          value = status("ready", `${models.length} text models available.`, version);
+        } else if ((entry.backend as OpenCodeCLIBackend).hasAuthenticatedProviders()) {
+          value = status("no_models", "OpenCode providers are authenticated but expose no usable text models.", version);
+        } else {
+          value = status("not_authenticated", "OpenCode has no authenticated providers.", version);
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message.toLowerCase() : "";
@@ -191,18 +151,11 @@ export async function getLocalCLIStatus(
 
 export async function getLocalCLIModels(
   provider: LocalCLIProvider,
-  options: { forceRefresh?: boolean } = {}
+  options: { forceRefresh?: boolean; expectedModelId?: string } = {}
 ): Promise<ProviderModelDefinition[]> {
-  const connectedOpenCodeProviders = provider === "opencode_cli"
-    ? await getConnectedOpenCodeProviderIds({ forceRefresh: options.forceRefresh })
-    : undefined;
-  const filterModels = (models: ProviderModelDefinition[]) =>
-    connectedOpenCodeProviders
-      ? filterConnectedOpenCodeModels(models, connectedOpenCodeProviders)
-      : models;
   const cached = modelCache.get(provider);
   if (!options.forceRefresh && cached && cached.expiresAt > Date.now()) {
-    return filterModels(cached.models);
+    return cached.models;
   }
   if (!options.forceRefresh) {
     const stored = await loadStoredLocalCLICatalog(provider);
@@ -211,35 +164,34 @@ export async function getLocalCLIModels(
         models: stored.models,
         expiresAt: stored.fetchedAt + CLI_MODEL_CACHE_TTL_MS,
       });
-      return filterModels(stored.models);
+      return stored.models;
     }
   }
-  const existingFlight = modelFlights.get(provider);
+  const flightKey = `${provider}:${options.expectedModelId ?? ""}`;
+  const existingFlight = modelFlights.get(flightKey);
   if (existingFlight) return existingFlight;
 
   const flight = (async () => {
     const entry = await getBackendEntry(provider);
     if (!entry) return [];
-    const models = validateLocalCLIModelCatalog(await entry.backend.listModels());
-    if (provider === "opencode_cli") {
-      const providerIds = (entry.backend as OpenCodeCLIBackend).getLastConnectedProviderIds();
-      openCodeConnectionCache.set(provider, {
-        providerIds,
-        expiresAt: Date.now() + CLI_STATUS_CACHE_TTL_MS,
-      });
-    }
+    const discoveredModels = provider === "opencode_cli"
+      ? await (entry.backend as OpenCodeCLIBackend).listModels({
+        expectedModelId: options.expectedModelId,
+      })
+      : await entry.backend.listModels();
+    const models = validateLocalCLIModelCatalog(discoveredModels);
     modelCache.set(provider, {
       models,
       expiresAt: Date.now() + CLI_MODEL_CACHE_TTL_MS,
     });
     await saveStoredLocalCLICatalog(provider, models);
-    return filterModels(models);
+    return models;
   })();
-  modelFlights.set(provider, flight);
+  modelFlights.set(flightKey, flight);
   try {
     return await flight;
   } finally {
-    if (modelFlights.get(provider) === flight) modelFlights.delete(provider);
+    if (modelFlights.get(flightKey) === flight) modelFlights.delete(flightKey);
   }
 }
 
@@ -258,7 +210,10 @@ async function refreshLocalCLIModelForExecution(
   // is absent from it resolves to no model (invalid_model) rather than a
   // stale entry for something the CLI no longer exposes.
   try {
-    const liveModels = await getLocalCLIModels(provider, { forceRefresh: true });
+    const liveModels = await getLocalCLIModels(provider, {
+      forceRefresh: true,
+      expectedModelId: modelId,
+    });
     const filtered = liveModels.find((model) => model.modelId === modelId);
     if (filtered) return { refreshed: true, model: filtered };
     return {
@@ -325,23 +280,21 @@ export function clearLocalCLICaches(provider?: LocalCLIProvider): void {
   if (provider) {
     statusCache.delete(provider);
     modelCache.delete(provider);
-    openCodeConnectionCache.delete(provider);
     return;
   }
   statusCache.clear();
   modelCache.clear();
-  openCodeConnectionCache.clear();
 }
 
 export async function retireLocalCLIProvider(provider: LocalCLIProvider): Promise<void> {
-  const flight = modelFlights.get(provider);
-  if (flight) await flight.catch(() => undefined);
+  const flights = Array.from(modelFlights.entries())
+    .filter(([key]) => key.startsWith(`${provider}:`));
+  await Promise.all(flights.map(([, flight]) => flight.catch(() => undefined)));
   backendCache.get(provider)?.backend.retire();
   backendCache.delete(provider);
   statusCache.delete(provider);
   modelCache.delete(provider);
-  openCodeConnectionCache.delete(provider);
-  modelFlights.delete(provider);
+  for (const [key] of flights) modelFlights.delete(key);
 }
 
 export async function resetLocalCLIProvider(provider: LocalCLIProvider): Promise<void> {

@@ -12,7 +12,11 @@ import type {
   V2Event as OpenCodeEvent,
 } from "@opencode/client";
 
-import { CLI_IDLE_SHUTDOWN_MS } from "@/lib/ai/local-cli/constants";
+import {
+  CLI_IDLE_SHUTDOWN_MS,
+  OPENCODE_CATALOG_RETRY_INTERVAL_MS,
+  OPENCODE_CATALOG_SETTLE_TIMEOUT_MS,
+} from "@/lib/ai/local-cli/constants";
 import type {
   AIGenerationBackend,
   BackendResult,
@@ -34,6 +38,10 @@ const DENY_ALL_PERMISSIONS = [
 
 type OpenCodeClientModule = typeof import("@opencode/client");
 export type OpenCodeClientLoader = () => Promise<OpenCodeClientModule>;
+interface OpenCodeModelListOptions {
+  expectedModelId?: string;
+}
+
 let clientModulePromise: Promise<OpenCodeClientModule> | undefined;
 
 function loadOpenCodeClient(): Promise<OpenCodeClientModule> {
@@ -229,7 +237,7 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private version?: string;
   private readonly reasoningEffortsByModel = new Map<string, string[]>();
-  private connectedProviderIds = new Set<string>();
+  private authenticatedProviderIds = new Set<string>();
   private activeOperations = 0;
   private retireWhenIdle = false;
 
@@ -246,43 +254,82 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
     if (this.activeOperations === 0) this.stopProcess();
   }
 
-  async listModels(): Promise<ProviderModelDefinition[]> {
+  async listModels(
+    options: OpenCodeModelListOptions = {}
+  ): Promise<ProviderModelDefinition[]> {
     this.beginOperation();
     try {
       const client = await this.start();
-      const [catalog, providerCatalog, defaultModel] = await Promise.all([
-        client.model.list(undefined, { signal: AbortSignal.timeout(10_000) }),
-        client.provider.list(undefined, { signal: AbortSignal.timeout(10_000) }),
-        client.model.default(undefined, { signal: AbortSignal.timeout(10_000) }),
-      ]);
-      const providerNames = new Map(
-        providerCatalog.data.map((provider) => [provider.id, provider.name])
-      );
-      const models = catalog.data.filter(isUsableTextModel);
-      this.connectedProviderIds = new Set(models.map((model) => model.providerID));
+      const deadline = Date.now() + OPENCODE_CATALOG_SETTLE_TIMEOUT_MS;
 
-      return models.map((model) => {
-        const reasoningControl = createEffortReasoningControl(
-          model.variants
-            .map(({ id }) => id)
-            .filter(isReasoningEffort)
-            .map((value) => ({ value }))
+      while (true) {
+        // OpenCode v2 can report a healthy server and successful catalog reads
+        // before catalog-producing integrations finish starting. Read the
+        // default first, then retry incomplete snapshots within a short bound.
+        const defaultModel = await client.model.default(
+          undefined,
+          { signal: AbortSignal.timeout(10_000) }
         );
-        const variants = reasoningControl.kind === "effort"
-          ? reasoningControl.options.map(({ value }) => value)
-          : [];
-        const modelId = `${model.providerID}/${model.modelID}`;
-        this.reasoningEffortsByModel.set(modelId, variants);
-        return withReasoningControl({
-          modelId,
-          label: model.name || model.modelID,
-          description: model.family ?? "",
-          group: `OpenCode · ${providerNames.get(model.providerID) ?? model.providerID}`,
-          upstreamProvider: model.providerID,
-          isDefault: defaultModel.data?.providerID === model.providerID
-            && defaultModel.data.modelID === model.modelID,
-        }, reasoningControl);
-      });
+        const [catalog, providerCatalog, integrations] = await Promise.all([
+          client.model.list(undefined, { signal: AbortSignal.timeout(10_000) }),
+          client.provider.list(undefined, { signal: AbortSignal.timeout(10_000) }),
+          client.integration.list(undefined, { signal: AbortSignal.timeout(10_000) }),
+        ]);
+        const providerNames = new Map(
+          providerCatalog.data.map((provider) => [provider.id, provider.name])
+        );
+        const providerIntegrationIds = new Set(
+          providerCatalog.data.map((provider) => provider.integrationID ?? provider.id)
+        );
+        const providerIntegrations = integrations.data.filter((integration) =>
+          providerIntegrationIds.has(integration.id)
+        );
+        const models = catalog.data.filter(isUsableTextModel);
+        this.authenticatedProviderIds = new Set(
+          providerIntegrations
+            .filter((integration) => integration.connections.length > 0)
+            .map((integration) => integration.id)
+        );
+
+        const definitions = models.map((model) => {
+          const reasoningControl = createEffortReasoningControl(
+            model.variants
+              .map(({ id }) => id)
+              .filter(isReasoningEffort)
+              .map((value) => ({ value }))
+          );
+          const variants = reasoningControl.kind === "effort"
+            ? reasoningControl.options.map(({ value }) => value)
+            : [];
+          const modelId = `${model.providerID}/${model.modelID}`;
+          this.reasoningEffortsByModel.set(modelId, variants);
+          return withReasoningControl({
+            modelId,
+            label: model.name || model.modelID,
+            description: model.family ?? "",
+            group: `OpenCode · ${providerNames.get(model.providerID) ?? model.providerID}`,
+            upstreamProvider: model.providerID,
+            isDefault: defaultModel.data?.providerID === model.providerID
+              && defaultModel.data.modelID === model.modelID,
+          }, reasoningControl);
+        });
+        const expectedModelAvailable = !options.expectedModelId
+          || definitions.some((model) => model.modelId === options.expectedModelId);
+        const authenticationSettledWithoutModels = definitions.length === 0
+          && providerCatalog.data.length > 0
+          && providerIntegrations.length === providerIntegrationIds.size
+          && this.authenticatedProviderIds.size === 0;
+        if ((definitions.length > 0 && expectedModelAvailable)
+            || authenticationSettledWithoutModels
+            || Date.now() >= deadline) {
+          return definitions;
+        }
+
+        await new Promise((resolve) => setTimeout(
+          resolve,
+          OPENCODE_CATALOG_RETRY_INTERVAL_MS
+        ));
+      }
     } catch (error) {
       throw mapOpenCodeError(error);
     } finally {
@@ -294,31 +341,8 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
     this.reasoningEffortsByModel.set(modelId, [...efforts]);
   }
 
-  hasConnectedProviders(): boolean {
-    return this.connectedProviderIds.size > 0;
-  }
-
-  getLastConnectedProviderIds(): string[] {
-    return Array.from(this.connectedProviderIds);
-  }
-
-  async readConnectedProviderIds(): Promise<string[]> {
-    this.beginOperation();
-    try {
-      const client = await this.start();
-      const catalog = await client.model.list(
-        undefined,
-        { signal: AbortSignal.timeout(10_000) }
-      );
-      this.connectedProviderIds = new Set(
-        catalog.data.filter(isUsableTextModel).map((model) => model.providerID)
-      );
-      return this.getLastConnectedProviderIds();
-    } catch (error) {
-      throw mapOpenCodeError(error);
-    } finally {
-      this.endOperation();
-    }
+  hasAuthenticatedProviders(): boolean {
+    return this.authenticatedProviderIds.size > 0;
   }
 
   async getVersion(): Promise<string | undefined> {

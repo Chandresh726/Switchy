@@ -15,8 +15,7 @@ const mocks = vi.hoisted(() => ({
   deleteStoredCatalog: vi.fn(),
   retireCodex: vi.fn(),
   retireOpenCode: vi.fn(),
-  readConnectedOpenCodeProviders: vi.fn(),
-  lastConnectedOpenCodeProviders: vi.fn(),
+  hasAuthenticatedOpenCodeProviders: vi.fn(),
 }));
 
 vi.mock("@/lib/ai/local-cli/catalog-cache", () => ({
@@ -44,9 +43,7 @@ vi.mock("@/lib/ai/local-cli/opencode-backend", () => ({
   OpenCodeCLIBackend: class {
     listModels = mocks.listOpenCodeModels;
     getVersion = mocks.openCodeVersion;
-    hasConnectedProviders = () => mocks.lastConnectedOpenCodeProviders().length > 0;
-    readConnectedProviderIds = mocks.readConnectedOpenCodeProviders;
-    getLastConnectedProviderIds = mocks.lastConnectedOpenCodeProviders;
+    hasAuthenticatedProviders = mocks.hasAuthenticatedOpenCodeProviders;
     setModelReasoningEfforts = mocks.setOpenCodeReasoning;
     retire = mocks.retireOpenCode;
   },
@@ -77,8 +74,7 @@ describe("local CLI connection status", () => {
     mocks.saveStoredCatalog.mockResolvedValue(undefined);
     mocks.validateStoredCatalog.mockImplementation((models) => models);
     mocks.deleteStoredCatalog.mockResolvedValue(undefined);
-    mocks.readConnectedOpenCodeProviders.mockResolvedValue(["openai"]);
-    mocks.lastConnectedOpenCodeProviders.mockReturnValue(["openai"]);
+    mocks.hasAuthenticatedOpenCodeProviders.mockReturnValue(true);
   });
 
   it("reports installation, authentication, and model availability without generation", async () => {
@@ -152,62 +148,24 @@ describe("local CLI connection status", () => {
     });
   });
 
-  it("reports OpenCode with no connected provider as not authenticated", async () => {
-    mocks.readConnectedOpenCodeProviders.mockResolvedValueOnce([]);
+  it("reports OpenCode with no authenticated provider as not authenticated", async () => {
+    mocks.listOpenCodeModels.mockResolvedValueOnce([]);
+    mocks.hasAuthenticatedOpenCodeProviders.mockReturnValueOnce(false);
 
     await expect(getLocalCLIStatus("opencode_cli", { forceRefresh: true })).resolves.toMatchObject({
       status: "not_authenticated",
       selectable: false,
     });
-    expect(mocks.listOpenCodeModels).not.toHaveBeenCalled();
+    expect(mocks.listOpenCodeModels).toHaveBeenCalledOnce();
   });
 
-  it("does not let a durable OpenCode catalog outlive disconnected authentication", async () => {
-    mocks.loadStoredCatalog.mockResolvedValue({
-      fetchedAt: Date.now(),
-      models: [{
-        modelId: "openai/gpt",
-        label: "GPT",
-        description: "",
-        supportsReasoning: false,
-        upstreamProvider: "openai",
-      }],
-    });
-    await expect(getLocalCLIStatus("opencode_cli")).resolves.toMatchObject({ status: "ready" });
+  it("distinguishes authenticated providers with no usable models", async () => {
+    mocks.listOpenCodeModels.mockResolvedValueOnce([]);
 
-    clearLocalCLICaches("opencode_cli");
-    mocks.readConnectedOpenCodeProviders.mockResolvedValueOnce([]);
-
-    await expect(getLocalCLIStatus("opencode_cli")).resolves.toMatchObject({
-      status: "not_authenticated",
+    await expect(getLocalCLIStatus("opencode_cli", { forceRefresh: true })).resolves.toMatchObject({
+      status: "no_models",
       selectable: false,
     });
-  });
-
-  it("filters cached OpenCode models by the live connected-provider set", async () => {
-    mocks.loadStoredCatalog.mockResolvedValue({
-      fetchedAt: Date.now(),
-      models: [
-        {
-          modelId: "openai/gpt",
-          label: "GPT",
-          description: "",
-          supportsReasoning: false,
-          upstreamProvider: "openai",
-        },
-        {
-          modelId: "disconnected/model",
-          label: "Unavailable",
-          description: "",
-          supportsReasoning: false,
-          upstreamProvider: "disconnected",
-        },
-      ],
-    });
-
-    await expect(getLocalCLIModels("opencode_cli")).resolves.toEqual([
-      expect.objectContaining({ modelId: "openai/gpt" }),
-    ]);
   });
 
   it("caches model catalogs independently and allows an explicit refresh", async () => {
@@ -334,6 +292,9 @@ describe("local CLI connection status", () => {
       cliVersion: "2.0.0",
     });
     expect(mocks.listOpenCodeModels).toHaveBeenCalledTimes(1);
+    expect(mocks.listOpenCodeModels).toHaveBeenCalledWith({
+      expectedModelId: "openai/healed",
+    });
     expect(mocks.saveStoredCatalog).toHaveBeenCalled();
   });
 

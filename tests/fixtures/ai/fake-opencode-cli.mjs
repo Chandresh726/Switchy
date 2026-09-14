@@ -55,6 +55,9 @@ let sessionExists = false;
 let sessionInstructions = "";
 let sessionModel;
 let assistantMessage;
+const catalogStartsCold = process.env.SWITCHY_FAKE_OPENCODE_COLD_CATALOG === "1"
+  || process.env.SWITCHY_FAKE_OPENCODE_PARTIAL_CATALOG === "1";
+let catalogReady = !catalogStartsCold;
 
 function resolveSchema(schema, root) {
   if (!schema?.$ref) return schema ?? {};
@@ -148,10 +151,11 @@ function emit(event) {
   }
 }
 
-function model({ enabled = true, output = ["text"] } = {}) {
+function model({ enabled = true, modelID, output = ["text"] } = {}) {
+  const resolvedModelID = modelID ?? (output.includes("text") ? "text" : "image");
   return {
-    id: "openai/text",
-    modelID: output.includes("text") ? "text" : "image",
+    id: `openai/${resolvedModelID}`,
+    modelID: resolvedModelID,
     providerID: "openai",
     family: "gpt",
     name: output.includes("text") ? "Text Model" : "Image Model",
@@ -184,29 +188,60 @@ const server = http.createServer((request, response) => {
   if (request.method === "GET" && url.pathname === "/api/provider") {
     json(response, {
       location: location(),
-      data: [{
+      data: catalogReady || process.env.SWITCHY_FAKE_OPENCODE_PARTIAL_CATALOG === "1" ? [{
         id: "openai",
         name: "OpenAI",
         activation: "enabled",
         package: "@opencode/ai/providers/openai",
-      }],
+      }] : [],
     });
     return;
   }
   if (request.method === "GET" && url.pathname === "/api/model") {
     json(response, {
       location: location(),
-      data: [
-        model({ enabled: process.env.SWITCHY_FAKE_OPENCODE_DISCONNECTED !== "1" }),
-        model({ output: ["image"] }),
-      ],
+      data: catalogReady
+        ? [
+          model({ enabled: process.env.SWITCHY_FAKE_OPENCODE_DISCONNECTED !== "1" }),
+          model({ output: ["image"] }),
+        ]
+        : process.env.SWITCHY_FAKE_OPENCODE_PARTIAL_CATALOG === "1"
+          ? [model({ modelID: "warming" })]
+          : [],
     });
     return;
   }
   if (request.method === "GET" && url.pathname === "/api/model/default") {
+    if (catalogStartsCold) {
+      setTimeout(() => { catalogReady = true; }, 100);
+    }
     json(response, {
       location: location(),
-      data: process.env.SWITCHY_FAKE_OPENCODE_DISCONNECTED === "1" ? null : model(),
+      data: catalogReady && process.env.SWITCHY_FAKE_OPENCODE_DISCONNECTED !== "1"
+        ? model()
+        : null,
+    });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/integration") {
+    json(response, {
+      location: location(),
+      data: [
+        {
+          id: "openai",
+          name: "OpenAI",
+          methods: [{ type: "key", label: "API key" }],
+          connections: process.env.SWITCHY_FAKE_OPENCODE_DISCONNECTED === "1"
+            ? []
+            : [{ type: "credential", id: "test", label: "Test account" }],
+        },
+        {
+          id: "mcp_github",
+          name: "GitHub MCP",
+          methods: [{ type: "oauth", id: "github", label: "GitHub" }],
+          connections: [{ type: "credential", id: "github", label: "GitHub" }],
+        },
+      ],
     });
     return;
   }

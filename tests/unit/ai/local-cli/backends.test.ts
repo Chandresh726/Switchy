@@ -345,8 +345,34 @@ describe("OpenCode CLI backend", () => {
     vi.stubEnv("SWITCHY_FAKE_OPENCODE_DISCONNECTED", "1");
     const backend = createOpenCodeBackend(openCodeExecutable, async () => openCodeClient);
     await expect(backend.listModels()).resolves.toEqual([]);
-    expect(backend.hasConnectedProviders()).toBe(false);
+    expect(backend.hasAuthenticatedProviders()).toBe(false);
     backend.retire();
+  });
+
+  it("waits for the v2 catalog to settle after every cold start", async () => {
+    vi.stubEnv("SWITCHY_FAKE_OPENCODE_COLD_CATALOG", "1");
+    const backend = createOpenCodeBackend(
+      openCodeExecutable,
+      async () => openCodeClient,
+      50
+    );
+
+    await expect(backend.listModels()).resolves.toEqual([
+      expect.objectContaining({ modelId: "openai/text" }),
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    await expect(backend.listModels()).resolves.toEqual([
+      expect.objectContaining({ modelId: "openai/text" }),
+    ]);
+  });
+
+  it("waits for a configured model missing from an intermediate v2 catalog", async () => {
+    vi.stubEnv("SWITCHY_FAKE_OPENCODE_PARTIAL_CATALOG", "1");
+    const backend = createOpenCodeBackend(openCodeExecutable, async () => openCodeClient);
+
+    await expect(backend.listModels({ expectedModelId: "openai/text" })).resolves.toEqual([
+      expect.objectContaining({ modelId: "openai/text" }),
+    ]);
   });
 
   it("groups usable text models and executes isolated streaming and structured sessions", async () => {
