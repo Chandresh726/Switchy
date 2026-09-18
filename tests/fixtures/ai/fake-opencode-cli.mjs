@@ -151,12 +151,12 @@ function emit(event) {
   }
 }
 
-function model({ enabled = true, modelID, output = ["text"] } = {}) {
+function model({ enabled = true, modelID, output = ["text"], providerID = "openai" } = {}) {
   const resolvedModelID = modelID ?? (output.includes("text") ? "text" : "image");
   return {
-    id: `openai/${resolvedModelID}`,
+    id: `${providerID}/${resolvedModelID}`,
     modelID: resolvedModelID,
-    providerID: "openai",
+    providerID,
     family: "gpt",
     name: output.includes("text") ? "Text Model" : "Image Model",
     capabilities: { tools: false, input: ["text"], output },
@@ -177,12 +177,17 @@ const server = http.createServer((request, response) => {
   }
 
   const url = new URL(request.url, `http://127.0.0.1:${port}`);
-  if (request.method === "GET" && url.pathname === "/api/health") {
+  if (request.method === "GET" && url.pathname === "/api/info") {
     if (process.env.SWITCHY_FAKE_OPENCODE_MISSING_HEALTH === "1") {
       json(response, { error: "not found" }, 404);
       return;
     }
-    json(response, { healthy: true, version: "2.0.1", pid: process.pid });
+    json(response, {
+      version: "2.0.7",
+      pid: process.pid,
+      urls: [`http://127.0.0.1:${port}`],
+      paths: { tmp: process.cwd() },
+    });
     return;
   }
   if (request.method === "GET" && url.pathname === "/api/provider") {
@@ -203,6 +208,7 @@ const server = http.createServer((request, response) => {
       data: catalogReady
         ? [
           model({ enabled: process.env.SWITCHY_FAKE_OPENCODE_DISCONNECTED !== "1" }),
+          model({ providerID: "opencode", modelID: "muse-spark-1.3-contributor-free" }),
           model({ output: ["image"] }),
         ]
         : process.env.SWITCHY_FAKE_OPENCODE_PARTIAL_CATALOG === "1"
@@ -240,6 +246,12 @@ const server = http.createServer((request, response) => {
           name: "GitHub MCP",
           methods: [{ type: "oauth", id: "github", label: "GitHub" }],
           connections: [{ type: "credential", id: "github", label: "GitHub" }],
+        },
+        {
+          id: "opencode",
+          name: "OpenCode",
+          methods: [],
+          connections: [{ type: "credential", id: "free-tier", label: "Free tier" }],
         },
       ],
     });
@@ -280,7 +292,7 @@ const server = http.createServer((request, response) => {
     });
     return;
   }
-  if (request.method === "PUT" && url.pathname === "/api/session/session-1/instructions/entries/switchy") {
+  if (request.method === "PUT" && url.pathname === "/api/experimental/session/session-1/instructions/entries/switchy") {
     void readJson(request).then((parsed) => {
       sessionInstructions = typeof parsed.value === "string" ? parsed.value : "";
       empty(response);
@@ -304,6 +316,12 @@ const server = http.createServer((request, response) => {
         : "hello";
       const embeddedError = prompt.includes("embedded-auth-error")
         ? { type: "ProviderAuthError", message: "synthetic secret", status: 401 }
+        : prompt.includes("embedded-free-tier-restriction")
+          ? {
+            type: "provider.auth",
+            message: "Error from provider (Console): OpenCode's free tier can only be used from within OpenCode",
+            status: 403,
+          }
         : prompt.includes("embedded-rate-limit") || prompt === "rate-limit"
           ? { type: "APIError", message: "synthetic body", status: 429 }
           : prompt.includes("embedded-abort")

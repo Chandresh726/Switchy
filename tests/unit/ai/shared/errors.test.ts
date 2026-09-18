@@ -2,6 +2,7 @@ import { APICallError } from "ai";
 import { describe, expect, it } from "vitest";
 
 import {
+  AIError,
   categorizeError,
   isRetryableError,
   sanitizeAIError,
@@ -45,5 +46,15 @@ describe("AI provider error classification", () => {
     });
     expect(serialized).not.toContain("SENTINEL_RESUME_DATA");
     expect(serialized).not.toContain("SENTINEL_PROVIDER_BODY");
+  });
+
+  it("reports provider-owned model restrictions without calling them missing keys", () => {
+    expect(sanitizeAIError(new AIError({
+      type: "provider_restricted",
+      message: "SENTINEL_PROVIDER_DETAIL",
+    }))).toEqual({
+      code: "provider_restricted",
+      message: "This provider restricts the selected model to its own application. Connect your own provider or select another model.",
+    });
   });
 });

@@ -380,7 +380,7 @@ describe("OpenCode CLI backend", () => {
       openCodeExecutable,
       async () => openCodeClient
     );
-    await expect(backend.getVersion()).resolves.toBe("2.0.1");
+    await expect(backend.getVersion()).resolves.toBe("2.0.7");
     const models = await backend.listModels();
     expect(models).toEqual([
       expect.objectContaining({
@@ -461,6 +461,12 @@ describe("OpenCode CLI backend", () => {
       modelId: "openai/text",
       prompt: "embedded-auth-error",
     })).rejects.toMatchObject({ type: "missing_api_key" });
+
+    await expect(backend.generateText({
+      ...baseInput(),
+      modelId: "openai/text",
+      prompt: "embedded-free-tier-restriction",
+    })).rejects.toMatchObject({ type: "provider_restricted" });
 
     await expect(backend.generateText({
       ...baseInput(),

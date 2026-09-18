@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   retireCodex: vi.fn(),
   retireOpenCode: vi.fn(),
   hasAuthenticatedOpenCodeProviders: vi.fn(),
+  hasRestrictedOpenCodeFreeTierModels: vi.fn(),
 }));
 
 vi.mock("@/lib/ai/local-cli/catalog-cache", () => ({
@@ -44,6 +45,7 @@ vi.mock("@/lib/ai/local-cli/opencode-backend", () => ({
     listModels = mocks.listOpenCodeModels;
     getVersion = mocks.openCodeVersion;
     hasAuthenticatedProviders = mocks.hasAuthenticatedOpenCodeProviders;
+    hasRestrictedFreeTierModels = mocks.hasRestrictedOpenCodeFreeTierModels;
     setModelReasoningEfforts = mocks.setOpenCodeReasoning;
     retire = mocks.retireOpenCode;
   },
@@ -75,6 +77,7 @@ describe("local CLI connection status", () => {
     mocks.validateStoredCatalog.mockImplementation((models) => models);
     mocks.deleteStoredCatalog.mockResolvedValue(undefined);
     mocks.hasAuthenticatedOpenCodeProviders.mockReturnValue(true);
+    mocks.hasRestrictedOpenCodeFreeTierModels.mockReturnValue(false);
   });
 
   it("reports installation, authentication, and model availability without generation", async () => {
@@ -165,6 +168,17 @@ describe("local CLI connection status", () => {
     await expect(getLocalCLIStatus("opencode_cli", { forceRefresh: true })).resolves.toMatchObject({
       status: "no_models",
       selectable: false,
+    });
+  });
+
+  it("explains when only restricted OpenCode free-tier models are available", async () => {
+    mocks.listOpenCodeModels.mockResolvedValueOnce([]);
+    mocks.hasRestrictedOpenCodeFreeTierModels.mockReturnValueOnce(true);
+
+    await expect(getLocalCLIStatus("opencode_cli", { forceRefresh: true })).resolves.toMatchObject({
+      status: "no_models",
+      selectable: false,
+      statusMessage: "OpenCode free-tier models reject external integrations. Connect your own provider in OpenCode.",
     });
   });
 
@@ -265,6 +279,14 @@ describe("local CLI connection status", () => {
     await expect(getLocalCLIExecutionTarget("opencode_cli", "openai/missing"))
       .rejects.toMatchObject({ type: "invalid_model" });
     expect(mocks.listOpenCodeModels).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects OpenCode free-tier execution before starting a provider session", async () => {
+    await expect(getLocalCLIExecutionTarget(
+      "opencode_cli",
+      "opencode/muse-spark-1.3-contributor-free"
+    )).rejects.toMatchObject({ type: "provider_restricted", retryable: false });
+    expect(mocks.listOpenCodeModels).not.toHaveBeenCalled();
   });
 
   it("heals a stale execution catalog with a live refresh when the model reappears", async () => {

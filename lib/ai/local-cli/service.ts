@@ -123,7 +123,17 @@ export async function getLocalCLIStatus(
           forceRefresh: options.forceRefresh,
         });
         if (models.length > 0) {
-          value = status("ready", `${models.length} text models available.`, version);
+          const restrictionNotice = (entry.backend as OpenCodeCLIBackend)
+            .hasRestrictedFreeTierModels()
+            ? " OpenCode free-tier models are excluded because they reject external integrations."
+            : "";
+          value = status("ready", `${models.length} text models available.${restrictionNotice}`, version);
+        } else if ((entry.backend as OpenCodeCLIBackend).hasRestrictedFreeTierModels()) {
+          value = status(
+            "no_models",
+            "OpenCode free-tier models reject external integrations. Connect your own provider in OpenCode.",
+            version
+          );
         } else if ((entry.backend as OpenCodeCLIBackend).hasAuthenticatedProviders()) {
           value = status("no_models", "OpenCode providers are authenticated but expose no usable text models.", version);
         } else {
@@ -234,6 +244,13 @@ export async function getLocalCLIExecutionTarget(
   upstreamProvider?: string;
   reasoningControl: ProviderModelDefinition["reasoningControl"];
 }> {
+  if (provider === "opencode_cli" && modelId.startsWith("opencode/")) {
+    throw new AIError({
+      type: "provider_restricted",
+      message: "OpenCode free-tier models cannot be used by external integrations; connect your own provider in OpenCode or select a direct Switchy provider",
+      retryable: false,
+    });
+  }
   const entry = await getBackendEntry(provider);
   if (!entry) {
     throw new AIError({

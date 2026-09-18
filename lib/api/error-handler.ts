@@ -50,6 +50,7 @@ export class ConflictError extends AppError {
 const AI_ERROR_STATUS_BY_TYPE: Partial<Record<AIError["type"], number>> = {
   provider_not_found: 404,
   missing_api_key: 400,
+  provider_restricted: 400,
   missing_profile: 400,
   invalid_model: 400,
   reasoning_not_supported: 400,
@@ -66,6 +67,7 @@ const AI_ERROR_STATUS_BY_TYPE: Partial<Record<AIError["type"], number>> = {
 const AI_ERROR_CODE_BY_TYPE: Partial<Record<AIError["type"], string>> = {
   provider_not_found: "provider_not_found",
   missing_api_key: "missing_api_key",
+  provider_restricted: "provider_restricted",
   missing_profile: "missing_profile",
   invalid_model: "invalid_model",
   reasoning_not_supported: "reasoning_not_supported",

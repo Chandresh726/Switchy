@@ -108,6 +108,22 @@ async function raceWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Prom
 }
 
 function mapOpenCodeError(error: unknown): AIError {
+  const record = error && typeof error === "object"
+    ? error as { name?: unknown; type?: unknown; message?: unknown; status?: unknown; data?: unknown }
+    : {};
+  const data = record.data && typeof record.data === "object"
+    ? record.data as Record<string, unknown>
+    : {};
+  const errorMessage = typeof record.message === "string"
+    ? record.message
+    : typeof data.message === "string" ? data.message : "";
+  if (/free tier can only be used from within opencode/i.test(errorMessage)) {
+    return new AIError({
+      type: "provider_restricted",
+      message: "OpenCode free-tier models cannot be used by external integrations",
+      retryable: false,
+    });
+  }
   if (hasOpenCodeErrorTag(error, "UnauthorizedError")) {
     return new AIError({
       type: "missing_api_key",
@@ -139,15 +155,9 @@ function mapOpenCodeError(error: unknown): AIError {
     });
   }
 
-  const record = error && typeof error === "object"
-    ? error as { name?: unknown; type?: unknown; message?: unknown; status?: unknown; data?: unknown }
-    : {};
   const name = typeof record.name === "string"
     ? record.name
     : typeof record.type === "string" ? record.type : "UnknownError";
-  const data = record.data && typeof record.data === "object"
-    ? record.data as Record<string, unknown>
-    : {};
   const statusCode = typeof record.status === "number"
     ? record.status
     : typeof data.statusCode === "number" ? data.statusCode : undefined;
@@ -238,6 +248,7 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
   private version?: string;
   private readonly reasoningEffortsByModel = new Map<string, string[]>();
   private authenticatedProviderIds = new Set<string>();
+  private restrictedFreeTierModelCount = 0;
   private activeOperations = 0;
   private retireWhenIdle = false;
 
@@ -284,7 +295,11 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
         const providerIntegrations = integrations.data.filter((integration) =>
           providerIntegrationIds.has(integration.id)
         );
-        const models = catalog.data.filter(isUsableTextModel);
+        const usableModels = catalog.data.filter(isUsableTextModel);
+        this.restrictedFreeTierModelCount = usableModels.filter(
+          (model) => model.providerID === "opencode"
+        ).length;
+        const models = usableModels.filter((model) => model.providerID !== "opencode");
         this.authenticatedProviderIds = new Set(
           providerIntegrations
             .filter((integration) => integration.connections.length > 0)
@@ -343,6 +358,10 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
 
   hasAuthenticatedProviders(): boolean {
     return this.authenticatedProviderIds.size > 0;
+  }
+
+  hasRestrictedFreeTierModels(): boolean {
+    return this.restrictedFreeTierModelCount > 0;
   }
 
   async getVersion(): Promise<string | undefined> {
@@ -458,7 +477,7 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
 
       const onAbort = () => {
         if (sessionID) void client.session.interrupt(
-          { sessionID, continue: false },
+          { sessionID },
           { signal: AbortSignal.timeout(2_000) }
         ).catch(() => undefined);
       };
@@ -599,7 +618,7 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
       removeAbortListener?.();
       if (sessionID) {
         await client.session.interrupt(
-          { sessionID, continue: false },
+          { sessionID },
           { signal: AbortSignal.timeout(2_000) }
         ).catch(() => undefined);
         await client.session.remove(
@@ -709,11 +728,11 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
       while (Date.now() < deadline) {
         if (processError || child.exitCode !== null) break;
         try {
-          const health = await client.health.get({
+          const info = await client.server.info({
             signal: AbortSignal.timeout(1_000),
           });
-          if (health.healthy) {
-            this.version = health.version;
+          if (info.version) {
+            this.version = info.version;
             this.client = client;
             this.scheduleIdleShutdown();
             return client;

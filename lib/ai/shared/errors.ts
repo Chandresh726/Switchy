@@ -2,6 +2,7 @@ import { APICallError } from "ai";
 
 export type AIErrorType =
   | "provider_not_found"
+  | "provider_restricted"
   | "missing_api_key"
   | "missing_profile"
   | "invalid_model"
@@ -50,6 +51,7 @@ export class AIError extends Error {
   static isRetryableType(type: AIErrorType): boolean {
     const nonRetryableTypes: AIErrorType[] = [
       "provider_not_found",
+      "provider_restricted",
       "missing_api_key",
       "missing_profile",
       "invalid_model",
@@ -287,6 +289,7 @@ export function sanitizeAIError(error: unknown): SanitizedAIError {
     network: "The AI provider could not be reached.",
     no_object: "The AI provider did not return the required structured response.",
     provider_not_found: "The configured AI provider is unavailable.",
+    provider_restricted: "This provider restricts the selected model to its own application. Connect your own provider or select another model.",
     quality_gate: "Generated content quality was too low. Please try again.",
     rate_limit: "The AI provider rate limit was reached.",
     reasoning_not_supported: "The configured model does not support this reasoning policy.",
