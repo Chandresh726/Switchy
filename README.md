@@ -43,7 +43,7 @@ stable application release.
 - Groq
 - NVIDIA (NIM)
 - Codex CLI (uses the CLI's existing login; no credential is stored by Switchy)
-- OpenCode (uses provider connections configured in OpenCode; no credential is stored by Switchy). OpenCode's provider-owned free-tier models are not available to external integrations such as Switchy.
+- OpenCode (uses OpenCode's existing provider configuration; no credential is stored by Switchy)
 
 ## Prerequisites
 

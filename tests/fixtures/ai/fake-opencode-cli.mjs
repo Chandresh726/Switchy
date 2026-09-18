@@ -5,6 +5,38 @@ import { appendFileSync, writeFileSync } from "node:fs";
 
 const args = process.argv.slice(2);
 
+if (args[0] === "run") {
+  if (process.env.SWITCHY_FAKE_CLI_AUDIT_PATH) {
+    appendFileSync(
+      process.env.SWITCHY_FAKE_CLI_AUDIT_PATH,
+      `${JSON.stringify({ cli: "opencode", argv: args })}\n`
+    );
+  }
+  const sessionID = "run-session-1";
+  let prompt = "";
+  for await (const chunk of process.stdin) prompt += chunk;
+  if (prompt.includes("free-run-error")) {
+    process.stdout.write(`${JSON.stringify({
+      type: "error",
+      sessionID,
+      error: { type: "provider.auth", message: "synthetic run failure", status: 403 },
+    })}\n`);
+    process.exit(1);
+  }
+  const text = prompt.includes("JSON SCHEMA:")
+    ? JSON.stringify({ value: "structured" })
+    : "free hello";
+  process.stdout.write(`${JSON.stringify({ type: "step_start", sessionID })}\n`);
+  process.stdout.write(`${JSON.stringify({
+    type: "text",
+    sessionID,
+    part: { type: "text", text },
+  })}\n`);
+  process.exit(0);
+}
+
+if (args[0] === "api") process.exit(0);
+
 if (process.env.SWITCHY_FAKE_OPENCODE_INCOMPATIBLE === "1" || args.includes("--pure")) {
   process.stderr.write("Unrecognized flag: --pure in command opencode serve\n");
   process.exit(2);

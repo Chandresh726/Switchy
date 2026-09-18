@@ -341,10 +341,12 @@ describe("OpenCode CLI backend", () => {
     });
   });
 
-  it("exposes models only from connected OpenCode providers", async () => {
+  it("keeps OpenCode free-tier automation models when owned providers are disconnected", async () => {
     vi.stubEnv("SWITCHY_FAKE_OPENCODE_DISCONNECTED", "1");
     const backend = createOpenCodeBackend(openCodeExecutable, async () => openCodeClient);
-    await expect(backend.listModels()).resolves.toEqual([]);
+    await expect(backend.listModels()).resolves.toEqual([
+      expect.objectContaining({ modelId: "opencode/muse-spark-1.3-contributor-free" }),
+    ]);
     expect(backend.hasAuthenticatedProviders()).toBe(false);
     backend.retire();
   });
@@ -357,22 +359,25 @@ describe("OpenCode CLI backend", () => {
       50
     );
 
-    await expect(backend.listModels()).resolves.toEqual([
+    await expect(backend.listModels()).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({ modelId: "openai/text" }),
-    ]);
+      expect.objectContaining({ modelId: "opencode/muse-spark-1.3-contributor-free" }),
+    ]));
     await new Promise((resolve) => setTimeout(resolve, 75));
-    await expect(backend.listModels()).resolves.toEqual([
+    await expect(backend.listModels()).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({ modelId: "openai/text" }),
-    ]);
+      expect.objectContaining({ modelId: "opencode/muse-spark-1.3-contributor-free" }),
+    ]));
   });
 
   it("waits for a configured model missing from an intermediate v2 catalog", async () => {
     vi.stubEnv("SWITCHY_FAKE_OPENCODE_PARTIAL_CATALOG", "1");
     const backend = createOpenCodeBackend(openCodeExecutable, async () => openCodeClient);
 
-    await expect(backend.listModels({ expectedModelId: "openai/text" })).resolves.toEqual([
+    await expect(backend.listModels({ expectedModelId: "openai/text" })).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({ modelId: "openai/text" }),
-    ]);
+      expect.objectContaining({ modelId: "opencode/muse-spark-1.3-contributor-free" }),
+    ]));
   });
 
   it("groups usable text models and executes isolated streaming and structured sessions", async () => {
@@ -382,13 +387,46 @@ describe("OpenCode CLI backend", () => {
     );
     await expect(backend.getVersion()).resolves.toBe("2.0.7");
     const models = await backend.listModels();
-    expect(models).toEqual([
+    expect(models).toEqual(expect.arrayContaining([
       expect.objectContaining({
         modelId: "openai/text",
         group: "OpenCode · OpenAI",
         upstreamProvider: "openai",
       }),
-    ]);
+      expect.objectContaining({
+        modelId: "opencode/muse-spark-1.3-contributor-free",
+        upstreamProvider: "opencode",
+      }),
+    ]));
+
+    const auditDirectory = await mkdtemp(path.join(os.tmpdir(), "switchy-opencode-run-audit-"));
+    temporaryDirectories.push(auditDirectory);
+    const auditPath = path.join(auditDirectory, "argv.jsonl");
+    vi.stubEnv("SWITCHY_FAKE_CLI_AUDIT_PATH", auditPath);
+    await expect(backend.generateText({
+      ...baseInput(),
+      modelId: "opencode/muse-spark-1.3-contributor-free",
+      reasoningEffort: undefined,
+    })).resolves.toMatchObject({
+      output: "free hello",
+      providerRequestId: "run-session-1",
+    });
+
+    await expect(backend.generateStructured({
+      ...baseInput(),
+      modelId: "opencode/muse-spark-1.3-contributor-free",
+      reasoningEffort: undefined,
+      jsonSchema: {
+        type: "object",
+        properties: { value: { type: "string" } },
+        required: ["value"],
+      },
+      validate: (value) => z.object({ value: z.string() }).parse(value),
+    })).resolves.toMatchObject({ output: { value: "structured" } });
+    const runArgv = await readFile(auditPath, "utf8");
+    expect(runArgv).toContain('"run"');
+    expect(runArgv).not.toContain("Synthetic untrusted input");
+    expect(runArgv).not.toContain("Return the requested fixture response");
 
     await expect(backend.generateText({
       ...baseInput(),

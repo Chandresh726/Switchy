@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createInterface } from "node:readline";
 
 import type {
   ModelInfo as OpenCodeModel,
@@ -248,7 +249,6 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
   private version?: string;
   private readonly reasoningEffortsByModel = new Map<string, string[]>();
   private authenticatedProviderIds = new Set<string>();
-  private restrictedFreeTierModelCount = 0;
   private activeOperations = 0;
   private retireWhenIdle = false;
 
@@ -295,11 +295,7 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
         const providerIntegrations = integrations.data.filter((integration) =>
           providerIntegrationIds.has(integration.id)
         );
-        const usableModels = catalog.data.filter(isUsableTextModel);
-        this.restrictedFreeTierModelCount = usableModels.filter(
-          (model) => model.providerID === "opencode"
-        ).length;
-        const models = usableModels.filter((model) => model.providerID !== "opencode");
+        const models = catalog.data.filter(isUsableTextModel);
         this.authenticatedProviderIds = new Set(
           providerIntegrations
             .filter((integration) => integration.connections.length > 0)
@@ -360,10 +356,6 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
     return this.authenticatedProviderIds.size > 0;
   }
 
-  hasRestrictedFreeTierModels(): boolean {
-    return this.restrictedFreeTierModelCount > 0;
-  }
-
   async getVersion(): Promise<string | undefined> {
     this.beginOperation();
     try {
@@ -421,6 +413,9 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
         message: "OpenCode does not expose an enforceable per-session output-token limit",
         retryable: false,
       });
+    }
+    if (parseModelId(input.modelId).providerID === "opencode") {
+      return this.runOfficialCLI(input, onDelta);
     }
     this.beginOperation();
     let client: OpenCodeClient;
@@ -642,6 +637,114 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
       await rm(directory, { recursive: true, force: true });
       this.endOperation();
     }
+  }
+
+  private async runOfficialCLI(
+    input: BackendTextInput,
+    onDelta?: (delta: string) => void | Promise<void>
+  ): Promise<BackendResult<string>> {
+    const directory = await mkdtemp(path.join(tmpdir(), "switchy-opencode-run-"));
+    const model = input.reasoningEffort
+      ? `${input.modelId}#${input.reasoningEffort}`
+      : input.modelId;
+    const child = spawn(this.executable, [
+      "run",
+      "--model",
+      model,
+      "--agent",
+      "build",
+      "--format",
+      "json",
+      "--title",
+      "Switchy AI execution",
+    ], {
+      cwd: directory,
+      shell: false,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: process.env,
+    });
+    child.stdin.end(`${input.instructions}\n\nUSER INPUT:\n${input.prompt}`);
+    let sessionID: string | undefined;
+    let output = "";
+    let eventError: AIError | undefined;
+    let stderr = "";
+    let deltaDelivery = Promise.resolve();
+    const lines = createInterface({ input: child.stdout });
+    const onAbort = () => child.kill("SIGTERM");
+    input.signal.addEventListener("abort", onAbort, { once: true });
+
+    try {
+      lines.on("line", (line) => {
+        try {
+          const event = JSON.parse(line) as {
+            type?: unknown;
+            sessionID?: unknown;
+            part?: { type?: unknown; text?: unknown };
+            error?: unknown;
+          };
+          if (typeof event.sessionID === "string") sessionID = event.sessionID;
+          if (event.type === "text" && event.part?.type === "text"
+              && typeof event.part.text === "string") {
+            output += event.part.text;
+            deltaDelivery = deltaDelivery.then(() => onDelta?.(event.part!.text as string));
+          } else if (event.type === "error") {
+            eventError = mapOpenCodeError(event.error);
+          }
+        } catch {
+          // Ignore non-JSON diagnostics. The command exit status remains authoritative.
+        }
+      });
+      child.stderr.on("data", (chunk: Buffer) => {
+        if (stderr.length < 4_096) stderr += chunk.toString("utf8", 0, 4_096 - stderr.length);
+      });
+      const exitCode = await raceWithSignal(new Promise<number | null>((resolve, reject) => {
+        child.once("error", reject);
+        child.once("exit", resolve);
+      }), input.signal);
+      await deltaDelivery;
+      if (eventError) throw eventError;
+      if (exitCode !== 0) {
+        throw mapOpenCodeError(new Error(stderr || "OpenCode run failed"));
+      }
+      if (!output) {
+        throw new AIError({
+          type: "generation_failed",
+          message: "OpenCode completed without text output",
+        });
+      }
+      return {
+        output,
+        usage: {},
+        finishReason: "stop",
+        providerRequestId: sessionID,
+        warningCodes: [],
+      };
+    } finally {
+      input.signal.removeEventListener("abort", onAbort);
+      lines.close();
+      if (child.exitCode === null) child.kill("SIGTERM");
+      if (sessionID) await this.removeOfficialCLISession(sessionID);
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+
+  private async removeOfficialCLISession(sessionID: string): Promise<void> {
+    await new Promise<void>((resolve) => {
+      const child = spawn(this.executable, ["api", "delete", `/api/session/${sessionID}`], {
+        shell: false,
+        stdio: "ignore",
+      });
+      const timer = setTimeout(() => child.kill("SIGTERM"), 2_000);
+      timer.unref?.();
+      child.once("error", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      child.once("exit", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
   }
 
   private async start(): Promise<OpenCodeClient> {
