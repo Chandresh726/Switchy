@@ -5,6 +5,9 @@ const mocks = vi.hoisted(() => ({
   importLegacyMatchWork: vi.fn(),
   recoverPending: vi.fn(),
   startScheduler: vi.fn(),
+  ensureSchedulerWatchdog: vi.fn(),
+  recoverSchedulerOnBoot: vi.fn(),
+  syncSchedulerHost: vi.fn(),
   migrateSchedulerRecoveryState: vi.fn(),
   reconcileConfiguredLocalCLIProviders: vi.fn(),
   removeDeprecatedMatchingPreferenceSettings: vi.fn(),
@@ -52,7 +55,13 @@ vi.mock("@/lib/ai/local-cli/service", () => ({
 
 vi.mock("@/lib/jobs/scheduler", () => ({
   startScheduler: mocks.startScheduler,
+  ensureSchedulerWatchdog: mocks.ensureSchedulerWatchdog,
+  recoverSchedulerOnBoot: mocks.recoverSchedulerOnBoot,
   migrateSchedulerRecoveryState: mocks.migrateSchedulerRecoveryState,
+}));
+
+vi.mock("@/lib/jobs/scheduler-host", () => ({
+  syncSchedulerHost: mocks.syncSchedulerHost,
 }));
 
 vi.mock("@/lib/scraper", () => ({
@@ -73,6 +82,14 @@ const flushPromises = () => new Promise<void>((resolve) => setImmediate(resolve)
 describe("server startup instrumentation", () => {
   beforeEach(() => {
     mocks.startScheduler.mockResolvedValue(undefined);
+    mocks.ensureSchedulerWatchdog.mockReturnValue(undefined);
+    mocks.recoverSchedulerOnBoot.mockResolvedValue({
+      status: "not_needed",
+      pendingMissedCount: 0,
+      oldestMissedRun: null,
+      latestMissedRun: null,
+    });
+    mocks.syncSchedulerHost.mockResolvedValue("installed");
     mocks.recoverPending.mockResolvedValue({
       recovered: 0,
       claimed: 0,
@@ -104,6 +121,8 @@ describe("server startup instrumentation", () => {
     expect(mocks.registerRuntimeLock).not.toHaveBeenCalled();
     expect(mocks.reconcileResumeStorage).not.toHaveBeenCalled();
     expect(mocks.startScheduler).not.toHaveBeenCalled();
+    expect(mocks.recoverSchedulerOnBoot).not.toHaveBeenCalled();
+    expect(mocks.syncSchedulerHost).not.toHaveBeenCalled();
     expect(mocks.warmLocalCLIStatuses).not.toHaveBeenCalled();
     expect(mocks.recoverPending).not.toHaveBeenCalled();
     expect(mocks.dispatchPendingAIWork).not.toHaveBeenCalled();
@@ -117,6 +136,9 @@ describe("server startup instrumentation", () => {
 
     expect(mocks.startScheduler).toHaveBeenCalledTimes(1);
     expect(mocks.migrateSchedulerRecoveryState).toHaveBeenCalledTimes(1);
+    expect(mocks.ensureSchedulerWatchdog).toHaveBeenCalledTimes(1);
+    expect(mocks.recoverSchedulerOnBoot).toHaveBeenCalledTimes(1);
+    expect(mocks.syncSchedulerHost).toHaveBeenCalledTimes(1);
     expect(mocks.registerRuntimeLock).toHaveBeenCalledTimes(1);
     expect(mocks.reconcileResumeStorage).toHaveBeenCalledTimes(1);
     expect(mocks.recoverPending).toHaveBeenCalledTimes(1);
@@ -156,6 +178,8 @@ describe("server startup instrumentation", () => {
       "[Instrumentation] Failed to start scheduler:",
       schedulerError
     );
+    expect(mocks.recoverSchedulerOnBoot).not.toHaveBeenCalled();
+    expect(mocks.syncSchedulerHost).not.toHaveBeenCalled();
     expect(consoleError).toHaveBeenCalledWith(
       "[Instrumentation] Failed to recover local scrape queue:",
       queueError
@@ -179,8 +203,23 @@ describe("server startup instrumentation", () => {
     expect(mocks.dispatchPendingAIWork).toHaveBeenCalledTimes(1);
   });
 
-  it("dispatches current AI work even when legacy import fails", async () => {
+  it("still boots when scheduler host sync fails", async () => {
     vi.stubEnv("NEXT_RUNTIME", "nodejs");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.syncSchedulerHost.mockRejectedValue(new Error("launchd unavailable"));
+
+    await register();
+    await flushPromises();
+
+    expect(mocks.syncSchedulerHost).toHaveBeenCalledTimes(1);
+    expect(mocks.setSchedulerInitialization).toHaveBeenLastCalledWith("ready");
+    expect(consoleError).toHaveBeenCalledWith(
+      "[Instrumentation] Scheduler host sync failed:",
+      expect.objectContaining({ message: "launchd unavailable" })
+    );
+  });
+
+  it("dispatches current AI work even when legacy import fails", async () => {    vi.stubEnv("NEXT_RUNTIME", "nodejs");
     const importError = new Error("legacy payload failed");
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.importLegacyMatchWork.mockImplementation(() => {

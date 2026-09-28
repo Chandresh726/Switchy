@@ -84,11 +84,12 @@ describe("settings service", () => {
   });
 
   it("serializes the scraper keep-awake toggle as a boolean setting", () => {
-    expect(
-      parseSettingsUpdateBody({ scraper_keep_device_awake: false }).updates
-    ).toEqual([
+    const parsed = parseSettingsUpdateBody({ scraper_keep_device_awake: false });
+    expect(parsed.updates).toEqual([
       { key: "scraper_keep_device_awake", value: "false" },
     ]);
+    expect(parsed.keepAwakeChanged).toBe(true);
+    expect(parseSettingsUpdateBody({ matcher_batch_size: "4" }).keepAwakeChanged).toBe(false);
   });
 
   it("bounds local scrape history retention", () => {

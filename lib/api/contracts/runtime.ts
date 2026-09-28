@@ -14,6 +14,8 @@ export const schedulerStatusResponseSchema = z.object({
   pendingMissedCount: z.number().int().nonnegative(),
   oldestMissedRun: z.string().nullable(),
   latestMissedRun: z.string().nullable(),
+  backendOwned: z.boolean().optional(),
+  watchdogActive: z.boolean().optional(),
 });
 
 export const schedulerRecoveryResponseSchema = z.object({
@@ -21,6 +23,25 @@ export const schedulerRecoveryResponseSchema = z.object({
   pendingMissedCount: z.number().int().nonnegative(),
   oldestMissedRun: z.string().nullable(),
   latestMissedRun: z.string().nullable(),
+});
+
+export const schedulerHostStatusResponseSchema = z.object({
+  platform: z.string(),
+  supported: z.boolean(),
+  serverAgentInstalled: z.boolean(),
+  tickAgentInstalled: z.boolean(),
+  serverAgentLoaded: z.boolean().nullable(),
+  tickAgentLoaded: z.boolean().nullable(),
+  schedulerEnabled: z.boolean(),
+});
+
+export const schedulerHostActionSchema = z.object({
+  action: z.enum(["sync", "install", "uninstall"]),
+});
+
+export const schedulerHostSyncResponseSchema = z.object({
+  result: z.enum(["installed", "removed", "skipped", "failed"]),
+  status: schedulerHostStatusResponseSchema,
 });
 
 export const matchPhaseProgressSchema = z.object({
@@ -69,6 +90,8 @@ export const matchSessionProgressResponseSchema = z.object({
 });
 
 export type SchedulerStatusResponse = z.infer<typeof schedulerStatusResponseSchema>;
+export type SchedulerHostStatusResponse = z.infer<typeof schedulerHostStatusResponseSchema>;
+export type SchedulerHostSyncResponse = z.infer<typeof schedulerHostSyncResponseSchema>;
 export type MatchPhaseProgress = z.infer<typeof matchPhaseProgressSchema>;
 export type MatchJobProgress = z.infer<typeof matchJobProgressSchema>;
 export type MatchSessionProgress = z.infer<typeof matchSessionProgressResponseSchema>;

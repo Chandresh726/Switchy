@@ -216,6 +216,7 @@ export const queryKeys = {
   },
   runtime: {
     scheduler: () => ["runtime", "scheduler"] as const,
+    schedulerHost: () => ["runtime", "scheduler", "host"] as const,
     matchSessions: () => ["runtime", "match-session"] as const,
     matchSession: (id: string | null) => ["runtime", "match-session", id] as const,
     unmatchedJobs: () => ["runtime", "unmatched-jobs"] as const,
@@ -332,6 +333,7 @@ export const cacheOwnership = {
     return invalidateMany(queryClient, [
       queryKeys.settings.all,
       queryKeys.runtime.scheduler(),
+      queryKeys.runtime.schedulerHost(),
     ]);
   },
 

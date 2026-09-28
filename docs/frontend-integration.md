@@ -128,6 +128,7 @@ Backup and restore are CLI-only package scripts and are not HTTP APIs.
 | `/api/providers` | GET, POST | JSON client | `clients/providers` |
 | `/api/resume-history/[id]` | GET | JSON client | `clients/history` |
 | `/api/resume-history` | GET | JSON client | `clients/history` |
+| `/api/scheduler/host` | GET, POST | JSON client | `clients/runtime` |
 | `/api/scheduler/recover` | POST | JSON client / startup runtime | `clients/runtime` |
 | `/api/scheduler/status` | GET | JSON client | `clients/runtime` |
 | `/api/scrape-history/[id]/cancel` | POST | JSON client | `clients/history` |
