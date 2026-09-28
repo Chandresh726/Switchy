@@ -183,6 +183,7 @@ describe("cache ownership", () => {
     expect(invalidatedKeys(invalidate)).toEqual([
       queryKeys.settings.all,
       queryKeys.runtime.scheduler(),
+      queryKeys.runtime.schedulerHost(),
     ]);
 
     invalidate.mockClear();

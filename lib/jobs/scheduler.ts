@@ -13,6 +13,8 @@ import {
   setSchedulerInitialization,
 } from "@/lib/runtime/health";
 
+import type { DeviceSleepInhibitorLease } from "@/lib/scraper/runtime/device-sleep-inhibitor";
+
 import { getSchedulerLeaseStore } from "./scheduler-lease-store";
 
 const DEFAULT_CRON = "0 */6 * * *";
@@ -24,6 +26,9 @@ const SCHEDULER_MISSED_COUNT_KEY = "scheduler.missedCount";
 const SCHEDULER_OLDEST_MISSED_RUN_KEY = "scheduler.oldestMissedRun";
 const SCHEDULER_LATEST_MISSED_RUN_KEY = "scheduler.latestMissedRun";
 const LOCK_REFRESH_INTERVAL_MS = 60 * 1000;
+const WATCHDOG_INTERVAL_MS = 120 * 1000;
+const BOOT_RECOVERY_MAX_CATCHUP = 50;
+const KEEP_AWAKE_SETTING_KEY = "scraper_keep_device_awake";
 const MISSED_RUN_REASON = "Skipped while device was asleep or idle; queued for a later recovery run.";
 
 interface SchedulerRuntimeState {
@@ -31,6 +36,9 @@ interface SchedulerRuntimeState {
   isRunning: boolean;
   currentCronExpression: string;
   missedExecutionHandler: ((context: TaskContext) => Promise<void>) | null;
+  watchdogTimer: ReturnType<typeof setInterval> | null;
+  persistentSleepLease: DeviceSleepInhibitorLease | null;
+  bootRecoveryAttempted: boolean;
 }
 
 const globalSchedulerState = globalThis as typeof globalThis & {
@@ -42,6 +50,9 @@ const schedulerRuntime = globalSchedulerState.__switchySchedulerRuntime ??= {
   isRunning: false,
   currentCronExpression: DEFAULT_CRON,
   missedExecutionHandler: null,
+  watchdogTimer: null,
+  persistentSleepLease: null,
+  bootRecoveryAttempted: false,
 };
 
 interface SchedulerRecoveryState {
@@ -118,6 +129,10 @@ export interface SchedulerStatus extends SchedulerRecoveryState {
   lastRun: Date | null;
   nextRun: Date | null;
   cronExpression: string;
+  /** True when the backend owns scheduling without requiring an open UI. */
+  backendOwned: boolean;
+  /** True when the server-side watchdog timer is active in this process. */
+  watchdogActive: boolean;
 }
 
 export interface SchedulerRecoveryResult extends SchedulerRecoveryState {
@@ -305,6 +320,206 @@ function calculateNextRun(cronExpr: string): Date | null {
   }
 }
 
+function isSchedulerTestWorker(): boolean {
+  return Boolean(process.env.VITEST_WORKER_ID) || process.env.NODE_ENV === "test";
+}
+
+async function getKeepDeviceAwake(): Promise<boolean> {
+  const value = await getSettingValue(KEEP_AWAKE_SETTING_KEY);
+  return value === null ? true : value !== "false";
+}
+
+/**
+ * Cron occurrences strictly after `fromExclusive` up to and including
+ * `toInclusive`, capped so a long-offline device coalesces into one batch.
+ */
+export function listMissedOccurrences(
+  cronExpression: string,
+  fromExclusive: Date,
+  toInclusive: Date,
+  maxOccurrences = BOOT_RECOVERY_MAX_CATCHUP
+): Date[] {
+  const occurrences: Date[] = [];
+  try {
+    const interval = CronExpressionParser.parse(cronExpression, {
+      currentDate: fromExclusive,
+    });
+    for (let index = 0; index < maxOccurrences; index += 1) {
+      const next = interval.next().toDate();
+      if (next.getTime() > toInclusive.getTime()) break;
+      occurrences.push(next);
+    }
+  } catch (error) {
+    console.error("[Scheduler] Failed to enumerate missed cron occurrences:", error);
+  }
+  return occurrences;
+}
+
+/**
+ * Backend-owned catch-up: derive missed ticks from `scheduler.lastRun` and the
+ * persisted cron expression, so recovery does not depend on an open browser
+ * tab. Already-tracked `execution:missed` state is never double-counted.
+ */
+export async function reconcileMissedRunsOnBoot(now = new Date()): Promise<{
+  reconciled: number;
+  pendingMissedCount: number;
+}> {
+  const [isEnabled, cronExpression, lastRun, recoveryState] = await Promise.all([
+    getSchedulerEnabled(),
+    getCronFromDB(),
+    getLastRunFromDB(),
+    getRecoveryState(),
+  ]);
+
+  if (!isEnabled) {
+    return { reconciled: 0, pendingMissedCount: 0 };
+  }
+  if (recoveryState.pendingMissedCount > 0) {
+    return { reconciled: 0, pendingMissedCount: recoveryState.pendingMissedCount };
+  }
+  if (!lastRun || Number.isNaN(lastRun.getTime()) || lastRun.getTime() > now.getTime()) {
+    return { reconciled: 0, pendingMissedCount: recoveryState.pendingMissedCount };
+  }
+
+  const missed = listMissedOccurrences(cronExpression, lastRun, now);
+  for (const occurrence of missed) {
+    try {
+      await recordMissedExecution(occurrence);
+    } catch (error) {
+      console.error("[Scheduler] Failed to persist boot-time missed execution:", error);
+      break;
+    }
+  }
+
+  const nextState = await getRecoveryState();
+  if (missed.length > 0) {
+    console.warn(
+      `[Scheduler] Reconciled ${missed.length} missed run(s) since ${lastRun.toISOString()} without UI involvement`
+    );
+  }
+  return { reconciled: missed.length, pendingMissedCount: nextState.pendingMissedCount };
+}
+
+/**
+ * Runs once per process boot: reconcile missed ticks, then execute a single
+ * coalesced recovery batch. Safe to call repeatedly; reconciliation happens
+ * only on the first call.
+ */
+export async function recoverSchedulerOnBoot(
+  now = new Date(),
+  requestId?: string
+): Promise<SchedulerRecoveryResult> {
+  if (!schedulerRuntime.bootRecoveryAttempted) {
+    schedulerRuntime.bootRecoveryAttempted = true;
+    try {
+      await reconcileMissedRunsOnBoot(now);
+    } catch (error) {
+      console.error("[Scheduler] Boot reconciliation failed:", error);
+    }
+  }
+  return recoverMissedSchedulerRuns(requestId ?? "boot");
+}
+
+/**
+ * Server-side watchdog tick: keeps an enabled scheduler alive in-process and
+ * drains pending recovery without any frontend involvement. Never throws.
+ */
+export async function runSchedulerWatchdogTick(requestId = "watchdog"): Promise<void> {
+  try {
+    const isEnabled = await getSchedulerEnabled();
+    if (!isEnabled) {
+      if (schedulerRuntime.task) stopScheduler();
+      return;
+    }
+    if (!schedulerRuntime.task) {
+      try {
+        await startScheduler();
+      } catch (error) {
+        console.error("[Scheduler] Watchdog failed to restart scheduler:", error);
+        return;
+      }
+    }
+    if (schedulerRuntime.isRunning) return;
+    const recoveryState = await getRecoveryState();
+    if (recoveryState.pendingMissedCount <= 0) return;
+    await recoverMissedSchedulerRuns(requestId);
+  } catch (error) {
+    console.error("[Scheduler] Watchdog tick failed:", error);
+  }
+}
+
+export function ensureSchedulerWatchdog(): void {
+  if (isSchedulerTestWorker()) return;
+  if (schedulerRuntime.watchdogTimer) return;
+  const timer = setInterval(() => {
+    void runSchedulerWatchdogTick();
+  }, WATCHDOG_INTERVAL_MS);
+  if (typeof timer === "object" && "unref" in timer) {
+    timer.unref();
+  }
+  schedulerRuntime.watchdogTimer = timer;
+}
+
+async function ensurePersistentSleepAssertion(): Promise<void> {
+  if (isSchedulerTestWorker()) return;
+  if (process.platform !== "darwin") return;
+  if (schedulerRuntime.persistentSleepLease) return;
+  let enabled = false;
+  let keepAwake = false;
+  try {
+    enabled = await getSchedulerEnabled();
+    if (!enabled) return;
+    keepAwake = await getKeepDeviceAwake();
+  } catch (error) {
+    console.warn("[Scheduler] Failed to read sleep-assertion settings:", error);
+    return;
+  }
+  if (!keepAwake) return;
+  try {
+    const { CaffeinateDeviceSleepInhibitor } = await import(
+      "@/lib/scraper/runtime/device-sleep-inhibitor"
+    );
+    schedulerRuntime.persistentSleepLease = await new CaffeinateDeviceSleepInhibitor().acquire();
+    console.log("[Scheduler] Holding idle-sleep assertion while auto-scrape is enabled");
+  } catch (error) {
+    console.warn("[Scheduler] Failed to hold idle-sleep assertion:", error);
+    schedulerRuntime.persistentSleepLease = null;
+  }
+}
+
+async function releasePersistentSleepAssertion(): Promise<void> {
+  const lease = schedulerRuntime.persistentSleepLease;
+  schedulerRuntime.persistentSleepLease = null;
+  if (!lease) return;
+  try {
+    await lease.release();
+  } catch (error) {
+    console.warn("[Scheduler] Failed to release idle-sleep assertion:", error);
+  }
+}
+
+/**
+ * Re-applies the persistent idle-sleep assertion after settings changes.
+ * Called by the settings service; never throws.
+ */
+export async function refreshSchedulerPersistentState(): Promise<void> {
+  try {
+    const enabled = await getSchedulerEnabled();
+    if (!enabled) {
+      await releasePersistentSleepAssertion();
+      return;
+    }
+    const keepAwake = await getKeepDeviceAwake();
+    if (!keepAwake) {
+      await releasePersistentSleepAssertion();
+      return;
+    }
+    await ensurePersistentSleepAssertion();
+  } catch (error) {
+    console.warn("[Scheduler] Failed to refresh persistent scheduler state:", error);
+  }
+}
+
 export async function getSchedulerStatus(): Promise<SchedulerStatus> {
   const [lastRun, persistedCron, isEnabled, recoveryState] = await Promise.all([
     getLastRunFromDB(),
@@ -325,6 +540,8 @@ export async function getSchedulerStatus(): Promise<SchedulerStatus> {
     }
   }
 
+  ensureSchedulerWatchdog();
+
   const nextRun = isEnabled ? calculateNextRun(persistedCron) : null;
 
   return {
@@ -334,6 +551,8 @@ export async function getSchedulerStatus(): Promise<SchedulerStatus> {
     lastRun,
     nextRun,
     cronExpression: persistedCron,
+    backendOwned: true,
+    watchdogActive: schedulerRuntime.watchdogTimer !== null,
     ...recoveryState,
   };
 }
@@ -383,6 +602,8 @@ export async function startScheduler(): Promise<void> {
   schedulerRuntime.missedExecutionHandler = handleMissedExecution;
   schedulerRuntime.task.on("execution:missed", schedulerRuntime.missedExecutionHandler);
   setSchedulerInitialization("ready");
+  ensureSchedulerWatchdog();
+  void ensurePersistentSleepAssertion();
 
   console.log(`[Scheduler] Started with cron: ${schedulerRuntime.currentCronExpression}`);
 }
@@ -397,6 +618,7 @@ export function stopScheduler(): void {
     schedulerRuntime.missedExecutionHandler = null;
     console.log("[Scheduler] Stopped");
   }
+  void releasePersistentSleepAssertion();
 }
 
 export async function restartScheduler(): Promise<void> {

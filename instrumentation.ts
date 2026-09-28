@@ -50,12 +50,23 @@ export async function register() {
       console.error("[Instrumentation] Failed to initialize local CLI providers:", error);
     }
 
-    const { migrateSchedulerRecoveryState, startScheduler } = await import("@/lib/jobs/scheduler");
+    const { migrateSchedulerRecoveryState, startScheduler, ensureSchedulerWatchdog, recoverSchedulerOnBoot } = await import("@/lib/jobs/scheduler");
     try {
       migrateSchedulerRecoveryState();
       await startScheduler();
+      ensureSchedulerWatchdog();
       setSchedulerInitialization("ready");
       logRuntimeEvent("scheduler", "scheduler_initialized");
+      // Backend-owned catch-up: reconcile ticks missed while the process was
+      // down and run one coalesced batch. Never depends on an open UI.
+      try {
+        const bootRecovery = await recoverSchedulerOnBoot(new Date(), "boot");
+        if (bootRecovery.status === "started") {
+          logRuntimeEvent("scheduler", "scheduler_boot_recovery_started");
+        }
+      } catch (error) {
+        console.error("[Instrumentation] Scheduler boot recovery failed:", error);
+      }
     } catch (error) {
       setSchedulerInitialization("failed");
       recordRuntimeError("scheduler", "scheduler_initialization_failed");

@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   importLegacyMatchWork: vi.fn(),
   recoverPending: vi.fn(),
   startScheduler: vi.fn(),
+  ensureSchedulerWatchdog: vi.fn(),
+  recoverSchedulerOnBoot: vi.fn(),
   migrateSchedulerRecoveryState: vi.fn(),
   reconcileConfiguredLocalCLIProviders: vi.fn(),
   removeDeprecatedMatchingPreferenceSettings: vi.fn(),
@@ -52,6 +54,8 @@ vi.mock("@/lib/ai/local-cli/service", () => ({
 
 vi.mock("@/lib/jobs/scheduler", () => ({
   startScheduler: mocks.startScheduler,
+  ensureSchedulerWatchdog: mocks.ensureSchedulerWatchdog,
+  recoverSchedulerOnBoot: mocks.recoverSchedulerOnBoot,
   migrateSchedulerRecoveryState: mocks.migrateSchedulerRecoveryState,
 }));
 
@@ -73,6 +77,13 @@ const flushPromises = () => new Promise<void>((resolve) => setImmediate(resolve)
 describe("server startup instrumentation", () => {
   beforeEach(() => {
     mocks.startScheduler.mockResolvedValue(undefined);
+    mocks.ensureSchedulerWatchdog.mockReturnValue(undefined);
+    mocks.recoverSchedulerOnBoot.mockResolvedValue({
+      status: "not_needed",
+      pendingMissedCount: 0,
+      oldestMissedRun: null,
+      latestMissedRun: null,
+    });
     mocks.recoverPending.mockResolvedValue({
       recovered: 0,
       claimed: 0,
@@ -104,6 +115,7 @@ describe("server startup instrumentation", () => {
     expect(mocks.registerRuntimeLock).not.toHaveBeenCalled();
     expect(mocks.reconcileResumeStorage).not.toHaveBeenCalled();
     expect(mocks.startScheduler).not.toHaveBeenCalled();
+    expect(mocks.recoverSchedulerOnBoot).not.toHaveBeenCalled();
     expect(mocks.warmLocalCLIStatuses).not.toHaveBeenCalled();
     expect(mocks.recoverPending).not.toHaveBeenCalled();
     expect(mocks.dispatchPendingAIWork).not.toHaveBeenCalled();
@@ -117,6 +129,8 @@ describe("server startup instrumentation", () => {
 
     expect(mocks.startScheduler).toHaveBeenCalledTimes(1);
     expect(mocks.migrateSchedulerRecoveryState).toHaveBeenCalledTimes(1);
+    expect(mocks.ensureSchedulerWatchdog).toHaveBeenCalledTimes(1);
+    expect(mocks.recoverSchedulerOnBoot).toHaveBeenCalledTimes(1);
     expect(mocks.registerRuntimeLock).toHaveBeenCalledTimes(1);
     expect(mocks.reconcileResumeStorage).toHaveBeenCalledTimes(1);
     expect(mocks.recoverPending).toHaveBeenCalledTimes(1);
@@ -156,6 +170,7 @@ describe("server startup instrumentation", () => {
       "[Instrumentation] Failed to start scheduler:",
       schedulerError
     );
+    expect(mocks.recoverSchedulerOnBoot).not.toHaveBeenCalled();
     expect(consoleError).toHaveBeenCalledWith(
       "[Instrumentation] Failed to recover local scrape queue:",
       queueError

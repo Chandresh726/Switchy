@@ -3,6 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ScraperSettings } from "@/components/settings/scraper-settings";
 
+vi.mock("@/components/settings/scheduler-host-badge", () => ({
+  SchedulerHostBadge: () => null,
+}));
+
 function createProps() {
   return {
     schedulerEnabled: false,
@@ -120,7 +124,7 @@ describe("ScraperSettings", () => {
     render(<ScraperSettings {...props} />);
 
     expect(screen.getByText("macOS")).toBeTruthy();
-    expect(screen.getByText("Only while scrape work is active.")).toBeTruthy();
+    expect(screen.getByText(/Held while auto-scrape is enabled/)).toBeTruthy();
 
     fireEvent.click(
       screen.getByRole("checkbox", { name: "Keep Mac awake while scraping" })

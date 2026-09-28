@@ -1,5 +1,9 @@
 "use client";
 
+// Best-effort frontend hint only. The backend owns scheduling: server boot
+// recovery (`recoverSchedulerOnBoot`), the in-process watchdog, and the macOS
+// host agents run without any open tab. This listener merely shortens the
+// wait after sleep/wake when the UI happens to be open.
 import { useEffect, useRef } from "react";
 
 import { recoverScheduler } from "@/lib/api/clients/runtime";

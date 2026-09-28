@@ -27,6 +27,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 
 import { ScrapeCountdown } from "./scrape-countdown";
+import { SchedulerHostBadge } from "./scheduler-host-badge";
 
 const CRON_PRESETS = [
   { label: "Every hour", value: "0 * * * *" },
@@ -166,6 +167,7 @@ export function ScraperSettings({
               <ScrapeCountdown />
             )}
           </div>
+          <SchedulerHostBadge />
         </div>
 
         <div className="flex items-center justify-between gap-6 pt-4 border-t border-border">
@@ -177,7 +179,7 @@ export function ScraperSettings({
               <Badge variant="secondary">macOS</Badge>
             </div>
             <p className="text-xs text-muted-foreground">
-              Only while scrape work is active.
+              Held while auto-scrape is enabled so idle sleep does not skip runs. Lid-close still sleeps.
             </p>
           </div>
           <input

@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { aiProviders } from "@/lib/db/schema";
 import {
   getSchedulerEnabled,
+  refreshSchedulerPersistentState,
   restartScheduler,
   stopScheduler,
 } from "@/lib/jobs/scheduler";
@@ -83,7 +84,7 @@ export async function updateSettings(input: SettingsUpdateInput, context: ApiReq
   const reconciled = await reconcileReasoningSettings(input);
   const aiPayload = pickAISettings(reconciled);
   if (Object.keys(aiPayload).length > 0) AISettingsUpdateSchema.parse(aiPayload);
-  const { updates, cronUpdated, enabledChanged, newEnabledValue } = parseSettingsUpdateBody(reconciled);
+  const { updates, cronUpdated, enabledChanged, newEnabledValue, keepAwakeChanged = false } = parseSettingsUpdateBody(reconciled);
   if (updates.length > 0) {
     await upsertSettings(updates);
     const cliProviders = updates.flatMap(({ key }) => key === "codex_cli_executable"
@@ -115,6 +116,21 @@ export async function updateSettings(input: SettingsUpdateInput, context: ApiReq
   if (shouldRestart) {
     try { await restartScheduler(); } catch (error) {
       logApiFailure(context, enabledChanged ? "scheduler_start_failed" : "scheduler_restart_failed", 500, error);
+    }
+  }
+  if (enabledChanged || cronUpdated || keepAwakeChanged) {
+    try {
+      await refreshSchedulerPersistentState();
+    } catch (error) {
+      logApiFailure(context, "scheduler_sleep_assertion_failed", 500, error);
+    }
+    // The frontend only flips settings. The backend owns OS-level persistence:
+    // keep the macOS LaunchAgent in sync without ever failing the save.
+    try {
+      const { syncSchedulerHost } = await import("@/lib/jobs/scheduler-host");
+      await syncSchedulerHost();
+    } catch (error) {
+      console.warn("[Settings] Scheduler host sync skipped:", error);
     }
   }
   return getSettingsWithDefaults();
