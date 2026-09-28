@@ -356,9 +356,12 @@ export function listMissedOccurrences(
 }
 
 /**
- * Backend-owned catch-up: derive missed ticks from `scheduler.lastRun` and the
- * persisted cron expression, so recovery does not depend on an open browser
- * tab. Already-tracked `execution:missed` state is never double-counted.
+ * Backend-owned catch-up: derive missed ticks from the persisted cron
+ * expression, so recovery does not depend on an open browser tab.
+ *
+ * The baseline is the last successful run, or the latest already-tracked
+ * miss when recovery is pending, so earlier misses are never double-counted
+ * and later ones are still appended.
  */
 export async function reconcileMissedRunsOnBoot(now = new Date()): Promise<{
   reconciled: number;
@@ -374,14 +377,14 @@ export async function reconcileMissedRunsOnBoot(now = new Date()): Promise<{
   if (!isEnabled) {
     return { reconciled: 0, pendingMissedCount: 0 };
   }
-  if (recoveryState.pendingMissedCount > 0) {
-    return { reconciled: 0, pendingMissedCount: recoveryState.pendingMissedCount };
-  }
-  if (!lastRun || Number.isNaN(lastRun.getTime()) || lastRun.getTime() > now.getTime()) {
+  const baseline = recoveryState.pendingMissedCount > 0 && recoveryState.latestMissedRun
+    ? recoveryState.latestMissedRun
+    : lastRun;
+  if (!baseline || Number.isNaN(baseline.getTime()) || baseline.getTime() > now.getTime()) {
     return { reconciled: 0, pendingMissedCount: recoveryState.pendingMissedCount };
   }
 
-  const missed = listMissedOccurrences(cronExpression, lastRun, now);
+  const missed = listMissedOccurrences(cronExpression, baseline, now);
   for (const occurrence of missed) {
     try {
       await recordMissedExecution(occurrence);
@@ -394,10 +397,27 @@ export async function reconcileMissedRunsOnBoot(now = new Date()): Promise<{
   const nextState = await getRecoveryState();
   if (missed.length > 0) {
     console.warn(
-      `[Scheduler] Reconciled ${missed.length} missed run(s) since ${lastRun.toISOString()} without UI involvement`
+      `[Scheduler] Reconciled ${missed.length} missed run(s) since ${baseline.toISOString()} without UI involvement`
     );
   }
   return { reconciled: missed.length, pendingMissedCount: nextState.pendingMissedCount };
+}
+
+/**
+ * Called when auto-scrape is turned off: drops pending recovery so a later
+ * re-enable does not resurrect work from before the toggle.
+ */
+export async function handleSchedulerDisabled(): Promise<void> {
+  await clearRecoveryState();
+}
+
+/**
+ * Called when auto-scrape is turned on: restarts the baseline at now so ticks
+ * from the disabled window are never backfilled as missed on the next boot.
+ */
+export async function handleSchedulerEnabled(now = new Date()): Promise<void> {
+  await saveLastRun(now);
+  await clearRecoveryState();
 }
 
 /**
@@ -460,34 +480,73 @@ export function ensureSchedulerWatchdog(): void {
   schedulerRuntime.watchdogTimer = timer;
 }
 
+// Guards the persistent sleep assertion against overlapping ensure/release
+// calls (startup vs settings refresh, or a toggle mid-acquisition) so a stale
+// acquire can never overwrite or outlive the current settings.
+let persistentSleepEpoch = 0;
+let persistentSleepAcquireInFlight: Promise<DeviceSleepInhibitorLease | null> | null = null;
+
 async function ensurePersistentSleepAssertion(): Promise<void> {
   if (isSchedulerTestWorker()) return;
   if (process.platform !== "darwin") return;
   if (schedulerRuntime.persistentSleepLease) return;
-  let enabled = false;
-  let keepAwake = false;
-  try {
-    enabled = await getSchedulerEnabled();
-    if (!enabled) return;
-    keepAwake = await getKeepDeviceAwake();
-  } catch (error) {
-    console.warn("[Scheduler] Failed to read sleep-assertion settings:", error);
+  if (persistentSleepAcquireInFlight) {
+    await persistentSleepAcquireInFlight;
     return;
   }
-  if (!keepAwake) return;
+
+  const epoch = persistentSleepEpoch;
+  const acquisition = (async (): Promise<DeviceSleepInhibitorLease | null> => {
+    try {
+      const enabled = await getSchedulerEnabled();
+      const keepAwake = await getKeepDeviceAwake();
+      if (epoch !== persistentSleepEpoch || !enabled || !keepAwake) return null;
+      const { CaffeinateDeviceSleepInhibitor } = await import(
+        "@/lib/scraper/runtime/device-sleep-inhibitor"
+      );
+      const lease = await new CaffeinateDeviceSleepInhibitor().acquire();
+      // Re-check after acquiring: a toggle that landed mid-acquisition must
+      // release immediately instead of storing a stale assertion.
+      const stillEnabled = await getSchedulerEnabled();
+      const stillKeepAwake = await getKeepDeviceAwake();
+      if (epoch !== persistentSleepEpoch || !stillEnabled || !stillKeepAwake) {
+        try {
+          await lease.release();
+        } catch (releaseError) {
+          console.warn("[Scheduler] Failed to release stale idle-sleep assertion:", releaseError);
+        }
+        return null;
+      }
+      schedulerRuntime.persistentSleepLease = lease;
+      console.log("[Scheduler] Holding idle-sleep assertion while auto-scrape is enabled");
+      return lease;
+    } catch (error) {
+      console.warn("[Scheduler] Failed to hold idle-sleep assertion:", error);
+      return null;
+    }
+  })();
+  persistentSleepAcquireInFlight = acquisition;
   try {
-    const { CaffeinateDeviceSleepInhibitor } = await import(
-      "@/lib/scraper/runtime/device-sleep-inhibitor"
-    );
-    schedulerRuntime.persistentSleepLease = await new CaffeinateDeviceSleepInhibitor().acquire();
-    console.log("[Scheduler] Holding idle-sleep assertion while auto-scrape is enabled");
-  } catch (error) {
-    console.warn("[Scheduler] Failed to hold idle-sleep assertion:", error);
-    schedulerRuntime.persistentSleepLease = null;
+    await acquisition;
+  } finally {
+    if (persistentSleepAcquireInFlight === acquisition) {
+      persistentSleepAcquireInFlight = null;
+    }
   }
 }
 
 async function releasePersistentSleepAssertion(): Promise<void> {
+  persistentSleepEpoch += 1;
+  const inFlight = persistentSleepAcquireInFlight;
+  persistentSleepAcquireInFlight = null;
+  if (inFlight) {
+    try {
+      const lease = await inFlight;
+      if (lease) await lease.release();
+    } catch (error) {
+      console.warn("[Scheduler] Failed to release in-flight idle-sleep assertion:", error);
+    }
+  }
   const lease = schedulerRuntime.persistentSleepLease;
   schedulerRuntime.persistentSleepLease = null;
   if (!lease) return;

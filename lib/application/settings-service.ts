@@ -8,6 +8,8 @@ import { db } from "@/lib/db";
 import { aiProviders } from "@/lib/db/schema";
 import {
   getSchedulerEnabled,
+  handleSchedulerDisabled,
+  handleSchedulerEnabled,
   refreshSchedulerPersistentState,
   restartScheduler,
   stopScheduler,
@@ -112,10 +114,19 @@ export async function updateSettings(input: SettingsUpdateInput, context: ApiReq
   }
   if (shouldStop) {
     try { stopScheduler(); } catch (error) { logApiFailure(context, "scheduler_stop_failed", 500, error); }
+    try {
+      await handleSchedulerDisabled();
+    } catch (error) { logApiFailure(context, "scheduler_recovery_clear_failed", 500, error); }
   }
   if (shouldRestart) {
     try { await restartScheduler(); } catch (error) {
       logApiFailure(context, enabledChanged ? "scheduler_start_failed" : "scheduler_restart_failed", 500, error);
+    }
+    if (enabledChanged && newEnabledValue === true) {
+      // Fresh baseline: ticks from the disabled window must never backfill.
+      try {
+        await handleSchedulerEnabled();
+      } catch (error) { logApiFailure(context, "scheduler_baseline_reset_failed", 500, error); }
     }
   }
   if (enabledChanged || cronUpdated || keepAwakeChanged) {

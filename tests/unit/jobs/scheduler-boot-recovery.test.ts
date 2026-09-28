@@ -198,6 +198,67 @@ describe("scheduler backend-owned recovery", () => {
     expect(store.sessions[0]?.triggerSource).toBe("scheduler");
   });
 
+  it("appends ticks missed after an already-pending miss instead of hiding them", async () => {
+    store.settings.set("scheduler.lastRun", {
+      key: "scheduler.lastRun",
+      value: new Date(2026, 3, 5, 0).toISOString(),
+    });
+    store.settings.set("scheduler.recovery.v1", {
+      key: "scheduler.recovery.v1",
+      value: JSON.stringify({
+        version: 1,
+        pendingMissedCount: 1,
+        oldestMissedRun: new Date(2026, 3, 5, 6).toISOString(),
+        latestMissedRun: new Date(2026, 3, 5, 6).toISOString(),
+      }),
+    });
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    const result = await scheduler.reconcileMissedRunsOnBoot(
+      new Date(2026, 3, 5, 13)
+    );
+
+    expect(result.reconciled).toBe(1);
+    expect(result.pendingMissedCount).toBe(2);
+    const status = await scheduler.getSchedulerStatus();
+    expect(status.latestMissedRun?.toISOString()).toBe(
+      new Date(2026, 3, 5, 12).toISOString()
+    );
+  });
+
+  it("resets the baseline on enable so disabled windows never backfill", async () => {
+    store.settings.set("scheduler.lastRun", {
+      key: "scheduler.lastRun",
+      value: new Date(2026, 3, 2, 0).toISOString(),
+    });
+    const scheduler = await import("@/lib/jobs/scheduler");
+    const now = new Date(2026, 3, 5, 13);
+
+    await scheduler.handleSchedulerEnabled(now);
+
+    const result = await scheduler.reconcileMissedRunsOnBoot(now);
+    expect(result).toEqual({ reconciled: 0, pendingMissedCount: 0 });
+    expect(store.sessions).toEqual([]);
+  });
+
+  it("drops pending recovery on disable", async () => {
+    store.settings.set("scheduler.recovery.v1", {
+      key: "scheduler.recovery.v1",
+      value: JSON.stringify({
+        version: 1,
+        pendingMissedCount: 2,
+        oldestMissedRun: new Date(2026, 3, 5, 0).toISOString(),
+        latestMissedRun: new Date(2026, 3, 5, 6).toISOString(),
+      }),
+    });
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    await scheduler.handleSchedulerDisabled();
+
+    const status = await scheduler.getSchedulerStatus();
+    expect(status.pendingMissedCount).toBe(0);
+  });
+
   it("does not reconcile when the scheduler is disabled", async () => {
     store.settings.set("scheduler_enabled", { key: "scheduler_enabled", value: "false" });
     store.settings.set("scheduler.lastRun", {

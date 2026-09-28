@@ -10,7 +10,11 @@ function renderBadge(host: Record<string, unknown>) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  vi.stubGlobal("fetch", vi.fn(async () => Response.json(host)));
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+    serverAgentLoaded: null,
+    tickAgentLoaded: null,
+    ...host,
+  })));
   const wrapper = ({ children }: PropsWithChildren) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );

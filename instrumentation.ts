@@ -67,6 +67,16 @@ export async function register() {
       } catch (error) {
         console.error("[Instrumentation] Scheduler boot recovery failed:", error);
       }
+      // Backend-owned persistence: install/heal the macOS host agents on
+      // every boot so fresh installs get them without a settings save.
+      // Best-effort and never fails startup.
+      try {
+        const { syncSchedulerHost } = await import("@/lib/jobs/scheduler-host");
+        const hostResult = await syncSchedulerHost();
+        logRuntimeEvent("scheduler", "scheduler_host_synced", { code: hostResult });
+      } catch (error) {
+        console.error("[Instrumentation] Scheduler host sync failed:", error);
+      }
     } catch (error) {
       setSchedulerInitialization("failed");
       recordRuntimeError("scheduler", "scheduler_initialization_failed");

@@ -23,6 +23,8 @@ export interface SchedulerHostStatus {
   supported: boolean;
   serverAgentInstalled: boolean;
   tickAgentInstalled: boolean;
+  serverAgentLoaded: boolean | null;
+  tickAgentLoaded: boolean | null;
   schedulerEnabled: boolean;
 }
 
@@ -151,6 +153,36 @@ async function bootoutAgent(label: string): Promise<void> {
   }
 }
 
+/**
+ * Whether launchd currently has the agent loaded. Returns null when the
+ * loaded state cannot be determined (non-macOS, no UID, launchctl missing),
+ * so callers can fall back to plist existence instead of misreporting.
+ */
+async function isAgentLoaded(label: string): Promise<boolean | null> {
+  const uid = process.getuid?.() ?? null;
+  if (uid === null || process.platform !== "darwin") return null;
+  try {
+    await execFileAsync("/bin/launchctl", ["print", `gui/${uid}/${label}`]);
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/no such process|could not find|no such file/i.test(message)) return false;
+    return null;
+  }
+}
+
+/** Best-effort load; returns the loaded state afterwards. */
+async function ensureAgentLoaded(label: string): Promise<boolean> {
+  if (await isAgentLoaded(label)) return true;
+  try {
+    await bootstrapAgent(label);
+  } catch (error) {
+    console.warn(`[SchedulerHost] Failed to bootstrap ${label}:`, error);
+    return false;
+  }
+  return (await isAgentLoaded(label)) ?? true;
+}
+
 async function readSchedulerEnabled(): Promise<boolean> {
   try {
     const rows = await db
@@ -167,17 +199,29 @@ async function readSchedulerEnabled(): Promise<boolean> {
 }
 
 export async function getSchedulerHostStatus(): Promise<SchedulerHostStatus> {
-  const [serverAgentInstalled, tickAgentInstalled, schedulerEnabled] = await Promise.all([
+  const [
+    serverPlistInstalled,
+    tickPlistInstalled,
+    serverAgentLoaded,
+    tickAgentLoaded,
+    schedulerEnabled,
+  ] = await Promise.all([
     pathExists(plistPath(SCHEDULER_SERVER_AGENT_LABEL)),
     pathExists(plistPath(SCHEDULER_TICK_AGENT_LABEL)),
+    isAgentLoaded(SCHEDULER_SERVER_AGENT_LABEL),
+    isAgentLoaded(SCHEDULER_TICK_AGENT_LABEL),
     readSchedulerEnabled(),
   ]);
   const supported = process.platform === "darwin";
+  // A plist without a loaded agent is a failed install, not a working
+  // background service: report it as missing so sync retries the load.
   return {
     platform: process.platform,
     supported,
-    serverAgentInstalled,
-    tickAgentInstalled,
+    serverAgentInstalled: serverPlistInstalled && serverAgentLoaded !== false,
+    tickAgentInstalled: tickPlistInstalled && tickAgentLoaded !== false,
+    serverAgentLoaded,
+    tickAgentLoaded,
     schedulerEnabled,
   };
 }
@@ -197,16 +241,25 @@ export async function installSchedulerHost(
   await writeFile(plistPath(SCHEDULER_TICK_AGENT_LABEL), tickAgentPlist(port), {
     mode: 0o600,
   });
-  try {
-    await bootstrapAgent(SCHEDULER_SERVER_AGENT_LABEL);
-  } catch (error) {
-    console.warn("[SchedulerHost] Failed to bootstrap server agent (plist still installed):", error);
+  const failed: string[] = [];
+  for (const label of [SCHEDULER_SERVER_AGENT_LABEL, SCHEDULER_TICK_AGENT_LABEL]) {
+    if (!await ensureAgentLoaded(label)) failed.push(label);
   }
-  try {
-    await bootstrapAgent(SCHEDULER_TICK_AGENT_LABEL);
-  } catch (error) {
-    console.warn("[SchedulerHost] Failed to bootstrap tick agent (plist still installed):", error);
+  if (failed.length > 0) {
+    throw new Error(
+      `Scheduler host plists were written but launchd did not load: ${failed.join(", ")}`
+    );
   }
+}
+
+/**
+ * Removes only the scheduler tick agent. Disabling auto-scrape must never
+ * stop the app server itself, which may be running under the server agent.
+ */
+async function removeSchedulerTickAgent(): Promise<void> {
+  if (process.platform !== "darwin") return;
+  await bootoutAgent(SCHEDULER_TICK_AGENT_LABEL);
+  await rm(plistPath(SCHEDULER_TICK_AGENT_LABEL), { force: true });
 }
 
 export async function uninstallSchedulerHost(): Promise<void> {
@@ -220,7 +273,9 @@ export async function uninstallSchedulerHost(): Promise<void> {
 /**
  * Keeps the OS-level host in sync with the `scheduler_enabled` setting.
  * The frontend only flips settings; this best-effort sync owns persistence.
- * Never throws: failures are logged so settings saves always succeed.
+ * Disabling removes the tick poke but deliberately leaves the app server
+ * agent alone. Never throws: failures are logged so settings saves always
+ * succeed.
  */
 export async function syncSchedulerHost(
   appDirectory = process.cwd()
@@ -229,15 +284,23 @@ export async function syncSchedulerHost(
   try {
     const enabled = await readSchedulerEnabled();
     if (!enabled) {
-      await uninstallSchedulerHost();
+      await removeSchedulerTickAgent();
       return "removed";
     }
     const status = await getSchedulerHostStatus();
-    if (status.serverAgentInstalled && status.tickAgentInstalled) {
-      return "installed";
+    if (!status.serverAgentInstalled || !status.tickAgentInstalled) {
+      await installSchedulerHost(appDirectory);
+    } else {
+      const loaded = await Promise.all([
+        ensureAgentLoaded(SCHEDULER_SERVER_AGENT_LABEL),
+        ensureAgentLoaded(SCHEDULER_TICK_AGENT_LABEL),
+      ]);
+      if (loaded.some((value) => !value)) return "failed";
     }
-    await installSchedulerHost(appDirectory);
-    return "installed";
+    const verified = await getSchedulerHostStatus();
+    return verified.serverAgentInstalled && verified.tickAgentInstalled
+      ? "installed"
+      : "failed";
   } catch (error) {
     console.warn("[SchedulerHost] Failed to sync scheduler host agents:", error);
     return "failed";

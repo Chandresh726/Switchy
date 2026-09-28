@@ -30,6 +30,8 @@ export const schedulerHostStatusResponseSchema = z.object({
   supported: z.boolean(),
   serverAgentInstalled: z.boolean(),
   tickAgentInstalled: z.boolean(),
+  serverAgentLoaded: z.boolean().nullable(),
+  tickAgentLoaded: z.boolean().nullable(),
   schedulerEnabled: z.boolean(),
 });
 

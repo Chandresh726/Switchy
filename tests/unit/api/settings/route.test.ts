@@ -5,6 +5,10 @@ const mocks = vi.hoisted(() => ({
   getSchedulerEnabled: vi.fn(),
   restartScheduler: vi.fn(),
   stopScheduler: vi.fn(),
+  handleSchedulerDisabled: vi.fn(),
+  handleSchedulerEnabled: vi.fn(),
+  refreshSchedulerPersistentState: vi.fn(),
+  syncSchedulerHost: vi.fn(),
   getSettingsWithDefaults: vi.fn(),
   parseSettingsUpdateBody: vi.fn(),
   upsertSettings: vi.fn(),
@@ -20,6 +24,13 @@ vi.mock("@/lib/jobs/scheduler", () => ({
   getSchedulerEnabled: mocks.getSchedulerEnabled,
   restartScheduler: mocks.restartScheduler,
   stopScheduler: mocks.stopScheduler,
+  handleSchedulerDisabled: mocks.handleSchedulerDisabled,
+  handleSchedulerEnabled: mocks.handleSchedulerEnabled,
+  refreshSchedulerPersistentState: mocks.refreshSchedulerPersistentState,
+}));
+
+vi.mock("@/lib/jobs/scheduler-host", () => ({
+  syncSchedulerHost: mocks.syncSchedulerHost,
 }));
 
 vi.mock("@/lib/settings/settings-service", () => ({
@@ -52,6 +63,10 @@ describe("settings route", () => {
     mocks.upsertSettings.mockResolvedValue(undefined);
     mocks.getSchedulerEnabled.mockResolvedValue(true);
     mocks.restartScheduler.mockResolvedValue(undefined);
+    mocks.handleSchedulerDisabled.mockResolvedValue(undefined);
+    mocks.handleSchedulerEnabled.mockResolvedValue(undefined);
+    mocks.refreshSchedulerPersistentState.mockResolvedValue(undefined);
+    mocks.syncSchedulerHost.mockResolvedValue("installed");
     mocks.getCachedProviderModelDefinition.mockResolvedValue({
       reasoningControl: {
         kind: "effort",

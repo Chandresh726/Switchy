@@ -13,7 +13,7 @@ import {
 } from "@/lib/jobs/scheduler-host";
 import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   const context = createApiRequestContext(request);
   try {
     const status = await getSchedulerHostStatus();

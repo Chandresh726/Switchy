@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   startScheduler: vi.fn(),
   ensureSchedulerWatchdog: vi.fn(),
   recoverSchedulerOnBoot: vi.fn(),
+  syncSchedulerHost: vi.fn(),
   migrateSchedulerRecoveryState: vi.fn(),
   reconcileConfiguredLocalCLIProviders: vi.fn(),
   removeDeprecatedMatchingPreferenceSettings: vi.fn(),
@@ -59,6 +60,10 @@ vi.mock("@/lib/jobs/scheduler", () => ({
   migrateSchedulerRecoveryState: mocks.migrateSchedulerRecoveryState,
 }));
 
+vi.mock("@/lib/jobs/scheduler-host", () => ({
+  syncSchedulerHost: mocks.syncSchedulerHost,
+}));
+
 vi.mock("@/lib/scraper", () => ({
   getLocalScrapeQueueService: () => ({
     recoverPending: mocks.recoverPending,
@@ -84,6 +89,7 @@ describe("server startup instrumentation", () => {
       oldestMissedRun: null,
       latestMissedRun: null,
     });
+    mocks.syncSchedulerHost.mockResolvedValue("installed");
     mocks.recoverPending.mockResolvedValue({
       recovered: 0,
       claimed: 0,
@@ -116,6 +122,7 @@ describe("server startup instrumentation", () => {
     expect(mocks.reconcileResumeStorage).not.toHaveBeenCalled();
     expect(mocks.startScheduler).not.toHaveBeenCalled();
     expect(mocks.recoverSchedulerOnBoot).not.toHaveBeenCalled();
+    expect(mocks.syncSchedulerHost).not.toHaveBeenCalled();
     expect(mocks.warmLocalCLIStatuses).not.toHaveBeenCalled();
     expect(mocks.recoverPending).not.toHaveBeenCalled();
     expect(mocks.dispatchPendingAIWork).not.toHaveBeenCalled();
@@ -131,6 +138,7 @@ describe("server startup instrumentation", () => {
     expect(mocks.migrateSchedulerRecoveryState).toHaveBeenCalledTimes(1);
     expect(mocks.ensureSchedulerWatchdog).toHaveBeenCalledTimes(1);
     expect(mocks.recoverSchedulerOnBoot).toHaveBeenCalledTimes(1);
+    expect(mocks.syncSchedulerHost).toHaveBeenCalledTimes(1);
     expect(mocks.registerRuntimeLock).toHaveBeenCalledTimes(1);
     expect(mocks.reconcileResumeStorage).toHaveBeenCalledTimes(1);
     expect(mocks.recoverPending).toHaveBeenCalledTimes(1);
@@ -171,6 +179,7 @@ describe("server startup instrumentation", () => {
       schedulerError
     );
     expect(mocks.recoverSchedulerOnBoot).not.toHaveBeenCalled();
+    expect(mocks.syncSchedulerHost).not.toHaveBeenCalled();
     expect(consoleError).toHaveBeenCalledWith(
       "[Instrumentation] Failed to recover local scrape queue:",
       queueError
@@ -194,8 +203,23 @@ describe("server startup instrumentation", () => {
     expect(mocks.dispatchPendingAIWork).toHaveBeenCalledTimes(1);
   });
 
-  it("dispatches current AI work even when legacy import fails", async () => {
+  it("still boots when scheduler host sync fails", async () => {
     vi.stubEnv("NEXT_RUNTIME", "nodejs");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.syncSchedulerHost.mockRejectedValue(new Error("launchd unavailable"));
+
+    await register();
+    await flushPromises();
+
+    expect(mocks.syncSchedulerHost).toHaveBeenCalledTimes(1);
+    expect(mocks.setSchedulerInitialization).toHaveBeenLastCalledWith("ready");
+    expect(consoleError).toHaveBeenCalledWith(
+      "[Instrumentation] Scheduler host sync failed:",
+      expect.objectContaining({ message: "launchd unavailable" })
+    );
+  });
+
+  it("dispatches current AI work even when legacy import fails", async () => {    vi.stubEnv("NEXT_RUNTIME", "nodejs");
     const importError = new Error("legacy payload failed");
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.importLegacyMatchWork.mockImplementation(() => {
