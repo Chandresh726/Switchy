@@ -480,6 +480,23 @@ export function ensureSchedulerWatchdog(): void {
   schedulerRuntime.watchdogTimer = timer;
 }
 
+// Serializes persistent sleep-assertion updates so an ensure and a release
+// can never interleave: a release fully completes before a later ensure
+// starts (and vice versa), so a release can never close a newer assertion.
+let sleepAssertionTail: Promise<void> = Promise.resolve();
+
+function enqueueSleepAssertion(work: () => Promise<void>): Promise<void> {
+  const run = async (): Promise<void> => {
+    try {
+      await work();
+    } catch (error) {
+      console.warn("[Scheduler] Sleep assertion update failed:", error);
+    }
+  };
+  sleepAssertionTail = sleepAssertionTail.then(run, run);
+  return sleepAssertionTail;
+}
+
 // Guards the persistent sleep assertion against overlapping ensure/release
 // calls (startup vs settings refresh, or a toggle mid-acquisition) so a stale
 // acquire can never overwrite or outlive the current settings.
@@ -487,8 +504,16 @@ let persistentSleepEpoch = 0;
 let persistentSleepAcquireInFlight: Promise<DeviceSleepInhibitorLease | null> | null = null;
 
 async function ensurePersistentSleepAssertion(): Promise<void> {
+  if (isSchedulerTestWorker() || process.platform !== "darwin") return;
+  return enqueueSleepAssertion(doEnsurePersistentSleepAssertion);
+}
+
+async function releasePersistentSleepAssertion(): Promise<void> {
   if (isSchedulerTestWorker()) return;
-  if (process.platform !== "darwin") return;
+  return enqueueSleepAssertion(doReleasePersistentSleepAssertion);
+}
+
+async function doEnsurePersistentSleepAssertion(): Promise<void> {
   if (schedulerRuntime.persistentSleepLease) return;
   if (persistentSleepAcquireInFlight) {
     await persistentSleepAcquireInFlight;
@@ -535,7 +560,7 @@ async function ensurePersistentSleepAssertion(): Promise<void> {
   }
 }
 
-async function releasePersistentSleepAssertion(): Promise<void> {
+async function doReleasePersistentSleepAssertion(): Promise<void> {
   persistentSleepEpoch += 1;
   const inFlight = persistentSleepAcquireInFlight;
   persistentSleepAcquireInFlight = null;
@@ -547,6 +572,8 @@ async function releasePersistentSleepAssertion(): Promise<void> {
       console.warn("[Scheduler] Failed to release in-flight idle-sleep assertion:", error);
     }
   }
+  // Runs serialized against ensures, so the slot cannot change underneath:
+  // only the lease held at release time is ever closed.
   const lease = schedulerRuntime.persistentSleepLease;
   schedulerRuntime.persistentSleepLease = null;
   if (!lease) return;
@@ -687,6 +714,16 @@ export async function restartScheduler(): Promise<void> {
 
 async function saveLastRun(time: Date): Promise<void> {
   try {
+    // Monotonic guard: a stale batch (e.g. an older scrape finishing after a
+    // re-enable reset the baseline) must never rewind the recovery baseline.
+    const current = await getLastRunFromDB();
+    if (
+      current
+      && Number.isFinite(current.getTime())
+      && current.getTime() >= time.getTime()
+    ) {
+      return;
+    }
     await db.insert(settings).values({
       key: SCHEDULER_LAST_RUN_KEY,
       value: time.toISOString(),

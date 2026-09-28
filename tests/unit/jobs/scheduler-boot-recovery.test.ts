@@ -311,8 +311,28 @@ describe("scheduler backend-owned recovery", () => {
     expect(store.sessions).toHaveLength(2);
   });
 
-  it("drains pending recovery from the server-side watchdog tick", async () => {
+  it("never rewinds the recovery baseline when a stale batch finishes", async () => {
+    const seededLastRun = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+    store.settings.set("scheduler.lastRun", {
+      key: "scheduler.lastRun",
+      value: seededLastRun,
+    });
     const scheduler = await import("@/lib/jobs/scheduler");
+
+    await scheduler.startScheduler();
+    await store.task?.execute();
+
+    expect(store.scrapeAllCompanies).toHaveBeenCalledWith("scheduler");
+    expect(store.settings.get("scheduler.lastRun")?.value).toBe(seededLastRun);
+  });
+
+  it("leaves the persistent sleep assertion untouched under test workers", async () => {
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    await expect(scheduler.refreshSchedulerPersistentState()).resolves.toBeUndefined();
+  });
+
+  it("drains pending recovery from the server-side watchdog tick", async () => {    const scheduler = await import("@/lib/jobs/scheduler");
 
     await scheduler.startScheduler();
     await store.task?.listeners.get("execution:missed")?.({
