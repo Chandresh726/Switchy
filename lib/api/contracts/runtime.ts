@@ -28,6 +28,7 @@ export const schedulerRecoveryResponseSchema = z.object({
 export const schedulerHostStatusResponseSchema = z.object({
   platform: z.string(),
   supported: z.boolean(),
+  serverAgentSupported: z.boolean(),
   serverAgentInstalled: z.boolean(),
   tickAgentInstalled: z.boolean(),
   serverAgentLoaded: z.boolean().nullable(),

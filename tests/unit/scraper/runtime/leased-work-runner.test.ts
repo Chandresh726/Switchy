@@ -59,6 +59,30 @@ describe("LocalLeasedWorkRunner", () => {
     });
   });
 
+  it("reports recovery once leases are reclaimed, before queued work finishes", async () => {
+    const repository = createRepository([createScrapeQueueItem()]);
+    let finishWork: () => void = () => undefined;
+    const workStarted = vi.fn();
+    const runner = new LocalLeasedWorkRunner(
+      repository,
+      () => new Promise<void>((resolve) => {
+        workStarted();
+        finishWork = resolve;
+      }),
+      { concurrency: 1 }
+    );
+    const onRecovered = vi.fn();
+
+    const run = runner.runAvailable({ onRecovered });
+    await vi.waitFor(() => expect(workStarted).toHaveBeenCalled());
+
+    expect(onRecovered).toHaveBeenCalledTimes(1);
+    expect(onRecovered).toHaveBeenCalledBefore(vi.mocked(repository.claimNext));
+    expect(repository.complete).not.toHaveBeenCalled();
+    finishWork();
+    await expect(run).resolves.toMatchObject({ completed: 1 });
+  });
+
   it("requeues retryable attempts with an exponential availability delay", async () => {
     const repository = createRepository([
       createScrapeQueueItem({ attemptCount: 2, maxAttempts: 3 }),

@@ -11,9 +11,7 @@ import { backfillPersonSourceRecords } from "@/lib/people/source-records";
 
 const sqlite = (db as unknown as { $client: Database.Database }).$client;
 try {
-  const preflightReport = runPersistencePreflight(db);
-  console.log("Persistence preflight passed", preflightReport);
-
+  runPersistencePreflight(db);
   migrateLocalDatabase(db, path.join(process.cwd(), "drizzle"));
   console.log("Database migrations and integrity checks completed");
 

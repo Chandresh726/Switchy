@@ -253,7 +253,9 @@ export class LocalScrapeQueueService {
 
     try {
       await this.projector.recoverCommittedQueueItems();
-      const summary = await this.runner.runAvailable();
+      const summary = await this.runner.runAvailable({
+        onRecovered: () => setScrapeQueueRecovery("ready"),
+      });
       await this.projector.reconcileInProgressSessions();
       await this.historyRetention.pruneIfDue();
       await this.staleJobArchival?.archiveIfDue();

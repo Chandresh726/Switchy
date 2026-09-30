@@ -4,6 +4,7 @@ import { reconcileMatchNotifications } from "@/lib/notifications/service";
 import type { AIWorkItem } from "@/lib/db/schema";
 import {
   LocalLeasedWorkRunner,
+  type LocalLeasedWorkRunOptions,
   type LocalLeasedWorkRunSummary,
 } from "@/lib/scraper/runtime/leased-work-runner";
 import { ScheduledSingleFlightDispatcher } from "@/lib/scraper/runtime/single-flight-dispatcher";
@@ -49,8 +50,8 @@ export class AIWorkDispatcher {
     );
   }
 
-  runAvailable(): Promise<AIWorkRunSummary> {
-    return this.runner.runAvailable();
+  runAvailable(options?: LocalLeasedWorkRunOptions): Promise<AIWorkRunSummary> {
+    return this.runner.runAvailable(options);
   }
 
   stop(): void {
@@ -61,7 +62,9 @@ export class AIWorkDispatcher {
 const defaultDispatcher = new AIWorkDispatcher();
 const scheduledDispatcher = new ScheduledSingleFlightDispatcher({
   run: async () => {
-    const summary = await defaultDispatcher.runAvailable();
+    const summary = await defaultDispatcher.runAvailable({
+      onRecovered: () => setMatcherDispatchRecovery("ready"),
+    });
     await reconcileMatchNotifications();
     recordDispatchSuccess();
     setMatcherDispatchRecovery("ready");

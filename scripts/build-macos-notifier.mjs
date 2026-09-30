@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 const execute = promisify(execFile);
@@ -118,7 +120,24 @@ export async function buildMacOSNotifierBundle({
   const resourcesDirectory = path.join(contents, "Resources");
   const buildDirectory = path.join(destinationRoot, ".build");
   const executable = path.join(executableDirectory, EXECUTABLE_NAME);
+  const result = { bundle, executable, bundleIdentifier: BUNDLE_IDENTIFIER };
 
+  // Local builds rerun before every dev/start; release packaging always rebuilds.
+  const fingerprintPath = outputDirectory
+    ? null
+    : path.join(destinationRoot, ".notifier-fingerprint");
+  const fingerprint = fingerprintPath
+    ? await buildFingerprint(projectDirectory, definition.version)
+    : null;
+  if (
+    fingerprintPath
+    && existsSync(executable)
+    && await readFile(fingerprintPath, "utf8").catch(() => null) === fingerprint
+  ) {
+    return result;
+  }
+
+  if (fingerprintPath) await rm(fingerprintPath, { force: true });
   await rm(bundle, { recursive: true, force: true });
   await rm(buildDirectory, { recursive: true, force: true });
   await Promise.all([
@@ -147,12 +166,22 @@ export async function buildMacOSNotifierBundle({
   await execute("codesign", ["--force", "--deep", "--sign", "-", bundle]);
   await execute("codesign", ["--verify", "--deep", "--strict", bundle]);
   await rm(buildDirectory, { recursive: true, force: true });
+  if (fingerprintPath) await writeFile(fingerprintPath, fingerprint);
 
-  return {
-    bundle,
-    executable,
-    bundleIdentifier: BUNDLE_IDENTIFIER,
-  };
+  return result;
+}
+
+async function buildFingerprint(projectDirectory, version) {
+  const hash = createHash("sha256");
+  hash.update(version);
+  for (const input of [
+    path.join(projectDirectory, "native", "macos", "SwitchyNotifier.m"),
+    path.join(projectDirectory, "public", "Switchy-icon-macos.png"),
+    fileURLToPath(import.meta.url),
+  ]) {
+    hash.update(await readFile(input));
+  }
+  return hash.digest("hex");
 }
 
 if (

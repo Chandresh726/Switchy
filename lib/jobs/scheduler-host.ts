@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { mkdirSync } from "node:fs";
-import { access, mkdir, rm, writeFile } from "node:fs/promises";
+import { existsSync, mkdirSync } from "node:fs";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -21,6 +21,7 @@ export type SchedulerHostSyncResult = "installed" | "removed" | "skipped" | "fai
 export interface SchedulerHostStatus {
   platform: NodeJS.Platform;
   supported: boolean;
+  serverAgentSupported: boolean;
   serverAgentInstalled: boolean;
   tickAgentInstalled: boolean;
   serverAgentLoaded: boolean | null;
@@ -54,9 +55,19 @@ function logDirectory(): string {
   return path.join(getSwitchyRootDirectory(), "logs");
 }
 
+/**
+ * The `switchy` CLI owns the lifecycle of packaged runtimes, which have no
+ * pnpm scripts; a launchd server agent there could only crash-loop or fight
+ * the CLI-managed server for the port and database.
+ */
+function isPackagedRuntime(appDirectory: string): boolean {
+  return existsSync(path.join(appDirectory, "switchy-runtime.json"));
+}
+
 function serverAgentPlist(appDirectory: string): string {
   const logs = logDirectory();
   const command = `cd ${shellSingleQuote(appDirectory)} && exec pnpm start`;
+  const searchPath = process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin";
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -71,6 +82,11 @@ function serverAgentPlist(appDirectory: string): string {
   </array>
   <key>WorkingDirectory</key>
   <string>${xmlEscape(appDirectory)}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>${xmlEscape(searchPath)}</string>
+  </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
@@ -183,6 +199,27 @@ async function ensureAgentLoaded(label: string): Promise<boolean> {
   return (await isAgentLoaded(label)) ?? true;
 }
 
+/** Writes the plist when it changed and reloads it so launchd sees the update. */
+async function ensureAgent(label: string, contents: string): Promise<boolean> {
+  const plist = plistPath(label);
+  const current = await readFile(plist, "utf8").catch(() => null);
+  if (current !== contents) {
+    await writeFile(plist, contents, { mode: 0o600 });
+    // Booting out the agent this process runs under would kill the server;
+    // launchd picks up the rewritten plist on its next load instead.
+    if (current !== null && process.env.XPC_SERVICE_NAME !== label) {
+      await bootoutAgent(label);
+    }
+  }
+  return ensureAgentLoaded(label);
+}
+
+async function removeAgent(label: string): Promise<void> {
+  if (!await pathExists(plistPath(label))) return;
+  await bootoutAgent(label);
+  await rm(plistPath(label), { force: true });
+}
+
 async function readSchedulerEnabled(): Promise<boolean> {
   try {
     const rows = await db
@@ -198,7 +235,9 @@ async function readSchedulerEnabled(): Promise<boolean> {
   }
 }
 
-export async function getSchedulerHostStatus(): Promise<SchedulerHostStatus> {
+export async function getSchedulerHostStatus(
+  appDirectory = process.cwd()
+): Promise<SchedulerHostStatus> {
   const [
     serverPlistInstalled,
     tickPlistInstalled,
@@ -218,6 +257,7 @@ export async function getSchedulerHostStatus(): Promise<SchedulerHostStatus> {
   return {
     platform: process.platform,
     supported,
+    serverAgentSupported: supported && !isPackagedRuntime(appDirectory),
     serverAgentInstalled: serverPlistInstalled && serverAgentLoaded !== false,
     tickAgentInstalled: tickPlistInstalled && tickAgentLoaded !== false,
     serverAgentLoaded,
@@ -235,15 +275,16 @@ export async function installSchedulerHost(
   }
   mkdirSync(logDirectory(), { recursive: true, mode: 0o700 });
   await mkdir(launchAgentsDirectory(), { recursive: true, mode: 0o700 });
-  await writeFile(plistPath(SCHEDULER_SERVER_AGENT_LABEL), serverAgentPlist(appDirectory), {
-    mode: 0o600,
-  });
-  await writeFile(plistPath(SCHEDULER_TICK_AGENT_LABEL), tickAgentPlist(port), {
-    mode: 0o600,
-  });
   const failed: string[] = [];
-  for (const label of [SCHEDULER_SERVER_AGENT_LABEL, SCHEDULER_TICK_AGENT_LABEL]) {
-    if (!await ensureAgentLoaded(label)) failed.push(label);
+  if (isPackagedRuntime(appDirectory)) {
+    await removeAgent(SCHEDULER_SERVER_AGENT_LABEL);
+  } else if (
+    !await ensureAgent(SCHEDULER_SERVER_AGENT_LABEL, serverAgentPlist(appDirectory))
+  ) {
+    failed.push(SCHEDULER_SERVER_AGENT_LABEL);
+  }
+  if (!await ensureAgent(SCHEDULER_TICK_AGENT_LABEL, tickAgentPlist(port))) {
+    failed.push(SCHEDULER_TICK_AGENT_LABEL);
   }
   if (failed.length > 0) {
     throw new Error(
@@ -287,18 +328,10 @@ export async function syncSchedulerHost(
       await removeSchedulerTickAgent();
       return "removed";
     }
-    const status = await getSchedulerHostStatus();
-    if (!status.serverAgentInstalled || !status.tickAgentInstalled) {
-      await installSchedulerHost(appDirectory);
-    } else {
-      const loaded = await Promise.all([
-        ensureAgentLoaded(SCHEDULER_SERVER_AGENT_LABEL),
-        ensureAgentLoaded(SCHEDULER_TICK_AGENT_LABEL),
-      ]);
-      if (loaded.some((value) => !value)) return "failed";
-    }
-    const verified = await getSchedulerHostStatus();
-    return verified.serverAgentInstalled && verified.tickAgentInstalled
+    await installSchedulerHost(appDirectory);
+    const verified = await getSchedulerHostStatus(appDirectory);
+    return verified.tickAgentInstalled
+      && (!verified.serverAgentSupported || verified.serverAgentInstalled)
       ? "installed"
       : "failed";
   } catch (error) {

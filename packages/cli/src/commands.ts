@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 
+import { pruneInstallArtifacts, type PruneResult } from "./cleanup.js";
 import {
   CLI_VERSION,
   DEFAULT_PORT,
@@ -74,24 +75,48 @@ async function startCommandUnlocked({
     return;
   }
 
+  const previousVersion = await installedVersion();
   const selectedVersion = resolveApplicationVersion(version);
   const runtimeDirectory = await installRuntime(selectedVersion, paths);
-  await ensurePlaywrightBrowser(runtimeDirectory, paths);
-  await runDatabaseMigration(runtimeDirectory, paths);
+  await Promise.all([
+    ensurePlaywrightBrowser(runtimeDirectory, paths),
+    runDatabaseMigration(runtimeDirectory, paths),
+  ]);
   await setCurrentVersion(paths, selectedVersion);
-  const record = await startSwitchyProcess({
-    paths,
-    runtimeDirectory,
-    version: selectedVersion,
-    port,
-    foreground,
-  });
-  if (!foreground) {
-    console.log(
-      `Switchy ${selectedVersion} is running at `
-      + `http://${record.hostname}:${record.port}`
-    );
+  const pruning = pruneInstallArtifacts(paths, [selectedVersion, previousVersion])
+    .then(reportPrunedArtifacts)
+    .catch((error: unknown) => {
+      console.warn(
+        "Could not remove old Switchy runtimes:",
+        error instanceof Error ? error.message : String(error)
+      );
+    });
+  try {
+    const record = await startSwitchyProcess({
+      paths,
+      runtimeDirectory,
+      version: selectedVersion,
+      port,
+      foreground,
+    });
+    if (!foreground) {
+      console.log(
+        `Switchy ${selectedVersion} is running at `
+        + `http://${record.hostname}:${record.port}`
+      );
+    }
+  } finally {
+    await pruning;
   }
+}
+
+function reportPrunedArtifacts({ versions, downloads, snapshots }: PruneResult): void {
+  const removed = [
+    versions.length > 0 && `${versions.length} old runtime(s)`,
+    downloads.length > 0 && `${downloads.length} cached download(s)`,
+    snapshots.length > 0 && `${snapshots.length} old update snapshot(s)`,
+  ].filter(Boolean);
+  if (removed.length > 0) console.log(`Cleaned up ${removed.join(", ")}.`);
 }
 
 export async function stopCommand(force = false): Promise<void> {

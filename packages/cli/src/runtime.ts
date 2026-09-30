@@ -10,19 +10,26 @@ async function run(
   options: {
     cwd: string;
     env: NodeJS.ProcessEnv;
-    quiet?: boolean;
   }
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd: options.cwd,
       env: options.env,
-      stdio: options.quiet ? "ignore" : "inherit",
+      stdio: ["ignore", "pipe", "pipe"],
     });
+    const chunks: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => chunks.push(chunk));
     child.once("error", reject);
-    child.once("exit", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`${path.basename(executable)} exited with code ${code}`));
+    child.once("close", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      const output = Buffer.concat(chunks).toString("utf8").trim();
+      if (output) console.error(output);
+      reject(new Error(`${path.basename(executable)} exited with code ${code}`));
     });
   });
 }
@@ -47,7 +54,6 @@ export async function ensurePlaywrightBrowser(
       ...process.env,
       PLAYWRIGHT_BROWSERS_PATH: paths.playwright,
     },
-    quiet: true,
   });
 }
 

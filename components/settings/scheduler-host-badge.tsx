@@ -49,7 +49,8 @@ export function SchedulerHostBadge({ className }: SchedulerHostBadgeProps) {
     );
   }
 
-  const installed = host.serverAgentInstalled && host.tickAgentInstalled;
+  const installed = host.tickAgentInstalled
+    && (!host.serverAgentSupported || host.serverAgentInstalled);
   return (
     <span className={cn("flex items-center gap-2 text-xs", className)}>
       <span className={installed ? "text-emerald-400" : "text-amber-400"}>

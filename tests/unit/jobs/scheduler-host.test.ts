@@ -1,3 +1,4 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -54,6 +55,13 @@ vi.mock("node:fs/promises", () => ({
     }
   },
   mkdir: async () => undefined,
+  readFile: async (filePath: string) => {
+    const contents = store.files.get(String(filePath));
+    if (contents === undefined) {
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    }
+    return contents;
+  },
   rm: async (filePath: string) => {
     store.files.delete(String(filePath));
   },
@@ -174,5 +182,48 @@ describe("scheduler host agents", () => {
     await expect(host.syncSchedulerHost()).resolves.toBe("installed");
     expect(store.execCalls.some((call) => call.args[0] === "bootstrap")).toBe(true);
     expect((await host.getSchedulerHostStatus()).tickAgentInstalled).toBe(true);
+  });
+
+  it("gives the server agent a PATH and reloads a drifted plist", async () => {
+    store.files.set(plistPath("com.switchy.app"), "stale-server-plist");
+    store.loaded.add("com.switchy.app");
+    const host = await import("@/lib/jobs/scheduler-host");
+
+    await expect(host.syncSchedulerHost("/tmp/switchy-checkout")).resolves.toBe("installed");
+
+    const serverPlist = store.files.get(plistPath("com.switchy.app")) ?? "";
+    expect(serverPlist).toContain("<key>PATH</key>");
+    expect(serverPlist).toContain("/tmp/switchy-checkout");
+    const serverCalls = store.execCalls
+      .filter((call) => String(call.args.at(-1)).endsWith("com.switchy.app.plist"))
+      .map((call) => call.args[0]);
+    expect(serverCalls).toContain("bootout");
+    expect(serverCalls.at(-1)).toBe("bootstrap");
+
+    store.execCalls.length = 0;
+    await expect(host.syncSchedulerHost("/tmp/switchy-checkout")).resolves.toBe("installed");
+    expect(store.execCalls.some((call) => call.args[0] === "bootout")).toBe(false);
+  });
+
+  it("installs only the tick agent for a CLI-managed packaged runtime", async () => {
+    const runtimeDirectory = mkdtempSync(path.join(os.tmpdir(), "switchy-host-runtime-"));
+    writeFileSync(path.join(runtimeDirectory, "switchy-runtime.json"), "{}");
+    store.files.set(plistPath("com.switchy.app"), "legacy-server-plist");
+    store.loaded.add("com.switchy.app");
+    const host = await import("@/lib/jobs/scheduler-host");
+
+    try {
+      await expect(host.syncSchedulerHost(runtimeDirectory)).resolves.toBe("installed");
+
+      expect(store.files.has(plistPath("com.switchy.app"))).toBe(false);
+      expect(store.loaded.has("com.switchy.app")).toBe(false);
+      expect(store.loaded.has("com.switchy.scheduler-tick")).toBe(true);
+      expect(await host.getSchedulerHostStatus(runtimeDirectory)).toMatchObject({
+        serverAgentSupported: false,
+        tickAgentInstalled: true,
+      });
+    } finally {
+      rmSync(runtimeDirectory, { recursive: true, force: true });
+    }
   });
 });

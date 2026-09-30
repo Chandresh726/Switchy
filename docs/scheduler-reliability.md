@@ -19,7 +19,8 @@ via `PATCH /api/settings`; it never schedules work.
    successful run — or since the latest already-tracked miss when recovery is
    pending, so earlier misses are never double-counted and later ones are
    still appended (capped at 50) — records them as `skipped` sessions with
-   pending recovery, then runs one coalesced `scheduler_recovery` batch. No
+   pending recovery, then runs one coalesced `scheduler_recovery` batch in the
+   background, so server startup and readiness never wait on it. No
    UI involvement. Turning auto-scrape off drops pending recovery; turning it
    on resets the baseline to now, so ticks from the disabled window are never
    backfilled.
@@ -33,9 +34,14 @@ via `PATCH /api/settings`; it never schedules work.
 5. **macOS host agents** (`lib/jobs/scheduler-host.ts`):
    - `com.switchy.app`: `KeepAlive` + `RunAtLoad` wrapper around
      `pnpm start`, so the server (and layers 1-4) survives reboots and process
-     exits. Logs to `~/.switchy/logs/switchy-server.*.log`. Installed on
-     server boot and settings save; turning auto-scrape off removes only the
-     tick agent below, never the app server itself.
+     exits. The plist pins the installing shell's `PATH` so launchd can find
+     `pnpm`, and a plist that drifted from the expected contents is rewritten
+     and reloaded. Logs to `~/.switchy/logs/switchy-server.*.log`. Installed
+     on server boot and settings save; turning auto-scrape off removes only
+     the tick agent below, never the app server itself. Packaged runtimes
+     started by the `switchy` CLI never install this agent (and remove a
+     leftover one): the CLI owns that server process, and a second
+     launchd-managed server would compete for the same port and database.
    - `com.switchy.scheduler-tick`: `StartInterval` 300s `curl POST
      /api/scheduler/recover` fallback poke.
    - Synced automatically (best-effort, never fails a settings save) whenever

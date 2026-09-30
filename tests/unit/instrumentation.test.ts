@@ -203,6 +203,21 @@ describe("server startup instrumentation", () => {
     expect(mocks.dispatchPendingAIWork).toHaveBeenCalledTimes(1);
   });
 
+  it("finishes registration without waiting for the boot catch-up scrape or host sync", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "nodejs");
+    mocks.recoverSchedulerOnBoot.mockReturnValue(new Promise(() => undefined));
+    mocks.syncSchedulerHost.mockReturnValue(new Promise(() => undefined));
+
+    await register();
+
+    expect(mocks.recoverSchedulerOnBoot).toHaveBeenCalledTimes(1);
+    expect(mocks.setSchedulerInitialization).toHaveBeenLastCalledWith("ready");
+    await flushPromises();
+    expect(mocks.syncSchedulerHost).toHaveBeenCalledTimes(1);
+    expect(mocks.recoverPending).toHaveBeenCalledTimes(1);
+    expect(mocks.dispatchPendingAIWork).toHaveBeenCalledTimes(1);
+  });
+
   it("still boots when scheduler host sync fails", async () => {
     vi.stubEnv("NEXT_RUNTIME", "nodejs");
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);

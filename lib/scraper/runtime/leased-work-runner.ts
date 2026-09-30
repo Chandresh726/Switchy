@@ -81,6 +81,11 @@ export interface LocalLeasedWorkRunSummary<TRecovery> {
   nextAvailableAt: Date | null;
 }
 
+export interface LocalLeasedWorkRunOptions {
+  /** Called once expired leases are reclaimed, before any work is claimed. */
+  onRecovered?: () => void;
+}
+
 export interface LocalLeasedWorkRunnerConfig {
   workerIdPrefix: string;
   concurrency: number;
@@ -139,7 +144,9 @@ export class LocalLeasedWorkRunner<
     };
   }
 
-  async runAvailable(): Promise<LocalLeasedWorkRunSummary<TRecovery>> {
+  async runAvailable(
+    options: LocalLeasedWorkRunOptions = {}
+  ): Promise<LocalLeasedWorkRunSummary<TRecovery>> {
     if (this.running) throw new Error("The local leased-work runner is already active.");
     this.running = true;
     this.stopRequested = false;
@@ -154,6 +161,7 @@ export class LocalLeasedWorkRunner<
         recovered: await this.repository.recoverExpired(new Date()),
         nextAvailableAt: null,
       };
+      options.onRecovered?.();
 
       const worker = async (workerIndex: number) => {
         const workerId = `${this.config.workerIdPrefix}-${process.pid}-${workerIndex}-${crypto.randomUUID()}`;

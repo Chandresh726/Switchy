@@ -21,6 +21,7 @@ import { GET, POST } from "@/app/api/scheduler/host/route";
 const STATUS = {
   platform: "darwin",
   supported: true,
+  serverAgentSupported: true,
   serverAgentInstalled: true,
   tickAgentInstalled: true,
   serverAgentLoaded: true,
