@@ -26,8 +26,8 @@ minimumReleaseAgeExclude:
   - eslint-config-next@16.3.3
   - next@16.3.3
   - postcss@8.5.23
-  - undici@7.29.0
-  - fast-uri@3.1.5
+  - undici@7.29.1
+  - fast-uri@3.1.7
   - js-yaml@4.3.2
   - nanoid@3.3.18
   - '@opencode/client@2.0.7'
@@ -41,10 +41,10 @@ overrides:
   sanitize-html@>=1.9.0 <=2.17.6: ^2.17.7
   "@xmldom/xmldom@>=0.7.0 <=0.8.14": ^0.8.15
   esbuild: ^0.28.1
-  fast-uri@>=3.0.0 <3.1.5: ^3.1.5
+  fast-uri@>=3.0.0 <3.1.7: ^3.1.7
   js-yaml@>=4.0.0 <4.3.2: ^4.3.2
   nanoid@<3.3.18: ^3.3.18
   postcss: 8.5.23
   sharp: 0.35.4
-  undici@>=7.0.0 <7.29.0: ^7.29.0
+  undici@>=7.0.0 <7.29.1: ^7.29.1
   vite: ^8.1.4
