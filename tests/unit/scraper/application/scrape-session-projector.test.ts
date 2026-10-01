@@ -29,6 +29,7 @@ function createProjector() {
     })),
     listInProgressSessionIds: vi.fn(async () => []),
     getCommittedResult: vi.fn(async () => null),
+    getConcurrentCommittedResult: vi.fn(async () => null),
     recoverCommittedQueueItems: vi.fn(async () => 0),
   };
   const sessionStore: ScrapeSessionStore = {

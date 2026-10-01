@@ -27,6 +27,12 @@ const SCHEDULER_OLDEST_MISSED_RUN_KEY = "scheduler.oldestMissedRun";
 const SCHEDULER_LATEST_MISSED_RUN_KEY = "scheduler.latestMissedRun";
 const LOCK_REFRESH_INTERVAL_MS = 60 * 1000;
 const WATCHDOG_INTERVAL_MS = 120 * 1000;
+// node-cron treats a tick that fires later than this as missed. Its 1s default
+// misclassifies ordinary event-loop stalls (scrape parsing, sync SQLite) as
+// sleep; genuine sleep/wake gaps are still far longer than this.
+const CRON_MISSED_EXECUTION_TOLERANCE_MS = 5 * 60 * 1000;
+const FAILED_BATCH_RETRY_BASE_MS = 5 * 60 * 1000;
+const FAILED_BATCH_RETRY_MAX_MS = 60 * 60 * 1000;
 const BOOT_RECOVERY_MAX_CATCHUP = 50;
 const KEEP_AWAKE_SETTING_KEY = "scraper_keep_device_awake";
 const MISSED_RUN_REASON = "Skipped while device was asleep or idle; queued for a later recovery run.";
@@ -39,6 +45,11 @@ interface SchedulerRuntimeState {
   watchdogTimer: ReturnType<typeof setInterval> | null;
   persistentSleepLease: DeviceSleepInhibitorLease | null;
   bootRecoveryAttempted: boolean;
+  consecutiveBatchFailures: number;
+  batchRetryNotBefore: number | null;
+  sleepAssertionTail: Promise<void>;
+  persistentSleepEpoch: number;
+  persistentSleepAcquireInFlight: Promise<DeviceSleepInhibitorLease | null> | null;
 }
 
 const globalSchedulerState = globalThis as typeof globalThis & {
@@ -53,6 +64,11 @@ const schedulerRuntime = globalSchedulerState.__switchySchedulerRuntime ??= {
   watchdogTimer: null,
   persistentSleepLease: null,
   bootRecoveryAttempted: false,
+  consecutiveBatchFailures: 0,
+  batchRetryNotBefore: null,
+  sleepAssertionTail: Promise.resolve(),
+  persistentSleepEpoch: 0,
+  persistentSleepAcquireInFlight: null,
 };
 
 interface SchedulerRecoveryState {
@@ -136,7 +152,7 @@ export interface SchedulerStatus extends SchedulerRecoveryState {
 }
 
 export interface SchedulerRecoveryResult extends SchedulerRecoveryState {
-  status: "started" | "already_running" | "not_needed" | "disabled";
+  status: "started" | "already_running" | "not_needed" | "disabled" | "backoff";
 }
 
 async function getSettingValue(key: string): Promise<string | null> {
@@ -265,29 +281,40 @@ function inferMissedExecutionTime(context: TaskContext): Date {
   }
 }
 
+type SchedulerTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+function appendPendingRecovery(tx: SchedulerTransaction, scheduledFor: Date): void {
+  const persisted = tx.select({ value: settings.value }).from(settings)
+    .where(eq(settings.key, SCHEDULER_RECOVERY_STATE_KEY)).get()?.value ?? null;
+  const recoveryState = parseRecoveryRecord(persisted) ?? EMPTY_RECOVERY_STATE;
+  const nextState: SchedulerRecoveryState = {
+    pendingMissedCount: recoveryState.pendingMissedCount + 1,
+    oldestMissedRun: !recoveryState.oldestMissedRun || scheduledFor < recoveryState.oldestMissedRun
+      ? scheduledFor
+      : recoveryState.oldestMissedRun,
+    latestMissedRun: !recoveryState.latestMissedRun || scheduledFor > recoveryState.latestMissedRun
+      ? scheduledFor
+      : recoveryState.latestMissedRun,
+  };
+  const updatedAt = new Date();
+  tx.insert(settings).values({
+    key: SCHEDULER_RECOVERY_STATE_KEY,
+    value: serializeRecoveryState(nextState),
+    updatedAt,
+  }).onConflictDoUpdate({
+    target: settings.key,
+    set: { value: serializeRecoveryState(nextState), updatedAt },
+  }).run();
+}
+
+/** A failed batch already has its own session row; only recovery is queued. */
+function markFailedRunForRecovery(scheduledFor: Date): void {
+  db.transaction((tx) => appendPendingRecovery(tx, scheduledFor), { behavior: "immediate" });
+}
+
 async function recordMissedExecution(scheduledFor: Date): Promise<void> {
   db.transaction((tx) => {
-    const persisted = tx.select({ value: settings.value }).from(settings)
-      .where(eq(settings.key, SCHEDULER_RECOVERY_STATE_KEY)).get()?.value ?? null;
-    const recoveryState = parseRecoveryRecord(persisted) ?? EMPTY_RECOVERY_STATE;
-    const nextState: SchedulerRecoveryState = {
-      pendingMissedCount: recoveryState.pendingMissedCount + 1,
-      oldestMissedRun: !recoveryState.oldestMissedRun || scheduledFor < recoveryState.oldestMissedRun
-        ? scheduledFor
-        : recoveryState.oldestMissedRun,
-      latestMissedRun: !recoveryState.latestMissedRun || scheduledFor > recoveryState.latestMissedRun
-        ? scheduledFor
-        : recoveryState.latestMissedRun,
-    };
-    const updatedAt = new Date();
-    tx.insert(settings).values({
-      key: SCHEDULER_RECOVERY_STATE_KEY,
-      value: serializeRecoveryState(nextState),
-      updatedAt,
-    }).onConflictDoUpdate({
-      target: settings.key,
-      set: { value: serializeRecoveryState(nextState), updatedAt },
-    }).run();
+    appendPendingRecovery(tx, scheduledFor);
     tx.insert(scrapeSessions).values({
       id: crypto.randomUUID(),
       triggerSource: "scheduler",
@@ -408,6 +435,7 @@ export async function reconcileMissedRunsOnBoot(now = new Date()): Promise<{
  * re-enable does not resurrect work from before the toggle.
  */
 export async function handleSchedulerDisabled(): Promise<void> {
+  resetFailedBatchBackoff();
   await clearRecoveryState();
 }
 
@@ -416,8 +444,19 @@ export async function handleSchedulerDisabled(): Promise<void> {
  * from the disabled window are never backfilled as missed on the next boot.
  */
 export async function handleSchedulerEnabled(now = new Date()): Promise<void> {
+  resetFailedBatchBackoff();
   await saveLastRun(now);
   await clearRecoveryState();
+}
+
+function resetFailedBatchBackoff(): void {
+  schedulerRuntime.consecutiveBatchFailures = 0;
+  schedulerRuntime.batchRetryNotBefore = null;
+}
+
+function isFailedBatchBackoffActive(): boolean {
+  return schedulerRuntime.batchRetryNotBefore !== null
+    && Date.now() < schedulerRuntime.batchRetryNotBefore;
 }
 
 /**
@@ -483,8 +522,6 @@ export function ensureSchedulerWatchdog(): void {
 // Serializes persistent sleep-assertion updates so an ensure and a release
 // can never interleave: a release fully completes before a later ensure
 // starts (and vice versa), so a release can never close a newer assertion.
-let sleepAssertionTail: Promise<void> = Promise.resolve();
-
 function enqueueSleepAssertion(work: () => Promise<void>): Promise<void> {
   const run = async (): Promise<void> => {
     try {
@@ -493,15 +530,13 @@ function enqueueSleepAssertion(work: () => Promise<void>): Promise<void> {
       console.warn("[Scheduler] Sleep assertion update failed:", error);
     }
   };
-  sleepAssertionTail = sleepAssertionTail.then(run, run);
-  return sleepAssertionTail;
+  schedulerRuntime.sleepAssertionTail = schedulerRuntime.sleepAssertionTail.then(run, run);
+  return schedulerRuntime.sleepAssertionTail;
 }
 
-// Guards the persistent sleep assertion against overlapping ensure/release
-// calls (startup vs settings refresh, or a toggle mid-acquisition) so a stale
+// The persistent sleep epoch guards against overlapping ensure/release calls
+// (startup vs settings refresh, or a toggle mid-acquisition) so a stale
 // acquire can never overwrite or outlive the current settings.
-let persistentSleepEpoch = 0;
-let persistentSleepAcquireInFlight: Promise<DeviceSleepInhibitorLease | null> | null = null;
 
 async function ensurePersistentSleepAssertion(): Promise<void> {
   if (isSchedulerTestWorker() || process.platform !== "darwin") return;
@@ -515,17 +550,17 @@ async function releasePersistentSleepAssertion(): Promise<void> {
 
 async function doEnsurePersistentSleepAssertion(): Promise<void> {
   if (schedulerRuntime.persistentSleepLease) return;
-  if (persistentSleepAcquireInFlight) {
-    await persistentSleepAcquireInFlight;
+  if (schedulerRuntime.persistentSleepAcquireInFlight) {
+    await schedulerRuntime.persistentSleepAcquireInFlight;
     return;
   }
 
-  const epoch = persistentSleepEpoch;
+  const epoch = schedulerRuntime.persistentSleepEpoch;
   const acquisition = (async (): Promise<DeviceSleepInhibitorLease | null> => {
     try {
       const enabled = await getSchedulerEnabled();
       const keepAwake = await getKeepDeviceAwake();
-      if (epoch !== persistentSleepEpoch || !enabled || !keepAwake) return null;
+      if (epoch !== schedulerRuntime.persistentSleepEpoch || !enabled || !keepAwake) return null;
       const { CaffeinateDeviceSleepInhibitor } = await import(
         "@/lib/scraper/runtime/device-sleep-inhibitor"
       );
@@ -534,7 +569,7 @@ async function doEnsurePersistentSleepAssertion(): Promise<void> {
       // release immediately instead of storing a stale assertion.
       const stillEnabled = await getSchedulerEnabled();
       const stillKeepAwake = await getKeepDeviceAwake();
-      if (epoch !== persistentSleepEpoch || !stillEnabled || !stillKeepAwake) {
+      if (epoch !== schedulerRuntime.persistentSleepEpoch || !stillEnabled || !stillKeepAwake) {
         try {
           await lease.release();
         } catch (releaseError) {
@@ -550,20 +585,20 @@ async function doEnsurePersistentSleepAssertion(): Promise<void> {
       return null;
     }
   })();
-  persistentSleepAcquireInFlight = acquisition;
+  schedulerRuntime.persistentSleepAcquireInFlight = acquisition;
   try {
     await acquisition;
   } finally {
-    if (persistentSleepAcquireInFlight === acquisition) {
-      persistentSleepAcquireInFlight = null;
+    if (schedulerRuntime.persistentSleepAcquireInFlight === acquisition) {
+      schedulerRuntime.persistentSleepAcquireInFlight = null;
     }
   }
 }
 
 async function doReleasePersistentSleepAssertion(): Promise<void> {
-  persistentSleepEpoch += 1;
-  const inFlight = persistentSleepAcquireInFlight;
-  persistentSleepAcquireInFlight = null;
+  schedulerRuntime.persistentSleepEpoch += 1;
+  const inFlight = schedulerRuntime.persistentSleepAcquireInFlight;
+  schedulerRuntime.persistentSleepAcquireInFlight = null;
   if (inFlight) {
     try {
       const lease = await inFlight;
@@ -682,9 +717,13 @@ export async function startScheduler(): Promise<void> {
     schedulerRuntime.currentCronExpression = DEFAULT_CRON;
   }
 
-  schedulerRuntime.task = cron.schedule(schedulerRuntime.currentCronExpression, async () => {
-    await runScheduledRefresh();
-  });
+  schedulerRuntime.task = cron.schedule(
+    schedulerRuntime.currentCronExpression,
+    async () => {
+      await runScheduledRefresh();
+    },
+    { missedExecutionTolerance: CRON_MISSED_EXECUTION_TOLERANCE_MS }
+  );
   schedulerRuntime.missedExecutionHandler = handleMissedExecution;
   schedulerRuntime.task.on("execution:missed", schedulerRuntime.missedExecutionHandler);
   setSchedulerInitialization("ready");
@@ -749,11 +788,13 @@ async function runSchedulerBatch(
 
   // Manual requests, startup recovery, and scheduled runs share one in-process
   // supervisor so the configured local concurrency limit applies to all work.
-  const leaseStore = getSchedulerLeaseStore();
-  const queueService = getLocalScrapeQueueService();
   const ownerId = `scheduler-${process.pid}-${crypto.randomUUID()}`;
+  let queueService: ReturnType<typeof getLocalScrapeQueueService>;
+  let leaseStore: ReturnType<typeof getSchedulerLeaseStore>;
   let lockToken: string | null;
   try {
+    queueService = getLocalScrapeQueueService();
+    leaseStore = getSchedulerLeaseStore();
     lockToken = await leaseStore.acquire(ownerId);
   } catch (error) {
     recordRuntimeError("scheduler", "scheduler_lease_acquire_failed");
@@ -762,6 +803,7 @@ async function runSchedulerBatch(
       sessionId,
       code: "scheduler_lease_acquire_failed",
     });
+    scheduleFailedBatchRetry(triggerSource, new Date());
     throw error;
   }
 
@@ -831,11 +873,13 @@ async function runSchedulerBatch(
       console.error("[Scheduler] Skipping state updates because lock ownership was lost");
     }
 
+    resetFailedBatchBackoff();
     logRuntimeEvent("scheduler", "scheduler_run_completed", { requestId, sessionId });
   } catch (error) {
     recordRuntimeError("scheduler", "scheduler_run_failed");
     logRuntimeEvent("scheduler", "scheduler_run_failed", { requestId, sessionId, code: "scheduler_run_failed" });
     console.error("[Scheduler] Error during refresh:", error);
+    scheduleFailedBatchRetry(triggerSource, startTime);
   } finally {
     clearInterval(refreshTimer);
     await refreshInFlight;
@@ -858,10 +902,45 @@ async function runSchedulerBatch(
   return "started";
 }
 
+/**
+ * Queues a failed batch for watchdog/tick recovery with exponential backoff,
+ * so an infrastructure failure is retried before the next cron tick without
+ * hammering a persistent fault. Recovery batches are already pending.
+ */
+function scheduleFailedBatchRetry(
+  triggerSource: "scheduler" | "scheduler_recovery",
+  scheduledFor: Date
+): void {
+  schedulerRuntime.consecutiveBatchFailures += 1;
+  const delayMs = Math.min(
+    FAILED_BATCH_RETRY_BASE_MS * 2 ** (schedulerRuntime.consecutiveBatchFailures - 1),
+    FAILED_BATCH_RETRY_MAX_MS
+  );
+  schedulerRuntime.batchRetryNotBefore = Date.now() + delayMs;
+  if (triggerSource !== "scheduler") return;
+  try {
+    markFailedRunForRecovery(scheduledFor);
+  } catch (error) {
+    console.error("[Scheduler] Failed to queue recovery for failed run:", error);
+  }
+}
+
 async function runScheduledRefresh(): Promise<void> {
   if (!await getSchedulerEnabled()) {
     stopScheduler();
     logRuntimeEvent("scheduler", "scheduler_run_skipped", { code: "disabled" });
+    return;
+  }
+
+  if (isFailedBatchBackoffActive()) {
+    // The tick still counts as pending work, so the recovery batch that runs
+    // once the backoff expires covers it.
+    logRuntimeEvent("scheduler", "scheduler_run_skipped", { code: "backoff" });
+    try {
+      markFailedRunForRecovery(new Date());
+    } catch (error) {
+      console.error("[Scheduler] Failed to queue recovery for backed-off run:", error);
+    }
     return;
   }
 
@@ -882,6 +961,13 @@ export async function recoverMissedSchedulerRuns(requestId?: string): Promise<Sc
   if (recoveryState.pendingMissedCount <= 0) {
     return {
       status: "not_needed",
+      ...recoveryState,
+    };
+  }
+
+  if (isFailedBatchBackoffActive()) {
+    return {
+      status: "backoff",
       ...recoveryState,
     };
   }

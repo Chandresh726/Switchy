@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, ne, or } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import {
@@ -28,6 +28,12 @@ export interface ScrapeSessionProjectionStore {
     sessionId: string,
     companyId: number
   ): Promise<CommittedScrapeResult | null>;
+  /** Latest successful scrape of the company by another session that started at or after `startedAtOrAfter`. */
+  getConcurrentCommittedResult(
+    excludedSessionId: string,
+    companyId: number,
+    startedAtOrAfter: Date
+  ): Promise<(CommittedScrapeResult & { sessionId: string }) | null>;
   recoverCommittedQueueItems(): Promise<number>;
 }
 
@@ -97,6 +103,49 @@ export class DrizzleScrapeSessionProjectionStore
     return committed
       ? this.toCommittedResult({ ...committed, companyId })
       : null;
+  }
+
+  async getConcurrentCommittedResult(
+    excludedSessionId: string,
+    companyId: number,
+    startedAtOrAfter: Date
+  ): Promise<(CommittedScrapeResult & { sessionId: string }) | null> {
+    const committed = await this.database
+      .select({
+        sessionId: scrapingLogs.sessionId,
+        companyName: companies.name,
+        logId: scrapingLogs.id,
+        status: scrapingLogs.status,
+        jobsFound: scrapingLogs.jobsFound,
+        jobsAdded: scrapingLogs.jobsAdded,
+        jobsUpdated: scrapingLogs.jobsUpdated,
+        jobsFiltered: scrapingLogs.jobsFiltered,
+        jobsArchived: scrapingLogs.jobsArchived,
+        platform: scrapingLogs.platform,
+        duration: scrapingLogs.duration,
+        errorMessage: scrapingLogs.errorMessage,
+      })
+      .from(scrapingLogs)
+      .leftJoin(companies, eq(companies.id, scrapingLogs.companyId))
+      .where(
+        and(
+          eq(scrapingLogs.companyId, companyId),
+          ne(scrapingLogs.sessionId, excludedSessionId),
+          gte(scrapingLogs.startedAt, startedAtOrAfter),
+          or(
+            eq(scrapingLogs.status, "success"),
+            eq(scrapingLogs.status, "partial")
+          )
+        )
+      )
+      .orderBy(desc(scrapingLogs.startedAt), desc(scrapingLogs.id))
+      .limit(1)
+      .get();
+    if (!committed?.sessionId) return null;
+    return {
+      ...this.toCommittedResult({ ...committed, companyId }),
+      sessionId: committed.sessionId,
+    };
   }
 
   async recoverCommittedQueueItems(): Promise<number> {

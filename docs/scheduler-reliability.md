@@ -13,7 +13,13 @@ via `PATCH /api/settings`; it never schedules work.
 
 1. **In-process cron** (`lib/jobs/scheduler.ts`): `startScheduler()` registers
    `node-cron` at server boot (`instrumentation.ts`). Fires while the
-   `next start` process is alive.
+   `next start` process is alive. A tick is only treated as missed when it
+   fires more than 5 minutes late, so event-loop stalls do not masquerade as
+   sleep. A batch that throws (including queue setup or lease acquisition) is
+   queued as pending recovery and retried by the watchdog/tick with
+   exponential backoff (5 min doubling, capped at 1 h). Cron ticks during the
+   backoff are recorded as pending instead of running. Toggling auto-scrape
+   resets the backoff.
 2. **Boot recovery** (`recoverSchedulerOnBoot`): on every server boot,
    `reconcileMissedRunsOnBoot()` enumerates cron occurrences since the last
    successful run — or since the latest already-tracked miss when recovery is
@@ -58,6 +64,19 @@ via `PATCH /api/settings`; it never schedules work.
 Manual runs, cron runs, boot recovery, watchdog ticks, and tick-script pokes
 all share the `scheduler.lock` DB lease (5 min TTL, CAS) plus the in-process
 `isRunning` guard, so overlapping triggers coalesce instead of double-scraping.
+
+Every session enqueues and waits for all of its companies. Same-company work
+is serialized by an in-process lock; once an item holds it, a successful scrape
+of that company by another session that started after the item was queued is
+reused instead of fetching again (write counts stay with the session that did
+the scrape). If that other work failed or was cancelled, the item scrapes
+normally.
+
+Next.js loads `instrumentation.ts` and route handlers as separate module
+graphs. In-process runtimes (scrape queue service, data-operation gate, AI and
+notification dispatchers) are therefore held in `processSingleton()`
+(`lib/runtime/process-singleton.ts`) so cron, boot recovery, and API routes
+share one runner, one concurrency gate, and one browser.
 
 ## Frontend role
 

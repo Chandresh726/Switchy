@@ -928,4 +928,102 @@ describe("LocalScrapeQueueService", () => {
     expect(scrapeCompany).toHaveBeenCalledTimes(2);
     expect(maxActive).toBe(1);
   });
+
+  function createLoggingPipeline(database: ReturnType<typeof createTestDatabase>) {
+    const scrapeCompany = vi.fn<ScrapeCompanyPipeline["scrape"]>(
+      async (companyId, request) => {
+        database
+          .insert(scrapingLogs)
+          .values({
+            companyId,
+            sessionId: request.sessionId,
+            status: "success",
+            jobsFound: 4,
+            jobsAdded: 2,
+            platform: "greenhouse",
+            startedAt: new Date(),
+          })
+          .run();
+        return {
+          companyId,
+          companyName: `Company ${companyId}`,
+          success: true,
+          outcome: "success",
+          jobsFound: 4,
+          jobsAdded: 2,
+          jobsUpdated: 0,
+          jobsFiltered: 0,
+          jobsArchived: 0,
+          platform: "greenhouse",
+          duration: 10,
+        };
+      }
+    );
+    return { pipeline: { scrape: scrapeCompany }, scrapeCompany };
+  }
+
+  it("reuses a concurrent session's scrape instead of fetching a company twice", async () => {
+    const database = createTestDatabase();
+    const [first, second] = database
+      .insert(companies)
+      .values([
+        { name: "One", careersUrl: "https://example.com/one" },
+        { name: "Two", careersUrl: "https://example.com/two" },
+      ])
+      .returning({ id: companies.id })
+      .all();
+    const queueRepository = new DrizzleLocalScrapeQueueRepository(database);
+    await queueRepository.createSessionAndEnqueue({
+      sessionId: "scheduled",
+      triggerSource: "scheduler",
+      companyIds: [first!.id],
+      priority: 0,
+    });
+    const { pipeline, scrapeCompany } = createLoggingPipeline(database);
+    const { service } = createService(database, { pipeline, queueRepository });
+
+    const result = await service.scrapeCompanies([first!.id, second!.id], "manual");
+    await service.recoverPending();
+    const scheduledItems = await queueRepository.listSessionItems("scheduled");
+
+    expect(scrapeCompany).toHaveBeenCalledTimes(2);
+    expect(scheduledItems).toEqual([expect.objectContaining({ status: "completed" })]);
+    expect(result.summary).toMatchObject({
+      totalCompanies: 2,
+      successfulCompanies: 2,
+      reusedCompanies: 1,
+      totalJobsAdded: 2,
+    });
+    expect(result.results.find((entry) => entry.companyId === first!.id))
+      .toMatchObject({ reusedFromSessionId: "scheduled", jobsFound: 4, jobsAdded: 0 });
+  });
+
+  it("scrapes again when the only other scrape started before the request", async () => {
+    const database = createTestDatabase();
+    const company = database
+      .insert(companies)
+      .values({ name: "One", careersUrl: "https://example.com/one" })
+      .returning({ id: companies.id })
+      .get();
+    database
+      .insert(scrapeSessions)
+      .values({ id: "earlier", triggerSource: "scheduler", status: "completed" })
+      .run();
+    database
+      .insert(scrapingLogs)
+      .values({
+        companyId: company.id,
+        sessionId: "earlier",
+        status: "success",
+        startedAt: new Date(Date.now() - 60 * 60 * 1000),
+      })
+      .run();
+    const { pipeline, scrapeCompany } = createLoggingPipeline(database);
+    const { service } = createService(database, { pipeline });
+
+    const result = await service.scrapeCompanies([company.id], "manual");
+
+    expect(scrapeCompany).toHaveBeenCalledTimes(1);
+    expect(result.summary.reusedCompanies).toBe(0);
+  });
 });

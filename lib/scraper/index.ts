@@ -8,6 +8,8 @@ import {
   type ScrapeSettingsProvider,
 } from "./settings/provider";
 
+import { processSingleton } from "@/lib/runtime/process-singleton";
+
 import {
   createScrapeCompanyPipeline,
   DEFAULT_SCRAPE_COMPANY_PIPELINE_CONFIG,
@@ -82,8 +84,6 @@ function createScrapingModule(config: ScrapingModuleConfig = {}): ScrapingModule
   };
 }
 
-let defaultQueueService: LocalScrapeQueueService | null = null;
-
 function createLocalScrapeQueueService(
   config: ScrapingModuleConfig = {},
   runnerConfig: Partial<LocalLeasedWorkRunnerConfig> = {}
@@ -126,8 +126,7 @@ function createLocalScrapeQueueService(
 }
 
 export function getLocalScrapeQueueService(): LocalScrapeQueueService {
-  if (!defaultQueueService) {
-    defaultQueueService = createLocalScrapeQueueService();
-  }
-  return defaultQueueService;
+  return processSingleton("localScrapeQueueService", () =>
+    createLocalScrapeQueueService()
+  );
 }

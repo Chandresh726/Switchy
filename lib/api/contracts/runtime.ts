@@ -19,7 +19,7 @@ export const schedulerStatusResponseSchema = z.object({
 });
 
 export const schedulerRecoveryResponseSchema = z.object({
-  status: z.enum(["started", "already_running", "not_needed", "disabled"]),
+  status: z.enum(["started", "already_running", "not_needed", "disabled", "backoff"]),
   pendingMissedCount: z.number().int().nonnegative(),
   oldestMissedRun: z.string().nullable(),
   latestMissedRun: z.string().nullable(),

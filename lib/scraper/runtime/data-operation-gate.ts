@@ -1,3 +1,5 @@
+import { processSingleton } from "@/lib/runtime/process-singleton";
+
 import { SharedExclusiveExecutionGate } from "./shared-exclusive-gate";
 
 export interface MatchCancellationFilter {
@@ -141,8 +143,9 @@ export class InProcessLocalDataOperationGate implements LocalDataOperationGate {
   }
 }
 
-const defaultDataOperationGate = new InProcessLocalDataOperationGate();
-
 export function getLocalDataOperationGate(): LocalDataOperationGate {
-  return defaultDataOperationGate;
+  return processSingleton(
+    "localDataOperationGate",
+    () => new InProcessLocalDataOperationGate()
+  );
 }

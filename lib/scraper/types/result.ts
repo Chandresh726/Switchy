@@ -140,6 +140,8 @@ export const FetchResultSchema = z.object({
   warnings: z.array(z.string()).optional(),
   duration: z.number(),
   logId: z.number().optional(),
+  /** Set when a concurrent session already scraped this company after it was requested. */
+  reusedFromSessionId: z.string().optional(),
 });
 
 export type FetchResult = z.infer<typeof FetchResultSchema>;
@@ -152,6 +154,8 @@ export interface BatchFetchResult {
     successfulCompanies: number;
     skippedCompanies: number;
     failedCompanies: number;
+    /** Companies satisfied by a concurrent session's scrape instead of a new fetch. */
+    reusedCompanies: number;
     totalJobsFound: number;
     totalJobsAdded: number;
     totalJobsFiltered: number;

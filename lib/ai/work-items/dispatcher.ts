@@ -13,6 +13,7 @@ import {
   recordRuntimeError,
   setMatcherDispatchRecovery,
 } from "@/lib/runtime/health";
+import { processSingleton } from "@/lib/runtime/process-singleton";
 
 import type { MatchWorkResult } from "./contracts";
 import { AIMatchWorkHandler, type MatchWorkExecutor } from "./match-handler";
@@ -59,27 +60,29 @@ export class AIWorkDispatcher {
   }
 }
 
-const defaultDispatcher = new AIWorkDispatcher();
-const scheduledDispatcher = new ScheduledSingleFlightDispatcher({
-  run: async () => {
-    const summary = await defaultDispatcher.runAvailable({
-      onRecovered: () => setMatcherDispatchRecovery("ready"),
-    });
-    await reconcileMatchNotifications();
-    recordDispatchSuccess();
-    setMatcherDispatchRecovery("ready");
-    return summary;
-  },
-  getNextRunAt: (summary) => summary.nextAvailableAt,
-  failureRetryMs: DEFAULT_CONFIG.baseRetryDelayMs,
-  onError: (error) => {
-    setMatcherDispatchRecovery("failed");
-    recordRuntimeError("matcher", "matcher_dispatch_failed");
-    const sanitized = sanitizeAIError(error);
-    console.error(`[AI Work] Dispatch failed: [${sanitized.code}] ${sanitized.message}`);
-  },
-});
+function createScheduledAIWorkDispatcher() {
+  const dispatcher = new AIWorkDispatcher();
+  return new ScheduledSingleFlightDispatcher({
+    run: async () => {
+      const summary = await dispatcher.runAvailable({
+        onRecovered: () => setMatcherDispatchRecovery("ready"),
+      });
+      await reconcileMatchNotifications();
+      recordDispatchSuccess();
+      setMatcherDispatchRecovery("ready");
+      return summary;
+    },
+    getNextRunAt: (summary) => summary.nextAvailableAt,
+    failureRetryMs: DEFAULT_CONFIG.baseRetryDelayMs,
+    onError: (error) => {
+      setMatcherDispatchRecovery("failed");
+      recordRuntimeError("matcher", "matcher_dispatch_failed");
+      const sanitized = sanitizeAIError(error);
+      console.error(`[AI Work] Dispatch failed: [${sanitized.code}] ${sanitized.message}`);
+    },
+  });
+}
 
 export function dispatchPendingAIWork(): Promise<AIWorkRunSummary> {
-  return scheduledDispatcher.request();
+  return processSingleton("aiWorkDispatcher", createScheduledAIWorkDispatcher).request();
 }

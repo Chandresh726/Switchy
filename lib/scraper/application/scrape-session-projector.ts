@@ -92,6 +92,34 @@ export class ScrapeSessionProjector {
     return committed ? createFetchResultFromCommittedScrape(committed) : null;
   }
 
+  /**
+   * A scrape by another session that started after this item was queued is
+   * at least as fresh as the request, so it satisfies the item without a new
+   * fetch. Write counts stay with the session that performed them.
+   */
+  async loadConcurrentResult(
+    sessionId: string,
+    companyId: number,
+    requestedAt: Date
+  ): Promise<FetchResult | null> {
+    const committed = await this.projectionStore.getConcurrentCommittedResult(
+      sessionId,
+      companyId,
+      requestedAt
+    );
+    if (!committed) return null;
+    return {
+      ...createFetchResultFromCommittedScrape(committed),
+      jobsAdded: 0,
+      jobsUpdated: 0,
+      jobsFiltered: 0,
+      jobsArchived: 0,
+      duration: 0,
+      logId: undefined,
+      reusedFromSessionId: committed.sessionId,
+    };
+  }
+
   async waitForTerminalItems(
     sessionId: string,
     signal: AbortSignal
@@ -135,6 +163,7 @@ export class ScrapeSessionProjector {
         successfulCompanies,
         skippedCompanies,
         failedCompanies,
+        reusedCompanies: results.filter((result) => result.reusedFromSessionId).length,
         ...progress,
         totalDuration: Math.max(
           0,

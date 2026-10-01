@@ -310,6 +310,88 @@ describe("scheduler recovery", () => {
     );
   });
 
+  it("tolerates ordinary event-loop stalls before treating a cron tick as missed", async () => {
+    const scheduler = await import("@/lib/jobs/scheduler");
+    const cron = await import("node-cron");
+
+    await scheduler.startScheduler();
+
+    expect(cron.default.schedule).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Function),
+      { missedExecutionTolerance: 5 * 60 * 1000 }
+    );
+  });
+
+  it("queues a failed cron run for recovery and backs off before retrying", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    store.scrapeAllCompanies.mockRejectedValueOnce(new Error("injected scrape failure"));
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    await scheduler.startScheduler();
+    await store.task?.execute();
+    const pending = await scheduler.getSchedulerStatus();
+    const throttled = await scheduler.recoverMissedSchedulerRuns();
+
+    expect(pending.pendingMissedCount).toBe(1);
+    expect(store.sessions).toEqual([]);
+    expect(throttled.status).toBe("backoff");
+    expect(store.scrapeAllCompanies).toHaveBeenCalledTimes(1);
+
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 5 * 60 * 1000 + 1);
+    const retried = await scheduler.recoverMissedSchedulerRuns().finally(() => now.mockRestore());
+
+    expect(retried.status).toBe("started");
+    expect(retried.pendingMissedCount).toBe(0);
+    expect(store.scrapeAllCompanies).toHaveBeenLastCalledWith("scheduler_recovery");
+  });
+
+  it("queues recovery when the scheduler lease cannot be acquired", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    store.acquireSchedulerLock.mockRejectedValueOnce(new Error("injected lease failure"));
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    await scheduler.startScheduler();
+    await expect(store.task?.execute()).rejects.toThrow("injected lease failure");
+    const status = await scheduler.getSchedulerStatus();
+
+    expect(status.pendingMissedCount).toBe(1);
+    expect((await scheduler.recoverMissedSchedulerRuns()).status).toBe("backoff");
+  });
+
+  it("skips cron ticks during failure backoff and leaves them pending", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    store.scrapeAllCompanies.mockRejectedValueOnce(new Error("injected scrape failure"));
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    await scheduler.startScheduler();
+    await store.task?.execute();
+    await store.task?.execute();
+    const status = await scheduler.getSchedulerStatus();
+
+    expect(store.scrapeAllCompanies).toHaveBeenCalledTimes(1);
+    expect(status.pendingMissedCount).toBe(2);
+  });
+
+  it("starts failure backoff fresh after auto-scrape is disabled and re-enabled", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    store.scrapeAllCompanies
+      .mockRejectedValueOnce(new Error("first failure"))
+      .mockRejectedValueOnce(new Error("second failure"));
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    await scheduler.startScheduler();
+    await store.task?.execute();
+    await scheduler.handleSchedulerDisabled();
+    await scheduler.handleSchedulerEnabled();
+    await store.task?.execute();
+
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 5 * 60 * 1000 + 1);
+    const retried = await scheduler.recoverMissedSchedulerRuns().finally(() => now.mockRestore());
+
+    expect(retried.status).toBe("started");
+  });
+
   it("stops without scraping when disabled after the cron task was registered", async () => {
     const scheduler = await import("@/lib/jobs/scheduler");
 

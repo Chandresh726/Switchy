@@ -87,9 +87,18 @@ export class ScrapeWorkHandler {
     );
     if (committedResult) return committedResult;
 
+    // Same-company work is serialized by this lock, so once it is held any
+    // overlapping session's scrape has already committed its log.
     const releaseCompany = await this.companyLocks.acquire(item.companyId, signal);
     let releaseExecution: (() => void) | null = null;
     try {
+      const concurrentResult = await this.projector.loadConcurrentResult(
+        item.sessionId,
+        item.companyId,
+        item.createdAt
+      );
+      if (concurrentResult) return concurrentResult;
+
       const executionMode = await this.resolveExecutionMode(item.companyId);
       releaseExecution = await this.executionGate.acquire(executionMode, signal);
       const result = await this.pipeline.scrape(item.companyId, {

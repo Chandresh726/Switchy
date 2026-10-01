@@ -147,6 +147,7 @@ describe("LocalDataMaintenanceService", () => {
       } as unknown as ScrapeSessionProjectionStore,
       {
         loadCommittedResult: vi.fn().mockResolvedValue(null),
+        loadConcurrentResult: vi.fn().mockResolvedValue(null),
       } as unknown as ScrapeSessionProjector,
       {} as ScrapeSettingsProvider,
       undefined,

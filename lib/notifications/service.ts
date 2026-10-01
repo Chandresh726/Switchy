@@ -27,6 +27,7 @@ import {
   scrapingLogs,
   settings as settingsTable,
 } from "@/lib/db/schema";
+import { processSingleton } from "@/lib/runtime/process-singleton";
 import { ScheduledSingleFlightDispatcher } from "@/lib/scraper/runtime/single-flight-dispatcher";
 import { getSettingsWithDefaults } from "@/lib/settings/settings-service";
 
@@ -277,14 +278,18 @@ async function runScheduledMatchNotifications(): Promise<NotificationDispatchSum
   };
 }
 
-const scheduledNotificationDispatcher = new ScheduledSingleFlightDispatcher({
-  run: runScheduledMatchNotifications,
-  getNextRunAt: (summary) => summary.nextRunAt,
-  failureRetryMs: DELIVERY_RETRY_DELAY_MS,
-  onError: (error) => {
-    console.error("[Notifications] Scheduled reconciliation failed:", error);
-  },
-});
+function getScheduledNotificationDispatcher() {
+  return processSingleton("matchNotificationDispatcher", () =>
+    new ScheduledSingleFlightDispatcher({
+      run: runScheduledMatchNotifications,
+      getNextRunAt: (summary) => summary.nextRunAt,
+      failureRetryMs: DELIVERY_RETRY_DELAY_MS,
+      onError: (error) => {
+        console.error("[Notifications] Scheduled reconciliation failed:", error);
+      },
+    })
+  );
+}
 
 /**
  * Fire-and-forget reconciliation for callers that must not fail because a
@@ -293,7 +298,7 @@ const scheduledNotificationDispatcher = new ScheduledSingleFlightDispatcher({
  */
 export async function reconcileMatchNotifications(): Promise<void> {
   try {
-    await scheduledNotificationDispatcher.request();
+    await getScheduledNotificationDispatcher().request();
   } catch {
     // The dispatcher logs and schedules infrastructure failures itself.
   }
