@@ -25,7 +25,7 @@ function renderBadge(host: Record<string, unknown>) {
 describe("SchedulerHostBadge", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("reports when the background service keeps scraping alive with UI closed", async () => {
+  it("renders nothing when the background service is installed", async () => {
     renderBadge({
       platform: "darwin",
       supported: true,
@@ -35,8 +35,9 @@ describe("SchedulerHostBadge", () => {
     });
 
     await waitFor(() =>
-      expect(screen.getByText("Background service installed: runs with UI closed")).toBeTruthy()
+      expect(screen.queryByText("Checking background service...")).toBeNull()
     );
+    expect(screen.queryByText(/Background service installed/)).toBeNull();
   });
 
   it("offers to install the background service when the agents are missing", async () => {
@@ -54,7 +55,7 @@ describe("SchedulerHostBadge", () => {
     expect(screen.getByRole("button", { name: "Install" })).toBeTruthy();
   });
 
-  it("does not require the server agent when the CLI manages the server", async () => {
+  it("renders nothing when the CLI manages the server and the tick agent is installed", async () => {
     renderBadge({
       platform: "darwin",
       supported: true,
@@ -65,7 +66,8 @@ describe("SchedulerHostBadge", () => {
     });
 
     await waitFor(() =>
-      expect(screen.getByText("Background service installed: runs with UI closed")).toBeTruthy()
+      expect(screen.queryByText("Checking background service...")).toBeNull()
     );
+    expect(screen.queryByText(/Background service installed/)).toBeNull();
   });
 });

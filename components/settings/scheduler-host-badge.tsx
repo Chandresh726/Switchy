@@ -12,10 +12,8 @@ interface SchedulerHostBadgeProps {
 }
 
 /**
- * Read-only indicator that the scraper schedule is backend-owned.
- * The UI never schedules work; this badge only surfaces whether the macOS
- * host agents keep the backend alive with no tab open, with a one-click
- * reinstall when the plists were removed out-of-band.
+ * Surfaces missing macOS host agents with a one-click reinstall when their
+ * plists were removed out-of-band.
  */
 export function SchedulerHostBadge({ className }: SchedulerHostBadgeProps) {
   const queryClient = useQueryClient();
@@ -51,23 +49,24 @@ export function SchedulerHostBadge({ className }: SchedulerHostBadgeProps) {
 
   const installed = host.tickAgentInstalled
     && (!host.serverAgentSupported || host.serverAgentInstalled);
+
+  if (installed) {
+    return null;
+  }
+
   return (
     <span className={cn("flex items-center gap-2 text-xs", className)}>
-      <span className={installed ? "text-emerald-400" : "text-amber-400"}>
-        {installed
-          ? "Background service installed: runs with UI closed"
-          : "Background service not installed: runs only while app server is up"}
+      <span className="text-amber-400">
+        Background service not installed: runs only while app server is up
       </span>
-      {!installed && (
-        <button
-          type="button"
-          disabled={reinstallMutation.isPending}
-          onClick={() => reinstallMutation.mutate()}
-          className="underline underline-offset-2 text-muted-foreground hover:text-foreground disabled:opacity-50"
-        >
-          {reinstallMutation.isPending ? "Installing..." : "Install"}
-        </button>
-      )}
+      <button
+        type="button"
+        disabled={reinstallMutation.isPending}
+        onClick={() => reinstallMutation.mutate()}
+        className="underline underline-offset-2 text-muted-foreground hover:text-foreground disabled:opacity-50"
+      >
+        {reinstallMutation.isPending ? "Installing..." : "Install"}
+      </button>
     </span>
   );
 }
