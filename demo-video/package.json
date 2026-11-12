@@ -15,12 +15,12 @@
     "verify": "pnpm typecheck"
   },
   "dependencies": {
-    "@remotion/cli": "4.0.499",
-    "@remotion/media": "4.0.499",
+    "@remotion/cli": "4.0.543",
+    "@remotion/media": "4.0.543",
     "playwright": "^1.61.1",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "remotion": "4.0.499"
+    "remotion": "4.0.543"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
