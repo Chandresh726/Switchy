@@ -18,6 +18,7 @@ vi.mock("@/lib/ai/runtime/capability-runtime", () => ({
   createAICapabilityRuntime: mocks.createAICapabilityRuntime,
 }));
 
+import { AIRateLimitError } from "@/lib/ai/shared/errors";
 import { analyzeJobsForMatching } from "@/lib/ai/matcher/evidence/job-analysis";
 import { DEFAULT_MATCHER_CONFIG, type JobData } from "@/lib/ai/matcher/types";
 
@@ -132,6 +133,16 @@ describe("AI-only job analysis service", () => {
     expect(mocks.executeStructured).toHaveBeenCalledOnce();
   });
 
+  it("does not split a throttled five-job batch or mark it terminally failed", async () => {
+    const error = new AIRateLimitError("limited", undefined, 90_000);
+    mocks.executeStructured.mockRejectedValue(error);
+    const onFailed = vi.fn();
+    await expect(analyzeJobsForMatching(Array.from({ length: 5 }, (_, i) => ({ ...job, id: i + 1 })),
+      { ...config, batchSize: 5 }, undefined, undefined, undefined, { onFailed })).rejects.toBe(error);
+    expect(mocks.executeStructured).toHaveBeenCalledTimes(1);
+    expect(onFailed).not.toHaveBeenCalled();
+  });
+
   it("reports each ready analysis and isolates a failed multi-job batch", async () => {
     const secondJob = { ...job, id: 2, title: "Platform Engineer" };
     mocks.getOrCreateJobAnalysis.mockImplementation(async (input) => ({
@@ -140,7 +151,7 @@ describe("AI-only job analysis service", () => {
       evidence: input.evidence,
     }));
     mocks.executeStructured
-      .mockRejectedValueOnce(new Error("multi-job output was malformed"))
+      .mockRejectedValueOnce(Object.assign(new Error("JSON parse: malformed multi-job output"), { name: "SyntaxError" }))
       .mockResolvedValueOnce({ runId: "run-1", output: [providerOutput] })
       .mockResolvedValueOnce({
         runId: "run-2",
@@ -150,7 +161,7 @@ describe("AI-only job analysis service", () => {
 
     const results = await analyzeJobsForMatching(
       [job, secondJob],
-      { ...config, batchSize: 2 },
+      { ...config, batchSize: 2, maxRetries: 1 },
       undefined,
       undefined,
       undefined,

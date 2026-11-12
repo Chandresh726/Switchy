@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   AdaptiveProviderLimiter,
@@ -19,6 +19,7 @@ async function recordSuccesses(
 }
 
 describe("AdaptiveProviderLimiter", () => {
+  afterEach(() => vi.useRealTimers());
   it("isolates concurrency by concrete provider record", async () => {
     const limiter = new AdaptiveProviderLimiter();
     const firstProviderPermit = await limiter.acquire("provider-a", 1);
@@ -43,7 +44,7 @@ describe("AdaptiveProviderLimiter", () => {
     (await waiting).success();
   });
 
-  it("reduces concurrency by one after a rate-limit response", async () => {
+  it("drops to a single recovery probe after a rate-limit response", async () => {
     const limiter = new AdaptiveProviderLimiter();
     const permit = await limiter.acquire("provider-a", 4);
 
@@ -51,26 +52,44 @@ describe("AdaptiveProviderLimiter", () => {
 
     expect(limiter.getSnapshot("provider-a")).toMatchObject({
       ceiling: 4,
-      currentLimit: 3,
+      currentLimit: 1,
       active: 0,
       consecutiveSuccesses: 0,
     });
   });
 
   it("increases by one after twenty consecutive successes", async () => {
+    vi.useFakeTimers();
     const limiter = new AdaptiveProviderLimiter();
     const permit = await limiter.acquire("provider-a", 3);
     permit.failure(new AIRateLimitError("429 Too Many Requests"));
 
+    await vi.advanceTimersByTimeAsync(36_001);
     await recordSuccesses(limiter, "provider-a", 3, 19);
-    expect(limiter.getSnapshot("provider-a")?.currentLimit).toBe(2);
+    expect(limiter.getSnapshot("provider-a")?.currentLimit).toBe(1);
 
     await recordSuccesses(limiter, "provider-a", 3, 1);
     expect(limiter.getSnapshot("provider-a")).toMatchObject({
       ceiling: 3,
-      currentLimit: 3,
+      currentLimit: 2,
       consecutiveSuccesses: 0,
     });
+  });
+
+  it("rejects queued work during cooldown and permits only one recovery probe", async () => {
+    vi.useFakeTimers();
+    const limiter = new AdaptiveProviderLimiter();
+    const permit = await limiter.acquire("a", 1);
+    const waiting = limiter.acquire("a", 1);
+    const rejected = expect(waiting).rejects.toMatchObject({ type: "rate_limit" });
+    permit.failure(new AIRateLimitError("limited", undefined, 120_000));
+    await rejected;
+    await expect(limiter.acquire("a", 5)).rejects.toMatchObject({ type: "rate_limit" });
+    (await limiter.acquire("b", 1)).success();
+    await vi.advanceTimersByTimeAsync(120_001);
+    const probe = await limiter.acquire("a", 5);
+    expect(limiter.getSnapshot("a")).toMatchObject({ currentLimit: 1, active: 1 });
+    probe.success();
   });
 
   it("never grows beyond the configured ceiling", async () => {

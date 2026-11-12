@@ -9,6 +9,15 @@ import {
 
 const MATCHER_SETTING_KEYS = [
   "matcher_model",
+  "matcher_fallback_enabled",
+  "matcher_fallback_provider_id",
+  "matcher_fallback_model",
+  "matcher_fallback_reasoning_effort",
+  "job_analysis_fallback_enabled",
+  "job_analysis_fallback_provider_id",
+  "job_analysis_fallback_model",
+  "job_analysis_fallback_reasoning_effort",
+
   "matcher_provider_id",
   "matcher_reasoning_effort",
   "job_analysis_model",
@@ -68,7 +77,16 @@ export async function getMatcherConfig(): Promise<MatcherConfig> {
   const storedProviderId = settingsMap.get("matcher_provider_id") || undefined;
   const storedModelId = settingsMap.get("matcher_model") || undefined;
 
+  const fallback = (prefix: "matcher" | "job_analysis") => {
+    const providerId = settingsMap.get(`${prefix}_fallback_provider_id`);
+    const modelId = settingsMap.get(`${prefix}_fallback_model`);
+    return settingsMap.get(`${prefix}_fallback_enabled`) === "true" && providerId && modelId
+      ? { providerId, modelId, reasoningEffort: settingsMap.get(`${prefix}_fallback_reasoning_effort`) || undefined }
+      : undefined;
+  };
   return {
+    jobAnalysisFallback: fallback("job_analysis"),
+    matchFallback: fallback("matcher"),
     providerId: storedProviderId,
     model: storedModelId ?? "",
     reasoningEffort:

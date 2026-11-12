@@ -7,10 +7,13 @@ import { resolveAIContextForCapability } from "@/lib/ai/runtime-context";
 import { AISDKGenerationBackend } from "@/lib/ai/runtime/ai-sdk-backend";
 import {
   AIError,
+  AIRateLimitError,
   getRetryAfterMs,
   isRetryableError,
+  isRateLimitError,
 } from "@/lib/ai/shared/errors";
 
+import { providerQuotaScope } from "./provider-scope";
 import { adaptiveProviderLimiter } from "./adaptive-provider-limiter";
 import { aiRunRepository } from "./default-run-repository";
 import { fingerprintAIInput } from "./fingerprint";
@@ -303,9 +306,7 @@ async function executeWithLedger<T>(input: {
               input.snapshot.structuredGenerationStrategy ?? "portable_json",
           }
         : {}),
-      timeoutMode: input.snapshot.backendKind === "ai_sdk"
-        ? "hard_deadline"
-        : "completion_wait",
+      timeoutMode: "hard_deadline",
     },
   });
   const startedAt = performance.now();
@@ -333,7 +334,7 @@ async function executeWithLedger<T>(input: {
       const composed = composeAbortSignal(
         input.execution.signal,
         input.execution.policy.timeoutMs,
-        input.snapshot.backendKind === "ai_sdk"
+        false
       );
       const attemptStartedAt = performance.now();
       let attemptUsage: AIExecutionUsage = {};
@@ -365,23 +366,37 @@ async function executeWithLedger<T>(input: {
         attempts = attempt;
         await input.runRepository.startAttempt(runId, attempt);
         attemptRecorded = true;
+        if (useAdaptiveLimiter && input.runRepository.getProviderCooldown) {
+          const until = await input.runRepository.getProviderCooldown(providerQuotaScope(input.snapshot));
+          if (until > Date.now()) throw new AIRateLimitError("Provider is cooling down", undefined, until - Date.now());
+        }
         permit = useAdaptiveLimiter
           ? await adaptiveProviderLimiter.acquire(
-              input.snapshot.providerRecordId,
+              providerQuotaScope(input.snapshot),
               input.providerConcurrencyLimit!,
               composed.signal
             )
           : undefined;
+        const generationSignal = AbortSignal.any([composed.signal, AbortSignal.timeout(input.execution.policy.timeoutMs)]);
         let result: ProviderCallResult<T>;
         try {
           result = await input.perform(
             attempt,
-            composed.signal,
+            generationSignal,
             recordTelemetry
           );
+          generationSignal.throwIfAborted();
           permit?.success();
         } catch (error) {
           permit?.failure(error);
+          if (useAdaptiveLimiter && isRateLimitError(error)) {
+            const until = adaptiveProviderLimiter.getSnapshot(providerQuotaScope(input.snapshot))?.cooldownUntil;
+            if (until && input.runRepository.setProviderCooldown) {
+              await input.runRepository.setProviderCooldown(providerQuotaScope(input.snapshot), until);
+            }
+            throw new AIRateLimitError("Provider is cooling down", error instanceof Error ? error : undefined,
+              Math.max(getRetryAfterMs(error) ?? 0, (until ?? Date.now()) - Date.now()));
+          }
           throw error;
         }
         input.execution.signal?.throwIfAborted();
@@ -417,6 +432,8 @@ async function executeWithLedger<T>(input: {
 
         return {
           output: result.output,
+          resolvedModel: input.snapshot,
+          reasoningEffort: input.resolvedReasoningEffort,
           runId,
           usage: accumulatedUsage,
           durationMs,
@@ -428,6 +445,7 @@ async function executeWithLedger<T>(input: {
         const normalized = error instanceof Error ? error : new Error(String(error));
         const cancelled = input.execution.signal?.aborted || normalized.name === "AbortError";
         const canRetry = !cancelled &&
+          !isRateLimitError(normalized) &&
           attempt < input.execution.policy.maxAttempts &&
           isRetryableError(normalized);
         let delayMs: number | undefined;

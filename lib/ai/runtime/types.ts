@@ -39,6 +39,8 @@ export interface AIExecutionUsage {
 }
 
 export interface AIExecutionResult<T> {
+  resolvedModel?: ResolvedModelSnapshot;
+  reasoningEffort?: string;
   output: T;
   runId: string;
   usage: AIExecutionUsage;

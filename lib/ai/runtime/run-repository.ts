@@ -7,7 +7,7 @@ import { z } from "zod";
 import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { isReasoningEffort } from "@/lib/ai/providers/types";
 import type * as databaseSchema from "@/lib/db/schema";
-import { aiRunAttempts, aiRuns } from "@/lib/db/schema";
+import { aiRunAttempts, aiRuns, settings } from "@/lib/db/schema";
 
 import type {
   AICapability,
@@ -39,6 +39,9 @@ const RuntimeMetadataSchema = z.object({
     z.string().refine(isReasoningEffort),
   ]).optional(),
   structuredGenerationStrategy: z.enum(["native", "portable_json"]).optional(),
+  fallbackUsed: z.boolean().optional(),
+  fallbackFromRunId: z.string().max(100).optional(),
+  fallbackReason: z.string().max(80).optional(),
   timeoutMode: z.enum(["hard_deadline", "completion_wait"]).optional(),
 });
 
@@ -217,6 +220,19 @@ function attemptId(runId: string, attemptNumber: number): string {
 
 export function createAIRunRepository(database: AIRunDatabase) {
   return {
+    async getProviderCooldown(scope: string): Promise<number> {
+      const row = await database.select({ value: settings.value }).from(settings)
+        .where(eq(settings.key, `ai_cooldown:${scope}`)).get();
+      return Number(row?.value) || 0;
+    },
+    async setProviderCooldown(scope: string, until: number): Promise<void> {
+      database.transaction((tx) => {
+        const key = `ai_cooldown:${scope}`;
+        const row = tx.select({ value: settings.value }).from(settings).where(eq(settings.key, key)).get();
+        const value = String(Math.max(Number(row?.value) || 0, until));
+        tx.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
+      });
+    },
     async create(input: CreateAIRunInput): Promise<string> {
       const id = randomUUID();
       const inputFingerprint = InputFingerprintSchema.parse(input.inputFingerprint);

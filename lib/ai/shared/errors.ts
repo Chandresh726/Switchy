@@ -99,7 +99,7 @@ function normalizeRetryAfterMs(value: unknown): number | undefined {
   return Math.max(0, value);
 }
 
-function parseRetryAfterHeaders(
+export function parseRetryAfterHeaders(
   headers: Record<string, string> | undefined,
   now = Date.now()
 ): number | undefined {
@@ -273,6 +273,14 @@ export function sanitizeAIError(error: unknown): SanitizedAIError {
     : new Error("Unknown AI execution failure");
 
   if (normalized.name === "AbortError") {
+    const causes: Array<[RegExp, string, string]> = [
+      [/suspension/i, "system_suspended", "Matching paused because the device went to sleep."],
+      [/lease|ownership/i, "lease_lost", "Matching paused because worker ownership changed."],
+      [/maintenance/i, "maintenance_cancelled", "Matching stopped for local data maintenance."],
+    ];
+    for (const [pattern, code, message] of causes) {
+      if (pattern.test(normalized.message)) return { code, message };
+    }
     return { code: "aborted", message: "The AI request was cancelled." };
   }
 

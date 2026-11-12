@@ -11,6 +11,15 @@ import { SCRAPER_SETTINGS } from "@/lib/scraper/settings/definitions";
 import { safeJsonParse } from "@/lib/utils/safe-json";
 
 export const DEFAULT_SETTINGS = {
+  job_analysis_fallback_enabled: "false",
+  job_analysis_fallback_provider_id: "",
+  job_analysis_fallback_model: "",
+  job_analysis_fallback_reasoning_effort: "",
+  matcher_fallback_enabled: "false",
+  matcher_fallback_provider_id: "",
+  matcher_fallback_model: "",
+  matcher_fallback_reasoning_effort: "",
+
   job_analysis_model: "",
   job_analysis_provider_id: "",
   job_analysis_reasoning_effort: "",
@@ -224,6 +233,8 @@ function parseSettingValue(
       return { value: parseNumberInRange(key, value, 500, 10_000), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
     case "matcher_backoff_max_delay":
       return { value: parseNumberInRange(key, value, 5_000, 120_000), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+    case "job_analysis_fallback_enabled":
+    case "matcher_fallback_enabled":
     case "matcher_auto_match_after_scrape":
     case "notifications_enabled":
       return { value: parseBooleanValue(value), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
@@ -253,6 +264,8 @@ function parseSettingValue(
     case "resume_parser_model":
     case "ai_writing_model":
       return { value: ensureNonEmptyString(key, value), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+    case "job_analysis_fallback_reasoning_effort":
+    case "matcher_fallback_reasoning_effort":
     case "matcher_reasoning_effort":
     case "job_analysis_reasoning_effort":
     case "resume_parser_reasoning_effort":

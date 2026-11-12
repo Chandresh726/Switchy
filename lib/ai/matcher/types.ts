@@ -4,7 +4,11 @@ export interface MatchResult {
   matchedSkills: string[];
 }
 
+import type { MatchFallbackModel } from "./fallback";
+
 export interface MatcherConfig {
+  jobAnalysisFallback?: MatchFallbackModel;
+  matchFallback?: MatchFallbackModel;
   jobAnalysisModel?: string;
   jobAnalysisProviderId?: string;
   jobAnalysisReasoningEffort?: string;

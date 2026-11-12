@@ -351,92 +351,17 @@ describe("AI capability runtime", () => {
     );
   });
 
-  it("honors an AI SDK retry-after delay before the next provider attempt", async () => {
-    vi.useFakeTimers();
-    const firstAttempted = Promise.withResolvers<void>();
-    let callCount = 0;
-    const model = new MockLanguageModelV4({
-      doGenerate: async () => {
-        callCount += 1;
-        if (callCount === 1) {
-          firstAttempted.resolve();
-          throw new APICallError({
-            message: "Provider rate limit",
-            url: "https://provider.invalid/generate",
-            requestBodyValues: {},
-            statusCode: 429,
-            responseHeaders: { "retry-after-ms": "500" },
-            responseBody: "rate limited",
-            isRetryable: true,
-          });
-        }
-        return successfulProviderResult("Recovered response");
-      },
-    });
+  it("defers rate limits instead of retrying in a tight loop and honors reset timing", async () => {
+    const model = new MockLanguageModelV4({ doGenerate: async () => {
+      throw new APICallError({ message: "Provider rate limit", url: "https://provider.invalid", requestBodyValues: {},
+        statusCode: 429, responseHeaders: { "retry-after": "120" }, isRetryable: true });
+    } });
     useModel(model);
-    const runtime = await createAICapabilityRuntime({
-      capability: "job_analysis",
-      providerConcurrencyLimit: 2,
-    });
-    const pending = runtime.executeText({
-      ...executionInput({ maxAttempts: 2 }),
-      retry: { baseDelayMs: 100, maxDelayMs: 1_000 },
-    });
-
-    await firstAttempted.promise;
-    await vi.advanceTimersByTimeAsync(499);
+    const runtime = await createAICapabilityRuntime({ capability: "job_analysis", providerConcurrencyLimit: 2 });
+    await expect(runtime.executeText(executionInput({ maxAttempts: 3 }))).rejects.toMatchObject({ type: "rate_limit", retryAfterMs: 120_000 });
     expect(model.doGenerateCalls).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(1);
-
-    await expect(pending).resolves.toMatchObject({
-      output: "Recovered response",
-      attempts: 2,
-    });
-    expect(model.doGenerateCalls).toHaveLength(2);
-  });
-
-  it("treats provider retry-after as a floor above the application backoff cap", async () => {
-    vi.useFakeTimers();
-    const firstAttempted = Promise.withResolvers<void>();
-    let callCount = 0;
-    const model = new MockLanguageModelV4({
-      doGenerate: async () => {
-        callCount += 1;
-        if (callCount === 1) {
-          firstAttempted.resolve();
-          throw new APICallError({
-            message: "Provider rate limit",
-            url: "https://provider.invalid/generate",
-            requestBodyValues: {},
-            statusCode: 429,
-            responseHeaders: { "retry-after-ms": "2500" },
-            responseBody: "rate limited",
-            isRetryable: true,
-          });
-        }
-        return successfulProviderResult("Recovered response");
-      },
-    });
-    useModel(model);
-    const runtime = await createAICapabilityRuntime({
-      capability: "job_analysis",
-      providerConcurrencyLimit: 2,
-    });
-    const pending = runtime.executeText({
-      ...executionInput({ maxAttempts: 2 }),
-      retry: { baseDelayMs: 100, maxDelayMs: 1_000 },
-    });
-
-    await firstAttempted.promise;
-    await vi.advanceTimersByTimeAsync(2_499);
+    await expect(runtime.executeText(executionInput())).rejects.toMatchObject({ type: "rate_limit" });
     expect(model.doGenerateCalls).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(1);
-
-    await expect(pending).resolves.toMatchObject({
-      output: "Recovered response",
-      attempts: 2,
-    });
-    expect(model.doGenerateCalls).toHaveLength(2);
   });
 
   it("limits matching provider attempts while preserving cancellation", async () => {
@@ -803,11 +728,11 @@ describe("AI capability runtime", () => {
     );
   });
 
-  it("allows a local CLI turn to outlive the configured API timeout", async () => {
+  it("applies the execution deadline to local CLI turns", async () => {
     const backend = {
       generateText: vi.fn(async (input: { signal: AbortSignal }) => {
         await new Promise((resolve) => setTimeout(resolve, 30));
-        expect(input.signal.aborted).toBe(false);
+        expect(input.signal.aborted).toBe(true);
         return {
           output: "completed after the API deadline",
           usage: {},
@@ -833,12 +758,12 @@ describe("AI capability runtime", () => {
     });
 
     await expect(runtime.executeText(executionInput({ timeoutMs: 10 })))
-      .resolves.toMatchObject({ output: "completed after the API deadline" });
+      .rejects.toMatchObject({ name: "TimeoutError" });
     expect(backend.generateText).toHaveBeenCalledTimes(1);
     expect(mocks.createRun).toHaveBeenCalledWith(expect.objectContaining({
       metadata: expect.objectContaining({
         backendKind: "codex_cli",
-        timeoutMode: "completion_wait",
+        timeoutMode: "hard_deadline",
       }),
     }));
   });
@@ -875,7 +800,7 @@ describe("AI capability runtime", () => {
     const controller = new AbortController();
     const reason = new DOMException("cancel local CLI turn", "AbortError");
     const pending = runtime.executeText(executionInput({
-      timeoutMs: 10,
+      timeoutMs: 1_000,
       signal: controller.signal,
     }));
 

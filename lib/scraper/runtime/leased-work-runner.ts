@@ -1,3 +1,4 @@
+import { getRetryAfterMs, isRateLimitError } from "@/lib/ai/shared/errors";
 import { createScrapeAbortError } from "@/lib/scraper/infrastructure/cancellation";
 
 import { resolveRetryDelay } from "./retry-policy";
@@ -42,6 +43,7 @@ export interface LocalLeasedWorkStore<
     availableAt: Date,
     now: Date
   ): Promise<boolean>;
+  defer?(itemId: string, workerId: string, error: Error, availableAt: Date, now: Date, attemptCount: number): Promise<boolean>;
   fail(
     itemId: string,
     workerId: string,
@@ -330,6 +332,12 @@ export class LocalLeasedWorkRunner<
         if (!released) {
           await this.persistRacedCancellation(item.id, workerId, now, summary);
         }
+      } else if (isRateLimitError(error) && this.repository.defer) {
+        const until = new Date(now.getTime() + Math.max(30_000, getRetryAfterMs(error) ?? 0));
+        const deferred = await this.repository.defer(item.id, workerId,
+          error instanceof Error ? error : new Error("Provider rate limited"), until, now, Math.max(0, item.attemptCount - 1));
+        if (deferred) summary.retried += 1;
+        else await this.persistRacedCancellation(item.id, workerId, now, summary);
       } else if (item.attemptCount < item.maxAttempts) {
         const message = error instanceof Error ? error.message : "Unknown queue handler error";
         const retryAt = new Date(

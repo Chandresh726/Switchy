@@ -5,6 +5,7 @@ import {
   type MatchBreakdown,
   type MatchEvidence,
 } from "@/lib/ai/artifacts/schemas";
+import type { ResolvedModelSnapshot } from "@/lib/ai/runtime/types";
 import { fingerprintAIInput } from "@/lib/ai/runtime/fingerprint";
 import type { AICapabilityRuntime } from "@/lib/ai/runtime/capability-runtime";
 
@@ -130,6 +131,8 @@ export function buildMatchPolicyVersion(
 }
 
 export interface AIMatchEvaluation {
+  resolvedModel?: ResolvedModelSnapshot;
+  reasoningEffort?: string;
   outcome: AIMatchOutcome;
   runId: string;
   attempts: number;
@@ -175,7 +178,7 @@ export async function evaluateMatchWithAI(
       built.jobRequirementIds
     ),
   });
-  return { outcome: result.output, runId: result.runId, attempts: result.attempts };
+  return { outcome: result.output, runId: result.runId, attempts: result.attempts, resolvedModel: result.resolvedModel, reasoningEffort: result.reasoningEffort };
 }
 
 export function buildPersistedMatchArtifacts(outcome: AIMatchOutcome): {

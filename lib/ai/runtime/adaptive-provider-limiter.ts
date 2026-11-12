@@ -1,4 +1,4 @@
-import { isRateLimitError } from "@/lib/ai/shared/errors";
+import { AIRateLimitError, getRetryAfterMs, isRateLimitError } from "@/lib/ai/shared/errors";
 
 const SUCCESS_STREAK_TO_INCREASE = 20;
 
@@ -15,6 +15,8 @@ interface ProviderLimitState {
   active: number;
   consecutiveSuccesses: number;
   waiters: WaitingPermit[];
+  cooldownUntil: number;
+  throttleCount: number;
 }
 
 export interface AdaptiveProviderLimitSnapshot {
@@ -23,6 +25,7 @@ export interface AdaptiveProviderLimitSnapshot {
   active: number;
   consecutiveSuccesses: number;
   waiting: number;
+  cooldownUntil: number;
 }
 
 export interface AdaptiveProviderPermit {
@@ -50,6 +53,9 @@ export class AdaptiveProviderLimiter {
     signal?.throwIfAborted();
     const state = this.getOrCreateState(providerRecordId, configuredCeiling);
 
+    if (state.cooldownUntil > Date.now()) {
+      return Promise.reject(new AIRateLimitError("Provider is cooling down", undefined, state.cooldownUntil - Date.now()));
+    }
     if (state.active < state.currentLimit) {
       state.active += 1;
       return Promise.resolve(this.createPermit(providerRecordId, state));
@@ -87,6 +93,7 @@ export class AdaptiveProviderLimiter {
       active: state.active,
       consecutiveSuccesses: state.consecutiveSuccesses,
       waiting: state.waiters.length,
+      cooldownUntil: state.cooldownUntil,
     };
   }
 
@@ -119,6 +126,8 @@ export class AdaptiveProviderLimiter {
       active: 0,
       consecutiveSuccesses: 0,
       waiters: [],
+      cooldownUntil: 0,
+      throttleCount: 0,
     };
     this.states.set(providerRecordId, state);
     return state;
@@ -134,6 +143,7 @@ export class AdaptiveProviderLimiter {
       completed = true;
 
       if (error === undefined) {
+        state.throttleCount = 0;
         state.consecutiveSuccesses += 1;
         if (
           state.consecutiveSuccesses >= SUCCESS_STREAK_TO_INCREASE &&
@@ -145,7 +155,11 @@ export class AdaptiveProviderLimiter {
       } else {
         state.consecutiveSuccesses = 0;
         if (isRateLimitError(error)) {
-          state.currentLimit = Math.max(1, state.currentLimit - 1);
+          state.currentLimit = 1;
+          state.throttleCount += 1;
+          const delay = Math.max(getRetryAfterMs(error) ?? 0,
+            Math.min(30_000 * 2 ** Math.min(state.throttleCount - 1, 6), 30 * 60_000) * (1 + Math.random() * 0.2));
+          state.cooldownUntil = Math.max(state.cooldownUntil, Date.now() + delay);
         }
       }
 
@@ -160,6 +174,13 @@ export class AdaptiveProviderLimiter {
   }
 
   private drain(providerRecordId: string, state: ProviderLimitState): void {
+    if (state.cooldownUntil > Date.now()) {
+      for (const waiter of state.waiters.splice(0)) {
+        waiter.removeAbortListener();
+        waiter.reject(new AIRateLimitError("Provider is cooling down", undefined, state.cooldownUntil - Date.now()));
+      }
+      return;
+    }
     while (state.active < state.currentLimit && state.waiters.length > 0) {
       const waiter = state.waiters.shift();
       if (!waiter) return;

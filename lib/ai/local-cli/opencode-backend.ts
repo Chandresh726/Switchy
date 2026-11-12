@@ -31,7 +31,7 @@ import {
   withReasoningControl,
 } from "@/lib/ai/providers/reasoning-controls";
 import { isReasoningEffort } from "@/lib/ai/providers/types";
-import { AIError, AIRateLimitError } from "@/lib/ai/shared/errors";
+import { AIError, AIRateLimitError, parseRetryAfterHeaders } from "@/lib/ai/shared/errors";
 
 const DENY_ALL_PERMISSIONS = [
   { action: "*", resource: "*", effect: "deny" as const },
@@ -171,7 +171,11 @@ function mapOpenCodeError(error: unknown): AIError {
     });
   }
   if (statusCode === 429 || /rate.?limit/i.test(name)) {
-    return new AIRateLimitError("OpenCode provider rate limit was reached");
+    const headers = data.responseHeaders && typeof data.responseHeaders === "object"
+      ? Object.fromEntries(Object.entries(data.responseHeaders).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+      : undefined;
+    return new AIRateLimitError("OpenCode provider rate limit was reached", undefined,
+      parseRetryAfterHeaders(headers) ?? (typeof data.retryAfterMs === "number" ? data.retryAfterMs : undefined));
   }
   if (/invalid.?model|model.?not.?found/i.test(name)) {
     return new AIError({

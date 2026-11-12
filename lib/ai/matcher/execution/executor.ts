@@ -1,5 +1,7 @@
 import PQueue from "p-queue";
 
+import { createMatchRuntime, resultModelConfig } from "../fallback";
+
 import {
   artifactRepository,
   buildCandidateEvidence,
@@ -10,7 +12,7 @@ import {
   createAICapabilityRuntime,
   getAIExecutionErrorContext,
 } from "@/lib/ai/runtime";
-import { AIError } from "@/lib/ai/shared/errors";
+import { AIError, isRateLimitError } from "@/lib/ai/shared/errors";
 
 import {
   buildMatchPolicyVersion,
@@ -170,7 +172,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
   let matchRuntime: Awaited<ReturnType<typeof createAICapabilityRuntime>>;
   try {
     [analysisRuntime, matchRuntime] = await Promise.all([
-      createAICapabilityRuntime({
+      createMatchRuntime({
         capability: "job_analysis",
         model: {
           providerId: config.jobAnalysisProviderId,
@@ -178,8 +180,8 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
           reasoningEffort: config.jobAnalysisReasoningEffort,
         },
         providerConcurrencyLimit: config.concurrencyLimit,
-      }),
-      createAICapabilityRuntime({
+      }, config.jobAnalysisFallback),
+      createMatchRuntime({
         capability: "match_evaluation",
         model: {
           providerId: config.providerId,
@@ -187,7 +189,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
           reasoningEffort: config.reasoningEffort,
         },
         providerConcurrencyLimit: config.concurrencyLimit,
-      }),
+      }, config.matchFallback),
     ]);
   } catch (error) {
     const normalized = error instanceof Error ? error : new Error(String(error));
@@ -222,7 +224,6 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
   };
 
   const analysisVersion = buildJobAnalysisVersion(concreteConfig);
-  const matchPolicyVersion = buildMatchPolicyVersion(concreteConfig, analysisVersion);
   let completed = 0;
   let succeeded = 0;
   let failed = 0;
@@ -270,6 +271,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
     if (sessionId) await markJobMatchStarted(sessionId, jobId);
 
     try {
+      let matchPolicyVersion = buildMatchPolicyVersion(concreteConfig, analyzed.analysisVersion ?? analysisVersion);
       const cached = await artifactRepository.findFreshMatch(jobId, {
         candidateFingerprint: candidateArtifact.fingerprint,
         jobFingerprint: analyzed.jobFingerprint,
@@ -309,6 +311,8 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
         concreteConfig,
         signal
       );
+      const actualModel = resultModelConfig(evaluation.resolvedModel, evaluation.reasoningEffort);
+      if (actualModel) matchPolicyVersion = buildMatchPolicyVersion(actualModel, analyzed.analysisVersion ?? analysisVersion);
       const persistedArtifacts = buildPersistedMatchArtifacts(evaluation.outcome);
       throwIfAborted(signal);
       const persisted = await artifactRepository.createMatchResult({
@@ -334,13 +338,14 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
         sessionId,
         attemptCount: evaluation.attempts,
         duration: Math.round(performance.now() - startedAt),
-        modelUsed: matchRuntime.snapshot.modelId,
+        modelUsed: evaluation.resolvedModel?.modelId ?? matchRuntime.snapshot.modelId,
         matchRunId: evaluation.runId,
       });
       results.set(jobId, publicResult);
       reportTerminal(jobId, "succeeded");
     } catch (error) {
       throwIfAborted(signal);
+      if (isRateLimitError(error)) throw error;
       const normalized = error instanceof Error ? error : new Error(String(error));
       results.set(jobId, normalized);
       await persistFailure({
@@ -359,7 +364,9 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
     const jobId = analyzed.job.id;
     if (scheduledJobIds.has(jobId) || terminalJobIds.has(jobId)) return;
     scheduledJobIds.add(jobId);
-    matchTasks.push(matchQueue.add(() => matchAnalyzedJob(analyzed)));
+    const task = matchQueue.add(() => matchAnalyzedJob(analyzed));
+    void task.catch(() => undefined);
+    matchTasks.push(task);
   };
 
   const sameProvider = analysisRuntime.snapshot.providerRecordId ===

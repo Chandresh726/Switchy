@@ -23,6 +23,7 @@ import {
 } from "@/lib/api/clients/runtime";
 import { getSettings, patchSettings } from "@/lib/api/clients/settings";
 import { AppearanceSection } from "@/components/settings/appearance-section";
+import { MatcherFallbackSettings } from "@/components/settings/matcher-fallback-settings";
 import { MatcherSection } from "@/components/settings/matcher-section";
 import { NotificationsSection } from "@/components/settings/notifications-section";
 import { ScraperSettings } from "@/components/settings/scraper-settings";
@@ -1535,6 +1536,7 @@ function SettingsContent() {
             onFilterTitleKeywordsChange={setFilterTitleKeywords}
           />
 
+          {settings && <MatcherFallbackSettings settings={settings} providers={providers} modelsByProvider={providerModelsById} />}
           <ResumeParserSection
             availableProviders={providerOptions}
             hasProviders={providerOptions.length > 0}

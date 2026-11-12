@@ -13,6 +13,15 @@ const settingBooleanInputSchema = z.union([
 ]);
 
 export const settingsUpdateBodySchema = z.object({
+  job_analysis_fallback_enabled: settingBooleanInputSchema,
+  job_analysis_fallback_provider_id: settingTextInputSchema,
+  job_analysis_fallback_model: settingTextInputSchema,
+  job_analysis_fallback_reasoning_effort: settingTextInputSchema,
+  matcher_fallback_enabled: settingBooleanInputSchema,
+  matcher_fallback_provider_id: settingTextInputSchema,
+  matcher_fallback_model: settingTextInputSchema,
+  matcher_fallback_reasoning_effort: settingTextInputSchema,
+
   job_analysis_model: settingTextInputSchema,
   job_analysis_provider_id: settingTextInputSchema,
   job_analysis_reasoning_effort: settingTextInputSchema,
@@ -67,6 +76,15 @@ export const settingsUpdateBodySchema = z.object({
   });
 
 export const settingsResponseSchema = z.object({
+  job_analysis_fallback_enabled: z.string().default("false"),
+  job_analysis_fallback_provider_id: z.string().default(""),
+  job_analysis_fallback_model: z.string().default(""),
+  job_analysis_fallback_reasoning_effort: z.string().default(""),
+  matcher_fallback_enabled: z.string().default("false"),
+  matcher_fallback_provider_id: z.string().default(""),
+  matcher_fallback_model: z.string().default(""),
+  matcher_fallback_reasoning_effort: z.string().default(""),
+
   job_analysis_model: z.string(),
   job_analysis_provider_id: z.string(),
   job_analysis_reasoning_effort: z.string(),

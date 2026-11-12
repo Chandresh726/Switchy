@@ -26,6 +26,13 @@ import type { z } from "zod";
 type SettingsUpdateInput = z.infer<typeof settingsUpdateBodySchema>;
 
 const AI_SETTING_KEYS: ReadonlySet<SettingKey> = new Set([
+  "job_analysis_fallback_provider_id",
+  "job_analysis_fallback_model",
+  "job_analysis_fallback_reasoning_effort",
+  "matcher_fallback_provider_id",
+  "matcher_fallback_model",
+  "matcher_fallback_reasoning_effort",
+
   "job_analysis_model", "job_analysis_provider_id", "job_analysis_reasoning_effort",
   "matcher_model", "matcher_provider_id", "matcher_reasoning_effort",
   "resume_parser_model", "resume_parser_provider_id", "resume_parser_reasoning_effort",
@@ -37,6 +44,9 @@ const AI_SETTING_KEYS: ReadonlySet<SettingKey> = new Set([
 
 const LEGACY_REASONING_VALUES = new Set(["low", "medium", "high"]);
 const REASONING_FEATURE_SETTINGS = [
+  { provider: "job_analysis_fallback_provider_id", model: "job_analysis_fallback_model", effort: "job_analysis_fallback_reasoning_effort" },
+  { provider: "matcher_fallback_provider_id", model: "matcher_fallback_model", effort: "matcher_fallback_reasoning_effort" },
+
   { provider: "job_analysis_provider_id", model: "job_analysis_model", effort: "job_analysis_reasoning_effort" },
   { provider: "matcher_provider_id", model: "matcher_model", effort: "matcher_reasoning_effort" },
   { provider: "resume_parser_provider_id", model: "resume_parser_model", effort: "resume_parser_reasoning_effort" },
@@ -83,6 +93,22 @@ async function reconcileReasoningSettings(body: Record<string, unknown>) {
 export const getSettings = () => getSettingsWithDefaults();
 
 export async function updateSettings(input: SettingsUpdateInput, context: ApiRequestContext) {
+  const current = await getSettingsWithDefaults();
+  const merged = { ...current, ...input };
+  for (const stage of ["job_analysis", "matcher"] as const) {
+    if (String(merged[`${stage}_fallback_enabled`]) !== "true") continue;
+    const provider = String(merged[`${stage}_fallback_provider_id`] ?? "").trim();
+    const model = String(merged[`${stage}_fallback_model`] ?? "").trim();
+    if (!provider || !model) throw new ValidationError("Choose a provider and model before enabling fallback", "invalid_request");
+    const primaryProvider = merged[`${stage}_provider_id`] || merged.matcher_provider_id;
+    const primaryModel = merged[`${stage}_model`] || merged.matcher_model;
+    if (provider === primaryProvider && model === primaryModel) {
+      throw new ValidationError("Fallback must use a different provider or model", "invalid_request");
+    }
+    if (!(await getCachedProviderModelDefinition(provider, model))) {
+      throw new ValidationError("Refresh the fallback provider's model catalog before enabling fallback", "invalid_request");
+    }
+  }
   const reconciled = await reconcileReasoningSettings(input);
   const aiPayload = pickAISettings(reconciled);
   if (Object.keys(aiPayload).length > 0) AISettingsUpdateSchema.parse(aiPayload);

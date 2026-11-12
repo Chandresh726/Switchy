@@ -15,7 +15,7 @@ import {
 import { fingerprintAIInput } from "@/lib/ai/runtime/fingerprint";
 import type { AICapabilityRuntime } from "@/lib/ai/runtime/capability-runtime";
 import type { AIExecutionResult } from "@/lib/ai/runtime/types";
-import { AIError, sanitizeAIError } from "@/lib/ai/shared/errors";
+import { AIError, sanitizeAIError, categorizeError, isRateLimitError } from "@/lib/ai/shared/errors";
 
 import type { JobData, MatcherConfig } from "../types";
 import { htmlToText } from "../utils";
@@ -55,6 +55,7 @@ export interface MatchingJobAnalysis {
   jobFingerprint: string;
   jobAnalysisId: string;
   analysisRunId?: string | null;
+  analysisVersion?: string;
   analysis: JobAnalysisEvidence;
 }
 
@@ -312,6 +313,7 @@ export async function analyzeJobsForMatching(
         jobAnalysisId: cached.id,
         analysisRunId: cached.aiRunId,
         analysis: cached.evidence,
+        analysisVersion,
       });
       await callbacks.onReady?.(resolved.get(job.id)!, "cached");
     } else {
@@ -339,7 +341,13 @@ export async function analyzeJobsForMatching(
     concurrency: Math.max(1, callbacks.concurrencyLimit ?? config.concurrencyLimit),
   });
   const batches = buildAnalysisBatches(pending.map((item) => item.job), config.batchSize);
-  const processBatch = async (batch: JobData[]): Promise<void> => {
+  const processBatch = async (batch: JobData[], budget = { remaining: 4 }): Promise<void> => {
+    if (budget.remaining <= 0) {
+      await callbacks.onFailed?.(batch.map((job) => job.id), new AIError({ type: "no_object", message: "Analysis exhausted its generation budget" }));
+      return;
+    }
+    const attempts = Math.min(config.maxRetries, 2, budget.remaining);
+    budget.remaining -= attempts;
     signal?.throwIfAborted();
     if (shouldStop && await shouldStop()) return;
     await callbacks.onStarted?.(batch.map((job) => job.id));
@@ -350,7 +358,7 @@ export async function analyzeJobsForMatching(
         prompt: buildAnalysisPrompt(batch),
         schema: JobAnalysisBatchSchema,
         policy: {
-          maxAttempts: config.maxRetries,
+          maxAttempts: attempts,
           timeoutMs: config.timeoutMs,
           reasoningEffort: runtime.reasoningEffort,
         },
@@ -378,12 +386,14 @@ export async function analyzeJobsForMatching(
       });
     } catch (error) {
       signal?.throwIfAborted();
-      if (batch.length > 1) {
+      if (!config.jobAnalysisFallback && batch.length > 1 && error instanceof Error &&
+          ["json_parse", "no_object"].includes(categorizeError(error))) {
         const middle = Math.ceil(batch.length / 2);
-        await processBatch(batch.slice(0, middle));
-        await processBatch(batch.slice(middle));
+        await processBatch(batch.slice(0, middle), budget);
+        await processBatch(batch.slice(middle), budget);
         return;
       }
+      if (isRateLimitError(error)) throw error;
       warnWithSanitizedError("[JobAnalysis] AI extraction failed.", error);
       await callbacks.onFailed?.(batch.map((job) => job.id), error);
       return;
@@ -400,7 +410,11 @@ export async function analyzeJobsForMatching(
       };
       const artifact = await artifactRepository.getOrCreateJobAnalysis({
         jobEvidence: item.jobEvidence,
-        extractorVersion: analysisVersion,
+        extractorVersion: result.resolvedModel ? buildJobAnalysisVersion({ ...config,
+          jobAnalysisProviderId: result.resolvedModel.providerRecordId,
+          jobAnalysisModel: result.resolvedModel.modelId,
+          jobAnalysisReasoningEffort: result.reasoningEffort,
+        }) : analysisVersion,
         evidence: groundJobAnalysisEvidence(analysis, item.job),
         aiRunId: result.runId,
       });
@@ -411,10 +425,17 @@ export async function analyzeJobsForMatching(
         jobAnalysisId: artifact.id,
         analysisRunId: artifact.aiRunId,
         analysis: artifact.evidence,
+        analysisVersion: result.resolvedModel ? buildJobAnalysisVersion({ ...config,
+          jobAnalysisProviderId: result.resolvedModel.providerRecordId,
+          jobAnalysisModel: result.resolvedModel.modelId,
+          jobAnalysisReasoningEffort: result.reasoningEffort,
+        }) : analysisVersion,
       });
       await callbacks.onReady?.(resolved.get(item.job.id)!, "generated");
     }
   };
-  await Promise.all(batches.map((batch) => queue.add(() => processBatch(batch))));
+  const settled = await Promise.allSettled(batches.map((batch) => queue.add(() => processBatch(batch))));
+  const rejected = settled.find((item) => item.status === "rejected");
+  if (rejected?.status === "rejected") throw rejected.reason;
   return resolved;
 }

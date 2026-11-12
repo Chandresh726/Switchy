@@ -57,6 +57,13 @@ const ReasoningEffortSchema = z.union([
 ]);
 
 export const AISettingsUpdateSchema = z.object({
+  job_analysis_fallback_provider_id: z.string().trim().optional(),
+  job_analysis_fallback_model: z.string().trim().optional(),
+  job_analysis_fallback_reasoning_effort: ReasoningEffortSchema.optional(),
+  matcher_fallback_provider_id: z.string().trim().optional(),
+  matcher_fallback_model: z.string().trim().optional(),
+  matcher_fallback_reasoning_effort: ReasoningEffortSchema.optional(),
+
   job_analysis_model: z.string().trim().min(1).optional(),
   job_analysis_provider_id: z.string().trim().optional(),
   job_analysis_reasoning_effort: ReasoningEffortSchema.optional(),

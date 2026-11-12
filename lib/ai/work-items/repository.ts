@@ -442,6 +442,10 @@ export class DrizzleAIWorkStore implements AIWorkStore {
     return this.requeue(itemId, workerId, error, availableAt, now);
   }
 
+  async defer(itemId: string, workerId: string, error: Error, availableAt: Date, now: Date, attemptCount: number) {
+    return this.requeue(itemId, workerId, sanitizeAIError(error).message, availableAt, now, attemptCount);
+  }
+
   async fail(itemId: string, workerId: string, error: string, now: Date) {
     return this.setFailed(itemId, workerId, error, now);
   }
@@ -599,7 +603,8 @@ export class DrizzleAIWorkStore implements AIWorkStore {
     now: Date,
     attemptCount?: number
   ) {
-    const sanitized = error === null ? null : sanitizeAIError(new Error(error));
+    const sanitized = error === null ? null : error === "The AI provider rate limit was reached."
+      ? { code: "rate_limit", message: error } : sanitizeAIError(new Error(error));
     return this.retryBusy(() => this.database.transaction((tx) => {
       const updated = tx.update(aiWorkItems).set({
         status: "queued",
@@ -616,6 +621,10 @@ export class DrizzleAIWorkStore implements AIWorkStore {
       }).get();
       if (!updated) return false;
 
+      tx.update(matchSessionJobs).set({ analysisStatus: "queued", matchStatus: "blocked", updatedAt: now })
+        .where(and(eq(matchSessionJobs.sessionId, itemId), eq(matchSessionJobs.analysisStatus, "analyzing"))).run();
+      tx.update(matchSessionJobs).set({ matchStatus: "queued", updatedAt: now })
+        .where(and(eq(matchSessionJobs.sessionId, itemId), eq(matchSessionJobs.matchStatus, "matching"))).run();
       const checkpoint = summarizeCheckpoints(tx.select({
         jobId: matchLogs.jobId,
         status: matchLogs.status,
@@ -744,6 +753,14 @@ export class DrizzleAIWorkStore implements AIWorkStore {
     const payload = parseMatchWorkPayload(payloadJson);
     const pending = payload.jobIds.filter((jobId) => !checkpoint.completedJobIds.includes(jobId));
     for (const chunk of chunkSqliteParameters(pending)) {
+      tx.update(matchSessionJobs).set({ analysisStatus: "failed", matchStatus: "failed",
+        errorStage: "analysis", errorCode: "queue_failed", errorMessage: message, updatedAt: now })
+        .where(and(eq(matchSessionJobs.sessionId, sessionId), inArray(matchSessionJobs.jobId, chunk),
+          inArray(matchSessionJobs.analysisStatus, ["queued", "analyzing"]))).run();
+      tx.update(matchSessionJobs).set({ matchStatus: "failed", errorStage: "matching",
+        errorCode: "queue_failed", errorMessage: message, updatedAt: now })
+        .where(and(eq(matchSessionJobs.sessionId, sessionId), inArray(matchSessionJobs.jobId, chunk),
+          inArray(matchSessionJobs.matchStatus, ["queued", "matching", "blocked"]))).run();
       for (const jobId of chunk) {
         tx.insert(matchLogs).values({
           sessionId,
