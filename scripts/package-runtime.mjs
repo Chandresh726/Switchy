@@ -17,6 +17,7 @@ import { spawnSync } from "node:child_process";
 import { build } from "esbuild";
 
 import { buildMacOSNotifierBundle } from "./build-macos-notifier.mjs";
+import { materializeTracedPackages } from "./runtime-traced-packages.mjs";
 import { brandStandaloneServer } from "./runtime-server-branding.mjs";
 
 const projectDirectory = process.cwd();
@@ -82,6 +83,7 @@ for (const entry of ["server.js", "package.json", ".next"]) {
   await cp(source, path.join(runtimeDirectory, entry), {
     recursive: true,
     verbatimSymlinks: true,
+    filter: (candidate) => entry !== ".next" || candidate !== path.join(source, "node_modules"),
   });
 }
 const runtimeServerPath = path.join(runtimeDirectory, "server.js");
@@ -247,6 +249,11 @@ for (const packageName of await packageEntries(runtimeNodeModules)) {
   const destination = path.join(runtimeNodeModules, packageName);
   await materializePackage(destination, destination);
 }
+await materializeTracedPackages(
+  path.join(standaloneAppDirectory, ".next"),
+  path.join(runtimeDirectory, ".next"),
+  materializePackage
+);
 await materializeSymlinks(runtimeDirectory);
 await rm(path.join(runtimeNodeModules, ".pnpm"), {
   recursive: true,
