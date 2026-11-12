@@ -194,6 +194,16 @@ describe("AI-only matcher executor", () => {
     expect(mocks.createMatchResult).not.toHaveBeenCalled();
   });
 
+  it("persists fallback model identity and its actual analysis version", async () => {
+    mocks.analyzeJobsForMatching.mockResolvedValue(new Map([[101, { ...analysis, analysisVersion: "alternate-analysis-v1" }]]));
+    mocks.evaluateMatchWithAI.mockResolvedValue({ outcome: { score: 90 }, runId: "fallback-run", attempts: 3,
+      resolvedModel: { providerRecordId: "alternate-provider", modelId: "alternate-model", provider: "openai", backendKind: "ai_sdk" }, reasoningEffort: "low" });
+    await executeMatch({ config, jobIds: [101], sessionId: "session-1" });
+    expect(mocks.buildMatchPolicyVersion).toHaveBeenLastCalledWith({ providerId: "alternate-provider", model: "alternate-model", reasoningEffort: "low" }, "alternate-analysis-v1");
+    expect(mocks.persistMatchSuccess).toHaveBeenCalledWith("session-1", 101, "result-1", expect.any(Object), 3,
+      expect.any(Number), "alternate-model", expect.objectContaining({ matchRunId: "fallback-run" }));
+  });
+
   it("uses separate analysis and match runtimes and persists only the AI score", async () => {
     const results = await executeMatch({ config, jobIds: [101], sessionId: "session-1" });
 

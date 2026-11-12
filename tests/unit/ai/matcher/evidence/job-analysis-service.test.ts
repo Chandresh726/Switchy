@@ -19,7 +19,7 @@ vi.mock("@/lib/ai/runtime/capability-runtime", () => ({
 }));
 
 import { AIRateLimitError } from "@/lib/ai/shared/errors";
-import { analyzeJobsForMatching } from "@/lib/ai/matcher/evidence/job-analysis";
+import { analyzeJobsForMatching, buildJobAnalysisVersion } from "@/lib/ai/matcher/evidence/job-analysis";
 import { DEFAULT_MATCHER_CONFIG, type JobData } from "@/lib/ai/matcher/types";
 
 const job: JobData = {
@@ -75,6 +75,41 @@ describe("AI-only job analysis service", () => {
 
     expect(results.get(1)?.jobAnalysisId).toBe("cached");
     expect(mocks.createAICapabilityRuntime).not.toHaveBeenCalled();
+  });
+
+  it("deduplicates concurrent analysis by fingerprint and reuses the completed artifact", async () => {
+    let cached: { id: string; evidence: typeof providerOutput } | null = null;
+    mocks.findJobAnalysis.mockImplementation(async () => cached);
+    mocks.getOrCreateJobAnalysis.mockImplementation(async () => {
+      cached = { id: "shared-analysis", evidence: providerOutput };
+      return cached;
+    });
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    mocks.executeStructured.mockImplementation(async () => {
+      started.resolve();
+      await release.promise;
+      return { runId: "shared-run", output: [providerOutput] };
+    });
+    const firstRun = analyzeJobsForMatching([job], config);
+    await started.promise;
+    const secondRun = analyzeJobsForMatching([job], config);
+    await vi.waitFor(() => expect(mocks.findJobAnalysis).toHaveBeenCalledTimes(3));
+    release.resolve();
+    const [first, second] = await Promise.all([firstRun, secondRun]);
+    expect(mocks.executeStructured).toHaveBeenCalledTimes(1);
+    expect(first.get(1)?.jobAnalysisId).toBe("shared-analysis");
+    expect(second.get(1)?.jobAnalysisId).toBe("shared-analysis");
+  });
+
+  it("keys fallback analysis artifacts by the actual producing model", async () => {
+    mocks.executeStructured.mockResolvedValue({ runId: "alternate-run", output: [providerOutput],
+      resolvedModel: { providerRecordId: "alternate-provider", modelId: "alternate-model" }, reasoningEffort: "low" });
+    const results = await analyzeJobsForMatching([job], config);
+    const version = buildJobAnalysisVersion({ ...config, jobAnalysisProviderId: "alternate-provider",
+      jobAnalysisModel: "alternate-model", jobAnalysisReasoningEffort: "low" });
+    expect(mocks.getOrCreateJobAnalysis).toHaveBeenCalledWith(expect.objectContaining({ extractorVersion: version, aiRunId: "alternate-run" }));
+    expect(results.get(1)?.analysisVersion).toBe(version);
   });
 
   it("persists only successful AI analysis with run provenance", async () => {
