@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { AIRateLimitError } from "@/lib/ai/shared/errors";
 import type { ScrapeQueueItem } from "@/lib/db/schema";
 
 import {
@@ -28,6 +29,20 @@ function createRepository(
 }
 
 describe("LocalLeasedWorkRunner", () => {
+  it("defers quota failures even at the final attempt without exhausting work", async () => {
+    const repository = createRepository([createScrapeQueueItem({ attemptCount: 3, maxAttempts: 3 })]);
+    repository.defer = vi.fn(async () => true);
+    const before = Date.now();
+    const runner = new LocalLeasedWorkRunner(repository, async () => {
+      throw new AIRateLimitError("limited", undefined, 600_000);
+    }, { concurrency: 1, maxRetryDelayMs: 1000 });
+    expect(await runner.runAvailable()).toMatchObject({ retried: 1, failed: 0 });
+    expect(repository.fail).not.toHaveBeenCalled();
+    const args = vi.mocked(repository.defer).mock.calls[0];
+    expect(args[3].getTime()).toBeGreaterThanOrEqual(before + 600_000);
+    expect(args[5]).toBe(2);
+  });
+
   it("recovers expired leases before claiming and persists successful results", async () => {
     const repository = createRepository([createScrapeQueueItem()]);
     vi.mocked(repository.recoverExpired).mockResolvedValue({

@@ -75,9 +75,11 @@ function MatchJobLogRow({ log }: { log: MatchLog }) {
     ? distinctRunModels
     : labeledRunModels.map(({ label, model }) => `${label} ${model}`);
   const hasRunModel = runModels.some(Boolean);
+  const fallbackRun = [log.analysisRun, log.matchRun].find((run) => run?.fallbackUsed);
 
   const body = (
     <>
+      {fallbackRun && <p className="px-5 pt-3 text-xs text-muted-foreground">Fallback model used{fallbackRun.fallbackReason ? ` after ${fallbackRun.fallbackReason.replaceAll("_", " ")}` : ""}</p>}
       <StatusRail className={failed ? "bg-red-400" : "bg-emerald-400"} />
       <div className="py-3.5 pl-5 pr-4 sm:pl-6 sm:pr-5">
         <div className="flex items-start gap-3">

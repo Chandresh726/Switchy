@@ -13,6 +13,7 @@ export interface LocalLeasedWorkStore<
   TItem extends LeasedWorkItem,
   TRecovery,
 > {
+  describeError?(error: unknown): string;
   claimNext(
     workerId: string,
     now: Date,
@@ -333,13 +334,13 @@ export class LocalLeasedWorkRunner<
           await this.persistRacedCancellation(item.id, workerId, now, summary);
         }
       } else if (isRateLimitError(error) && this.repository.defer) {
-        const until = new Date(now.getTime() + Math.max(30_000, getRetryAfterMs(error) ?? 0));
+        const until = new Date(Math.ceil((now.getTime() + Math.max(30_000, getRetryAfterMs(error) ?? 0)) / 1000) * 1000);
         const deferred = await this.repository.defer(item.id, workerId,
           error instanceof Error ? error : new Error("Provider rate limited"), until, now, Math.max(0, item.attemptCount - 1));
         if (deferred) summary.retried += 1;
         else await this.persistRacedCancellation(item.id, workerId, now, summary);
       } else if (item.attemptCount < item.maxAttempts) {
-        const message = error instanceof Error ? error.message : "Unknown queue handler error";
+        const message = this.repository.describeError?.(error) ?? (error instanceof Error ? error.message : "Unknown queue handler error");
         const retryAt = new Date(
           now.getTime() +
             resolveRetryDelay(item.attemptCount, error, this.config)
@@ -351,7 +352,7 @@ export class LocalLeasedWorkRunner<
           await this.persistRacedCancellation(item.id, workerId, now, summary);
         }
       } else {
-        const message = error instanceof Error ? error.message : "Unknown queue handler error";
+        const message = this.repository.describeError?.(error) ?? (error instanceof Error ? error.message : "Unknown queue handler error");
         const failed = await this.repository.fail(item.id, workerId, message, now);
         if (failed) {
           summary.failed += 1;

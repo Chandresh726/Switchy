@@ -52,6 +52,7 @@ export async function getAIRunSummaries(
         cacheStatus: aiRuns.cacheStatus,
         qualityResult: aiRuns.qualityResult,
         warningsJson: aiRuns.warningsJson,
+        metadataJson: aiRuns.metadataJson,
         errorCode: aiRuns.errorCode,
         startedAt: aiRuns.startedAt,
         completedAt: aiRuns.completedAt,
@@ -67,9 +68,17 @@ export async function getAIRunSummaries(
       attemptsByRunId.set(attempt.runId, runAttempts);
     }
     for (const row of rows) {
-      const { warningsJson, ...summary } = row;
+      const { warningsJson, metadataJson, ...summary } = row;
+      let fallback: { fallbackUsed?: boolean; fallbackReason?: string; fallbackFromRunId?: string } = {};
+      try {
+        const metadata = JSON.parse(metadataJson ?? "{}");
+        fallback = { ...(metadata.fallbackUsed === true ? { fallbackUsed: true } : {}),
+          ...(typeof metadata.fallbackReason === "string" ? { fallbackReason: metadata.fallbackReason } : {}),
+          ...(typeof metadata.fallbackFromRunId === "string" ? { fallbackFromRunId: metadata.fallbackFromRunId } : {}) };
+      } catch { /* Older runs may not have metadata. */ }
       loadedSummaries.set(row.id, {
         ...summary,
+        ...fallback,
         warningCodes: parseWarningCodes(warningsJson),
         attemptHistory: (attemptsByRunId.get(row.id) ?? []).map((attempt) => ({
           attemptNumber: attempt.attemptNumber,

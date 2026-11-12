@@ -703,7 +703,7 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
       });
       const exitCode = await raceWithSignal(new Promise<number | null>((resolve, reject) => {
         child.once("error", reject);
-        child.once("exit", resolve);
+        child.once("close", resolve);
       }), input.signal);
       await deltaDelivery;
       if (eventError) throw eventError;
@@ -726,7 +726,13 @@ export class OpenCodeCLIBackend implements AIGenerationBackend {
     } finally {
       input.signal.removeEventListener("abort", onAbort);
       lines.close();
-      if (child.exitCode === null) child.kill("SIGTERM");
+      if (child.exitCode === null && child.signalCode === null) {
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(() => child.kill("SIGKILL"), 2_000);
+          child.once("close", () => { clearTimeout(timer); resolve(); });
+          child.kill("SIGTERM");
+        });
+      }
       if (sessionID) await this.removeOfficialCLISession(sessionID);
       await rm(directory, { recursive: true, force: true });
     }

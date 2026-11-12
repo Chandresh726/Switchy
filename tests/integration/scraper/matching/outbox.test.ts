@@ -213,15 +213,17 @@ describe("AIWorkDispatcher", () => {
       now: new Date(3),
     });
     await dispatcher.runAvailable();
-    expect(rateRetryAt - rateFailureAt).toBeGreaterThanOrEqual(15);
+    expect(rateRetryAt).toBe(0);
+    expect(database.select().from(aiWorkItems).where(eq(aiWorkItems.id, "adaptive-rate-limit")).get()).toMatchObject({ status: "queued", attemptCount: 0 });
     expect(adaptiveProviderLimiter.getSnapshot("provider-shared")).toMatchObject({
       ceiling: 2,
       currentLimit: 1,
-      consecutiveSuccesses: 1,
+      consecutiveSuccesses: 0,
     });
 
     mode = "success";
-    for (let id = 4; id < 23; id += 1) {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(rateFailureAt + 40_000);
+    for (let id = 4; id < 24; id += 1) {
       enqueueMatchWork(database, {
         id: `adaptive-recovery-${id}`,
         jobIds: [id],
@@ -236,7 +238,8 @@ describe("AIWorkDispatcher", () => {
       currentLimit: 2,
       consecutiveSuccesses: 0,
     });
-    expect(database.select().from(settings).all()).toEqual(settingsBefore);
+    clock.mockRestore();
+    expect(database.select().from(settings).all().filter((row) => !row.key.startsWith("ai_cooldown:"))).toEqual(settingsBefore);
   });
 
   it("claims independent durable sessions concurrently while provider work is pending", async () => {

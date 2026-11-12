@@ -1,7 +1,7 @@
 import type { z } from "zod";
 
 import type { AIContextOverrides } from "@/lib/ai/runtime-context";
-import { createAICapabilityRuntime, getAIExecutionErrorContext, type AICapabilityRuntime, type CreateAICapabilityRuntimeOptions } from "@/lib/ai/runtime/capability-runtime";
+import { createAICapabilityRuntime, getAIExecutionErrorContext, type AICapabilityRuntime, type CreateAICapabilityRuntimeOptions } from "@/lib/ai/runtime";
 import { categorizeError, isRateLimitError } from "@/lib/ai/shared/errors";
 import type { AIExecutionResult, ResolvedModelSnapshot } from "@/lib/ai/runtime/types";
 
@@ -10,7 +10,7 @@ export interface MatchFallbackModel extends AIContextOverrides {
   modelId: string;
 }
 
-export function canUseFallback(error: unknown): boolean {
+function canUseFallback(error: unknown): boolean {
   if (!(error instanceof Error) || error.name === "AbortError") return false;
   return ["rate_limit", "network", "timeout", "generation_failed", "json_parse", "no_object",
     "missing_api_key", "invalid_model", "provider_not_found", "provider_restricted"].includes(categorizeError(error));
@@ -39,15 +39,16 @@ export function withMatchFallback(primary: AICapabilityRuntime, model?: MatchFal
           throw resolutionError;
         });
         try {
-          return await fallback.executeStructured({ ...input,
+          const result = await fallback.executeStructured({ ...input,
             metadata: { ...input.metadata, fallbackUsed: true,
               ...(previous.aiRunId ? { fallbackFromRunId: previous.aiRunId } : {}),
               fallbackReason: categorizeError(error as Error) },
             policy: { ...input.policy, maxAttempts: Math.min(input.policy.maxAttempts, 2), reasoningEffort: fallback.reasoningEffort },
           });
+          return { ...result, attempts: result.attempts + (previous.attemptCount ?? 0) };
         } catch (fallbackError) {
           // If either route is temporarily throttled, keep the operation resumable.
-          if (isRateLimitError(error) && !isRateLimitError(fallbackError)) throw error;
+          if (isRateLimitError(error) && !isRateLimitError(fallbackError) && ["network", "timeout"].includes(categorizeError(fallbackError as Error))) throw error;
           throw fallbackError;
         }
       }

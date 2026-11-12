@@ -11,7 +11,7 @@ Every provider call belongs to a named capability:
 - `writing_cover_letter`, `writing_referral`, and `writing_recruiter_follow_up` produce grounded drafts.
 - `resume_parse` normalizes deterministically extracted resume text.
 
-The shared runtime resolves one concrete provider/model snapshot per logical execution, owns retries and timeout policy, composes cancellation signals, validates output, and writes a sanitized `aiRuns` ledger entry. API-provider attempts use the configured hard deadline. Local CLI turns wait for provider completion and use the signal only for explicit cancellation, so a healthy long-running CLI turn is not interrupted merely because the API timeout elapsed. AI SDK retries are disabled. A configured unavailable model fails clearly and is never silently replaced.
+The shared runtime resolves one concrete provider/model snapshot per logical execution, owns retries and timeout policy, composes cancellation signals, validates output, and writes a sanitized `aiRuns` ledger entry. API and local CLI generation attempts use the configured hard deadline, starting after a provider permit is granted. Queue waiting does not consume that deadline. AI SDK retries are disabled. Matching may switch only to a fallback explicitly enabled in Settings; other capabilities continue to fail clearly when their configured model is unavailable.
 
 Structured capabilities use portable JSON generation: Switchy gives the provider the JSON Schema through ordinary text generation, accepts only one JSON value (optionally in one JSON code fence), and validates it again with the original Zod schema. This path is shared by API providers, Codex CLI, and OpenCode CLI and avoids depending on inconsistent provider-native schema modes.
 
@@ -44,7 +44,7 @@ Canonical candidate inputs are SHA-256 fingerprinted. A relevant profile change 
 
 Job analysis has its own provider, model, and provider-native reasoning setting. It returns only a short role summary and at most 20 material, source-grounded requirements. Each requirement retains an internal ID, type, importance, concise text, and source excerpt. Closely related requirements and technology alternatives are combined instead of repeated across separate skill, experience, education, constraint, ambiguity, or confidence fields.
 
-Analyses are keyed by the job content fingerprint plus an extractor version that includes the analysis provider/model policy. Jobs are batched within both count and character limits. Only validated AI output is persisted. A failed or timed-out analysis creates no fallback artifact and the job's match fails clearly, so a later run can retry it.
+Analyses are keyed by the job content fingerprint plus an extractor version that includes the analysis provider/model policy. Jobs are batched within both count and character limits. Only validated AI output is persisted. A failed analysis never creates a synthetic artifact. An explicitly configured fallback may produce a validated analysis instead. Primary and fallback artifacts retain their actual provider/model/reasoning versions. Concurrent sessions lock job fingerprints in a stable order and recheck the cache before generating.
 
 ### Final AI match
 
@@ -59,7 +59,7 @@ There is no active deterministic scorer, keyword formula, fixed weight, deductio
 
 Presentation freshness depends only on the candidate fingerprint: a result becomes stale when the profile changes, not when the selected model, reasoning setting, job-analysis policy, or job content changes. Explicit rematching can still replace a result for the same candidate. Execution-cache reuse remains stricter and requires exact candidate fingerprint, job fingerprint, job-analysis version, and match-policy version equality. The startup migration pipeline removes pre-v3 match artifacts and clears deprecated job-level match payloads; active execution only writes `source: ai` results linked to a successful `match_evaluation` run.
 
-The default API-provider per-attempt matching timeout is 120 seconds. User-configured values remain explicit settings and are never changed silently during execution. Local CLI providers keep separate bounded protocol timeouts for startup and JSON-RPC acknowledgements, but generation turns wait for completion or explicit cancellation rather than inheriting the API request deadline.
+The default API-provider per-attempt matching timeout is 120 seconds. User-configured values remain explicit settings and are never changed silently during execution. Local CLI providers also retain separate bounded protocol timeouts for startup and JSON-RPC acknowledgements. Codex interrupts timed-out turns before returning; OpenCode automation terminates the child process before another model is tried.
 
 ## Durable matching queue
 
@@ -76,6 +76,16 @@ Writing uses its independently configured provider/model through the same runtim
 ## Resume parsing
 
 Resume file text extraction is deterministic and separate from AI normalization. The configured resume provider/model receives bounded untrusted extracted text and returns the versioned structured profile shape through portable JSON validation. Field-level validation reports malformed dates, missing required values, duplicate skills, and suspicious URLs. The resume stores its parse run and parser version. An existing profile is never destructively replaced without explicit user action.
+
+## Quotas and matching fallbacks
+
+Settings offers one optional fallback for job analysis and one for match evaluation. Each has its own provider, model, reasoning setting, and enable switch. Both routes use the same schema and evidence validation. Changing the primary never silently enables a fallback. Select any paid fallback explicitly before it can use the provider balance.
+
+Matching caps execution at two attempts per model, or four across primary and fallback. A rate limit immediately exits inline retries and never splits an analysis batch. Malformed JSON may split a batch only within a four-attempt tree budget when no fallback is configured. Invalid input and cancellation never invoke fallback. Successful analysis and matching results are checkpointed and reused independently.
+
+Provider cooldowns are shared across Next.js module graphs and persisted in SQLite settings under internal `ai_cooldown:` keys. OpenCode upstream accounts use separate quota scopes; models on the same upstream conservatively share a scope. Unknown reset times use a 30-second initial cooldown with jitter and exponential growth up to 30 minutes, while an upstream Retry-After remains a minimum. After cooldown, concurrency begins at one and grows after sustained success. Free models are capped at one concurrent request.
+
+When no route can progress because of throttling, the durable work item returns to queued state with an `availableAt` timestamp. Deferrals do not exhaust the queue retry budget. Polling exposes the safe wait reason and next attempt time; cancellation remains available. A restart preserves the wait. History identifies the actual model and fallback reason. Suspension, lease loss, and user cancellation retain distinct safe error codes, and recovery settles active-looking rows in terminal sessions.
 
 ## Local CLI providers
 

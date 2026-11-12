@@ -25,6 +25,9 @@ interface AIRunAttemptSummary {
 }
 
 export interface AIRunSummary {
+  fallbackUsed?: boolean;
+  fallbackReason?: string | null;
+  fallbackFromRunId?: string | null;
   id: string;
   capability: string;
   provider: string;

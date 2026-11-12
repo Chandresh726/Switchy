@@ -363,20 +363,21 @@ async function executeWithLedger<T>(input: {
       };
 
       try {
-        attempts = attempt;
-        await input.runRepository.startAttempt(runId, attempt);
-        attemptRecorded = true;
         if (useAdaptiveLimiter && input.runRepository.getProviderCooldown) {
           const until = await input.runRepository.getProviderCooldown(providerQuotaScope(input.snapshot));
+          adaptiveProviderLimiter.restoreCooldown(providerQuotaScope(input.snapshot), input.providerConcurrencyLimit!, until);
           if (until > Date.now()) throw new AIRateLimitError("Provider is cooling down", undefined, until - Date.now());
         }
         permit = useAdaptiveLimiter
           ? await adaptiveProviderLimiter.acquire(
               providerQuotaScope(input.snapshot),
-              input.providerConcurrencyLimit!,
+              input.snapshot.modelId.endsWith("-free") ? 1 : input.providerConcurrencyLimit!,
               composed.signal
             )
           : undefined;
+        attempts = attempt;
+        await input.runRepository.startAttempt(runId, attempt);
+        attemptRecorded = true;
         const generationSignal = AbortSignal.any([composed.signal, AbortSignal.timeout(input.execution.policy.timeoutMs)]);
         let result: ProviderCallResult<T>;
         try {
@@ -443,6 +444,7 @@ async function executeWithLedger<T>(input: {
         };
       } catch (error) {
         const normalized = error instanceof Error ? error : new Error(String(error));
+        permit?.failure(normalized);
         const cancelled = input.execution.signal?.aborted || normalized.name === "AbortError";
         const canRetry = !cancelled &&
           !isRateLimitError(normalized) &&

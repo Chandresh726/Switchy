@@ -82,7 +82,7 @@ export class AIMatchWorkHandler {
           state.checkpoint.succeeded + succeeded,
           state.checkpoint.failed + failed
         )),
-    });
+    }).finally(async () => { await progressWrites; });
     await progressWrites;
     if (progressError) throw progressError;
     executionSignal.throwIfAborted();

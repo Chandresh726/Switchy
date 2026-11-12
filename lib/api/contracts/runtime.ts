@@ -71,6 +71,8 @@ export const matchJobProgressSchema = z.object({
   updatedAt: z.string(),
 });
 export const matchSessionProgressResponseSchema = z.object({
+  nextAttemptAt: z.string().nullable().optional(),
+  waitReason: z.string().nullable().optional(),
   sessionId: z.string(),
   status: z.string(),
   total: z.number().int().nonnegative(),

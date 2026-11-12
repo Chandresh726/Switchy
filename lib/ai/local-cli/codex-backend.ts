@@ -301,6 +301,7 @@ export class CodexCLIBackend implements AIGenerationBackend {
     this.beginOperation();
     let threadId: string | undefined;
     let turnId: string | undefined;
+    let interruption: Promise<unknown> | undefined;
     let rejectCompletion: ((error: Error) => void) | undefined;
     const disposers: Array<() => void> = [];
     const abortReason = () => input.signal.reason instanceof Error
@@ -308,8 +309,8 @@ export class CodexCLIBackend implements AIGenerationBackend {
       : new DOMException("AI execution cancelled", "AbortError");
     const onAbort = () => {
       if (threadId && turnId) {
-        void this.client.request("turn/interrupt", { threadId, turnId }, { timeoutMs: 1_000 })
-          .catch(() => this.requestRestartWhenIdle());
+        interruption = this.client.request("turn/interrupt", { threadId, turnId }, { timeoutMs: 1_000 })
+          .catch(() => this.client.stop());
       }
       rejectCompletion?.(abortReason());
     };
@@ -452,6 +453,7 @@ export class CodexCLIBackend implements AIGenerationBackend {
       throw error;
     } finally {
       input.signal.removeEventListener("abort", onAbort);
+      await interruption;
       disposers.forEach((dispose) => dispose());
       await rm(cwd, { recursive: true, force: true });
       this.endOperation();

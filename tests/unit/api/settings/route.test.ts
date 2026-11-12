@@ -76,6 +76,34 @@ describe("settings route", () => {
     });
   });
 
+  it("rejects enabling fallback without a model", async () => {
+    const response = await PATCH(new Request("http://localhost/api/settings", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ matcher_fallback_enabled: true }),
+    }));
+    expect(response.status).toBe(400);
+    expect(mocks.upsertSettings).not.toHaveBeenCalled();
+  });
+
+  it("rejects a fallback identical to its primary", async () => {
+    const response = await PATCH(new Request("http://localhost/api/settings", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ matcher_fallback_enabled: true, matcher_fallback_provider_id: "provider-1", matcher_fallback_model: "gpt-4.1-mini" }),
+    }));
+    expect(response.status).toBe(400);
+    expect(mocks.upsertSettings).not.toHaveBeenCalled();
+  });
+
+  it("validates a configured fallback and reconciles its own reasoning effort", async () => {
+    const response = await PATCH(new Request("http://localhost/api/settings", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ job_analysis_fallback_enabled: true, job_analysis_fallback_provider_id: "backup", job_analysis_fallback_model: "backup-model", job_analysis_fallback_reasoning_effort: "low" }),
+    }));
+    expect(response.status).toBe(200);
+    expect(mocks.getCachedProviderModelDefinition).toHaveBeenCalledWith("backup", "backup-model");
+    expect(mocks.parseSettingsUpdateBody).toHaveBeenCalledWith(expect.objectContaining({ job_analysis_fallback_reasoning_effort: "low" }));
+  });
+
   it("returns settings from service", async () => {
     const response = await GET(new Request("http://localhost/api/settings"));
     const body = await response.json();

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 const mocks = vi.hoisted(() => ({ create: vi.fn() }));
-vi.mock("@/lib/ai/runtime/capability-runtime", () => ({
+vi.mock("@/lib/ai/runtime", () => ({
   createAICapabilityRuntime: mocks.create,
   getAIExecutionErrorContext: (error: object) => error,
 }));

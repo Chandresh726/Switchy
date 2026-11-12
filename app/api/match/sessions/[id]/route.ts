@@ -19,6 +19,8 @@ export async function GET(request: Request, { params }: RouteParams) {
     return NextResponse.json({
       sessionId: session.id,
       status: session.status,
+      nextAttemptAt: session.status === "queued" ? session.nextAttemptAt : null,
+      waitReason: session.status === "queued" ? session.waitReason : null,
       total: session.jobsTotal ?? 0,
       completed: session.jobsCompleted ?? 0,
       succeeded: session.jobsSucceeded ?? 0,

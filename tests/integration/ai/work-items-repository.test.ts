@@ -1,3 +1,4 @@
+import { AIRateLimitError } from "@/lib/ai/shared/errors";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
@@ -38,6 +39,34 @@ function insertCompany(database: ReturnType<typeof harness.createDatabase>["data
 }
 
 describe("generic local AI work repository", () => {
+  it("defers throttled work without spending its retry budget or leaving active stages", async () => {
+    const { database } = harness.createDatabase();
+    const company = insertCompany(database);
+    const job = database.insert(jobs).values({ companyId: company.id, title: "Role", url: "https://example.test/defer" }).returning().get();
+    const queued = enqueueMatchWork(database, { jobIds: [job.id], triggerSource: "manual" });
+    const store = new DrizzleAIWorkStore(database);
+    const now = new Date(Math.floor(Date.now() / 1000) * 1000 + 1000);
+    const item = await store.claimNext("worker", now, 120_000);
+    await markJobAnalysisStarted(queued.sessionId, [job.id], database);
+    const next = new Date(now.getTime() + 600_000);
+    expect(await store.defer(item!.id, "worker", new AIRateLimitError("private provider text"), next, now, 0)).toBe(true);
+    expect(database.select().from(aiWorkItems).get()).toMatchObject({ status: "queued", attemptCount: 0,
+      availableAt: next, lastErrorCode: "rate_limit", lastError: "The AI provider rate limit was reached." });
+    expect(database.select().from(matchSessionJobs).get()).toMatchObject({ analysisStatus: "queued", matchStatus: "blocked" });
+    expect(await store.claimNext("new-worker", new Date(next.getTime() - 1000), 120_000)).toBeNull();
+    expect(database.select().from(matchLogs).all()).toHaveLength(0);
+  });
+
+  it("settles stale pipeline rows inside historical failed sessions", async () => {
+    const { database } = harness.createDatabase();
+    const company = insertCompany(database);
+    const job = database.insert(jobs).values({ companyId: company.id, title: "Role", url: "https://example.test/stale" }).returning().get();
+    const queued = enqueueMatchWork(database, { jobIds: [job.id], triggerSource: "manual" });
+    database.update(matchSessions).set({ status: "failed", completedAt: new Date() }).where(eq(matchSessions.id, queued.sessionId)).run();
+    await new DrizzleAIWorkStore(database).recoverExpired(new Date());
+    expect(database.select().from(matchSessionJobs).get()).toMatchObject({ analysisStatus: "failed", matchStatus: "failed", errorCode: "work_interrupted" });
+  });
+
   it("creates a match session and validated work item atomically", () => {
     const { database } = harness.createDatabase();
     const company = insertCompany(database);

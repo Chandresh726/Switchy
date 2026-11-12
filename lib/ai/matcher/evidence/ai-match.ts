@@ -152,7 +152,7 @@ export async function evaluateMatchWithAI(
     prompt: built.prompt,
     schema: AIMatchOutcomeSchema,
     policy: {
-      maxAttempts: config.maxRetries,
+      maxAttempts: Math.min(config.maxRetries, 2),
       timeoutMs: config.timeoutMs,
       reasoningEffort: runtime.reasoningEffort,
     },

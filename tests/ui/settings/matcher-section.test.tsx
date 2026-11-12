@@ -89,7 +89,7 @@ describe("MatcherSection", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show advanced" }));
 
     expect(screen.getByLabelText("Analysis batch")).toBeTruthy();
-    expect(screen.getByLabelText("Max attempts")).toBeTruthy();
+    expect(screen.getByLabelText("Attempts per model")).toBeTruthy();
     expect(screen.getByLabelText("Timeout (sec)")).toBeTruthy();
     expect(screen.getByLabelText("Concurrency")).toBeTruthy();
   });

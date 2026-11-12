@@ -27,7 +27,7 @@ stable application release.
 - Track companies (single and bulk operations), with support for custom career pages + manual ATS override
 - Manage a job pipeline with filters, search, sorting, saved/applied tabs, and match score views
 - Upload and parse resumes, then manage profile, skills, experience, and education data
-- Configure evidence-based AI matching with Economy, Balanced, or Quality presets and advanced retry, concurrency, and timeout controls
+- Configure AI job analysis and matching with optional fallback models, shared quota cooldowns, and bounded retry, concurrency, and timeout controls
 - Generate AI referral messages and cover letters per job, with editable AI history
 - Run scheduled scraping through a crash-recoverable local queue and review scrape/match/AI histories
 - Receive native macOS alerts for strong matches found by automatic scrape runs

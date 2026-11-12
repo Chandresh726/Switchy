@@ -61,7 +61,17 @@ async function reconcileReasoningSettings(body: Record<string, unknown>) {
   const current = await getSettingsWithDefaults();
   const reconciled = { ...body };
   for (const keys of REASONING_FEATURE_SETTINGS) {
-    if (!(keys.provider in body || keys.model in body || keys.effort in body)) continue;
+    const fallbackEnabledKey = keys.provider.includes("_fallback_")
+      ? keys.provider.replace("provider_id", "enabled") as SettingKey : undefined;
+    if (!(keys.provider in body || keys.model in body || keys.effort in body || (fallbackEnabledKey && fallbackEnabledKey in body))) continue;
+    if (keys.provider.includes("_fallback_") && !String(body[keys.model] ?? current[keys.model]).trim()) {
+      reconciled[keys.effort] = "";
+      continue;
+    }
+    if (keys.provider.includes("_fallback_")) {
+      const enabledKey = keys.provider.replace("provider_id", "enabled") as SettingKey;
+      if (String(body[enabledKey] ?? current[enabledKey]) !== "true") continue;
+    }
     const providerId = String(body[keys.provider] ?? current[keys.provider]).trim();
     const modelId = String(body[keys.model] ?? current[keys.model]).trim();
     const requestedEffort = String(body[keys.effort] ?? current[keys.effort]);

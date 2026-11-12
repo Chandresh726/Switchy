@@ -66,6 +66,16 @@ function createLegacyMigrationsFolder(): string {
 }
 
 describe("AI run migration and repository", () => {
+  it("retains the longest provider cooldown across repository instances", async () => {
+    const { database } = harness.createDatabase();
+    const first = createAIRunRepository(database);
+    await first.setProviderCooldown("opencode:opencode", 900_000);
+    await first.setProviderCooldown("opencode:opencode", 100_000);
+    const restarted = createAIRunRepository(database);
+    expect(await restarted.getProviderCooldown("opencode:opencode")).toBe(900_000);
+    expect(await restarted.getProviderCooldown("opencode:github-copilot")).toBe(0);
+  });
+
   it("migrates a fresh database and stores complete sanitized run telemetry", async () => {
     const { database } = harness.createDatabase();
     const repository = createAIRunRepository(database);

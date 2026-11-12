@@ -272,11 +272,20 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
 
     try {
       let matchPolicyVersion = buildMatchPolicyVersion(concreteConfig, analyzed.analysisVersion ?? analysisVersion);
-      const cached = await artifactRepository.findFreshMatch(jobId, {
+      let cached = await artifactRepository.findFreshMatch(jobId, {
         candidateFingerprint: candidateArtifact.fingerprint,
         jobFingerprint: analyzed.jobFingerprint,
         scoringPolicyVersion: matchPolicyVersion,
       });
+      if (!cached && config.matchFallback) {
+        const fallbackPolicy = buildMatchPolicyVersion({ providerId: config.matchFallback.providerId,
+          model: config.matchFallback.modelId, reasoningEffort: config.matchFallback.reasoningEffort },
+          analyzed.analysisVersion ?? analysisVersion);
+        cached = await artifactRepository.findFreshMatch(jobId, {
+          candidateFingerprint: candidateArtifact.fingerprint, jobFingerprint: analyzed.jobFingerprint,
+          scoringPolicyVersion: fallbackPolicy,
+        });
+      }
       if (cached) {
         const publicResult = toPublicMatchResult(cached.score, cached.evidence);
         if (!sessionId) {

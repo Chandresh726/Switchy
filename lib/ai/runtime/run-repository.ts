@@ -283,7 +283,7 @@ export function createAIRunRepository(database: AIRunDatabase) {
         schemaVersion: "runtime-resolution-v1",
         policyVersion: "runtime-resolution-v1",
         inputFingerprint: InputFingerprintSchema.parse(input.inputFingerprint),
-        status: sanitized.code === "aborted" ? "cancelled" : "failed",
+        status: ["aborted", "system_suspended", "lease_lost", "maintenance_cancelled"].includes(sanitized.code) ? "cancelled" : "failed",
         attemptCount: 0,
         durationMs: 0,
         cacheStatus: "bypass",
@@ -363,7 +363,7 @@ export function createAIRunRepository(database: AIRunDatabase) {
       const result = await database
         .update(aiRuns)
         .set({
-          status: sanitized.code === "aborted" ? "cancelled" : "failed",
+          status: ["aborted", "system_suspended", "lease_lost", "maintenance_cancelled"].includes(sanitized.code) ? "cancelled" : "failed",
           attemptCount: input.attempts,
           ...usageColumns(input.usage),
           durationMs: input.durationMs,

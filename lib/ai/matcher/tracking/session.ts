@@ -9,6 +9,7 @@ import {
   matchLogs,
   matchSessionJobs,
   matchSessions,
+  aiWorkItems,
 } from "@/lib/db/schema";
 import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
 
@@ -161,6 +162,8 @@ export async function getMatchSessionStatus(sessionId: string) {
   const [session] = await db
     .select({
       id: matchSessions.id,
+      nextAttemptAt: aiWorkItems.availableAt,
+      waitReason: aiWorkItems.lastError,
       status: matchSessions.status,
       jobsTotal: matchSessions.jobsTotal,
       jobsCompleted: matchSessions.jobsCompleted,
@@ -170,6 +173,7 @@ export async function getMatchSessionStatus(sessionId: string) {
       completedAt: matchSessions.completedAt,
     })
     .from(matchSessions)
+    .leftJoin(aiWorkItems, eq(aiWorkItems.matchSessionId, matchSessions.id))
     .where(eq(matchSessions.id, sessionId))
     .limit(1);
 

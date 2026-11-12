@@ -1,6 +1,9 @@
 import { z } from "zod";
 import PQueue from "p-queue";
 
+import { KeyedExecutionLock } from "@/lib/scraper/runtime/keyed-lock";
+import { processSingleton } from "@/lib/runtime/process-singleton";
+
 import {
   buildJobEvidenceInput,
   buildJobFingerprint,
@@ -293,11 +296,20 @@ export async function analyzeJobsForMatching(
     if (shouldStop && await shouldStop()) return resolved;
     let jobEvidence: JobEvidenceInput;
     let jobFingerprint: string;
+    let cachedVersion = analysisVersion;
     let cached: Awaited<ReturnType<typeof artifactRepository.findJobAnalysis>>;
     try {
       jobEvidence = buildJobEvidenceInput(job);
       jobFingerprint = buildJobFingerprint(jobEvidence);
       cached = await artifactRepository.findJobAnalysis(jobFingerprint, analysisVersion);
+      if (!cached && config.jobAnalysisFallback) {
+        cachedVersion = buildJobAnalysisVersion({ ...config,
+          jobAnalysisProviderId: config.jobAnalysisFallback.providerId,
+          jobAnalysisModel: config.jobAnalysisFallback.modelId,
+          jobAnalysisReasoningEffort: config.jobAnalysisFallback.reasoningEffort,
+        });
+        cached = await artifactRepository.findJobAnalysis(jobFingerprint, cachedVersion);
+      }
     } catch (error) {
       if (!(error instanceof z.ZodError)) throw error;
       const validationError = storedJobValidationError(job.id, error);
@@ -313,7 +325,7 @@ export async function analyzeJobsForMatching(
         jobAnalysisId: cached.id,
         analysisRunId: cached.aiRunId,
         analysis: cached.evidence,
-        analysisVersion,
+        analysisVersion: cachedVersion,
       });
       await callbacks.onReady?.(resolved.get(job.id)!, "cached");
     } else {
@@ -341,7 +353,7 @@ export async function analyzeJobsForMatching(
     concurrency: Math.max(1, callbacks.concurrencyLimit ?? config.concurrencyLimit),
   });
   const batches = buildAnalysisBatches(pending.map((item) => item.job), config.batchSize);
-  const processBatch = async (batch: JobData[], budget = { remaining: 4 }): Promise<void> => {
+  const processBatchUnlocked = async (batch: JobData[], budget = { remaining: 4 }): Promise<void> => {
     if (budget.remaining <= 0) {
       await callbacks.onFailed?.(batch.map((job) => job.id), new AIError({ type: "no_object", message: "Analysis exhausted its generation budget" }));
       return;
@@ -389,8 +401,8 @@ export async function analyzeJobsForMatching(
       if (!config.jobAnalysisFallback && batch.length > 1 && error instanceof Error &&
           ["json_parse", "no_object"].includes(categorizeError(error))) {
         const middle = Math.ceil(batch.length / 2);
-        await processBatch(batch.slice(0, middle), budget);
-        await processBatch(batch.slice(middle), budget);
+        await processBatchUnlocked(batch.slice(0, middle), budget);
+        await processBatchUnlocked(batch.slice(middle), budget);
         return;
       }
       if (isRateLimitError(error)) throw error;
@@ -433,6 +445,34 @@ export async function analyzeJobsForMatching(
       });
       await callbacks.onReady?.(resolved.get(item.job.id)!, "generated");
     }
+  };
+  const locks = processSingleton("aiAnalysisLocks", () => new KeyedExecutionLock<string>());
+  const processBatch = async (batch: JobData[]) => {
+    const releases: Array<() => void> = [];
+    try {
+      const keys = Array.from(new Set(batch.map((job) => `${analysisVersion}:${pendingById.get(job.id)!.jobFingerprint}`))).sort();
+      for (const key of keys) releases.push(await locks.acquire(key, signal ?? new AbortController().signal));
+      const uncached: JobData[] = [];
+      for (const job of batch) {
+        const item = pendingById.get(job.id)!;
+        let version = analysisVersion;
+        let cached = await artifactRepository.findJobAnalysis(item.jobFingerprint, version);
+        if (!cached && config.jobAnalysisFallback) {
+          version = buildJobAnalysisVersion({ ...config,
+            jobAnalysisProviderId: config.jobAnalysisFallback.providerId,
+            jobAnalysisModel: config.jobAnalysisFallback.modelId,
+            jobAnalysisReasoningEffort: config.jobAnalysisFallback.reasoningEffort });
+          cached = await artifactRepository.findJobAnalysis(item.jobFingerprint, version);
+        }
+        if (cached) {
+          const analyzed = { job, jobEvidence: item.jobEvidence, jobFingerprint: item.jobFingerprint,
+            jobAnalysisId: cached.id, analysisRunId: cached.aiRunId, analysis: cached.evidence, analysisVersion: version };
+          resolved.set(job.id, analyzed);
+          await callbacks.onReady?.(analyzed, "cached");
+        } else uncached.push(job);
+      }
+      if (uncached.length) await processBatchUnlocked(uncached);
+    } finally { releases.reverse().forEach((release) => release()); }
   };
   const settled = await Promise.allSettled(batches.map((batch) => queue.add(() => processBatch(batch))));
   const rejected = settled.find((item) => item.status === "rejected");

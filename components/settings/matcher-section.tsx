@@ -170,7 +170,10 @@ export function MatcherSection({
                 ? `${matchProgress.completed}/${matchProgress.total} matched`
                 : "Matching..."
               : "Match Unmatched"}
-            {isMatching && matchProgress ? (
+            {isMatching && matchProgress?.waitReason && <p role="status" className="text-sm text-muted-foreground">
+          {matchProgress.waitReason}{matchProgress.nextAttemptAt ? ` Next attempt: ${new Date(matchProgress.nextAttemptAt).toLocaleTimeString()}.` : ""}
+        </p>}
+        {isMatching && matchProgress ? (
               <span className="text-xs text-muted-foreground">
                 {matchProgress.succeeded}✓ {matchProgress.failed}✕
               </span>
@@ -231,6 +234,9 @@ export function MatcherSection({
         </DialogContent>
       </Dialog>
       <CardContent className="space-y-4">
+        {isMatching && matchProgress?.waitReason && <p role="status" className="text-sm text-muted-foreground">
+          {matchProgress.waitReason}{matchProgress.nextAttemptAt ? ` Next attempt: ${new Date(matchProgress.nextAttemptAt).toLocaleTimeString()}.` : ""}
+        </p>}
         {isMatching && matchProgress ? (
           <MatchPipelineProgress
             analysis={matchProgress.analysis}
@@ -406,14 +412,14 @@ export function MatcherSection({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="max-retries" className="text-xs text-muted-foreground">Max attempts</Label>
+                      <Label htmlFor="max-retries" className="text-xs text-muted-foreground">Attempts per model</Label>
                       <Input
                         id="max-retries"
                         type="number"
                         min={1}
-                        max={10}
-                        value={maxRetries}
-                        onChange={(e) => onMaxRetriesChange(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
+                        max={2}
+                        value={Math.min(2, maxRetries)}
+                        onChange={(e) => onMaxRetriesChange(Math.min(2, Math.max(1, parseInt(e.target.value) || 1)))}
                         className="bg-background/60 border-border"
                       />
                     </div>

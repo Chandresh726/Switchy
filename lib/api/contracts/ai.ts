@@ -35,6 +35,9 @@ const aiRunAttemptSummarySchema = z.object({
 });
 
 export const aiRunSummarySchema = z.object({
+  fallbackUsed: z.boolean().optional(),
+  fallbackReason: z.string().nullable().optional(),
+  fallbackFromRunId: z.string().nullable().optional(),
   id: z.string(),
   capability: z.string(),
   provider: z.string(),

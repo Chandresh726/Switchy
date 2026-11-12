@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import { and, asc, eq, inArray, lte } from "drizzle-orm";
 
-import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { db } from "@/lib/db";
 import {
   aiWorkItems,
@@ -15,6 +14,8 @@ import {
 } from "@/lib/db/schema";
 import { chunkSqliteParameters, createSqliteBusyRetry } from "@/lib/db/sqlite-utils";
 import type { LocalLeasedWorkStore } from "@/lib/scraper/runtime/leased-work-runner";
+
+import { serializeWorkError, deserializeWorkError } from "./errors";
 
 import {
   createAIWorkRecords,
@@ -104,6 +105,16 @@ function projectScrapingLog(
   if (scrapingLogId) {
     tx.update(scrapingLogs).set(values).where(eq(scrapingLogs.id, scrapingLogId)).run();
   }
+}
+
+function settleCancelledPipeline(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0], sessionId: string, now: Date
+): void {
+  tx.update(matchSessionJobs).set({ matchStatus: "failed", errorCode: "aborted",
+    errorMessage: "The AI request was cancelled.", updatedAt: now })
+    .where(and(eq(matchSessionJobs.sessionId, sessionId), inArray(matchSessionJobs.matchStatus, ["blocked", "queued", "matching"]))).run();
+  tx.update(matchSessionJobs).set({ analysisStatus: "failed", updatedAt: now })
+    .where(and(eq(matchSessionJobs.sessionId, sessionId), inArray(matchSessionJobs.analysisStatus, ["queued", "analyzing"]))).run();
 }
 
 function insertPipelineJobs(
@@ -442,8 +453,10 @@ export class DrizzleAIWorkStore implements AIWorkStore {
     return this.requeue(itemId, workerId, error, availableAt, now);
   }
 
+  describeError(error: unknown): string { return serializeWorkError(error); }
+
   async defer(itemId: string, workerId: string, error: Error, availableAt: Date, now: Date, attemptCount: number) {
-    return this.requeue(itemId, workerId, sanitizeAIError(error).message, availableAt, now, attemptCount);
+    return this.requeue(itemId, workerId, serializeWorkError(error), availableAt, now, attemptCount);
   }
 
   async fail(itemId: string, workerId: string, error: string, now: Date) {
@@ -468,6 +481,7 @@ export class DrizzleAIWorkStore implements AIWorkStore {
       if (!work) {
         tx.update(matchSessions).set({ status: "cancelled", completedAt: now })
           .where(eq(matchSessions.id, sessionId)).run();
+        settleCancelledPipeline(tx, sessionId, now);
         return { exists: true, stopped: true, status: "cancelled" };
       }
       const checkpoint = summarizeCheckpoints(tx.select({
@@ -491,6 +505,7 @@ export class DrizzleAIWorkStore implements AIWorkStore {
         errorCount: checkpoint.failed,
         completedAt: now,
       }).where(eq(matchSessions.id, sessionId)).run();
+      settleCancelledPipeline(tx, sessionId, now);
       projectScrapingLog(tx, work.payloadJson, {
         matcherStatus: "failed",
         matcherJobsCompleted: completedCount(checkpoint),
@@ -502,6 +517,18 @@ export class DrizzleAIWorkStore implements AIWorkStore {
 
   async recoverExpired(now: Date) {
     return this.retryBusy(() => this.database.transaction((tx) => {
+      const stale = tx.select({ sessionId: matchSessionJobs.sessionId, jobId: matchSessionJobs.jobId,
+        analysisStatus: matchSessionJobs.analysisStatus, matchStatus: matchSessionJobs.matchStatus })
+        .from(matchSessionJobs).innerJoin(matchSessions, eq(matchSessions.id, matchSessionJobs.sessionId))
+        .where(and(inArray(matchSessions.status, ["failed", "cancelled"]),
+          inArray(matchSessionJobs.matchStatus, ["blocked", "queued", "matching"]))).all();
+      for (const row of stale) {
+        const analysisFailed = ["queued", "analyzing"].includes(row.analysisStatus);
+        tx.update(matchSessionJobs).set({ ...(analysisFailed ? { analysisStatus: "failed" as const } : {}),
+          matchStatus: "failed", errorStage: analysisFailed ? "analysis" : "matching",
+          errorCode: "work_interrupted", errorMessage: "This session ended before the job completed.", updatedAt: now,
+        }).where(and(eq(matchSessionJobs.sessionId, row.sessionId), eq(matchSessionJobs.jobId, row.jobId))).run();
+      }
       const expired = tx.select().from(aiWorkItems).where(and(
         eq(aiWorkItems.workType, "match_jobs"),
         eq(aiWorkItems.status, "running"),
@@ -603,8 +630,7 @@ export class DrizzleAIWorkStore implements AIWorkStore {
     now: Date,
     attemptCount?: number
   ) {
-    const sanitized = error === null ? null : error === "The AI provider rate limit was reached."
-      ? { code: "rate_limit", message: error } : sanitizeAIError(new Error(error));
+    const sanitized = error === null ? null : deserializeWorkError(error);
     return this.retryBusy(() => this.database.transaction((tx) => {
       const updated = tx.update(aiWorkItems).set({
         status: "queued",
@@ -650,7 +676,7 @@ export class DrizzleAIWorkStore implements AIWorkStore {
   }
 
   private async setFailed(itemId: string, workerId: string, error: string, now: Date) {
-    const sanitized = sanitizeAIError(new Error(error));
+    const sanitized = deserializeWorkError(error);
     return this.retryBusy(() => this.database.transaction((tx) => {
       const updated = tx.update(aiWorkItems).set({
         status: "failed",
@@ -686,6 +712,7 @@ export class DrizzleAIWorkStore implements AIWorkStore {
       if (!updated) return false;
       tx.update(matchSessions).set({ status: "cancelled", completedAt: now })
         .where(eq(matchSessions.id, itemId)).run();
+      settleCancelledPipeline(tx, itemId, now);
       projectScrapingLog(tx, updated.payloadJson, { matcherStatus: "failed" });
       return true;
     }, { behavior: "immediate" }));
@@ -739,6 +766,7 @@ export class DrizzleAIWorkStore implements AIWorkStore {
       errorCount: checkpoint.failed,
       completedAt: now,
     }).where(eq(matchSessions.id, item.id)).run();
+    settleCancelledPipeline(tx, item.id, now);
     projectScrapingLog(tx, item.payloadJson, { matcherStatus: "failed" });
   }
 

@@ -1,3 +1,5 @@
+import { processSingleton } from "@/lib/runtime/process-singleton";
+
 import { AIRateLimitError, getRetryAfterMs, isRateLimitError } from "@/lib/ai/shared/errors";
 
 const SUCCESS_STREAK_TO_INCREASE = 20;
@@ -82,6 +84,14 @@ export class AdaptiveProviderLimiter {
       state.waiters.push(waiter);
       if (signal?.aborted) onAbort();
     });
+  }
+
+  restoreCooldown(providerRecordId: string, ceiling: number, until: number): void {
+    const state = this.getOrCreateState(providerRecordId, ceiling);
+    if (until > state.cooldownUntil) {
+      state.cooldownUntil = until;
+      state.currentLimit = 1;
+    }
   }
 
   getSnapshot(providerRecordId: string): AdaptiveProviderLimitSnapshot | null {
@@ -195,7 +205,7 @@ export class AdaptiveProviderLimiter {
   }
 }
 
-export const adaptiveProviderLimiter = new AdaptiveProviderLimiter();
+export const adaptiveProviderLimiter = processSingleton("adaptiveAIProviderLimiter", () => new AdaptiveProviderLimiter());
 
 export function resetAdaptiveProviderLimiter(): void {
   adaptiveProviderLimiter.reset();
