@@ -94,6 +94,15 @@ describe("MatcherSection", () => {
     expect(screen.getByLabelText("Concurrency")).toBeTruthy();
   });
 
+  it("keeps fallback controls inside the advanced settings toggle", () => {
+    render(<MatcherSection {...createProps()} fallbackSettings={<div>Fallback controls</div>} />);
+    expect(screen.queryByText("Fallback controls")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show advanced" }));
+    expect(screen.getByText("Fallback controls")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Hide advanced" }));
+    expect(screen.queryByText("Fallback controls")).toBeNull();
+  });
+
   it("hides reasoning when the model does not publish selectable efforts", () => {
     const props = createProps();
     props.models[0].supportsReasoning = false;

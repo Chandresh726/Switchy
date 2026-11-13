@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -65,7 +67,7 @@ vi.mock("@/lib/api/clients/jobs", () => ({
 }));
 vi.mock("@/lib/api/clients/ai", () => ({ clearAllAIContent: vi.fn() }));
 
-vi.mock("@/components/settings/matcher-section", () => ({ MatcherSection: () => <div>Matcher</div> }));
+vi.mock("@/components/settings/matcher-section", () => ({ MatcherSection: ({ fallbackSettings }: { fallbackSettings?: ReactNode }) => <div><span>Matcher</span>{fallbackSettings}</div> }));
 vi.mock("@/components/settings/danger-zone", () => ({ DangerZone: () => <div>Danger zone</div> }));
 vi.mock("@/components/settings/resume-parser-section", () => ({ ResumeParserSection: () => <div>Resume parser</div> }));
 vi.mock("@/components/settings/notifications-section", () => ({ NotificationsSection: () => <div>Notifications</div> }));
@@ -224,6 +226,28 @@ describe("settings failure recovery", () => {
     }));
 
     expect(await screen.findByText("codex_cli:ready")).toBeTruthy();
+  });
+
+  it("autosaves fallback edits with the matching engine settings", async () => {
+    const current = { ...settings, job_analysis_provider_id: "provider-1", job_analysis_model: "primary-model", job_analysis_reasoning_effort: "",
+      matcher_provider_id: "provider-1", matcher_model: "primary-model", matcher_reasoning_effort: "",
+      resume_parser_provider_id: "provider-1", resume_parser_model: "primary-model", resume_parser_reasoning_effort: "",
+      ai_writing_provider_id: "provider-1", ai_writing_model: "primary-model", ai_writing_reasoning_effort: "",
+      matcher_fallback_provider_id: "provider-1", matcher_fallback_model: "backup-model", matcher_fallback_reasoning_effort: "" };
+    mocks.getSettings.mockResolvedValue(current);
+    mocks.patchSettings.mockImplementation(async (updates) => ({ ...current, ...updates }));
+    mocks.getProviders.mockResolvedValue([{ id: "provider-1", provider: "openai", kind: "api_key", isActive: true,
+      hasApiKey: true, selectable: true, createdAt: null, updatedAt: null }]);
+    mocks.getProviderModels.mockResolvedValue({ providerId: "provider-1", provider: "openai", isStale: false,
+      fetchedAt: "2026-11-13T00:00:00Z", source: "live", models: ["primary-model", "backup-model"].map((modelId) => ({
+        modelId, label: modelId, description: "", supportsReasoning: false, reasoningControl: { kind: "provider_default" },
+      })) });
+    renderSettings();
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Final match fallback" }));
+    await waitFor(() => expect(mocks.patchSettings).toHaveBeenCalledWith(expect.objectContaining({
+      matcher_model: "primary-model", matcher_fallback_enabled: "true",
+    })));
+    expect(screen.queryByRole("button", { name: /save.*fallback/i })).toBeNull();
   });
 
   it("preserves the null signal when removing a provider credential", async () => {

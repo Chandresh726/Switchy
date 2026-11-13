@@ -23,7 +23,7 @@ import {
 } from "@/lib/api/clients/runtime";
 import { getSettings, patchSettings } from "@/lib/api/clients/settings";
 import { AppearanceSection } from "@/components/settings/appearance-section";
-import { MatcherFallbackSettings } from "@/components/settings/matcher-fallback-settings";
+import { MatcherFallbackSettings, type FallbackSettings } from "@/components/settings/matcher-fallback-settings";
 import { MatcherSection } from "@/components/settings/matcher-section";
 import { NotificationsSection } from "@/components/settings/notifications-section";
 import { ScraperSettings } from "@/components/settings/scraper-settings";
@@ -91,6 +91,7 @@ function clearSavedEdits<T extends object>(current: T, saved: T): T {
 }
 
 interface MatcherLocalEdits {
+  fallbackSettings?: Partial<FallbackSettings>;
   jobAnalysisModel?: string;
   jobAnalysisProviderId?: string;
   jobAnalysisReasoningEffort?: ReasoningEffort;
@@ -818,6 +819,7 @@ function SettingsContent() {
     scraperLocalEdits.filterCity !== undefined ||
     scraperLocalEdits.filterTitleKeywords !== undefined;
   const matcherHasUnsavedChanges =
+    matcherLocalEdits.fallbackSettings !== undefined ||
     matcherLocalEdits.jobAnalysisModel !== undefined ||
     matcherLocalEdits.jobAnalysisProviderId !== undefined ||
     matcherLocalEdits.jobAnalysisReasoningEffort !== undefined ||
@@ -1185,6 +1187,18 @@ function SettingsContent() {
       return;
     }
 
+    const fallback = { ...settings, ...matcherLocalEdits.fallbackSettings };
+    for (const stage of ["job_analysis", "matcher"] as const) {
+      if (fallback[`${stage}_fallback_enabled`] !== "true") continue;
+      const provider = fallback[`${stage}_fallback_provider_id`] ?? "";
+      const modelId = fallback[`${stage}_fallback_model`];
+      const model = providerModelsById[provider]?.models.find((entry) => entry.modelId === modelId);
+      const primaryProvider = stage === "job_analysis" ? jobAnalysisProviderId : matcherProviderId;
+      const primaryModel = stage === "job_analysis" ? jobAnalysisModel : matcherModel;
+      if (!model || hasInvalidReasoningSelection(model, fallback[`${stage}_fallback_reasoning_effort`] ?? "") ||
+          (provider === primaryProvider && modelId === primaryModel)) return;
+    }
+
     const timer = setTimeout(() => {
       matcherAutosaveAttemptRef.current = signature;
       saveMatcherSettings({
@@ -1201,6 +1215,7 @@ function SettingsContent() {
           matcher_concurrency_limit: concurrencyLimit,
           matcher_timeout_ms: timeoutMs,
           matcher_auto_match_after_scrape: autoMatchAfterScrape,
+          ...matcherLocalEdits.fallbackSettings,
         },
       });
     }, 400);
@@ -1214,6 +1229,8 @@ function SettingsContent() {
     jobAnalysisProviderId,
     jobAnalysisReasoningEffort,
     matcherHasUnsavedChanges,
+    settings,
+    providerModelsById,
     matcherLocalEdits,
     matcherModel,
     matcherModelsState.models,
@@ -1409,6 +1426,21 @@ function SettingsContent() {
           />
 
           <MatcherSection
+            fallbackSettings={settings && (
+              <MatcherFallbackSettings
+                settings={{ ...settings, ...matcherLocalEdits.fallbackSettings }}
+                availableProviders={providerOptions}
+                modelsByProvider={providerModelsById}
+                primaryModels={{
+                  job_analysis: { providerId: jobAnalysisProviderId, modelId: jobAnalysisModel },
+                  matcher: { providerId: matcherProviderId, modelId: matcherModel },
+                }}
+                onChange={(updates) => setMatcherLocalEdits((previous) => ({
+                  ...previous,
+                  fallbackSettings: { ...previous.fallbackSettings, ...updates },
+                }))}
+              />
+            )}
             availableProviders={providerOptions}
             hasProviders={providerOptions.length > 0}
             jobAnalysisModels={jobAnalysisModelsState.models}
@@ -1536,7 +1568,6 @@ function SettingsContent() {
             onFilterTitleKeywordsChange={setFilterTitleKeywords}
           />
 
-          {settings && <MatcherFallbackSettings settings={settings} providers={providers} modelsByProvider={providerModelsById} />}
           <ResumeParserSection
             availableProviders={providerOptions}
             hasProviders={providerOptions.length > 0}

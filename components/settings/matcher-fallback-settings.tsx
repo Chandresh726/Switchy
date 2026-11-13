@@ -1,93 +1,102 @@
 "use client";
 
-import { useState } from "react";
+import { AlertTriangle } from "lucide-react";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
-
-import { patchSettings } from "@/lib/api/clients/settings";
-import type { Settings, ProviderSettingsListItem } from "@/lib/api/contracts/settings";
-import { queryKeys } from "@/lib/query-keys";
-import type { ProviderModelsState } from "@/lib/settings/types";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { Settings } from "@/lib/api/contracts/settings";
+import type { ProviderModelsState } from "@/lib/settings/types";
+import type { Provider } from "@/lib/types";
 
 import { ModelCombobox } from "./model-combobox";
-import { ReasoningEffortControl } from "./reasoning-effort-control";
+import { ReasoningEffortControl, resolveReasoningSelection } from "./reasoning-effort-control";
+
+type FallbackSettingKey = Extract<keyof Settings, `${"job_analysis" | "matcher"}_fallback_${string}`>;
+export type FallbackSettings = Pick<Settings, FallbackSettingKey>;
 
 interface MatcherFallbackSettingsProps {
-  settings: Settings;
-  providers: ProviderSettingsListItem[];
+  settings: FallbackSettings;
+  availableProviders: Provider[];
   modelsByProvider: Record<string, ProviderModelsState>;
+  primaryModels?: Partial<Record<"job_analysis" | "matcher", { providerId: string; modelId: string }>>;
+  onChange: (updates: Partial<FallbackSettings>) => void;
 }
 
-interface FallbackStageProps extends MatcherFallbackSettingsProps {
-  stage: "job_analysis" | "matcher";
-  title: string;
-}
-
-const FallbackStage = ({ settings, providers, modelsByProvider, stage, title }: FallbackStageProps) => {
-  const [edits, setEdits] = useState<Record<string, string>>({});
-  const value = (key: "enabled" | "provider_id" | "model" | "reasoning_effort") =>
-    edits[key] ?? settings[`${stage}_fallback_${key}`];
-  const enabled = value("enabled") === "true";
-  const providerId = value("provider_id");
-  const modelId = value("model");
-  const models = modelsByProvider[providerId];
-  const selected = models?.models.find((model) => model.modelId === modelId);
-  const queryClient = useQueryClient();
-  const save = useMutation({
-    mutationFn: () => patchSettings(Object.fromEntries(
-      (["enabled", "provider_id", "model", "reasoning_effort"] as const)
-        .map((key) => [`${stage}_fallback_${key}`, value(key)])
-    )),
-    onSuccess: (updated) => {
-      queryClient.setQueryData(queryKeys.settings.detail(), updated);
-      setEdits({});
-      toast.success(`${title} fallback saved`);
-    },
-    onError: (error) => toast.error(error.message),
-  });
-  return <div className="space-y-4 rounded-lg border p-4">
-    <div className="flex items-center justify-between gap-4">
-      <Label htmlFor={`${stage}-fallback-enabled`}>{title} fallback</Label>
-      <Switch id={`${stage}-fallback-enabled`} checked={enabled}
-        onCheckedChange={(checked) => setEdits({ ...edits, enabled: String(checked) })} />
-    </div>
-    <div className="grid gap-4 md:grid-cols-2">
-      <div className="space-y-2"><Label>Fallback provider</Label>
-        <Select value={providerId} onValueChange={(id) => setEdits({ ...edits, provider_id: id ?? "", model: "", reasoning_effort: "" })}>
-          <SelectTrigger aria-label={`${title} fallback provider`}><SelectValue placeholder="Choose provider" /></SelectTrigger>
-          <SelectContent>{providers.filter((provider) => provider.kind !== "local_cli" || provider.selectable).map((provider) =>
-            <SelectItem key={provider.id} value={provider.id}>{provider.displayName ?? provider.provider}</SelectItem>)}</SelectContent>
-        </Select>
-      </div>
-      <div className="space-y-2"><Label>Fallback model</Label>
-        <ModelCombobox models={models?.models ?? []} value={modelId}
-          onValueChange={(id) => setEdits({ ...edits, model: id, reasoning_effort: "" })}
-          disabled={!providerId} loading={models?.loading ?? false} />
-      </div>
-    </div>
-    <ReasoningEffortControl model={selected} value={value("reasoning_effort")}
-      onValueChange={(effort) => setEdits({ ...edits, reasoning_effort: effort })} />
-    {models?.error && <p className="text-sm text-destructive">{models.error}</p>}
-    {enabled && providerId.startsWith("builtin:opencode") && modelId.startsWith("opencode/") &&
-      <p className="text-sm text-muted-foreground">Models on the same service may share a quota. A different provider gives better outage coverage.</p>}
-    <Button disabled={save.isPending || (enabled && !selected)} onClick={() => save.mutate()}>
-      {save.isPending ? "Saving…" : `Save ${title.toLowerCase()} fallback`}
-    </Button>
-  </div>;
-};
-
-export const MatcherFallbackSettings = (props: MatcherFallbackSettingsProps) => <Card>
-  <CardHeader><CardTitle>Matching fallbacks</CardTitle>
-    <CardDescription>Use a second model when the primary is unavailable or repeatedly returns invalid output. Paid models use your provider balance. Both models use the same quality checks.</CardDescription>
-  </CardHeader>
-  <CardContent className="space-y-4">
-    <FallbackStage {...props} stage="job_analysis" title="Job analysis" />
-    <FallbackStage {...props} stage="matcher" title="Match evaluation" />
-  </CardContent>
-</Card>;
+export const MatcherFallbackSettings = ({
+  settings, availableProviders, modelsByProvider, primaryModels, onChange,
+}: MatcherFallbackSettingsProps) => (
+  <>
+    {([{ stage: "job_analysis", title: "Job analysis fallback" },
+      { stage: "matcher", title: "Final match fallback" }] as const).map(({ stage, title }) => {
+      const providerId = settings[`${stage}_fallback_provider_id`];
+      const modelId = settings[`${stage}_fallback_model`];
+      const models = modelsByProvider[providerId];
+      const selected = models?.models.find((model) => model.modelId === modelId);
+      const enabled = settings[`${stage}_fallback_enabled`] === "true";
+      const sameAsPrimary = enabled && providerId === primaryModels?.[stage]?.providerId && modelId === primaryModels?.[stage]?.modelId;
+      const incomplete = enabled && (!providerId || !modelId);
+      const unavailable = Boolean(modelId) && !selected && !models?.loading;
+      return (
+        <div key={stage} className="space-y-3 rounded-lg border border-border bg-background/30 p-4">
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id={`${stage}-fallback-enabled`}
+              checked={enabled}
+              onChange={(event) => onChange({ [`${stage}_fallback_enabled`]: String(event.target.checked) })}
+              className="mt-1 h-4 w-4 rounded border-border bg-muted text-emerald-500 focus:ring-emerald-500 focus:ring-offset-background"
+            />
+            <div>
+              <Label htmlFor={`${stage}-fallback-enabled`} className="cursor-pointer font-medium">{title}</Label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Use this model when the primary is unavailable. Paid models use your provider balance.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Select value={providerId} onValueChange={(id) => onChange({
+              [`${stage}_fallback_provider_id`]: id ?? "",
+              [`${stage}_fallback_model`]: "",
+              [`${stage}_fallback_reasoning_effort`]: "",
+            })}>
+              <SelectTrigger aria-label={`${title} provider`} className="w-[180px] bg-background/60 border-border">
+                <SelectValue placeholder="Select provider" />
+              </SelectTrigger>
+              <SelectContent><SelectGroup>
+                {availableProviders.map((provider) => (
+                  <SelectItem key={provider.id} value={provider.id}>{provider.name}</SelectItem>
+                ))}
+              </SelectGroup></SelectContent>
+            </Select>
+            <ModelCombobox
+              models={models?.models ?? []}
+              value={modelId}
+              onValueChange={(id) => onChange({
+                [`${stage}_fallback_model`]: id,
+                [`${stage}_fallback_reasoning_effort`]: resolveReasoningSelection({
+                  providerWasEdited: true,
+                  model: models?.models.find((model) => model.modelId === id),
+                }),
+              })}
+              disabled={!providerId || models?.loading || !models?.models.length}
+              loading={models?.loading ?? false}
+              error={models?.error}
+              placeholder={`Select ${title.toLowerCase()} model`}
+            />
+            <ReasoningEffortControl model={selected} value={settings[`${stage}_fallback_reasoning_effort`]}
+              onValueChange={(effort) => onChange({ [`${stage}_fallback_reasoning_effort`]: effort })}
+              ariaLabel={`${title} reasoning effort`} />
+          </div>
+          {(sameAsPrimary || incomplete || models?.error || unavailable || models?.isStale) && (
+            <p className="flex items-center gap-2 text-xs text-amber-400">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {sameAsPrimary ? "Choose a different provider or model from the primary." : incomplete ? "Choose a provider and model to enable this fallback." : models?.error ?? (unavailable
+                ? "The configured fallback model is unavailable. Choose an available model or refresh the catalog."
+                : "Showing cached model list (latest refresh failed)")}
+            </p>
+          )}
+        </div>
+      );
+    })}
+  </>
+);

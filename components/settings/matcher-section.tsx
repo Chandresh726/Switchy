@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { AlertTriangle, Cpu, Loader2, Settings2, Sparkles } from "lucide-react";
 
@@ -29,6 +29,7 @@ import type { ProviderModelOption } from "@/lib/api/contracts/settings";
 import type { Provider } from "@/lib/types";
 
 export interface MatcherSectionProps {
+  fallbackSettings?: ReactNode;
   availableProviders: Provider[];
   hasProviders: boolean;
   jobAnalysisModels: ProviderModelOption[];
@@ -72,6 +73,7 @@ export interface MatcherSectionProps {
 }
 
 export function MatcherSection({
+  fallbackSettings,
   availableProviders,
   hasProviders,
   jobAnalysisModels,
@@ -383,13 +385,15 @@ export function MatcherSection({
                 <div className="space-y-1">
                   <Label className="text-base">Advanced</Label>
                   <p className="text-xs text-muted-foreground">
-                    Override request limits only when your provider or hardware needs it.
+                    Configure fallback models and adjust request limits.
                   </p>
                 </div>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => setShowAdvanced(!showAdvanced)}
+                  aria-expanded={showAdvanced}
+                  aria-controls="matcher-advanced-settings"
                   className="h-8 text-xs text-muted-foreground hover:text-foreground"
                 >
                   <Settings2 className="mr-2 h-3.5 w-3.5" />
@@ -398,7 +402,9 @@ export function MatcherSection({
               </div>
 
               {showAdvanced && (
-                <div className="grid gap-4 rounded-lg border border-border bg-background/30 p-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div id="matcher-advanced-settings" className="space-y-4">
+                  {fallbackSettings}
+                  <div className="grid gap-4 rounded-lg border border-border bg-background/30 p-4 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="space-y-2">
                       <Label htmlFor="batch-size" className="text-xs text-muted-foreground">Analysis batch</Label>
                       <Input
@@ -447,6 +453,7 @@ export function MatcherSection({
                         className="bg-background/60 border-border"
                       />
                     </div>
+                  </div>
                 </div>
               )}
             </div>
