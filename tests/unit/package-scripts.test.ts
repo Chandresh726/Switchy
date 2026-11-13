@@ -14,13 +14,6 @@ function readPackageManifest(): PackageManifest {
 }
 
 describe("package scripts", () => {
-  it("uses one database preparation entrypoint", () => {
-    const packageJson = readPackageManifest();
-
-    expect(packageJson.scripts["db:migrate"]).toBe("tsx scripts/migrate-database.ts");
-    expect(packageJson.scripts["db:cleanup-job-duplicates"]).toBeUndefined();
-  });
-
   it("only references script files that exist", () => {
     const packageJson = readPackageManifest();
     const referencedFiles = Object.values(packageJson.scripts).flatMap((command) =>

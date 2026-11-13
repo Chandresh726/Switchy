@@ -8,7 +8,7 @@ import { LinkedinIcon } from "@/components/icons/linkedin-icon";
 import { Button } from "@/components/ui/button";
 import { patchPerson } from "@/lib/api/clients/people";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
-import { canOpenLinkedInProfile } from "@/lib/people/message";
+import { isLinkedInProfileUrl } from "@/lib/people/normalize";
 import { cn } from "@/lib/utils";
 import { copyTextToClipboard } from "@/lib/utils/clipboard";
 import { formatRelativeTime } from "@/lib/utils/format";
@@ -103,7 +103,7 @@ export function CompanyPersonCard({ person, showOutreachBadge = false }: Company
         <Button
           variant="ghost"
           size="sm"
-          disabled={!canOpenLinkedInProfile(person.profileUrl)}
+          disabled={!isLinkedInProfileUrl(person.profileUrl)}
           onClick={() => window.open(person.profileUrl, "_blank", "noopener,noreferrer")}
         >
           <LinkedinIcon className="size-5" />

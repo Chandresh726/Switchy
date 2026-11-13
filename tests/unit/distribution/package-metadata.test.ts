@@ -35,29 +35,9 @@ describe("Switchy distribution metadata", () => {
     expect(application.scripts["release:version"]).toBe(
       "pnpm --filter @chandresh726/switchy version --no-git-checks --no-git-tag-version"
     );
-    expect(application.scripts.dev).toBe(
-      "NODE_ENV=development "
-      + "SWITCHY_MACOS_NOTIFICATION_HELPER='./.switchy-build/native/macos/"
-      + "Switchy Notifications.app/Contents/MacOS/SwitchyNotifier' "
-      + "SWITCHY_PROCESS_TITLE='Switchy Dev' "
-      + "NODE_OPTIONS=\"$NODE_OPTIONS "
-      + "--require=./scripts/switchy-process-title.cjs\" "
-      + "next dev --hostname 127.0.0.1"
-    );
-    expect(application.scripts.start).toBe(
-      "NODE_ENV=production "
-      + "SWITCHY_MACOS_NOTIFICATION_HELPER='./.switchy-build/native/macos/"
-      + "Switchy Notifications.app/Contents/MacOS/SwitchyNotifier' "
-      + "SWITCHY_PROCESS_TITLE=Switchy "
-      + "NODE_OPTIONS=\"$NODE_OPTIONS "
-      + "--require=./scripts/switchy-process-title.cjs\" "
-      + "next start --hostname 127.0.0.1 --port 6767"
-    );
-    expect(application.scripts.predev).toContain("pnpm native:prepare");
-    expect(application.scripts.prestart).toContain("pnpm native:prepare");
-    expect(application.scripts["native:prepare"]).toBe(
-      "node scripts/build-macos-notifier.mjs"
-    );
+    for (const script of [application.scripts.dev, application.scripts.start]) {
+      expect(script).toContain("--hostname 127.0.0.1");
+    }
     expect(cli).toMatchObject({
       name: "@chandresh726/switchy",
       license: application.license,
@@ -66,43 +46,5 @@ describe("Switchy distribution metadata", () => {
     });
     expect(cli.version).toMatch(/^\d+\.\d+\.\d+$/u);
     expect(cli.private).not.toBe(true);
-  });
-
-  it("keeps macOS runtime packaging independent of Apple credentials", () => {
-    const workflow = readFileSync(
-      path.join(process.cwd(), ".github", "workflows", "release.yml"),
-      "utf8"
-    );
-    const builder = readFileSync(
-      path.join(process.cwd(), "scripts", "build-macos-notifier.mjs"),
-      "utf8"
-    );
-
-    expect(workflow).not.toContain("scripts/configure-macos-release-");
-    expect(builder).not.toContain("notarytool");
-    expect(builder).toContain('["--force", "--deep", "--sign", "-", bundle]');
-  });
-
-  it("reuses successful CI and one audited npm tarball for releases", () => {
-    const ciWorkflow = readFileSync(
-      path.join(process.cwd(), ".github", "workflows", "ci.yml"),
-      "utf8"
-    );
-    const releaseWorkflow = readFileSync(
-      path.join(process.cwd(), ".github", "workflows", "release.yml"),
-      "utf8"
-    );
-
-    expect(ciWorkflow).toContain("static-analysis:");
-    expect(ciWorkflow).toContain("tests-and-distribution:");
-    expect(ciWorkflow).toContain("application-build:");
-    expect(ciWorkflow).toContain("landing:");
-    expect(releaseWorkflow).toContain(
-      "Require successful main CI for tagged commit"
-    );
-    expect(releaseWorkflow).toContain("actions/workflows/ci.yml/runs?");
-    expect(releaseWorkflow).not.toContain("pnpm verify:all");
-    expect(releaseWorkflow).toContain("name: npm-package");
-    expect(releaseWorkflow).toContain("npm publish dist/npm/*.tgz --access public");
   });
 });

@@ -343,21 +343,16 @@ export function SkillsEditor({
             </p>
           </div>
         ) : (
-          <div
-            data-skills-category-layout
-            className="flex flex-wrap items-start gap-x-6 gap-y-4"
-          >
+          <div className="flex flex-wrap items-start gap-x-6 gap-y-4">
             {Object.entries(skillsByCategory).map(([category, categorySkills]) => (
               <div
                 key={category}
-                data-skills-category
                 className="w-max max-w-full flex-none"
               >
                 <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   {category}
                 </h4>
                 <div
-                  data-skills-category-items
                   className="flex w-max max-w-full flex-nowrap gap-2 overflow-x-auto"
                 >
                   {categorySkills.map((skill) => (

@@ -34,7 +34,7 @@
     "test:coverage": "node scripts/run-tests.mjs --run --coverage --project unit --project integration --project ui --project eval",
     "audit": "pnpm audit",
     "audit:prod": "pnpm audit --prod",
-    "verify": "pnpm lint && pnpm typecheck && pnpm deadcode && pnpm test:run && pnpm distribution:verify && pnpm audit:prod && pnpm build",
+    "verify": "pnpm lint && pnpm typecheck && pnpm deadcode && pnpm test:run && pnpm cli:typecheck && pnpm cli:build && pnpm audit:prod && pnpm build",
     "verify:all": "pnpm verify && pnpm landing:verify",
     "landing:lint": "pnpm --filter switchy-landing lint",
     "landing:typecheck": "pnpm --filter switchy-landing typecheck",

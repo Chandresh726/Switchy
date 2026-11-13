@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { z } from "zod";
 
@@ -167,12 +167,6 @@ export interface ProviderModelsResponse {
 export interface GetProviderModelsOptions {
   forceRefresh?: boolean;
   allowStaleOnError?: boolean;
-}
-
-export interface ResolvedProviderModelSelection {
-  providerId: string;
-  provider: AIProvider;
-  modelId: string;
 }
 
 const providerModelCache = new Map<string, CachedProviderModels>();
@@ -423,56 +417,6 @@ async function getProviderRecord(providerId: string): Promise<ProviderRecord> {
     updatedAt: provider.updatedAt,
     customConnection: provider.provider === "custom"
       ? resolveStoredCustomProvider(provider, decryptedApiKey)
-      : undefined,
-  };
-}
-
-async function getFallbackProviderRecord(): Promise<ProviderRecord | null> {
-  const providers = await db
-    .select()
-    .from(aiProviders)
-    .where(eq(aiProviders.isActive, true))
-    .orderBy(aiProviders.isDefault, asc(aiProviders.createdAt));
-
-  if (providers.length === 0) {
-    return null;
-  }
-
-  const apiProviders = providers.filter(
-    (provider) => !isLocalCLIProvider(provider.provider)
-  );
-  const defaultProvider = apiProviders.find((provider) => provider.isDefault);
-  const candidate = defaultProvider ?? apiProviders[0];
-
-  if (!candidate) return null;
-
-  if (!isAIProvider(candidate.provider)) {
-    throw new AIError({
-      type: "provider_not_found",
-      message: `Provider "${candidate.provider}" is not supported`,
-    });
-  }
-
-  let decryptedApiKey: string | undefined;
-  if (candidate.apiKey) {
-    try {
-      decryptedApiKey = decryptApiKey(candidate.apiKey);
-    } catch (error) {
-      throw new AIError({
-        type: "decryption_failed",
-        message: `Failed to decrypt API key for provider "${candidate.provider}"`,
-        cause: error instanceof Error ? error : undefined,
-      });
-    }
-  }
-
-  return {
-    id: candidate.id,
-    provider: candidate.provider,
-    apiKey: decryptedApiKey,
-    updatedAt: candidate.updatedAt,
-    customConnection: candidate.provider === "custom"
-      ? resolveStoredCustomProvider(candidate, decryptedApiKey)
       : undefined,
   };
 }
@@ -937,66 +881,6 @@ export async function deleteStoredProviderModelsCache(
 ): Promise<void> {
   clearProviderModelsCache(providerId);
   await database.delete(settings).where(eq(settings.key, catalogSettingKey(providerId)));
-}
-
-export async function resolveProviderModelSelection(options: {
-  providerId?: string;
-  modelId?: string;
-}): Promise<ResolvedProviderModelSelection> {
-  let provider: ProviderRecord | null = null;
-
-  if (options.providerId) {
-    provider = await getProviderRecord(options.providerId);
-  }
-
-  if (!provider) {
-    provider = await getFallbackProviderRecord();
-  }
-
-  if (!provider) {
-    throw new AIError({
-      type: "provider_not_found",
-      message: "No active provider configured",
-    });
-  }
-
-  const requestedModelId = options.modelId?.trim();
-
-  let providerModels: ProviderModelsResponse | null = null;
-  try {
-    providerModels = await getProviderModels(provider.id);
-  } catch (error) {
-    if (!requestedModelId) {
-      throw error;
-    }
-  }
-
-  const availableModels = providerModels?.models ?? [];
-  if (
-    requestedModelId &&
-    availableModels.length > 0 &&
-    !availableModels.some((model) => model.modelId === requestedModelId)
-  ) {
-    throw new AIError({
-      type: "invalid_model",
-      message: `Configured model "${requestedModelId}" is unavailable for provider "${provider.provider}"`,
-    });
-  }
-
-  const resolvedModelId = requestedModelId ?? availableModels[0]?.modelId;
-
-  if (!resolvedModelId) {
-    throw new AIError({
-      type: "invalid_model",
-      message: `No valid model available for provider "${provider.provider}"`,
-    });
-  }
-
-  return {
-    providerId: provider.id,
-    provider: provider.provider,
-    modelId: resolvedModelId,
-  };
 }
 
 export function clearProviderModelsCache(providerId?: string): void {

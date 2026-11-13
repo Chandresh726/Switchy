@@ -24,12 +24,10 @@ import {
   clearProviderModelsCache,
   discoverCustomProviderModels,
   getProviderModels,
-  resolveProviderModelSelection,
 } from "@/lib/ai/providers/model-catalog";
 
 interface SelectResponse {
   limit?: unknown[];
-  orderBy?: unknown[];
 }
 
 describe("model catalog", () => {
@@ -59,9 +57,7 @@ describe("model catalog", () => {
         from: () => ({
           where: () => ({
             limit: async () => response.limit ?? [],
-            orderBy: async () => response.orderBy ?? [],
           }),
-          orderBy: async () => response.orderBy ?? [],
           limit: async () => response.limit ?? [],
         }),
       };
@@ -530,36 +526,5 @@ describe("model catalog", () => {
       reasoningControl: { kind: "provider_default" },
     });
     expect(response.models[0]?.supportedReasoningEfforts).toBeUndefined();
-  });
-
-  it("does not silently replace a configured unavailable model", async () => {
-    const defaultProvider = {
-      id: "provider-default",
-      provider: "openai",
-      apiKey: "encrypted-key",
-      updatedAt: new Date("2026-02-20T00:00:00.000Z"),
-      isDefault: true,
-      createdAt: new Date("2026-02-19T00:00:00.000Z"),
-    };
-
-    queueSelectResponses(
-      { orderBy: [defaultProvider] },
-      { limit: [defaultProvider] },
-      { limit: [] }
-    );
-
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: [{ id: "gpt-4.1", owned_by: "openai" }],
-      }),
-    });
-
-    await expect(
-      resolveProviderModelSelection({ modelId: "missing-model" })
-    ).rejects.toMatchObject({
-      type: "invalid_model",
-      message: expect.stringContaining("missing-model"),
-    });
   });
 });

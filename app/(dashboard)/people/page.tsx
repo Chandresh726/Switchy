@@ -55,7 +55,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TogglePill } from "@/components/ui/toggle-pill";
-import { canOpenLinkedInProfile } from "@/lib/people/message";
+import { isLinkedInProfileUrl } from "@/lib/people/normalize";
 import type {
   PeopleImportResponse,
   PeopleImportSession,
@@ -536,7 +536,7 @@ export default function PeoplePage() {
                         <Button
                           variant="outline"
                           size="xs"
-                          disabled={!canOpenLinkedInProfile(item.profileUrl)}
+                          disabled={!isLinkedInProfileUrl(item.profileUrl)}
                           onClick={() => window.open(item.profileUrl, "_blank", "noopener,noreferrer")}
                         >
                           <LinkedinIcon className="h-3.5 w-3.5" />

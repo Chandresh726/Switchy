@@ -33,7 +33,7 @@ import { getJob } from "@/lib/api/clients/jobs";
 import { getApiErrorMessage, isApiNotFoundError } from "@/lib/api/error-presentation";
 import { getPeople, patchPerson } from "@/lib/api/clients/people";
 import type { PeopleResponse } from "@/lib/api/contracts/people";
-import { canOpenLinkedInProfile } from "@/lib/people/message";
+import { isLinkedInProfileUrl } from "@/lib/people/normalize";
 import { isRecruiterPosition } from "@/lib/people/position";
 import { applyConnectionPlaceholder } from "@/lib/people/referral-template";
 import { cn } from "@/lib/utils";
@@ -481,7 +481,7 @@ export function AIWorkspacePage({
             ) : prioritizedPeople.length ? (
               prioritizedPeople.map((person) => {
                 const personalizedMessage = applyConnectionPlaceholder(currentContent, person.firstName);
-                const canOpenProfile = canOpenLinkedInProfile(person.profileUrl);
+                const canOpenProfile = isLinkedInProfileUrl(person.profileUrl);
                 const isRecruiter = isRecruiterPosition(person.position);
 
                 return (

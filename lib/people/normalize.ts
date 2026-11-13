@@ -52,11 +52,6 @@ export function normalizeLinkedInProfileUrl(value: string | null | undefined): s
   }
 }
 
-function normalizePersonName(value: string | null | undefined): string {
-  if (!value) return "";
-  return collapseWhitespace(value.toLowerCase());
-}
-
 export function parseConnectedOn(value: string | null | undefined): Date | null {
   if (!value) return null;
   const trimmed = value.trim();
@@ -74,26 +69,6 @@ export function parseConnectedOn(value: string | null | undefined): Date | null 
   }
 
   return null;
-}
-
-export function buildIdentityKey(input: {
-  profileUrl: string | null;
-  fullName: string;
-  companyNormalized: string | null;
-  connectedOn: Date | null;
-}): string | null {
-  const normalizedProfile = normalizeLinkedInProfileUrl(input.profileUrl);
-  if (normalizedProfile) {
-    return `profile:${normalizedProfile}`;
-  }
-
-  const normalizedName = normalizePersonName(input.fullName);
-  if (!normalizedName || !input.companyNormalized || !input.connectedOn) {
-    return null;
-  }
-
-  const datePart = input.connectedOn.toISOString().slice(0, 10);
-  return `fallback:${normalizedName}|${input.companyNormalized}|${datePart}`;
 }
 
 export function isLinkedInProfileUrl(value: string): boolean {

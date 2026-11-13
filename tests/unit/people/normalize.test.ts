@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  buildIdentityKey,
   isLinkedInProfileUrl,
   normalizeCompanyName,
   normalizeLinkedInProfileUrl,
@@ -19,26 +18,6 @@ describe("connections normalize utilities", () => {
       "https://www.linkedin.com/in/jane-doe"
     );
     expect(normalizeLinkedInProfileUrl("https://example.com/user")).toBeNull();
-  });
-
-  it("builds identity key using profile url first", () => {
-    const key = buildIdentityKey({
-      profileUrl: "https://www.linkedin.com/in/test-user/",
-      fullName: "Test User",
-      companyNormalized: "acme",
-      connectedOn: new Date("2024-01-01"),
-    });
-    expect(key).toBe("profile:https://www.linkedin.com/in/test-user");
-  });
-
-  it("falls back to name/company/date identity", () => {
-    const key = buildIdentityKey({
-      profileUrl: "",
-      fullName: "Jane Doe",
-      companyNormalized: "acme",
-      connectedOn: new Date("2024-02-01"),
-    });
-    expect(key).toBe("fallback:jane doe|acme|2024-02-01");
   });
 
   it("parses connected date", () => {

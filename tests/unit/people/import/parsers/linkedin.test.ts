@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { parseConnectionsCsv } from "@/lib/people/csv";
+import { parseLinkedinCsv } from "@/lib/people/import/parsers/linkedin";
 
-describe("parseConnectionsCsv", () => {
+describe("parseLinkedinCsv", () => {
   it("parses valid csv rows", () => {
     const csv = [
       "First Name,Last Name,URL,Email,Company,Position,Connected On",
       "Jane,Doe,https://www.linkedin.com/in/jane-doe,jane@example.com,Acme Inc,Engineer,2024-01-10",
     ].join("\n");
 
-    const result = parseConnectionsCsv(csv);
+    const result = parseLinkedinCsv(csv);
     expect(result.totalRows).toBe(1);
     expect(result.rows).toHaveLength(1);
     expect(result.errors).toHaveLength(0);
@@ -22,7 +22,7 @@ describe("parseConnectionsCsv", () => {
       "Jane,Doe,,Acme Inc,Engineer,",
     ].join("\n");
 
-    const result = parseConnectionsCsv(csv);
+    const result = parseLinkedinCsv(csv);
     expect(result.rows).toHaveLength(0);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0].rowNumber).toBe(2);
@@ -37,7 +37,7 @@ describe("parseConnectionsCsv", () => {
       "Jane,Doe,https://www.linkedin.com/in/jane-doe,jane@example.com,Acme Inc,Engineer,20 Feb 2026",
     ].join("\n");
 
-    const result = parseConnectionsCsv(csv);
+    const result = parseLinkedinCsv(csv);
     expect(result.totalRows).toBe(1);
     expect(result.rows).toHaveLength(1);
     expect(result.errors).toHaveLength(0);
@@ -51,7 +51,7 @@ describe("parseConnectionsCsv", () => {
       "Jane,Doe,https://www.linkedin.com/in/jane-doe,jane@example.com,Acme Inc,Engineer,20 Feb 2026",
     ].join("\n");
 
-    const result = parseConnectionsCsv(csv);
+    const result = parseLinkedinCsv(csv);
     expect(result.rows).toHaveLength(1);
     expect(result.errors).toHaveLength(0);
   });

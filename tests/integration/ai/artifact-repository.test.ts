@@ -12,10 +12,7 @@ import {
   buildJobEvidenceInput,
   buildJobFingerprint,
 } from "@/lib/ai/artifacts/fingerprints";
-import {
-  createArtifactRepository,
-  isMatchResultFresh,
-} from "@/lib/ai/artifacts/repository";
+import { createArtifactRepository } from "@/lib/ai/artifacts/repository";
 import { ensureJobFingerprintProjection } from "@/lib/ai/artifacts/job-fingerprint-projection";
 import {
   aiRuns,
@@ -344,11 +341,6 @@ describe("versioned AI artifact repository", () => {
       source: "deterministic",
     });
 
-    expect(isMatchResultFresh(created, {
-      candidateFingerprint,
-      jobFingerprint,
-      scoringPolicyVersion: "scoring-v1",
-    })).toBe(true);
     expect(await repository.findFreshMatch(persistedJob.id, {
       candidateFingerprint,
       jobFingerprint,

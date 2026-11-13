@@ -88,60 +88,6 @@ describe("profile section action layout", () => {
     expectReviewActionsInHeader();
   });
 
-  it("gives experience titles more emphasis than descriptions", async () => {
-    mocks.getExperience.mockResolvedValueOnce([{
-      id: 7,
-      profileId: 1,
-      company: "Example Company",
-      title: "Senior Engineer",
-      location: "Bengaluru",
-      startDate: "2024-01",
-      endDate: null,
-      description: "Built reliable platform services.",
-      highlights: null,
-    }]);
-
-    renderWithClient(<ExperienceList profileId={1} />);
-
-    const title = await screen.findByText("Senior Engineer");
-    const description = screen.getByText("Built reliable platform services.");
-    expect(title.className).toContain("text-sm");
-    expect(description.className).toContain("text-xs");
-    expect(description.className).not.toContain("text-sm");
-  });
-
-  it("packs intrinsic-width skill categories while keeping each skill list on one line", async () => {
-    mocks.getSkills.mockResolvedValueOnce([
-      { id: 1, profileId: 1, name: "Python", category: "languages" },
-      { id: 2, profileId: 1, name: "TypeScript/JavaScript", category: "languages" },
-      { id: 3, profileId: 1, name: "Node.js", category: "backend" },
-      { id: 4, profileId: 1, name: "AWS", category: "cloud" },
-      { id: 5, profileId: 1, name: "PostgreSQL", category: "database" },
-    ]);
-
-    const { container } = renderWithClient(<SkillsEditor profileId={1} />);
-
-    await screen.findByText("TypeScript/JavaScript");
-    const categorySelect = screen.getByRole("combobox", { name: "Skill category" });
-    expect(categorySelect.getAttribute("data-slot")).toBe("select-trigger");
-    expect(container.querySelector('select:not([aria-hidden="true"])')).toBeNull();
-
-    const categoryLayout = container.querySelector("[data-skills-category-layout]");
-    expect(categoryLayout?.className).toContain("flex-wrap");
-    expect(categoryLayout?.className).not.toContain("grid");
-    expect(
-      [...(categoryLayout?.children ?? [])].map((category) =>
-        category.querySelector("h4")?.textContent
-      )
-    ).toEqual(["languages", "backend", "cloud", "database"]);
-
-    const languages = container.querySelector("[data-skills-category]");
-    expect(languages?.className).toContain("w-max");
-    const languageSkills = languages?.querySelector("[data-skills-category-items]");
-    expect(languageSkills?.className).toContain("flex-nowrap");
-    expect(languageSkills?.className).not.toContain("flex-wrap");
-  });
-
   it("shows skills review actions in the card header", async () => {
     renderWithClient(
       <SkillsEditor

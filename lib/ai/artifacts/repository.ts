@@ -75,21 +75,6 @@ export interface MatchFreshnessInput {
   scoringPolicyVersion: string;
 }
 
-export function isMatchResultFresh(
-  result: {
-    candidateFingerprint: string;
-    jobFingerprint: string;
-    scoringPolicyVersion: string;
-    isStale: boolean;
-  },
-  current: MatchFreshnessInput
-): boolean {
-  return !result.isStale &&
-    result.candidateFingerprint === current.candidateFingerprint &&
-    result.jobFingerprint === current.jobFingerprint &&
-    result.scoringPolicyVersion === current.scoringPolicyVersion;
-}
-
 export function createArtifactRepository(database: ArtifactDatabase) {
   async function requireSuccessfulRun(
     runId: string,

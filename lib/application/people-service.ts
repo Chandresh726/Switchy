@@ -39,7 +39,7 @@ import {
   peopleImportSessions,
   personSourceRecords,
 } from "@/lib/db/schema";
-import { parsePeopleCsvRows } from "@/lib/people/csv";
+import { parseCsv } from "@/lib/people/import/parsers/csv-utils";
 import { suggestApolloMapping, type ApolloColumnMapping } from "@/lib/people/import/parsers/apollo";
 import { normalizeCompanyName } from "@/lib/people/normalize";
 import { isRecruiterPosition } from "@/lib/people/position";
@@ -476,7 +476,7 @@ export async function previewPeopleImport(formData: FormData) {
   const source = peopleSourceSchema.parse(formData.get("source") ?? "linkedin");
   const file = formData.get("file");
   validateCsvFile(file);
-  const rows = parsePeopleCsvRows(await file.text());
+  const rows = parseCsv(await file.text()).rows;
   if (rows.length === 0) throw new ValidationError("CSV is empty");
   const headers = rows[0];
   const sampleRows = rows.slice(1, 6).map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] || ""])));
