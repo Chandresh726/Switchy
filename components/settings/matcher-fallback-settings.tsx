@@ -14,6 +14,8 @@ import { ReasoningEffortControl, resolveReasoningSelection } from "./reasoning-e
 type FallbackSettingKey = Extract<keyof Settings, `${"job_analysis" | "matcher"}_fallback_${string}`>;
 export type FallbackSettings = Pick<Settings, FallbackSettingKey>;
 
+const DISABLED_PROVIDER = "__disabled_fallback__";
+
 const NO_FALLBACK_MODEL: ProviderModelOption = {
   modelId: "__no_fallback__",
   label: "None",
@@ -47,8 +49,8 @@ export const MatcherFallbackSettings = ({
         <div key={stage} className="space-y-2">
           <Label>{title}</Label>
           <div className="flex flex-wrap gap-2">
-            <Select value={providerId} onValueChange={(id) => onChange({
-              [`${stage}_fallback_provider_id`]: id ?? "",
+            <Select value={providerId || DISABLED_PROVIDER} onValueChange={(id) => onChange({
+              [`${stage}_fallback_provider_id`]: id === DISABLED_PROVIDER ? "" : id ?? "",
               [`${stage}_fallback_enabled`]: "false",
               [`${stage}_fallback_model`]: "",
               [`${stage}_fallback_reasoning_effort`]: "",
@@ -57,6 +59,7 @@ export const MatcherFallbackSettings = ({
                 <SelectValue placeholder="Select provider" />
               </SelectTrigger>
               <SelectContent><SelectGroup>
+                <SelectItem value={DISABLED_PROVIDER}>Disabled</SelectItem>
                 {availableProviders.map((provider) => (
                   <SelectItem key={provider.id} value={provider.id}>{provider.name}</SelectItem>
                 ))}

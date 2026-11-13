@@ -33,6 +33,23 @@ const modelsByProvider = { "provider-1": { loading: false, isRefreshing: false, 
 }] } };
 
 describe("matching fallback controls", () => {
+  it("defaults unconfigured provider selectors to Disabled", () => {
+    render(<MatcherFallbackSettings settings={{ ...settings, job_analysis_fallback_provider_id: "", matcher_fallback_provider_id: "" }}
+      availableProviders={providers} modelsByProvider={modelsByProvider} onChange={vi.fn()} />);
+    expect(screen.getByRole("combobox", { name: "Job analysis fallback provider" }).textContent).toContain("Disabled");
+    expect(screen.getByRole("combobox", { name: "Final match fallback provider" }).textContent).toContain("Disabled");
+  });
+
+  it("clears the provider, model, and reasoning when Disabled is chosen", () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const onChange = vi.fn();
+    render(<MatcherFallbackSettings settings={{ ...settings, matcher_fallback_enabled: "true", matcher_fallback_model: "backup-model", matcher_fallback_reasoning_effort: "low" }}
+      availableProviders={providers} modelsByProvider={modelsByProvider} onChange={onChange} />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Final match fallback provider" }));
+    fireEvent.click(screen.getByRole("option", { name: "Disabled" }));
+    expect(onChange).toHaveBeenCalledWith({ matcher_fallback_provider_id: "", matcher_fallback_enabled: "false", matcher_fallback_model: "", matcher_fallback_reasoning_effort: "" });
+  });
+
   it("enables each fallback by selecting a model, without checkboxes or descriptions", () => {
     const onChange = vi.fn();
     render(<MatcherFallbackSettings settings={settings} availableProviders={providers} modelsByProvider={modelsByProvider} onChange={onChange} />);
