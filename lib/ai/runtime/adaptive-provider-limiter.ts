@@ -32,7 +32,8 @@ export interface AdaptiveProviderLimitSnapshot {
 
 export interface AdaptiveProviderPermit {
   success(): void;
-  failure(error: unknown): void;
+  failure(error: unknown, applyCooldown?: boolean): void;
+  release(): void;
 }
 
 function normalizeCeiling(value: number): number {
@@ -91,6 +92,7 @@ export class AdaptiveProviderLimiter {
     if (until > state.cooldownUntil) {
       state.cooldownUntil = until;
       state.currentLimit = 1;
+      this.drain(providerRecordId, state);
     }
   }
 
@@ -148,11 +150,11 @@ export class AdaptiveProviderLimiter {
     state: ProviderLimitState
   ): AdaptiveProviderPermit {
     let completed = false;
-    const finish = (error?: unknown) => {
+    const finish = (outcome: "success" | "failure" | "release", error?: unknown, applyCooldown = true) => {
       if (completed) return;
       completed = true;
 
-      if (error === undefined) {
+      if (outcome === "success") {
         state.throttleCount = 0;
         state.consecutiveSuccesses += 1;
         if (
@@ -162,14 +164,16 @@ export class AdaptiveProviderLimiter {
           state.currentLimit += 1;
           state.consecutiveSuccesses = 0;
         }
-      } else {
+      } else if (outcome === "failure") {
         state.consecutiveSuccesses = 0;
         if (isRateLimitError(error)) {
           state.currentLimit = 1;
-          state.throttleCount += 1;
-          const delay = Math.max(getRetryAfterMs(error) ?? 0,
-            Math.min(30_000 * 2 ** Math.min(state.throttleCount - 1, 6), 30 * 60_000) * (1 + Math.random() * 0.2));
-          state.cooldownUntil = Math.max(state.cooldownUntil, Date.now() + delay);
+          if (applyCooldown) {
+            state.throttleCount += 1;
+            const delay = Math.max(getRetryAfterMs(error) ?? 0,
+              Math.min(30_000 * 2 ** Math.min(state.throttleCount - 1, 6) * (1 + Math.random() * 0.2), 30 * 60_000));
+            state.cooldownUntil = Math.max(state.cooldownUntil, Date.now() + delay);
+          }
         }
       }
 
@@ -178,8 +182,9 @@ export class AdaptiveProviderLimiter {
     };
 
     return {
-      success: () => finish(),
-      failure: (error) => finish(error),
+      success: () => finish("success"),
+      failure: (error, applyCooldown) => finish("failure", error, applyCooldown),
+      release: () => finish("release"),
     };
   }
 

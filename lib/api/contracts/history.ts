@@ -83,6 +83,8 @@ const matchSessionSchema = z.object({
   errorCount: z.number().int().nullable(),
   startedAt: z.coerce.date().nullable(),
   completedAt: z.coerce.date().nullable(),
+  nextAttemptAt: z.coerce.date().nullable().optional(),
+  waitReason: z.string().nullable().optional(),
 }).passthrough();
 
 export const scrapeHistoryListResponseSchema = z.object({

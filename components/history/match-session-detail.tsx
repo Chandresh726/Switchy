@@ -20,6 +20,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 
 import { TRIGGER_LABELS } from "@/components/history/shared/constants";
+import { MatchSessionWait } from "@/components/history/shared/match-session-wait";
 import {
   MetaLine,
   SessionStat,
@@ -322,6 +323,7 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
                   session.companyName,
                 ]}
               />
+              <MatchSessionWait session={session} />
             </div>
           </div>
           <StatusPill

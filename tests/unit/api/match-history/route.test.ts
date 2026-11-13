@@ -43,12 +43,12 @@ function getDetail(sessionId: string) {
 }
 
 function selectSession(result: unknown[]) {
+  const chain = {
+    leftJoin: () => chain,
+    where: vi.fn().mockResolvedValue(result),
+  };
   return {
-    from: () => ({
-      leftJoin: () => ({
-        where: vi.fn().mockResolvedValue(result),
-      }),
-    }),
+    from: () => chain,
   };
 }
 

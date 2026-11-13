@@ -20,6 +20,22 @@ async function recordSuccesses(
 
 describe("AdaptiveProviderLimiter", () => {
   afterEach(() => vi.useRealTimers());
+  it("caps jittered backoff at thirty minutes while honoring longer Retry-After values", async () => {
+    vi.useFakeTimers();
+    const limiter = new AdaptiveProviderLimiter();
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const permit = await limiter.acquire("a", 1);
+      const now = Date.now();
+      permit.failure(new AIRateLimitError("limited"));
+      const until = limiter.getSnapshot("a")!.cooldownUntil;
+      expect(until - now).toBeLessThanOrEqual(30 * 60_000);
+      await vi.advanceTimersByTimeAsync(Math.ceil(until - now));
+    }
+    const permit = await limiter.acquire("a", 1);
+    const now = Date.now();
+    permit.failure(new AIRateLimitError("limited", undefined, 3_600_000));
+    expect(limiter.getSnapshot("a")!.cooldownUntil - now).toBe(3_600_000);
+  });
   it("isolates concurrency by concrete provider record", async () => {
     const limiter = new AdaptiveProviderLimiter();
     const firstProviderPermit = await limiter.acquire("provider-a", 1);
@@ -42,6 +58,17 @@ describe("AdaptiveProviderLimiter", () => {
     independentPermit.success();
     firstProviderPermit.success();
     (await waiting).success();
+  });
+
+  it("rejects queued permits when another execution restores an account cooldown", async () => {
+    const limiter = new AdaptiveProviderLimiter();
+    const active = await limiter.acquire("account", 1);
+    const waiting = limiter.acquire("account", 1);
+    const rejected = expect(waiting).rejects.toMatchObject({ type: "rate_limit" });
+    limiter.restoreCooldown("account", 1, Date.now() + 120_000);
+    await rejected;
+    active.release();
+    expect(limiter.getSnapshot("account")).toMatchObject({ active: 0, waiting: 0, consecutiveSuccesses: 0 });
   });
 
   it("drops to a single recovery probe after a rate-limit response", async () => {

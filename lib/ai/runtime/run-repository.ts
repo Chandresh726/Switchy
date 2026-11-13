@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, eq, isNull, ne, or } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, ne, or } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { z } from "zod";
 
@@ -19,6 +19,7 @@ import type {
   ResolvedModelSnapshot,
   SafeAIMetadata,
 } from "./types";
+import { providerModelScope } from "./provider-scope";
 
 const AICapabilitySchema = z.enum([
   "job_analysis",
@@ -230,7 +231,33 @@ export function createAIRunRepository(database: AIRunDatabase) {
         const key = `ai_cooldown:${scope}`;
         const row = tx.select({ value: settings.value }).from(settings).where(eq(settings.key, key)).get();
         const value = String(Math.max(Number(row?.value) || 0, until));
-        tx.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
+        tx.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: new Date() } }).run();
+      });
+    },
+    async recordModelCooldown(accountScope: string, modelId: string, until: number, accountWide = false): Promise<number> {
+      return database.transaction((tx) => {
+        const prefix = `ai_cooldown:${accountScope}:model:`;
+        const key = `ai_cooldown:${providerModelScope(accountScope, modelId)}`;
+        const existing = tx.select({ value: settings.value }).from(settings).where(eq(settings.key, key)).get();
+        const modelUntil = Math.max(Number(existing?.value) || 0, until);
+        const value = String(modelUntil);
+        tx.insert(settings).values({ key, value }).onConflictDoUpdate({
+          target: settings.key, set: { value, updatedAt: new Date() },
+        }).run();
+        const active = tx.select({ value: settings.value }).from(settings)
+          .where(and(gte(settings.key, prefix), lt(settings.key, `${prefix}\uffff`)))
+          .all().map((row) => Number(row.value)).filter((deadline) => deadline > Date.now());
+        const accountKey = `ai_cooldown:${accountScope}:account`;
+        const account = tx.select({ value: settings.value }).from(settings).where(eq(settings.key, accountKey)).get();
+        const sharedUntil = Math.max(Number(account?.value) || 0,
+          accountWide || active.length >= 2 ? Math.max(modelUntil, ...active) : 0);
+        if (sharedUntil > Date.now()) {
+          const sharedValue = String(sharedUntil);
+          tx.insert(settings).values({ key: accountKey, value: sharedValue }).onConflictDoUpdate({
+            target: settings.key, set: { value: sharedValue, updatedAt: new Date() },
+          }).run();
+        }
+        return sharedUntil;
       });
     },
     async create(input: CreateAIRunInput): Promise<string> {

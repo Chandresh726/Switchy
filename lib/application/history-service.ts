@@ -7,6 +7,7 @@ import { getAIRunSummaries } from "@/lib/ai/observability";
 import { ConflictError, NotFoundError } from "@/lib/api";
 import { db } from "@/lib/db";
 import {
+  aiWorkItems,
   companies,
   jobAnalyses,
   jobs,
@@ -35,8 +36,12 @@ export async function listMatchHistory(limit: number, offset: number) {
     errorCount: matchSessions.errorCount,
     startedAt: matchSessions.startedAt,
     completedAt: matchSessions.completedAt,
+    workStatus: aiWorkItems.status,
+    nextAttemptAt: aiWorkItems.availableAt,
+    waitReason: aiWorkItems.lastError,
   }).from(matchSessions)
     .leftJoin(companies, eq(matchSessions.companyId, companies.id))
+    .leftJoin(aiWorkItems, and(eq(matchSessions.id, aiWorkItems.matchSessionId), eq(aiWorkItems.workType, "match_jobs")))
     .orderBy(desc(matchSessions.startedAt), desc(matchSessions.id))
     .limit(limit)
     .offset(offset);
@@ -49,7 +54,7 @@ export async function listMatchHistory(limit: number, offset: number) {
   const totalJobsMatched = Number(stats?.totalJobsMatched ?? 0);
   const totalJobsAttempted = Number(stats?.totalJobsAttempted ?? 0);
   return {
-    sessions,
+    sessions: sessions.map(presentMatchSessionWait),
     pagination: { total, limit, offset, hasMore: offset + sessions.length < total },
     stats: {
       totalSessions: total,
@@ -57,6 +62,22 @@ export async function listMatchHistory(limit: number, offset: number) {
       avgDuration: Math.round(Number(stats?.avgDuration ?? 0)),
       totalJobsMatched,
     },
+  };
+}
+
+function presentMatchSessionWait<T extends {
+  status: string | null;
+  workStatus: string | null;
+  nextAttemptAt: Date | null;
+  waitReason: string | null;
+}>(session: T) {
+  const { workStatus, ...presented } = session;
+  const waiting = session.status === "queued" && workStatus === "queued" &&
+    session.nextAttemptAt !== null && session.nextAttemptAt.getTime() > Date.now();
+  return {
+    ...presented,
+    nextAttemptAt: waiting ? session.nextAttemptAt : null,
+    waitReason: waiting ? session.waitReason : null,
   };
 }
 
@@ -84,8 +105,12 @@ export async function getMatchHistoryDetail(
     errorCount: matchSessions.errorCount,
     startedAt: matchSessions.startedAt,
     completedAt: matchSessions.completedAt,
+    workStatus: aiWorkItems.status,
+    nextAttemptAt: aiWorkItems.availableAt,
+    waitReason: aiWorkItems.lastError,
   }).from(matchSessions)
     .leftJoin(companies, eq(matchSessions.companyId, companies.id))
+    .leftJoin(aiWorkItems, and(eq(matchSessions.id, aiWorkItems.matchSessionId), eq(aiWorkItems.workType, "match_jobs")))
     .where(eq(matchSessions.id, sessionId));
   if (!session) throw new NotFoundError("Session not found", "match_session_not_found");
 
@@ -219,7 +244,7 @@ export async function getMatchHistoryDetail(
   });
 
   return {
-    session,
+    session: presentMatchSessionWait(session),
     logs: presentedLogs,
     logPagination: {
       total: totalLogs,

@@ -187,6 +187,21 @@ describe("MatchSessionDetail", () => {
     mocks.push.mockReset();
   });
 
+  it("explains queued provider cooldowns and shows the scheduled retry", async () => {
+    const response = detailResponse("queued");
+    const nextAttemptAt = "2026-11-13T16:13:15.000Z";
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({
+      ...response,
+      session: { ...response.session, completedAt: null, nextAttemptAt,
+        waitReason: "The AI provider rate limit was reached." },
+    })));
+    renderWithQueryClient(<MatchSessionDetail sessionId={SESSION_ID} />);
+    const wait = await screen.findByRole("status");
+    expect(wait.textContent).toContain("The AI provider rate limit was reached.");
+    expect(wait.textContent).toContain("Retry at");
+    expect(wait.textContent).toContain("Nov 13, 2026");
+  });
+
   it("summarises the session and links each job result to its job page", async () => {
     vi.stubGlobal(
       "fetch",

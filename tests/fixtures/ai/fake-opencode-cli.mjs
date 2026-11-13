@@ -354,6 +354,8 @@ const server = http.createServer((request, response) => {
             message: "Error from provider (Console): OpenCode's free tier can only be used from within OpenCode",
             status: 403,
           }
+        : prompt.includes("account-rate-limit")
+          ? { type: "APIError", message: "Account quota exhausted", status: 429 }
         : prompt.includes("embedded-rate-limit") || prompt === "rate-limit"
           ? { type: "APIError", message: "synthetic body", status: 429 }
           : prompt.includes("embedded-abort")

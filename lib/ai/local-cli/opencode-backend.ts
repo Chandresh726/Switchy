@@ -175,7 +175,9 @@ function mapOpenCodeError(error: unknown): AIError {
       ? Object.fromEntries(Object.entries(data.responseHeaders).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
       : undefined;
     return new AIRateLimitError("OpenCode provider rate limit was reached", undefined,
-      parseRetryAfterHeaders(headers) ?? (typeof data.retryAfterMs === "number" ? data.retryAfterMs : undefined));
+      parseRetryAfterHeaders(headers) ?? (typeof data.retryAfterMs === "number" ? data.retryAfterMs : undefined),
+      /account[ -]wide|account (?:usage|quota|limit).*(?:exceeded|exhausted|reached)|insufficient[_ ]quota/i.test(errorMessage)
+        ? "account" : undefined);
   }
   if (/invalid.?model|model.?not.?found/i.test(name)) {
     return new AIError({

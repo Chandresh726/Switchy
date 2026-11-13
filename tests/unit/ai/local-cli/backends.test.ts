@@ -513,6 +513,10 @@ describe("OpenCode CLI backend", () => {
     })).rejects.toMatchObject({ type: "rate_limit" });
 
     await expect(backend.generateText({
+      ...baseInput(), modelId: "openai/text", prompt: "account-rate-limit",
+    })).rejects.toMatchObject({ type: "rate_limit", context: { rateLimitScope: "account" } });
+
+    await expect(backend.generateText({
       ...baseInput(),
       modelId: "openai/text",
       prompt: "embedded-abort",

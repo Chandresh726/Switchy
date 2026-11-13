@@ -79,13 +79,14 @@ export class AIError extends Error {
 }
 
 export class AIRateLimitError extends AIError {
-  constructor(message: string, cause?: Error, retryAfterMs?: number) {
+  constructor(message: string, cause?: Error, retryAfterMs?: number, scope?: "account") {
     super({
       type: "rate_limit",
       message,
       cause,
       retryable: true,
       retryAfterMs: retryAfterMs ?? getRetryAfterMs(cause),
+      context: scope ? { rateLimitScope: scope } : undefined,
     });
     this.name = "AIRateLimitError";
   }

@@ -12,6 +12,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { SessionDeleteDialog } from "@/components/history/shared/session-delete-dialog";
+import { MatchSessionWait } from "@/components/history/shared/match-session-wait";
 import { toast } from "sonner";
 import {
   cancelMatchHistorySession,
@@ -166,6 +167,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
                   session.completedAt && `Finished ${formatTime(session.completedAt)}`,
                 ]}
               />
+              <MatchSessionWait session={session} />
             </div>
           </div>
 
