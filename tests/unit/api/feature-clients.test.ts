@@ -95,6 +95,21 @@ describe("typed feature clients", () => {
     );
   });
 
+  it("forwards the query cancellation signal to the jobs fetch", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({ jobs: [], totalCount: 0, hasMore: false })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+
+    await getJobs({ search: "engineer" }, controller.signal);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("search=engineer"),
+      expect.objectContaining({ signal: controller.signal })
+    );
+  });
+
   it("rejects invalid resource IDs before making a request", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

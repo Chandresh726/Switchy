@@ -54,9 +54,9 @@ function CompanyLayoutContent({
                 : "jobs";
 
     const { data, error, isError, isLoading, refetch } = useQuery<CompanyOverviewResponse>({
-        queryKey: queryKeys.companies.overview(companyId),
+        queryKey: queryKeys.companies.overview(companyId, activeTab),
         queryFn: async () => {
-            return getCompanyOverview(companyId);
+            return getCompanyOverview(companyId, activeTab);
         },
         enabled: Number.isInteger(companyId) && companyId > 0,
     });

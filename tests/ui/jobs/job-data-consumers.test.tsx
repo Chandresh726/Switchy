@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getCompanies: vi.fn(),
   getJob: vi.fn(),
   getJobs: vi.fn(),
+  getJobStatusCounts: vi.fn(),
   getProfile: vi.fn(),
   getStats: vi.fn(),
   replace: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock("@/lib/api/clients/companies", () => ({
 vi.mock("@/lib/api/clients/jobs", () => ({
   getJob: mocks.getJob,
   getJobs: mocks.getJobs,
+  getJobStatusCounts: mocks.getJobStatusCounts,
   updateJob: vi.fn(),
 }));
 vi.mock("@/lib/api/clients/profile", () => ({ getProfile: mocks.getProfile }));
@@ -139,6 +141,7 @@ describe("job data consumers", () => {
     mocks.routeId = "42";
     mocks.getJob.mockClear();
     mocks.getJobs.mockReset();
+    mocks.getJobStatusCounts.mockResolvedValue({ new: 1, viewed: 1, interested: 0, applied: 1, rejected: 0, archived: 0 });
     mocks.getCompanies.mockResolvedValue([company]);
     mocks.getJob.mockResolvedValue(detailJob);
     mocks.getProfile.mockResolvedValue({ id: 1, name: "Test User" });
@@ -224,7 +227,7 @@ describe("job data consumers", () => {
     expect(mocks.getJobs).toHaveBeenCalledWith(expect.objectContaining({
       sortBy: "discoveredAt",
       sortOrder: "desc",
-    }));
+    }), expect.any(AbortSignal));
   });
 
   it("migrates the previous compatibility default to date added", async () => {
@@ -240,7 +243,7 @@ describe("job data consumers", () => {
     expect(mocks.getJobs).toHaveBeenCalledWith(expect.objectContaining({
       sortBy: "discoveredAt",
       sortOrder: "desc",
-    }));
+    }), expect.any(AbortSignal));
   });
 
   it("stores and renders the job-detail resource directly", async () => {

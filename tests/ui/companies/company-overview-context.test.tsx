@@ -109,9 +109,9 @@ it("shares the layout overview with every tab and propagates cache updates", asy
   expect(screen.getByText("7: Original note")).toBeTruthy();
   expect(screen.getByText("0 people")).toBeTruthy();
   expect(screen.getByText("0 scrapes")).toBeTruthy();
-  expect(mocks.getCompanyOverview).toHaveBeenCalledExactlyOnceWith(7);
+  expect(mocks.getCompanyOverview).toHaveBeenCalledExactlyOnceWith(7, "jobs");
   await act(async () => {
-    client.setQueryData(queryKeys.companies.overview(7), {
+    client.setQueryData(queryKeys.companies.overview(7, "jobs"), {
       ...overview,
       company: { ...overview.company, name: "Updated", notes: "Saved note" },
     });

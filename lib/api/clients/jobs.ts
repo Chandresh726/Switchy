@@ -5,6 +5,7 @@ import {
   jobUpdateResponseSchema,
   jobsQuerySchema,
   jobsResponseSchema,
+  jobStatusCountsSchema,
 } from "@/lib/api/contracts/jobs";
 import type {
   JobDetail,
@@ -24,9 +25,9 @@ import { appendQuery, apiCommand, apiGet, apiJsonMutation, serializePathParam, s
 const jobPath = (id: number) => serializePathParam(jobIdParamsSchema, { id });
 export type JobsQueryInput = Partial<z.output<typeof jobsQuerySchema>>;
 
-export const getJobs = (params: JobsQueryInput = {}): Promise<JobsResponse> => {
+export const getJobs = (params: JobsQueryInput = {}, signal?: AbortSignal): Promise<JobsResponse> => {
   const query = serializeQuery(jobsQuerySchema, params);
-  return apiGet(appendQuery("/api/jobs", query), jobsResponseSchema, "Failed to fetch jobs");
+  return apiGet(appendQuery("/api/jobs", query), jobsResponseSchema, "Failed to fetch jobs", signal);
 };
 
 export const getJob = (id: number): Promise<JobDetail> =>
@@ -58,3 +59,6 @@ export const clearJobMatchData = (): Promise<ClearMatchDataResponse> => apiComma
   clearMatchDataResponseSchema,
   "Failed to clear match data"
 );
+
+export const getJobStatusCounts = (signal?: AbortSignal) =>
+  apiGet("/api/jobs/counts", jobStatusCountsSchema, "Failed to fetch job counts", signal);

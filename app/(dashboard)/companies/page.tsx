@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { Suspense, useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -14,7 +15,7 @@ import { CompanyFilters, type CompanyFilters as CompanyFiltersType } from "@/com
 import { CompanyForm } from "@/components/companies/company-form";
 import { CompanyQuickAdd } from "@/components/companies/company-quick-add";
 import { CompanyList } from "@/components/companies/company-list";
-import { JsonEditor } from "@/components/companies/json-editor";
+
 import {
   bulkDeleteCompanies,
   bulkDeleteCompanyJobs,
@@ -35,6 +36,8 @@ import { usePresetCompanies } from "@/lib/hooks/use-preset-companies";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
+
+const JsonEditor = dynamic(() => import("@/components/companies/json-editor").then((module) => module.JsonEditor));
 
 const CUSTOM_PLATFORM_SET = new Set<string>(["custom", ...CUSTOM_SCRAPER_PLATFORMS]);
 

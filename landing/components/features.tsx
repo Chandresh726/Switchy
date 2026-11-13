@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { m as motion } from "framer-motion";
 
 import { FEATURES, FEATURE_COLORS } from "@/lib/constants";
 import { fadeInUp, getSlideDelay } from "@/lib/animations";

@@ -77,6 +77,7 @@ export const queryKeys = {
   jobs: {
     all: ["jobs"] as const,
     lists: () => ["jobs", "list"] as const,
+    counts: () => ["jobs", "counts"] as const,
     list: (params: JobsQueryInput = {}) => [
       "jobs",
       "list",
@@ -93,7 +94,9 @@ export const queryKeys = {
     all: ["companies"] as const,
     list: () => ["companies", "list"] as const,
     overviews: () => ["companies", "overview"] as const,
-    overview: (id: number) => ["companies", "overview", id] as const,
+    overview: (id: number, section?: string) => section
+      ? ["companies", "overview", id, section] as const
+      : ["companies", "overview", id] as const,
     presets: () => ["assets", "preset-companies"] as const,
   },
   people: {
@@ -247,6 +250,7 @@ export const cacheOwnership = {
   ): Promise<void> {
     const keys: QueryKey[] = [
       queryKeys.jobs.lists(),
+      queryKeys.jobs.counts(),
       queryKeys.stats.all,
     ];
     if (context.jobId !== undefined) keys.push(queryKeys.jobs.detail(context.jobId));

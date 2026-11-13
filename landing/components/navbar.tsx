@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { motion } from "framer-motion";
+import { m as motion } from "framer-motion";
 import { Sun, Moon } from "lucide-react";
 
 import { GithubIcon } from "@/components/icons";

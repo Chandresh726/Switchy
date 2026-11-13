@@ -1,3 +1,4 @@
+import { MotionProvider } from "@/components/motion-provider";
 import { Navbar } from "@/components/navbar";
 import { Hero } from "@/components/hero";
 import { ProductDemo } from "@/components/product-demo";
@@ -12,22 +13,24 @@ import { Footer } from "@/components/footer";
 
 export default function LandingPage() {
   return (
-    <main className="relative">
-      <Navbar />
-      <Hero />
-      <ProductDemo />
-      <SectionDivider top="grid" bottom="plain" />
-      <Features />
-      <SectionDivider top="plain" bottom="grid" />
-      <HowItWorks />
-      <SectionDivider top="grid" bottom="plain" />
-      <TechStack />
-      <SectionDivider top="plain" bottom="grid" />
-      <SupportedPlatforms />
-      <SectionDivider top="grid" bottom="plain" />
-      <InstallationGuide />
-      <FAQ />
-      <Footer />
-    </main>
+    <MotionProvider>
+      <main className="relative">
+        <Navbar />
+        <Hero />
+        <ProductDemo />
+        <SectionDivider top="grid" bottom="plain" />
+        <Features />
+        <SectionDivider top="plain" bottom="grid" />
+        <HowItWorks />
+        <SectionDivider top="grid" bottom="plain" />
+        <TechStack />
+        <SectionDivider top="plain" bottom="grid" />
+        <SupportedPlatforms />
+        <SectionDivider top="grid" bottom="plain" />
+        <InstallationGuide />
+        <FAQ />
+        <Footer />
+      </main>
+    </MotionProvider>
   );
 }

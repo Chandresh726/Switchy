@@ -71,6 +71,7 @@ describe("cache ownership", () => {
 
     expect(invalidatedKeys(invalidate)).toEqual([
       queryKeys.jobs.lists(),
+      queryKeys.jobs.counts(),
       queryKeys.stats.all,
       queryKeys.jobs.detail(42),
       queryKeys.companies.overview(7),

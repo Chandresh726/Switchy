@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -19,9 +20,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { UnmatchedPeopleModal } from "@/components/companies/unmatched-people-modal";
 import { LinkedinIcon } from "@/components/icons/linkedin-icon";
-import { ImportPeopleModal } from "@/components/people/import-people-modal";
 import { getCompanies } from "@/lib/api/clients/companies";
 import type { Company } from "@/lib/api/contracts/companies";
 import {
@@ -63,9 +62,13 @@ import type {
   PersonSource,
 } from "@/lib/api/contracts/people";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+
 import { copyTextToClipboard } from "@/lib/utils/clipboard";
 import { formatDateTime } from "@/lib/utils/format";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
+
+const ImportPeopleModal = dynamic(() => import("@/components/people/import-people-modal").then((module) => module.ImportPeopleModal));
+const UnmatchedPeopleModal = dynamic(() => import("@/components/companies/unmatched-people-modal").then((module) => module.UnmatchedPeopleModal));
 
 type MappingScope = "mapped" | "all" | "unmapped";
 type ActivityScope = "active" | "inactive" | "all";
@@ -587,7 +590,7 @@ export default function PeoplePage() {
         </>
       )}
 
-      <ImportPeopleModal
+      {isImportModalOpen && <ImportPeopleModal
         open={isImportModalOpen}
         onOpenChange={setIsImportModalOpen}
         onImported={(summary) => {
@@ -599,7 +602,7 @@ export default function PeoplePage() {
           setCurrentPage(1);
           void cacheOwnership.peopleMutation(queryClient);
         }}
-      />
+      />}
 
       <AlertDialog open={isDeleteAllDialogOpen} onOpenChange={setIsDeleteAllDialogOpen}>
         <AlertDialogContent showCloseButton>
@@ -631,7 +634,7 @@ export default function PeoplePage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <UnmatchedPeopleModal open={isUnmatchedModalOpen} onOpenChange={setIsUnmatchedModalOpen} companies={companies} />
+      {isUnmatchedModalOpen && <UnmatchedPeopleModal open={isUnmatchedModalOpen} onOpenChange={setIsUnmatchedModalOpen} companies={companies} />}
     </div>
   );
 }

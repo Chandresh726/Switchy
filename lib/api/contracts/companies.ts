@@ -220,3 +220,8 @@ export type CompanyStats = CompanyOverviewResponse["stats"];
 export type CompanyJob = CompanyOverviewResponse["jobs"][number];
 export type CompanyPerson = CompanyOverviewResponse["people"][number];
 export type CompanyActivity = CompanyOverviewResponse["activity"];
+
+export const companyOverviewQuerySchema = z.object({
+  section: z.enum(["all", "jobs", "people", "activity", "notes"]).default("all"),
+});
+export type CompanyOverviewSection = z.infer<typeof companyOverviewQuerySchema>["section"];

@@ -108,14 +108,14 @@ const jobSummarySchema = z.object({
   viewedAt: nullableIsoDateSchema,
   appliedAt: nullableIsoDateSchema,
   matchScore: z.number().nullable(),
-  matchReasons: z.array(z.string()),
-  matchedSkills: z.array(z.string()),
+  matchReasons: z.array(z.string()).optional(),
+  matchedSkills: z.array(z.string()).optional(),
   matchResultId: z.string().nullable(),
-  matchBreakdown: MatchBreakdownSchema.nullable(),
+  matchBreakdown: MatchBreakdownSchema.nullable().optional(),
   matchStale: z.boolean(),
   matchLegacy: z.boolean(),
-  matchSummary: z.string(),
-  matchReasoning: z.array(MatchReasoningPointSchema),
+  matchSummary: z.string().optional(),
+  matchReasoning: z.array(MatchReasoningPointSchema).optional(),
   matchRunId: z.string().nullable(),
   matchPolicyVersion: z.string().nullable(),
   scoringPolicyVersion: z.string().nullable(),
@@ -134,6 +134,11 @@ const storedJobAnalysisSchema = JobAnalysisEvidenceSchema.extend({
 });
 
 export const jobSchema = jobSummarySchema.extend({
+  matchReasons: z.array(z.string()),
+  matchedSkills: z.array(z.string()),
+  matchBreakdown: MatchBreakdownSchema.nullable(),
+  matchSummary: z.string(),
+  matchReasoning: z.array(MatchReasoningPointSchema),
   description: z.string().nullable(),
   matchMetadata: z.object({
     source: MatchSourceSchema,
@@ -156,6 +161,15 @@ export const jobUpdateResponseSchema = z.object({
   archivedAt: nullableIsoDateSchema,
   archiveSource: z.string().nullable(),
   updatedAt: nullableIsoDateSchema,
+});
+
+export const jobStatusCountsSchema = z.object({
+  new: z.number().int().nonnegative(),
+  viewed: z.number().int().nonnegative(),
+  interested: z.number().int().nonnegative(),
+  applied: z.number().int().nonnegative(),
+  rejected: z.number().int().nonnegative(),
+  archived: z.number().int().nonnegative(),
 });
 
 export type JobSummary = z.infer<typeof jobSummarySchema>;

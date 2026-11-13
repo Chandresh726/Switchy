@@ -80,6 +80,7 @@ Backup and restore are CLI-only package scripts and are not HTTP APIs.
 | `/api/health/ready` | GET | JSON client / probe | `clients/health`, System Info |
 | `/api/health/runtime` | GET | JSON client / probe | `clients/health`, System Info |
 | `/api/jobs/[id]` | GET, PATCH; DELETE retained without a current UI caller | JSON client / server-only | `clients/jobs` |
+| `/api/jobs/counts` | GET | JSON client; grouped status totals without job presentation | `clients/jobs` |
 | `/api/jobs/match-data` | DELETE | JSON client | `clients/jobs` |
 | `/api/jobs/match-unmatched` | GET, POST | JSON client | `clients/runtime` |
 | `/api/jobs` | GET | JSON client | `clients/jobs` |
@@ -136,3 +137,11 @@ Backup and restore are CLI-only package scripts and are not HTTP APIs.
 | `/api/scrape-history` | GET | JSON client | `clients/history` |
 | `/api/settings` | GET, PATCH | JSON client | `clients/settings` |
 | `/api/stats` | GET | JSON client | `clients/stats` |
+
+### Performance-oriented reads
+
+Job lists omit detailed match evidence, reasoning, and breakdowns. These remain required on the job detail response. List schemas accept older responses with these fields during runtime upgrades.
+
+Company overview accepts `section=jobs|people|activity|notes`. Shared company statistics remain available in every section; unrelated collections are empty and are not queried. Omitting the section preserves the complete overview response. Section query keys share the company overview prefix so mutations invalidate every cached tab; note saves update all cached sections.
+
+Job searches preserve substring matching. Nonempty search pages obtain totals from the same query; empty pages fall back to a count so out-of-range pagination still reports the correct total. Job-list fetches accept an abort signal for superseded queries.

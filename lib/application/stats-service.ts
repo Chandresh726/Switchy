@@ -28,22 +28,20 @@ export async function getDashboardStats(
     eq(preferredMatchResults.presentationRank, 1)
   );
   const effectiveScore = sql<number | null>`coalesce(${preferredMatchResults.score}, ${jobs.matchScore})`;
-  const scoreStatsQuery = db.select({
-    highMatchJobs: sql<number>`coalesce(sum(case when ${effectiveScore} >= 70 then 1 else 0 end), 0)`,
-    activeHighMatchJobs: sql<number>`coalesce(sum(case when ${jobs.status} not in ('rejected', 'archived') and ${effectiveScore} >= 70 then 1 else 0 end), 0)`,
-    jobsWithScore: sql<number>`coalesce(sum(case when ${effectiveScore} is not null then 1 else 0 end), 0)`,
-  }).from(jobs).leftJoin(preferredMatchResults, preferredResultJoin);
-
   const [
     jobStatsResult,
     companyStatsResult,
     lastSessionResult,
     peopleStatsResult,
-    scoreStatsResult,
-    recentJobsResult,
   ] = await Promise.all([
     db.select({
       totalJobs: count(),
+      highMatchJobs: sql<number>`coalesce(sum(case when ${effectiveScore} >= 70 then 1 else 0 end), 0)`,
+      activeHighMatchJobs: sql<number>`coalesce(sum(case when ${jobs.status} not in ('rejected', 'archived') and ${effectiveScore} >= 70 then 1 else 0 end), 0)`,
+      jobsWithScore: sql<number>`coalesce(sum(case when ${effectiveScore} is not null then 1 else 0 end), 0)`,
+      discovered: sql<number>`coalesce(sum(case when ${discoveredInPeriod} then 1 else 0 end), 0)`,
+      viewed: sql<number>`coalesce(sum(case when ${viewedInPeriod} then 1 else 0 end), 0)`,
+      applied: sql<number>`coalesce(sum(case when ${appliedInPeriod} then 1 else 0 end), 0)`,
       appliedJobs: sql<number>`coalesce(sum(case when ${jobs.status} = 'applied' then 1 else 0 end), 0)`,
       newJobs: sql<number>`coalesce(sum(case when ${jobs.status} = 'new' then 1 else 0 end), 0)`,
       viewedJobs: sql<number>`coalesce(sum(case when ${jobs.status} = 'viewed' then 1 else 0 end), 0)`,
@@ -51,7 +49,7 @@ export async function getDashboardStats(
       rejectedJobs: sql<number>`coalesce(sum(case when ${jobs.status} = 'rejected' then 1 else 0 end), 0)`,
       archivedJobs: sql<number>`coalesce(sum(case when ${jobs.status} = 'archived' then 1 else 0 end), 0)`,
       activeJobs: sql<number>`coalesce(sum(case when ${jobs.status} not in ('rejected', 'archived') then 1 else 0 end), 0)`,
-    }).from(jobs),
+    }).from(jobs).leftJoin(preferredMatchResults, preferredResultJoin),
     db.select({ totalCompanies: count() }).from(companies),
     db.select().from(scrapeSessions)
       .orderBy(desc(scrapeSessions.startedAt), desc(scrapeSessions.id))
@@ -61,18 +59,12 @@ export async function getDashboardStats(
       starredPeople: sql<number>`coalesce(sum(case when ${people.isActive} = 1 and ${people.archivedAt} is null and ${people.isStarred} = 1 then 1 else 0 end), 0)`,
       mappedPeople: sql<number>`coalesce(sum(case when ${people.isActive} = 1 and ${people.archivedAt} is null and ${people.mappedCompanyId} is not null then 1 else 0 end), 0)`,
     }).from(people),
-    scoreStatsQuery,
-    db.select({
-      discovered: sql<number>`coalesce(sum(case when ${discoveredInPeriod} then 1 else 0 end), 0)`,
-      viewed: sql<number>`coalesce(sum(case when ${viewedInPeriod} then 1 else 0 end), 0)`,
-      applied: sql<number>`coalesce(sum(case when ${appliedInPeriod} then 1 else 0 end), 0)`,
-    }).from(jobs),
   ]);
   const jobStats = jobStatsResult[0];
   const companyStats = companyStatsResult[0];
   const peopleStats = peopleStatsResult[0];
-  const scoreStats = scoreStatsResult[0];
-  const recentJobs = recentJobsResult[0];
+  const scoreStats = jobStats;
+  const recentJobs = jobStats;
   const unmatchedSummary = (peopleStats?.totalPeople ?? 0) > 0
     ? await getUnmatchedCompaniesSummary()
     : { unmatchedCompanyCount: 0, unmatchedPeopleCount: 0 };

@@ -125,8 +125,8 @@ export function CompanyNotesTab({ companyId, note }: CompanyNotesTabProps) {
       failedDraftRef.current = null;
       setLastSavedDraft(savedNote);
       setNoteSaveIndicator("saved");
-      queryClient.setQueryData<CompanyOverviewResponse | undefined>(
-        queryKeys.companies.overview(companyId),
+      queryClient.setQueriesData<CompanyOverviewResponse | undefined>(
+        { queryKey: queryKeys.companies.overview(companyId) },
         (current) =>
           current
             ? {

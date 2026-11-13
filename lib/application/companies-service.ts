@@ -13,6 +13,7 @@ import type {
   companyImportBodySchema,
   companyPatchBodySchema,
   companyReplaceBodySchema,
+  CompanyOverviewSection,
 } from "@/lib/api/contracts/companies";
 import { companyPlatformSchema } from "@/lib/api/contracts/companies";
 import {
@@ -310,12 +311,15 @@ export async function refreshCompanyJobs(companyIds: number[]) {
   };
 }
 
-export async function getCompanyOverview(id: number, now = new Date()) {
+export async function getCompanyOverview(id: number, now = new Date(), section: CompanyOverviewSection = "all") {
+  const includeJobs = section === "all" || section === "jobs";
+  const includePeople = section === "all" || section === "people";
+  const includeActivity = section === "all" || section === "activity";
   const company = await getCompany(id);
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1_000);
   const discoveredLast7Days = and(gte(jobs.discoveredAt, sevenDaysAgo), lte(jobs.discoveredAt, now));
   const currentContext = await getCurrentMatchContext();
-  const preferredMatchResults = buildPreferredMatchResultsQuery(currentContext);
+  const preferredMatchResults = buildPreferredMatchResultsQuery(currentContext, id);
   const preferredResultJoin = and(
     eq(preferredMatchResults.jobId, jobs.id),
     eq(preferredMatchResults.presentationRank, 1)
@@ -349,8 +353,8 @@ export async function getCompanyOverview(id: number, now = new Date()) {
       eq(people.isActive, true),
       isNull(people.archivedAt)
     )),
-    db.select(COMPANY_JOB_SELECTION).from(jobs).where(eq(jobs.companyId, id)).orderBy(desc(jobs.discoveredAt), desc(jobs.id)).limit(50),
-    db.select({
+    includeJobs ? db.select(COMPANY_JOB_SELECTION).from(jobs).where(eq(jobs.companyId, id)).orderBy(desc(jobs.discoveredAt), desc(jobs.id)).limit(50) : Promise.resolve([]),
+    includePeople ? db.select({
       id: people.id, fullName: people.fullName, firstName: people.firstName,
       lastName: people.lastName, profileUrl: people.profileUrl, email: people.email,
       position: people.position, source: people.source, connectedOn: people.connectedOn,
@@ -362,20 +366,20 @@ export async function getCompanyOverview(id: number, now = new Date()) {
       eq(people.isActive, true),
       isNull(people.archivedAt)
     ))
-      .orderBy(desc(people.isStarred), people.fullName, desc(people.id)).limit(200),
-    db.select({
+      .orderBy(desc(people.isStarred), people.fullName, desc(people.id)).limit(200) : Promise.resolve([]),
+    includeActivity ? db.select({
       id: scrapingLogs.id, status: scrapingLogs.status, triggerSource: scrapingLogs.triggerSource,
       jobsFound: scrapingLogs.jobsFound, jobsAdded: scrapingLogs.jobsAdded,
       startedAt: scrapingLogs.startedAt, completedAt: scrapingLogs.completedAt,
-    }).from(scrapingLogs).where(eq(scrapingLogs.companyId, id)).orderBy(desc(scrapingLogs.startedAt), desc(scrapingLogs.id)).limit(20),
-    db.select({
+    }).from(scrapingLogs).where(eq(scrapingLogs.companyId, id)).orderBy(desc(scrapingLogs.startedAt), desc(scrapingLogs.id)).limit(20) : Promise.resolve([]),
+    includeActivity ? db.select({
       id: matchSessions.id, status: matchSessions.status, triggerSource: matchSessions.triggerSource,
       jobsTotal: matchSessions.jobsTotal, jobsCompleted: matchSessions.jobsCompleted,
       jobsSucceeded: matchSessions.jobsSucceeded, jobsFailed: matchSessions.jobsFailed,
       startedAt: matchSessions.startedAt, completedAt: matchSessions.completedAt,
-    }).from(matchSessions).where(eq(matchSessions.companyId, id)).orderBy(desc(matchSessions.startedAt), desc(matchSessions.id)).limit(20),
+    }).from(matchSessions).where(eq(matchSessions.companyId, id)).orderBy(desc(matchSessions.startedAt), desc(matchSessions.id)).limit(20) : Promise.resolve([]),
     promotionCountPromise,
-    topMatchJobsPromise,
+    includeJobs ? topMatchJobsPromise : Promise.resolve([]),
   ]);
   const [presentations, topPresentations] = await Promise.all([
     getMatchPresentations(companyJobs.map((job) => ({ ...job, description: null })), currentContext),
@@ -384,7 +388,12 @@ export async function getCompanyOverview(id: number, now = new Date()) {
   const present = (rows: typeof companyJobs, values: Awaited<ReturnType<typeof getMatchPresentations>>) => rows.map((job) => {
     const presentation = values.get(job.id);
     if (!presentation) throw new Error(`Missing match presentation for job ${job.id}`);
-    return { ...job, ...presentation };
+    return {
+      id: job.id, title: job.title, url: job.url, status: job.status,
+      location: job.location, locationType: job.locationType,
+      discoveredAt: job.discoveredAt, viewedAt: job.viewedAt,
+      matchScore: presentation.matchScore, matchLegacy: presentation.matchLegacy,
+    };
   });
   return {
     company: { ...company, canScrapeJobs: isCompanyScrapeSupported(company.careersUrl, company.platform) },
@@ -402,7 +411,9 @@ export async function getCompanyOverview(id: number, now = new Date()) {
         archived: Number(jobStatsRows[0]?.archivedJobs ?? 0),
       },
       jobsDiscoveredLast7Days: Number(jobStatsRows[0]?.jobsDiscoveredLast7Days ?? 0),
-      lastJobDiscoveredAt: companyJobs[0]?.discoveredAt ?? null,
+      lastJobDiscoveredAt: includeJobs ? companyJobs[0]?.discoveredAt ?? null
+        : (await db.select({ discoveredAt: jobs.discoveredAt }).from(jobs)
+          .where(eq(jobs.companyId, id)).orderBy(desc(jobs.discoveredAt), desc(jobs.id)).limit(1))[0]?.discoveredAt ?? null,
     },
     jobs: present(companyJobs, presentations),
     topMatches: present(topMatchJobs, topPresentations),

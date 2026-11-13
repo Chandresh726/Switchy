@@ -36,6 +36,8 @@ import {
   matchResults,
   scrapingLogs,
 } from "@/lib/db/schema";
+import { JOB_STATUSES } from "@/lib/jobs/status";
+import type { JobStatus } from "@/lib/jobs/status";
 import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 
 type JobUpdate = z.infer<typeof jobResourceUpdateBodySchema>;
@@ -107,7 +109,20 @@ async function presentRows(rows: Array<{ job: Omit<Parameters<typeof getMatchPre
   return rows.map(({ job, company }) => {
     const presentation = presentations.get(job.id);
     if (!presentation) throw new Error(`Missing match presentation for job ${job.id}`);
-    return { ...job, company, ...presentation };
+    const { matchReasons, matchedSkills, ...summary } = job;
+    // Legacy evidence is used for presentation selection but stays on the detail endpoint.
+    void matchReasons;
+    void matchedSkills;
+    return {
+      ...summary, company,
+      matchScore: presentation.matchScore,
+      matchResultId: presentation.matchResultId,
+      matchStale: presentation.matchStale,
+      matchLegacy: presentation.matchLegacy,
+      matchRunId: presentation.matchRunId,
+      matchPolicyVersion: presentation.matchPolicyVersion,
+      scoringPolicyVersion: presentation.scoringPolicyVersion,
+    };
   });
 }
 
@@ -174,9 +189,11 @@ export async function listJobs(query: JobsQuery) {
     || query.maxScore !== undefined || requestedBands.length > 0;
   const baseWhere = conditions.length > 0 ? and(...conditions) : undefined;
   if (!scoreAware) {
-    const select = db.select(JOB_SUMMARY_SELECTION).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id)).where(baseWhere);
+    const select = db.select({ ...JOB_SUMMARY_SELECTION, total: query.search ? sql<number>`count(*) over ()` : sql<number>`0` }).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id)).where(baseWhere);
     const rows = await select.orderBy(...orderByFor(query)).limit(query.limit).offset(query.offset);
-    const [{ value: totalCount }] = await db.select({ value: count() }).from(jobs).where(baseWhere);
+    const totalCount = query.search && rows.length > 0
+      ? rows[0].total
+      : (await db.select({ value: count() }).from(jobs).where(baseWhere))[0].value;
     return { jobs: await presentRows(rows), totalCount, hasMore: query.offset + query.limit < totalCount };
   }
 
@@ -202,17 +219,18 @@ export async function listJobs(query: JobsQuery) {
     );
   }
   const where = scoreConditions.length > 0 ? and(...scoreConditions) : undefined;
-  const rows = await db.select(JOB_SUMMARY_SELECTION).from(jobs)
+  const rows = await db.select({ ...JOB_SUMMARY_SELECTION, total: query.search ? sql<number>`count(*) over ()` : sql<number>`0` }).from(jobs)
     .innerJoin(companies, eq(jobs.companyId, companies.id))
     .leftJoin(preferredMatchResults, preferredResultJoin)
     .where(where)
     .orderBy(...orderByFor(query, effectiveScore))
     .limit(query.limit)
     .offset(query.offset);
-  const [total] = await db.select({ value: count() }).from(jobs)
-    .leftJoin(preferredMatchResults, preferredResultJoin)
-    .where(where);
-  const totalCount = total.value;
+  const scoreFiltered = query.minScore !== undefined || query.maxScore !== undefined || requestedBands.length > 0;
+  const totalCount = query.search && rows.length > 0 ? rows[0].total : (scoreFiltered
+    ? await db.select({ value: count() }).from(jobs)
+      .leftJoin(preferredMatchResults, preferredResultJoin).where(where)
+    : await db.select({ value: count() }).from(jobs).where(baseWhere))[0].value;
   return { jobs: await presentRows(rows, currentContext), totalCount, hasMore: query.offset + query.limit < totalCount };
 }
 
@@ -282,4 +300,11 @@ export async function queueUnmatchedJobs(days: number) {
   return jobIds.length === 0
     ? completeEmptyMatchSession({ triggerSource: "match_unmatched" })
     : queueMatchWork({ jobIds, triggerSource: "match_unmatched" });
+}
+
+export async function getJobStatusCounts(): Promise<Record<JobStatus, number>> {
+  const counts = Object.fromEntries(JOB_STATUSES.map((status) => [status, 0])) as Record<JobStatus, number>;
+  const rows = await db.select({ status: jobs.status, value: count() }).from(jobs).groupBy(jobs.status);
+  for (const row of rows) counts[row.status] = row.value;
+  return counts;
 }

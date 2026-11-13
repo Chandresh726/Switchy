@@ -217,12 +217,14 @@ export async function apiFileRequest(
 export async function apiGet<TSchema extends z.ZodType>(
   input: string,
   responseSchema: TSchema,
-  fallbackErrorMessage: string
+  fallbackErrorMessage: string,
+  signal?: AbortSignal
 ): Promise<z.infer<TSchema>> {
   return apiRequest(
     input,
     {
       method: "GET",
+      ...(signal ? { signal } : {}),
     },
     responseSchema,
     fallbackErrorMessage

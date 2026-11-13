@@ -10,7 +10,7 @@ import { ApiErrorState } from "@/components/ui/api-error-state";
 import { useSearchParams, useRouter } from "next/navigation";
 import { getPageNumbers } from "@/lib/utils/pagination";
 import { getCompanies } from "@/lib/api/clients/companies";
-import { getJobs, type JobsQueryInput } from "@/lib/api/clients/jobs";
+import { getJobStatusCounts, getJobs, type JobsQueryInput } from "@/lib/api/clients/jobs";
 import type { Company } from "@/lib/api/contracts/companies";
 import type { JobSummary, JobsResponse } from "@/lib/api/contracts/jobs";
 import { JOB_STATUSES, type JobStatus } from "@/lib/jobs/status";
@@ -326,43 +326,21 @@ export function JobList() {
   // Fetch jobs
   const { data, error, isError, isLoading, isFetching, refetch } = useQuery<JobsResponse>({
     queryKey: queryKeys.jobs.list(queryParams),
-    queryFn: async () => {
-      return getJobs(queryParams);
+    queryFn: async ({ signal }) => {
+      return getJobs(queryParams, signal);
     },
   });
 
-  // Fetch applied count for tab badge
-  const appliedCountQuery = useQuery({
-    queryKey: queryKeys.jobs.list({ status: "applied", limit: 1 }),
-    queryFn: async () => {
-      return getJobs({ status: "applied", limit: 1 });
-    },
+  const countsQuery = useQuery({
+    queryKey: queryKeys.jobs.counts(),
+    queryFn: ({ signal }) => getJobStatusCounts(signal),
   });
 
-  // Fetch saved count for tab badge
-  const savedCountQuery = useQuery({
-    queryKey: queryKeys.jobs.list({ status: "interested", limit: 1 }),
-    queryFn: async () => {
-      return getJobs({ status: "interested", limit: 1 });
-    },
-  });
-
-  // Fetch archived count for tab badge
-  const archivedCountQuery = useQuery({
-    queryKey: queryKeys.jobs.list({ status: "archived", limit: 1 }),
-    queryFn: async () => {
-      return getJobs({ status: "archived", limit: 1 });
-    },
-  });
-
-  const appliedData = appliedCountQuery.data;
-  const savedData = savedCountQuery.data;
-  const archivedData = archivedCountQuery.data;
   const jobs: JobSummary[] = data?.jobs || [];
   const totalCount = data?.totalCount || 0;
-  const appliedCount = appliedData?.totalCount || 0;
-  const savedCount = savedData?.totalCount || 0;
-  const archivedCount = archivedData?.totalCount || 0;
+  const appliedCount = countsQuery.data?.applied || 0;
+  const savedCount = countsQuery.data?.interested || 0;
+  const archivedCount = countsQuery.data?.archived || 0;
   const totalPages = Math.ceil(totalCount / pageSize);
 
   const startIndex = (currentPage - 1) * pageSize;
@@ -443,15 +421,13 @@ export function JobList() {
         </button>
       </div>
 
-      {appliedCountQuery.isError || savedCountQuery.isError || archivedCountQuery.isError ? (
+      {countsQuery.isError ? (
         <div className="mb-4">
           <ApiErrorState
-            error={appliedCountQuery.error ?? savedCountQuery.error ?? archivedCountQuery.error}
+            error={countsQuery.error}
             fallbackMessage="One or more job counts could not be loaded."
             onRetry={() => {
-              void appliedCountQuery.refetch();
-              void savedCountQuery.refetch();
-              void archivedCountQuery.refetch();
+              void countsQuery.refetch();
             }}
           />
         </div>
