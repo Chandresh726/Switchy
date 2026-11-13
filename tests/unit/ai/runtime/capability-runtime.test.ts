@@ -28,6 +28,7 @@ vi.mock("@/lib/ai/runtime/default-run-repository", () => ({
   },
 }));
 
+import { AISDKGenerationBackend } from "@/lib/ai/runtime/ai-sdk-backend";
 import { createAICapabilityRuntime } from "@/lib/ai/runtime/capability-runtime";
 import { resetAdaptiveProviderLimiter } from "@/lib/ai/runtime/adaptive-provider-limiter";
 
@@ -86,8 +87,8 @@ describe("AI capability runtime", () => {
       providerId: "provider-1",
       provider: "openai",
       modelId: "gpt-test",
-      model,
-      providerOptions: undefined,
+      backendKind: "ai_sdk",
+      backend: new AISDKGenerationBackend(model),
       reasoningEffort: "medium",
     });
   }
@@ -149,8 +150,8 @@ describe("AI capability runtime", () => {
       providerId: "provider-1",
       provider: "openai",
       modelId: "gpt-test",
-      model,
-      providerOptions: undefined,
+      backendKind: "ai_sdk",
+      backend: new AISDKGenerationBackend(model),
       reasoningEffort: undefined,
     });
     const runtime = await createAICapabilityRuntime({
@@ -180,8 +181,9 @@ describe("AI capability runtime", () => {
           providerRecordId: "provider-1",
           provider: "openai",
           modelId: "gpt-test",
-          model,
+          backendKind: "ai_sdk",
         },
+        backend: new AISDKGenerationBackend(model),
         reasoningEffort: "medium",
       },
     });

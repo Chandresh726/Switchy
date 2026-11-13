@@ -160,9 +160,7 @@ const DEFAULT_EIGHTFOLD_CONFIG: EightfoldConfig = {
 export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
   readonly platform = "eightfold" as const;
   override readonly capabilities = {
-    transport: "browser",
     concurrency: "browser_limited",
-    supportsCancellation: true,
   } as const;
 
   constructor(

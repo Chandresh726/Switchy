@@ -22,6 +22,8 @@ import {
   queueUnmatchedJobs,
 } from "@/lib/api/clients/runtime";
 import { getSettings, patchSettings } from "@/lib/api/clients/settings";
+import { AI_MODEL_FEATURES, resolveFeatureModel } from "@/components/settings/feature-model-settings";
+import { useSettingsAutosave } from "@/components/settings/use-settings-autosave";
 import { AppearanceSection } from "@/components/settings/appearance-section";
 import { MatcherFallbackSettings, type FallbackSettings } from "@/components/settings/matcher-fallback-settings";
 import { MatcherSection } from "@/components/settings/matcher-section";
@@ -78,16 +80,6 @@ function clampScraperHistoryRetentionDays(value: number): number {
 
 function clampScraperStaleJobArchiveDays(value: number): number {
   return Math.min(3_650, Math.max(7, value));
-}
-
-function clearSavedEdits<T extends object>(current: T, saved: T): T {
-  const next = { ...current };
-  for (const key of Object.keys(saved) as Array<keyof T>) {
-    if (Object.is(current[key], saved[key])) {
-      delete next[key];
-    }
-  }
-  return next;
 }
 
 interface MatcherLocalEdits {
@@ -157,14 +149,6 @@ function SettingsContent() {
   const debouncedUnmatchedWindowDays = useDebounce(unmatchedWindowDays, 250);
   const lastModelReconciliationRef = useRef<string | null>(null);
   const failedModelReconciliationRef = useRef<string | null>(null);
-  const resumeParserAutosaveAttemptRef = useRef<string | null>(null);
-  const resumeParserAutosaveFailureRef = useRef<string | null>(null);
-  const matcherAutosaveAttemptRef = useRef<string | null>(null);
-  const matcherAutosaveFailureRef = useRef<string | null>(null);
-  const scraperAutosaveAttemptRef = useRef<string | null>(null);
-  const scraperAutosaveFailureRef = useRef<string | null>(null);
-  const aiWritingAutosaveAttemptRef = useRef<string | null>(null);
-  const aiWritingAutosaveFailureRef = useRef<string | null>(null);
 
   const settingsQuery = useQuery<Settings>({
     queryKey: queryKeys.settings.detail(),
@@ -354,152 +338,77 @@ function SettingsContent() {
     onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update provider connection")),
   });
 
+  const featureModels = useMemo(
+    () => ({
+      job_analysis: resolveFeatureModel(
+        "job_analysis",
+        {
+          providerId: matcherLocalEdits.jobAnalysisProviderId,
+          modelId: matcherLocalEdits.jobAnalysisModel,
+          reasoningEffort: matcherLocalEdits.jobAnalysisReasoningEffort,
+        },
+        settings,
+        providers,
+        providerModelsById,
+      ),
+      matcher: resolveFeatureModel(
+        "matcher",
+        {
+          providerId: matcherLocalEdits.matcherProviderId,
+          modelId: matcherLocalEdits.matcherModel,
+          reasoningEffort: matcherLocalEdits.matcherReasoningEffort,
+        },
+        settings,
+        providers,
+        providerModelsById,
+      ),
+      resume_parser: resolveFeatureModel(
+        "resume_parser",
+        {
+          providerId: resumeParserLocalEdits.resumeParserProviderId,
+          modelId: resumeParserLocalEdits.resumeParserModel,
+          reasoningEffort: resumeParserLocalEdits.resumeParserReasoningEffort,
+        },
+        settings,
+        providers,
+        providerModelsById,
+      ),
+      ai_writing: resolveFeatureModel(
+        "ai_writing",
+        {
+          providerId: aiWritingLocalEdits.aiWritingProviderId,
+          modelId: aiWritingLocalEdits.aiWritingModel,
+          reasoningEffort: aiWritingLocalEdits.aiWritingReasoningEffort,
+        },
+        settings,
+        providers,
+        providerModelsById,
+      ),
+    }),
+    [
+      settings,
+      providers,
+      providerModelsById,
+      matcherLocalEdits,
+      resumeParserLocalEdits,
+      aiWritingLocalEdits,
+    ],
+  );
+
   const derivedValues = useMemo(() => {
-    const savedProviderIds = new Set([
-      settings?.job_analysis_provider_id,
-      settings?.matcher_provider_id,
-      settings?.resume_parser_provider_id,
-      settings?.ai_writing_provider_id,
-    ].filter(Boolean));
-    const candidateProviders = providers.filter(
-      (provider) => provider.selectable || savedProviderIds.has(provider.id)
-    );
-    const hasProviders = candidateProviders.length > 0;
-    const firstProviderId = candidateProviders[0]?.id || "";
-    const getModelsState = (providerId: string): ProviderModelsState | undefined => providerModelsById[providerId];
-
-    const getDefaultForProvider = (providerId: string) =>
-      getModelsState(providerId)?.models[0]?.modelId ?? "";
-
-    const isValidModelForProvider = (modelId: string, providerId: string) =>
-      getModelsState(providerId)?.models.some((model) => model.modelId === modelId) ?? false;
-
-    const resolveProviderId = (
-      localProviderId: string | undefined,
-      savedProviderId: string | undefined
-    ) => {
-      if (!hasProviders) return "";
-
-      const candidateId = localProviderId || savedProviderId || firstProviderId;
-      return candidateProviders.some((provider) => provider.id === candidateId) ? candidateId : firstProviderId;
-    };
-
-    const resolvedJobAnalysisProviderId = resolveProviderId(
-      matcherLocalEdits.jobAnalysisProviderId,
-      settings?.job_analysis_provider_id || settings?.matcher_provider_id
-    );
-    const resolvedMatcherProviderId = resolveProviderId(
-      matcherLocalEdits.matcherProviderId,
-      settings?.matcher_provider_id
-    );
-    const resolvedResumeParserProviderId = resolveProviderId(
-      resumeParserLocalEdits.resumeParserProviderId,
-      settings?.resume_parser_provider_id
-    );
-    const resolvedAIWritingProviderId = resolveProviderId(
-      aiWritingLocalEdits.aiWritingProviderId,
-      settings?.ai_writing_provider_id
-    );
-
-    const getValidModelOrDefault = (
-      localEdit: string | undefined, 
-      savedModel: string | undefined, 
-      providerId: string,
-      savedProviderId: string | undefined
-    ) => {
-      if (localEdit) return localEdit;
-
-      if (savedModel) {
-        const providerChangedFromSaved = Boolean(savedProviderId) && savedProviderId !== providerId;
-        const shouldKeepSavedModel = !providerChangedFromSaved;
-        if (shouldKeepSavedModel || isValidModelForProvider(savedModel, providerId)) {
-          return savedModel;
-        }
-      }
-
-      return hasProviders ? getDefaultForProvider(providerId) : "";
-    };
-
-    const resolvedJobAnalysisModel = getValidModelOrDefault(
-      matcherLocalEdits.jobAnalysisModel,
-      settings?.job_analysis_model || settings?.matcher_model,
-      resolvedJobAnalysisProviderId,
-      settings?.job_analysis_provider_id || settings?.matcher_provider_id
-    );
-    const resolvedMatcherModel = getValidModelOrDefault(
-      matcherLocalEdits.matcherModel,
-      settings?.matcher_model,
-      resolvedMatcherProviderId,
-      settings?.matcher_provider_id
-    );
-    const resolvedResumeParserModel = getValidModelOrDefault(
-      resumeParserLocalEdits.resumeParserModel,
-      settings?.resume_parser_model,
-      resolvedResumeParserProviderId,
-      settings?.resume_parser_provider_id
-    );
-    const resolvedAIWritingModel = getValidModelOrDefault(
-      aiWritingLocalEdits.aiWritingModel,
-      settings?.ai_writing_model,
-      resolvedAIWritingProviderId,
-      settings?.ai_writing_provider_id
-    );
-
-    const resolveReasoningEffort = ({
-      localValue,
-      savedValue,
-      providerId,
-      modelId,
-      providerWasEdited,
-    }: {
-      localValue: ReasoningEffort | undefined;
-      savedValue: string | undefined;
-      providerId: string;
-      modelId: string;
-      providerWasEdited: boolean;
-    }): ReasoningEffort => {
-      if (localValue !== undefined) return localValue;
-      if (!providerWasEdited) return savedValue || "";
-
-      const model = getModelsState(providerId)?.models.find(
-        (candidate) => candidate.modelId === modelId
-      );
-      return resolveReasoningSelection({
-        localValue,
-        savedValue,
-        providerWasEdited,
-        model,
-      });
-    };
-
     return {
-      jobAnalysisModel: resolvedJobAnalysisModel,
-      jobAnalysisProviderId: resolvedJobAnalysisProviderId,
-      jobAnalysisReasoningEffort: resolveReasoningEffort({
-        localValue: matcherLocalEdits.jobAnalysisReasoningEffort,
-        savedValue: settings?.job_analysis_reasoning_effort || settings?.matcher_reasoning_effort,
-        providerId: resolvedJobAnalysisProviderId,
-        modelId: resolvedJobAnalysisModel,
-        providerWasEdited: matcherLocalEdits.jobAnalysisProviderId !== undefined,
-      }),
-      matcherModel: resolvedMatcherModel,
-      matcherProviderId: resolvedMatcherProviderId,
-      resumeParserModel: resolvedResumeParserModel,
-      resumeParserProviderId: resolvedResumeParserProviderId,
-      matcherReasoningEffort: resolveReasoningEffort({
-        localValue: matcherLocalEdits.matcherReasoningEffort,
-        savedValue: settings?.matcher_reasoning_effort,
-        providerId: resolvedMatcherProviderId,
-        modelId: resolvedMatcherModel,
-        providerWasEdited: matcherLocalEdits.matcherProviderId !== undefined,
-      }),
-      resumeParserReasoningEffort: resolveReasoningEffort({
-        localValue: resumeParserLocalEdits.resumeParserReasoningEffort,
-        savedValue: settings?.resume_parser_reasoning_effort,
-        providerId: resolvedResumeParserProviderId,
-        modelId: resolvedResumeParserModel,
-        providerWasEdited: resumeParserLocalEdits.resumeParserProviderId !== undefined,
-      }),
+      jobAnalysisModel: featureModels.job_analysis.modelId,
+      jobAnalysisProviderId: featureModels.job_analysis.providerId,
+      jobAnalysisReasoningEffort: featureModels.job_analysis.reasoningEffort,
+      matcherModel: featureModels.matcher.modelId,
+      matcherProviderId: featureModels.matcher.providerId,
+      matcherReasoningEffort: featureModels.matcher.reasoningEffort,
+      resumeParserModel: featureModels.resume_parser.modelId,
+      resumeParserProviderId: featureModels.resume_parser.providerId,
+      resumeParserReasoningEffort: featureModels.resume_parser.reasoningEffort,
+      aiWritingModel: featureModels.ai_writing.modelId,
+      aiWritingProviderId: featureModels.ai_writing.providerId,
+      aiWritingReasoningEffort: featureModels.ai_writing.reasoningEffort,
       batchSize: matcherLocalEdits.batchSize ?? parseInt(settings?.matcher_batch_size || "2", 10),
       maxRetries: matcherLocalEdits.maxRetries ?? parseInt(settings?.matcher_max_retries || "3", 10),
       concurrencyLimit: matcherLocalEdits.concurrencyLimit ?? parseInt(settings?.matcher_concurrency_limit || "3", 10),
@@ -558,16 +467,6 @@ function SettingsContent() {
           return [];
         }
       })(),
-      // AI Writing
-      aiWritingModel: resolvedAIWritingModel,
-      aiWritingProviderId: resolvedAIWritingProviderId,
-      aiWritingReasoningEffort: resolveReasoningEffort({
-        localValue: aiWritingLocalEdits.aiWritingReasoningEffort,
-        savedValue: settings?.ai_writing_reasoning_effort,
-        providerId: resolvedAIWritingProviderId,
-        modelId: resolvedAIWritingModel,
-        providerWasEdited: aiWritingLocalEdits.aiWritingProviderId !== undefined,
-      }),
       referralTone: aiWritingLocalEdits.referralTone ?? (settings?.referral_tone || "professional"),
       referralLength: aiWritingLocalEdits.referralLength ?? (settings?.referral_length || "medium"),
       followUpTone: aiWritingLocalEdits.followUpTone ?? (settings?.follow_up_tone || "professional"),
@@ -585,7 +484,7 @@ function SettingsContent() {
         }
       })(),
     };
-  }, [settings, matcherLocalEdits, resumeParserLocalEdits, scraperLocalEdits, aiWritingLocalEdits, providers, providerModelsById]);
+  }, [settings, matcherLocalEdits, scraperLocalEdits, aiWritingLocalEdits, featureModels]);
 
   const {
     jobAnalysisModel, jobAnalysisProviderId, jobAnalysisReasoningEffort,
@@ -665,102 +564,14 @@ function SettingsContent() {
     const updates: Record<string, string> = {};
     const features: string[] = [];
 
-    const queueFeatureUpdate = ({
-      featureLabel,
-      providerSettingKey,
-      modelSettingKey,
-      savedProviderId,
-      savedModelId,
-      resolvedProviderId,
-      resolvedModelId,
-      localProviderEdited,
-      localModelEdited,
-    }: {
-      featureLabel: string;
-      providerSettingKey: string;
-      modelSettingKey: string;
-      savedProviderId?: string;
-      savedModelId?: string;
-      resolvedProviderId: string;
-      resolvedModelId: string;
-      localProviderEdited: boolean;
-      localModelEdited: boolean;
-    }) => {
-      if (localProviderEdited || localModelEdited) {
-        return;
-      }
-
-      if (!resolvedProviderId || !resolvedModelId) {
-        return;
-      }
-
-      if ((savedProviderId || "") !== resolvedProviderId) {
-        updates[providerSettingKey] = resolvedProviderId;
-      }
-
-      if ((savedModelId || "") !== resolvedModelId) {
-        updates[modelSettingKey] = resolvedModelId;
-      }
-
-      if (updates[providerSettingKey] || updates[modelSettingKey]) {
-        features.push(featureLabel);
-      }
-    };
-
-    if (!jobAnalysisModelsState.loading && jobAnalysisModelsState.models.length > 0) {
-      queueFeatureUpdate({
-        featureLabel: "Job Analysis",
-        providerSettingKey: "job_analysis_provider_id",
-        modelSettingKey: "job_analysis_model",
-        savedProviderId: settings.job_analysis_provider_id,
-        savedModelId: settings.job_analysis_model,
-        resolvedProviderId: jobAnalysisProviderId,
-        resolvedModelId: jobAnalysisModel,
-        localProviderEdited: matcherLocalEdits.jobAnalysisProviderId !== undefined,
-        localModelEdited: matcherLocalEdits.jobAnalysisModel !== undefined,
-      });
-    }
-
-    if (!matcherModelsState.loading && matcherModelsState.models.length > 0) {
-      queueFeatureUpdate({
-        featureLabel: "Matcher",
-        providerSettingKey: "matcher_provider_id",
-        modelSettingKey: "matcher_model",
-        savedProviderId: settings.matcher_provider_id,
-        savedModelId: settings.matcher_model,
-        resolvedProviderId: matcherProviderId,
-        resolvedModelId: matcherModel,
-        localProviderEdited: matcherLocalEdits.matcherProviderId !== undefined,
-        localModelEdited: matcherLocalEdits.matcherModel !== undefined,
-      });
-    }
-
-    if (!resumeParserModelsState.loading && resumeParserModelsState.models.length > 0) {
-      queueFeatureUpdate({
-        featureLabel: "Resume Parser",
-        providerSettingKey: "resume_parser_provider_id",
-        modelSettingKey: "resume_parser_model",
-        savedProviderId: settings.resume_parser_provider_id,
-        savedModelId: settings.resume_parser_model,
-        resolvedProviderId: resumeParserProviderId,
-        resolvedModelId: resumeParserModel,
-        localProviderEdited: resumeParserLocalEdits.resumeParserProviderId !== undefined,
-        localModelEdited: resumeParserLocalEdits.resumeParserModel !== undefined,
-      });
-    }
-
-    if (!aiWritingModelsState.loading && aiWritingModelsState.models.length > 0) {
-      queueFeatureUpdate({
-        featureLabel: "AI Writing",
-        providerSettingKey: "ai_writing_provider_id",
-        modelSettingKey: "ai_writing_model",
-        savedProviderId: settings.ai_writing_provider_id,
-        savedModelId: settings.ai_writing_model,
-        resolvedProviderId: aiWritingProviderId,
-        resolvedModelId: aiWritingModel,
-        localProviderEdited: aiWritingLocalEdits.aiWritingProviderId !== undefined,
-        localModelEdited: aiWritingLocalEdits.aiWritingModel !== undefined,
-      });
+    for (const feature of Object.keys(AI_MODEL_FEATURES) as Array<keyof typeof AI_MODEL_FEATURES>) {
+      const keys = AI_MODEL_FEATURES[feature];
+      const resolved = featureModels[feature];
+      const catalog = providerModelsById[resolved.providerId];
+      if (!catalog || catalog.loading || catalog.models.length === 0 || resolved.localProviderEdited || resolved.localModelEdited || !resolved.providerId || !resolved.modelId) continue;
+      if ((settings[keys.provider] || "") !== resolved.providerId) updates[keys.provider] = resolved.providerId;
+      if ((settings[keys.model] || "") !== resolved.modelId) updates[keys.model] = resolved.modelId;
+      if (updates[keys.provider] || updates[keys.model]) features.push(keys.label);
     }
 
     if (Object.keys(updates).length === 0) {
@@ -779,35 +590,7 @@ function SettingsContent() {
 
     lastModelReconciliationRef.current = signature;
     reconcileModelsMutation.mutate({ updates, features, signature });
-  }, [
-    settings,
-    providers,
-    jobAnalysisModelsState.loading,
-    jobAnalysisModelsState.models.length,
-    jobAnalysisProviderId,
-    jobAnalysisModel,
-    matcherLocalEdits.jobAnalysisProviderId,
-    matcherLocalEdits.jobAnalysisModel,
-    matcherModelsState.loading,
-    matcherModelsState.models.length,
-    matcherProviderId,
-    matcherModel,
-    matcherLocalEdits.matcherProviderId,
-    matcherLocalEdits.matcherModel,
-    resumeParserModelsState.loading,
-    resumeParserModelsState.models.length,
-    resumeParserProviderId,
-    resumeParserModel,
-    resumeParserLocalEdits.resumeParserProviderId,
-    resumeParserLocalEdits.resumeParserModel,
-    aiWritingModelsState.loading,
-    aiWritingModelsState.models.length,
-    aiWritingProviderId,
-    aiWritingModel,
-    aiWritingLocalEdits.aiWritingProviderId,
-    aiWritingLocalEdits.aiWritingModel,
-    reconcileModelsMutation,
-  ]);
+  }, [settings, providers.length, featureModels, providerModelsById, reconcileModelsMutation]);
 
   const scraperHasUnsavedChanges =
     scraperLocalEdits.schedulerCron !== undefined ||
@@ -950,38 +733,6 @@ function SettingsContent() {
     onError: (error) => toast.error(getApiErrorMessage(error, "Failed to delete AI generated content")),
   });
 
-  const resumeParserMutation = useMutation({
-    mutationFn: (variables: {
-      updates: {
-        resume_parser_model?: string;
-        resume_parser_provider_id?: string;
-        resume_parser_reasoning_effort?: ReasoningEffort;
-      };
-      signature: string;
-      snapshot: ResumeParserLocalEdits;
-    }) => patchSettings(variables.updates),
-    onSuccess: (_data, variables) => {
-      resumeParserAutosaveAttemptRef.current = null;
-      resumeParserAutosaveFailureRef.current = null;
-      void cacheOwnership.settingsMutation(queryClient);
-      setResumeParserLocalEdits((current) => clearSavedEdits(current, variables.snapshot));
-    },
-    onError: (error, variables) => {
-      resumeParserAutosaveAttemptRef.current = null;
-      resumeParserAutosaveFailureRef.current = variables.signature;
-      toast.error(getApiErrorMessage(error, "Failed to save resume parser settings"), {
-        action: {
-          label: "Retry",
-          onClick: () => {
-            resumeParserAutosaveFailureRef.current = null;
-            resumeParserAutosaveAttemptRef.current = variables.signature;
-            resumeParserMutation.mutate(variables);
-          },
-        },
-      });
-    },
-  });
-
   const schedulerEnabledMutation = useMutation<Settings, Error, boolean, { previousEnabled: boolean }>({
     mutationFn: (enabled: boolean) =>
       patchSettings({ scheduler_enabled: enabled }),
@@ -1011,334 +762,127 @@ function SettingsContent() {
     schedulerEnabledMutation.mutate(enabled);
   };
 
-  // Auto-save effect for Resume Parser with debounce
-  useEffect(() => {
-    if (
-      resumeParserLocalEdits.resumeParserModel === undefined &&
-      resumeParserLocalEdits.resumeParserProviderId === undefined &&
-      resumeParserLocalEdits.resumeParserReasoningEffort === undefined
-    ) {
-      return;
-    }
-
-    const currentModelsState = providerModelsById[resumeParserProviderId];
-    const modelIsReady =
-      !!resumeParserProviderId &&
-      !!resumeParserModel &&
-      !!currentModelsState &&
-      !currentModelsState.loading &&
-      currentModelsState.models.some((model) => model.modelId === resumeParserModel);
-
-    if (!modelIsReady) {
-      return;
-    }
-
-    const updates = {
-      resume_parser_model: resumeParserModel,
-      resume_parser_provider_id: resumeParserProviderId,
-      resume_parser_reasoning_effort: resumeParserReasoningEffort,
-    };
-    const signature = JSON.stringify(resumeParserLocalEdits);
-    if (
-      resumeParserAutosaveAttemptRef.current === signature ||
-      resumeParserAutosaveFailureRef.current === signature
-    ) {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      resumeParserAutosaveAttemptRef.current = signature;
-      resumeParserMutation.mutate({
-        updates,
-        signature,
-        snapshot: resumeParserLocalEdits,
-      });
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [
-    resumeParserModel,
-    resumeParserProviderId,
-    resumeParserReasoningEffort,
-    resumeParserLocalEdits,
-    resumeParserMutation,
-    providerModelsById,
-  ]);
-
-  const matcherSettingsMutation = useMutation({
-    mutationFn: ({ updates }: { updates: Record<string, unknown>; snapshot: MatcherLocalEdits }) =>
-      patchSettings(updates),
-    onSuccess: (data, variables) => {
-      matcherAutosaveAttemptRef.current = null;
-      matcherAutosaveFailureRef.current = null;
-      queryClient.setQueryData(queryKeys.settings.detail(), data);
-      setMatcherLocalEdits((current) => clearSavedEdits(current, variables.snapshot));
-    },
-    onError: (error, variables) => {
-      const signature = JSON.stringify(variables.snapshot);
-      matcherAutosaveAttemptRef.current = null;
-      matcherAutosaveFailureRef.current = signature;
-      toast.error(getApiErrorMessage(error, "Failed to save matcher settings"), {
-        action: {
-          label: "Retry",
-          onClick: () => {
-            matcherAutosaveFailureRef.current = null;
-            matcherAutosaveAttemptRef.current = signature;
-            matcherSettingsMutation.mutate(variables);
-          },
-        },
-      });
-    },
-  });
-
-  const scraperSettingsMutation = useMutation<
-    Record<string, string>,
-    Error,
-    { updates: Record<string, unknown>; snapshot: ScraperLocalEdits }
-  >({
-    mutationFn: ({ updates }) =>
-      patchSettings(updates),
-    onSuccess: (data, variables) => {
-      scraperAutosaveAttemptRef.current = null;
-      scraperAutosaveFailureRef.current = null;
-      queryClient.setQueryData(queryKeys.settings.detail(), data);
-      queryClient.invalidateQueries({ queryKey: queryKeys.runtime.scheduler() });
-      setScraperLocalEdits((current) => clearSavedEdits(current, variables.snapshot));
-    },
-    onError: (error, variables) => {
-      const signature = JSON.stringify(variables.snapshot);
-      scraperAutosaveAttemptRef.current = null;
-      scraperAutosaveFailureRef.current = signature;
-      toast.error(getApiErrorMessage(error, "Failed to save scraper settings"), {
-        action: {
-          label: "Retry",
-          onClick: () => {
-            scraperAutosaveFailureRef.current = null;
-            scraperAutosaveAttemptRef.current = signature;
-            scraperSettingsMutation.mutate(variables);
-          },
-        },
-      });
-    },
-  });
-
-  const aiWritingMutation = useMutation({
-    mutationFn: ({ updates }: {
-      updates: Partial<AIWritingSettings>;
-      snapshot: AIWritingLocalEdits;
-    }) =>
-      patchSettings({
-          referral_tone: updates.referralTone,
-          referral_length: updates.referralLength,
-          follow_up_tone: updates.followUpTone,
-          follow_up_length: updates.followUpLength,
-          cover_letter_tone: updates.coverLetterTone,
-          cover_letter_length: updates.coverLetterLength,
-          cover_letter_focus: updates.coverLetterFocus,
-          ai_writing_model: updates.aiWritingModel,
-          ai_writing_provider_id: updates.aiWritingProviderId,
-          ai_writing_reasoning_effort: updates.aiWritingReasoningEffort,
-        }),
-    onSuccess: (data, variables) => {
-      aiWritingAutosaveAttemptRef.current = null;
-      aiWritingAutosaveFailureRef.current = null;
-      queryClient.setQueryData(queryKeys.settings.detail(), data);
-      setAIWritingLocalEdits((current) => clearSavedEdits(current, variables.snapshot));
-    },
-    onError: (error, variables) => {
-      const signature = JSON.stringify(variables.snapshot);
-      aiWritingAutosaveAttemptRef.current = null;
-      aiWritingAutosaveFailureRef.current = signature;
-      toast.error(getApiErrorMessage(error, "Failed to save AI writing settings"), {
-        action: {
-          label: "Retry",
-          onClick: () => {
-            aiWritingAutosaveFailureRef.current = null;
-            aiWritingAutosaveAttemptRef.current = signature;
-            aiWritingMutation.mutate(variables);
-          },
-        },
-      });
-    },
-  });
-  const saveMatcherSettings = matcherSettingsMutation.mutate;
-  const matcherSettingsSaving = matcherSettingsMutation.isPending;
-  const saveScraperSettings = scraperSettingsMutation.mutate;
-  const scraperSettingsSaving = scraperSettingsMutation.isPending;
-  const saveAIWritingSettings = aiWritingMutation.mutate;
-  const aiWritingSettingsSaving = aiWritingMutation.isPending;
-
-  useEffect(() => {
-    if (!matcherHasUnsavedChanges || matcherSettingsSaving || providerOptions.length === 0) return;
-    const signature = JSON.stringify(matcherLocalEdits);
-    if (
-      matcherAutosaveAttemptRef.current === signature ||
-      matcherAutosaveFailureRef.current === signature
-    ) return;
-    const selectedAnalysisModel = jobAnalysisModelsState.models.find(
-      (model) => model.modelId === jobAnalysisModel
+  const modelSelectionValid = (feature: keyof typeof AI_MODEL_FEATURES) => {
+    const resolved = featureModels[feature];
+    const model = providerModelsById[resolved.providerId]?.models.find(
+      ({ modelId }) => modelId === resolved.modelId,
     );
-    const selectedModel = matcherModelsState.models.find((model) => model.modelId === matcherModel);
-    if (
-      !selectedAnalysisModel ||
-      hasInvalidReasoningSelection(selectedAnalysisModel, jobAnalysisReasoningEffort) ||
-      !selectedModel ||
-      hasInvalidReasoningSelection(selectedModel, matcherReasoningEffort)
-    ) {
-      return;
-    }
-
+    return (
+      Boolean(model) &&
+      !hasInvalidReasoningSelection(model, resolved.reasoningEffort)
+    );
+  };
+  const fallbackSettingsValid = () => {
     const fallback = { ...settings, ...matcherLocalEdits.fallbackSettings };
     for (const stage of ["job_analysis", "matcher"] as const) {
       if (fallback[`${stage}_fallback_enabled`] !== "true") continue;
       const provider = fallback[`${stage}_fallback_provider_id`] ?? "";
       const modelId = fallback[`${stage}_fallback_model`];
-      const model = providerModelsById[provider]?.models.find((entry) => entry.modelId === modelId);
-      const primaryProvider = stage === "job_analysis" ? jobAnalysisProviderId : matcherProviderId;
-      const primaryModel = stage === "job_analysis" ? jobAnalysisModel : matcherModel;
-      if (!model || hasInvalidReasoningSelection(model, fallback[`${stage}_fallback_reasoning_effort`] ?? "") ||
-          (provider === primaryProvider && modelId === primaryModel)) return;
+      const model = providerModelsById[provider]?.models.find(
+        (entry) => entry.modelId === modelId,
+      );
+      const primary = featureModels[stage];
+      if (
+        !model ||
+        hasInvalidReasoningSelection(
+          model,
+          fallback[`${stage}_fallback_reasoning_effort`] ?? "",
+        ) ||
+        (provider === primary.providerId && modelId === primary.modelId)
+      )
+        return false;
     }
+    return true;
+  };
 
-    const timer = setTimeout(() => {
-      matcherAutosaveAttemptRef.current = signature;
-      saveMatcherSettings({
-        snapshot: matcherLocalEdits,
-        updates: {
-          job_analysis_model: jobAnalysisModel,
-          job_analysis_provider_id: jobAnalysisProviderId,
-          job_analysis_reasoning_effort: jobAnalysisReasoningEffort,
-          matcher_model: matcherModel,
-          matcher_provider_id: matcherProviderId,
-          matcher_reasoning_effort: matcherReasoningEffort,
-          matcher_batch_size: batchSize,
-          matcher_max_retries: maxRetries,
-          matcher_concurrency_limit: concurrencyLimit,
-          matcher_timeout_ms: timeoutMs,
-          matcher_auto_match_after_scrape: autoMatchAfterScrape,
-          ...matcherLocalEdits.fallbackSettings,
-        },
-      });
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [
-    autoMatchAfterScrape,
-    batchSize,
-    concurrencyLimit,
-    jobAnalysisModel,
-    jobAnalysisModelsState.models,
-    jobAnalysisProviderId,
-    jobAnalysisReasoningEffort,
-    matcherHasUnsavedChanges,
-    settings,
-    providerModelsById,
-    matcherLocalEdits,
-    matcherModel,
-    matcherModelsState.models,
-    matcherProviderId,
-    matcherReasoningEffort,
-    matcherSettingsSaving,
-    maxRetries,
-    providerOptions.length,
-    saveMatcherSettings,
-    timeoutMs,
-  ]);
+  useSettingsAutosave({
+    edits: resumeParserLocalEdits,
+    setEdits: setResumeParserLocalEdits,
+    enabled:
+      Object.values(resumeParserLocalEdits).some(
+        (value) => value !== undefined,
+      ) &&
+      Boolean(resumeParserProviderId && resumeParserModel) &&
+      !resumeParserModelsState.loading &&
+      resumeParserModelsState.models.some(
+        ({ modelId }) => modelId === resumeParserModel,
+      ),
+    delay: 300,
+    errorMessage: "Failed to save resume parser settings",
+    cache: "invalidate",
+    updates: {
+      resume_parser_model: resumeParserModel,
+      resume_parser_provider_id: resumeParserProviderId,
+      resume_parser_reasoning_effort: resumeParserReasoningEffort,
+    },
+  });
+  useSettingsAutosave({
+    edits: matcherLocalEdits,
+    setEdits: setMatcherLocalEdits,
+    enabled:
+      matcherHasUnsavedChanges &&
+      providerOptions.length > 0 &&
+      modelSelectionValid("job_analysis") &&
+      modelSelectionValid("matcher") &&
+      fallbackSettingsValid(),
+    delay: 400,
+    errorMessage: "Failed to save matcher settings",
+    updates: {
+      job_analysis_model: jobAnalysisModel,
+      job_analysis_provider_id: jobAnalysisProviderId,
+      job_analysis_reasoning_effort: jobAnalysisReasoningEffort,
+      matcher_model: matcherModel,
+      matcher_provider_id: matcherProviderId,
+      matcher_reasoning_effort: matcherReasoningEffort,
+      matcher_batch_size: batchSize,
+      matcher_max_retries: maxRetries,
+      matcher_concurrency_limit: concurrencyLimit,
+      matcher_timeout_ms: timeoutMs,
+      matcher_auto_match_after_scrape: autoMatchAfterScrape,
+      ...matcherLocalEdits.fallbackSettings,
+    },
+  });
+  useSettingsAutosave({
+    edits: scraperLocalEdits,
+    setEdits: setScraperLocalEdits,
+    enabled: scraperHasUnsavedChanges,
+    delay: 500,
+    errorMessage: "Failed to save scraper settings",
+    cache: "scheduler",
+    updates: {
+      scheduler_cron: schedulerCron,
+      scraper_max_parallel_scrapes: maxParallelScrapes,
+      scraper_keep_device_awake: keepDeviceAwake,
+      scraper_history_retention_days: historyRetentionDays,
+      scraper_stale_job_archive_days: staleJobArchiveDays,
+      scraper_filter_country: filterCountry,
+      scraper_filter_city: filterCity,
+      scraper_filter_title_keywords: filterTitleKeywords,
+    },
+  });
+  useSettingsAutosave({
+    edits: aiWritingLocalEdits,
+    setEdits: setAIWritingLocalEdits,
+    enabled:
+      aiWritingHasUnsavedChanges &&
+      providerOptions.length > 0 &&
+      modelSelectionValid("ai_writing"),
+    delay: 400,
+    errorMessage: "Failed to save AI writing settings",
+    updates: {
+      referral_tone: referralTone,
+      referral_length: referralLength,
+      follow_up_tone: followUpTone,
+      follow_up_length: followUpLength,
+      cover_letter_tone: coverLetterTone,
+      cover_letter_length: coverLetterLength,
+      cover_letter_focus: coverLetterFocus,
+      ai_writing_model: aiWritingModel,
+      ai_writing_provider_id: aiWritingProviderId,
+      ai_writing_reasoning_effort: aiWritingReasoningEffort,
+    },
+  });
 
-  useEffect(() => {
-    if (!scraperHasUnsavedChanges || scraperSettingsSaving) return;
-    const signature = JSON.stringify(scraperLocalEdits);
-    if (
-      scraperAutosaveAttemptRef.current === signature ||
-      scraperAutosaveFailureRef.current === signature
-    ) return;
-
-    const timer = setTimeout(() => {
-      scraperAutosaveAttemptRef.current = signature;
-      saveScraperSettings({
-        snapshot: scraperLocalEdits,
-        updates: {
-          scheduler_cron: schedulerCron,
-          scraper_max_parallel_scrapes: maxParallelScrapes,
-          scraper_keep_device_awake: keepDeviceAwake,
-          scraper_history_retention_days: historyRetentionDays,
-          scraper_stale_job_archive_days: staleJobArchiveDays,
-          scraper_filter_country: filterCountry,
-          scraper_filter_city: filterCity,
-          scraper_filter_title_keywords: filterTitleKeywords,
-        },
-      });
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [
-    filterCity,
-    filterCountry,
-    filterTitleKeywords,
-    historyRetentionDays,
-    staleJobArchiveDays,
-    keepDeviceAwake,
-    maxParallelScrapes,
-    schedulerCron,
-    scraperHasUnsavedChanges,
-    scraperLocalEdits,
-    saveScraperSettings,
-    scraperSettingsSaving,
-  ]);
-
-  useEffect(() => {
-    if (!aiWritingHasUnsavedChanges || aiWritingSettingsSaving || providerOptions.length === 0) return;
-    const signature = JSON.stringify(aiWritingLocalEdits);
-    if (
-      aiWritingAutosaveAttemptRef.current === signature ||
-      aiWritingAutosaveFailureRef.current === signature
-    ) return;
-    const selectedModel = aiWritingModelsState.models.find(
-      (model) => model.modelId === aiWritingModel
-    );
-    if (
-      !selectedModel ||
-      hasInvalidReasoningSelection(selectedModel, aiWritingReasoningEffort)
-    ) {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      aiWritingAutosaveAttemptRef.current = signature;
-      saveAIWritingSettings({
-        snapshot: aiWritingLocalEdits,
-        updates: {
-          referralTone,
-          referralLength,
-          followUpTone,
-          followUpLength,
-          coverLetterTone,
-          coverLetterLength,
-          coverLetterFocus,
-          aiWritingModel,
-          aiWritingProviderId,
-          aiWritingReasoningEffort,
-        },
-      });
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [
-    aiWritingHasUnsavedChanges,
-    aiWritingLocalEdits,
-    aiWritingModel,
-    aiWritingModelsState.models,
-    aiWritingSettingsSaving,
-    aiWritingProviderId,
-    aiWritingReasoningEffort,
-    coverLetterFocus,
-    coverLetterLength,
-    coverLetterTone,
-    followUpLength,
-    followUpTone,
-    providerOptions.length,
-    referralLength,
-    referralTone,
-    saveAIWritingSettings,
-  ]);
-
-  // Query for unmatched jobs count
   const {
     data: unmatchedData,
     isFetching: unmatchedCountLoading,

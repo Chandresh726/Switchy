@@ -4,11 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, History, Loader2, Sparkles, Timer } from "lucide-react";
 import { AIUsageOverview } from "./ai-usage-overview";
 import { MatchSessionCard } from "./match-session-card";
+import { SessionGroups } from "@/components/history/shared/session-groups";
 import { OverviewCard } from "@/components/history/shared/overview-card";
 import {
   formatDurationMs,
   formatRelativeTime,
-  groupSessionsByDate,
 } from "@/lib/utils/format";
 import { getMatchHistoryList } from "@/lib/api/clients/history";
 import { queryKeys } from "@/lib/query-keys";
@@ -64,7 +64,6 @@ export function MatchHistoryTab() {
     );
   }
 
-  const groupedSessions = groupSessionsByDate(sessions);
   // Sessions come back newest-first, so the first row is the latest run overall.
   const lastRunAt = sessions[0]?.startedAt ? new Date(sessions[0].startedAt) : null;
 
@@ -105,19 +104,10 @@ export function MatchHistoryTab() {
         </div>
       )}
 
-      {/* Sessions grouped by date */}
-      {Array.from(groupedSessions.entries()).map(([date, dateSessions]) => (
-        <div key={date} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <h3 className="sticky top-0 z-10 mb-3 border-b border-border/60 bg-background/95 py-2 text-xs font-medium uppercase tracking-wider text-muted-foreground backdrop-blur-sm supports-backdrop-filter:bg-background/80">
-            {date}
-          </h3>
-          <div className="space-y-3">
-            {dateSessions.map((session) => (
-              <MatchSessionCard key={session.id} session={session} />
-            ))}
-          </div>
-        </div>
-      ))}
+      <SessionGroups
+        sessions={sessions}
+        renderSession={(session) => <MatchSessionCard key={session.id} session={session} />}
+      />
     </div>
   );
 }

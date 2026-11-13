@@ -3,6 +3,7 @@ import { MockLanguageModelV4 } from "ai/test";
 import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 
+import { AISDKGenerationBackend } from "@/lib/ai/runtime/ai-sdk-backend";
 import { createAICapabilityRuntime } from "@/lib/ai/runtime/capability-runtime";
 import {
   adaptiveProviderLimiter,
@@ -169,8 +170,9 @@ describe("AIWorkDispatcher", () => {
             providerRecordId: "provider-shared",
             provider: "openai",
             modelId: "synthetic-model",
-            model,
+            backendKind: "ai_sdk",
           },
+          backend: new AISDKGenerationBackend(model),
           reasoningEffort: "medium",
         },
         providerConcurrencyLimit: 2,

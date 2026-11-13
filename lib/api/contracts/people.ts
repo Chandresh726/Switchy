@@ -129,37 +129,6 @@ export const personResponseSchema = z.object({
   company: z.object({ id: z.number().int().positive(), name: z.string() }).nullable(),
 }).passthrough();
 
-const personSourceRecordResponseSchema = z.object({
-  id: z.number().int().positive(),
-  personId: z.number().int().positive(),
-  source: z.enum(["linkedin", "apollo", "manual"]),
-  sourceRecordKey: z.string(),
-  stableIdentityKey: z.string().nullable(),
-  identityKind: z.enum(["linkedin_url", "email", "composite", "manual"]).nullable(),
-  firstName: z.string(),
-  lastName: z.string(),
-  fullName: z.string(),
-  profileUrl: z.string(),
-  profileUrlNormalized: z.string().nullable(),
-  email: z.string().nullable(),
-  emailNormalized: z.string().nullable(),
-  companyRaw: z.string().nullable(),
-  companyNormalized: z.string().nullable(),
-  position: z.string().nullable(),
-  connectedOn: nullableIsoDateSchema,
-  sourceNotes: z.string().nullable(),
-  isActive: z.boolean(),
-  firstSeenAt: z.iso.datetime(),
-  lastSeenAt: z.iso.datetime(),
-  lastImportSessionId: z.string().nullable(),
-  createdAt: nullableIsoDateSchema,
-  updatedAt: nullableIsoDateSchema,
-});
-
-export const personDetailResponseSchema = personResponseSchema.extend({
-  sources: z.array(personSourceRecordResponseSchema),
-});
-
 export const peopleListResponseSchema = z.object({
   people: z.array(personResponseSchema),
   totalCount: z.number().int().nonnegative(),
@@ -229,74 +198,6 @@ export const peopleImportSessionsResponseSchema = z.object({
     hasMore: z.boolean(),
   }),
 });
-export const peopleImportSessionDetailResponseSchema = peopleImportSessionResponseSchema.extend({
-  issues: z.array(z.object({
-    id: z.number().int().positive(),
-    rowNumber: z.number().int().positive(),
-    kind: z.enum(["invalid", "duplicate", "ambiguous_identity"]),
-    reason: z.string(),
-    sourceRecordKey: z.string().nullable(),
-    createdAt: nullableIsoDateSchema,
-  })),
-  issuePagination: z.object({
-    total: z.number().int().nonnegative(),
-    limit: z.number().int().positive(),
-    offset: z.number().int().nonnegative(),
-    hasMore: z.boolean(),
-  }),
-});
-
-const duplicatePersonSummarySchema = personResponseSchema.pick({
-  id: true,
-  source: true,
-  fullName: true,
-  profileUrl: true,
-  email: true,
-  companyRaw: true,
-  position: true,
-  isActive: true,
-  archivedAt: true,
-});
-export const peopleDuplicatesResponseSchema = z.object({
-  groups: z.array(z.object({
-    identityKind: z.enum(["linkedin_url", "email"]),
-    identityValue: z.string(),
-    matchReasons: z.array(z.enum(["exact_linkedin_url", "exact_email"])).min(1),
-    people: z.array(duplicatePersonSummarySchema).min(2),
-  })),
-  totalCount: z.number().int().nonnegative(),
-  hasMore: z.boolean(),
-});
-
-export const personMergeResponseSchema = z.object({
-  person: personDetailResponseSchema,
-  mergedPersonId: z.number().int().positive(),
-});
-export const personSplitResponseSchema = z.object({
-  person: personDetailResponseSchema,
-  createdPerson: personDetailResponseSchema,
-});
-export const personPurgeResponseSchema = z.object({
-  deletedId: z.number().int().positive(),
-});
-
-const companyAliasResponseSchema = z.object({
-  id: z.number().int().positive(),
-  companyNormalized: z.string(),
-  mappedCompanyId: z.number().int().positive(),
-  mappedCompany: z.object({ id: z.number().int().positive(), name: z.string() }),
-  affectedPeopleCount: z.number().int().nonnegative(),
-  createdAt: nullableIsoDateSchema,
-});
-export const companyAliasesResponseSchema = z.object({
-  aliases: z.array(companyAliasResponseSchema),
-  totalCount: z.number().int().nonnegative(),
-  hasMore: z.boolean(),
-});
-export const companyAliasMutationResponseSchema = z.object({
-  alias: companyAliasResponseSchema.nullable(),
-  updatedPeopleCount: z.number().int().nonnegative(),
-});
 const unmatchedSummarySchema = z.object({
   unmatchedCompanyCount: z.number().int().nonnegative(),
   unmatchedPeopleCount: z.number().int().nonnegative(),
@@ -334,9 +235,5 @@ export type PeopleImportPreviewResponse = z.infer<typeof peopleImportPreviewResp
 export type PeopleImportResponse = z.infer<typeof peopleImportResponseSchema>;
 export type PeopleImportSessionsResponse = z.infer<typeof peopleImportSessionsResponseSchema>;
 export type PeopleImportSession = PeopleImportSessionsResponse["sessions"][number];
-export type PersonDetail = z.infer<typeof personDetailResponseSchema>;
-export type PeopleDuplicatesResponse = z.infer<typeof peopleDuplicatesResponseSchema>;
-export type PeopleImportSessionDetailResponse = z.infer<typeof peopleImportSessionDetailResponseSchema>;
-export type CompanyAliasesResponse = z.infer<typeof companyAliasesResponseSchema>;
 export type UnmatchedCompaniesResponse = z.infer<typeof unmatchedCompaniesResponseSchema>;
 export type UnmatchedCompanyPeopleResponse = z.infer<typeof unmatchedCompanyPeopleResponseSchema>;

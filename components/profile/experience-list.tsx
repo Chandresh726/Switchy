@@ -14,22 +14,13 @@ import {
   Save,
   Sparkles,
   Trash2,
-  Undo2,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { ApiErrorState } from "@/components/ui/api-error-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -48,6 +39,10 @@ import type {
   ResumeSectionReview,
 } from "@/lib/profile/resume-review";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+
+import { ProfileSectionState } from "./profile-section-state";
+import { ResumeReviewActions } from "./resume-review-actions";
+import { useResumeSectionReview } from "./use-resume-section-review";
 
 interface ExperienceFormData {
   company: string;
@@ -214,13 +209,6 @@ export function ExperienceList({
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState<ExperienceFormData>(EMPTY_FORM);
-  const [dismissedReview, setDismissedReview] = useState<{
-    reviewKey: number | null;
-    keys: string[];
-  }>({ reviewKey: null, keys: [] });
-  const dismissedReviewKeys = dismissedReview.reviewKey === resumeReview?.key
-    ? dismissedReview.keys
-    : [];
 
   const {
     data: experiences = [],
@@ -279,28 +267,9 @@ export function ExperienceList({
     },
   });
 
-  const reviewMutation = useMutation({
-    mutationFn: async (items: ResumeExperienceInput[]) => {
-      if (!profileId) throw new Error("Save the profile before applying experience");
-      return applyResumeSection({
-        section: "experience",
-        profileId,
-        items,
-      });
-    },
-    onSuccess: (result) => {
-      void cacheOwnership.profileMutation(
-        queryClient,
-        queryKeys.profile.experience(profileId)
-      );
-      toast.success(
-        `Experience updated: ${result.added} added, ${result.updated} updated`
-      );
-      onReviewResolved?.();
-    },
-    onError: (error) => {
-      toast.error(getApiErrorMessage(error, "Failed to apply resume experience"));
-    },
+  const { pendingChanges, isPending: reviewPending, applyReview, revertReview, removePendingChange } = useResumeSectionReview<ResumeExperienceInput>({
+    profileId, section: "experience", review: resumeReview, onResolved: onReviewResolved,
+    apply: (items, profileId) => applyResumeSection({ section: "experience", profileId, items }),
   });
 
   const deleteMutation = useMutation({
@@ -315,10 +284,6 @@ export function ExperienceList({
       toast.error(getApiErrorMessage(error, "Failed to delete experience"));
     },
   });
-
-  const pendingChanges = resumeReview?.review.changes.filter(
-    ({ key }) => !dismissedReviewKeys.includes(key)
-  ) ?? [];
 
   const handleAddSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -348,241 +313,160 @@ export function ExperienceList({
     setFormData(EMPTY_FORM);
   };
 
-  const removePendingChange = (key: string) => {
-    const remainingCount = pendingChanges.filter((change) => change.key !== key).length;
-    setDismissedReview({
-      reviewKey: resumeReview?.key ?? null,
-      keys: [...dismissedReviewKeys, key],
-    });
-    if (remainingCount === 0) onReviewResolved?.();
-  };
-
-  const handleRevertReview = () => {
-    setDismissedReview({ reviewKey: null, keys: [] });
-    onReviewResolved?.();
-  };
-
-  if (!profileId) {
-    return (
-      <Card className="border-border bg-card">
-        <CardContent className="p-6">
-          <p className="text-sm text-muted-foreground">
-            Save your basic information first to add work experience.
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <Card className="border-border bg-card">
-        <CardContent className="p-6">
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (isError) {
-    return (
-      <Card className="border-border bg-card">
-        <CardContent className="p-6">
-          <ApiErrorState
-            error={error}
-            fallbackMessage="Work experience could not be loaded."
-            onRetry={() => void refetch()}
-          />
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
-    <Card className="border-border bg-card">
-      <CardHeader>
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10">
-            <Briefcase className="h-5 w-5 text-amber-500" />
-          </div>
-          <CardTitle className="text-lg font-medium text-foreground">
-            Work Experience
-          </CardTitle>
-        </div>
-        {pendingChanges.length > 0 ? (
-          <>
-            <CardDescription>
-              {pendingChanges.filter(({ kind }) => kind === "add").length} to add ·{" "}
-              {pendingChanges.filter(({ kind }) => kind === "update").length} to update
-              {resumeReview?.review.unchangedCount
-                ? ` · ${resumeReview.review.unchangedCount} already current`
-                : ""}
-            </CardDescription>
-            <CardAction className="col-span-2 col-start-1 row-span-1 row-start-3 mt-2 flex w-full justify-end gap-2 sm:col-span-1 sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:mt-0 sm:w-auto">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={handleRevertReview}
-                disabled={reviewMutation.isPending}
-              >
-                <Undo2 data-icon="inline-start" />
-                Revert
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => reviewMutation.mutate(
-                  pendingChanges.map(({ value }) => value)
-                )}
-                disabled={reviewMutation.isPending}
-                className="min-w-[120px] bg-amber-600 text-foreground hover:bg-amber-500"
-              >
-                {reviewMutation.isPending ? (
-                  <Loader2 data-icon="inline-start" className="animate-spin" />
-                ) : (
-                  <Save data-icon="inline-start" />
-                )}
-                {reviewMutation.isPending ? "Saving..." : "Save Changes"}
-              </Button>
-            </CardAction>
-          </>
-        ) : null}
-      </CardHeader>
-      <Separator />
-      <CardContent className="space-y-4">
-        {pendingChanges.length > 0 ? (
-          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-              <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                Resume changes to review
-              </span>
+    <ProfileSectionState
+      profileId={profileId} isLoading={isLoading} isError={isError} error={error}
+      onRetry={() => void refetch()} missingMessage="Save your basic information first to add work experience." errorMessage="Work experience could not be loaded."
+    >
+      <Card className="border-border bg-card">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10">
+              <Briefcase className="h-5 w-5 text-amber-500" />
             </div>
-            <div className="mt-3 space-y-2">
-              {pendingChanges.map((change) => (
-                <div
-                  key={change.key}
-                  className="flex items-center justify-between rounded border border-emerald-500/30 bg-emerald-500/15 p-2"
-                >
-                  <div className="flex items-center gap-2 text-sm">
-                    <Badge variant="outline">
-                      {change.kind === "add" ? "New" : "Update"}
-                    </Badge>
-                    <div>
-                      <span className="font-medium text-emerald-700 dark:text-emerald-300">
-                        {change.value.title}
-                      </span>
-                      <span className="text-emerald-600 dark:text-emerald-400">
-                        {" "}at {change.value.company}
-                      </span>
-                      {change.changedFields.length > 0 ? (
-                        <p className="text-xs text-emerald-600/80 dark:text-emerald-400/90">
-                          Changes: {change.changedFields.join(", ")}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    aria-label={`Ignore ${change.value.title} at ${change.value.company}`}
-                    onClick={() => removePendingChange(change.key)}
-                    className="rounded p-1 text-emerald-600 hover:bg-emerald-500/20 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+            <CardTitle className="text-lg font-medium text-foreground">
+              Work Experience
+            </CardTitle>
+          </div>
+          <ResumeReviewActions
+            changes={pendingChanges} unchangedCount={resumeReview?.review.unchangedCount}
+            isPending={reviewPending} onRevert={revertReview} onApply={applyReview}
+            className="bg-amber-600 hover:bg-amber-500"
+          />
+        </CardHeader>
+        <Separator />
+        <CardContent className="space-y-4">
+          {pendingChanges.length > 0 ? (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                  Resume changes to review
+                </span>
+              </div>
+              <div className="mt-3 space-y-2">
+                {pendingChanges.map((change) => (
+                  <div
+                    key={change.key}
+                    className="flex items-center justify-between rounded border border-emerald-500/30 bg-emerald-500/15 p-2"
                   >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              ))}
+                    <div className="flex items-center gap-2 text-sm">
+                      <Badge variant="outline">
+                        {change.kind === "add" ? "New" : "Update"}
+                      </Badge>
+                      <div>
+                        <span className="font-medium text-emerald-700 dark:text-emerald-300">
+                          {change.value.title}
+                        </span>
+                        <span className="text-emerald-600 dark:text-emerald-400">
+                          {" "}at {change.value.company}
+                        </span>
+                        {change.changedFields.length > 0 ? (
+                          <p className="text-xs text-emerald-600/80 dark:text-emerald-400/90">
+                            Changes: {change.changedFields.join(", ")}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`Ignore ${change.value.title} at ${change.value.company}`}
+                      onClick={() => removePendingChange(change.key)}
+                      className="rounded p-1 text-emerald-600 hover:bg-emerald-500/20 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        ) : null}
+          ) : null}
 
-        {editingId ? (
-          <ExperienceForm
-            onSubmit={handleEditSubmit}
-            onCancel={cancelEditing}
-            isEdit
-            isPending={updateMutation.isPending}
-            formData={formData}
-            setFormData={setFormData}
-          />
-        ) : null}
+          {editingId ? (
+            <ExperienceForm
+              onSubmit={handleEditSubmit}
+              onCancel={cancelEditing}
+              isEdit
+              isPending={updateMutation.isPending}
+              formData={formData}
+              setFormData={setFormData}
+            />
+          ) : null}
 
-        {experiences.map((item) => (
-          <div
-            key={item.id}
-            className={`group rounded-lg border border-border bg-card p-4 ${
-              editingId === item.id ? "opacity-50" : ""
-            }`}
-          >
-            <div className="flex items-start justify-between">
-              <div className="space-y-1">
-                <h4 className="text-sm font-medium text-foreground">{item.title}</h4>
-                <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Building2 className="h-3.5 w-3.5" />
-                    {item.company}
-                  </span>
-                  {item.location ? (
+          {experiences.map((item) => (
+            <div
+              key={item.id}
+              className={`group rounded-lg border border-border bg-card p-4 ${
+                editingId === item.id ? "opacity-50" : ""
+              }`}
+            >
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-medium text-foreground">{item.title}</h4>
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <span className="flex items-center gap-1">
-                      <MapPin className="h-3.5 w-3.5" />
-                      {item.location}
+                      <Building2 className="h-3.5 w-3.5" />
+                      {item.company}
                     </span>
+                    {item.location ? (
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3.5 w-3.5" />
+                        {item.location}
+                      </span>
+                    ) : null}
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-3.5 w-3.5" />
+                      {item.startDate} - {item.endDate || "Present"}
+                    </span>
+                  </div>
+                  {item.description ? (
+                    <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-foreground/80">
+                      {item.description}
+                    </p>
                   ) : null}
-                  <span className="flex items-center gap-1">
-                    <Calendar className="h-3.5 w-3.5" />
-                    {item.startDate} - {item.endDate || "Present"}
-                  </span>
                 </div>
-                {item.description ? (
-                  <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-foreground/80">
-                    {item.description}
-                  </p>
-                ) : null}
-              </div>
-              <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => startEditing(item)}
-                  disabled={editingId === item.id}
-                >
-                  <Pencil className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => deleteMutation.mutate(item.id)}
-                >
-                  <Trash2 className="h-4 w-4 text-muted-foreground hover:text-red-400" />
-                </Button>
+                <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => startEditing(item)}
+                    disabled={editingId === item.id}
+                  >
+                    <Pencil className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => deleteMutation.mutate(item.id)}
+                  >
+                    <Trash2 className="h-4 w-4 text-muted-foreground hover:text-red-400" />
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))}
 
-        {isAdding ? (
-          <ExperienceForm
-            onSubmit={handleAddSubmit}
-            onCancel={() => {
-              setIsAdding(false);
-              setFormData(EMPTY_FORM);
-            }}
-            isEdit={false}
-            isPending={addMutation.isPending}
-            formData={formData}
-            setFormData={setFormData}
-          />
-        ) : !editingId ? (
-          <Button variant="outline" className="w-full" onClick={() => setIsAdding(true)}>
-            <Plus className="h-4 w-4" />
-            Add Work Experience
-          </Button>
-        ) : null}
-      </CardContent>
+          {isAdding ? (
+            <ExperienceForm
+              onSubmit={handleAddSubmit}
+              onCancel={() => {
+                setIsAdding(false);
+                setFormData(EMPTY_FORM);
+              }}
+              isEdit={false}
+              isPending={addMutation.isPending}
+              formData={formData}
+              setFormData={setFormData}
+            />
+          ) : !editingId ? (
+            <Button variant="outline" className="w-full" onClick={() => setIsAdding(true)}>
+              <Plus className="h-4 w-4" />
+              Add Work Experience
+            </Button>
+          ) : null}
+        </CardContent>
 
-    </Card>
+      </Card>
+    </ProfileSectionState>
   );
 }

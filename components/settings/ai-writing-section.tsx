@@ -1,15 +1,12 @@
 "use client";
 
+import { FileText, MessageCircle, Send, Wand2 } from "lucide-react";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ModelCombobox } from "@/components/settings/model-combobox";
-import {
-  hasInvalidReasoningSelection,
-  ReasoningEffortControl,
-} from "@/components/settings/reasoning-effort-control";
 import { Separator } from "@/components/ui/separator";
-import { AlertTriangle, FileText, MessageCircle, Send, Wand2 } from "lucide-react";
+import { ProviderModelFields } from "@/components/settings/provider-model-fields";
 import { cn } from "@/lib/utils";
 import type { ReasoningEffort } from "@/lib/settings/types";
 import type { ProviderModelOption } from "@/lib/api/contracts/settings";
@@ -91,13 +88,6 @@ export function AIWritingSection({
   onAIWritingSettingsChange,
 }: AIWritingSectionProps) {
   const currentModel = aiWritingSettings.aiWritingModel;
-  const selectedModel = models.find((model) => model.modelId === currentModel);
-  const reasoningSelectionInvalid = hasInvalidReasoningSelection(
-    selectedModel,
-    aiWritingSettings.aiWritingReasoningEffort
-  );
-  const configuredModelUnavailable = Boolean(currentModel) && !selectedModel;
-
   const toggleFocus = (value: string) => {
     const current = aiWritingSettings.coverLetterFocus || [];
     const newFocus = current.includes(value)
@@ -127,25 +117,12 @@ export function AIWritingSection({
           <>
             <div className="space-y-3">
               <Label>AI Provider & Model</Label>
-              <div className="flex gap-2">
-                <Select value={aiWritingProviderId} onValueChange={onAIWritingProviderIdChange}>
-                  <SelectTrigger className="w-[180px] bg-background/60 border-border">
-                    <SelectValue placeholder="Select provider" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {availableProviders.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <ModelCombobox
-                  models={models}
-                  value={currentModel}
-                  onValueChange={(value) => {
+              <ProviderModelFields
+                variant="writing" providers={availableProviders}
+                providerId={aiWritingProviderId} onProviderChange={onAIWritingProviderIdChange}
+                models={models} loading={modelsLoading} error={modelsError} stale={modelsStale}
+                modelId={currentModel}
+                  onModelChange={(value) => {
                     const model = models.find((candidate) => candidate.modelId === value);
                     const defaultReasoningEffort = model?.reasoningControl.kind === "effort"
                       ? model.reasoningControl.defaultValue ?? model.reasoningControl.options[0]?.value ?? ""
@@ -155,41 +132,9 @@ export function AIWritingSection({
                       aiWritingReasoningEffort: defaultReasoningEffort,
                     });
                   }}
-                  disabled={modelsLoading || models.length === 0}
-                  loading={modelsLoading}
-                  error={modelsError}
-                  placeholder="Select model"
-                />
-                <ReasoningEffortControl
-                  model={selectedModel}
-                  value={aiWritingSettings.aiWritingReasoningEffort}
-                  onValueChange={(value) => onAIWritingSettingsChange({ aiWritingReasoningEffort: value })}
-                />
-              </div>
-              {modelsError && (
-                <p className="text-xs text-amber-400 flex items-center gap-2">
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  {modelsError}
-                </p>
-              )}
-              {configuredModelUnavailable && (
-                <p className="text-xs text-amber-400 flex items-center gap-2">
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  The configured model is unavailable. Choose another model or refresh the catalog.
-                </p>
-              )}
-              {reasoningSelectionInvalid && (
-                <p className="text-xs text-destructive flex items-center gap-2">
-                  <AlertTriangle />
-                  Choose a reasoning value advertised by this model.
-                </p>
-              )}
-              {modelsStale && !modelsError && (
-                <p className="text-xs text-amber-400 flex items-center gap-2">
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  Showing cached model list (latest refresh failed)
-                </p>
-              )}
+                reasoningEffort={aiWritingSettings.aiWritingReasoningEffort}
+                onReasoningChange={(value) => onAIWritingSettingsChange({ aiWritingReasoningEffort: value })}
+              />
             </div>
 
             <Separator className="bg-muted" />

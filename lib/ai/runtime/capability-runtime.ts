@@ -1,10 +1,9 @@
-import { zodSchema, type LanguageModel } from "ai";
+import { zodSchema } from "ai";
 import { z } from "zod";
 
 import type { AIGenerationBackend } from "@/lib/ai/local-cli/types";
 import type { AIContextOverrides } from "@/lib/ai/runtime-context";
 import { resolveAIContextForCapability } from "@/lib/ai/runtime-context";
-import { AISDKGenerationBackend } from "@/lib/ai/runtime/ai-sdk-backend";
 import {
   AIError,
   AIRateLimitError,
@@ -113,13 +112,8 @@ export interface CreateAICapabilityRuntimeOptions {
   /** Testable storage boundary; production executions use the local default repository. */
   runRepository?: AIRunRepository;
   resolved?: {
-    snapshot: Omit<ResolvedModelSnapshot, "backendKind"> & {
-      backendKind?: ResolvedModelSnapshot["backendKind"];
-      /** Compatibility for callers that previously cached the AI SDK model. */
-      model?: LanguageModel;
-      providerOptions?: Record<string, unknown>;
-    };
-    backend?: AIGenerationBackend;
+    snapshot: ResolvedModelSnapshot;
+    backend: AIGenerationBackend;
     reasoningEffort?: string;
   };
 }
@@ -508,30 +502,17 @@ export async function createAICapabilityRuntime(
   const runRepository = options.runRepository ?? aiRunRepository;
   let context: Awaited<ReturnType<typeof resolveAIContextForCapability>>;
   if (options.resolved) {
-    const legacyModel = options.resolved.snapshot.model;
-    const backend = options.resolved.backend ?? (legacyModel
-      ? new AISDKGenerationBackend(
-          legacyModel,
-          options.resolved.snapshot.providerOptions
-        )
-      : undefined);
-    if (!backend) {
-      throw new AIError({
-        type: "validation",
-        message: "A resolved AI execution must include its backend",
-      });
-    }
     context = {
       providerRecordId: options.resolved.snapshot.providerRecordId,
       provider: options.resolved.snapshot.provider,
       modelId: options.resolved.snapshot.modelId,
-      backendKind: options.resolved.snapshot.backendKind ?? "ai_sdk",
+      backendKind: options.resolved.snapshot.backendKind,
       providerConfigFingerprint: options.resolved.snapshot.providerConfigFingerprint,
       cliVersion: options.resolved.snapshot.cliVersion,
       upstreamProvider: options.resolved.snapshot.upstreamProvider,
       providerId: options.resolved.snapshot.providerRecordId,
       reasoningEffort: options.resolved.reasoningEffort,
-      backend,
+      backend: options.resolved.backend,
     };
   } else {
     try {
@@ -555,24 +536,12 @@ export async function createAICapabilityRuntime(
       throw error;
     }
   }
-  const legacyContext = context as typeof context & {
-    model?: LanguageModel;
-    providerOptions?: Record<string, unknown>;
-  };
-  const backend = context.backend ?? (legacyContext.model
-    ? new AISDKGenerationBackend(legacyContext.model, legacyContext.providerOptions)
-    : undefined);
-  if (!backend) {
-    throw new AIError({
-      type: "validation",
-      message: "The resolved AI execution does not provide a backend",
-    });
-  }
+  const backend = context.backend;
   const snapshot: ResolvedModelSnapshot = {
     providerRecordId: context.providerRecordId,
     provider: context.provider,
     modelId: context.modelId,
-    backendKind: context.backendKind ?? "ai_sdk",
+    backendKind: context.backendKind,
     providerConfigFingerprint: context.providerConfigFingerprint,
     cliVersion: context.cliVersion,
     upstreamProvider: context.upstreamProvider,

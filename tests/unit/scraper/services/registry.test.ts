@@ -54,40 +54,26 @@ describe("createScraperRegistry", () => {
     });
 
     expect(registry.getScraperByPlatform("greenhouse")?.capabilities).toEqual({
-      transport: "http",
       concurrency: "parallel",
-      supportsCancellation: true,
     });
     expect(registry.getScraperByPlatform("smartrecruiters")?.capabilities).toEqual({
-      transport: "http",
       concurrency: "parallel",
-      supportsCancellation: true,
     });
     expect(registry.getScraperByPlatform("servicenow")?.capabilities).toEqual({
-      transport: "http",
       concurrency: "parallel",
-      supportsCancellation: true,
     });
     expect(registry.getScraperByPlatform("eightfold")?.capabilities).toEqual({
-      transport: "browser",
       concurrency: "browser_limited",
-      supportsCancellation: true,
     });
     expect(registry.getScraperByPlatform("workday")?.capabilities).toEqual({
-      transport: "browser",
       concurrency: "browser_limited",
-      supportsCancellation: true,
     });
     expect(registry.getScraperByPlatform("uber")?.capabilities).toEqual({
-      transport: "http",
       concurrency: "parallel",
-      supportsCancellation: true,
     });
     for (const platform of ["jobvite", "talentbrew", "oracle", "phenom"] as const) {
       expect(registry.getScraperByPlatform(platform)?.capabilities).toEqual({
-        transport: "http",
         concurrency: "parallel",
-        supportsCancellation: true,
       });
     }
   });
@@ -97,11 +83,8 @@ describe("createScraperRegistry", () => {
     const registry = new ScraperRegistry();
     registry.register({
       platform: "greenhouse",
-      requiresBrowser: false,
       capabilities: {
-        transport: "http",
         concurrency: "parallel",
-        supportsCancellation: true,
       },
       validate: () => true,
       extractIdentifier: () => "test",

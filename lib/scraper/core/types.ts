@@ -12,9 +12,7 @@ export type {
 };
 
 export interface ScraperCapabilities {
-  transport: "http" | "browser";
   concurrency: "parallel" | "browser_limited";
-  supportsCancellation: boolean;
 }
 
 export interface IScraper<
@@ -22,7 +20,6 @@ export interface IScraper<
   TScraperConfig extends ScraperConfig = ScraperConfig
 > {
   readonly platform: Platform;
-  readonly requiresBrowser: boolean;
   readonly capabilities: ScraperCapabilities;
 
   validate(url: string): boolean;

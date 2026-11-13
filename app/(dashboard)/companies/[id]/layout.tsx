@@ -18,6 +18,7 @@ import {
     CompanyNotesProvider,
     useCompanyNotesContext,
 } from "@/components/companies/company-detail";
+import { CompanyOverviewContext } from "@/components/companies/company-detail/company-overview-context";
 import { CompanyLayoutClient } from "@/components/companies/company-detail/company-layout-client";
 import {
     getCompanyOverview,
@@ -148,7 +149,7 @@ function CompanyLayoutContent({
                     ) : null
                 }
             >
-                {children}
+                <CompanyOverviewContext value={data}>{children}</CompanyOverviewContext>
             </CompanyLayoutClient>
         </div>
     );

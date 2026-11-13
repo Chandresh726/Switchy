@@ -2,25 +2,17 @@
 
 import { useState, type ReactNode } from "react";
 
-import { AlertTriangle, Cpu, Loader2, Settings2, Sparkles } from "lucide-react";
+import { Cpu, Loader2, Settings2, Sparkles } from "lucide-react";
 
-import { ModelCombobox } from "@/components/settings/model-combobox";
-import { ReasoningEffortControl } from "@/components/settings/reasoning-effort-control";
+import { ProviderModelFields } from "@/components/settings/provider-model-fields";
 import { MatchPipelineProgress } from "@/components/matching/match-pipeline-progress";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import type { ReasoningEffort } from "@/lib/settings/types";
@@ -120,12 +112,6 @@ export function MatcherSection({
   const [daysInput, setDaysInput] = useState(String(unmatchedWindowDays));
   const parsedDays = Number(daysInput);
   const validDays = Number.isInteger(parsedDays) && parsedDays >= 1 && parsedDays <= 365;
-  const selectedAnalysisModel = jobAnalysisModels.find(
-    (model) => model.modelId === jobAnalysisModel
-  );
-  const configuredAnalysisModelUnavailable = Boolean(jobAnalysisModel) && !selectedAnalysisModel;
-  const selectedModel = models.find((model) => model.modelId === matcherModel);
-  const configuredModelUnavailable = Boolean(matcherModel) && !selectedModel;
   const handleMatchDialogOpenChange = (open: boolean) => {
     setMatchDialogOpen(open);
     if (open) {
@@ -258,46 +244,13 @@ export function MatcherSection({
                     Creates a concise role summary and reusable, source-grounded requirements.
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Select value={jobAnalysisProviderId} onValueChange={onJobAnalysisProviderIdChange}>
-                    <SelectTrigger className="w-[180px] bg-background/60 border-border">
-                      <SelectValue placeholder="Select provider" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {availableProviders.map((provider) => (
-                          <SelectItem key={provider.id} value={provider.id}>
-                            {provider.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  <ModelCombobox
-                    models={jobAnalysisModels}
-                    value={jobAnalysisModel}
-                    onValueChange={onJobAnalysisModelChange}
-                    disabled={jobAnalysisModelsLoading || jobAnalysisModels.length === 0}
-                    loading={jobAnalysisModelsLoading}
-                    error={jobAnalysisModelsError}
-                    placeholder="Select analysis model"
-                  />
-                  <ReasoningEffortControl
-                    model={selectedAnalysisModel}
-                    value={jobAnalysisReasoningEffort}
-                    onValueChange={onJobAnalysisReasoningEffortChange}
-                    ariaLabel="Job analysis reasoning effort"
-                  />
-                </div>
-                {(jobAnalysisModelsError || configuredAnalysisModelUnavailable ||
-                  (jobAnalysisModelsStale && !jobAnalysisModelsError)) && (
-                  <p className="flex items-center gap-2 text-xs text-amber-400">
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    {jobAnalysisModelsError ?? (configuredAnalysisModelUnavailable
-                      ? "The configured analysis model is unavailable. Choose an available model or refresh the catalog."
-                      : "Showing cached analysis models (latest refresh failed)")}
-                  </p>
-                )}
+                <ProviderModelFields
+                  variant="analysis" providers={availableProviders}
+                  providerId={jobAnalysisProviderId} onProviderChange={onJobAnalysisProviderIdChange}
+                  models={jobAnalysisModels} loading={jobAnalysisModelsLoading} error={jobAnalysisModelsError} stale={jobAnalysisModelsStale}
+                  modelId={jobAnalysisModel} onModelChange={onJobAnalysisModelChange}
+                  reasoningEffort={jobAnalysisReasoningEffort} onReasoningChange={onJobAnalysisReasoningEffortChange}
+                />
               </div>
 
               <div className="space-y-3 rounded-lg border border-border bg-background/30 p-4">
@@ -307,55 +260,13 @@ export function MatcherSection({
                     Scores the final match with a confidence level and evidence-linked reasoning.
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Select value={matcherProviderId} onValueChange={onMatcherProviderIdChange}>
-                    <SelectTrigger className="w-[180px] bg-background/60 border-border">
-                      <SelectValue placeholder="Select provider" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {availableProviders.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  <ModelCombobox
-                    models={models}
-                    value={matcherModel}
-                    onValueChange={onMatcherModelChange}
-                    disabled={modelsLoading || models.length === 0}
-                    loading={modelsLoading}
-                    error={modelsError}
-                    placeholder="Select model"
-                  />
-                  <ReasoningEffortControl
-                    model={selectedModel}
-                    value={matcherReasoningEffort}
-                    onValueChange={onMatcherReasoningEffortChange}
-                    ariaLabel="Final match reasoning effort"
-                  />
-                </div>
-                {modelsError && (
-                  <p className="text-xs text-amber-400 flex items-center gap-2">
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    {modelsError}
-                  </p>
-                )}
-                {configuredModelUnavailable && (
-                  <p className="text-xs text-amber-400 flex items-center gap-2">
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    The configured model is unavailable. Choose an available model or refresh the catalog.
-                  </p>
-                )}
-                {modelsStale && !modelsError && (
-                  <p className="text-xs text-amber-400 flex items-center gap-2">
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    Showing cached model list (latest refresh failed)
-                  </p>
-                )}
+                <ProviderModelFields
+                  variant="final" providers={availableProviders}
+                  providerId={matcherProviderId} onProviderChange={onMatcherProviderIdChange}
+                  models={models} loading={modelsLoading} error={modelsError} stale={modelsStale}
+                  modelId={matcherModel} onModelChange={onMatcherModelChange}
+                  reasoningEffort={matcherReasoningEffort} onReasoningChange={onMatcherReasoningEffortChange}
+                />
               </div>
 
               <div className="flex items-start gap-3 rounded-lg border border-border bg-background/30 p-4">

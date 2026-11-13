@@ -9,20 +9,9 @@ import {
   Loader2,
   Square,
   Target,
-  Trash2,
   XCircle,
 } from "lucide-react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { SessionDeleteDialog } from "@/components/history/shared/session-delete-dialog";
 import { toast } from "sonner";
 import {
   cancelMatchHistorySession,
@@ -195,37 +184,7 @@ export function MatchSessionCard({ session }: MatchSessionCardProps) {
                 </Button>
               )}
 
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-muted-foreground opacity-0 transition-opacity hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
-                    title="Delete Session"
-                  >
-                    <Trash2 />
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Match Session?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This will permanently delete this match session and its logs.
-                      This action cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleDelete}
-                      className="bg-red-500 hover:bg-red-600 text-foreground"
-                      disabled={isDeleting}
-                    >
-                      {isDeleting ? "Deleting..." : "Delete"}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <SessionDeleteDialog kind="match" onDelete={handleDelete} isDeleting={isDeleting} />
             </div>
 
             <StatusPill

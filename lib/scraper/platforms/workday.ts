@@ -148,9 +148,7 @@ const DEFAULT_WORKDAY_CONFIG: WorkdayConfig = {
 export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
   readonly platform = "workday" as const;
   override readonly capabilities = {
-    transport: "browser",
     concurrency: "browser_limited",
-    supportsCancellation: true,
   } as const;
 
   constructor(

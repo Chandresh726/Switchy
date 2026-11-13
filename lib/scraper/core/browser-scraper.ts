@@ -20,11 +20,8 @@ export abstract class AbstractBrowserScraper<
   TConfig extends ScraperConfig = ScraperConfig
 > implements IScraper<TConfig> {
   abstract readonly platform: Platform;
-  readonly requiresBrowser = true;
   readonly capabilities: ScraperCapabilities = {
-    transport: "browser",
     concurrency: "parallel",
-    supportsCancellation: true,
   };
 
   constructor(

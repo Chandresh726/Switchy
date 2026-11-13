@@ -148,38 +148,3 @@ export async function getMatcherConfig(): Promise<MatcherConfig> {
     ),
   };
 }
-
-export function validateMatcherConfig(
-  config: Partial<MatcherConfig>
-): { isValid: boolean; errors: string[] } {
-  const errors: string[] = [];
-
-  if (config.batchSize !== undefined) {
-    if (config.batchSize < 1 || config.batchSize > 10) {
-      errors.push("Batch size must be between 1 and 10");
-    }
-  }
-
-  if (config.maxRetries !== undefined) {
-    if (config.maxRetries < 1 || config.maxRetries > 10) {
-      errors.push("Max attempts must be between 1 and 10");
-    }
-  }
-
-  if (config.concurrencyLimit !== undefined) {
-    if (config.concurrencyLimit < 1 || config.concurrencyLimit > 10) {
-      errors.push("Concurrency limit must be between 1 and 10");
-    }
-  }
-
-  if (config.timeoutMs !== undefined) {
-    if (config.timeoutMs < 5000 || config.timeoutMs > 120000) {
-      errors.push("Timeout must be between 5s and 120s");
-    }
-  }
-
-  return {
-    isValid: errors.length === 0,
-    errors,
-  };
-}

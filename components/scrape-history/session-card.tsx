@@ -11,19 +11,8 @@ import {
   Loader2,
   Plus,
   Square,
-  Trash2,
 } from "lucide-react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { SessionDeleteDialog } from "@/components/history/shared/session-delete-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { TRIGGER_LABELS } from "@/components/history/shared/constants";
@@ -203,37 +192,7 @@ export function SessionCard({ session }: SessionCardProps) {
                 </Button>
               )}
 
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-muted-foreground opacity-0 transition-opacity hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
-                    title="Delete Session"
-                  >
-                    <Trash2 />
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Session?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This will permanently delete this scrape session and its logs.
-                      This action cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleDelete}
-                      className="bg-red-500 hover:bg-red-600 text-foreground"
-                      disabled={isDeleting}
-                    >
-                      {isDeleting ? "Deleting..." : "Delete"}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <SessionDeleteDialog kind="scrape" onDelete={handleDelete} isDeleting={isDeleting} />
             </div>
 
             <StatusPill
