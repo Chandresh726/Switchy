@@ -243,9 +243,16 @@ describe("settings failure recovery", () => {
         modelId, label: modelId, description: "", supportsReasoning: false, reasoningControl: { kind: "provider_default" },
       })) });
     renderSettings();
-    fireEvent.click(await screen.findByRole("checkbox", { name: "Final match fallback" }));
+    Element.prototype.scrollIntoView = vi.fn();
+    fireEvent.click(await screen.findByRole("combobox", { name: "Final match fallback model" }));
+    fireEvent.click(await screen.findByRole("option", { name: "backup-model" }));
     await waitFor(() => expect(mocks.patchSettings).toHaveBeenCalledWith(expect.objectContaining({
-      matcher_model: "primary-model", matcher_fallback_enabled: "true",
+      matcher_model: "primary-model", matcher_fallback_enabled: "true", matcher_fallback_model: "backup-model",
+    })));
+    fireEvent.click(screen.getByRole("combobox", { name: "Final match fallback model" }));
+    fireEvent.click(await screen.findByRole("option", { name: "None" }));
+    await waitFor(() => expect(mocks.patchSettings).toHaveBeenCalledWith(expect.objectContaining({
+      matcher_fallback_enabled: "false", matcher_fallback_model: "", matcher_fallback_reasoning_effort: "",
     })));
     expect(screen.queryByRole("button", { name: /save.*fallback/i })).toBeNull();
   });

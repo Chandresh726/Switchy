@@ -54,6 +54,7 @@ function DescriptionMarquee({ text }: { text: string }) {
 }
 
 interface ModelComboboxProps {
+  ariaLabel?: string;
   models: ProviderModelOption[];
   value: string;
   onValueChange: (modelId: string) => void;
@@ -65,6 +66,7 @@ interface ModelComboboxProps {
 }
 
 export function ModelCombobox({
+  ariaLabel,
   models,
   value,
   onValueChange,
@@ -139,6 +141,7 @@ export function ModelCombobox({
     >
       <div ref={anchorRef} className="flex-1">
         <ComboboxTrigger
+          aria-label={ariaLabel}
           className="border-input dark:bg-input/30 dark:hover:bg-input/50 w-full h-8 rounded-none border bg-transparent px-2.5 py-2 text-xs flex items-center justify-between whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50"
           disabled={disabled}
         >
