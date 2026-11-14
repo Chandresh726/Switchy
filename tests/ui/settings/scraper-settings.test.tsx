@@ -15,8 +15,6 @@ function createProps() {
     onSchedulerCronChange: vi.fn(),
     maxParallelScrapes: 3,
     onMaxParallelScrapesChange: vi.fn(),
-    keepDeviceAwake: true,
-    onKeepDeviceAwakeChange: vi.fn(),
     historyRetentionDays: 60,
     onHistoryRetentionDaysChange: vi.fn(),
     staleJobArchiveDays: 60,
@@ -90,9 +88,6 @@ describe("ScraperSettings", () => {
     render(<ScraperSettings {...createProps()} />);
 
     expect(screen.getByLabelText("Scheduler Frequency")).toBeTruthy();
-    expect(screen.getByRole("checkbox", {
-      name: "Keep Mac awake while scraping",
-    })).toBeTruthy();
     expect(screen.getByLabelText("Country")).toBeTruthy();
     expect(screen.getByLabelText("City")).toBeTruthy();
     expect(screen.getByLabelText("Job Title Keywords")).toBeTruthy();
@@ -119,16 +114,4 @@ describe("ScraperSettings", () => {
     expect(screen.queryByRole("button", { name: /save/i })).toBeNull();
   });
 
-  it("explains and toggles macOS idle-sleep prevention", () => {
-    const props = createProps();
-    render(<ScraperSettings {...props} />);
-
-    expect(screen.getByText("macOS")).toBeTruthy();
-    expect(screen.getByText(/Held while auto-scrape is enabled/)).toBeTruthy();
-
-    fireEvent.click(
-      screen.getByRole("checkbox", { name: "Keep Mac awake while scraping" })
-    );
-    expect(props.onKeepDeviceAwakeChange).toHaveBeenCalledWith(false);
-  });
 });

@@ -115,6 +115,29 @@ async function persistMatchableJob(
 }
 
 describe("AIWorkDispatcher", () => {
+  it("holds sleep protection for manual matching with the scheduler disabled", async () => {
+    const database = createTestDatabase();
+    database.insert(settings).values({ key: "scheduler_enabled", value: "false" }).run();
+    enqueueMatchWork(database, { jobIds: [1], triggerSource: "manual" });
+    const started = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    const release = vi.fn(async () => undefined);
+    const acquire = vi.fn(async () => ({ release }));
+    const dispatcher = new AIWorkDispatcher(database, async (jobIds) => {
+      started.resolve();
+      await finish.promise;
+      return new Map(jobIds.map((id) => [id, { score: 90, reasons: [], matchedSkills: [] }]));
+    }, {}, { acquire });
+    const run = dispatcher.runAvailable();
+    await started.promise;
+    expect(acquire).toHaveBeenCalledOnce();
+    expect(release).not.toHaveBeenCalled();
+    finish.resolve();
+    expect(await run).toMatchObject({ completed: 1 });
+    expect(release).toHaveBeenCalledOnce();
+    await dispatcher.runAvailable();
+    expect(acquire).toHaveBeenCalledOnce();
+  });
   it("shares adaptive provider limiting across concurrent durable sessions", async () => {
     resetAdaptiveProviderLimiter();
     runtimeMocks.create.mockReset();

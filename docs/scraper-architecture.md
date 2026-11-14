@@ -79,12 +79,13 @@ The queue provides at-least-once execution with idempotent completion. Platform 
 The Settings page exposes:
 
 - **Max Parallel Scrapes**: the shared API/browser concurrency limit, from 1 to 10.
-- **Keep Mac awake while scraping**: enabled by default. During an active queue dispatch on macOS, Switchy holds a bounded idle-sleep assertion. The display and screensaver may still activate, closing the lid may still sleep the Mac, and the setting is a no-op on other operating systems.
 - **History Retention**: terminal scrape sessions and logs are pruned after 7 to 3,650 days; the default is 90 days.
 
 Retention never deletes jobs, companies, uploads, active/leased queue work, or an active matching handoff. Pruning runs on the first supervisor pass after startup and is then throttled to at most once per day for that process.
 
-The macOS assertion uses `/usr/bin/caffeinate -i -t 300` and renews every four minutes only while the queue is actively dispatching work. It is released after success, failure, or cancellation and while the supervisor is only waiting for a future retry. Launch and release failures are warnings and never change the scrape outcome.
+The separate **Power** section exposes **Keep awake while scraping or matching**, enabled by default. A process-wide activity manager shares one macOS assertion across scraper and matching workers, independently of whether scheduling is enabled. It releases the assertion one second after the last worker finishes, fails, or is cancelled, avoiding churn between adjacent tasks. Idle scheduling and future retry waits do not hold an assertion. Setting changes apply to active work immediately. The original stored setting key is retained for compatibility.
+
+The assertion uses `/usr/bin/caffeinate -i -w <server-pid>` for the active lease, without timed renewal. Acquisition checks `pmset` for the child's registered idle-sleep assertion. An unexpected helper exit or failed acquisition triggers a retry with bounded exponential backoff from one to thirty seconds. Release cancels retries and stops the helper; server exit also bounds its lifetime. Assertion failures are warnings and do not fail job processing. The display may sleep; lid-close, explicit sleep and low-battery sleep can still suspend the Mac. Other operating systems use a no-op inhibitor.
 
 ## Observability and recovery
 

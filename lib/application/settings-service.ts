@@ -5,12 +5,12 @@ import { getCachedProviderModelDefinition } from "@/lib/ai/providers/model-catal
 import { ValidationError, logApiFailure, type ApiRequestContext } from "@/lib/api";
 import type { settingsUpdateBodySchema } from "@/lib/api/contracts/settings";
 import { db } from "@/lib/db";
+import { getActivitySleepInhibitor } from "@/lib/runtime/activity-sleep-inhibitor";
 import { aiProviders } from "@/lib/db/schema";
 import {
   getSchedulerEnabled,
   handleSchedulerDisabled,
   handleSchedulerEnabled,
-  refreshSchedulerPersistentState,
   restartScheduler,
   stopScheduler,
 } from "@/lib/jobs/scheduler";
@@ -165,12 +165,8 @@ export async function updateSettings(input: SettingsUpdateInput, context: ApiReq
       } catch (error) { logApiFailure(context, "scheduler_baseline_reset_failed", 500, error); }
     }
   }
-  if (enabledChanged || cronUpdated || keepAwakeChanged) {
-    try {
-      await refreshSchedulerPersistentState();
-    } catch (error) {
-      logApiFailure(context, "scheduler_sleep_assertion_failed", 500, error);
-    }
+  if (keepAwakeChanged) await getActivitySleepInhibitor().refresh();
+  if (enabledChanged || cronUpdated) {
     // The frontend only flips settings. The backend owns OS-level persistence:
     // keep the macOS LaunchAgent in sync without ever failing the save.
     try {

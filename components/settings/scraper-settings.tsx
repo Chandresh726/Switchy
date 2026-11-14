@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 
 import { Settings2, Timer, X } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -45,8 +44,6 @@ interface ScraperSettingsProps {
   onSchedulerCronChange: (value: string) => void;
   maxParallelScrapes: number;
   onMaxParallelScrapesChange: (value: number) => void;
-  keepDeviceAwake: boolean;
-  onKeepDeviceAwakeChange: (value: boolean) => void;
   historyRetentionDays: number;
   onHistoryRetentionDaysChange: (value: number) => void;
   staleJobArchiveDays: number;
@@ -66,8 +63,6 @@ export function ScraperSettings({
   onSchedulerCronChange,
   maxParallelScrapes,
   onMaxParallelScrapesChange,
-  keepDeviceAwake,
-  onKeepDeviceAwakeChange,
   historyRetentionDays,
   onHistoryRetentionDaysChange,
   staleJobArchiveDays,
@@ -168,28 +163,6 @@ export function ScraperSettings({
             )}
           </div>
           <SchedulerHostBadge />
-        </div>
-
-        <div className="flex items-center justify-between gap-6 pt-4 border-t border-border">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <Label htmlFor="scraper-keep-device-awake">
-                Keep Mac awake while scraping
-              </Label>
-              <Badge variant="secondary">macOS</Badge>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Held while auto-scrape is enabled so idle sleep does not skip runs. Lid-close still sleeps.
-            </p>
-          </div>
-          <input
-            type="checkbox"
-            id="scraper-keep-device-awake"
-            checked={keepDeviceAwake}
-            onChange={(e) => onKeepDeviceAwakeChange(e.target.checked)}
-            aria-label="Keep Mac awake while scraping"
-            className="h-4 w-4 shrink-0 rounded border-border bg-muted text-emerald-500 focus:ring-emerald-500 focus:ring-offset-background"
-          />
         </div>
 
         <div className="space-y-4 pt-4 border-t border-border">

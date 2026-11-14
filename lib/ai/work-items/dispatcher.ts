@@ -14,6 +14,8 @@ import {
   setMatcherDispatchRecovery,
 } from "@/lib/runtime/health";
 import { processSingleton } from "@/lib/runtime/process-singleton";
+import { getActivitySleepInhibitor, withSleepProtection } from "@/lib/runtime/activity-sleep-inhibitor";
+import type { DeviceSleepInhibitor } from "@/lib/scraper/runtime/device-sleep-inhibitor";
 
 import type { MatchWorkResult } from "./contracts";
 import { AIMatchWorkHandler, type MatchWorkExecutor } from "./match-handler";
@@ -39,14 +41,17 @@ export class AIWorkDispatcher {
   constructor(
     database: typeof db = db,
     executeMatch?: MatchWorkExecutor,
-    config: Partial<typeof DEFAULT_CONFIG> = {}
+    config: Partial<typeof DEFAULT_CONFIG> = {},
+    sleepInhibitor: DeviceSleepInhibitor = getActivitySleepInhibitor()
   ) {
     const merged = { ...DEFAULT_CONFIG, ...config };
     const store = new DrizzleAIWorkStore(database);
     const handler = new AIMatchWorkHandler(store, executeMatch);
     this.runner = new LocalLeasedWorkRunner(
       store,
-      (item, { signal, workerId }) => handler.handle(item, signal, workerId),
+      (item, { signal, workerId }) => withSleepProtection(
+        sleepInhibitor, () => handler.handle(item, signal, workerId)
+      ),
       { ...merged, workerIdPrefix: "ai-work" }
     );
   }

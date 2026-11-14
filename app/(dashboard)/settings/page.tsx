@@ -28,6 +28,7 @@ import { AppearanceSection } from "@/components/settings/appearance-section";
 import { MatcherFallbackSettings, type FallbackSettings } from "@/components/settings/matcher-fallback-settings";
 import { MatcherSection } from "@/components/settings/matcher-section";
 import { NotificationsSection } from "@/components/settings/notifications-section";
+import { PowerSettings } from "@/components/settings/power-settings";
 import { ScraperSettings } from "@/components/settings/scraper-settings";
 import { DangerZone } from "@/components/settings/danger-zone";
 import { ResumeParserSection } from "@/components/settings/resume-parser-section";
@@ -107,7 +108,6 @@ interface ScraperLocalEdits {
   schedulerEnabled?: boolean;
   schedulerCron?: string;
   maxParallelScrapes?: number;
-  keepDeviceAwake?: boolean;
   historyRetentionDays?: number;
   staleJobArchiveDays?: number;
   filterCountry?: string;
@@ -143,6 +143,7 @@ function SettingsContent() {
 
   const [matcherLocalEdits, setMatcherLocalEdits] = useState<MatcherLocalEdits>({});
   const [resumeParserLocalEdits, setResumeParserLocalEdits] = useState<ResumeParserLocalEdits>({});
+  const [powerLocalEdits, setPowerLocalEdits] = useState<{ keepDeviceAwake?: boolean }>({});
   const [scraperLocalEdits, setScraperLocalEdits] = useState<ScraperLocalEdits>({});
   const [aiWritingLocalEdits, setAIWritingLocalEdits] = useState<AIWritingLocalEdits>({});
   const [unmatchedWindowDays, setUnmatchedWindowDays] = useState(5);
@@ -434,7 +435,7 @@ function SettingsContent() {
           ) || DEFAULT_SCRAPER_MAX_PARALLEL_SCRAPES
         ),
       keepDeviceAwake:
-        scraperLocalEdits.keepDeviceAwake ??
+        powerLocalEdits.keepDeviceAwake ??
         (settings?.scraper_keep_device_awake !== "false"),
       historyRetentionDays:
         scraperLocalEdits.historyRetentionDays ??
@@ -484,7 +485,7 @@ function SettingsContent() {
         }
       })(),
     };
-  }, [settings, matcherLocalEdits, scraperLocalEdits, aiWritingLocalEdits, featureModels]);
+  }, [settings, matcherLocalEdits, scraperLocalEdits, powerLocalEdits, aiWritingLocalEdits, featureModels]);
 
   const {
     jobAnalysisModel, jobAnalysisProviderId, jobAnalysisReasoningEffort,
@@ -595,7 +596,6 @@ function SettingsContent() {
   const scraperHasUnsavedChanges =
     scraperLocalEdits.schedulerCron !== undefined ||
     scraperLocalEdits.maxParallelScrapes !== undefined ||
-    scraperLocalEdits.keepDeviceAwake !== undefined ||
     scraperLocalEdits.historyRetentionDays !== undefined ||
     scraperLocalEdits.staleJobArchiveDays !== undefined ||
     scraperLocalEdits.filterCountry !== undefined ||
@@ -683,7 +683,7 @@ function SettingsContent() {
   const setMaxParallelScrapes = (value: number) =>
     setScraperLocalEdits((prev) => ({ ...prev, maxParallelScrapes: clampScraperParallelScrapes(value) }));
   const setKeepDeviceAwake = (value: boolean) =>
-    setScraperLocalEdits((prev) => ({ ...prev, keepDeviceAwake: value }));
+    setPowerLocalEdits((prev) => ({ ...prev, keepDeviceAwake: value }));
   const setHistoryRetentionDays = (value: number) =>
     setScraperLocalEdits((prev) => ({
       ...prev,
@@ -843,6 +843,14 @@ function SettingsContent() {
     },
   });
   useSettingsAutosave({
+    edits: powerLocalEdits,
+    setEdits: setPowerLocalEdits,
+    enabled: powerLocalEdits.keepDeviceAwake !== undefined,
+    delay: 400,
+    errorMessage: "Failed to save power settings",
+    updates: { scraper_keep_device_awake: keepDeviceAwake },
+  });
+  useSettingsAutosave({
     edits: scraperLocalEdits,
     setEdits: setScraperLocalEdits,
     enabled: scraperHasUnsavedChanges,
@@ -852,7 +860,6 @@ function SettingsContent() {
     updates: {
       scheduler_cron: schedulerCron,
       scraper_max_parallel_scrapes: maxParallelScrapes,
-      scraper_keep_device_awake: keepDeviceAwake,
       scraper_history_retention_days: historyRetentionDays,
       scraper_stale_job_archive_days: staleJobArchiveDays,
       scraper_filter_country: filterCountry,
@@ -1098,8 +1105,6 @@ function SettingsContent() {
             onSchedulerCronChange={setSchedulerCron}
             maxParallelScrapes={maxParallelScrapes}
             onMaxParallelScrapesChange={setMaxParallelScrapes}
-            keepDeviceAwake={keepDeviceAwake}
-            onKeepDeviceAwakeChange={setKeepDeviceAwake}
             historyRetentionDays={historyRetentionDays}
             onHistoryRetentionDaysChange={setHistoryRetentionDays}
             staleJobArchiveDays={staleJobArchiveDays}
@@ -1110,6 +1115,11 @@ function SettingsContent() {
             onFilterCityChange={setFilterCity}
             filterTitleKeywords={filterTitleKeywords}
             onFilterTitleKeywordsChange={setFilterTitleKeywords}
+          />
+
+          <PowerSettings
+            keepDeviceAwake={keepDeviceAwake}
+            onKeepDeviceAwakeChange={setKeepDeviceAwake}
           />
 
           <ResumeParserSection

@@ -1,4 +1,5 @@
 import type { ScrapeQueueItem } from "@/lib/db/schema";
+import { getActivitySleepInhibitor, withSleepProtection } from "@/lib/runtime/activity-sleep-inhibitor";
 import {
   recordDispatchSuccess,
   recordRuntimeError,
@@ -20,9 +21,7 @@ import {
 import { ScheduledSingleFlightDispatcher } from "@/lib/scraper/runtime/single-flight-dispatcher";
 import { createDeviceWakeCheck } from "@/lib/scraper/runtime/device-wake-state";
 import {
-  createDeviceSleepInhibitor,
   type DeviceSleepInhibitor,
-  type DeviceSleepInhibitorLease,
 } from "@/lib/scraper/runtime/device-sleep-inhibitor";
 import type { ScrapeSettingsProvider } from "@/lib/scraper/settings/provider";
 import type {
@@ -84,11 +83,13 @@ export class LocalScrapeQueueService {
     this.historyRetention = dependencies.historyRetention;
     this.staleJobArchival = dependencies.staleJobArchival;
     this.deviceSleepInhibitor =
-      dependencies.deviceSleepInhibitor ?? createDeviceSleepInhibitor();
+      dependencies.deviceSleepInhibitor ?? getActivitySleepInhibitor();
     this.isDeviceAwake = dependencies.isDeviceAwake ?? createDeviceWakeCheck();
     this.runner = new LocalLeasedWorkRunner(
       this.queueStore,
-      (item, { signal }) => this.workHandler.handle(item, signal),
+      (item, { signal }) => withSleepProtection(
+        this.deviceSleepInhibitor, () => this.workHandler.handle(item, signal)
+      ),
       { workerIdPrefix: "local-scrape", ...dependencies.runnerConfig },
       (item) => this.projector.reconcileSession(item.sessionId),
       serializeFetchResult
@@ -250,37 +251,14 @@ export class LocalScrapeQueueService {
         nextAvailableAt: new Date(Date.now() + 60_000),
       };
     }
-    let sleepInhibitorLease: DeviceSleepInhibitorLease | null = null;
-    try {
-      if (await this.dependencies.settingsProvider.getKeepDeviceAwake()) {
-        sleepInhibitorLease = await this.deviceSleepInhibitor.acquire();
-      }
-    } catch (error) {
-      console.warn(
-        "[LocalScrapeQueueService] Failed to inhibit idle sleep:",
-        error
-      );
-    }
-
-    try {
-      await this.projector.recoverCommittedQueueItems();
-      const summary = await this.runner.runAvailable({
-        onRecovered: () => setScrapeQueueRecovery("ready"),
-        canClaim: this.isDeviceAwake,
-      });
-      await this.projector.reconcileInProgressSessions();
-      await this.historyRetention.pruneIfDue();
-      await this.staleJobArchival?.archiveIfDue();
-      return summary;
-    } finally {
-      try {
-        await sleepInhibitorLease?.release();
-      } catch (error) {
-        console.warn(
-          "[LocalScrapeQueueService] Failed to release idle-sleep inhibitor:",
-          error
-        );
-      }
-    }
+    await this.projector.recoverCommittedQueueItems();
+    const summary = await this.runner.runAvailable({
+      onRecovered: () => setScrapeQueueRecovery("ready"),
+      canClaim: this.isDeviceAwake,
+    });
+    await this.projector.reconcileInProgressSessions();
+    await this.historyRetention.pruneIfDue();
+    await this.staleJobArchival?.archiveIfDue();
+    return summary;
   }
 }

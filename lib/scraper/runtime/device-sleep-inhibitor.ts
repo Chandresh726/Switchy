@@ -1,8 +1,9 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { promisify } from "node:util";
 
+const execute = promisify(execFile);
 const CAFFEINATE_PATH = "/usr/bin/caffeinate";
-const ASSERTION_TIMEOUT_SECONDS = 300;
-const RENEWAL_INTERVAL_MS = 240_000;
+const MAX_RESTART_DELAY_MS = 30_000;
 
 export interface DeviceSleepInhibitorLease {
   release(): Promise<void>;
@@ -13,93 +14,110 @@ export interface DeviceSleepInhibitor {
 }
 
 type SpawnProcess = (command: string, args: string[]) => ChildProcess;
+type ConfirmAssertion = (child: ChildProcess) => Promise<boolean>;
 
-class NoopDeviceSleepInhibitorLease implements DeviceSleepInhibitorLease {
-  async release(): Promise<void> {}
+async function confirmAssertion(child: ChildProcess): Promise<boolean> {
+  if (!child.pid) return false;
+  const deadline = Date.now() + 2_000;
+  do {
+    const { stdout } = await execute("/usr/bin/pmset", ["-g", "assertions"], { timeout: 2_000 });
+    if (stdout.split("\n").some((line) =>
+      line.includes(`pid ${child.pid}(caffeinate):`) && line.includes("PreventUserIdleSystemSleep")
+    )) return true;
+    if (child.exitCode !== null || child.killed) return false;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  } while (Date.now() < deadline);
+  return false;
 }
 
 export class CaffeinateDeviceSleepInhibitor implements DeviceSleepInhibitor {
   constructor(
     private readonly platform: NodeJS.Platform = process.platform,
     private readonly spawnProcess: SpawnProcess = (command, args) =>
-      spawn(command, args, { stdio: "ignore" })
+      spawn(command, args, { stdio: "ignore" }),
+    private readonly confirm: ConfirmAssertion = confirmAssertion
   ) {}
 
   async acquire(): Promise<DeviceSleepInhibitorLease> {
-    if (this.platform !== "darwin") {
-      return new NoopDeviceSleepInhibitorLease();
-    }
+    if (this.platform !== "darwin") return { release: async () => undefined };
 
     let activeProcess: ChildProcess | null = null;
-    let pendingProcess: ChildProcess | null = null;
+    let restartTimer: ReturnType<typeof setTimeout> | null = null;
+    let restartDelayMs = 1_000;
     let released = false;
 
     const stopProcess = (child: ChildProcess | null) => {
-      if (!child || child.killed) return;
+      if (!child || child.killed || child.exitCode !== null) return;
       try {
         child.kill();
       } catch (error) {
-        console.warn(
-          "[DeviceSleepInhibitor] Failed to stop caffeinate assertion:",
-          error
-        );
+        console.warn("[DeviceSleepInhibitor] Failed to stop caffeinate assertion:", error);
       }
     };
 
-    const startAssertion = () => {
-      if (released) return;
+    const scheduleRestart = () => {
+      if (released || restartTimer || activeProcess) return;
+      restartTimer = setTimeout(() => {
+        restartTimer = null;
+        void startAssertion();
+      }, restartDelayMs);
+      restartTimer.unref();
+      restartDelayMs = Math.min(MAX_RESTART_DELAY_MS, restartDelayMs * 2);
+    };
+
+    const startAssertion = async () => {
+      if (released || activeProcess) return;
+      let child: ChildProcess | null = null;
       try {
-        const nextProcess = this.spawnProcess(CAFFEINATE_PATH, [
-          "-i",
-          "-t",
-          String(ASSERTION_TIMEOUT_SECONDS),
-        ]);
-        const supersededPendingProcess = pendingProcess;
-        pendingProcess = nextProcess;
-        stopProcess(supersededPendingProcess);
-
-        nextProcess.once("spawn", () => {
-          if (released || pendingProcess !== nextProcess) {
-            stopProcess(nextProcess);
-            return;
-          }
-
-          const previousProcess = activeProcess;
-          pendingProcess = null;
-          activeProcess = nextProcess;
-          stopProcess(previousProcess);
+        // The assertion lasts for this lease, and -w also bounds it to the
+        // server lifetime if the server crashes before releasing the lease.
+        child = this.spawnProcess(CAFFEINATE_PATH, ["-i", "-w", String(process.pid)]);
+        activeProcess = child;
+        const current = child;
+        const spawned = new Promise<void>((resolve, reject) => {
+          current.once("spawn", resolve);
+          current.once("error", reject);
+          current.once("exit", () => reject(new Error("Caffeinate exited before acquisition")));
         });
-        nextProcess.once("error", (error) => {
-          if (pendingProcess === nextProcess) {
-            pendingProcess = null;
-          }
-          console.warn(
-            "[DeviceSleepInhibitor] Failed to start caffeinate assertion:",
-            error
-          );
-        });
-        nextProcess.unref();
+        const onFailure = () => {
+          if (released || activeProcess !== current) return;
+          activeProcess = null;
+          console.warn("[DeviceSleepInhibitor] Caffeinate exited; restoring sleep protection.");
+          stopProcess(current);
+          scheduleRestart();
+        };
+        current.once("exit", onFailure);
+        current.once("error", onFailure);
+        current.unref();
+        await spawned;
+        if (released || activeProcess !== current) return;
+        const confirmed = await this.confirm(current);
+        if (released || activeProcess !== current) return;
+        if (!confirmed) throw new Error("macOS did not confirm the sleep assertion");
+        restartDelayMs = 1_000;
       } catch (error) {
-        console.warn(
-          "[DeviceSleepInhibitor] Failed to start caffeinate assertion:",
-          error
-        );
+        if (child && activeProcess !== child) return;
+        if (activeProcess === child) {
+          activeProcess = null;
+          stopProcess(child);
+        }
+        if (!released) {
+          console.warn("[DeviceSleepInhibitor] Failed to start caffeinate assertion:", error);
+          scheduleRestart();
+        }
       }
     };
 
-    startAssertion();
-    const renewalTimer = setInterval(startAssertion, RENEWAL_INTERVAL_MS);
-    renewalTimer.unref();
-
+    await startAssertion();
     return {
       release: async () => {
         if (released) return;
         released = true;
-        clearInterval(renewalTimer);
-        stopProcess(pendingProcess);
-        stopProcess(activeProcess);
-        pendingProcess = null;
+        if (restartTimer) clearTimeout(restartTimer);
+        restartTimer = null;
+        const child = activeProcess;
         activeProcess = null;
+        stopProcess(child);
       },
     };
   }

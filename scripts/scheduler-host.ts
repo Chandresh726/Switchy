@@ -4,8 +4,8 @@
  * Usage:
  *   tsx scripts/scheduler-host.ts install|uninstall|status|sync
  *
- * The frontend only flips `scheduler_enabled` / `scheduler_cron` /
- * `scraper_keep_device_awake` settings. This script (and the automatic sync in
+ * The frontend only flips `scheduler_enabled` and `scheduler_cron`.
+ * This script (and the automatic sync in
  * the settings service) owns OS-level persistence so scraping continues even
  * when no browser tab is open.
  */

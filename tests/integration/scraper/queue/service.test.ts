@@ -8,6 +8,7 @@ import {
   scrapingLogs,
   settings,
 } from "@/lib/db/schema";
+import { ActivitySleepInhibitor } from "@/lib/runtime/activity-sleep-inhibitor";
 import { HistoryRetentionService } from "@/lib/scraper/application/history-retention-service";
 import type { ScrapeCompanyPipeline } from "@/lib/scraper/application/scrape-company-pipeline";
 import { ScrapeSessionProjector } from "@/lib/scraper/application/scrape-session-projector";
@@ -108,7 +109,7 @@ function createService(
       settingsProvider
     ),
     settingsProvider,
-    deviceSleepInhibitor,
+    deviceSleepInhibitor: new ActivitySleepInhibitor(deviceSleepInhibitor, () => settingsProvider.getKeepDeviceAwake()),
     runnerConfig: {
       concurrency: 2,
       baseRetryDelayMs: 0,
@@ -162,7 +163,7 @@ describe("LocalScrapeQueueService", () => {
     await service.scrapeCompanies([company.id], "manual");
 
     expect(acquire).toHaveBeenCalledTimes(1);
-    expect(release).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1), { timeout: 2_000 });
   });
 
   it("does not inhibit sleep when the stored setting is disabled", async () => {
@@ -206,7 +207,7 @@ describe("LocalScrapeQueueService", () => {
 
     expect(result.summary.successfulCompanies).toBe(1);
     expect(console.warn).toHaveBeenCalledWith(
-      "[LocalScrapeQueueService] Failed to inhibit idle sleep:",
+      "[ActivitySleepInhibitor] Failed to update sleep protection:",
       expect.any(Error)
     );
   });
@@ -234,7 +235,7 @@ describe("LocalScrapeQueueService", () => {
       getStaleJobArchiveDays: () =>
         storedSettingsProvider.getStaleJobArchiveDays(),
     };
-    const acquire = vi.fn();
+    const acquire = vi.fn(async () => ({ release: vi.fn(async () => undefined) }));
     const { service } = createService(database, {
       settingsProvider,
       deviceSleepInhibitor: { acquire },
@@ -243,9 +244,9 @@ describe("LocalScrapeQueueService", () => {
     const result = await service.scrapeCompanies([company.id], "manual");
 
     expect(result.summary.successfulCompanies).toBe(1);
-    expect(acquire).not.toHaveBeenCalled();
+    expect(acquire).toHaveBeenCalledOnce();
     expect(console.warn).toHaveBeenCalledWith(
-      "[LocalScrapeQueueService] Failed to inhibit idle sleep:",
+      "[ActivitySleepInhibitor] Failed to read keep-awake setting:",
       expect.any(Error)
     );
   });

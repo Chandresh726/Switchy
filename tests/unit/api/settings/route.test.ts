@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   stopScheduler: vi.fn(),
   handleSchedulerDisabled: vi.fn(),
   handleSchedulerEnabled: vi.fn(),
-  refreshSchedulerPersistentState: vi.fn(),
+  refreshSleepProtection: vi.fn(),
   syncSchedulerHost: vi.fn(),
   getSettingsWithDefaults: vi.fn(),
   parseSettingsUpdateBody: vi.fn(),
@@ -26,7 +26,10 @@ vi.mock("@/lib/jobs/scheduler", () => ({
   stopScheduler: mocks.stopScheduler,
   handleSchedulerDisabled: mocks.handleSchedulerDisabled,
   handleSchedulerEnabled: mocks.handleSchedulerEnabled,
-  refreshSchedulerPersistentState: mocks.refreshSchedulerPersistentState,
+}));
+
+vi.mock("@/lib/runtime/activity-sleep-inhibitor", () => ({
+  getActivitySleepInhibitor: () => ({ refresh: mocks.refreshSleepProtection }),
 }));
 
 vi.mock("@/lib/jobs/scheduler-host", () => ({
@@ -47,6 +50,20 @@ vi.mock("@/lib/ai/providers/model-catalog", () => ({
 import { GET, PATCH } from "@/app/api/settings/route";
 
 describe("settings route", () => {
+  it("refreshes active work protection independently of the scheduler", async () => {
+    mocks.parseSettingsUpdateBody.mockReturnValue({
+      updates: [{ key: "scraper_keep_device_awake", value: "false" }],
+      cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: true,
+    });
+    const response = await PATCH(new Request("http://localhost/api/settings", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scraper_keep_device_awake: false }),
+    }));
+    expect(response.status).toBe(200);
+    expect(mocks.refreshSleepProtection).toHaveBeenCalledOnce();
+    expect(mocks.restartScheduler).not.toHaveBeenCalled();
+    expect(mocks.syncSchedulerHost).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getSettingsWithDefaults.mockResolvedValue({
@@ -65,7 +82,7 @@ describe("settings route", () => {
     mocks.restartScheduler.mockResolvedValue(undefined);
     mocks.handleSchedulerDisabled.mockResolvedValue(undefined);
     mocks.handleSchedulerEnabled.mockResolvedValue(undefined);
-    mocks.refreshSchedulerPersistentState.mockResolvedValue(undefined);
+    mocks.refreshSleepProtection.mockResolvedValue(undefined);
     mocks.syncSchedulerHost.mockResolvedValue("installed");
     mocks.getCachedProviderModelDefinition.mockResolvedValue({
       reasoningControl: {

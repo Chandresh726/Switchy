@@ -326,12 +326,6 @@ describe("scheduler backend-owned recovery", () => {
     expect(store.settings.get("scheduler.lastRun")?.value).toBe(seededLastRun);
   });
 
-  it("leaves the persistent sleep assertion untouched under test workers", async () => {
-    const scheduler = await import("@/lib/jobs/scheduler");
-
-    await expect(scheduler.refreshSchedulerPersistentState()).resolves.toBeUndefined();
-  });
-
   it("drains pending recovery from the server-side watchdog tick", async () => {    const scheduler = await import("@/lib/jobs/scheduler");
 
     await scheduler.startScheduler();

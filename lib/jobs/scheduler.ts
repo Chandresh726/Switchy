@@ -13,8 +13,6 @@ import {
   setSchedulerInitialization,
 } from "@/lib/runtime/health";
 
-import type { DeviceSleepInhibitorLease } from "@/lib/scraper/runtime/device-sleep-inhibitor";
-
 import { getSchedulerLeaseStore } from "./scheduler-lease-store";
 
 const DEFAULT_CRON = "0 */6 * * *";
@@ -34,7 +32,6 @@ const CRON_MISSED_EXECUTION_TOLERANCE_MS = 5 * 60 * 1000;
 const FAILED_BATCH_RETRY_BASE_MS = 5 * 60 * 1000;
 const FAILED_BATCH_RETRY_MAX_MS = 60 * 60 * 1000;
 const BOOT_RECOVERY_MAX_CATCHUP = 50;
-const KEEP_AWAKE_SETTING_KEY = "scraper_keep_device_awake";
 const MISSED_RUN_REASON = "Skipped while device was asleep or idle; queued for a later recovery run.";
 
 interface SchedulerRuntimeState {
@@ -43,13 +40,9 @@ interface SchedulerRuntimeState {
   currentCronExpression: string;
   missedExecutionHandler: ((context: TaskContext) => Promise<void>) | null;
   watchdogTimer: ReturnType<typeof setInterval> | null;
-  persistentSleepLease: DeviceSleepInhibitorLease | null;
   bootRecoveryAttempted: boolean;
   consecutiveBatchFailures: number;
   batchRetryNotBefore: number | null;
-  sleepAssertionTail: Promise<void>;
-  persistentSleepEpoch: number;
-  persistentSleepAcquireInFlight: Promise<DeviceSleepInhibitorLease | null> | null;
 }
 
 const globalSchedulerState = globalThis as typeof globalThis & {
@@ -62,13 +55,9 @@ const schedulerRuntime = globalSchedulerState.__switchySchedulerRuntime ??= {
   currentCronExpression: DEFAULT_CRON,
   missedExecutionHandler: null,
   watchdogTimer: null,
-  persistentSleepLease: null,
   bootRecoveryAttempted: false,
   consecutiveBatchFailures: 0,
   batchRetryNotBefore: null,
-  sleepAssertionTail: Promise.resolve(),
-  persistentSleepEpoch: 0,
-  persistentSleepAcquireInFlight: null,
 };
 
 interface SchedulerRecoveryState {
@@ -351,11 +340,6 @@ function isSchedulerTestWorker(): boolean {
   return Boolean(process.env.VITEST_WORKER_ID) || process.env.NODE_ENV === "test";
 }
 
-async function getKeepDeviceAwake(): Promise<boolean> {
-  const value = await getSettingValue(KEEP_AWAKE_SETTING_KEY);
-  return value === null ? true : value !== "false";
-}
-
 /**
  * Cron occurrences strictly after `fromExclusive` up to and including
  * `toInclusive`, capped so a long-offline device coalesces into one batch.
@@ -519,128 +503,6 @@ export function ensureSchedulerWatchdog(): void {
   schedulerRuntime.watchdogTimer = timer;
 }
 
-// Serializes persistent sleep-assertion updates so an ensure and a release
-// can never interleave: a release fully completes before a later ensure
-// starts (and vice versa), so a release can never close a newer assertion.
-function enqueueSleepAssertion(work: () => Promise<void>): Promise<void> {
-  const run = async (): Promise<void> => {
-    try {
-      await work();
-    } catch (error) {
-      console.warn("[Scheduler] Sleep assertion update failed:", error);
-    }
-  };
-  schedulerRuntime.sleepAssertionTail = schedulerRuntime.sleepAssertionTail.then(run, run);
-  return schedulerRuntime.sleepAssertionTail;
-}
-
-// The persistent sleep epoch guards against overlapping ensure/release calls
-// (startup vs settings refresh, or a toggle mid-acquisition) so a stale
-// acquire can never overwrite or outlive the current settings.
-
-async function ensurePersistentSleepAssertion(): Promise<void> {
-  if (isSchedulerTestWorker() || process.platform !== "darwin") return;
-  return enqueueSleepAssertion(doEnsurePersistentSleepAssertion);
-}
-
-async function releasePersistentSleepAssertion(): Promise<void> {
-  if (isSchedulerTestWorker()) return;
-  return enqueueSleepAssertion(doReleasePersistentSleepAssertion);
-}
-
-async function doEnsurePersistentSleepAssertion(): Promise<void> {
-  if (schedulerRuntime.persistentSleepLease) return;
-  if (schedulerRuntime.persistentSleepAcquireInFlight) {
-    await schedulerRuntime.persistentSleepAcquireInFlight;
-    return;
-  }
-
-  const epoch = schedulerRuntime.persistentSleepEpoch;
-  const acquisition = (async (): Promise<DeviceSleepInhibitorLease | null> => {
-    try {
-      const enabled = await getSchedulerEnabled();
-      const keepAwake = await getKeepDeviceAwake();
-      if (epoch !== schedulerRuntime.persistentSleepEpoch || !enabled || !keepAwake) return null;
-      const { CaffeinateDeviceSleepInhibitor } = await import(
-        "@/lib/scraper/runtime/device-sleep-inhibitor"
-      );
-      const lease = await new CaffeinateDeviceSleepInhibitor().acquire();
-      // Re-check after acquiring: a toggle that landed mid-acquisition must
-      // release immediately instead of storing a stale assertion.
-      const stillEnabled = await getSchedulerEnabled();
-      const stillKeepAwake = await getKeepDeviceAwake();
-      if (epoch !== schedulerRuntime.persistentSleepEpoch || !stillEnabled || !stillKeepAwake) {
-        try {
-          await lease.release();
-        } catch (releaseError) {
-          console.warn("[Scheduler] Failed to release stale idle-sleep assertion:", releaseError);
-        }
-        return null;
-      }
-      schedulerRuntime.persistentSleepLease = lease;
-      console.log("[Scheduler] Holding idle-sleep assertion while auto-scrape is enabled");
-      return lease;
-    } catch (error) {
-      console.warn("[Scheduler] Failed to hold idle-sleep assertion:", error);
-      return null;
-    }
-  })();
-  schedulerRuntime.persistentSleepAcquireInFlight = acquisition;
-  try {
-    await acquisition;
-  } finally {
-    if (schedulerRuntime.persistentSleepAcquireInFlight === acquisition) {
-      schedulerRuntime.persistentSleepAcquireInFlight = null;
-    }
-  }
-}
-
-async function doReleasePersistentSleepAssertion(): Promise<void> {
-  schedulerRuntime.persistentSleepEpoch += 1;
-  const inFlight = schedulerRuntime.persistentSleepAcquireInFlight;
-  schedulerRuntime.persistentSleepAcquireInFlight = null;
-  if (inFlight) {
-    try {
-      const lease = await inFlight;
-      if (lease) await lease.release();
-    } catch (error) {
-      console.warn("[Scheduler] Failed to release in-flight idle-sleep assertion:", error);
-    }
-  }
-  // Runs serialized against ensures, so the slot cannot change underneath:
-  // only the lease held at release time is ever closed.
-  const lease = schedulerRuntime.persistentSleepLease;
-  schedulerRuntime.persistentSleepLease = null;
-  if (!lease) return;
-  try {
-    await lease.release();
-  } catch (error) {
-    console.warn("[Scheduler] Failed to release idle-sleep assertion:", error);
-  }
-}
-
-/**
- * Re-applies the persistent idle-sleep assertion after settings changes.
- * Called by the settings service; never throws.
- */
-export async function refreshSchedulerPersistentState(): Promise<void> {
-  try {
-    const enabled = await getSchedulerEnabled();
-    if (!enabled) {
-      await releasePersistentSleepAssertion();
-      return;
-    }
-    const keepAwake = await getKeepDeviceAwake();
-    if (!keepAwake) {
-      await releasePersistentSleepAssertion();
-      return;
-    }
-    await ensurePersistentSleepAssertion();
-  } catch (error) {
-    console.warn("[Scheduler] Failed to refresh persistent scheduler state:", error);
-  }
-}
-
 export async function getSchedulerStatus(): Promise<SchedulerStatus> {
   const [lastRun, persistedCron, isEnabled, recoveryState] = await Promise.all([
     getLastRunFromDB(),
@@ -728,7 +590,6 @@ export async function startScheduler(): Promise<void> {
   schedulerRuntime.task.on("execution:missed", schedulerRuntime.missedExecutionHandler);
   setSchedulerInitialization("ready");
   ensureSchedulerWatchdog();
-  void ensurePersistentSleepAssertion();
 
   console.log(`[Scheduler] Started with cron: ${schedulerRuntime.currentCronExpression}`);
 }
@@ -743,7 +604,6 @@ export function stopScheduler(): void {
     schedulerRuntime.missedExecutionHandler = null;
     console.log("[Scheduler] Stopped");
   }
-  void releasePersistentSleepAssertion();
 }
 
 export async function restartScheduler(): Promise<void> {

@@ -166,6 +166,20 @@ function renderSettings() {
 }
 
 describe("settings failure recovery", () => {
+  it("places Power between scraper and resume settings and saves its toggle independently", async () => {
+    mocks.getSettings.mockResolvedValue({ ...settings, scraper_keep_device_awake: "false" });
+    mocks.patchSettings.mockResolvedValue({ ...settings, scraper_keep_device_awake: "true" });
+    renderSettings();
+    const toggle = await screen.findByRole("switch", { name: "Keep awake while scraping or matching" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    const power = screen.getByText("Power");
+    const scraper = screen.getByRole("button", { name: `cron:${settings.scheduler_cron}` });
+    const resume = screen.getByText("Resume parser");
+    expect(scraper.compareDocumentPosition(power) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(power.compareDocumentPosition(resume) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(mocks.patchSettings).toHaveBeenCalledWith({ scraper_keep_device_awake: true }));
+  });
   beforeEach(() => {
     mocks.getSettings.mockReset();
     mocks.getLocalCLIStatus.mockReset();
