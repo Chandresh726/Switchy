@@ -43,6 +43,7 @@ export function parseExternalPayload<T>(
 export interface ParsedExternalItems<T> {
   items: T[];
   invalidCount: number;
+  invalidFields: string[];
 }
 
 export function parseExternalItems<T>(
@@ -52,6 +53,7 @@ export function parseExternalItems<T>(
 ): ParsedExternalItems<T> {
   const items: T[] = [];
   let invalidCount = 0;
+  const invalidFields = new Set<string>();
 
   for (const item of payload) {
     const parsed = schema.safeParse(item);
@@ -59,14 +61,18 @@ export function parseExternalItems<T>(
       items.push(parsed.data);
     } else {
       invalidCount++;
+      for (const issue of parsed.error.issues) {
+        // Record field names only, never payload values or validation messages.
+        if (invalidFields.size < 3) invalidFields.add(issue.path.join(".") || "root");
+      }
     }
   }
 
   if (payload.length > 0 && items.length === 0) {
-    throw new ScraperPayloadError(source, "no usable items were found");
+    throw new ScraperPayloadError(source, `no usable items were found; invalid fields: ${[...invalidFields].join(", ")}`);
   }
 
-  return { items, invalidCount };
+  return { items, invalidCount, invalidFields: [...invalidFields] };
 }
 
 export function createFailureFromUnknown(error: unknown): ScraperErrorResult {

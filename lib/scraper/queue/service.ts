@@ -18,6 +18,7 @@ import {
   type LocalLeasedWorkRunnerConfig,
 } from "@/lib/scraper/runtime/leased-work-runner";
 import { ScheduledSingleFlightDispatcher } from "@/lib/scraper/runtime/single-flight-dispatcher";
+import { createDeviceWakeCheck } from "@/lib/scraper/runtime/device-wake-state";
 import {
   createDeviceSleepInhibitor,
   type DeviceSleepInhibitor,
@@ -56,6 +57,7 @@ export interface LocalScrapeQueueServiceDependencies {
   staleJobArchival?: StaleJobArchivalService;
   settingsProvider: ScrapeSettingsProvider;
   deviceSleepInhibitor?: DeviceSleepInhibitor;
+  isDeviceAwake?: () => Promise<boolean>;
   runnerConfig?: Partial<LocalLeasedWorkRunnerConfig>;
 }
 
@@ -66,6 +68,7 @@ export class LocalScrapeQueueService {
   private readonly historyRetention: HistoryRetentionService;
   private readonly staleJobArchival?: StaleJobArchivalService;
   private readonly deviceSleepInhibitor: DeviceSleepInhibitor;
+  private readonly isDeviceAwake: () => Promise<boolean>;
   private readonly runner: LocalLeasedWorkRunner<
     ScrapeQueueItem,
     FetchResult,
@@ -82,6 +85,7 @@ export class LocalScrapeQueueService {
     this.staleJobArchival = dependencies.staleJobArchival;
     this.deviceSleepInhibitor =
       dependencies.deviceSleepInhibitor ?? createDeviceSleepInhibitor();
+    this.isDeviceAwake = dependencies.isDeviceAwake ?? createDeviceWakeCheck();
     this.runner = new LocalLeasedWorkRunner(
       this.queueStore,
       (item, { signal }) => this.workHandler.handle(item, signal),
@@ -239,6 +243,13 @@ export class LocalScrapeQueueService {
   }
 
   private async runDispatch(): Promise<QueueRunSummary> {
+    if (!await this.isDeviceAwake()) {
+      return {
+        claimed: 0, completed: 0, retried: 0, failed: 0, cancelled: 0,
+        recovered: { requeued: 0, failed: 0, cancelled: 0 },
+        nextAvailableAt: new Date(Date.now() + 60_000),
+      };
+    }
     let sleepInhibitorLease: DeviceSleepInhibitorLease | null = null;
     try {
       if (await this.dependencies.settingsProvider.getKeepDeviceAwake()) {
@@ -255,6 +266,7 @@ export class LocalScrapeQueueService {
       await this.projector.recoverCommittedQueueItems();
       const summary = await this.runner.runAvailable({
         onRecovered: () => setScrapeQueueRecovery("ready"),
+        canClaim: this.isDeviceAwake,
       });
       await this.projector.reconcileInProgressSessions();
       await this.historyRetention.pruneIfDue();

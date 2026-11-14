@@ -58,6 +58,35 @@ function directHttpClient(): IHttpClient {
 }
 
 describe("WorkdayScraper", () => {
+  it("retains listings with null optional metadata without weakening identity validation", async () => {
+    const httpClient = directHttpClient();
+    vi.mocked(httpClient.post).mockResolvedValue({
+      total: 2,
+      jobPostings: [
+        { ...listing(1), locationsText: null, postedOn: null, remoteType: null, bulletFields: null },
+        listing(2),
+      ],
+    });
+    const result = await new WorkdayScraper(httpClient, browserClient()).scrape(
+      "https://acme.wd5.myworkdayjobs.com/Acme"
+    );
+    expect(result).toMatchObject({ outcome: "success", listingCompleteness: "complete", totalListings: 2 });
+    expect(result.openExternalIds).toHaveLength(2);
+  });
+
+  it("reports rejected fields and keeps listing completeness partial when identity is invalid", async () => {
+    const httpClient = directHttpClient();
+    vi.mocked(httpClient.post).mockResolvedValue({
+      total: 2, jobPostings: [listing(1), { ...listing(2), externalPath: null }],
+    });
+    const result = await new WorkdayScraper(httpClient, browserClient()).scrape(
+      "https://acme.wd5.myworkdayjobs.com/Acme"
+    );
+    expect(result).toMatchObject({ outcome: "partial", listingCompleteness: "partial" });
+    if (result.outcome === "error") throw new Error("Expected partial result");
+    expect(result.issues?.map((issue) => issue.message).join(" ")).toContain("invalid fields: externalPath");
+    expect(result.openExternalIds).toHaveLength(1);
+  });
   it("uses direct HTTP without bootstrapping a browser on normal responses", async () => {
     const bootstrap = vi.fn(async () => {
       throw new Error("browser must remain unused");

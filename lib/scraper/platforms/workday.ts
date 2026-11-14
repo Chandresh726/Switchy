@@ -45,6 +45,7 @@ type WorkdayJobListResponse = {
   total: number;
   jobPostings: WorkdayJobListItem[];
   invalidCount: number;
+  invalidFields: string[];
 };
 
 type WorkdayListFetchResult = {
@@ -54,6 +55,7 @@ type WorkdayListFetchResult = {
   missingOffsets: number[];
   unidentifiedCount: number;
   invalidCount: number;
+  invalidFields: string[];
 };
 
 type WorkdayListFetchStage = "bootstrap" | "list-page";
@@ -88,10 +90,10 @@ const WorkdayJobListItemSchema = z
   .object({
     title: z.string(),
     externalPath: z.string(),
-    locationsText: z.string().default(""),
-    postedOn: z.string().default(""),
-    remoteType: z.string().default(""),
-    bulletFields: z.array(z.string()).default([]),
+    locationsText: z.string().nullish().transform((value) => value ?? ""),
+    postedOn: z.string().nullish().transform((value) => value ?? ""),
+    remoteType: z.string().nullish().transform((value) => value ?? ""),
+    bulletFields: z.array(z.string()).nullish().transform((value) => value ?? []),
   })
   .passthrough();
 
@@ -518,6 +520,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         total: envelope.total,
         jobPostings: parsedItems.items,
         invalidCount: parsedItems.invalidCount,
+        invalidFields: parsedItems.invalidFields,
       };
     } catch (error) {
       throwIfScrapeAborted(error);
@@ -579,6 +582,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
     const invalidCountByOffset = new Map<number, number>([
       [0, firstBatch.invalidCount],
     ]);
+    const invalidFieldsByOffset = new Map<number, string[]>([[0, firstBatch.invalidFields]]);
     const addJobs = (jobs: WorkdayJobListItem[], offset: number) => {
       for (let index = 0; index < jobs.length; index++) {
         const job = jobs[index];
@@ -632,6 +636,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
             missingOffsets.add(offset);
           } else {
             invalidCountByOffset.set(offset, result.invalidCount);
+            invalidFieldsByOffset.set(offset, result.invalidFields);
             addJobs(result.jobPostings, offset);
             const expectedCount = Math.min(WORKDAY_PAGE_SIZE, total - offset);
             if (result.jobPostings.length < expectedCount) {
@@ -649,6 +654,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         if (!result || !Array.isArray(result.jobPostings)) continue;
 
         invalidCountByOffset.set(offset, result.invalidCount);
+        invalidFieldsByOffset.set(offset, result.invalidFields);
         addJobs(result.jobPostings, offset);
         const expectedCount = Math.min(WORKDAY_PAGE_SIZE, total - offset);
         if (result.jobPostings.length >= expectedCount) {
@@ -682,11 +688,13 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       isComplete:
         missingOffsets.size === 0 &&
         countsComplete &&
+        invalidCount === 0 &&
         unidentifiedCount === 0,
       advertisedCount: total,
       missingOffsets: Array.from(missingOffsets).sort((a, b) => a - b),
       unidentifiedCount,
       invalidCount,
+      invalidFields: [...new Set([...invalidFieldsByOffset.values()].flat())].slice(0, 3),
     };
   }
 
@@ -816,7 +824,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         : "";
     const invalidSuffix =
       result.invalidCount > 0
-        ? `; ${result.invalidCount} malformed listing${result.invalidCount === 1 ? " was" : "s were"} discarded`
+        ? `; ${result.invalidCount} malformed listing${result.invalidCount === 1 ? " was" : "s were"} discarded; invalid fields: ${result.invalidFields.join(", ")}`
         : "";
     return createScraperError(
       "network_error",

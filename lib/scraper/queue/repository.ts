@@ -212,6 +212,26 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
     }, true);
   }
 
+  async deferSuspended(
+    itemId: string,
+    workerId: string,
+    error: Error,
+    availableAt: Date,
+    now: Date,
+    attemptCount: number
+  ): Promise<boolean> {
+    return this.finishOwnedItem(itemId, workerId, {
+      status: "queued",
+      workerId: null,
+      lockedAt: null,
+      leaseExpiresAt: null,
+      attemptCount: Math.max(0, attemptCount),
+      availableAt,
+      lastError: error.message,
+      updatedAt: now,
+    }, true);
+  }
+
   async fail(itemId: string, workerId: string, error: string, now: Date): Promise<boolean> {
     return this.finishOwnedItem(itemId, workerId, {
       status: "failed",

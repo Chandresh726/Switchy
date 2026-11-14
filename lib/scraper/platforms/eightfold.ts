@@ -40,6 +40,12 @@ interface EightfoldSearchResponse {
   };
 }
 
+class EightfoldListError extends Error {
+  constructor(status?: number) {
+    super(`Failed to fetch Eightfold jobs list (stage=list-page, offset=0${status === undefined ? "; network or invalid response" : `, HTTP ${status}`}).`);
+  }
+}
+
 interface EightfoldPosition {
   id: number;
   name: string;
@@ -231,7 +237,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       );
 
       if (!listResult) {
-        return this.failure("network_error", "Failed to fetch Eightfold jobs list.");
+        return this.failure("network_error", new EightfoldListError().message);
       }
 
       const allPositions = listResult.positions;
@@ -379,6 +385,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         issues: issues.length > 0 ? issues : undefined,
       };
     } catch (error) {
+      if (error instanceof EightfoldListError) return this.failure("network_error", error.message);
       return this.failureFromUnknown(error);
     }
   }
@@ -478,7 +485,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
     sessionCookies: EightfoldSessionCookieController
   ): Promise<EightfoldListFetchResult | null> {
     const baseUrl = `${sourceUrl.protocol}//${sourceUrl.hostname}`;
-    const fetchSafely = async (offset: number) => {
+    const fetchSafely = async (offset: number, required = false) => {
       try {
         return await this.fetchJobList(
           sourceUrl,
@@ -490,14 +497,15 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         if (error instanceof ScraperPayloadError) throw error;
         if (error instanceof BrowserSessionBootstrapError) throw error;
         throwIfScrapeAborted(error);
+        if (required) throw new EightfoldListError(error instanceof HttpError ? error.status : undefined);
         return null;
       }
     };
 
-    const firstBatch = await fetchSafely(0);
+    const firstBatch = await fetchSafely(0, true);
 
     if (!firstBatch || firstBatch.status !== 200 || !firstBatch.data) {
-      return null;
+      throw new EightfoldListError(firstBatch?.status);
     }
 
     let advertisedCount = firstBatch.data.count || 0;

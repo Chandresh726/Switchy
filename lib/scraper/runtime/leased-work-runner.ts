@@ -45,6 +45,7 @@ export interface LocalLeasedWorkStore<
     now: Date
   ): Promise<boolean>;
   defer?(itemId: string, workerId: string, error: Error, availableAt: Date, now: Date, attemptCount: number): Promise<boolean>;
+  deferSuspended?(itemId: string, workerId: string, error: Error, availableAt: Date, now: Date, attemptCount: number): Promise<boolean>;
   fail(
     itemId: string,
     workerId: string,
@@ -87,6 +88,7 @@ export interface LocalLeasedWorkRunSummary<TRecovery> {
 export interface LocalLeasedWorkRunOptions {
   /** Called once expired leases are reclaimed, before any work is claimed. */
   onRecovered?: () => void;
+  canClaim?: () => Promise<boolean>;
 }
 
 export interface LocalLeasedWorkRunnerConfig {
@@ -97,6 +99,7 @@ export interface LocalLeasedWorkRunnerConfig {
   maxClockGapMs: number;
   baseRetryDelayMs: number;
   maxRetryDelayMs: number;
+  suspensionRetryDelayMs: number;
 }
 
 const DEFAULT_LOCAL_LEASED_WORK_RUNNER_CONFIG: LocalLeasedWorkRunnerConfig = {
@@ -107,7 +110,14 @@ const DEFAULT_LOCAL_LEASED_WORK_RUNNER_CONFIG: LocalLeasedWorkRunnerConfig = {
   maxClockGapMs: 60 * 1000,
   baseRetryDelayMs: 5 * 1000,
   maxRetryDelayMs: 5 * 60 * 1000,
+  suspensionRetryDelayMs: 60 * 1000,
 };
+
+class LocalWorkSuspendedError extends DOMException {
+  constructor() {
+    super("System suspension detected; local work paused until wake", "AbortError");
+  }
+}
 
 export class LocalLeasedWorkRunner<
   TItem extends LeasedWorkItem,
@@ -118,6 +128,7 @@ export class LocalLeasedWorkRunner<
   private readonly activeControllers = new Map<string, AbortController>();
   private stopRequested = false;
   private running = false;
+  private resumeNotBefore = 0;
 
   constructor(
     private readonly repository: LocalLeasedWorkStore<TItem, TRecovery>,
@@ -144,6 +155,7 @@ export class LocalLeasedWorkRunner<
       ),
       baseRetryDelayMs: Math.max(0, merged.baseRetryDelayMs),
       maxRetryDelayMs: Math.max(0, merged.maxRetryDelayMs),
+      suspensionRetryDelayMs: Math.max(1_000, merged.suspensionRetryDelayMs),
     };
   }
 
@@ -170,6 +182,11 @@ export class LocalLeasedWorkRunner<
         const workerId = `${this.config.workerIdPrefix}-${process.pid}-${workerIndex}-${crypto.randomUUID()}`;
         try {
           while (!this.stopRequested) {
+            if (Date.now() < this.resumeNotBefore) return;
+            if (options.canClaim && !await options.canClaim()) {
+              this.resumeNotBefore = Date.now() + this.config.suspensionRetryDelayMs;
+              return;
+            }
             const item = await this.repository.claimNext(
               workerId,
               new Date(),
@@ -177,7 +194,7 @@ export class LocalLeasedWorkRunner<
             );
             if (!item) return;
             summary.claimed += 1;
-            if (this.stopRequested) {
+            if (this.stopRequested || Date.now() < this.resumeNotBefore) {
               const now = new Date();
               const released = await this.repository.release(
                 item.id,
@@ -206,6 +223,11 @@ export class LocalLeasedWorkRunner<
       );
       if (failedWorker) throw failedWorker.reason;
       summary.nextAvailableAt = await this.repository.getNextAvailableAt();
+      if (summary.nextAvailableAt && this.resumeNotBefore > Date.now()) {
+        summary.nextAvailableAt = new Date(Math.max(
+          summary.nextAvailableAt.getTime(), this.resumeNotBefore
+        ));
+      }
       return summary;
     } finally {
       this.running = false;
@@ -274,12 +296,11 @@ export class LocalLeasedWorkRunner<
       const clockGapMs = currentTickAt - lastMonitorTickAt;
       lastMonitorTickAt = currentTickAt;
       if (clockGapMs > this.config.maxClockGapMs) {
-        controller.abort(
-          new DOMException(
-            "System suspension detected; retrying local work",
-            "AbortError"
-          )
-        );
+        this.resumeNotBefore = currentTickAt + this.config.suspensionRetryDelayMs;
+        // Pause every leased task, including tasks waiting for a resource gate.
+        for (const active of this.activeControllers.values()) {
+          if (!active.signal.aborted) active.abort(new LocalWorkSuspendedError());
+        }
         return;
       }
       const currentMonitor = monitor();
@@ -333,6 +354,16 @@ export class LocalLeasedWorkRunner<
         if (!released) {
           await this.persistRacedCancellation(item.id, workerId, now, summary);
         }
+      } else if (controller.signal.reason instanceof LocalWorkSuspendedError) {
+        const defer = this.repository.deferSuspended ?? this.repository.defer;
+        const deferred = defer
+          ? await defer.call(this.repository,
+            item.id, workerId, controller.signal.reason,
+            new Date(this.resumeNotBefore), now, Math.max(0, item.attemptCount - 1)
+          )
+          : await this.repository.release(item.id, workerId, item.attemptCount, now);
+        if (deferred) summary.retried += 1;
+        else await this.persistRacedCancellation(item.id, workerId, now, summary);
       } else if (isRateLimitError(error) && this.repository.defer) {
         const until = new Date(Math.ceil((now.getTime() + Math.max(30_000, getRetryAfterMs(error) ?? 0)) / 1000) * 1000);
         const deferred = await this.repository.defer(item.id, workerId,

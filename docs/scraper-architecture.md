@@ -48,7 +48,7 @@ The preferred order is:
 
 This hybrid approach remains the right fit for a local application. Replacing every scraper with a headless browser would increase memory usage and failure surface. Replacing platform adapters with a generic AI extraction step would make results slower, less deterministic, and harder to test. AI-assisted extraction can be added later as an explicit fallback, but should not become the primary path for ATS platforms with structured endpoints.
 
-External payload validation is strict for the response envelope and job identity fields, but tolerant of optional, nullable, and polymorphic metadata. When some jobs are malformed, adapters retain usable jobs, mark listing completeness as partial, and prevent missing-job archival.
+External payload validation is strict for the response envelope and job identity fields, but tolerant of optional, nullable, and polymorphic metadata. Workday accepts null optional listing metadata, reports the names of rejected fields without logging payload values, and keeps malformed or incomplete lists partial. Eightfold first-page failures retain the fetch stage, offset and HTTP status. When some jobs are malformed, adapters retain usable jobs, mark listing completeness as partial, and prevent missing-job archival.
 
 Queue items use a static platform priority derived from production history. Eightfold is ranked first, Workday next, and fast HTTP adapters follow. The ordered queue interleaves one fast adapter after every two browser-heavy items so the browser cap cannot consume every leased worker. This starts long jobs early, keeps an HTTP lane busy, and remains deterministic.
 
@@ -62,9 +62,9 @@ All adapters share the user-configured total concurrency budget. Eightfold and W
 - Job synchronization, company metadata, audit logging, and the matching handoff commit atomically.
 - If the process stops after job persistence but before queue completion, the queue result is rebuilt from the committed scrape log instead of scraping again.
 - Startup recovery handles expired work and schedules future retry or lease times.
-- A large heartbeat clock gap aborts and retries active leased work after system suspension instead of letting a stale browser request continue indefinitely.
+- A large heartbeat clock gap pauses every active leased task, including tasks waiting at resource gates. Interrupted tasks are deferred for at least one minute without spending a network retry attempt, even on the final attempt. Cancellation still takes precedence over deferral.
 - Browser-session bootstrap failures identify the sanitized launch, navigation, settle, or session-extraction stage without persisting cookies, tokens, headers, or response bodies.
-- Timer drift only marks scheduler recovery as pending. Recovery waits until the app has remained visible, focused, and online for ten seconds, preventing DarkWake from starting network work.
+- On macOS, dispatch checks system CPU, Graphics and Network capabilities before recovering leases or claiming work. CPU/network-only maintenance DarkWake defers dispatch for a minute; recovery remains backend-owned and needs no open browser tab. If the OS probe is unavailable, dispatch falls back to clock-gap recovery with a warning.
 - Eightfold and Workday retry missing list offsets with one refreshed browser session before committing a partial result. Workday also retries failed details once and retains listing-only jobs when hydration remains unavailable.
 - Uber follows the current server-rendered jobs pagination and hydrates details only for new jobs that pass early filters; verification pages are classified as retryable network failures.
 - ServiceNow follows all advertised listing pages up to a 100-page safety cap, retries failed navigation, and applies early filtering before detail hydration.
@@ -100,6 +100,8 @@ For local troubleshooting:
 6. Run `pnpm verify` before releasing scraper changes.
 
 ## Migration compatibility
+
+Known retired Postman and Swiggy sources are migrated in place to Workday and SmartRecruiters. The obsolete JioHotstar Lever source is disabled when a JioStar Workday board already exists, or migrated in place otherwise. These idempotent data repairs preserve disabled states, company IDs, jobs and application history. New installs use the updated preset catalog.
 
 Generated migrations are append-only once they may have been applied to a local database. Migrations 0012 through 0014 intentionally remain as a correction chain: the final schema is correct for fresh installs, while retaining the intermediate hashes keeps existing local databases compatible. Do not squash or rewrite those files; generate any future schema change with Drizzle.
 

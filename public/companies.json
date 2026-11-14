@@ -45,14 +45,6 @@
     "isActive": true
   },
   {
-    "name": "JioHotstar",
-    "careersUrl": "https://jobs.lever.co/jiostar",
-    "logoUrl": "https://play-lh.googleusercontent.com/bp4jknyVZ8yDKhER9thIS1p9MBeU2LABqBX-sO8uaL1h5_keqlgMUmXv-CjfRWaqKw",
-    "platform": "lever",
-    "boardToken": "jiostar",
-    "isActive": true
-  },
-  {
     "name": "Crunchyroll",
     "careersUrl": "https://www.crunchyroll.com/about/jobs",
     "logoUrl": "https://upload.wikimedia.org/wikipedia/commons/0/08/Crunchyroll_Logo.png",
@@ -62,10 +54,10 @@
   },
   {
     "name": "Postman",
-    "careersUrl": "https://job-boards.greenhouse.io/postman",
+    "careersUrl": "https://postman.wd108.myworkdayjobs.com/careers",
     "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT-TB9d5YXwtKhv4NWbpeTBVveYvcxu9gMJng&s",
-    "platform": "greenhouse",
-    "boardToken": "postman",
+    "platform": "workday",
+    "boardToken": "postman/careers",
     "isActive": true
   },
   {
@@ -444,10 +436,10 @@
   },
   {
     "name": "Swiggy",
-    "careersUrl": "https://careers.swiggy.com/#/careers",
+    "careersUrl": "https://jobs.smartrecruiters.com/SWIGGY",
     "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSOqDecYNB4XzOS5TFHmIBXBgf_DMPzKttsmw&s",
-    "platform": "mynexthire",
-    "boardToken": "swiggy",
+    "platform": "smartrecruiters",
+    "boardToken": "SWIGGY",
     "isActive": true
   },
   {

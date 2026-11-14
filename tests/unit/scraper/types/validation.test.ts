@@ -28,7 +28,7 @@ describe("scraper payload validation", () => {
         [{ id: "valid" }, { id: 42 }],
         "Example items"
       )
-    ).toEqual({ items: [{ id: "valid" }], invalidCount: 1 });
+    ).toEqual({ items: [{ id: "valid" }], invalidCount: 1, invalidFields: ["id"] });
   });
 
   it("rejects a non-empty collection with no usable items", () => {

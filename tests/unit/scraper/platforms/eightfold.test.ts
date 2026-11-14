@@ -28,6 +28,18 @@ function browserClient(bootstrap = vi.fn(async () => ({
 }
 
 describe("EightfoldScraper", () => {
+  it("preserves first-page HTTP status and stage without response bodies", async () => {
+    const scraper = new EightfoldScraper(
+      createHttpClientStub({ fetch: vi.fn(async () => new Response("sensitive upstream body", { status: 503 })) }),
+      browserClient(),
+      { retries: 0 }
+    );
+    const result = await scraper.scrape("https://nvidia.eightfold.ai/careers");
+    expect(result).toMatchObject({ outcome: "error", error: { code: "network_error", retryable: true } });
+    if (result.outcome !== "error") throw new Error("Expected error");
+    expect(result.error.message).toContain("stage=list-page, offset=0, HTTP 503");
+    expect(result.error.message).not.toContain("sensitive upstream body");
+  });
   it("uses direct HTTP and preserves configured source filters", async () => {
     const bootstrap = vi.fn(async () => {
       throw new Error("browser must remain unused");

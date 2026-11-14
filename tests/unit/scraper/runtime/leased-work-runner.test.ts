@@ -21,6 +21,7 @@ function createRepository(
     complete: vi.fn(async () => true),
     release: vi.fn(async () => true),
     retry: vi.fn(async () => true),
+    defer: vi.fn(async () => true),
     fail: vi.fn(async () => true),
     cancel: vi.fn(async () => true),
     recoverExpired: vi.fn(async () => ({ requeued: 0, failed: 0, cancelled: 0 })),
@@ -275,11 +276,11 @@ describe("LocalLeasedWorkRunner", () => {
     }
   });
 
-  it("retries work after detecting a suspended-system clock gap", async () => {
+  it("defers final-attempt work after suspension without consuming an attempt", async () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(new Date(0));
-      const repository = createRepository([createScrapeQueueItem()]);
+      const repository = createRepository([createScrapeQueueItem({ attemptCount: 3, maxAttempts: 3 })]);
       const handlerStarted = Promise.withResolvers<void>();
       const runner = new LocalLeasedWorkRunner(
         repository,
@@ -304,15 +305,77 @@ describe("LocalLeasedWorkRunner", () => {
       await vi.advanceTimersByTimeAsync(100);
       const summary = await runPromise;
 
-      expect(repository.retry).toHaveBeenCalledWith(
+      expect(repository.defer).toHaveBeenCalledWith(
         "item-1",
         expect.any(String),
-        "System suspension detected; retrying local work",
+        expect.objectContaining({ name: "AbortError" }),
         expect.any(Date),
-        expect.any(Date)
+        expect.any(Date),
+        2
       );
       expect(repository.heartbeat).not.toHaveBeenCalled();
+      expect(repository.retry).not.toHaveBeenCalled();
+      expect(repository.fail).not.toHaveBeenCalled();
       expect(summary.retried).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("pauses sibling tasks and new claims across dispatches after suspension", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(0);
+      const repository = createRepository([1, 2, 3].map((id) => createScrapeQueueItem({ id: `item-${id}` })));
+      vi.mocked(repository.getNextAvailableAt).mockResolvedValue(new Date(0));
+      const started = Promise.withResolvers<void>();
+      let active = 0;
+      const handler = vi.fn(async (_item, { signal }: { signal: AbortSignal }) => {
+        if (++active === 2) started.resolve();
+        return new Promise<void>((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      });
+      const runner = new LocalLeasedWorkRunner(repository, handler, {
+        concurrency: 2, heartbeatIntervalMs: 100, maxClockGapMs: 500,
+      });
+      const run = runner.runAvailable();
+      await started.promise;
+      vi.setSystemTime(10_000);
+      await vi.advanceTimersByTimeAsync(100);
+      const summary = await run;
+      expect(summary).toMatchObject({ claimed: 2, retried: 2, failed: 0 });
+      expect(summary.nextAvailableAt?.getTime()).toBe(70_100);
+      expect(repository.defer).toHaveBeenCalledTimes(2);
+      expect(await runner.runAvailable()).toMatchObject({ claimed: 0 });
+      expect(handler).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(60_000);
+      handler.mockResolvedValue(undefined);
+      expect(await runner.runAvailable()).toMatchObject({ claimed: 1, completed: 1 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("honors cancellation over suspension deferral", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(0);
+      const repository = createRepository([createScrapeQueueItem()]);
+      vi.mocked(repository.isCancellationRequested).mockResolvedValue(true);
+      const started = Promise.withResolvers<void>();
+      const runner = new LocalLeasedWorkRunner(repository, async (_item, { signal }) => {
+        started.resolve();
+        return new Promise<void>((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      }, { concurrency: 1, heartbeatIntervalMs: 100, maxClockGapMs: 500 });
+      const run = runner.runAvailable();
+      await started.promise;
+      vi.setSystemTime(10_000);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(await run).toMatchObject({ cancelled: 1, retried: 0 });
+      expect(repository.defer).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

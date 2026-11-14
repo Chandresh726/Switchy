@@ -60,6 +60,7 @@ interface TestServiceOptions {
   runnerConfig?: Partial<LocalLeasedWorkRunnerConfig>;
   deviceSleepInhibitor?: DeviceSleepInhibitor;
   settingsProvider?: ScrapeSettingsProvider;
+  isDeviceAwake?: () => Promise<boolean>;
 }
 
 function createService(
@@ -97,6 +98,7 @@ function createService(
     } satisfies DeviceSleepInhibitor);
   const service = new LocalScrapeQueueService({
     companyCatalog: scraperRepository,
+    isDeviceAwake: options.isDeviceAwake ?? (async () => true),
     sessionStore: scraperRepository,
     queueStore: queueRepository,
     workHandler,
@@ -118,6 +120,28 @@ function createService(
 }
 
 describe("LocalScrapeQueueService", () => {
+  it("leaves queued and expired final-attempt work untouched during DarkWake", async () => {
+    vi.useFakeTimers();
+    try {
+      const database = createTestDatabase();
+      const company = database.insert(companies).values({ name: "One", careersUrl: "https://example.com/one" }).returning().get();
+      const repository = new DrizzleLocalScrapeQueueRepository(database);
+      await repository.createSessionAndEnqueue({ sessionId: "darkwake", triggerSource: "scheduler", companyIds: [company.id], maxAttempts: 1 });
+      await repository.claimNext("suspended-worker", new Date(), 1_000);
+      database.update(scrapeQueueItems).set({ leaseExpiresAt: new Date(Date.now() - 1_000) }).run();
+      const awake = vi.fn(async () => false);
+      const { service, scrapeCompany } = createService(database, { queueRepository: repository, isDeviceAwake: awake });
+      expect(await service.recoverPending()).toMatchObject({ claimed: 0, failed: 0 });
+      expect(database.select().from(scrapeQueueItems).get()).toMatchObject({ status: "running", attemptCount: 1 });
+      expect(scrapeCompany).not.toHaveBeenCalled();
+      // Cancel before allowing the scheduled dispatcher to resume.
+      await service.cancelSession("darkwake");
+      awake.mockResolvedValue(true);
+      await vi.advanceTimersByTimeAsync(60_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   afterEach(() => {
     vi.restoreAllMocks();
   });
