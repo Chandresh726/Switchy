@@ -93,6 +93,9 @@ export function createFailureFromUnknown(error: unknown): ScraperErrorResult {
   }
 
   if (error instanceof HttpError) {
+    if (error.isBrowserChallenge) {
+      return createScraperFailure("browser_challenge", "Blocked by browser challenge", { statusCode: error.status });
+    }
     return createFailureForHttpStatus(error.status, error.message, error.retryAfterMs);
   }
 

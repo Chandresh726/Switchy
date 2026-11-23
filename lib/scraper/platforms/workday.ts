@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import type { Page } from "playwright";
 import { z } from "zod";
 
 import { containsHtml, processDescription } from "@/lib/jobs/description-processor";
@@ -15,6 +16,7 @@ import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation"
 import {
   HttpError,
   type IHttpClient,
+  type HttpRequestOptions,
 } from "@/lib/scraper/infrastructure/http-client";
 import {
   createScraperError,
@@ -29,6 +31,8 @@ import {
   type ScrapedJob,
   type ScraperResult,
 } from "@/lib/scraper/types";
+import { KeyedExecutionLock } from "@/lib/scraper/runtime/keyed-lock";
+
 import { AbstractBrowserScraper, DEFAULT_BROWSER_CONFIG } from "../core";
 import {
   isDetailFailuresTolerable,
@@ -138,6 +142,7 @@ type WorkdaySession = WorkdaySource & {
 
 type WorkdaySessionController = {
   readonly session: WorkdaySession;
+  readonly requestOptions: HttpRequestOptions;
   bootstrap(): Promise<WorkdaySession>;
 };
 
@@ -148,12 +153,13 @@ export type WorkdayConfig = BrowserScraperConfig & {
 };
 
 const WORKDAY_PAGE_SIZE = 20;
+const workdayLock = new KeyedExecutionLock<string>();
 
 const DEFAULT_WORKDAY_CONFIG: WorkdayConfig = {
   ...DEFAULT_BROWSER_CONFIG,
   parallelListFetches: 1,
-  detailBatchSize: 2,
-  listDelayMs: 250,
+  detailBatchSize: 1,
+  listDelayMs: 1_500,
 };
 
 export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
@@ -186,6 +192,40 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
   }
 
   async scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult> {
+    const release = await workdayLock.acquire("workday", getActiveScrapeSignal() ?? new AbortController().signal);
+    try {
+      try {
+        return await this.scrapeAttempt(url, options);
+      } catch (error) {
+        if (!(error instanceof HttpError) || !error.isBrowserChallenge) throw error;
+        // Keep the browser alive for the entire retry, including detail requests.
+        // Copying cookies back into Node fetch does not preserve a browser session.
+        try {
+          return await this.browserClient.withBrowser(async (page) => {
+            const source = new URL(url);
+            source.search = "";
+            source.hash = "";
+            const response = await page.goto(source.toString(), {
+              waitUntil: "domcontentloaded", timeout: this.config.timeout,
+            });
+            if (response && (await response.allHeaders())["cf-mitigated"] === "challenge") {
+              // Give the site's own browser checks a bounded opportunity to settle.
+              await page.waitForTimeout(3_000);
+            }
+            return this.scrapeAttempt(url, options, page);
+          });
+        } catch (browserError) {
+          throwIfScrapeAborted(browserError);
+          return this.failure("browser_challenge",
+            "Workday browser recovery could not complete after a browser challenge. Retry in a future run.");
+        }
+      }
+    } finally {
+      release();
+    }
+  }
+
+  private async scrapeAttempt(url: string, options?: ScrapeOptions, page?: Page): Promise<ScraperResult> {
     try {
       let parsedUrl = this.parseUrl(url);
       let detectedBoardToken: string | undefined;
@@ -212,7 +252,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         detectedBoardToken = `${parsedUrl.tenant}/${parsedUrl.board}`;
       }
 
-      const sessionController = this.createSessionController(parsedUrl);
+      const sessionController = this.createSessionController(parsedUrl, page);
       const listResult = await this.fetchAllJobListItems(sessionController);
       if (listResult instanceof WorkdayListError) {
         return this.toListFailure(listResult);
@@ -346,6 +386,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         issues: issues.length > 0 ? issues : undefined,
       };
     } catch (error) {
+      if (error instanceof HttpError && error.isBrowserChallenge) throw error;
       return this.failureFromUnknown(error);
     }
   }
@@ -366,6 +407,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       return this.failure("browser_error", error.describe());
     }
     if (cause instanceof HttpError) {
+      if (cause.isBrowserChallenge) throw cause;
       return createFailureForHttpStatus(cause.status, error.describe(), cause.retryAfterMs);
     }
     if (cause instanceof ScraperPayloadError) {
@@ -437,7 +479,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
     return { searchText, appliedFacets };
   }
 
-  private createSessionController(source: WorkdaySource): WorkdaySessionController {
+  private createSessionController(source: WorkdaySource, page?: Page): WorkdaySessionController {
     let activeSession: WorkdaySession = {
       ...source,
       cookies: "",
@@ -446,7 +488,23 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
     let bootstrapInFlight: Promise<WorkdaySession> | null = null;
     let bootstrapAttempted = false;
 
+    const transport: HttpRequestOptions["transport"] = page ? async (url, init) => {
+      const headers = new Headers(init.headers);
+      for (const name of ["cookie", "origin", "referer", "user-agent"]) headers.delete(name);
+      const response = await page.evaluate(async ({ url, method, headers, body, timeout }) => {
+        const result = await fetch(url, {
+          method, headers, body, credentials: "same-origin", redirect: "error",
+          signal: AbortSignal.timeout(timeout),
+        });
+        return { status: result.status, statusText: result.statusText,
+          headers: Array.from(result.headers.entries()), body: await result.text() };
+      }, { url, method: init.method, headers: Array.from(headers.entries()),
+        body: typeof init.body === "string" ? init.body : undefined, timeout: this.config.timeout });
+      return new Response(response.body || null, response);
+    } : undefined;
+
     return {
+      requestOptions: { transport, minIntervalMs: this.config.listDelayMs },
       get session() {
         return activeSession;
       },
@@ -488,7 +546,8 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
     try {
       return await request(controller.session);
     } catch (error) {
-      if (!(error instanceof HttpError) || (error.status !== 401 && error.status !== 403)) {
+      if (!(error instanceof HttpError) || error.isBrowserChallenge ||
+        controller.requestOptions.transport || (error.status !== 401 && error.status !== 403)) {
         throw error;
       }
       const session = await controller.bootstrap();
@@ -512,7 +571,8 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
             offset,
             searchText: session.searchText,
           },
-          this.createRequestHeaders(session, true)
+          this.createRequestHeaders(session, true),
+          controller.requestOptions
         );
       });
 
@@ -612,7 +672,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       const offsets = [...missingOffsets];
       let stopped = false;
       for (let index = 0; index < offsets.length; index += this.config.parallelListFetches) {
-        if (consecutiveFailures >= 3 || Date.now() - startedAt > 120_000) {
+        if (consecutiveFailures >= 3 || Date.now() - startedAt > 15 * 60_000) {
           diagnostics.push("Listing sweep stopped at its failure or time budget");
           stopped = true;
           break;
@@ -645,8 +705,11 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         }
         persist();
         const fatal = results.find(({ error }) => error instanceof WorkdayListError &&
-          (error.status === 429 || error.stage === "bootstrap"));
+          (error.status === 429 || error.stage === "bootstrap" ||
+            (error.cause instanceof HttpError && error.cause.isBrowserChallenge)));
         if (fatal?.error) {
+          if (fatal.error instanceof WorkdayListError && fatal.error.cause instanceof HttpError &&
+            fatal.error.cause.isBrowserChallenge) throw fatal.error.cause;
           if (fatal.error instanceof WorkdayListError && fatal.error.status === 429 && this.state) {
             return fatal.error;
           }
@@ -690,7 +753,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
     try {
       const payload = await this.withSessionFallback(controller, (session) => {
         const url = `${session.baseUrl}/wday/cxs/${session.tenant}/${session.board}/job/${jobPostingId}`;
-        return this.fetch<unknown>(url, this.createRequestHeaders(session));
+        return this.fetch<unknown>(url, this.createRequestHeaders(session), controller.requestOptions);
       });
 
       return parseExternalPayload(
@@ -699,6 +762,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         "Workday job detail"
       );
     } catch (error) {
+      if (error instanceof HttpError && (error.isBrowserChallenge || error.status === 429)) throw error;
       throwIfScrapeAborted(error);
       return null;
     }
@@ -746,7 +810,8 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           postedDate: this.parsePostedDate(job.postedOn),
         };
       } catch (error) {
-        if (error instanceof BrowserSessionBootstrapError) throw error;
+        if (error instanceof BrowserSessionBootstrapError ||
+          (error instanceof HttpError && (error.isBrowserChallenge || error.status === 429))) throw error;
         throwIfScrapeAborted(error);
         failedJobs.push(job);
         return null;

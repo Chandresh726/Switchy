@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import type { Page } from "playwright";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { IBrowserClient } from "@/lib/scraper/infrastructure/browser-client";
 import {
+  FetchHttpClient,
   HttpError,
   type HttpRequestOptions,
   type IHttpClient,
@@ -58,6 +60,93 @@ function directHttpClient(): IHttpClient {
 }
 
 describe("WorkdayScraper", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([false, true])("bounds browser challenge recovery, persistent=%s", async (persistent) => {
+    const values = new Map<string, unknown>();
+    const state = { get: (key: string) => values.get(key),
+      set: (key: string, value: unknown) => { values.set(key, value); },
+      delete: (key: string) => { values.delete(key); } };
+    const challenge = () => new Response("challenge", { status: 429, headers: { "cf-mitigated": "challenge" } });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(challenge());
+    if (persistent) fetchMock.mockImplementation(async () => challenge());
+    else fetchMock.mockResolvedValueOnce(Response.json({ total: 1, jobPostings: [listing(1)] }))
+      .mockResolvedValueOnce(Response.json(detail("REQ-1")));
+    vi.stubGlobal("fetch", fetchMock);
+    const evaluate = vi.fn(async (fn, args) => fn(args));
+    const page = { goto: vi.fn(async () => null), evaluate } as unknown as Page;
+    const browser = browserClient();
+    vi.mocked(browser.withBrowser).mockImplementation(async (callback) => callback(page));
+    const result = await new WorkdayScraper(new FetchHttpClient({}, state), browser,
+      { listDelayMs: 0 }, state).scrape("https://acme.wd5.myworkdayjobs.com/Acme");
+    expect(browser.withBrowser).toHaveBeenCalledTimes(1);
+    expect(browser.bootstrap).not.toHaveBeenCalled();
+    expect([...values.keys()].filter((key) => key.startsWith("cooldown:"))).toEqual([]);
+    if (persistent) {
+      expect(result).toMatchObject({ outcome: "error", error: { code: "browser_challenge", retryable: false } });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } else {
+      expect(result).toMatchObject({ outcome: "success", listingCompleteness: "complete" });
+      expect(result.jobs).toHaveLength(1);
+      expect(evaluate).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it("defers actual detail throttling instead of accepting empty descriptions", async () => {
+    const http = directHttpClient();
+    vi.mocked(http.get).mockRejectedValue(new HttpError(429, "Too Many Requests", "https://acme.wd5.myworkdayjobs.com/job/1",
+      new Headers({ "retry-after": "90" })));
+    const browser = browserClient();
+    const result = await new WorkdayScraper(http, browser).scrape("https://acme.wd5.myworkdayjobs.com/Acme");
+    expect(result).toMatchObject({ outcome: "error", error: { code: "rate_limited", retryAfterMs: 90_000 } });
+    expect(http.get).toHaveBeenCalledTimes(1);
+    expect(browser.withBrowser).not.toHaveBeenCalled();
+  });
+
+  it("serializes Workday companies across scraper instances", async () => {
+    let finishFirst!: () => void;
+    const pending = new Promise<void>((resolve) => { finishFirst = resolve; });
+    const http = directHttpClient();
+    vi.mocked(http.post).mockImplementationOnce(async () => {
+      await pending;
+      return { total: 0, jobPostings: [] };
+    }).mockResolvedValue({ total: 0, jobPostings: [] });
+    const first = new WorkdayScraper(http, browserClient()).scrape("https://acme.wd5.myworkdayjobs.com/Acme");
+    await vi.waitFor(() => expect(http.post).toHaveBeenCalledTimes(1));
+    const second = new WorkdayScraper(http, browserClient()).scrape("https://other.wd5.myworkdayjobs.com/Other");
+    await Promise.resolve();
+    expect(http.post).toHaveBeenCalledTimes(1);
+    finishFirst();
+    expect((await first).outcome).toBe("success");
+    expect((await second).outcome).toBe("success");
+    expect(http.post).toHaveBeenCalledTimes(2);
+  });
+
+  it("recovers a later-page challenge while keeping mixed listing snapshots unsafe for archival", async () => {
+    const values = new Map<string, unknown>();
+    const state = { get: (key: string) => values.get(key),
+      set: (key: string, value: unknown) => { values.set(key, value); },
+      delete: (key: string) => { values.delete(key); } };
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+      const offset = JSON.parse(String(init?.body)).offset as number;
+      if (fetchMock.mock.calls.length === 2) return new Response("challenge", {
+        status: 403, headers: { "cf-mitigated": "challenge" },
+      });
+      return Response.json({ total: 40, jobPostings: Array.from({ length: 20 }, (_, i) => listing(offset + i + 1)) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const page = { goto: vi.fn(async () => null), evaluate: vi.fn(async (fn, args) => fn(args)) } as unknown as Page;
+    const browser = browserClient();
+    vi.mocked(browser.withBrowser).mockImplementation(async (callback) => callback(page));
+    const result = await new WorkdayScraper(new FetchHttpClient({}, state), browser,
+      { listDelayMs: 0 }, state).scrape("https://acme.wd5.myworkdayjobs.com/Acme", {
+        existingExternalIds: new Set(Array.from({ length: 40 }, (_, i) => `workday-Acme-REQ-${i + 1}`)),
+      });
+    expect(result).toMatchObject({ outcome: "partial", listingCompleteness: "partial", totalListings: 40 });
+    expect(browser.withBrowser).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
   it("resumes saved pages after throttling and keeps mixed snapshots unsafe for archival", async () => {
     const values = new Map<string, unknown>();
     const state = { get: (key: string) => values.get(key),

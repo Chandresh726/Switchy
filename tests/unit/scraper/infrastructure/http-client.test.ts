@@ -28,6 +28,37 @@ describe("FetchHttpClient", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("does not retry or persist cooldowns for browser challenges", async () => {
+    const state = { get: vi.fn(), set: vi.fn(), delete: vi.fn() };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response("challenge", {
+      status: 429, headers: { "cf-mitigated": "challenge", "content-type": "text/html" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new FetchHttpClient({ retries: 3 }, state);
+    await expect(client.post("https://example.com/jobs", {})).rejects.toMatchObject({
+      isBrowserChallenge: true, isRateLimited: false,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(state.set).not.toHaveBeenCalled();
+  });
+
+  it("paces transport attempts and relaxes cooldown strikes after successful requests", async () => {
+    const values = new Map<string, unknown>([["cooldown:example.com", { until: 0, strikes: 5 }]]);
+    const state = { get: (key: string) => values.get(key),
+      set: (key: string, value: unknown) => { values.set(key, value); },
+      delete: (key: string) => { values.delete(key); } };
+    const transport = vi.fn(async () => new Response("{}"));
+    const client = new FetchHttpClient({}, state);
+    await client.get("https://example.com/one", { transport, minIntervalMs: 1500 });
+    const second = client.get("https://example.com/two", { transport, minIntervalMs: 1500 });
+    await vi.advanceTimersByTimeAsync(1499);
+    expect(transport).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await second;
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect(values.get("cooldown:example.com")).toEqual({ until: 0, strikes: 3 });
+  });
+
   it("never truncates a long server-requested wait even without a state store", async () => {
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(
       new Response("busy", { status: 503, headers: { "Retry-After": "120" } })));

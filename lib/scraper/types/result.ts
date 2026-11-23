@@ -12,6 +12,7 @@ export type ScraperErrorCode =
   | "network_error"
   | "parse_error"
   | "auth_required"
+  | "browser_challenge"
   | "browser_error"
   | "csrf_error"
   | "timeout"

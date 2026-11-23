@@ -176,9 +176,11 @@ function buildMetaItems(
 ): Array<string | false | null | undefined> {
   return [
     queueItem &&
-      (queueItem.attemptCount === 0
-        ? "Not started"
-        : `Attempt ${queueItem.attemptCount} of ${queueItem.maxAttempts}`),
+      (queueItem.attemptCount > 0
+        ? `Attempt ${queueItem.attemptCount} of ${queueItem.maxAttempts}`
+        : queueItem.status === "queued"
+          ? (queueItem.startedAt || queueItem.lastError ? "Waiting for retry" : "Not started")
+          : false),
     latestLog?.duration !== null &&
       latestLog?.duration !== undefined &&
       formatDurationMs(latestLog.duration),
@@ -191,7 +193,7 @@ function buildMetaItems(
     queueItem?.startedAt &&
       `Started ${formatDateTime(new Date(queueItem.startedAt))}`,
     queueItem?.status === "queued" &&
-      queueItem.attemptCount > 0 &&
+      (queueItem.attemptCount > 0 || Boolean(queueItem.startedAt) || Boolean(queueItem.lastError)) &&
       `Retry at ${formatDateTime(new Date(queueItem.availableAt))}`,
     queueItem?.status === "running" &&
       queueItem.leaseExpiresAt &&

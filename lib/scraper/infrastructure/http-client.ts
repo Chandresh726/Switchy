@@ -17,6 +17,8 @@ export interface HttpClientConfig {
 }
 
 export interface HttpRequestOptions extends RequestInit {
+  transport?: (url: string, options: RequestInit) => Promise<Response>;
+  minIntervalMs?: number;
   timeout?: number;
   retries?: number;
   baseDelay?: number;
@@ -88,6 +90,7 @@ function parseScrapeHost(url: string): string {
 
 export class FetchHttpClient implements IHttpClient {
   private readonly defaultConfig: HttpClientConfig;
+  private readonly lastRequestAt = new Map<string, number>();
   private readonly activeByHost = new Map<string, number>();
   private readonly waitersByHost = new Map<string, HostWaiter[]>();
 
@@ -111,6 +114,8 @@ export class FetchHttpClient implements IHttpClient {
       baseDelay = this.defaultConfig.baseDelay,
       maxDelay = this.defaultConfig.maxDelay,
       signal: explicitSignal,
+      transport,
+      minIntervalMs = 0,
       ...fetchOptions
     } = options;
     const signal = explicitSignal ?? getActiveScrapeSignal();
@@ -122,6 +127,8 @@ export class FetchHttpClient implements IHttpClient {
       maxDelay,
       timeout,
       signal,
+      transport,
+      minIntervalMs,
     });
   }
 
@@ -182,6 +189,8 @@ export class FetchHttpClient implements IHttpClient {
     maxDelay: number;
     timeout: number;
     signal?: AbortSignal;
+    transport?: HttpRequestOptions["transport"];
+    minIntervalMs: number;
   }): Promise<Response> {
     let attempt = 0;
     let currentUrl = args.url;
@@ -203,8 +212,12 @@ export class FetchHttpClient implements IHttpClient {
       );
 
       try {
+        const host = parseScrapeHost(currentUrl);
+        const waitMs = (this.lastRequestAt.get(host) ?? 0) + args.minIntervalMs - Date.now();
+        if (waitMs > 0) await this.delay(waitMs, attemptController.signal);
         this.checkCooldown(currentUrl);
-        const response = await fetch(currentUrl, {
+        this.lastRequestAt.set(host, Date.now());
+        const response = await (args.transport ?? fetch)(currentUrl, {
           redirect: "manual",
           ...currentOptions,
           signal: attemptController.signal,
@@ -240,12 +253,27 @@ export class FetchHttpClient implements IHttpClient {
           continue;
         }
 
+        // A browser challenge is not a rate limit, regardless of its HTTP status.
+        if (response.headers.get("cf-mitigated") === "challenge") {
+          this.state?.delete(`cooldown:${host}`);
+          await this.discardResponse(response);
+          throw new HttpError(response.status, "Blocked by browser challenge", currentUrl, response.headers);
+        }
+        if (response.ok && this.state) {
+          const key = `cooldown:${host}`;
+          const previous = this.state.get(key) as { strikes?: number } | undefined;
+          if (previous?.strikes) {
+            if (previous.strikes <= 1) this.state.delete(key);
+            else this.state.set(key, { until: 0, strikes: previous.strikes - 1 },
+              new Date(Date.now() + 24 * 60 * 60 * 1000));
+          }
+        }
         if (response.status === 429 && this.state) {
           const key = `cooldown:${parseScrapeHost(currentUrl)}`;
           const previous = this.state.get(key) as { strikes?: number } | undefined;
           const strikes = Math.min(5, (previous?.strikes ?? 0) + 1);
           const delay = Math.max(this.parseRetryAfter(response.headers.get("retry-after")) ?? 0,
-            60_000 * 2 ** (strikes - 1));
+            60_000 * 2 ** (strikes - 1) * (1 + Math.random() * this.defaultConfig.jitterRatio));
           const until = Date.now() + delay;
           this.state.set(key, { until, strikes }, new Date(until + 24 * 60 * 60 * 1000));
           const buffered = await this.bufferResponse(response, currentUrl);
@@ -425,8 +453,12 @@ export class HttpError extends Error {
     return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
   }
 
+  get isBrowserChallenge(): boolean {
+    return this.responseHeaders?.get("cf-mitigated") === "challenge";
+  }
+
   get isRateLimited(): boolean {
-    return this.status === 429;
+    return this.status === 429 && !this.isBrowserChallenge;
   }
 
   get isClientError(): boolean {

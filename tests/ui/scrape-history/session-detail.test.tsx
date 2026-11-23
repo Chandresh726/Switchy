@@ -140,6 +140,18 @@ describe("SessionDetail", () => {
     mocks.push.mockReset();
   });
 
+  it("shows deferred retry timing even when rate limits preserve the attempt budget", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(sessionResponse("in_progress", [queueItem({
+      status: "queued", attemptCount: 0, workerId: null,
+      lastError: "Host rate limit cooldown is active", availableAt: "2026-07-13T10:16:00.000Z",
+    }), queueItem({ id: "queue-2", companyId: 8, companyName: "Other", status: "failed",
+      attemptCount: 0, lastError: "Browser challenge", workerId: null })]))));
+    renderWithQueryClient(<SessionDetail sessionId={SESSION_ID} />);
+    expect(await screen.findByText("Waiting for retry")).toBeTruthy();
+    expect(screen.getByText(/Retry at/)).toBeTruthy();
+    expect(screen.queryByText("Not started")).toBeNull();
+  });
+
   it("shows durable retry, lease, and error metadata and blocks deletion while work is active", async () => {
     vi.stubGlobal(
       "fetch",
