@@ -1,12 +1,12 @@
-import cron from "node-cron";
-import { eq, inArray } from "drizzle-orm";
+import { eq,inArray } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import cron from "node-cron";
 
-import { ValidationError } from "@/lib/errors";
 import { isReasoningEffort } from "@/lib/ai/providers/types";
 import { db } from "@/lib/db";
-import { settings } from "@/lib/db/schema";
 import type * as databaseSchema from "@/lib/db/schema";
+import { settings } from "@/lib/db/schema";
+import { ValidationError } from "@/lib/errors";
 import { SCRAPER_SETTINGS } from "@/lib/scraper/settings/definitions";
 import { safeJsonParse } from "@/lib/utils/safe-json";
 
@@ -219,120 +219,90 @@ function normalizeCoverLetterFocus(value: unknown): string {
 function parseSettingValue(
   key: SettingKey,
   value: unknown
-): { value: string; cronUpdated: boolean; enabledChanged: boolean; newEnabledValue: boolean | null; keepAwakeChanged: boolean } {
+): string {
   switch (key) {
     case "matcher_batch_size":
-      return { value: parseNumberInRange(key, value, 1, 10), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return parseNumberInRange(key, value, 1, 10);
     case "matcher_max_retries":
-      return { value: parseNumberInRange(key, value, 1, 10), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return parseNumberInRange(key, value, 1, 10);
     case "matcher_concurrency_limit":
-      return { value: parseNumberInRange(key, value, 1, 10), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return parseNumberInRange(key, value, 1, 10);
     case "matcher_timeout_ms":
-      return { value: parseNumberInRange(key, value, 5_000, 120_000), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return parseNumberInRange(key, value, 5_000, 120_000);
     case "matcher_backoff_base_delay":
-      return { value: parseNumberInRange(key, value, 500, 10_000), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return parseNumberInRange(key, value, 500, 10_000);
     case "matcher_backoff_max_delay":
-      return { value: parseNumberInRange(key, value, 5_000, 120_000), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return parseNumberInRange(key, value, 5_000, 120_000);
     case "job_analysis_fallback_enabled":
     case "matcher_fallback_enabled":
     case "matcher_auto_match_after_scrape":
     case "notifications_enabled":
-      return { value: parseBooleanValue(value), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return parseBooleanValue(value);
     case "scraper_keep_device_awake":
-      return { value: parseBooleanValue(value), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: true };
+      return parseBooleanValue(value);
     case "notifications_match_score_threshold":
-      return { value: parseNumberInRange(key, value, 0, 100), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return parseNumberInRange(key, value, 0, 100);
     case "scheduler_cron": {
       const cronExpr = String(value ?? "").trim();
       if (!cron.validate(cronExpr)) {
         throw new ValidationError("Invalid cron expression", "invalid_request");
       }
-      return { value: cronExpr, cronUpdated: true, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return cronExpr;
     }
     case "scheduler_enabled": {
       const parsed = parseBooleanValue(value);
-      return {
-        value: parsed,
-        cronUpdated: false,
-        enabledChanged: true,
-        newEnabledValue: parsed === "true",
-        keepAwakeChanged: false,
-      };
+      return parsed;
     }
     case "matcher_model":
     case "job_analysis_model":
     case "resume_parser_model":
     case "ai_writing_model":
-      return { value: ensureNonEmptyString(key, value), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return ensureNonEmptyString(key, value);
     case "job_analysis_fallback_reasoning_effort":
     case "matcher_fallback_reasoning_effort":
     case "matcher_reasoning_effort":
     case "job_analysis_reasoning_effort":
     case "resume_parser_reasoning_effort":
     case "ai_writing_reasoning_effort":
-      return {
-        value: normalizeReasoningSetting(key, value),
-        cronUpdated: false,
-        enabledChanged: false,
-        newEnabledValue: null,
-        keepAwakeChanged: false,
-      };
+      return normalizeReasoningSetting(key, value);
     case "scraper_filter_country":
     case "scraper_filter_city":
-      return { value: String(value ?? ""), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return String(value ?? "");
     case "scraper_max_parallel_scrapes": {
       const setting = SCRAPER_SETTINGS.maxParallelScrapes;
-      return { value: parseNumberInRange(key, value, setting.minimum, setting.maximum), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return parseNumberInRange(key, value, setting.minimum, setting.maximum);
     }
     case "scraper_history_retention_days": {
       const setting = SCRAPER_SETTINGS.historyRetentionDays;
-      return { value: parseNumberInRange(key, value, setting.minimum, setting.maximum), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return parseNumberInRange(key, value, setting.minimum, setting.maximum);
     }
     case "scraper_stale_job_archive_days": {
       const setting = SCRAPER_SETTINGS.staleJobArchiveDays;
-      return { value: parseNumberInRange(key, value, setting.minimum, setting.maximum), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return parseNumberInRange(key, value, setting.minimum, setting.maximum);
     }
     case "scraper_filter_title_keywords":
-      return { value: normalizeTitleKeywords(value), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return normalizeTitleKeywords(value);
     case "referral_tone":
     case "follow_up_tone":
-      return {
-        value: ensureEnum(key, value, ["professional", "casual", "friendly", "flexible"] as const),
-        cronUpdated: false,
-        enabledChanged: false,
-        newEnabledValue: null,
-        keepAwakeChanged: false,
-      };
+      return ensureEnum(key, value, ["professional", "casual", "friendly", "flexible"] as const);
     case "referral_length":
     case "follow_up_length":
     case "cover_letter_length":
-      return {
-        value: ensureEnum(key, value, ["short", "medium", "long"] as const),
-        cronUpdated: false,
-        enabledChanged: false,
-        newEnabledValue: null,
-        keepAwakeChanged: false,
-      };
+      return ensureEnum(key, value, ["short", "medium", "long"] as const);
     case "cover_letter_tone":
-      return {
-        value: ensureEnum(key, value, ["professional", "formal", "casual", "flexible"] as const),
-        cronUpdated: false,
-        enabledChanged: false,
-        newEnabledValue: null,
-        keepAwakeChanged: false,
-      };
+      return ensureEnum(key, value, ["professional", "formal", "casual", "flexible"] as const);
     case "cover_letter_focus":
-      return { value: normalizeCoverLetterFocus(value), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return normalizeCoverLetterFocus(value);
     case "matcher_provider_id":
     case "job_analysis_provider_id":
     case "resume_parser_provider_id":
     case "ai_writing_provider_id":
-      return { value: String(value ?? "").trim(), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return String(value ?? "").trim();
     case "codex_cli_executable":
     case "opencode_cli_executable":
-      return { value: String(value ?? "").trim(), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return String(value ?? "").trim();
     default:
-      return { value: String(value ?? ""), cronUpdated: false, enabledChanged: false, newEnabledValue: null, keepAwakeChanged: false };
+      return String(value ?? "");
   }
 }
 
@@ -342,32 +312,23 @@ export function parseSettingsUpdateBody(body: unknown): ParsedSettingsUpdateResu
   }
 
   const updates: ParsedSettingUpdate[] = [];
-  let cronUpdated = false;
-  let enabledChanged = false;
-  let newEnabledValue: boolean | null = null;
-  let keepAwakeChanged = false;
 
   for (const [rawKey, rawValue] of Object.entries(body)) {
     if (!isSettingKey(rawKey) || SERVER_MANAGED_SETTING_KEYS.has(rawKey)) {
       continue;
     }
 
-    const parsed = parseSettingValue(rawKey, rawValue);
-    updates.push({ key: rawKey, value: parsed.value });
-    cronUpdated = cronUpdated || parsed.cronUpdated;
-    enabledChanged = enabledChanged || parsed.enabledChanged;
-    keepAwakeChanged = keepAwakeChanged || parsed.keepAwakeChanged;
-    if (parsed.newEnabledValue !== null) {
-      newEnabledValue = parsed.newEnabledValue;
-    }
+    updates.push({ key: rawKey, value: parseSettingValue(rawKey, rawValue) });
   }
 
+  const touched = new Set(updates.map(({ key }) => key));
+  const enabled = updates.find(({ key }) => key === "scheduler_enabled");
   return {
     updates,
-    cronUpdated,
-    enabledChanged,
-    newEnabledValue,
-    keepAwakeChanged,
+    cronUpdated: touched.has("scheduler_cron"),
+    enabledChanged: Boolean(enabled),
+    newEnabledValue: enabled ? enabled.value === "true" : null,
+    keepAwakeChanged: touched.has("scraper_keep_device_awake"),
   };
 }
 

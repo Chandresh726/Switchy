@@ -1,39 +1,15 @@
 import { resolveReasoningSelection } from "@/components/settings/reasoning-effort-control";
 import type {
-  ProviderSettingsListItem,
-  Settings,
+ProviderSettingsListItem,
+Settings,
 } from "@/lib/api/contracts/settings";
 import type {
-  ProviderModelsState,
-  ReasoningEffort,
+ProviderModelsState,
+ReasoningEffort,
 } from "@/lib/settings/types";
 
-export const AI_MODEL_FEATURES = {
-  job_analysis: {
-    label: "Job Analysis",
-    provider: "job_analysis_provider_id",
-    model: "job_analysis_model",
-    reasoning: "job_analysis_reasoning_effort",
-  },
-  matcher: {
-    label: "Matcher",
-    provider: "matcher_provider_id",
-    model: "matcher_model",
-    reasoning: "matcher_reasoning_effort",
-  },
-  resume_parser: {
-    label: "Resume Parser",
-    provider: "resume_parser_provider_id",
-    model: "resume_parser_model",
-    reasoning: "resume_parser_reasoning_effort",
-  },
-  ai_writing: {
-    label: "AI Writing",
-    provider: "ai_writing_provider_id",
-    model: "ai_writing_model",
-    reasoning: "ai_writing_reasoning_effort",
-  },
-} as const;
+import { AI_MODEL_FEATURES } from "@/lib/settings/ai-features";
+export { AI_MODEL_FEATURES } from "@/lib/settings/ai-features";
 
 type ModelFeature = keyof typeof AI_MODEL_FEATURES;
 interface FeatureModelEdits {

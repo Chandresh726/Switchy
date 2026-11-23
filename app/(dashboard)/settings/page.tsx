@@ -1,87 +1,71 @@
 "use client";
 
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation,useQuery,useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo,useState } from "react";
 import { toast } from "sonner";
 
-import { clearAllAIContent } from "@/lib/api/clients/ai";
-import { getReadiness, getRuntimeHealth } from "@/lib/api/clients/health";
-import { clearJobMatchData, clearJobs } from "@/lib/api/clients/jobs";
-import {
-  createProvider,
-  deleteProvider,
-  getLocalCLIStatus,
-  getProviderModels,
-  getProviders,
-  updateProvider,
-  updateProviderApiKey,
-} from "@/lib/api/clients/providers";
-import {
-  getUnmatchedJobsCount,
-  queueUnmatchedJobs,
-} from "@/lib/api/clients/runtime";
-import { getSettings, patchSettings } from "@/lib/api/clients/settings";
-import { AI_MODEL_FEATURES, resolveFeatureModel } from "@/components/settings/feature-model-settings";
-import { useSettingsAutosave } from "@/components/settings/use-settings-autosave";
+import { AIProvidersManager } from "@/components/settings/ai-providers-manager";
+import { AIWritingSection,type AIWritingSettings } from "@/components/settings/ai-writing-section";
 import { AppearanceSection } from "@/components/settings/appearance-section";
-import { MatcherFallbackSettings, type FallbackSettings } from "@/components/settings/matcher-fallback-settings";
+import { ApplicationSettings } from "@/components/settings/application-settings";
+import { DangerZone } from "@/components/settings/danger-zone";
+import { AI_MODEL_FEATURES,resolveFeatureModel } from "@/components/settings/feature-model-settings";
+import { MatcherFallbackSettings,type FallbackSettings } from "@/components/settings/matcher-fallback-settings";
 import { MatcherSection } from "@/components/settings/matcher-section";
 import { NotificationsSection } from "@/components/settings/notifications-section";
-import { ApplicationSettings } from "@/components/settings/application-settings";
-import { VersionUpdate } from "@/components/settings/version-update";
-import { ScraperSettings } from "@/components/settings/scraper-settings";
-import { DangerZone } from "@/components/settings/danger-zone";
-import { ResumeParserSection } from "@/components/settings/resume-parser-section";
-import { SystemInfo } from "@/components/settings/system-info";
-import { AIWritingSection, type AIWritingSettings } from "@/components/settings/ai-writing-section";
-import { AIProvidersManager } from "@/components/settings/ai-providers-manager";
 import {
-  hasInvalidReasoningSelection,
-  resolveReasoningSelection,
+hasInvalidReasoningSelection,
+resolveReasoningSelection,
 } from "@/components/settings/reasoning-effort-control";
+import { ResumeParserSection } from "@/components/settings/resume-parser-section";
+import { ScraperSettings } from "@/components/settings/scraper-settings";
+import { SystemInfo } from "@/components/settings/system-info";
+import { useModelReconciliation } from "@/components/settings/use-model-reconciliation";
+import { useSettingsAutosave } from "@/components/settings/use-settings-autosave";
+import { useSettingsProviders } from "@/components/settings/use-settings-providers";
+import { VersionUpdate } from "@/components/settings/version-update";
 import { ApiErrorState } from "@/components/ui/api-error-state";
 import { getProviderMetadata } from "@/lib/ai/providers/metadata";
 import {
-  isLocalCLIProvider,
-  type AIProvider,
-  type LocalCLIProvider,
+type AIProvider
 } from "@/lib/ai/providers/types";
-import { APP_VERSION, DB_PATH } from "@/lib/constants";
+import { clearAllAIContent } from "@/lib/api/clients/ai";
+import { getReadiness,getRuntimeHealth } from "@/lib/api/clients/health";
+import { clearJobMatchData,clearJobs } from "@/lib/api/clients/jobs";
+import {
+getUnmatchedJobsCount,
+queueUnmatchedJobs,
+} from "@/lib/api/clients/runtime";
+import { getSettings,patchSettings } from "@/lib/api/clients/settings";
+import type {
+Settings
+} from "@/lib/api/contracts/settings";
+import { getApiErrorMessage } from "@/lib/api/error-presentation";
+import { APP_VERSION,DB_PATH } from "@/lib/constants";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
+import { cacheOwnership,queryKeys } from "@/lib/query-keys";
+import { SCRAPER_SETTINGS } from "@/lib/scraper/settings/definitions";
 import type {
-  ProviderModelsResponse,
-  ProviderSettingsListItem,
-  Settings,
-} from "@/lib/api/contracts/settings";
-import type {
-  ProviderCreateBody,
-  ProviderPatchBody,
-} from "@/lib/api/contracts/providers";
-import type {
-  ProviderModelsState,
-  ReasoningEffort,
+ProviderModelsState,
+ReasoningEffort,
 } from "@/lib/settings/types";
-import { cacheOwnership, queryKeys } from "@/lib/query-keys";
-import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
-const PROVIDER_MODELS_STALE_TIME_MS = 15 * 60 * 1000;
-const LOCAL_CLI_STATUS_STALE_TIME_MS = 30_000;
-const DEFAULT_SCRAPER_MAX_PARALLEL_SCRAPES = 3;
-const DEFAULT_SCRAPER_HISTORY_RETENTION_DAYS = 60;
-const DEFAULT_SCRAPER_STALE_JOB_ARCHIVE_DAYS = 60;
+const DEFAULT_SCRAPER_MAX_PARALLEL_SCRAPES = SCRAPER_SETTINGS.maxParallelScrapes.defaultValue;
+const DEFAULT_SCRAPER_HISTORY_RETENTION_DAYS = SCRAPER_SETTINGS.historyRetentionDays.defaultValue;
+const DEFAULT_SCRAPER_STALE_JOB_ARCHIVE_DAYS = SCRAPER_SETTINGS.staleJobArchiveDays.defaultValue;
 
 function clampScraperParallelScrapes(value: number): number {
-  return Math.min(10, Math.max(1, value));
+  return Math.min(SCRAPER_SETTINGS.maxParallelScrapes.maximum, Math.max(SCRAPER_SETTINGS.maxParallelScrapes.minimum, value));
 }
 
 function clampScraperHistoryRetentionDays(value: number): number {
-  return Math.min(3_650, Math.max(7, value));
+  return Math.min(SCRAPER_SETTINGS.historyRetentionDays.maximum, Math.max(SCRAPER_SETTINGS.historyRetentionDays.minimum, value));
 }
 
 function clampScraperStaleJobArchiveDays(value: number): number {
-  return Math.min(3_650, Math.max(7, value));
+  return Math.min(SCRAPER_SETTINGS.staleJobArchiveDays.maximum, Math.max(SCRAPER_SETTINGS.staleJobArchiveDays.minimum, value));
 }
 
 interface MatcherLocalEdits {
@@ -149,78 +133,14 @@ function SettingsContent() {
   const [aiWritingLocalEdits, setAIWritingLocalEdits] = useState<AIWritingLocalEdits>({});
   const [unmatchedWindowDays, setUnmatchedWindowDays] = useState(5);
   const debouncedUnmatchedWindowDays = useDebounce(unmatchedWindowDays, 250);
-  const lastModelReconciliationRef = useRef<string | null>(null);
-  const failedModelReconciliationRef = useRef<string | null>(null);
 
   const settingsQuery = useQuery<Settings>({
     queryKey: queryKeys.settings.detail(),
     queryFn: getSettings,
   });
 
-  const fetchProviderModels = async (
-    providerId: string,
-    forceRefresh = false
-  ): Promise<ProviderModelsResponse> => {
-    return getProviderModels(providerId, forceRefresh ? { refresh: "1" } : {});
-  };
-
-  const providersQuery = useQuery<ProviderSettingsListItem[]>({
-    queryKey: queryKeys.providers.list(),
-    queryFn: getProviders,
-  });
   const settings = settingsQuery.data;
-  const providerRecords = useMemo(() => providersQuery.data ?? [], [providersQuery.data]);
-  const localCLIProviders = useMemo(
-    () => providerRecords.filter(
-      (provider): provider is ProviderSettingsListItem & {
-        kind: "local_cli";
-        provider: LocalCLIProvider;
-      } => provider.kind === "local_cli" && isLocalCLIProvider(provider.provider)
-    ),
-    [providerRecords]
-  );
-  const localCLIStatusQueries = useQueries({
-    queries: localCLIProviders.map((provider) => ({
-      queryKey: queryKeys.providers.status(provider.id),
-      queryFn: () => getLocalCLIStatus(provider.provider),
-      staleTime: LOCAL_CLI_STATUS_STALE_TIME_MS,
-      retry: 1,
-    })),
-  });
-  const providers = useMemo(() => {
-    const statusQueriesByProviderId = new Map(
-      localCLIProviders.map((provider, index) => [
-        provider.id,
-        localCLIStatusQueries[index],
-      ])
-    );
-
-    return providerRecords.map((provider) => {
-      if (provider.kind !== "local_cli") return provider;
-
-      const statusQuery = statusQueriesByProviderId.get(provider.id);
-      const connection = statusQuery?.data;
-      if (connection) {
-        return {
-          ...provider,
-          connectionStatus: connection.status,
-          selectable: connection.selectable,
-          cliVersion: connection.cliVersion,
-          statusMessage: connection.statusMessage,
-          lastCheckedAt: connection.lastCheckedAt,
-        };
-      }
-      if (statusQuery?.isError) {
-        return {
-          ...provider,
-          connectionStatus: "error" as const,
-          selectable: false,
-          statusMessage: getApiErrorMessage(statusQuery.error, "Failed to check local CLI"),
-        };
-      }
-      return provider;
-    });
-  }, [localCLIProviders, localCLIStatusQueries, providerRecords]);
+  const { providersQuery, providers, providerModelsById, refreshProviderModels, saveCLIExecutablePaths, addProviderMutation, deleteProviderMutation, updateProviderApiKeyMutation, updateProviderMutation } = useSettingsProviders();
   const readinessQuery = useQuery({
     queryKey: queryKeys.runtime.readiness(),
     queryFn: getReadiness,
@@ -232,113 +152,7 @@ function SettingsContent() {
     refetchInterval: 15_000,
   });
 
-  const providerModelsQueries = useQueries({
-    queries: providers.map((provider) => ({
-      queryKey: queryKeys.providers.model(provider.id),
-      queryFn: async () => fetchProviderModels(provider.id),
-      enabled: Boolean(provider.id) && (provider.kind === "api_key" || provider.selectable),
-      staleTime: PROVIDER_MODELS_STALE_TIME_MS,
-      retry: 1,
-    })),
-  });
-
-  const providerModelsById = useMemo<Record<string, ProviderModelsState>>(() => {
-    const state: Record<string, ProviderModelsState> = {};
-
-    providers.forEach((provider, index) => {
-      const query = providerModelsQueries[index];
-      const data = query?.data;
-      const queryError = query?.error
-        ? getApiErrorMessage(query.error, "Failed to load provider models")
-        : undefined;
-      const warning = data?.warning;
-
-      state[provider.id] = {
-        models: data?.models ?? [],
-        loading: Boolean(query?.isFetching && !data),
-        isRefreshing: Boolean(query?.isFetching && data),
-        isStale: data?.isStale ?? false,
-        error: queryError ?? warning ?? (
-          provider.kind === "local_cli" && !provider.selectable
-            ? provider.statusMessage
-            : undefined
-        ),
-      };
-    });
-
-    return state;
-  }, [providerModelsQueries, providers]);
-
-  const refreshProviderModels = async (providerId: string): Promise<void> => {
-    try {
-      const models = await fetchProviderModels(providerId, true);
-      queryClient.setQueryData(queryKeys.providers.model(providerId), models);
-      toast.success("Model list refreshed");
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to refresh model list"));
-    }
-  };
-
-  const saveCLIExecutablePaths = useCallback(async (paths: { codex: string; opencode: string }) => {
-    await patchSettings({
-        codex_cli_executable: paths.codex,
-        opencode_cli_executable: paths.opencode,
-      });
-    await cacheOwnership.providerMutation(queryClient);
-  }, [queryClient]);
-
   const isInitialLoading = settingsQuery.isLoading || providersQuery.isLoading;
-
-  const addProviderMutation = useMutation({
-    mutationFn: async (input: ProviderCreateBody) => {
-      return createProvider(input);
-    },
-    onSuccess: (data) => {
-      void cacheOwnership.providerMutation(queryClient);
-
-      if (data.autoConfiguredWarning) {
-        toast.warning(data.autoConfiguredWarning);
-      } else if (data.autoConfiguredDefaults) {
-        toast.success(
-          data.autoConfiguredModelId
-            ? `Provider added. Default model set to ${data.autoConfiguredModelId}`
-            : "Provider added and defaults auto-configured"
-        );
-      } else {
-        toast.success("Provider added successfully");
-      }
-    },
-    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to add provider")),
-  });
-
-  const deleteProviderMutation = useMutation({
-    mutationFn: deleteProvider,
-    onSuccess: () => {
-      void cacheOwnership.providerMutation(queryClient);
-      toast.success("Provider deleted successfully");
-    },
-    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to delete provider")),
-  });
-
-  const updateProviderApiKeyMutation = useMutation({
-    mutationFn: ({ id, apiKey }: { id: string; apiKey?: string | null }) =>
-      updateProviderApiKey(id, { apiKey }),
-    onSuccess: () => {
-      void cacheOwnership.providerMutation(queryClient);
-      toast.success("Provider API key updated");
-    },
-    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update provider API key")),
-  });
-
-  const updateProviderMutation = useMutation({
-    mutationFn: ({ id, input }: { id: string; input: ProviderPatchBody }) =>
-      updateProvider(id, input),
-    onSuccess: () => {
-      void cacheOwnership.providerMutation(queryClient);
-      toast.success("Provider connection updated");
-    },
-    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update provider connection")),
-  });
 
   const featureModels = useMemo(
     () => ({
@@ -530,69 +344,7 @@ function SettingsContent() {
   const resumeParserModelsState = getProviderModelsState(resumeParserProviderId);
   const aiWritingModelsState = getProviderModelsState(aiWritingProviderId);
 
-  const reconcileModelsMutation = useMutation({
-    mutationFn: ({ updates }: { updates: Record<string, string>; features: string[]; signature: string }) =>
-      patchSettings(updates),
-    onSuccess: (_data, variables) => {
-      lastModelReconciliationRef.current = null;
-      failedModelReconciliationRef.current = null;
-      const updatedFeatures = Array.from(new Set(variables.features));
-      if (updatedFeatures.length > 0) {
-        toast.warning(`Updated invalid AI model settings for ${updatedFeatures.join(", ")}.`);
-      }
-      void cacheOwnership.settingsMutation(queryClient);
-    },
-    onError: (error, variables) => {
-      lastModelReconciliationRef.current = null;
-      failedModelReconciliationRef.current = variables.signature;
-      toast.error(getApiErrorMessage(error, "Failed to auto-fix invalid model settings"), {
-        action: {
-          label: "Retry",
-          onClick: () => {
-            failedModelReconciliationRef.current = null;
-            lastModelReconciliationRef.current = variables.signature;
-            reconcileModelsMutation.mutate(variables);
-          },
-        },
-      });
-    },
-  });
-
-  useEffect(() => {
-    if (!settings || providers.length === 0 || reconcileModelsMutation.isPending) {
-      return;
-    }
-
-    const updates: Record<string, string> = {};
-    const features: string[] = [];
-
-    for (const feature of Object.keys(AI_MODEL_FEATURES) as Array<keyof typeof AI_MODEL_FEATURES>) {
-      const keys = AI_MODEL_FEATURES[feature];
-      const resolved = featureModels[feature];
-      const catalog = providerModelsById[resolved.providerId];
-      if (!catalog || catalog.loading || catalog.models.length === 0 || resolved.localProviderEdited || resolved.localModelEdited || !resolved.providerId || !resolved.modelId) continue;
-      if ((settings[keys.provider] || "") !== resolved.providerId) updates[keys.provider] = resolved.providerId;
-      if ((settings[keys.model] || "") !== resolved.modelId) updates[keys.model] = resolved.modelId;
-      if (updates[keys.provider] || updates[keys.model]) features.push(keys.label);
-    }
-
-    if (Object.keys(updates).length === 0) {
-      lastModelReconciliationRef.current = null;
-      failedModelReconciliationRef.current = null;
-      return;
-    }
-
-    const signature = JSON.stringify(updates);
-    if (
-      lastModelReconciliationRef.current === signature ||
-      failedModelReconciliationRef.current === signature
-    ) {
-      return;
-    }
-
-    lastModelReconciliationRef.current = signature;
-    reconcileModelsMutation.mutate({ updates, features, signature });
-  }, [settings, providers.length, featureModels, providerModelsById, reconcileModelsMutation]);
+  useModelReconciliation({ settings, providerCount: providers.length, featureModels, providerModelsById });
 
   const scraperHasUnsavedChanges =
     scraperLocalEdits.schedulerCron !== undefined ||

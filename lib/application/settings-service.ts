@@ -2,24 +2,25 @@ import { eq } from "drizzle-orm";
 
 import { AISettingsUpdateSchema } from "@/lib/ai/contracts";
 import { getCachedProviderModelDefinition } from "@/lib/ai/providers/model-catalog";
-import { logApiFailure, type ApiRequestContext } from "@/lib/api";
-import { ValidationError } from "@/lib/errors";
+import { logApiFailure,type ApiRequestContext } from "@/lib/api";
 import type { settingsUpdateBodySchema } from "@/lib/api/contracts/settings";
 import { db } from "@/lib/db";
-import { getActivitySleepInhibitor } from "@/lib/runtime/activity-sleep-inhibitor";
 import { aiProviders } from "@/lib/db/schema";
+import { ValidationError } from "@/lib/errors";
 import {
-  getSchedulerEnabled,
-  handleSchedulerDisabled,
-  handleSchedulerEnabled,
-  restartScheduler,
-  stopScheduler,
+getSchedulerEnabled,
+handleSchedulerDisabled,
+handleSchedulerEnabled,
+restartScheduler,
+stopScheduler,
 } from "@/lib/jobs/scheduler";
+import { getActivitySleepInhibitor } from "@/lib/runtime/activity-sleep-inhibitor";
+import { AI_REASONING_SETTINGS } from "@/lib/settings/ai-features";
 import {
-  getSettingsWithDefaults,
-  parseSettingsUpdateBody,
-  upsertSettings,
-  type SettingKey,
+getSettingsWithDefaults,
+parseSettingsUpdateBody,
+upsertSettings,
+type SettingKey,
 } from "@/lib/settings/settings-service";
 
 import type { z } from "zod";
@@ -27,50 +28,28 @@ import type { z } from "zod";
 type SettingsUpdateInput = z.infer<typeof settingsUpdateBodySchema>;
 
 const AI_SETTING_KEYS: ReadonlySet<SettingKey> = new Set([
-  "job_analysis_fallback_provider_id",
-  "job_analysis_fallback_model",
-  "job_analysis_fallback_reasoning_effort",
-  "matcher_fallback_provider_id",
-  "matcher_fallback_model",
-  "matcher_fallback_reasoning_effort",
-
-  "job_analysis_model", "job_analysis_provider_id", "job_analysis_reasoning_effort",
-  "matcher_model", "matcher_provider_id", "matcher_reasoning_effort",
-  "resume_parser_model", "resume_parser_provider_id", "resume_parser_reasoning_effort",
-  "ai_writing_model", "ai_writing_provider_id", "ai_writing_reasoning_effort",
+  ...AI_REASONING_SETTINGS.flatMap(({ provider, model, effort }) => [provider, model, effort]),
   "referral_tone", "referral_length", "follow_up_tone", "follow_up_length",
   "cover_letter_tone", "cover_letter_length", "cover_letter_focus",
   "codex_cli_executable", "opencode_cli_executable",
 ]);
 
 const LEGACY_REASONING_VALUES = new Set(["low", "medium", "high"]);
-const REASONING_FEATURE_SETTINGS = [
-  { provider: "job_analysis_fallback_provider_id", model: "job_analysis_fallback_model", effort: "job_analysis_fallback_reasoning_effort" },
-  { provider: "matcher_fallback_provider_id", model: "matcher_fallback_model", effort: "matcher_fallback_reasoning_effort" },
-
-  { provider: "job_analysis_provider_id", model: "job_analysis_model", effort: "job_analysis_reasoning_effort" },
-  { provider: "matcher_provider_id", model: "matcher_model", effort: "matcher_reasoning_effort" },
-  { provider: "resume_parser_provider_id", model: "resume_parser_model", effort: "resume_parser_reasoning_effort" },
-  { provider: "ai_writing_provider_id", model: "ai_writing_model", effort: "ai_writing_reasoning_effort" },
-] as const;
-
 function pickAISettings(body: Record<string, unknown>) {
   return Object.fromEntries(Object.entries(body).filter(([key]) => AI_SETTING_KEYS.has(key as SettingKey)));
 }
 
-async function reconcileReasoningSettings(body: Record<string, unknown>) {
-  const current = await getSettingsWithDefaults();
+async function reconcileReasoningSettings(body: Record<string, unknown>, current: Awaited<ReturnType<typeof getSettingsWithDefaults>>) {
   const reconciled = { ...body };
-  for (const keys of REASONING_FEATURE_SETTINGS) {
-    const fallbackEnabledKey = keys.provider.includes("_fallback_")
-      ? keys.provider.replace("provider_id", "enabled") as SettingKey : undefined;
+  for (const keys of AI_REASONING_SETTINGS) {
+    const fallbackEnabledKey = keys.enabled;
     if (!(keys.provider in body || keys.model in body || keys.effort in body || (fallbackEnabledKey && fallbackEnabledKey in body))) continue;
-    if (keys.provider.includes("_fallback_") && !String(body[keys.model] ?? current[keys.model]).trim()) {
+    if (keys.enabled && !String(body[keys.model] ?? current[keys.model]).trim()) {
       reconciled[keys.effort] = "";
       continue;
     }
-    if (keys.provider.includes("_fallback_")) {
-      const enabledKey = keys.provider.replace("provider_id", "enabled") as SettingKey;
+    if (keys.enabled) {
+      const enabledKey = keys.enabled;
       if (String(body[enabledKey] ?? current[enabledKey]) !== "true") continue;
     }
     const providerId = String(body[keys.provider] ?? current[keys.provider]).trim();
@@ -120,7 +99,7 @@ export async function updateSettings(input: SettingsUpdateInput, context: ApiReq
       throw new ValidationError("Refresh the fallback provider's model catalog before enabling fallback", "invalid_request");
     }
   }
-  const reconciled = await reconcileReasoningSettings(input);
+  const reconciled = await reconcileReasoningSettings(input, current);
   const aiPayload = pickAISettings(reconciled);
   if (Object.keys(aiPayload).length > 0) AISettingsUpdateSchema.parse(aiPayload);
   const { updates, cronUpdated, enabledChanged, newEnabledValue, keepAwakeChanged = false } = parseSettingsUpdateBody(reconciled);

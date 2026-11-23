@@ -1,3 +1,4 @@
+import { PLATFORM_OPTIONS } from "@/lib/companies/platforms";
 import releasePackageJson from "@/packages/cli/package.json";
 
 export const APP_VERSION = releasePackageJson.version;
@@ -9,8 +10,7 @@ export const MAX_CSV_FILE_SIZE = 10 * 1024 * 1024;
 export const MAX_RESUME_FILE_SIZE = 5 * 1024 * 1024;
 export const MAX_RESUME_TEXT_LENGTH = 60_000;
 
-export { PLATFORM_OPTIONS, PLATFORM_COLORS } from "@/lib/companies/platforms";
-import { PLATFORM_OPTIONS } from "@/lib/companies/platforms";
+export { PLATFORM_COLORS,PLATFORM_OPTIONS } from "@/lib/companies/platforms";
 
 export const CUSTOM_SCRAPER_PLATFORMS = [
   "servicenow",
@@ -30,4 +30,3 @@ export const COMPANY_FILTER_PLATFORM_OPTIONS = PLATFORM_OPTIONS.filter(
       option.value as (typeof CUSTOM_SCRAPER_PLATFORMS)[number]
     )
 );
-
