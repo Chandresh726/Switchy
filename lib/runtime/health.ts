@@ -158,7 +158,7 @@ async function readQueueMetrics(now: Date) {
 
 export async function getReadinessHealth() {
   const available = await databaseAvailable();
-  const ready = available && (isUpdateMaintenance() || (
+  const ready = available && ((isUpdateMaintenance() && process.env.SWITCHY_UPDATE_CANDIDATE !== "1") || (
     state.schedulerInitialization === "ready"
     && state.queueRecovery === "ready"));
   return {

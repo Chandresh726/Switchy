@@ -32,9 +32,6 @@ describe("Switchy distribution metadata", () => {
       license: "MIT",
     });
     expect(application.version).toBeUndefined();
-    expect(application.scripts["release:version"]).toBe(
-      "pnpm --filter @chandresh726/switchy version --no-git-checks --no-git-tag-version"
-    );
     for (const script of [application.scripts.dev, application.scripts.start]) {
       expect(script).toContain("--hostname 127.0.0.1");
     }

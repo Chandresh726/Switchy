@@ -13,12 +13,33 @@ npx @chandresh726/switchy@latest stop
 npx @chandresh726/switchy@latest update
 ```
 
-`start` resolves the requested application version, downloads the matching
-runtime when it is not already installed, verifies its SHA-256 checksum, runs
-database migrations, installs Chromium into the local cache, and starts a
-detached loopback-only server on port `6767` by default. Users can override the
-port with `start --port <port>`. The CLI records and verifies the process
-identity before stopping it.
+`start` reuses the installed runtime and saved port. First installation and any
+explicit version change use the update transaction described below, including
+checksum verification, browser preparation, migration and rollback. Ordinary
+starts do not rerun migrations or browser installation. Downgrades are rejected.
+The server binds to `127.0.0.1`, with port `6767` as the initial default. Use
+`start --port <port>` to change it.
+
+Useful commands:
+
+```bash
+switchy restart
+switchy status --json
+switchy doctor
+switchy update --check
+switchy update --download
+switchy update --apply
+```
+
+`doctor` prints local state and log locations without modifying the installation.
+`update --download` stages a release while the app keeps running; `--apply`
+installs that exact staged version without checking GitHub again. A plain
+`update` checks and installs the latest stable version. Unknown options and
+conflicting update actions are rejected.
+
+`start --foreground` keeps output in the terminal and releases the control lock
+after readiness. `stop` remains usable from another terminal. Foreground runs
+are not restarted by the background manager.
 
 Everything remains under one local root:
 
@@ -53,7 +74,13 @@ The `release.yml` workflow runs only for stable `vMAJOR.MINOR.PATCH` tags. It:
 4. builds and audits the npm tarball once, then publishes that exact artifact;
 5. creates one checksum manifest and immutable GitHub release;
 6. publishes `@chandresh726/switchy` through npm trusted publishing when the
-   repository variable `NPM_TRUSTED_PUBLISHING_READY` is `true`.
+   repository variable `NPM_TRUSTED_PUBLISHING_READY` is `true`;
+7. downloads published runtime assets to verify their size and SHA-256, then
+   verifies the npm tarball against the packaged build and runs the exact
+   published CLI version. Registry propagation is retried for a bounded period.
+   Verification runs in separate jobs so retries do not republish assets.
+
+Release permissions and GitHub's existing latest-release behavior are unchanged.
 
 `packages/cli/package.json` is the single source of truth for the release
 version. The application, runtime metadata, native helper, GitHub release, and
@@ -134,9 +161,19 @@ pnpm dlx @chandresh726/switchy@latest startup status
 After starting a runtime that includes lifecycle support, Switchy installs a
 persistent Node executable and a small supervisor under `~/.switchy/app/host/`.
 It does not depend on a package-manager cache, shell profile, or network access
-to start the installed application. Each supervisor tick loads its manager
-from the currently installed runtime, so release updates also update manager
-code. Diagnostics are appended to `~/.switchy/logs/lifecycle.log`.
+to start the installed application. A dependency-free bootstrap starts one
+persistent manager from the selected runtime. The manager watches for requests
+and preference changes, with a 30-second fallback timer for missed events and
+process checks. It reloads after a committed runtime change. It does not launch
+a new worker on every timer tick, and exits when stopped or its installation is
+removed.
+
+The host saves the executable search path without copying shell credentials.
+This preserves local CLI discovery after login. Versioned Node executables are
+refreshed on explicit starts with a newer Node 24, and the manager reloads onto that
+version. The startup item is refreshed on explicit starts and settings changes. Application
+and lifecycle logs rotate at 10 MiB and retain a bounded previous tail. `logs`
+reads a bounded suffix rather than loading the whole log.
 
 On macOS, enabling startup writes the per-user
 `~/Library/LaunchAgents/com.switchy.lifecycle.plist` and enables the item for the
@@ -147,8 +184,8 @@ or administrator access is required. macOS background-item restrictions still
 apply. A sleeping or powered-off laptop does not run Switchy.
 
 Automatic updates check GitHub's stable release every six hours while Switchy
-is running. Check, download, and restart requests from Settings are handled within
-about 30 seconds. Minor and patch releases can install automatically; major
+is running. Settings requests usually wake the manager immediately; the fallback
+check handles them within about 30 seconds. Minor and patch releases can install automatically; major
 versions require an explicit download and restart from **System Info**. An open
 Switchy tab postpones automatic installation, including background tabs, to
 protect unsaved edits. The download icon beside the version stages an update
@@ -160,23 +197,41 @@ Update preferences and recovery records live outside the database in
 `~/.switchy/runtime/`. An update downloads and checksum-verifies the runtime and
 prepares Chromium before closing admission. It then rechecks activity, stops
 the server, snapshots production data, and runs the packaged Drizzle migrator.
-While the candidate is being checked, API requests are held and background
-initialization waits. The updater commits the new version only after readiness
-and process identity checks pass. It then resumes normal operation. It retains
-the previous runtime and the three most recent update snapshots.
+While the candidate is being checked, API admission and new job claims remain
+closed. The candidate initializes and validates its scheduler and queue recovery
+before readiness can succeed. External scheduler recovery and host registration
+wait until commit. The updater commits only after readiness and process identity
+checks pass. Managed processes register before opening SQLite and must match
+the launcher's published PID and instance ID. Candidate runtimes must declare lifecycle protocol 2; older releases
+without these guarantees are rejected. It then resumes normal operation. It retains
+the previous runtime and the three most recent update snapshots. The previous
+version is recorded explicitly and survives ordinary restarts.
+
+Downloads hold the update lock, leaving stop available. Activation takes the
+start lock after preparation; the lock order is update, start, then preferences.
+An explicit stop during preparation prevents later activation. Directory locks
+are published with complete, uniquely named ownership records. Stale cleanup
+only removes the observed owner and an empty directory, never a new owner's
+lock. Update requests have separate IDs and are acknowledged individually.
+Journal writes and snapshot files are synced before migration; containing
+directories are synced where the operating system supports it.
 
 If migration or candidate startup fails, Switchy restores the previous data
 snapshot and runtime before allowing new writes. An interrupted transaction is
-recovered on the next start or manager tick. Failed candidate versions are not
+recovered on the next start or manager tick. Recovery waits on the migration
+lock, and migration children register before opening SQLite, so an orphaned
+migrator cannot race a restore. Failed candidate versions are not
 retried automatically. If recovery itself fails, admission stays closed and the
 snapshot and transaction record remain available for diagnosis. Do not remove
 these records to force startup without first recovering the data.
 
 For isolated test environments, `SWITCHY_DISABLE_LIFECYCLE=1` prevents the CLI
-from launching the supervisor. It does not alter saved user preferences.
+from launching the supervisor. Startup and update opt-ins remain unchanged.
 
 Source runs, including `pnpm dev` and `pnpm start` from a checkout, show these
-controls but disable startup and update actions. Those actions manage the
+controls but disable startup and update actions. Development runs send no
+lifecycle heartbeats, and unsupported source production runs stop after the
+capability probe. They do not create browser leases that defer installed updates. Those actions manage the
 versioned production runtimes installed by the CLI; they do not update a source
 checkout or restart the development server. Keep-awake settings can still be
 used in development. End-to-end startup and update testing requires a packaged

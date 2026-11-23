@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { writeJsonFileAtomic } from "../../../packages/cli/src/files";
 import { lifecycleTick } from "../../../packages/cli/src/lifecycle-manager";
-import { lifecycleFiles, readPreferences } from "../../../packages/cli/src/lifecycle-state";
+import { enqueueUpdateRequest, nextUpdateRequest, lifecycleFiles, readPreferences } from "../../../packages/cli/src/lifecycle-state";
 import { ensureSwitchyDirectories, getSwitchyPaths } from "../../../packages/cli/src/paths";
 
 const mocks = vi.hoisted(() => ({ start: vi.fn(), running: vi.fn(), latest: vi.fn(), update: vi.fn(), download: vi.fn(), recover: vi.fn() }));
@@ -19,6 +19,7 @@ let paths: ReturnType<typeof getSwitchyPaths>;
 beforeEach(async () => {
   vi.clearAllMocks();
   mocks.running.mockResolvedValue(null);
+  mocks.start.mockResolvedValue({ version: "1.9.0", port: 6767 });
   root = await mkdtemp(path.join(os.tmpdir(), "switchy-lifecycle-test-"));
   vi.stubEnv("SWITCHY_HOME", root);
   paths = getSwitchyPaths(root);
@@ -77,9 +78,23 @@ it("downloads a requested update without installing or restarting it", async () 
   await writeJsonFileAtomic(lifecycleFiles(paths).preferences, { ...await readPreferences(paths), automaticUpdates: true });
   await writeJsonFileAtomic(lifecycleFiles(paths).request, { action: "download" });
   await writeJsonFileAtomic(lifecycleFiles(paths).state, { phase: "available", latestVersion: "1.10.0", lastCheckedAt: new Date().toISOString() });
-  mocks.running.mockResolvedValue({ record: { port: 6767 } });
+  mocks.running.mockResolvedValue({ record: { version: "1.9.0", port: 6767 } });
   await lifecycleTick();
   expect(mocks.download).toHaveBeenCalledWith(paths, "1.10.0");
   expect(mocks.update).not.toHaveBeenCalled();
   expect(mocks.start).not.toHaveBeenCalled();
+});
+
+it("acknowledges only the consumed request when another arrives during a check", async () => {
+  await enqueueUpdateRequest(paths, "check");
+  mocks.latest.mockImplementation(async () => {
+    await enqueueUpdateRequest(paths, "install", "1.10.0");
+    return "1.10.0";
+  });
+  await lifecycleTick();
+  expect((await nextUpdateRequest(paths))?.request).toMatchObject({ action: "install", version: "1.10.0" });
+  mocks.update.mockResolvedValue(true);
+  await lifecycleTick();
+  expect(mocks.update).toHaveBeenCalledWith(paths, "1.10.0", true);
+  expect(await nextUpdateRequest(paths)).toBeNull();
 });

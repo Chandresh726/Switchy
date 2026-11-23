@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,6 +8,7 @@ const packageDirectory = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   ".."
 );
+await rm(path.join(packageDirectory, "dist"), { recursive: true, force: true });
 await mkdir(path.join(packageDirectory, "dist"), { recursive: true });
 await build({
   entryPoints: [path.join(packageDirectory, "src", "cli.ts")],
@@ -19,10 +20,4 @@ await build({
   packages: "external",
   banner: { js: "#!/usr/bin/env node" },
   sourcemap: true,
-});
-
-await build({
-  entryPoints: [path.join(packageDirectory, "src/lifecycle-worker.ts")],
-  outfile: path.join(packageDirectory, "dist/lifecycle.cjs"),
-  bundle: true, platform: "node", target: "node24", format: "cjs",
 });

@@ -67,6 +67,7 @@ const environment = {
   SWITCHY_HOME: switchyHome,
   SWITCHY_RUNTIME_SOURCE: runtimeDirectory,
   SWITCHY_SKIP_BROWSER_INSTALL: "1",
+  SWITCHY_DISABLE_LIFECYCLE: "1",
   SWITCHY_OPENCODE_CLI_PATH: openCodeExecutable,
   SWITCHY_FAKE_OPENCODE_PID_PATH: openCodePidPath,
 };

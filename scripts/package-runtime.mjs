@@ -307,6 +307,7 @@ await writeFile(
     schemaVersion: 1,
     version: releasePackageJson.version,
     target,
+    lifecycleProtocol: 2,
     nodeVersion: process.versions.node,
     builtAt: new Date().toISOString(),
   }, null, 2)}\n`

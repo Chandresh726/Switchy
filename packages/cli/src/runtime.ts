@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
-import { cp, mkdir, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, open, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
+import { syncDirectory } from "./lifecycle-state.js";
+import { writeJsonFileAtomic } from "./files.js";
 import type { SwitchyPaths } from "./types.js";
 
 async function run(
@@ -18,17 +20,23 @@ async function run(
       env: options.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    const chunks: Buffer[] = [];
-    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => chunks.push(chunk));
+    let output = Buffer.alloc(0);
+    const collect = (chunk: Buffer) => { output = Buffer.concat([output, chunk]).subarray(-64 * 1024); };
+    child.stdout.on("data", collect);
+    child.stderr.on("data", collect);
+    let timedOut = false;
+    const timeout = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, 10 * 60_000);
+    child.once("error", () => clearTimeout(timeout));
     child.once("error", reject);
     child.once("close", (code) => {
+      clearTimeout(timeout);
+      if (timedOut) { reject(new Error(`${path.basename(executable)} timed out after 10 minutes`)); return; }
       if (code === 0) {
         resolve();
         return;
       }
-      const output = Buffer.concat(chunks).toString("utf8").trim();
-      if (output) console.error(output);
+      const message = output.toString("utf8").trim();
+      if (message) console.error(message);
       reject(new Error(`${path.basename(executable)} exited with code ${code}`));
     });
   });
@@ -70,6 +78,7 @@ export async function runDatabaseMigration(
         ...process.env,
         NODE_ENV: "production",
         SWITCHY_HOME: paths.root,
+        SWITCHY_MIGRATION_PARENT_PID: String(process.pid),
       },
     }
   );
@@ -92,14 +101,22 @@ export async function createUpdateSnapshot(
   await cp(paths.productionData, path.join(snapshotDirectory, "production"), {
     recursive: true,
   });
-  await writeFile(
-    path.join(snapshotDirectory, "update.json"),
-    `${JSON.stringify({
-      fromVersion,
-      toVersion,
-      createdAt: new Date().toISOString(),
-    }, null, 2)}\n`,
-    { mode: 0o600 }
-  );
+  await syncTree(path.join(snapshotDirectory, "production"));
+  await writeJsonFileAtomic(path.join(snapshotDirectory, "update.json"), {
+    fromVersion, toVersion, createdAt: new Date().toISOString(),
+  });
+  await syncDirectory(paths.updateSnapshots);
   return snapshotDirectory;
+}
+
+export async function syncTree(directory: string): Promise<void> {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) await syncTree(file);
+    else if (entry.isFile()) {
+      const handle = await open(file, "r");
+      try { await handle.sync(); } finally { await handle.close(); }
+    }
+  }
+  await syncDirectory(directory);
 }

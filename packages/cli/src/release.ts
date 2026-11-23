@@ -20,6 +20,7 @@ import {
   RELEASE_MANIFEST_FILE,
 } from "./config.js";
 import {
+  readJsonFile,
   withDirectoryLock,
   writeJsonFileAtomic,
 } from "./files.js";
@@ -354,12 +355,16 @@ export async function installRuntime(
 
 export async function setCurrentVersion(
   paths: SwitchyPaths,
-  version: string
+  version: string,
+  previousVersion?: string | null
 ): Promise<void> {
+  const current = await readJsonFile<CurrentVersionRecord>(paths.currentVersion);
   const value: CurrentVersionRecord = {
     schemaVersion: 1,
     version,
     updatedAt: new Date().toISOString(),
+    previousVersion: previousVersion !== undefined ? previousVersion
+      : current?.version !== version ? current?.version ?? null : current.previousVersion ?? null,
   };
   await writeJsonFileAtomic(paths.currentVersion, value);
 }

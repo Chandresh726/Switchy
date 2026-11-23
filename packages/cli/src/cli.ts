@@ -1,91 +1,39 @@
-import { lifecycleCommand } from "./lifecycle.js";
-import {
-  logsCommand,
-  openCommand,
-  startCommand,
-  statusCommand,
-  stopCommand,
-  updateCommand,
-  versionCommand,
-} from "./commands.js";
+import { parseArguments } from "./arguments.js";
+import { doctorCommand, logsCommand, openCommand, restartCommand, startCommand, statusCommand, stopCommand, updateCommand, versionCommand } from "./commands.js";
 import { DEFAULT_PORT, assertSupportedNodeVersion } from "./config.js";
+import { lifecycleCommand } from "./lifecycle.js";
 
-function optionValue(args: string[], name: string): string | undefined {
-  const index = args.indexOf(name);
-  if (index < 0) return undefined;
-  const value = args[index + 1];
-  if (!value || value.startsWith("--")) {
-    throw new Error(`${name} requires a value`);
-  }
-  return value;
-}
-
-function parsePort(args: string[]): number | undefined {
-  const value = optionValue(args, "--port");
-  if (!value) return undefined;
-  const port = Number(value);
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-    throw new Error("--port must be an integer between 1 and 65535");
-  }
-  return port;
-}
-
-function printHelp(): void {
-  console.log(`Switchy CLI
+async function main(): Promise<void> {
+  assertSupportedNodeVersion();
+  const { command, values, startup } = parseArguments(process.argv.slice(2));
+  switch (command) {
+    case "start": await startCommand({
+      version: values.get("--app-version") as string | undefined,
+      port: values.has("--port") ? Number(values.get("--port")) : undefined,
+      foreground: values.has("--foreground"),
+    }); break;
+    case "stop": await stopCommand(values.has("--force")); break;
+    case "restart": await restartCommand(); break;
+    case "status": await statusCommand(values.has("--json")); break;
+    case "doctor": await doctorCommand(); break;
+    case "startup": await lifecycleCommand(startup); break;
+    case "update": await updateCommand(values.has("--check") ? "check" : values.has("--download") ? "download" : values.has("--apply") ? "apply" : "install"); break;
+    case "logs": await logsCommand(); break;
+    case "open": await openCommand(); break;
+    case "version": versionCommand(); break;
+    default: console.log(`Switchy CLI
 
 Usage:
   switchy start [--port ${DEFAULT_PORT}] [--foreground] [--app-version <version>]
   switchy stop [--force]
-  switchy status
-  switchy update
+  switchy restart
+  switchy status [--json]
+  switchy doctor
+  switchy update [--check | --download | --apply]
   switchy startup enable|disable|status
   switchy logs
   switchy open
   switchy version`);
-}
-
-async function main(): Promise<void> {
-  assertSupportedNodeVersion();
-  const args = process.argv.slice(2);
-  const command = args[0] ?? "help";
-  switch (command) {
-    case "start":
-      await startCommand({
-        version: optionValue(args, "--app-version"),
-        port: parsePort(args),
-        foreground: args.includes("--foreground"),
-      });
-      break;
-    case "stop":
-      await stopCommand(args.includes("--force"));
-      break;
-    case "status":
-      await statusCommand();
-      break;
-    case "startup":
-      await lifecycleCommand(args[1] ?? "status");
-      break;
-    case "update":
-      await updateCommand();
-      break;
-    case "logs":
-      await logsCommand();
-      break;
-    case "open":
-      await openCommand();
-      break;
-    case "version":
-    case "--version":
-    case "-v":
-      versionCommand();
-      break;
-    case "help":
-    case "--help":
-    case "-h":
-      printHelp();
-      break;
-    default:
-      throw new Error(`Unknown command: ${command}`);
   }
 }
 

@@ -28,7 +28,7 @@ async function listEntries(directory: string): Promise<Dirent[]> {
 
 /**
  * Removes runtimes, cached archives, and update snapshots that are no longer
- * needed. Callers must hold the start lock so no install or process is using
+ * needed. Callers must hold the update and start locks so no install or process is using
  * the versions being removed.
  */
 export async function pruneInstallArtifacts(

@@ -139,6 +139,25 @@ describe("server startup instrumentation", () => {
     }
   });
 
+  it("validates candidate subsystems while admission is closed and defers external scheduling", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "nodejs");
+    vi.stubEnv("SWITCHY_UPDATE_CANDIDATE", "1");
+    mocks.isUpdateMaintenance.mockReturnValue(true);
+    vi.useFakeTimers();
+    try {
+      await register();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.startScheduler).toHaveBeenCalledOnce();
+      expect(mocks.setScrapeQueueRecovery).toHaveBeenLastCalledWith("ready");
+      expect(mocks.setMatcherDispatchRecovery).toHaveBeenLastCalledWith("ready");
+      expect(mocks.recoverSchedulerOnBoot).not.toHaveBeenCalled();
+      expect(mocks.syncSchedulerHost).not.toHaveBeenCalled();
+      mocks.isUpdateMaintenance.mockReturnValue(false);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(mocks.recoverSchedulerOnBoot).toHaveBeenCalledOnce();
+    } finally { vi.useRealTimers(); }
+  });
+
   it("does nothing outside the Node.js runtime", async () => {
     vi.stubEnv("NEXT_RUNTIME", "edge");
 

@@ -1,3 +1,6 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -149,4 +152,27 @@ describe("local runtime health", () => {
 
     expect((await health.getReadinessHealth()).ready).toBe(true);
   });
+});
+
+it("requires initialized subsystems for an update candidate behind maintenance", async () => {
+  const { database, path: databasePath } = harness.createDatabase();
+  vi.doMock("@/lib/db", () => ({ db: database }));
+  const health = await import("@/lib/runtime/health");
+  health.resetRuntimeHealthForTests();
+  const root = path.dirname(databasePath);
+  await mkdir(path.join(root, "runtime"));
+  await writeFile(path.join(root, "runtime/update-maintenance.json"), "{}");
+  vi.stubEnv("NODE_ENV", "production");
+  vi.stubEnv("SWITCHY_HOME", root);
+  vi.stubEnv("SWITCHY_UPDATE_CANDIDATE", "1");
+  try {
+    expect((await health.getReadinessHealth()).ready).toBe(false);
+    health.setSchedulerInitialization("ready");
+    health.setScrapeQueueRecovery("ready");
+    health.setMatcherDispatchRecovery("ready");
+    health.setLegacyMatchImportRecovery("ready");
+    expect((await health.getReadinessHealth()).ready).toBe(true);
+    health.setScrapeQueueRecovery("failed");
+    expect((await health.getReadinessHealth()).ready).toBe(false);
+  } finally { vi.unstubAllEnvs(); }
 });

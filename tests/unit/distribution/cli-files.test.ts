@@ -3,11 +3,11 @@ import {
   mkdirSync,
   writeFileSync,
 } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { withDirectoryLock } from "../../../packages/cli/src/files";
 import { getSwitchyPaths } from "../../../packages/cli/src/paths";
@@ -49,7 +49,7 @@ describe("Switchy CLI local coordination", () => {
       events.push("first-end");
     });
     await expect.poll(
-      () => existsSync(path.join(lockPath, "owner.json"))
+      async () => (await readdir(lockPath).catch(() => [])).some((name) => /^owner-/.test(name))
     ).toBe(true);
 
     const second = withDirectoryLock(lockPath, async () => {
@@ -78,13 +78,46 @@ describe("Switchy CLI local coordination", () => {
     expect(existsSync(lockPath)).toBe(false);
   });
 
-  it("discards corrupt transient process metadata", async () => {
+  it("ignores corrupt process metadata without mutating it during inspection", async () => {
     const root = await temporaryDirectory();
     const paths = getSwitchyPaths(root);
     mkdirSync(paths.runtime, { recursive: true });
     writeFileSync(paths.processRecord, "{invalid");
 
     await expect(getRunningProcess(paths)).resolves.toBeNull();
-    expect(existsSync(paths.processRecord)).toBe(false);
+    expect(existsSync(paths.processRecord)).toBe(true);
   });
+});
+
+it("keeps simultaneous stale-lock reclaimers mutually exclusive", async () => {
+  const root = await temporaryDirectory();
+  const lock = path.join(root, "stale.lock");
+  await mkdir(lock);
+  writeFileSync(path.join(lock, "owner.json"), JSON.stringify({ pid: 2_147_483_647, token: "old" }));
+  let active = 0;
+  let maximum = 0;
+  await Promise.all(Array.from({ length: 8 }, () => withDirectoryLock(lock, async () => {
+    active++;
+    maximum = Math.max(maximum, active);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    active--;
+  })));
+  expect(maximum).toBe(1);
+  expect(existsSync(lock)).toBe(false);
+});
+
+it("ignores a reused PID recorded before this boot without probing or killing it", async () => {
+  const root = await temporaryDirectory();
+  const paths = getSwitchyPaths(root);
+  await mkdir(paths.runtime);
+  writeFileSync(paths.processRecord, JSON.stringify({
+    schemaVersion: 1, pid: process.pid, instanceId: "previous-boot", version: "1.0.0",
+    hostname: "127.0.0.1", port: 6767, startedAt: "1970-01-01T00:00:00.000Z",
+  }));
+  const fetch = vi.spyOn(globalThis, "fetch");
+  const uptime = vi.spyOn(os, "uptime").mockReturnValue(60);
+  try {
+    expect(await getRunningProcess(paths)).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  } finally { fetch.mockRestore(); uptime.mockRestore(); }
 });

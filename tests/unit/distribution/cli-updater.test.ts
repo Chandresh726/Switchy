@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -5,7 +6,7 @@ import { Script } from "node:vm";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { readJsonFile, writeJsonFileAtomic } from "../../../packages/cli/src/files";
+import { readJsonFile, withDirectoryLock, writeJsonFileAtomic } from "../../../packages/cli/src/files";
 import { compareVersions, lifecycleFiles, readPreferences } from "../../../packages/cli/src/lifecycle-state";
 import { ensureSwitchyDirectories, getSwitchyPaths } from "../../../packages/cli/src/paths";
 import { installHost, startupPlist } from "../../../packages/cli/src/startup";
@@ -36,6 +37,7 @@ beforeEach(async () => {
   await mkdir(paths.productionData, { recursive: true });
   await mkdir(path.join(paths.versions, "1.1.0/bin"), { recursive: true });
   await writeFile(path.join(paths.versions, "1.1.0/bin/lifecycle.cjs"), "");
+  await writeJsonFileAtomic(path.join(paths.versions, "1.1.0/switchy-runtime.json"), { lifecycleProtocol: 2 });
   await writeFile(path.join(paths.productionData, "switchy.db"), "before migration");
   await writeJsonFileAtomic(paths.currentVersion, { schemaVersion: 1, version: "1.0.0" });
 });
@@ -46,7 +48,7 @@ afterEach(async () => {
 
 describe("Switchy lifecycle", () => {
   it("defaults to explicit opt-in and compares versions numerically", async () => {
-    expect(await readPreferences(paths)).toMatchObject({ startAtLogin: false, automaticUpdates: false, consented: false });
+    expect(await readPreferences(paths)).toMatchObject({ startAtLogin: false, automaticUpdates: false });
     expect(compareVersions("1.10.0", "1.9.9")).toBe(1);
     expect(compareVersions("1.0.0", "1.0.1")).toBe(-1);
     expect(() => compareVersions("../unsafe", "1.0.0")).toThrow();
@@ -154,11 +156,21 @@ it("closes admission before migration and commits before allowing new writes", a
 it("packages a syntactically valid supervisor without relying on the CLI installation", async () => {
   const host = lifecycleFiles(paths).host;
   await mkdir(host, { recursive: true });
-  await writeFile(path.join(host, process.platform === "win32" ? "node.exe" : "node"), "fixture");
+  await writeFile(path.join(host, `node-${process.versions.node}${process.platform === "win32" ? ".exe" : ""}`), "fixture");
   expect(await installHost(paths, path.join(paths.versions, "1.1.0"))).toBe(true);
   const supervisor = await readFile(path.join(host, "supervisor.cjs"), "utf8");
   expect(() => new Script(supervisor)).not.toThrow();
   expect(supervisor).toContain("bin/lifecycle.cjs");
+  await rm(paths.currentVersion);
+  const spawn = vi.fn();
+  const timer = vi.fn();
+  new Script(supervisor).runInNewContext({
+    require: (id: string) => id === "node:fs" ? fs : id === "node:path" ? path : { spawn },
+    process: { env: { SWITCHY_HOME: root }, argv: [], once: vi.fn() },
+    setTimeout: timer,
+  });
+  expect(spawn).not.toHaveBeenCalled();
+  expect(timer).not.toHaveBeenCalled();
 });
 
 it("stages downloads without stopping the app or changing the selected version", async () => {
@@ -167,4 +179,38 @@ it("stages downloads without stopping the app or changing the selected version",
   expect(processManager.startSwitchyProcess).not.toHaveBeenCalled();
   expect(await readJsonFile(paths.currentVersion)).toMatchObject({ version: "1.0.0" });
   expect(await readJsonFile(lifecycleFiles(paths).state)).toMatchObject({ phase: "ready", downloadedVersion: "1.1.0" });
+});
+
+it("waits for an orphaned migration before restoring its database", async () => {
+  const snapshot = path.join(paths.updateSnapshots, "update-orphan");
+  await mkdir(path.join(snapshot, "production"), { recursive: true });
+  await writeFile(path.join(snapshot, "production/switchy.db"), "original");
+  await writeFile(path.join(paths.productionData, "switchy.db"), "migration in progress");
+  await writeJsonFileAtomic(lifecycleFiles(paths).transaction, {
+    fromVersion: "1.0.0", toVersion: "1.1.0", snapshot, port: 6767, stage: "starting",
+  });
+  let entered!: () => void;
+  let finish!: () => void;
+  const active = new Promise<void>((resolve) => { entered = resolve; });
+  const done = new Promise<void>((resolve) => { finish = resolve; });
+  const migration = withDirectoryLock(path.join(paths.runtime, "migration.lock"), async () => { entered(); await done; });
+  await active;
+  const recovery = recoverInterruptedUpdate(paths);
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(await readFile(path.join(paths.productionData, "switchy.db"), "utf8")).toBe("migration in progress");
+  } finally { finish(); }
+  await Promise.all([migration, recovery]);
+  expect(await readFile(path.join(paths.productionData, "switchy.db"), "utf8")).toBe("original");
+});
+
+it.each([true, false])("honors an explicit stop during preparation, initially running=%s", async (running) => {
+  const { requestRuntimeStop } = await import("../../../packages/cli/src/preferences");
+  const { ensurePlaywrightBrowser, runDatabaseMigration } = await import("../../../packages/cli/src/runtime");
+  await writeJsonFileAtomic(lifecycleFiles(paths).preferences, { ...await readPreferences(paths), running });
+  vi.mocked(ensurePlaywrightBrowser).mockImplementationOnce(async () => { await requestRuntimeStop(paths); });
+  expect(await installUpdate(paths, "1.1.0", true)).toBe(false);
+  expect(runDatabaseMigration).not.toHaveBeenCalled();
+  expect(processManager.startSwitchyProcess).not.toHaveBeenCalled();
+  expect(await readJsonFile(paths.currentVersion)).toMatchObject({ version: "1.0.0" });
 });

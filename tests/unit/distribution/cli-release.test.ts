@@ -1,16 +1,15 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getSwitchyPaths } from "../../../packages/cli/src/paths";
+import { ensureSwitchyDirectories, getSwitchyPaths } from "../../../packages/cli/src/paths";
 import { currentTarget } from "../../../packages/cli/src/platform";
 import {
-  CLI_VERSION,
-  DEFAULT_PORT,
   assertSupportedNodeVersion,
-  resolveApplicationVersion,
 } from "../../../packages/cli/src/config";
 import {
   assertStableVersion,
@@ -152,15 +151,6 @@ describe("Switchy CLI release handling", () => {
     expect(() => assertStableVersion("1.0.3-beta.1")).toThrow("Invalid stable");
   });
 
-  it("uses the executing CLI version unless an app version is requested", () => {
-    expect(resolveApplicationVersion()).toBe(CLI_VERSION);
-    expect(resolveApplicationVersion("1.0.1")).toBe("1.0.1");
-  });
-
-  it("uses the dedicated production port by default", () => {
-    expect(DEFAULT_PORT).toBe(6767);
-  });
-
   it("rejects Node.js versions that cannot run the packaged runtime", () => {
     expect(() => assertSupportedNodeVersion("24.12.0")).not.toThrow();
     expect(() => assertSupportedNodeVersion("22.20.0")).toThrow(
@@ -219,4 +209,38 @@ describe("Switchy CLI release handling", () => {
       "Runtime metadata does not match"
     );
   });
+});
+
+it.each(["success", "checksum", "interrupted"])("handles a streamed runtime download: %s", async (outcome) => {
+  const root = await temporaryDirectory();
+  const source = await temporaryDirectory();
+  const paths = getSwitchyPaths(root);
+  await ensureSwitchyDirectories(paths);
+  await writeRuntimeFiles(source);
+  await writeFile(path.join(source, "switchy-runtime.json"), JSON.stringify({
+    schemaVersion: 1, version: "1.0.2", target: currentTarget(), nodeVersion: process.versions.node, builtAt: new Date().toISOString(),
+  }));
+  const archive = path.join(root, "fixture.tar.gz");
+  execFileSync("tar", ["-czf", archive, "-C", source, "."]);
+  const bytes = await readFile(archive);
+  const file = `switchy-1.0.2-${currentTarget()}.tar.gz`;
+  const manifest = { schemaVersion: 1, version: "1.0.2", publishedAt: new Date().toISOString(), nodeVersion: process.versions.node,
+    artifacts: { [currentTarget()]: { file, size: bytes.length, sha256: outcome === "checksum" ? "0".repeat(64) : createHash("sha256").update(bytes).digest("hex") } } };
+  const fetch = vi.fn(async (url: string) => {
+    if (url.endsWith(".json")) return Response.json(manifest);
+    if (outcome === "interrupted") return new Response(new ReadableStream({ start(controller) {
+      controller.enqueue(new Uint8Array(bytes.subarray(0, 10)));
+      controller.error(new Error("network interrupted"));
+    } }));
+    return new Response(new Uint8Array(bytes));
+  });
+  vi.stubGlobal("fetch", fetch);
+  try {
+    if (outcome === "success") expect(await installRuntime("1.0.2", paths)).toBe(path.join(paths.versions, "1.0.2"));
+    else {
+      await expect(installRuntime("1.0.2", paths)).rejects.toThrow(outcome === "checksum" ? "checksum" : "network interrupted");
+      expect(await readdir(paths.downloads)).toEqual([]);
+      expect(await readdir(paths.versions)).toEqual([]);
+    }
+  } finally { vi.unstubAllGlobals(); }
 });

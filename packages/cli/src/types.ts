@@ -26,6 +26,7 @@ export interface CurrentVersionRecord {
   schemaVersion: 1;
   version: string;
   updatedAt: string;
+  previousVersion?: string | null;
 }
 
 export interface SwitchyPaths {

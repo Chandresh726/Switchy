@@ -155,6 +155,12 @@ jobs:
         run: node scripts/create-release-manifest.mjs
         env:
           SWITCHY_REQUIRED_TARGETS: linux-x64,linux-arm64,darwin-arm64,win32-x64
+      - uses: actions/upload-artifact@v7
+        with:
+          name: verified-release-manifest
+          path: dist/release-assets/switchy-manifest.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Publish immutable GitHub release assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -167,9 +173,25 @@ jobs:
           --generate-notes
           --title "Switchy ${GITHUB_REF_NAME}"
 
+  verify-github:
+    needs: publish-github
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.12.0
+      - uses: actions/download-artifact@v7
+        with:
+          name: verified-release-manifest
+          path: dist/release-assets
+      - name: Verify published runtime assets
+        run: node scripts/verify-published-release.mjs assets
+
   publish-npm:
     if: vars.NPM_TRUSTED_PUBLISHING_READY == 'true'
-    needs: publish-github
+    needs: verify-github
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: production
@@ -188,3 +210,24 @@ jobs:
           path: dist/npm
       - name: Publish npm CLI with trusted publishing
         run: npm publish dist/npm/*.tgz --access public
+
+  verify-npm:
+    if: vars.NPM_TRUSTED_PUBLISHING_READY == 'true'
+    needs: publish-npm
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.12.0
+      - uses: actions/download-artifact@v7
+        with:
+          name: npm-package
+          path: dist/npm
+      - name: Verify published npm package and exact installation
+        run: node scripts/verify-published-release.mjs npm

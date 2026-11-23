@@ -14,7 +14,7 @@
     "build": "node scripts/build-production.mjs",
     "cli:build": "node packages/cli/scripts/build.mjs",
     "cli:typecheck": "tsc --noEmit -p packages/cli/tsconfig.json",
-    "distribution:verify": "pnpm cli:typecheck && pnpm cli:build && vitest run --project unit tests/unit/distribution tests/unit/state/layout.test.ts",
+    "distribution:verify": "pnpm cli:typecheck && pnpm cli:build && pnpm test:unit tests/unit/distribution tests/unit/state/layout.test.ts",
     "runtime:package": "node scripts/package-runtime.mjs",
     "release:manifest": "node scripts/create-release-manifest.mjs",
     "release:version": "pnpm --filter @chandresh726/switchy version --no-git-checks --no-git-tag-version",

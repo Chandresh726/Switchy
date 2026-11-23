@@ -8,10 +8,6 @@ export const RELEASE_MANIFEST_FILE = "switchy-manifest.json";
 export const STARTUP_TIMEOUT_MS = 60_000;
 export const SHUTDOWN_TIMEOUT_MS = 15_000;
 
-export function resolveApplicationVersion(requestedVersion?: string): string {
-  return requestedVersion ?? CLI_VERSION;
-}
-
 export function assertSupportedNodeVersion(
   nodeVersion = process.versions.node
 ): void {

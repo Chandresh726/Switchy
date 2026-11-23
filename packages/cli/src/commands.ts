@@ -1,220 +1,125 @@
-import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
 
-import { pruneInstallArtifacts, type PruneResult } from "./cleanup.js";
-import {
-  CLI_VERSION,
-  DEFAULT_PORT,
-  resolveApplicationVersion,
-} from "./config.js";
-import {
-  readJsonFile,
-  withDirectoryLock,
-  writeJsonFileAtomic,
-} from "./files.js";
-import {
-  fetchLiveness,
-  getRunningProcess,
-  startSwitchyProcess,
-  stopSwitchy,
-} from "./process-manager.js";
-import {
-  ensureSwitchyDirectories,
-  getSwitchyPaths,
-} from "./paths.js";
-import {
-  installRuntime,
-  resolveLatestStableVersion,
-  setCurrentVersion,
-} from "./release.js";
-import {
-  ensurePlaywrightBrowser,
-  runDatabaseMigration,
-} from "./runtime.js";
+import { CLI_VERSION } from "./config.js";
+import { restartRuntime, startRuntime, stopRuntime, type StartOptions } from "./controller.js";
+import { readJsonFile } from "./files.js";
 import { prepareLifecycleHost } from "./lifecycle.js";
-import { lifecycleFiles, readPreferences, readUpdateState, saveUpdateState } from "./lifecycle-state.js";
-import { installUpdate, recoverInterruptedUpdate } from "./updater.js";
+import { compareVersions, readPreferences, readUpdateState, saveUpdateState } from "./lifecycle-state.js";
+import { readLogTail } from "./logs.js";
+import { ensureSwitchyDirectories, getSwitchyPaths } from "./paths.js";
+import { getRunningProcess, readProcessRecord, waitForForegroundExit } from "./process-manager.js";
+import { resolveLatestStableVersion } from "./release.js";
+import { installUpdate, downloadUpdate } from "./updater.js";
 import type { CurrentVersionRecord } from "./types.js";
 
-async function installedVersion(): Promise<string | null> {
-  const paths = getSwitchyPaths();
-  const current = await readJsonFile<CurrentVersionRecord>(paths.currentVersion);
-  return current?.schemaVersion === 1 ? current.version : null;
-}
-
-export async function startCommand({
-  version,
-  port,
-  foreground = false,
-}: {
-  version?: string;
-  port?: number;
-  foreground?: boolean;
-} = {}): Promise<void> {
+export async function startCommand(options: StartOptions = {}): Promise<void> {
   const paths = getSwitchyPaths();
   await ensureSwitchyDirectories(paths);
-  await withDirectoryLock(paths.startLock, async () =>
-    startCommandUnlocked({ paths, version, port: port ?? (await readPreferences(paths)).port, foreground })
-  );
-}
-
-async function startCommandUnlocked({
-  paths,
-  version,
-  port,
-  foreground,
-}: {
-  paths: ReturnType<typeof getSwitchyPaths>;
-  version?: string;
-  port: number;
-  foreground: boolean;
-}): Promise<void> {
-  await recoverInterruptedUpdate(paths);
-  const existing = await getRunningProcess(paths);
-  if (existing) {
-    await prepareLifecycleHost(paths, path.join(paths.versions, existing.record.version), existing.record.port);
-    console.log(
-      `Switchy ${existing.record.version} is already running at `
-      + `http://${existing.record.hostname}:${existing.record.port}`
-    );
-    return;
+  const record = await startRuntime(paths, options);
+  if (options.foreground) {
+    await waitForForegroundExit(record);
+  } else {
+    await prepareLifecycleHost(paths, path.join(paths.versions, record.version));
+    console.log(`Switchy ${record.version} is running at http://${record.hostname}:${record.port}`);
   }
-
-  const previousVersion = await installedVersion();
-  const selectedVersion = version ?? previousVersion ?? resolveApplicationVersion();
-  const runtimeDirectory = await installRuntime(selectedVersion, paths);
-  await Promise.all([
-    ensurePlaywrightBrowser(runtimeDirectory, paths),
-    runDatabaseMigration(runtimeDirectory, paths),
-  ]);
-  await setCurrentVersion(paths, selectedVersion);
-  const stagedVersion = (await readUpdateState(paths)).downloadedVersion ?? null;
-  const pruning = pruneInstallArtifacts(paths, [selectedVersion, previousVersion, stagedVersion])
-    .then(reportPrunedArtifacts)
-    .catch((error: unknown) => {
-      console.warn(
-        "Could not remove old Switchy runtimes:",
-        error instanceof Error ? error.message : String(error)
-      );
-    });
-  try {
-    const record = await startSwitchyProcess({
-      paths,
-      runtimeDirectory,
-      version: selectedVersion,
-      port,
-      foreground,
-    });
-    if (!foreground) {
-      await prepareLifecycleHost(paths, runtimeDirectory, port);
-      console.log(
-        `Switchy ${selectedVersion} is running at `
-        + `http://${record.hostname}:${record.port}`
-      );
-    }
-  } finally {
-    await pruning;
-  }
-}
-
-function reportPrunedArtifacts({ versions, downloads, snapshots }: PruneResult): void {
-  const removed = [
-    versions.length > 0 && `${versions.length} old runtime(s)`,
-    downloads.length > 0 && `${downloads.length} cached download(s)`,
-    snapshots.length > 0 && `${snapshots.length} old update snapshot(s)`,
-  ].filter(Boolean);
-  if (removed.length > 0) console.log(`Cleaned up ${removed.join(", ")}.`);
 }
 
 export async function stopCommand(force = false): Promise<void> {
   const paths = getSwitchyPaths();
   await ensureSwitchyDirectories(paths);
-  await withDirectoryLock(paths.startLock, async () => {
-    await withDirectoryLock(lifecycleFiles(paths).preferencesLock, async () => {
-      await writeJsonFileAtomic(lifecycleFiles(paths).preferences, { ...await readPreferences(paths), running: false });
-    });
-    if (await stopSwitchy(paths, force)) console.log("Switchy stopped.");
-    else console.log("Switchy is not running.");
-  });
+  console.log(await stopRuntime(paths, force) ? "Switchy stopped." : "Switchy is not running.");
 }
 
-export async function statusCommand(): Promise<void> {
+export async function restartCommand(): Promise<void> {
   const paths = getSwitchyPaths();
   await ensureSwitchyDirectories(paths);
+  const record = await restartRuntime(paths);
+  await prepareLifecycleHost(paths, path.join(paths.versions, record.version));
+  console.log(`Switchy ${record.version} restarted at http://${record.hostname}:${record.port}`);
+}
+
+async function readStatus() {
+  const paths = getSwitchyPaths();
   const running = await getRunningProcess(paths);
-  if (!running) {
-    console.log("Switchy is stopped.");
-    return;
-  }
-  const live = running.live ?? await fetchLiveness(running.record);
-  console.log(`Switchy ${running.record.version} is running.`);
-  console.log(`URL: http://${running.record.hostname}:${running.record.port}`);
-  console.log(`PID: ${running.record.pid}`);
-  console.log(`Health: ${live ? "Live" : "Starting or unavailable"}`);
+  const current = await readJsonFile<CurrentVersionRecord>(paths.currentVersion);
+  const status = {
+    status: running ? running.live ? "running" : "unresponsive" : "stopped",
+    cliVersion: CLI_VERSION, installedVersion: current?.version ?? null,
+    previousVersion: current?.previousVersion ?? null, nodeVersion: process.versions.node,
+    pid: running?.record.pid ?? null, url: running ? `http://${running.record.hostname}:${running.record.port}` : null,
+  };
+  return status;
 }
 
-export async function updateCommand(): Promise<void> {
+export async function statusCommand(json = false): Promise<void> {
+  const status = await readStatus();
+  if (json) console.log(JSON.stringify(status, null, 2));
+  else {
+    console.log(`Switchy${status.pid ? ` ${status.installedVersion}` : ""} is ${status.status}.`);
+    if (status.pid) console.log(`URL: ${status.url}\nPID: ${status.pid}`);
+  }
+}
+
+export async function doctorCommand(): Promise<void> {
+  const paths = getSwitchyPaths();
+  const issues: Record<string, string> = {};
+  const inspect = async <T>(name: string, read: () => Promise<T>): Promise<T | null> => {
+    try { return await read(); } catch (error) {
+      issues[name] = error instanceof Error ? error.message : String(error);
+      return null;
+    }
+  };
+  const [status, record, preferences, update, managedNode] = await Promise.all([
+    inspect("process", readStatus), inspect("record", () => readProcessRecord(paths)),
+    inspect("preferences", () => readPreferences(paths)), inspect("update", () => readUpdateState(paths)),
+    inspect("managedNode", () => readJsonFile(path.join(paths.app, "host/node.json"))),
+  ]);
+  console.log(JSON.stringify({ ...status, cliVersion: CLI_VERSION, home: paths.root, preferences, update, managedNode, issues,
+    recordedPid: record?.pid ?? null, applicationLog: paths.logFile,
+    lifecycleLog: path.join(paths.logs, "lifecycle.log"),
+  }, null, 2));
+}
+
+export async function updateCommand(action: "check" | "download" | "install" | "apply" = "install"): Promise<void> {
   const paths = getSwitchyPaths();
   await ensureSwitchyDirectories(paths);
-  await withDirectoryLock(paths.startLock, async () => {
-    await recoverInterruptedUpdate(paths);
-    const latestVersion = await resolveLatestStableVersion();
-    const currentVersion = await installedVersion();
-    if (currentVersion === latestVersion) {
-      console.log(`Switchy ${latestVersion} is already current.`);
-      return;
-    }
-
-    if (!currentVersion) {
-      await startCommandUnlocked({ paths, version: latestVersion, port: DEFAULT_PORT, foreground: false });
-      return;
-    }
-    await saveUpdateState(paths, { latestVersion, lastCheckedAt: new Date().toISOString() });
-    if (await installUpdate(paths, latestVersion, true)) {
-      await prepareLifecycleHost(paths, path.join(paths.versions, latestVersion), (await readPreferences(paths)).port);
-      console.log(`Updated to Switchy ${latestVersion}.`);
-    } else {
-      console.log("Update deferred. Wait for active work to finish and try again.");
-    }
-  });
+  const staged = (await readUpdateState(paths)).downloadedVersion;
+  if (action === "apply" && !staged) throw new Error("No update is downloaded. Run switchy update --download first.");
+  const latestVersion = action === "apply" ? staged! : await resolveLatestStableVersion();
+  const current = await readJsonFile<CurrentVersionRecord>(paths.currentVersion);
+  await saveUpdateState(paths, { latestVersion, lastCheckedAt: new Date().toISOString() });
+  if (current && compareVersions(latestVersion, current.version) <= 0) {
+    await saveUpdateState(paths, { phase: "idle", message: null });
+    console.log(`Switchy ${current.version} is already current.`);
+  } else if (action === "check") {
+    await saveUpdateState(paths, { phase: "available", message: null });
+    console.log(`Switchy ${latestVersion} is available.`);
+  } else if (action === "download") {
+    await downloadUpdate(paths, latestVersion);
+    console.log(`Downloaded Switchy ${latestVersion}. Run switchy update --apply to install.`);
+  } else if (await installUpdate(paths, latestVersion, true)) {
+    await prepareLifecycleHost(paths, path.join(paths.versions, latestVersion));
+    console.log(`Updated to Switchy ${latestVersion}.`);
+  } else {
+    console.log("Update deferred. Wait for active work to finish and try again.");
+  }
 }
 
 export async function logsCommand(): Promise<void> {
-  const paths = getSwitchyPaths();
-  const contents = await readFile(paths.logFile, "utf8").catch((error: unknown) => {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
-    throw error;
-  });
-  const lines = contents.trimEnd().split("\n");
-  console.log(lines.slice(-200).join("\n"));
+  console.log(await readLogTail(getSwitchyPaths().logFile));
 }
 
 export async function openCommand(): Promise<void> {
-  const paths = getSwitchyPaths();
-  const running = await getRunningProcess(paths);
-  if (!running) throw new Error("Switchy is not running");
+  const running = await getRunningProcess(getSwitchyPaths());
+  if (!running?.live) throw new Error("Switchy is not running or is unresponsive");
   const url = `http://${running.record.hostname}:${running.record.port}`;
-  let executable: string;
-  let args: string[];
-  if (process.platform === "darwin") {
-    executable = "open";
-    args = [url];
-  } else if (process.platform === "win32") {
-    executable = "cmd";
-    args = ["/c", "start", "", url];
-  } else {
-    executable = "xdg-open";
-    args = [url];
-  }
-  const child = spawn(executable, args, {
-    detached: true,
-    stdio: "ignore",
-  });
+  const [executable, args] = process.platform === "darwin" ? ["open", [url]]
+    : process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : ["xdg-open", [url]];
+  const child = spawn(executable, args, { detached: true, stdio: "ignore" });
+  await new Promise<void>((resolve, reject) => { child.once("spawn", resolve); child.once("error", reject); });
   child.unref();
   console.log(url);
 }
 
-export function versionCommand(): void {
-  console.log(CLI_VERSION);
-}
+export function versionCommand(): void { console.log(CLI_VERSION); }

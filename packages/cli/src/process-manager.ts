@@ -9,22 +9,18 @@ import {
   STARTUP_TIMEOUT_MS,
 } from "./config.js";
 import {
+  processIsAlive,
   readJsonFile,
   removeFile,
+  withDirectoryLock,
   writeJsonFileAtomic,
 } from "./files.js";
+import { predatesCurrentBoot } from "./lifecycle-state.js";
+import { rotateLog } from "./logs.js";
+import { runtimeEnvironment } from "./startup-environment.js";
 import type { ProcessRecord, SwitchyPaths } from "./types.js";
 
-function processIsAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
-async function readProcessRecord(
+export async function readProcessRecord(
   paths: SwitchyPaths
 ): Promise<ProcessRecord | null> {
   const record = await readJsonFile<ProcessRecord>(paths.processRecord)
@@ -79,15 +75,13 @@ export async function getRunningProcess(
   paths: SwitchyPaths
 ): Promise<{ record: ProcessRecord; live: Awaited<ReturnType<typeof fetchLiveness>> } | null> {
   const record = await readProcessRecord(paths);
-  if (!record) {
-    await removeFile(paths.processRecord);
-    return null;
+  if (!record || predatesCurrentBoot(record.startedAt) || !processIsAlive(record.pid)) return null;
+  const live = await fetchLiveness(record);
+  if (live && (live.instanceId !== record.instanceId || live.version !== record.version)) {
+    throw new Error("The recorded port belongs to another application instance");
   }
-  if (!processIsAlive(record.pid)) {
-    await removeFile(paths.processRecord);
-    return null;
-  }
-  return { record, live: await fetchLiveness(record) };
+  return { record, live };
+
 }
 
 async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
@@ -179,7 +173,10 @@ async function waitUntilReady(record: ProcessRecord): Promise<void> {
         `http://${record.hostname}:${record.port}/api/health/ready`,
         { signal: AbortSignal.timeout(2_000) }
       );
-      if (response.ok) return;
+      if (response.ok) {
+        const live = await fetchLiveness(record);
+        if (live?.instanceId === record.instanceId && live.version === record.version) return;
+      }
     } catch {
       // The server may still be starting.
     }
@@ -194,16 +191,19 @@ export async function startSwitchyProcess({
   version,
   port,
   foreground,
+  candidate = false,
 }: {
   paths: SwitchyPaths;
   runtimeDirectory: string;
   version: string;
   port: number;
   foreground: boolean;
+  candidate?: boolean;
 }): Promise<ProcessRecord> {
   const instanceId = randomUUID();
   const environment: NodeJS.ProcessEnv = {
-    ...process.env,
+    ...await runtimeEnvironment(paths),
+    ...(candidate ? { SWITCHY_UPDATE_CANDIDATE: "1" } : { SWITCHY_UPDATE_CANDIDATE: "" }),
     NODE_ENV: "production",
     HOSTNAME: DEFAULT_HOSTNAME,
     PORT: String(port),
@@ -220,17 +220,25 @@ export async function startSwitchyProcess({
     PLAYWRIGHT_BROWSERS_PATH: paths.playwright,
   };
   const serverPath = path.join(runtimeDirectory, "server.js");
+  if (!foreground) await rotateLog(paths.logFile);
   const logHandle = foreground
     ? null
     : await open(paths.logFile, "a", 0o600);
   const child = spawn(process.execPath, [serverPath], {
     cwd: runtimeDirectory,
-    detached: !foreground,
+    detached: true,
     env: environment,
     stdio: foreground
       ? "inherit"
       : ["ignore", logHandle!.fd, logHandle!.fd],
   });
+  const exited = new Promise<void>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) => code === 0 || code === null ? resolve() : reject(new Error(`Switchy exited with code ${code}`)));
+  });
+  // Startup observes failure through readiness. Keep an early exit from becoming
+  // an unhandled rejection before a foreground caller starts waiting.
+  void exited.catch(() => undefined);
   await logHandle?.close();
   if (!child.pid) throw new Error("Switchy did not return a process ID");
 
@@ -243,21 +251,26 @@ export async function startSwitchyProcess({
     port,
     startedAt: new Date().toISOString(),
   };
-  await writeJsonFileAtomic(paths.processRecord, record);
-
-  if (foreground) {
-    await new Promise<void>((resolve, reject) => {
-      child.once("error", reject);
-      child.once("exit", (code) => {
-        if (code === 0 || code === null) resolve();
-        else reject(new Error(`Switchy exited with code ${code}`));
-      });
-    }).finally(() => removeFile(paths.processRecord));
-    return record;
-  }
-
-  child.unref();
   try {
+    await writeJsonFileAtomic(paths.processRecord, record);
+
+    if (foreground) {
+      const terminate = () => { void signalProcessTree(record.pid, "SIGTERM").catch(console.error); };
+      process.once("SIGINT", terminate);
+      process.once("SIGTERM", terminate);
+      const completion = exited.finally(async () => {
+        process.removeListener("SIGINT", terminate);
+        process.removeListener("SIGTERM", terminate);
+        await withDirectoryLock(paths.startLock, async () => {
+          const current = await readProcessRecord(paths);
+          if (current?.instanceId === record.instanceId) await removeFile(paths.processRecord);
+        });
+      });
+      void completion.catch(() => undefined);
+      foregroundProcesses.set(record.instanceId, completion);
+    } else {
+      child.unref();
+    }
     await waitUntilReady(record);
     return record;
   } catch (error) {
@@ -276,4 +289,12 @@ export async function startSwitchyProcess({
     await removeFile(paths.processRecord);
     throw error;
   }
+}
+
+const foregroundProcesses = new Map<string, Promise<void>>();
+
+export async function waitForForegroundExit(record: ProcessRecord): Promise<void> {
+  const completion = foregroundProcesses.get(record.instanceId);
+  if (!completion) return;
+  try { await completion; } finally { foregroundProcesses.delete(record.instanceId); }
 }

@@ -17,7 +17,7 @@ export async function PATCH(request: Request) {
   try {
     assertAppRequest(request);
     const changes = lifecyclePreferencesPatchSchema.parse(await request.json());
-    await changeLifecyclePreferences({ ...changes, consented: true });
+    await changeLifecyclePreferences(changes);
     return NextResponse.json(await getLifecycleStatus(), { headers: NO_STORE_HEADERS });
   } catch (error) {
     return handleApiError(error, { request, fallbackMessage: "Could not save startup and update preferences" });

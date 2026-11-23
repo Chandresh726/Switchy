@@ -76,7 +76,7 @@ Backup and restore are CLI-only package scripts and are not HTTP APIs.
 | `/api/companies/refresh-jobs` | POST | JSON client | `clients/companies` |
 | `/api/companies` | GET | JSON client | `clients/companies` |
 | `/api/companies/sync` | PUT | JSON client | `clients/companies` |
-| `/api/lifecycle` | GET, PATCH, POST | JSON client | `clients/lifecycle`, Application and System Info |
+| `/api/lifecycle` | GET, PATCH, POST | JSON client | `clients/lifecycle`, Startup, power & updates and System Info |
 | `/api/lifecycle/activity` | GET | Probe | lifecycle manager only |
 | `/api/lifecycle/heartbeat` | POST | JSON client | `clients/lifecycle`, lifecycle listener |
 | `/api/health/live` | GET | Probe | process monitor only |

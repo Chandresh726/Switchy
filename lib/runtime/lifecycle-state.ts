@@ -1,43 +1,23 @@
-import { randomUUID } from "node:crypto";
-import { readFile, rename, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
-interface LifecyclePaths {
+import { readJsonFile, writeJsonFileAtomic } from "./atomic-file";
+
+export interface LifecyclePaths {
   root: string;
   runtime: string;
   app: string;
-}
-
-export async function readJsonFile<T>(filePath: string): Promise<T | null> {
-  try {
-    return JSON.parse(await readFile(filePath, "utf8")) as T;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw error;
-  }
-}
-
-export async function writeJsonFileAtomic(filePath: string, value: unknown): Promise<void> {
-  const temporaryPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${randomUUID()}.tmp`);
-  try {
-    await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-    await rename(temporaryPath, filePath);
-  } finally {
-    await rm(temporaryPath, { force: true });
-  }
 }
 
 export interface LifecyclePreferences {
   startAtLogin: boolean;
   openAtLogin: boolean;
   automaticUpdates: boolean;
-  consented: boolean;
   running: boolean;
+  stopToken?: string;
   port: number;
 }
 
-interface UpdateState {
+export interface UpdateState {
   phase: "idle" | "checking" | "available" | "downloading" | "ready" | "waiting" | "installing" | "failed";
   lastCheckedAt: string | null;
   latestVersion: string | null;
@@ -47,16 +27,18 @@ interface UpdateState {
 }
 
 export interface UpdateTransaction {
-  fromVersion: string;
+  fromVersion: string | null;
+  hadData?: boolean;
   toVersion: string;
   snapshot: string | null;
+  previousVersion?: string | null;
   port: number;
   stage: "prepared" | "stopped" | "snapshot" | "starting" | "committed";
 }
 
 const DEFAULT_PREFERENCES: LifecyclePreferences = {
   startAtLogin: false, openAtLogin: false, automaticUpdates: false,
-  consented: false, running: true, port: 6767,
+  running: true, port: 6767,
 };
 const DEFAULT_UPDATE_STATE: UpdateState = {
   phase: "idle", lastCheckedAt: null, latestVersion: null, failedVersion: null, downloadedVersion: null, message: null,
@@ -70,6 +52,10 @@ export function lifecycleFiles(paths: LifecyclePaths) {
     maintenance: path.join(paths.runtime, "update-maintenance.json"),
     browser: path.join(paths.runtime, "browser-heartbeats"),
     request: path.join(paths.runtime, "update-request.json"),
+    requests: path.join(paths.runtime, "update-requests"),
+    updateLock: path.join(paths.runtime, "update.lock"),
+    hostLock: path.join(paths.runtime, "host.lock"),
+    supervisorLock: path.join(paths.runtime, "supervisor.lock"),
     preferencesLock: path.join(paths.runtime, "preferences.lock"),
     host: path.join(paths.app, "host"),
   };
@@ -78,7 +64,7 @@ export function lifecycleFiles(paths: LifecyclePaths) {
 export async function readPreferences(paths: LifecyclePaths): Promise<LifecyclePreferences> {
   const value = await readJsonFile<LifecyclePreferences>(lifecycleFiles(paths).preferences);
   if (!value) return { ...DEFAULT_PREFERENCES };
-  if (["startAtLogin", "openAtLogin", "automaticUpdates", "consented", "running"].some(
+  if (["startAtLogin", "openAtLogin", "automaticUpdates", "running"].some(
     (key) => typeof value[key as keyof LifecyclePreferences] !== "boolean"
   ) || !Number.isInteger(value.port) || value.port < 1 || value.port > 65535) {
     throw new Error("Switchy startup preferences are invalid");
@@ -87,11 +73,13 @@ export async function readPreferences(paths: LifecyclePaths): Promise<LifecycleP
 }
 
 export async function readUpdateState(paths: LifecyclePaths): Promise<UpdateState> {
-  return await readJsonFile<UpdateState>(lifecycleFiles(paths).state) ?? { ...DEFAULT_UPDATE_STATE };
+  return { ...DEFAULT_UPDATE_STATE, ...await readJsonFile<UpdateState>(lifecycleFiles(paths).state) };
 }
 
 export async function saveUpdateState(paths: LifecyclePaths, changes: Partial<UpdateState>): Promise<void> {
-  await writeJsonFileAtomic(lifecycleFiles(paths).state, { ...await readUpdateState(paths), ...changes });
+  const previous = await readUpdateState(paths);
+  const next = { ...previous, ...changes };
+  if (JSON.stringify(previous) !== JSON.stringify(next)) await writeJsonFileAtomic(lifecycleFiles(paths).state, next);
 }
 
 export function compareVersions(left: string, right: string): number {
@@ -106,11 +94,4 @@ export function compareVersions(left: string, right: string): number {
   return 0;
 }
 
-export function predatesCurrentBoot(startedAt?: string): boolean {
-  try {
-    return Boolean(startedAt && Date.parse(startedAt) < Date.now() - os.uptime() * 1000 - 10_000);
-  } catch {
-    // Restricted environments may not expose uptime. Retain the PID check.
-    return false;
-  }
-}
+export { predatesCurrentBoot } from "./process-identity";

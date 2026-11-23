@@ -1,10 +1,13 @@
 import { execFile, spawn } from "node:child_process";
-import { chmod, copyFile, mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { chmod, copyFile, link, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { lifecycleFiles } from "./lifecycle-state.js";
+import { readJsonFile, withDirectoryLock, writeFileAtomic, writeJsonFileAtomic } from "./files.js";
+import { saveStartupEnvironment, runtimeEnvironment } from "./startup-environment.js";
+import { compareVersions, lifecycleFiles } from "./lifecycle-state.js";
 import type { SwitchyPaths } from "./types.js";
 
 const execute = promisify(execFile);
@@ -15,13 +18,13 @@ function escapeXml(value: string): string {
     .replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 }
 
-export function startupPlist(paths: SwitchyPaths): string {
+export function startupPlist(paths: SwitchyPaths, executable = path.join(lifecycleFiles(paths).host, "node")): string {
   const host = lifecycleFiles(paths).host;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>Label</key><string>${LABEL}</string>
-<key>ProgramArguments</key><array><string>${escapeXml(path.join(host, "node"))}</string><string>${escapeXml(path.join(host, "supervisor.cjs"))}</string><string>--login</string></array>
+<key>ProgramArguments</key><array><string>${escapeXml(executable)}</string><string>${escapeXml(path.join(host, "supervisor.cjs"))}</string><string>--login</string></array>
 <key>EnvironmentVariables</key><dict><key>SWITCHY_HOME</key><string>${escapeXml(paths.root)}</string></dict>
 <key>RunAtLoad</key><true/>
 <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
@@ -31,74 +34,97 @@ export function startupPlist(paths: SwitchyPaths): string {
 </dict></plist>\n`;
 }
 
-// The supervisor has no package dependencies. Each tick loads code from the
-// selected runtime so upgrading Switchy also upgrades the lifecycle manager.
+// The bootstrap stays dependency-free. One worker owns the manager lock and
+// remains alive between checks; exit 21 loads the newly committed runtime.
 const SUPERVISOR = `const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawn } = require('node:child_process');
 const root = process.env.SWITCHY_HOME;
-const bootTime = (() => { try { return Date.now() - require('node:os').uptime() * 1000; } catch { return 0; } })();
-const lock = path.join(root, 'runtime/supervisor.lock');
-fs.mkdirSync(path.dirname(lock), { recursive: true });
-try { fs.mkdirSync(lock); }
-catch (error) {
-  if (error.code !== 'EEXIST') throw error;
-  try {
-    const owner = JSON.parse(fs.readFileSync(path.join(lock, 'owner.json'), 'utf8'));
-    try {
-      if (!owner.startedAt || owner.startedAt >= bootTime - 10000) {
-        process.kill(owner.pid, 0); process.exit(0);
-      }
-    }
-    catch (error) { if (error.code !== 'ESRCH') process.exit(0); }
-  } catch {
-    if (Date.now() - fs.statSync(lock).mtimeMs < 30000) process.exit(0);
-  }
-  fs.rmSync(lock, { recursive: true, force: true });
-  try { fs.mkdirSync(lock); } catch { process.exit(0); }
-}
-fs.writeFileSync(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, startedAt: Date.now() }));
-process.once('exit', () => fs.rmSync(lock, { recursive: true, force: true }));
-process.once('SIGTERM', () => process.exit(0));
-process.once('SIGINT', () => process.exit(0));
 let login = process.argv.includes('--login');
-function tick() {
-  try {
-    const current = JSON.parse(fs.readFileSync(path.join(root, 'app/current.json'), 'utf8'));
-    if (!/^\\d+\\.\\d+\\.\\d+$/.test(current.version)) throw Error('Invalid installed version');
-    const worker = path.join(root, 'app/versions', current.version, 'bin/lifecycle.cjs');
-    const result = spawnSync(process.execPath, [worker, login ? 'login' : 'tick'], {
-      env: { ...process.env, SWITCHY_HOME: root }, stdio: 'inherit'
-    });
-    if (result.status === 20) process.exit(0);
-    if (result.status === 0) login = false;
-  } catch (error) { console.error('Switchy lifecycle:', error.message); }
-  setTimeout(tick, 30000);
+let child;
+let stopping = false;
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
+  stopping = true;
+  if (child) child.kill('SIGTERM'); else process.exit(0);
+});
+function start() {
+  let current;
+  try { current = JSON.parse(fs.readFileSync(path.join(root, 'app/current.json'), 'utf8')); }
+  catch (error) { if (error.code === 'ENOENT') return; throw error; }
+  if (!/^\\d+\\.\\d+\\.\\d+$/.test(current.version)) throw Error('Invalid installed version');
+  const worker = path.join(root, 'app/versions', current.version, 'bin/lifecycle.cjs');
+  if (!fs.existsSync(worker)) return;
+  const metadata = JSON.parse(fs.readFileSync(path.join(root, 'app/host/node.json'), 'utf8'));
+  child = spawn(path.join(root, 'app/host', metadata.file), [worker, login ? 'serve-login' : 'serve'], {
+    env: { ...process.env, SWITCHY_HOME: root }, stdio: 'inherit', windowsHide: true
+  });
+  child.once('error', error => { console.error('Switchy lifecycle:', error.message); process.exitCode = 1; });
+  child.once('exit', code => {
+    child = undefined;
+    if (stopping || code === 20) return;
+    login = false;
+    if (code === 21) start();
+    else setTimeout(start, 30000);
+  });
 }
-tick();
+start();
 `;
+
+interface HostNode { file: string; version: string }
+
+async function hostNode(paths: SwitchyPaths): Promise<HostNode> {
+  const metadata = await readJsonFile<HostNode>(path.join(lifecycleFiles(paths).host, "node.json"));
+  if (!metadata || !/^node-24\.\d+\.\d+(?:\.exe)?$/u.test(metadata.file)) throw new Error("Switchy manager Node metadata is invalid");
+  return metadata;
+}
 
 export async function installHost(paths: SwitchyPaths, runtimeDirectory: string): Promise<boolean> {
   if (!(await stat(path.join(runtimeDirectory, "bin/lifecycle.cjs")).catch(() => null))?.isFile()) return false;
-  const host = lifecycleFiles(paths).host;
-  await mkdir(host, { recursive: true, mode: 0o700 });
-  const node = path.join(host, process.platform === "win32" ? "node.exe" : "node");
-  if (!(await stat(node).catch(() => null))?.isFile()) {
-    await copyFile(process.execPath, `${node}.tmp`);
-    await chmod(`${node}.tmp`, 0o700);
-    await rename(`${node}.tmp`, node);
-  }
-  await writeFile(path.join(host, "supervisor.cjs"), SUPERVISOR, { mode: 0o600 });
-  return true;
+  return withDirectoryLock(lifecycleFiles(paths).hostLock, async () => {
+    const host = lifecycleFiles(paths).host;
+    await mkdir(host, { recursive: true, mode: 0o700 });
+    const previous = await readJsonFile<HostNode>(path.join(host, "node.json"));
+    const version = previous && compareVersions(previous.version, process.versions.node) > 0 ? previous.version : process.versions.node;
+    const file = `node-${version}${process.platform === "win32" ? ".exe" : ""}`;
+    const node = path.join(host, file);
+    if (!(await stat(node).catch(() => null))?.isFile()) {
+      if (version !== process.versions.node) throw new Error("The managed Node executable is missing. Start with the newer Node 24 version to restore it.");
+      const temporary = `${node}.${randomUUID()}.tmp`;
+      try {
+        await copyFile(process.execPath, temporary);
+        await chmod(temporary, 0o700);
+        const handle = await open(temporary, "r");
+        try { await handle.sync(); } finally { await handle.close(); }
+        await rename(temporary, node);
+      } finally { await rm(temporary, { force: true }); }
+    }
+    const alias = path.join(host, process.platform === "win32" ? "node.exe" : "node");
+    if (previous?.file !== file || !(await stat(alias).catch(() => null))) {
+      const temporary = `${alias}.${randomUUID()}.tmp`;
+      try {
+        await link(node, temporary);
+        await rename(temporary, alias);
+      } catch (error) {
+        if (!["EPERM", "EBUSY", "EACCES"].includes((error as NodeJS.ErrnoException).code ?? "") || !(await stat(alias).catch(() => null))) throw error;
+      } finally { await rm(temporary, { force: true }); }
+    }
+    await writeJsonFileAtomic(path.join(host, "node.json"), { file, version });
+    // Publish executable source atomically too. Running workers may configure
+    // preferences at the same time that a terminal refreshes the host.
+    await writeFileAtomic(path.join(host, "supervisor.cjs"), SUPERVISOR);
+    await saveStartupEnvironment(paths);
+    return true;
+  });
 }
 
 export async function startHost(paths: SwitchyPaths): Promise<void> {
   const host = lifecycleFiles(paths).host;
   const log = await open(path.join(paths.logs, "lifecycle.log"), "a", 0o600);
-  const child = spawn(path.join(host, process.platform === "win32" ? "node.exe" : "node"),
+  const node = await hostNode(paths);
+  const child = spawn(path.join(host, node.file),
     [path.join(host, "supervisor.cjs")], {
       detached: true, stdio: ["ignore", log.fd, log.fd], windowsHide: true,
-      env: { ...process.env, SWITCHY_HOME: paths.root },
+      env: { ...await runtimeEnvironment(paths), SWITCHY_HOME: paths.root },
     });
   await new Promise<void>((resolve, reject) => {
     child.once("spawn", resolve);
@@ -115,11 +141,12 @@ export async function setStartupRegistration(paths: SwitchyPaths, enabled: boole
   const file = path.join(os.homedir(), "Library/LaunchAgents", `${LABEL}.plist`);
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   const existingRegistration = await readFile(file, "utf8").catch(() => "");
-  if (existingRegistration && !existingRegistration.includes(escapeXml(paths.root))) {
+  if (existingRegistration && !existingRegistration.includes(`<string>${escapeXml(paths.root)}</string>`)) {
     throw new Error("Another Switchy installation owns the startup item");
   }
   if (enabled) {
-    await writeFile(file, startupPlist(paths), { mode: 0o600 });
+    const node = await hostNode(paths);
+    await writeFileAtomic(file, startupPlist(paths, path.join(lifecycleFiles(paths).host, node.file)));
     // Register for the next login. The existing supervisor owns this session;
     // bootstrapping another here would start a second supervisor.
   } else {

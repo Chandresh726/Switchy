@@ -1,5 +1,9 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { registerRuntimeLock } = await import("@/lib/state/runtime-lock");
+    registerRuntimeLock();
+    const { verifyLaunchRecord } = await import("@/lib/runtime/launch-record");
+    await verifyLaunchRecord();
     const {
       logRuntimeEvent,
       recordRuntimeError,
@@ -8,11 +12,9 @@ export async function register() {
       setScrapeQueueRecovery,
       setSchedulerInitialization,
     } = await import("@/lib/runtime/health");
-    const { registerRuntimeLock } = await import("@/lib/state/runtime-lock");
-    registerRuntimeLock();
-
     const { isUpdateMaintenance } = await import("@/lib/runtime/update-maintenance");
-    if (isUpdateMaintenance()) {
+    const candidate = process.env.SWITCHY_UPDATE_CANDIDATE === "1";
+    if (isUpdateMaintenance() && !candidate) {
       // The updater probes the migrated database before admitting any writes.
       // Background initialization resumes only after its commit is durable.
       const resume = setInterval(() => {
@@ -71,32 +73,41 @@ export async function register() {
       ensureSchedulerWatchdog();
       setSchedulerInitialization("ready");
       logRuntimeEvent("scheduler", "scheduler_initialized");
-      // Next.js serves no requests until register() resolves, and a catch-up
-      // batch scrapes every company, so neither task below may be awaited.
-      // Backend-owned catch-up: reconcile ticks missed while the process was
-      // down and run one coalesced batch. Never depends on an open UI.
-      void (async () => {
-        try {
-          const bootRecovery = await recoverSchedulerOnBoot(new Date(), "boot");
-          if (bootRecovery.status === "started") {
-            logRuntimeEvent("scheduler", "scheduler_boot_recovery_completed");
+      const afterCommit = () => {
+        // Next.js serves no requests until register() resolves, and a catch-up
+        // batch scrapes every company, so neither task below may be awaited.
+        // Backend-owned catch-up: reconcile ticks missed while the process was
+        // down and run one coalesced batch. Never depends on an open UI.
+        void (async () => {
+          try {
+            const bootRecovery = await recoverSchedulerOnBoot(new Date(), "boot");
+            if (bootRecovery.status === "started") {
+              logRuntimeEvent("scheduler", "scheduler_boot_recovery_completed");
+            }
+          } catch (error) {
+            console.error("[Instrumentation] Scheduler boot recovery failed:", error);
           }
-        } catch (error) {
-          console.error("[Instrumentation] Scheduler boot recovery failed:", error);
-        }
-      })();
-      // Backend-owned persistence: install/heal the macOS host agents on
-      // every boot so fresh installs get them without a settings save.
-      // Best-effort and never fails startup.
-      void (async () => {
-        try {
-          const { syncSchedulerHost } = await import("@/lib/jobs/scheduler-host");
-          const hostResult = await syncSchedulerHost();
-          logRuntimeEvent("scheduler", "scheduler_host_synced", { code: hostResult });
-        } catch (error) {
-          console.error("[Instrumentation] Scheduler host sync failed:", error);
-        }
-      })();
+        })();
+        // Backend-owned persistence: install/heal the macOS host agents on
+        // every boot so fresh installs get them without a settings save.
+        // Best-effort and never fails startup.
+        void (async () => {
+          try {
+            const { syncSchedulerHost } = await import("@/lib/jobs/scheduler-host");
+            const hostResult = await syncSchedulerHost();
+            logRuntimeEvent("scheduler", "scheduler_host_synced", { code: hostResult });
+          } catch (error) {
+            console.error("[Instrumentation] Scheduler host sync failed:", error);
+          }
+        })();
+      };
+      if (candidate && isUpdateMaintenance()) {
+        const resume = setInterval(() => {
+          if (!isUpdateMaintenance()) { clearInterval(resume); afterCommit(); }
+        }, 500);
+        resume.unref();
+      } else { afterCommit(); }
+
     } catch (error) {
       setSchedulerInitialization("failed");
       recordRuntimeError("scheduler", "scheduler_initialization_failed");
@@ -168,7 +179,10 @@ export async function register() {
         });
       }
       const { reconcileMatchNotifications } = await import("@/lib/notifications/service");
-      await reconcileMatchNotifications();
+      try { await reconcileMatchNotifications(); } catch (error) {
+        recordRuntimeError("queue", "notification_recovery_failed");
+        console.error("[Instrumentation] Notification reconciliation failed:", error);
+      }
     })();
   }
 }

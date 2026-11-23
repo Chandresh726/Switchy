@@ -25,6 +25,7 @@ export default defineConfig({
         "lib/state/**/*.ts",
         "lib/storage/**/*.ts",
         "lib/query-keys.ts",
+        "packages/cli/src/**/*.ts",
       ],
       exclude: ["lib/**/index.ts"],
       reporter: ["text", "html"],

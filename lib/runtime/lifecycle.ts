@@ -6,7 +6,8 @@ import { promisify } from "node:util";
 
 import { getSwitchyRootDirectory } from "@/lib/state/layout";
 
-import { lifecycleFiles, readPreferences, readUpdateState, writeJsonFileAtomic } from "./lifecycle-state";
+import { enqueueUpdateRequest } from "./update-requests";
+import { lifecycleFiles, readPreferences, readUpdateState } from "./lifecycle-state";
 
 const execute = promisify(execFile);
 
@@ -15,9 +16,13 @@ function paths() {
   return { root, runtime: path.join(root, "runtime"), app: path.join(root, "app") };
 }
 
+export function isLifecycleSupported(): boolean {
+  return process.env.NODE_ENV === "production" && existsSync(path.join(process.cwd(), "bin/lifecycle.cjs"));
+}
+
 export async function getLifecycleStatus() {
   const statePaths = paths();
-  const supported = process.env.NODE_ENV === "production" && existsSync(path.join(process.cwd(), "bin/lifecycle.cjs"));
+  const supported = isLifecycleSupported();
   return {
     supported, startupSupported: supported && process.platform === "darwin",
     preferences: await readPreferences(statePaths), update: await readUpdateState(statePaths),
@@ -33,10 +38,12 @@ export async function changeLifecyclePreferences(changes: Record<string, boolean
 
 export async function requestLifecycleUpdate(action: "check" | "download" | "install"): Promise<void> {
   if (!(await getLifecycleStatus()).supported) throw new Error("Updates require a packaged production build");
-  await writeJsonFileAtomic(lifecycleFiles(paths()).request, { action });
+  const state = await readUpdateState(paths());
+  await enqueueUpdateRequest(paths(), action, action === "check" ? undefined : state.latestVersion ?? undefined);
 }
 
 export async function recordBrowserHeartbeat(id: string): Promise<void> {
+  if (!isLifecycleSupported()) return;
   const directory = lifecycleFiles(paths()).browser;
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await writeFile(path.join(directory, id), "", { mode: 0o600 });

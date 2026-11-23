@@ -22,7 +22,7 @@ export const VersionUpdate = ({ version }: VersionUpdateProps) => {
   const { data, error } = useQuery({
     queryKey: queryKeys.runtime.lifecycle(),
     queryFn: getLifecycleStatus,
-    refetchInterval: 5000,
+    refetchInterval: (query) => query.state.data?.supported === false ? false : 5000,
   });
   const update = data?.update;
   const signature = JSON.stringify(update);
