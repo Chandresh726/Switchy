@@ -1,3 +1,4 @@
+import { isUpdateMaintenance } from "@/lib/runtime/update-maintenance";
 import { getRetryAfterMs, isRateLimitError } from "@/lib/ai/shared/errors";
 import { createScrapeAbortError } from "@/lib/scraper/infrastructure/cancellation";
 
@@ -185,7 +186,7 @@ export class LocalLeasedWorkRunner<
         const workerId = `${this.config.workerIdPrefix}-${process.pid}-${workerIndex}-${crypto.randomUUID()}`;
         try {
           while (!this.stopRequested) {
-            if (Date.now() < this.resumeNotBefore) return;
+            if (isUpdateMaintenance() || Date.now() < this.resumeNotBefore) return;
             if (options.canClaim && !await options.canClaim()) {
               this.resumeNotBefore = Date.now() + this.config.suspensionRetryDelayMs;
               return;

@@ -2,6 +2,7 @@ import cron, { type ScheduledTask, type TaskContext } from "node-cron";
 import { CronExpressionParser } from "cron-parser";
 import { eq } from "drizzle-orm";
 
+import { isUpdateMaintenance } from "@/lib/runtime/update-maintenance";
 import { db } from "@/lib/db";
 import { scrapeSessions, settings } from "@/lib/db/schema";
 import {
@@ -651,7 +652,7 @@ async function runSchedulerBatch(
   scheduledForAt?: Date
 ): Promise<"started" | "already_running"> {
   const sessionId = crypto.randomUUID();
-  if (schedulerRuntime.isRunning) {
+  if (isUpdateMaintenance() || schedulerRuntime.isRunning) {
     logRuntimeEvent("scheduler", "scheduler_run_skipped", { requestId, sessionId, code: "already_running" });
     return "already_running";
   }

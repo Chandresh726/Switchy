@@ -1,6 +1,7 @@
 import { zodSchema } from "ai";
 import { z } from "zod";
 
+import { isUpdateMaintenance } from "@/lib/runtime/update-maintenance";
 import type { AIGenerationBackend } from "@/lib/ai/local-cli/types";
 import type { AIContextOverrides } from "@/lib/ai/runtime-context";
 import { resolveAIContextForCapability } from "@/lib/ai/runtime-context";
@@ -277,6 +278,9 @@ async function executeWithLedger<T>(input: {
   providerConcurrencyLimit?: number;
   runRepository: AIRunRepository;
 }): Promise<AIExecutionResult<T>> {
+  if (isUpdateMaintenance()) {
+    throw new Error("Switchy is updating. Try again after it restarts.");
+  }
   const runId = await input.runRepository.create({
     capability: input.capability,
     subject: input.execution.subject,

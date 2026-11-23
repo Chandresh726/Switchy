@@ -1,3 +1,5 @@
+import { isUpdateMaintenance, recordMutationActivity } from "@/lib/runtime/update-maintenance";
+
 import { ValidationError } from "./error-handler";
 import { resolveLocalRequestOrigin } from "./local-host";
 
@@ -71,5 +73,11 @@ export function assertAppRequest(request: Request): void {
     hasMismatchedCaller
   ) {
     throw new ValidationError("Cross-origin requests are not allowed", "cross_origin_forbidden", 403);
+  }
+  if (!new URL(request.url).pathname.startsWith("/api/lifecycle")) {
+    if (isUpdateMaintenance()) {
+      throw new ValidationError("Switchy is updating. Please wait.", "update_in_progress", 503);
+    }
+    recordMutationActivity();
   }
 }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  isUpdateMaintenance: vi.fn(),
   dispatchPendingAIWork: vi.fn(),
   importLegacyMatchWork: vi.fn(),
   recoverPending: vi.fn(),
@@ -22,6 +23,11 @@ const mocks = vi.hoisted(() => ({
   recordRuntimeError: vi.fn(),
   logRuntimeEvent: vi.fn(),
 }));
+
+vi.mock("@/lib/ai/runtime", () => ({ aiRunRepository: { reconcileAbandonedRuns: async () => 0 } }));
+vi.mock("@/lib/notifications/service", () => ({ reconcileMatchNotifications: async () => undefined }));
+
+vi.mock("@/lib/runtime/update-maintenance", () => ({ isUpdateMaintenance: mocks.isUpdateMaintenance }));
 
 vi.mock("@/lib/runtime/health", () => ({
   setSchedulerInitialization: mocks.setSchedulerInitialization,
@@ -81,6 +87,7 @@ const flushPromises = () => new Promise<void>((resolve) => setImmediate(resolve)
 
 describe("server startup instrumentation", () => {
   beforeEach(() => {
+    mocks.isUpdateMaintenance.mockReturnValue(false);
     mocks.startScheduler.mockResolvedValue(undefined);
     mocks.ensureSchedulerWatchdog.mockReturnValue(undefined);
     mocks.recoverSchedulerOnBoot.mockResolvedValue({
@@ -111,6 +118,25 @@ describe("server startup instrumentation", () => {
       orphanedDeleted: 0,
       failed: 0,
     });
+  });
+
+  it("defers background writes until the updater commits the candidate", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "nodejs");
+    vi.useFakeTimers();
+    mocks.isUpdateMaintenance.mockReturnValue(true);
+    try {
+      await register();
+      expect(mocks.startScheduler).not.toHaveBeenCalled();
+      expect(mocks.reconcileResumeStorage).not.toHaveBeenCalled();
+      expect(mocks.recoverPending).not.toHaveBeenCalled();
+      mocks.isUpdateMaintenance.mockReturnValue(false);
+      await vi.advanceTimersByTimeAsync(500);
+      vi.useRealTimers();
+      await vi.waitFor(() => expect(mocks.startScheduler).toHaveBeenCalledOnce());
+      await flushPromises();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does nothing outside the Node.js runtime", async () => {

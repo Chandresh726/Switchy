@@ -11,6 +11,20 @@ export async function register() {
     const { registerRuntimeLock } = await import("@/lib/state/runtime-lock");
     registerRuntimeLock();
 
+    const { isUpdateMaintenance } = await import("@/lib/runtime/update-maintenance");
+    if (isUpdateMaintenance()) {
+      // The updater probes the migrated database before admitting any writes.
+      // Background initialization resumes only after its commit is durable.
+      const resume = setInterval(() => {
+        if (!isUpdateMaintenance()) {
+          clearInterval(resume);
+          void register().catch((error) => console.error("Post-update initialization failed:", error));
+        }
+      }, 500);
+      resume.unref();
+      return;
+    }
+
     try {
       const { aiRunRepository } = await import("@/lib/ai/runtime");
       const abandoned = await aiRunRepository.reconcileAbandonedRuns();

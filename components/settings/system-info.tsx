@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import { Database, Server } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +19,7 @@ import type {
 
 interface SystemInfoProps {
   version: string;
+  versionAction?: ReactNode;
   dbPath: string;
   readiness?: ReadinessResponse;
   runtimeHealth?: RuntimeHealthResponse;
@@ -33,6 +36,7 @@ function stateLabel(value: "pending" | "ready" | "failed" | undefined): string {
 
 export function SystemInfo({
   version,
+  versionAction,
   dbPath,
   readiness,
   runtimeHealth,
@@ -66,9 +70,12 @@ export function SystemInfo({
             <Server className="h-4 w-4 text-muted-foreground" />
             <CardTitle className="text-base">System Info</CardTitle>
           </div>
-          <Badge variant="outline" className="font-mono text-muted-foreground border-border">
-            v{version}
-          </Badge>
+          <div className="flex items-center gap-1">
+            <Badge variant="outline" className="font-mono text-muted-foreground border-border">
+              v{version}
+            </Badge>
+            {versionAction}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

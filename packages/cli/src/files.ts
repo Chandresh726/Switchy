@@ -2,12 +2,15 @@ import { randomUUID } from "node:crypto";
 import {
   mkdir,
   readFile,
-  rename,
   rm,
   stat,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+
+import { predatesCurrentBoot } from "./lifecycle-state.js";
+
+export { readJsonFile, writeJsonFileAtomic } from "../../../lib/runtime/lifecycle-state.js";
 
 const LOCK_TIMEOUT_MS = 60_000;
 const INVALID_LOCK_GRACE_MS = 30_000;
@@ -16,6 +19,7 @@ const LOCK_OWNER_FILE = "owner.json";
 interface LockOwner {
   pid: number;
   token: string;
+  startedAt?: string;
 }
 
 function processIsAlive(pid: number): boolean {
@@ -56,29 +60,6 @@ async function removeOwnedLock(
   }
 }
 
-export async function readJsonFile<T>(filePath: string): Promise<T | null> {
-  try {
-    return JSON.parse(await readFile(filePath, "utf8")) as T;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw error;
-  }
-}
-
-export async function writeJsonFileAtomic(
-  filePath: string,
-  value: unknown
-): Promise<void> {
-  const temporaryPath = path.join(
-    path.dirname(filePath),
-    `.${path.basename(filePath)}.${randomUUID()}.tmp`
-  );
-  await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
-    mode: 0o600,
-  });
-  await rename(temporaryPath, filePath);
-}
-
 export async function removeFile(filePath: string): Promise<void> {
   await rm(filePath, { force: true });
 }
@@ -96,7 +77,7 @@ export async function withDirectoryLock<T>(
       try {
         await writeFile(
           path.join(lockPath, LOCK_OWNER_FILE),
-          `${JSON.stringify({ pid: process.pid, token })}\n`,
+          `${JSON.stringify({ pid: process.pid, token, startedAt: new Date().toISOString() })}\n`,
           { mode: 0o600 }
         );
       } catch (error) {
@@ -111,7 +92,7 @@ export async function withDirectoryLock<T>(
         stat(lockPath).catch(() => null),
       ]);
       if (
-        (owner && !processIsAlive(owner.pid))
+        (owner && (!processIsAlive(owner.pid) || predatesCurrentBoot(owner.startedAt)))
         || (
           !owner
           && lockStats

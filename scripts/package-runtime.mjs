@@ -293,6 +293,14 @@ await build({
   alias: { "@": projectDirectory },
   sourcemap: true,
 });
+await build({
+  entryPoints: [path.join(projectDirectory, "packages/cli/src/lifecycle-worker.ts")],
+  outfile: path.join(runtimeDirectory, "bin/lifecycle.cjs"),
+  bundle: true,
+  platform: "node",
+  target: "node24",
+  format: "cjs",
+});
 await writeFile(
   path.join(runtimeDirectory, "switchy-runtime.json"),
   `${JSON.stringify({

@@ -28,7 +28,8 @@ import { AppearanceSection } from "@/components/settings/appearance-section";
 import { MatcherFallbackSettings, type FallbackSettings } from "@/components/settings/matcher-fallback-settings";
 import { MatcherSection } from "@/components/settings/matcher-section";
 import { NotificationsSection } from "@/components/settings/notifications-section";
-import { PowerSettings } from "@/components/settings/power-settings";
+import { ApplicationSettings } from "@/components/settings/application-settings";
+import { VersionUpdate } from "@/components/settings/version-update";
 import { ScraperSettings } from "@/components/settings/scraper-settings";
 import { DangerZone } from "@/components/settings/danger-zone";
 import { ResumeParserSection } from "@/components/settings/resume-parser-section";
@@ -1117,7 +1118,7 @@ function SettingsContent() {
             onFilterTitleKeywordsChange={setFilterTitleKeywords}
           />
 
-          <PowerSettings
+          <ApplicationSettings
             keepDeviceAwake={keepDeviceAwake}
             onKeepDeviceAwakeChange={setKeepDeviceAwake}
           />
@@ -1153,6 +1154,7 @@ function SettingsContent() {
 
           <SystemInfo
             version={APP_VERSION}
+            versionAction={<VersionUpdate version={APP_VERSION} />}
             dbPath={DB_PATH}
             readiness={readinessQuery.data}
             runtimeHealth={runtimeHealthQuery.data}

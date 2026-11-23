@@ -43,6 +43,15 @@ vi.mock("@/lib/api/clients/providers", () => ({
   updateProvider: mocks.updateProvider,
   updateProviderApiKey: mocks.updateProviderApiKey,
 }));
+vi.mock("@/lib/api/clients/lifecycle", () => ({
+  getLifecycleStatus: vi.fn().mockResolvedValue({
+    supported: false, startupSupported: false,
+    preferences: { startAtLogin: false, openAtLogin: false, automaticUpdates: false, consented: false, running: true, port: 6767 },
+    update: { phase: "idle", latestVersion: null, lastCheckedAt: null, message: null, failedVersion: null, downloadedVersion: null },
+  }),
+  patchLifecyclePreferences: vi.fn(),
+  requestLifecycleUpdate: vi.fn(),
+}));
 vi.mock("@/lib/api/clients/health", () => ({
   getReadiness: vi.fn().mockResolvedValue({ status: "ready", checks: { database: "ready", runtime: "ready" } }),
   getRuntimeHealth: vi.fn().mockResolvedValue({
@@ -166,17 +175,17 @@ function renderSettings() {
 }
 
 describe("settings failure recovery", () => {
-  it("places Power between scraper and resume settings and saves its toggle independently", async () => {
+  it("places startup controls between scraper and resume settings and saves its power toggle independently", async () => {
     mocks.getSettings.mockResolvedValue({ ...settings, scraper_keep_device_awake: "false" });
     mocks.patchSettings.mockResolvedValue({ ...settings, scraper_keep_device_awake: "true" });
     renderSettings();
     const toggle = await screen.findByRole("switch", { name: "Keep awake while scraping or matching" });
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    const power = screen.getByText("Power");
+    const application = screen.getByText("Startup, power & updates");
     const scraper = screen.getByRole("button", { name: `cron:${settings.scheduler_cron}` });
     const resume = screen.getByText("Resume parser");
-    expect(scraper.compareDocumentPosition(power) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(power.compareDocumentPosition(resume) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(scraper.compareDocumentPosition(application) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(application.compareDocumentPosition(resume) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     fireEvent.click(toggle);
     await waitFor(() => expect(mocks.patchSettings).toHaveBeenCalledWith({ scraper_keep_device_awake: true }));
   });

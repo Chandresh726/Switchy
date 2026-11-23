@@ -5,6 +5,9 @@
   "ignoreBinaries": ["taskkill"],
   "ignoreWorkspaces": ["landing", "demo-video"],
   "workspaces": {
+    "packages/cli": {
+      "entry": ["src/cli.ts", "src/lifecycle-worker.ts"]
+    },
     ".": {
       "entry": [
         // These executable fixtures are launched through child-process paths in tests.

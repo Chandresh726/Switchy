@@ -1,3 +1,4 @@
+import { lifecycleCommand } from "./lifecycle.js";
 import {
   logsCommand,
   openCommand,
@@ -37,6 +38,7 @@ Usage:
   switchy stop [--force]
   switchy status
   switchy update
+  switchy startup enable|disable|status
   switchy logs
   switchy open
   switchy version`);
@@ -59,6 +61,9 @@ async function main(): Promise<void> {
       break;
     case "status":
       await statusCommand();
+      break;
+    case "startup":
+      await lifecycleCommand(args[1] ?? "status");
       break;
     case "update":
       await updateCommand();

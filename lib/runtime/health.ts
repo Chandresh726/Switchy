@@ -1,5 +1,6 @@
 import { and, count, eq, lte, min } from "drizzle-orm";
 
+import { isUpdateMaintenance } from "@/lib/runtime/update-maintenance";
 import { db } from "@/lib/db";
 import {
   aiWorkItems,
@@ -157,9 +158,9 @@ async function readQueueMetrics(now: Date) {
 
 export async function getReadinessHealth() {
   const available = await databaseAvailable();
-  const ready = available
-    && state.schedulerInitialization === "ready"
-    && state.queueRecovery === "ready";
+  const ready = available && (isUpdateMaintenance() || (
+    state.schedulerInitialization === "ready"
+    && state.queueRecovery === "ready"));
   return {
     ready,
     databaseAvailable: available,

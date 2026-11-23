@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 
+import { LifecycleListener } from "@/components/runtime/lifecycle-listener";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { SchedulerRecoveryListener } from "@/components/scheduler/scheduler-recovery-listener";
@@ -24,6 +25,7 @@ export default async function DashboardLayout({
     <ThemeProvider>
       <QueryProvider>
         <SchedulerRecoveryListener />
+        <LifecycleListener />
         <div className="flex h-screen bg-background">
           <Sidebar initialCollapsed={initialCollapsed} />
           <main id="main-content" className="relative flex-1 overflow-auto">

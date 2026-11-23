@@ -108,3 +108,76 @@ For each later stable release:
 
 Do not overwrite an existing tag, GitHub release, runtime asset, or npm version.
 Every release is append-only; corrections use a new patch version.
+
+## Startup and automatic updates
+
+Installed production runtimes expose **Settings → Startup, power & updates**. Startup
+at sign-in and automatic updates are independent and default to off until the
+user chooses them. Opening the browser at sign-in is a separate preference.
+Startup registration is currently supported on macOS; automatic updates work
+on all supported runtime targets.
+
+Existing installations without lifecycle support need one stopped upgrade with
+the latest CLI: run `pnpm dlx @chandresh726/switchy@latest stop`, then
+`pnpm dlx @chandresh726/switchy@latest update`. After that, choose startup and
+update preferences in Settings. The stopped upgrade avoids interrupting work
+whose activity cannot be checked by an older runtime.
+
+The equivalent startup commands are:
+
+```bash
+pnpm dlx @chandresh726/switchy@latest startup enable
+pnpm dlx @chandresh726/switchy@latest startup disable
+pnpm dlx @chandresh726/switchy@latest startup status
+```
+
+After starting a runtime that includes lifecycle support, Switchy installs a
+persistent Node executable and a small supervisor under `~/.switchy/app/host/`.
+It does not depend on a package-manager cache, shell profile, or network access
+to start the installed application. Each supervisor tick loads its manager
+from the currently installed runtime, so release updates also update manager
+code. Diagnostics are appended to `~/.switchy/logs/lifecycle.log`.
+
+On macOS, enabling startup writes the per-user
+`~/Library/LaunchAgents/com.switchy.lifecycle.plist` and enables the item for the
+next login. This is separate from the scheduler's existing host agents. Disabling
+startup leaves the current session running. `switchy stop` suppresses background
+restarts until an explicit start or the next opted-in login. No system daemon
+or administrator access is required. macOS background-item restrictions still
+apply. A sleeping or powered-off laptop does not run Switchy.
+
+Automatic updates check GitHub's stable release every six hours while Switchy
+is running. Check, download, and restart requests from Settings are handled within
+about 30 seconds. Minor and patch releases can install automatically; major
+versions require an explicit download and restart from **System Info**. An open
+Switchy tab postpones automatic installation, including background tabs, to
+protect unsaved edits. The download icon beside the version stages an update
+without stopping Switchy. Once downloaded, it becomes a restart icon. Restarting
+permits installation with tabs open; save edits first. Queued and running work
+must finish before installation proceeds.
+
+Update preferences and recovery records live outside the database in
+`~/.switchy/runtime/`. An update downloads and checksum-verifies the runtime and
+prepares Chromium before closing admission. It then rechecks activity, stops
+the server, snapshots production data, and runs the packaged Drizzle migrator.
+While the candidate is being checked, API requests are held and background
+initialization waits. The updater commits the new version only after readiness
+and process identity checks pass. It then resumes normal operation. It retains
+the previous runtime and the three most recent update snapshots.
+
+If migration or candidate startup fails, Switchy restores the previous data
+snapshot and runtime before allowing new writes. An interrupted transaction is
+recovered on the next start or manager tick. Failed candidate versions are not
+retried automatically. If recovery itself fails, admission stays closed and the
+snapshot and transaction record remain available for diagnosis. Do not remove
+these records to force startup without first recovering the data.
+
+For isolated test environments, `SWITCHY_DISABLE_LIFECYCLE=1` prevents the CLI
+from launching the supervisor. It does not alter saved user preferences.
+
+Source runs, including `pnpm dev` and `pnpm start` from a checkout, show these
+controls but disable startup and update actions. Those actions manage the
+versioned production runtimes installed by the CLI; they do not update a source
+checkout or restart the development server. Keep-awake settings can still be
+used in development. End-to-end startup and update testing requires a packaged
+production build containing the changes being tested.

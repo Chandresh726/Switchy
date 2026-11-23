@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import path from "node:path";
 
 import { pruneInstallArtifacts, type PruneResult } from "./cleanup.js";
 import {
@@ -10,6 +11,7 @@ import {
 import {
   readJsonFile,
   withDirectoryLock,
+  writeJsonFileAtomic,
 } from "./files.js";
 import {
   fetchLiveness,
@@ -27,10 +29,12 @@ import {
   setCurrentVersion,
 } from "./release.js";
 import {
-  createUpdateSnapshot,
   ensurePlaywrightBrowser,
   runDatabaseMigration,
 } from "./runtime.js";
+import { prepareLifecycleHost } from "./lifecycle.js";
+import { lifecycleFiles, readPreferences, readUpdateState, saveUpdateState } from "./lifecycle-state.js";
+import { installUpdate, recoverInterruptedUpdate } from "./updater.js";
 import type { CurrentVersionRecord } from "./types.js";
 
 async function installedVersion(): Promise<string | null> {
@@ -41,7 +45,7 @@ async function installedVersion(): Promise<string | null> {
 
 export async function startCommand({
   version,
-  port = DEFAULT_PORT,
+  port,
   foreground = false,
 }: {
   version?: string;
@@ -50,8 +54,8 @@ export async function startCommand({
 } = {}): Promise<void> {
   const paths = getSwitchyPaths();
   await ensureSwitchyDirectories(paths);
-  await withDirectoryLock(paths.startLock, () =>
-    startCommandUnlocked({ paths, version, port, foreground })
+  await withDirectoryLock(paths.startLock, async () =>
+    startCommandUnlocked({ paths, version, port: port ?? (await readPreferences(paths)).port, foreground })
   );
 }
 
@@ -66,8 +70,10 @@ async function startCommandUnlocked({
   port: number;
   foreground: boolean;
 }): Promise<void> {
+  await recoverInterruptedUpdate(paths);
   const existing = await getRunningProcess(paths);
   if (existing) {
+    await prepareLifecycleHost(paths, path.join(paths.versions, existing.record.version), existing.record.port);
     console.log(
       `Switchy ${existing.record.version} is already running at `
       + `http://${existing.record.hostname}:${existing.record.port}`
@@ -76,14 +82,15 @@ async function startCommandUnlocked({
   }
 
   const previousVersion = await installedVersion();
-  const selectedVersion = resolveApplicationVersion(version);
+  const selectedVersion = version ?? previousVersion ?? resolveApplicationVersion();
   const runtimeDirectory = await installRuntime(selectedVersion, paths);
   await Promise.all([
     ensurePlaywrightBrowser(runtimeDirectory, paths),
     runDatabaseMigration(runtimeDirectory, paths),
   ]);
   await setCurrentVersion(paths, selectedVersion);
-  const pruning = pruneInstallArtifacts(paths, [selectedVersion, previousVersion])
+  const stagedVersion = (await readUpdateState(paths)).downloadedVersion ?? null;
+  const pruning = pruneInstallArtifacts(paths, [selectedVersion, previousVersion, stagedVersion])
     .then(reportPrunedArtifacts)
     .catch((error: unknown) => {
       console.warn(
@@ -100,6 +107,7 @@ async function startCommandUnlocked({
       foreground,
     });
     if (!foreground) {
+      await prepareLifecycleHost(paths, runtimeDirectory, port);
       console.log(
         `Switchy ${selectedVersion} is running at `
         + `http://${record.hostname}:${record.port}`
@@ -123,6 +131,9 @@ export async function stopCommand(force = false): Promise<void> {
   const paths = getSwitchyPaths();
   await ensureSwitchyDirectories(paths);
   await withDirectoryLock(paths.startLock, async () => {
+    await withDirectoryLock(lifecycleFiles(paths).preferencesLock, async () => {
+      await writeJsonFileAtomic(lifecycleFiles(paths).preferences, { ...await readPreferences(paths), running: false });
+    });
     if (await stopSwitchy(paths, force)) console.log("Switchy stopped.");
     else console.log("Switchy is not running.");
   });
@@ -147,6 +158,7 @@ export async function updateCommand(): Promise<void> {
   const paths = getSwitchyPaths();
   await ensureSwitchyDirectories(paths);
   await withDirectoryLock(paths.startLock, async () => {
+    await recoverInterruptedUpdate(paths);
     const latestVersion = await resolveLatestStableVersion();
     const currentVersion = await installedVersion();
     if (currentVersion === latestVersion) {
@@ -154,24 +166,16 @@ export async function updateCommand(): Promise<void> {
       return;
     }
 
-    const wasRunning = await getRunningProcess(paths);
-    await installRuntime(latestVersion, paths);
-    if (wasRunning) await stopSwitchy(paths);
-    const snapshot = currentVersion
-      ? await createUpdateSnapshot(paths, currentVersion, latestVersion)
-      : null;
-    try {
-      await startCommandUnlocked({
-        paths,
-        version: latestVersion,
-        port: wasRunning?.record.port ?? DEFAULT_PORT,
-        foreground: false,
-      });
-    } catch (error) {
-      if (snapshot) {
-        console.error(`Update snapshot retained at ${snapshot}`);
-      }
-      throw error;
+    if (!currentVersion) {
+      await startCommandUnlocked({ paths, version: latestVersion, port: DEFAULT_PORT, foreground: false });
+      return;
+    }
+    await saveUpdateState(paths, { latestVersion, lastCheckedAt: new Date().toISOString() });
+    if (await installUpdate(paths, latestVersion, true)) {
+      await prepareLifecycleHost(paths, path.join(paths.versions, latestVersion), (await readPreferences(paths)).port);
+      console.log(`Updated to Switchy ${latestVersion}.`);
+    } else {
+      console.log("Update deferred. Wait for active work to finish and try again.");
     }
   });
 }

@@ -20,3 +20,9 @@ await build({
   banner: { js: "#!/usr/bin/env node" },
   sourcemap: true,
 });
+
+await build({
+  entryPoints: [path.join(packageDirectory, "src/lifecycle-worker.ts")],
+  outfile: path.join(packageDirectory, "dist/lifecycle.cjs"),
+  bundle: true, platform: "node", target: "node24", format: "cjs",
+});
