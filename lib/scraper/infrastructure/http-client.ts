@@ -1,3 +1,5 @@
+import type { ScrapeFetchStateStore } from "./fetch-state";
+
 import {
   abortableDelay,
   createScrapeAbortError,
@@ -89,7 +91,7 @@ export class FetchHttpClient implements IHttpClient {
   private readonly activeByHost = new Map<string, number>();
   private readonly waitersByHost = new Map<string, HostWaiter[]>();
 
-  constructor(config: Partial<HttpClientConfig> = {}) {
+  constructor(config: Partial<HttpClientConfig> = {}, private readonly state?: ScrapeFetchStateStore) {
     const merged = { ...DEFAULT_HTTP_CONFIG, ...config };
     this.defaultConfig = {
       ...merged,
@@ -126,7 +128,7 @@ export class FetchHttpClient implements IHttpClient {
   async get<T>(url: string, options: HttpRequestOptions = {}): Promise<T> {
     const response = await this.fetch(url, { ...options, method: "GET" });
     if (!response.ok) {
-      throw new HttpError(response.status, `HTTP ${response.status}: ${response.statusText}`, url);
+      throw new HttpError(response.status, `HTTP ${response.status}: ${response.statusText}`, url, response.headers);
     }
     return response.json();
   }
@@ -142,9 +144,17 @@ export class FetchHttpClient implements IHttpClient {
       body: JSON.stringify(body),
     });
     if (!response.ok) {
-      throw new HttpError(response.status, `HTTP ${response.status}: ${response.statusText}`, url);
+      throw new HttpError(response.status, `HTTP ${response.status}: ${response.statusText}`, url, response.headers);
     }
     return response.json();
+  }
+
+  private checkCooldown(url: string): void {
+    const entry = this.state?.get(`cooldown:${parseScrapeHost(url)}`) as { until?: number } | undefined;
+    if (typeof entry?.until === "number" && entry.until > Date.now()) {
+      throw new HttpError(429, "Host rate limit cooldown is active", url,
+        new Headers({ "retry-after": String(Math.ceil((entry.until - Date.now()) / 1000)) }));
+    }
   }
 
   private static readonly MAX_REDIRECTS = 5;
@@ -182,6 +192,7 @@ export class FetchHttpClient implements IHttpClient {
       this.throwIfAborted(args.signal);
       // Per-hop concurrency slot so cross-host redirects respect the target
       // host's limit instead of reusing the origin host's slot.
+      this.checkCooldown(currentUrl);
       const release = await this.acquireHostSlot(currentUrl, args.signal);
       const attemptController = new AbortController();
       const onAbort = () => attemptController.abort(args.signal?.reason);
@@ -192,6 +203,7 @@ export class FetchHttpClient implements IHttpClient {
       );
 
       try {
+        this.checkCooldown(currentUrl);
         const response = await fetch(currentUrl, {
           redirect: "manual",
           ...currentOptions,
@@ -228,6 +240,23 @@ export class FetchHttpClient implements IHttpClient {
           continue;
         }
 
+        if (response.status === 429 && this.state) {
+          const key = `cooldown:${parseScrapeHost(currentUrl)}`;
+          const previous = this.state.get(key) as { strikes?: number } | undefined;
+          const strikes = Math.min(5, (previous?.strikes ?? 0) + 1);
+          const delay = Math.max(this.parseRetryAfter(response.headers.get("retry-after")) ?? 0,
+            60_000 * 2 ** (strikes - 1));
+          const until = Date.now() + delay;
+          this.state.set(key, { until, strikes }, new Date(until + 24 * 60 * 60 * 1000));
+          const buffered = await this.bufferResponse(response, currentUrl);
+          buffered.headers.set("retry-after", String(Math.ceil(delay / 1000)));
+          return buffered;
+        }
+        // Long server-requested waits belong in the durable queue, not a worker.
+        if ((this.parseRetryAfter(response.headers.get("retry-after")) ?? 0) > args.maxDelay) {
+          return await this.bufferResponse(response, currentUrl);
+        }
+
         if (!this.shouldRetryStatus(response.status) || attempt >= args.retries) {
           return await this.bufferResponse(response, currentUrl);
         }
@@ -244,7 +273,7 @@ export class FetchHttpClient implements IHttpClient {
         if (args.signal?.aborted) {
           this.throwIfAborted(args.signal);
         }
-        if (attempt >= args.retries) throw error;
+        if (error instanceof HttpError || attempt >= args.retries) throw error;
 
         const delayMs = this.applyJitter(
           Math.min(args.maxDelay, args.baseDelay * 2 ** attempt)
@@ -272,7 +301,7 @@ export class FetchHttpClient implements IHttpClient {
   ): number {
     const retryAfterMs = this.parseRetryAfter(response.headers.get("retry-after"));
     if (retryAfterMs !== null) {
-      return Math.min(maxDelay, retryAfterMs);
+      return retryAfterMs;
     }
     return this.applyJitter(Math.min(maxDelay, baseDelay * 2 ** attempt));
   }
@@ -301,7 +330,8 @@ export class FetchHttpClient implements IHttpClient {
   private async acquireHostSlot(url: string, signal?: AbortSignal): Promise<() => void> {
     const host = parseScrapeHost(url);
     const active = this.activeByHost.get(host) ?? 0;
-    if (active < this.defaultConfig.maxConcurrencyPerHost) {
+    const limit = host.endsWith(".myworkdayjobs.com") ? 1 : this.defaultConfig.maxConcurrencyPerHost;
+    if (active < limit) {
       this.activeByHost.set(host, active + 1);
       return this.createRelease(host);
     }
@@ -379,10 +409,20 @@ export class HttpError extends Error {
   constructor(
     public readonly status: number,
     message: string,
-    public readonly url: string
+    public readonly url: string,
+    public readonly responseHeaders?: Headers
   ) {
     super(message);
     this.name = "HttpError";
+  }
+
+  get retryAfterMs(): number | undefined {
+    const value = this.responseHeaders?.get("retry-after");
+    if (!value) return undefined;
+    const seconds = Number(value);
+    if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+    const date = Date.parse(value);
+    return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
   }
 
   get isRateLimited(): boolean {
@@ -398,6 +438,6 @@ export class HttpError extends Error {
   }
 }
 
-export function createHttpClient(config: Partial<HttpClientConfig> = {}): IHttpClient {
-  return new FetchHttpClient(config);
+export function createHttpClient(config: Partial<HttpClientConfig> = {}, state?: ScrapeFetchStateStore): IHttpClient {
+  return new FetchHttpClient(config, state);
 }

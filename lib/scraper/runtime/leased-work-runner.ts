@@ -7,6 +7,7 @@ export interface LeasedWorkItem {
   id: string;
   attemptCount: number;
   maxAttempts: number;
+  createdAt?: Date;
 }
 
 export interface LocalLeasedWorkStore<
@@ -100,6 +101,7 @@ export interface LocalLeasedWorkRunnerConfig {
   baseRetryDelayMs: number;
   maxRetryDelayMs: number;
   suspensionRetryDelayMs: number;
+  rateLimitMaxAgeMs: number;
 }
 
 const DEFAULT_LOCAL_LEASED_WORK_RUNNER_CONFIG: LocalLeasedWorkRunnerConfig = {
@@ -111,6 +113,7 @@ const DEFAULT_LOCAL_LEASED_WORK_RUNNER_CONFIG: LocalLeasedWorkRunnerConfig = {
   baseRetryDelayMs: 5 * 1000,
   maxRetryDelayMs: 5 * 60 * 1000,
   suspensionRetryDelayMs: 60 * 1000,
+  rateLimitMaxAgeMs: Number.POSITIVE_INFINITY,
 };
 
 class LocalWorkSuspendedError extends DOMException {
@@ -363,6 +366,16 @@ export class LocalLeasedWorkRunner<
           )
           : await this.repository.release(item.id, workerId, item.attemptCount, now);
         if (deferred) summary.retried += 1;
+        else await this.persistRacedCancellation(item.id, workerId, now, summary);
+      } else if (error instanceof Error && "retryable" in error && error.retryable === false) {
+        const failed = await this.repository.fail(item.id, workerId, error.message, now);
+        if (failed) summary.failed += 1;
+        else await this.persistRacedCancellation(item.id, workerId, now, summary);
+      } else if (isRateLimitError(error) && this.repository.defer && item.createdAt &&
+        now.getTime() + Math.max(30_000, getRetryAfterMs(error) ?? 0) >= item.createdAt.getTime() + this.config.rateLimitMaxAgeMs) {
+        const failed = await this.repository.fail(item.id, workerId,
+          "Rate-limit recovery exceeded the six-hour scrape deadline; will retry in a future run.", now);
+        if (failed) summary.failed += 1;
         else await this.persistRacedCancellation(item.id, workerId, now, summary);
       } else if (isRateLimitError(error) && this.repository.defer) {
         const until = new Date(Math.ceil((now.getTime() + Math.max(30_000, getRetryAfterMs(error) ?? 0)) / 1000) * 1000);

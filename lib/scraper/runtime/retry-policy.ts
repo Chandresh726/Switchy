@@ -27,8 +27,5 @@ export function resolveRetryDelay(
     maxDelay,
     baseDelay * 2 ** Math.max(0, attemptCount - 1)
   );
-  return Math.min(
-    maxDelay,
-    Math.max(exponentialDelay, getRetryAfterMs(error))
-  );
+  return Math.max(exponentialDelay, getRetryAfterMs(error));
 }

@@ -616,7 +616,7 @@ describe("LocalScrapeQueueService", () => {
         jobsFiltered: 0,
         jobsArchived: 0,
         platform: "greenhouse",
-        error: "Rate limited",
+        error: "Service unavailable",
         retryable: true,
         retryAfterMs: 10,
         duration: 10,

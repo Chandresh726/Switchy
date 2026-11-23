@@ -30,6 +30,26 @@ function createRepository(
 }
 
 describe("LocalLeasedWorkRunner", () => {
+  it("ends rate-limit recovery at the configured deadline", async () => {
+    const repository = createRepository([createScrapeQueueItem({
+      createdAt: new Date(Date.now() - 6 * 60 * 60_000), attemptCount: 1,
+    })]);
+    const runner = new LocalLeasedWorkRunner(repository, async () => {
+      throw new AIRateLimitError("limited", undefined, 60_000);
+    }, { concurrency: 1, rateLimitMaxAgeMs: 6 * 60 * 60_000 });
+    expect(await runner.runAvailable()).toMatchObject({ failed: 1, retried: 0 });
+    expect(repository.defer).not.toHaveBeenCalled();
+  });
+
+  it("fails permanent source errors once without spending retries", async () => {
+    const repository = createRepository([createScrapeQueueItem()]);
+    const runner = new LocalLeasedWorkRunner(repository, async () => {
+      throw Object.assign(new Error("Board not found; source needs repair"), { retryable: false });
+    });
+    expect(await runner.runAvailable()).toMatchObject({ failed: 1, completed: 0 });
+    expect(repository.retry).not.toHaveBeenCalled();
+  });
+
   it("defers quota failures even at the final attempt without exhausting work", async () => {
     const repository = createRepository([createScrapeQueueItem({ attemptCount: 3, maxAttempts: 3 })]);
     repository.defer = vi.fn(async () => true);

@@ -12,6 +12,29 @@ describe("FetchHttpClient", () => {
     vi.useRealTimers();
   });
 
+  it("returns long Retry-After to the queue and shares durable host cooldowns", async () => {
+    const values = new Map<string, unknown>();
+    const state = { get: (key: string) => values.get(key),
+      set: (key: string, value: unknown) => { values.set(key, value); },
+      delete: (key: string) => { values.delete(key); } };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("limited", { status: 429, headers: { "Retry-After": "120" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new FetchHttpClient({ retries: 3, maxDelay: 16_000 }, state);
+    await expect(client.post("https://example.com/jobs", {})).rejects.toMatchObject({ status: 429, retryAfterMs: 120_000 });
+    // New client represents a restarted worker using the same persisted state.
+    const restarted = new FetchHttpClient({}, state);
+    await expect(restarted.get("https://example.com/other-page")).rejects.toMatchObject({ status: 429, retryAfterMs: 120_000 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("never truncates a long server-requested wait even without a state store", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("busy", { status: 503, headers: { "Retry-After": "120" } })));
+    await expect(new FetchHttpClient({ maxDelay: 16_000 }).get("https://example.com/jobs"))
+      .rejects.toMatchObject({ status: 503, retryAfterMs: 120_000 });
+  });
+
   it("retries server failures with exponential delays", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

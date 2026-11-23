@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { z } from "zod";
 
 import { containsHtml, processDescription } from "@/lib/jobs/description-processor";
@@ -5,6 +7,9 @@ import type {
   BrowserSession,
   IBrowserClient,
 } from "@/lib/scraper/infrastructure/browser-client";
+import type { ScrapeFetchStateStore } from "@/lib/scraper/infrastructure/fetch-state";
+import { abortableDelay, getActiveScrapeSignal } from "@/lib/scraper/infrastructure/cancellation";
+import { createFailureForHttpStatus } from "@/lib/scraper/types/validation";
 import { BrowserSessionBootstrapError } from "@/lib/scraper/infrastructure/browser-session-error";
 import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 import {
@@ -56,6 +61,8 @@ type WorkdayListFetchResult = {
   unidentifiedCount: number;
   invalidCount: number;
   invalidFields: string[];
+  diagnostics: string[];
+  resumed: boolean;
 };
 
 type WorkdayListFetchStage = "bootstrap" | "list-page";
@@ -137,14 +144,16 @@ type WorkdaySessionController = {
 export type WorkdayConfig = BrowserScraperConfig & {
   parallelListFetches: number;
   detailBatchSize: number;
+  listDelayMs: number;
 };
 
 const WORKDAY_PAGE_SIZE = 20;
 
 const DEFAULT_WORKDAY_CONFIG: WorkdayConfig = {
   ...DEFAULT_BROWSER_CONFIG,
-  parallelListFetches: 6,
-  detailBatchSize: 5,
+  parallelListFetches: 1,
+  detailBatchSize: 2,
+  listDelayMs: 250,
 };
 
 export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
@@ -156,7 +165,8 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
   constructor(
     httpClient: IHttpClient,
     browserClient: IBrowserClient,
-    config: Partial<WorkdayConfig> = {}
+    config: Partial<WorkdayConfig> = {},
+    private readonly state?: ScrapeFetchStateStore
   ) {
     super(httpClient, browserClient, { ...DEFAULT_WORKDAY_CONFIG, ...config });
   }
@@ -356,7 +366,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       return this.failure("browser_error", error.describe());
     }
     if (cause instanceof HttpError) {
-      return this.failureForHttpStatus(cause.status, error.describe());
+      return createFailureForHttpStatus(cause.status, error.describe(), cause.retryAfterMs);
     }
     if (cause instanceof ScraperPayloadError) {
       return this.failure("parse_error", error.describe());
@@ -552,23 +562,22 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
   private async fetchAllJobListItems(
     controller: WorkdaySessionController
   ): Promise<WorkdayListFetchResult | WorkdayListError> {
-    const fetchSafely = async (offset: number) => {
-      try {
-        return await this.fetchJobListPage(
-          controller,
-          offset,
-          WORKDAY_PAGE_SIZE
-        );
-      } catch (error) {
-        // A broken session cannot be salvaged per-offset; fail the board.
-        if (error instanceof WorkdayListError && error.stage === "bootstrap") throw error;
-        if (error instanceof BrowserSessionBootstrapError) throw error;
-        if (error instanceof ScraperPayloadError) throw error;
-        throwIfScrapeAborted(error);
-        return null;
-      }
-    };
-
+    const source = controller.session;
+    const key = `workday-pages:${createHash("sha256").update(JSON.stringify({
+      baseUrl: source.baseUrl, tenant: source.tenant, board: source.board,
+      searchText: source.searchText, appliedFacets: source.appliedFacets,
+    })).digest("hex")}`;
+    const checkpointSchema = z.object({
+      createdAt: z.number(), total: z.number(),
+      pages: z.array(z.tuple([z.number().int().nonnegative(), z.object({
+        total: z.number(), jobPostings: z.array(WorkdayJobListItemSchema),
+        invalidCount: z.number(), invalidFields: z.array(z.string()),
+      })])),
+    });
+    const saved = checkpointSchema.safeParse(this.state?.get(key));
+    const pages = new Map<number, WorkdayJobListResponse>();
+    const diagnostics: string[] = [];
+    const startedAt = Date.now();
     let firstBatch: WorkdayJobListResponse;
     try {
       firstBatch = await this.fetchJobListPage(controller, 0, WORKDAY_PAGE_SIZE);
@@ -576,125 +585,101 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       if (error instanceof WorkdayListError) return error;
       throw error;
     }
-
     const total = firstBatch.total || 0;
-    const jobsById = new Map<string, WorkdayJobListItem>();
-    const invalidCountByOffset = new Map<number, number>([
-      [0, firstBatch.invalidCount],
-    ]);
-    const invalidFieldsByOffset = new Map<number, string[]>([[0, firstBatch.invalidFields]]);
-    const addJobs = (jobs: WorkdayJobListItem[], offset: number) => {
-      for (let index = 0; index < jobs.length; index++) {
-        const job = jobs[index];
-        if (!job) continue;
-        const jobPostingId = this.getJobPostingId(job);
-        const listingIdentity =
-          jobPostingId ?? `unkeyed-${offset + index}`;
-        const key = jobPostingId
-          ? `id:${jobPostingId}`
-          : `offset:${offset + index}`;
-        jobsById.set(key, { ...job, listingIdentity });
-      }
-    };
-    addJobs(firstBatch.jobPostings, 0);
-    const missingOffsets = new Set<number>();
-    if (firstBatch.jobPostings.length < Math.min(WORKDAY_PAGE_SIZE, total)) {
-      missingOffsets.add(0);
+    const checkpoint = saved.success && saved.data.total === total &&
+      startedAt - saved.data.createdAt < 15 * 60_000 ? saved.data : null;
+    if (checkpoint) {
+      for (const [offset, page] of checkpoint.pages) pages.set(offset, page);
     }
+    const resumed = pages.size > 0;
+    const createdAt = checkpoint?.createdAt ?? startedAt;
+    pages.set(0, firstBatch);
+    const persist = () => this.state?.set(key, {
+      createdAt, total, pages: Array.from(pages.entries()),
+    }, new Date(createdAt + 15 * 60_000));
+    persist();
 
-    if (total > WORKDAY_PAGE_SIZE) {
-      const totalPages = Math.ceil(total / WORKDAY_PAGE_SIZE);
-      const offsets: number[] = [];
-
-      for (let page = 1; page < totalPages; page++) {
-        offsets.push(page * WORKDAY_PAGE_SIZE);
+    const missingOffsets = new Set<number>();
+    for (let offset = 0; offset < total; offset += WORKDAY_PAGE_SIZE) {
+      const page = pages.get(offset);
+      if (!page || page.jobPostings.length < Math.min(WORKDAY_PAGE_SIZE, total - offset)) {
+        missingOffsets.add(offset);
       }
-
-      const fetchPage = async (offset: number): Promise<WorkdayJobListResponse | null> => {
-        try {
-          return await this.fetchJobListPage(controller, offset, WORKDAY_PAGE_SIZE);
-        } catch (error) {
-          if (error instanceof WorkdayListError && error.stage === "bootstrap") throw error;
-          if (error instanceof BrowserSessionBootstrapError) throw error;
-          throwIfScrapeAborted(error);
-          return null;
+    }
+    let consecutiveFailures = 0;
+    // One recovery pass for isolated failures; sustained failures stop the sweep.
+    for (let pass = 0; pass < 2; pass++) {
+      const offsets = [...missingOffsets];
+      let stopped = false;
+      for (let index = 0; index < offsets.length; index += this.config.parallelListFetches) {
+        if (consecutiveFailures >= 3 || Date.now() - startedAt > 120_000) {
+          diagnostics.push("Listing sweep stopped at its failure or time budget");
+          stopped = true;
+          break;
         }
-      };
-
-      const batchSize = this.config.parallelListFetches;
-      for (let i = 0; i < offsets.length; i += batchSize) {
-        const batchOffsets = offsets.slice(i, i + batchSize);
-        const results = await Promise.all(
-          batchOffsets.map((offset) => fetchPage(offset))
-        );
-
-        for (let resultIndex = 0; resultIndex < results.length; resultIndex++) {
-          const result = results[resultIndex];
-          const offset = batchOffsets[resultIndex];
-          if (offset === undefined) continue;
-          if (!result || !Array.isArray(result.jobPostings)) {
-            missingOffsets.add(offset);
-          } else {
-            invalidCountByOffset.set(offset, result.invalidCount);
-            invalidFieldsByOffset.set(offset, result.invalidFields);
-            addJobs(result.jobPostings, offset);
-            const expectedCount = Math.min(WORKDAY_PAGE_SIZE, total - offset);
-            if (result.jobPostings.length < expectedCount) {
-              missingOffsets.add(offset);
+        if (this.config.listDelayMs > 0) {
+          await abortableDelay(this.config.listDelayMs, getActiveScrapeSignal());
+        }
+        const batch = offsets.slice(index, index + this.config.parallelListFetches);
+        const results = await Promise.all(batch.map(async (offset) => {
+          try {
+            return { offset, page: await this.fetchJobListPage(controller, offset, WORKDAY_PAGE_SIZE) };
+          } catch (error) {
+            throwIfScrapeAborted(error);
+            return { offset, error };
+          }
+        }));
+        // Save successful peers before propagating a throttle or bootstrap error.
+        for (const result of results) {
+          if (result.page) {
+            pages.set(result.offset, result.page);
+            consecutiveFailures = 0;
+            if (result.page.jobPostings.length >= Math.min(WORKDAY_PAGE_SIZE, total - result.offset)) {
+              missingOffsets.delete(result.offset);
             }
+          } else {
+            consecutiveFailures++;
+            const error = result.error;
+            diagnostics.push(error instanceof WorkdayListError ? error.describe() : "Listing page request failed");
           }
         }
-
-      }
-    }
-
-    if (missingOffsets.size > 0) {
-      for (const offset of Array.from(missingOffsets).sort((a, b) => a - b)) {
-        const result = await fetchSafely(offset);
-        if (!result || !Array.isArray(result.jobPostings)) continue;
-
-        invalidCountByOffset.set(offset, result.invalidCount);
-        invalidFieldsByOffset.set(offset, result.invalidFields);
-        addJobs(result.jobPostings, offset);
-        const expectedCount = Math.min(WORKDAY_PAGE_SIZE, total - offset);
-        if (result.jobPostings.length >= expectedCount) {
-          missingOffsets.delete(offset);
+        persist();
+        const fatal = results.find(({ error }) => error instanceof WorkdayListError &&
+          (error.status === 429 || error.stage === "bootstrap"));
+        if (fatal?.error) {
+          if (fatal.error instanceof WorkdayListError && fatal.error.status === 429 && this.state) {
+            return fatal.error;
+          }
+          if (fatal.error instanceof WorkdayListError && fatal.error.stage === "bootstrap") throw fatal.error;
+          stopped = true;
+          break;
         }
       }
+      if (stopped) break;
     }
 
-    const allJobs = Array.from(jobsById.values());
-    const unidentifiedCount = allJobs.filter(
-      (job) => !this.getJobPostingId(job)
-    ).length;
-    const invalidCount = Array.from(invalidCountByOffset.values()).reduce(
-      (sum, count) => sum + count,
-      0
-    );
-    if (allJobs.length >= total && invalidCount === 0) {
-      missingOffsets.clear();
+    const jobsById = new Map<string, WorkdayJobListItem>();
+    for (const [offset, page] of pages) {
+      for (const [index, job] of page.jobPostings.entries()) {
+        const id = this.getJobPostingId(job);
+        const identity = id ?? `unkeyed-${offset + index}`;
+        jobsById.set(id ? `id:${id}` : `offset:${offset + index}`, { ...job, listingIdentity: identity });
+      }
     }
-    // Invalid listings are already excluded from `allJobs`, so they count
-    // toward the tolerated gap instead of failing the board on their own.
-    // Unidentified listings stay a hard failure: without a stable Workday ID
-    // they cannot be deduplicated or archived safely.
-    const { isComplete: countsComplete } = resolveListingCompleteness(
-      allJobs.length,
-      total
-    );
-
+    const jobs = [...jobsById.values()];
+    const invalidCount = [...pages.values()].reduce((sum, page) => sum + page.invalidCount, 0);
+    const unidentifiedCount = jobs.filter((job) => !this.getJobPostingId(job)).length;
+    const { isComplete: countsComplete } = resolveListingCompleteness(jobs.length, total);
+    // A checkpoint mixes snapshots. Keep archival disabled until a fresh complete sweep.
+    const isComplete = !resumed && missingOffsets.size === 0 && countsComplete &&
+      invalidCount === 0 && unidentifiedCount === 0;
+    if (missingOffsets.size === 0) this.state?.delete(key);
     return {
-      jobs: allJobs,
-      isComplete:
-        missingOffsets.size === 0 &&
-        countsComplete &&
-        invalidCount === 0 &&
-        unidentifiedCount === 0,
-      advertisedCount: total,
-      missingOffsets: Array.from(missingOffsets).sort((a, b) => a - b),
-      unidentifiedCount,
-      invalidCount,
-      invalidFields: [...new Set([...invalidFieldsByOffset.values()].flat())].slice(0, 3),
+      jobs, isComplete, advertisedCount: total,
+      missingOffsets: [...missingOffsets].sort((a, b) => a - b),
+      unidentifiedCount, invalidCount,
+      invalidFields: [...new Set([...pages.values()].flatMap((page) => page.invalidFields))].slice(0, 3),
+      diagnostics: [...new Set(diagnostics)].slice(0, 3), resumed,
     };
   }
 
@@ -828,7 +813,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         : "";
     return createScraperError(
       "network_error",
-      `Workday listings were only partially fetched (${result.jobs.length} of ${result.advertisedCount} advertised jobs; ${result.missingOffsets.length} page offset${result.missingOffsets.length === 1 ? "" : "s"} unresolved${unidentifiedSuffix}${invalidSuffix}).`
+      `Workday listings were only partially fetched (${result.jobs.length} of ${result.advertisedCount} advertised jobs; ${result.missingOffsets.length} page offset${result.missingOffsets.length === 1 ? "" : "s"} unresolved${unidentifiedSuffix}${invalidSuffix}).${result.resumed ? " Recovered listing checkpoint; archival deferred until a fresh complete sweep." : ""}${result.diagnostics.length ? ` Page failures: ${result.diagnostics.join("; ")}.` : ""}`
     );
   }
 

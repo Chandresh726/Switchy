@@ -48,6 +48,7 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
           .values({
             id: input.sessionId,
             triggerSource: input.triggerSource,
+            scheduledForAt: input.scheduledForAt,
             status: input.companyIds.length > 0 ? "in_progress" : "completed",
             companiesTotal: input.companyIds.length,
             companiesCompleted: 0,
@@ -210,6 +211,13 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
       lastError: null,
       updatedAt: now,
     }, true);
+  }
+
+  async defer(
+    itemId: string, workerId: string, error: Error, availableAt: Date,
+    now: Date, attemptCount: number
+  ): Promise<boolean> {
+    return this.deferSuspended(itemId, workerId, error, availableAt, now, attemptCount);
   }
 
   async deferSuspended(

@@ -25,7 +25,7 @@ import type { ScrapeCompanyPipeline } from "./scrape-company-pipeline";
 import type { ScrapeSessionProjector } from "./scrape-session-projector";
 
 class RetryableScrapeError extends Error {
-  constructor(message: string, readonly retryAfterMs?: number) {
+  constructor(message: string, readonly retryAfterMs?: number, readonly retryable = true) {
     super(message);
     this.name = "RetryableScrapeError";
   }
@@ -108,10 +108,11 @@ export class ScrapeWorkHandler {
         attemptCount: item.attemptCount,
         maxAttempts: item.maxAttempts,
       });
-      if (result.outcome === "error" && result.retryable) {
+      if (result.outcome === "error") {
         throw new RetryableScrapeError(
           result.error ?? `Retryable scrape failure for company ${item.companyId}`,
-          result.retryAfterMs
+          result.retryAfterMs,
+          result.retryable ?? false
         );
       }
       return result;

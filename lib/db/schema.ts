@@ -155,6 +155,13 @@ export const jobs = sqliteTable("jobs", {
 }));
 
 // Scrape Sessions - Track batch scrape operations
+// Expiring request cooldowns and listing checkpoints. Never stores session cookies.
+export const scrapeFetchState = sqliteTable("scrape_fetch_state", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+});
+
 export const scrapeSessions = sqliteTable("scrape_sessions", {
   id: text("id").primaryKey(), // UUID
   triggerSource: text("trigger_source").notNull(), // "manual" | "scheduler" | "scheduler_recovery" | "company_refresh"

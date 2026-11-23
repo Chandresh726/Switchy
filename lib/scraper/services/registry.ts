@@ -1,3 +1,5 @@
+import type { ScrapeFetchStateStore } from "@/lib/scraper/infrastructure/fetch-state";
+
 import { createScraperFailure, type Platform } from "@/lib/scraper/types";
 import type { IScraper, ScraperResult, ScrapeOptions } from "@/lib/scraper/core/types";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
@@ -96,6 +98,7 @@ export class ScraperRegistry implements IScraperRegistry {
 export interface ScraperRegistryConfig {
   httpClient: IHttpClient;
   browserClient: IBrowserClient;
+  fetchState?: ScrapeFetchStateStore;
 }
 
 export function createScraperRegistry(config: ScraperRegistryConfig): IScraperRegistry {
@@ -105,7 +108,7 @@ export function createScraperRegistry(config: ScraperRegistryConfig): IScraperRe
   registry.register(new LeverScraper(config.httpClient));
   registry.register(new AshbyScraper(config.httpClient));
   registry.register(new EightfoldScraper(config.httpClient, config.browserClient));
-  registry.register(new WorkdayScraper(config.httpClient, config.browserClient));
+  registry.register(new WorkdayScraper(config.httpClient, config.browserClient, {}, config.fetchState));
   registry.register(new ServiceNowScraper(config.httpClient));
   registry.register(new SmartRecruitersScraper(config.httpClient));
   registry.register(new TurboHireScraper(config.httpClient));

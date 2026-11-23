@@ -93,7 +93,7 @@ export function createFailureFromUnknown(error: unknown): ScraperErrorResult {
   }
 
   if (error instanceof HttpError) {
-    return createFailureForHttpStatus(error.status, error.message);
+    return createFailureForHttpStatus(error.status, error.message, error.retryAfterMs);
   }
 
   if (error instanceof TypeError) {
@@ -117,9 +117,11 @@ function classifyHttpStatus(status: number): ScraperErrorCode {
 
 export function createFailureForHttpStatus(
   status: number,
-  message: string
+  message: string,
+  retryAfterMs?: number
 ): ScraperErrorResult {
   return createScraperFailure(classifyHttpStatus(status), message, {
     statusCode: status,
+    retryAfterMs,
   });
 }

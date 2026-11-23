@@ -26,7 +26,7 @@ function createQueueDatabases() {
 }
 
 describe("DrizzleLocalScrapeQueueRepository", () => {
-  it("persists a suspension delay without exhausting work and rejects a racing cancellation", async () => {
+  it.each(["defer", "deferSuspended"] as const)("%s persists a delay without exhausting work and rejects a racing cancellation", async (method) => {
     const { firstDatabase } = createQueueDatabases();
     const company = firstDatabase.insert(companies).values({ name: "Acme", careersUrl: "https://example.com/jobs" }).returning().get();
     const repository = new DrizzleLocalScrapeQueueRepository(firstDatabase);
@@ -34,12 +34,12 @@ describe("DrizzleLocalScrapeQueueRepository", () => {
     const now = new Date(Math.floor(Date.now() / 1_000) * 1_000);
     const item = await repository.claimNext("worker", now, 60_000);
     const resume = new Date(now.getTime() + 60_000);
-    expect(await repository.deferSuspended(item!.id, "worker", new Error("Suspended"), resume, now, 0)).toBe(true);
+    expect(await repository[method](item!.id, "worker", new Error("Suspended"), resume, now, 0)).toBe(true);
     expect(firstDatabase.select().from(scrapeQueueItems).get()).toMatchObject({ status: "queued", attemptCount: 0, availableAt: resume, lastError: "Suspended", workerId: null });
     expect(await repository.claimNext("early-worker", now, 60_000)).toBeNull();
     expect(await repository.claimNext("resumed-worker", resume, 60_000)).toMatchObject({ attemptCount: 1 });
     await repository.requestSessionCancellation("suspension", resume);
-    expect(await repository.deferSuspended(item!.id, "resumed-worker", new Error("Suspended"), resume, resume, 0)).toBe(false);
+    expect(await repository[method](item!.id, "resumed-worker", new Error("Suspended"), resume, resume, 0)).toBe(false);
   });
   it("retries transient SQLite contention while renewing a worker lease", async () => {
     let attempts = 0;

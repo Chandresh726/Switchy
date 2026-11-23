@@ -277,10 +277,10 @@
   },
   {
     "name": "Headout",
-    "careersUrl": "https://www.headout.com/careers/#open-roles",
+    "careersUrl": "https://jobs.ashbyhq.com/headout",
     "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTYwgH5YP6oWkwJiQjX-rseLHeMeAs5EaXU2w&s",
-    "platform": "greenhouse",
-    "boardToken": "headoutcareers",
+    "platform": "ashby",
+    "boardToken": "headout",
     "isActive": true
   },
   {
@@ -487,14 +487,6 @@
     "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRq9S9DP4i3kJDBywUdbdTIwFx8_Mk1unaE-g&s",
     "platform": "oracle",
     "boardToken": "hdpc.fa.us2.oraclecloud.com/CX_3002",
-    "isActive": true
-  },
-  {
-    "name": "Headout LinkedIn",
-    "careersUrl": "https://job-boards.greenhouse.io/headoutlinkedin",
-    "logoUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTYwgH5YP6oWkwJiQjX-rseLHeMeAs5EaXU2w&s",
-    "platform": "greenhouse",
-    "boardToken": "headoutlinkedin",
     "isActive": true
   },
   {

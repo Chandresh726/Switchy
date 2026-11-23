@@ -288,6 +288,13 @@
       "when": 1788632014986,
       "tag": "0040_cuddly_earthquake",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1795428035984,
+      "tag": "0041_furry_network",
+      "breakpoints": true
     }
   ]
 }

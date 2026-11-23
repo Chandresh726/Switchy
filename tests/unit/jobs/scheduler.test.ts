@@ -39,11 +39,12 @@ vi.mock("@/lib/db", () => ({
   db: (() => {
     const select = () => ({
       from: (table: { __table?: string }) => ({
-        where: (value: string) => ({
-          get: () => table.__table === "settings" ? store.settings.get(value) : undefined,
+        where: (value: string | Date) => ({
+          get: () => table.__table === "settings" ? store.settings.get(value as string) : store.sessions.find((row) =>
+            value instanceof Date && [row.scheduledForAt, row.startedAt].some((date) => date instanceof Date && date.getTime() === value.getTime())),
           limit: async () => {
             if (table.__table === "settings") {
-              const row = store.settings.get(value);
+              const row = store.settings.get(value as string);
               return row ? [row] : [];
             }
             return [];

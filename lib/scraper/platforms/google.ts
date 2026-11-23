@@ -171,6 +171,7 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
       if (jobsToFetch.length === 0) {
         return {
           outcome: listingIsComplete ? "success" : "partial",
+          issues: listingIsComplete ? undefined : [{ code: "parse_error", message: "Google listing pagination was incomplete or contained an unrecognized page.", retryable: false }],
           jobs: [],
           totalListings: listings.length,
           earlyFiltered: selection.earlyFiltered,
@@ -196,6 +197,7 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
 
       return {
         outcome,
+        issues: outcome === "partial" ? [{ code: "network_error", message: `Google scrape incomplete: listing completeness=${listingIsComplete}; ${detailFailures} detail requests failed.`, retryable: true }] : undefined,
         jobs: scrapedJobs,
         totalListings: listings.length,
         earlyFiltered: selection.earlyFiltered,

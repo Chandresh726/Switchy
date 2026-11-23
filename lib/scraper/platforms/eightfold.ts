@@ -648,6 +648,12 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
             }
             positionsById.set(detail.id, detail);
           }
+          if (sitemapRecoveryFailureStatuses.some((status) => status === 403 || status === 429) ||
+            index + this.config.detailBatchSize >= 50) {
+            // Stop fallback amplification under access rejection or a large gap.
+            if (index + this.config.detailBatchSize < missingPositionIds.length) sitemapHydrationFailed = true;
+            break;
+          }
         }
 
         const activeSitemapPositionIds = Array.from(sitemapPositionIds).filter(

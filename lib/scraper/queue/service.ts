@@ -90,7 +90,7 @@ export class LocalScrapeQueueService {
       (item, { signal }) => withSleepProtection(
         this.deviceSleepInhibitor, () => this.workHandler.handle(item, signal)
       ),
-      { workerIdPrefix: "local-scrape", ...dependencies.runnerConfig },
+      { workerIdPrefix: "local-scrape", rateLimitMaxAgeMs: 6 * 60 * 60_000, ...dependencies.runnerConfig },
       (item) => this.projector.reconcileSession(item.sessionId),
       serializeFetchResult
     );
@@ -111,12 +111,13 @@ export class LocalScrapeQueueService {
     });
   }
 
-  async scrapeAllCompanies(triggerSource: TriggerSource): Promise<BatchFetchResult> {
+  async scrapeAllCompanies(triggerSource: TriggerSource, scheduledForAt?: Date): Promise<BatchFetchResult> {
     const companies = await this.dependencies.companyCatalog.getActiveCompanies();
     const orderedCompanyIds = this.orderByStaticPriority(companies);
     return this.runCoalescedBatch(
       orderedCompanyIds,
-      triggerSource
+      triggerSource,
+      scheduledForAt
     );
   }
 
@@ -164,14 +165,15 @@ export class LocalScrapeQueueService {
 
   private runCoalescedBatch(
     companyIds: number[],
-    triggerSource: TriggerSource
+    triggerSource: TriggerSource,
+    scheduledForAt?: Date
   ): Promise<BatchFetchResult> {
     const uniqueCompanyIds = Array.from(new Set(companyIds));
     const key = [...uniqueCompanyIds].sort((a, b) => a - b).join(",");
     const existing = this.inFlightBatches.get(key);
     if (existing) return existing;
 
-    const pending = this.enqueueAndWait(uniqueCompanyIds, triggerSource);
+    const pending = this.enqueueAndWait(uniqueCompanyIds, triggerSource, scheduledForAt);
     this.inFlightBatches.set(key, pending);
     void pending.then(
       () => this.inFlightBatches.delete(key),
@@ -203,7 +205,8 @@ export class LocalScrapeQueueService {
 
   private async enqueueAndWait(
     companyIds: number[],
-    triggerSource: TriggerSource
+    triggerSource: TriggerSource,
+    scheduledForAt?: Date
   ): Promise<BatchFetchResult> {
     await this.workHandler.refreshParallelLimit();
     const sessionId = crypto.randomUUID();
@@ -212,6 +215,7 @@ export class LocalScrapeQueueService {
       sessionId,
       triggerSource,
       companyIds: uniqueCompanyIds,
+      scheduledForAt,
     });
     if (uniqueCompanyIds.length === 0) {
       await this.dependencies.sessionStore.completeSession(

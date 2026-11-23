@@ -301,8 +301,15 @@ function markFailedRunForRecovery(scheduledFor: Date): void {
   db.transaction((tx) => appendPendingRecovery(tx, scheduledFor), { behavior: "immediate" });
 }
 
-async function recordMissedExecution(scheduledFor: Date): Promise<void> {
-  db.transaction((tx) => {
+async function recordMissedExecution(scheduledFor: Date): Promise<boolean> {
+  return db.transaction((tx) => {
+    // Serialized with queue writes; an occurrence already represented in history
+    // must not generate a second missed record or recovery request.
+    const recorded = tx.select({ id: scrapeSessions.id }).from(scrapeSessions)
+      .where(eq(scrapeSessions.scheduledForAt, scheduledFor)).get();
+    const legacy = tx.select({ id: scrapeSessions.id }).from(scrapeSessions)
+      .where(eq(scrapeSessions.startedAt, scheduledFor)).get();
+    if (recorded || legacy) return false;
     appendPendingRecovery(tx, scheduledFor);
     tx.insert(scrapeSessions).values({
       id: crypto.randomUUID(),
@@ -319,6 +326,7 @@ async function recordMissedExecution(scheduledFor: Date): Promise<void> {
       startedAt: scheduledFor,
       completedAt: scheduledFor,
     }).run();
+    return true;
   }, { behavior: "immediate" });
 }
 
@@ -396,9 +404,10 @@ export async function reconcileMissedRunsOnBoot(now = new Date()): Promise<{
   }
 
   const missed = listMissedOccurrences(cronExpression, baseline, now);
+  let reconciled = 0;
   for (const occurrence of missed) {
     try {
-      await recordMissedExecution(occurrence);
+      if (await recordMissedExecution(occurrence)) reconciled++;
     } catch (error) {
       console.error("[Scheduler] Failed to persist boot-time missed execution:", error);
       break;
@@ -411,7 +420,7 @@ export async function reconcileMissedRunsOnBoot(now = new Date()): Promise<{
       `[Scheduler] Reconciled ${missed.length} missed run(s) since ${baseline.toISOString()} without UI involvement`
     );
   }
-  return { reconciled: missed.length, pendingMissedCount: nextState.pendingMissedCount };
+  return { reconciled, pendingMissedCount: nextState.pendingMissedCount };
 }
 
 /**
@@ -581,8 +590,8 @@ export async function startScheduler(): Promise<void> {
 
   schedulerRuntime.task = cron.schedule(
     schedulerRuntime.currentCronExpression,
-    async () => {
-      await runScheduledRefresh();
+    async (context) => {
+      await runScheduledRefresh(context?.date);
     },
     { missedExecutionTolerance: CRON_MISSED_EXECUTION_TOLERANCE_MS }
   );
@@ -638,7 +647,8 @@ async function saveLastRun(time: Date): Promise<void> {
 
 async function runSchedulerBatch(
   triggerSource: "scheduler" | "scheduler_recovery",
-  requestId?: string
+  requestId?: string,
+  scheduledForAt?: Date
 ): Promise<"started" | "already_running"> {
   const sessionId = crypto.randomUUID();
   if (schedulerRuntime.isRunning) {
@@ -721,7 +731,8 @@ async function runSchedulerBatch(
   logRuntimeEvent("scheduler", "scheduler_run_started", { requestId, sessionId });
 
   try {
-    await queueService.scrapeAllCompanies(triggerSource);
+    if (scheduledForAt) await queueService.scrapeAllCompanies(triggerSource, scheduledForAt);
+    else await queueService.scrapeAllCompanies(triggerSource);
 
     const { reconcileMatchNotifications } = await import("@/lib/notifications/service");
     await reconcileMatchNotifications();
@@ -785,7 +796,7 @@ function scheduleFailedBatchRetry(
   }
 }
 
-async function runScheduledRefresh(): Promise<void> {
+async function runScheduledRefresh(scheduledForAt?: Date): Promise<void> {
   if (!await getSchedulerEnabled()) {
     stopScheduler();
     logRuntimeEvent("scheduler", "scheduler_run_skipped", { code: "disabled" });
@@ -804,7 +815,7 @@ async function runScheduledRefresh(): Promise<void> {
     return;
   }
 
-  await runSchedulerBatch("scheduler");
+  await runSchedulerBatch("scheduler", undefined, scheduledForAt);
 }
 
 export async function recoverMissedSchedulerRuns(requestId?: string): Promise<SchedulerRecoveryResult> {

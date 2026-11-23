@@ -58,6 +58,37 @@ function directHttpClient(): IHttpClient {
 }
 
 describe("WorkdayScraper", () => {
+  it("resumes saved pages after throttling and keeps mixed snapshots unsafe for archival", async () => {
+    const values = new Map<string, unknown>();
+    const state = { get: (key: string) => values.get(key),
+      set: (key: string, value: unknown) => { values.set(key, value); },
+      delete: (key: string) => { values.delete(key); } };
+    let limited = true;
+    const http = directHttpClient();
+    const offsets: number[] = [];
+    vi.mocked(http.post).mockImplementation(async (_url, body) => {
+      const offset = (body as { offset: number }).offset;
+      offsets.push(offset);
+      if (offset === 40 && limited) throw new HttpError(429, "Too Many Requests", "https://acme.wd5.myworkdayjobs.com/jobs", new Headers({ "Retry-After": "120" }));
+      return { total: 60, jobPostings: Array.from({ length: 20 }, (_, i) => listing(offset + i + 1)) };
+    });
+    const url = "https://acme.wd5.myworkdayjobs.com/Acme";
+    const config = { listDelayMs: 0 };
+    const first = await new WorkdayScraper(http, browserClient(), config, state).scrape(url);
+    expect(first).toMatchObject({ outcome: "error", error: { code: "rate_limited", retryAfterMs: 120_000 } });
+    expect(offsets).toEqual([0, 20, 40]);
+    limited = false;
+    offsets.length = 0;
+    const resumed = await new WorkdayScraper(http, browserClient(), config, state).scrape(url);
+    expect(offsets).toEqual([0, 40]);
+    expect(resumed).toMatchObject({ outcome: "partial", totalListings: 60, listingCompleteness: "partial" });
+    expect(values.size).toBe(0);
+    offsets.length = 0;
+    const fresh = await new WorkdayScraper(http, browserClient(), config, state).scrape(url);
+    expect(offsets).toEqual([0, 20, 40]);
+    expect(fresh).toMatchObject({ outcome: "success", listingCompleteness: "complete" });
+  });
+
   it("retains listings with null optional metadata without weakening identity validation", async () => {
     const httpClient = directHttpClient();
     vi.mocked(httpClient.post).mockResolvedValue({

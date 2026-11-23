@@ -38,11 +38,12 @@ vi.mock("@/lib/db", () => ({
   db: (() => {
     const select = () => ({
       from: (table: { __table?: string }) => ({
-        where: (value: string) => ({
-          get: () => table.__table === "settings" ? store.settings.get(value) : undefined,
+        where: (value: string | Date) => ({
+          get: () => table.__table === "settings" ? store.settings.get(value as string) : store.sessions.find((row) =>
+            value instanceof Date && [row.scheduledForAt, row.startedAt].some((date) => date instanceof Date && date.getTime() === value.getTime())),
           limit: async () => {
             if (table.__table === "settings") {
-              const row = store.settings.get(value);
+              const row = store.settings.get(value as string);
               return row ? [row] : [];
             }
             return [];
@@ -163,6 +164,19 @@ describe("scheduler backend-owned recovery", () => {
         totalJobsAdded: 0,
       },
     });
+  });
+
+  it("does not call an executed occurrence missed, even before lastRun is saved", async () => {
+    store.settings.set("scheduler.lastRun", {
+      key: "scheduler.lastRun", value: new Date(2026, 3, 5, 0).toISOString(),
+    });
+    store.sessions.push({ status: "in_progress", scheduledForAt: new Date(2026, 3, 5, 6) });
+    const scheduler = await import("@/lib/jobs/scheduler");
+    expect(await scheduler.reconcileMissedRunsOnBoot(new Date(2026, 3, 5, 13)))
+      .toEqual({ reconciled: 1, pendingMissedCount: 1 });
+    expect(store.sessions).toHaveLength(2);
+    expect(await scheduler.reconcileMissedRunsOnBoot(new Date(2026, 3, 5, 13)))
+      .toEqual({ reconciled: 0, pendingMissedCount: 1 });
   });
 
   it("enumerates cron occurrences strictly after the baseline", async () => {

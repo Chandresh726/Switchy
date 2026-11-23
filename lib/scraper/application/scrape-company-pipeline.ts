@@ -347,12 +347,15 @@ export class ScrapeCompanyPipeline {
     const outcome = this.resolveScrapeOutcome(scraperResult);
 
     if (scraperResult.outcome === "error") {
-      const errorMessage = scraperResult.error.message;
+      const errorMessage = scraperResult.error.code === "board_not_found"
+        ? `Source needs repair: ${scraperResult.error.message}`
+        : scraperResult.error.message;
       logger.error(errorMessage);
 
       // Mirror the catch-block policy: retryable failures before the final
       // attempt leave no log row; the terminal attempt records the outcome.
       if (
+        !(scraperResult.error.code === "rate_limited" && attemptCount !== undefined) &&
         this.isTerminalAttempt(scraperResult.error.retryable, attemptCount, maxAttempts)
       ) {
         try {

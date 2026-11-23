@@ -12,6 +12,7 @@ export interface EnqueueScrapeSession {
   priority?: number;
   maxAttempts?: number;
   availableAt?: Date;
+  scheduledForAt?: Date;
 }
 
 export interface QueueRecoveryResult {

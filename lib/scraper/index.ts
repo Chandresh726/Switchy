@@ -1,3 +1,5 @@
+import { DrizzleScrapeFetchStateStore } from "./infrastructure/fetch-state-store";
+
 import type { IScraperRepository } from "./infrastructure/types";
 import type { IHttpClient, HttpClientConfig } from "./infrastructure/http-client";
 import type { IBrowserClient, BrowserSessionConfig } from "./infrastructure/browser-client";
@@ -55,10 +57,11 @@ function createScrapingModule(config: ScrapingModuleConfig = {}): ScrapingModule
   const repository = config.repository ?? createScraperRepository();
   const settingsProvider =
     config.settingsProvider ?? new StoredScrapeSettingsProvider(repository);
-  const httpClient = createHttpClient(config.httpClient);
+  const fetchState = new DrizzleScrapeFetchStateStore();
+  const httpClient = createHttpClient(config.httpClient, fetchState);
   const browserClient = createBrowserClient(config.browserClient);
 
-  const registry = createScraperRegistry({ httpClient, browserClient });
+  const registry = createScraperRegistry({ httpClient, browserClient, fetchState });
   const deduplicationService = createDeduplicationService();
   const filterService = createFilterService();
 

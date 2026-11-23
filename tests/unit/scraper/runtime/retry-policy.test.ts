@@ -17,9 +17,9 @@ describe("resolveRetryDelay", () => {
     expect(resolveRetryDelay(attemptCount, null, policy)).toBe(expected);
   });
 
-  it("honors retry-after without exceeding the maximum", () => {
+  it("treats retry-after as a minimum even above the exponential cap", () => {
     expect(resolveRetryDelay(1, { retryAfterMs: 750 }, policy)).toBe(750);
-    expect(resolveRetryDelay(1, { retryAfterMs: 2_000 }, policy)).toBe(1_000);
+    expect(resolveRetryDelay(1, { retryAfterMs: 2_000 }, policy)).toBe(2_000);
   });
 
   it("ignores invalid retry-after values", () => {
