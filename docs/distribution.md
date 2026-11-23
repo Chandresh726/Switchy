@@ -78,6 +78,10 @@ The `release.yml` workflow runs only for stable `vMAJOR.MINOR.PATCH` tags. It:
 7. downloads published runtime assets to verify their size and SHA-256, then
    verifies the npm tarball against the packaged build and runs the exact
    published CLI version. Registry propagation is retried for a bounded period.
+   If the installer cannot yet resolve the exact new Switchy version, verification
+   retries every 15 seconds, up to six attempts within a three-minute budget.
+   Checksum mismatches, other installation errors, and incorrect CLI versions fail
+   immediately.
    Verification runs in separate jobs so retries do not republish assets.
 
 Release permissions and GitHub's existing latest-release behavior are unchanged.

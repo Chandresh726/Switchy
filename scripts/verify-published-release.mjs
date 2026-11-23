@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+
+import { verifyNpmInstallation } from "./verify-npm-installation.mjs";
 
 const repository = process.env.GITHUB_REPOSITORY ?? "Chandresh726/Switchy";
 const { name, version } = JSON.parse(await readFile("packages/cli/package.json", "utf8"));
@@ -44,12 +45,7 @@ if (mode === "assets") {
   const metadata = await (await published(`https://registry.npmjs.org/${encodeURIComponent(name)}/${version}`)).json();
   const downloaded = await digest(await published(metadata.dist.tarball), "sha512");
   assert.equal(downloaded.hex, expected, "Published npm tarball differs from the verified build");
-  const installation = spawnSync("pnpm", ["--config.verify-deps-before-run=false", "--reporter=silent", "dlx", `${name}@${version}`, "version"], {
-    cwd: process.env.RUNNER_TEMP, encoding: "utf8", timeout: 120_000,
-  });
-  if (installation.error) throw installation.error;
-  assert.equal(installation.status, 0, installation.stderr);
-  assert.equal(installation.stdout.trim(), version, "Installed CLI reports the wrong version");
+  await verifyNpmInstallation(name, version);
 } else {
   throw new Error("Use assets or npm");
 }
