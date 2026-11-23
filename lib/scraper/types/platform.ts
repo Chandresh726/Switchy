@@ -1,22 +1,6 @@
-export type Platform =
-  | "greenhouse"
-  | "smartrecruiters"
-  | "lever"
-  | "ashby"
-  | "eightfold"
-  | "workday"
-  | "servicenow"
-  | "turbohire"
-  | "mynexthire"
-  | "uber"
-  | "google"
-  | "atlassian"
-  | "rippling"
-  | "visa"
-  | "jobvite"
-  | "talentbrew"
-  | "oracle"
-  | "phenom";
+export { PLATFORMS } from "@/lib/companies/platforms";
+import { PLATFORMS, type Platform } from "@/lib/companies/platforms";
+export type { Platform } from "@/lib/companies/platforms";
 
 export type TriggerSource = "manual" | "scheduler" | "scheduler_recovery" | "company_refresh";
 
@@ -33,27 +17,6 @@ export type ScrapeLogStatus = "success" | "error" | "partial";
 export type SessionStatus = "in_progress" | "completed" | "partial" | "failed" | "skipped";
 
 export type MatcherStatus = "pending" | "in_progress" | "completed" | "failed";
-
-export const PLATFORMS = [
-  "greenhouse",
-  "smartrecruiters",
-  "lever",
-  "ashby",
-  "eightfold",
-  "workday",
-  "servicenow",
-  "turbohire",
-  "mynexthire",
-  "uber",
-  "google",
-  "atlassian",
-  "rippling",
-  "visa",
-  "jobvite",
-  "talentbrew",
-  "oracle",
-  "phenom",
-] as const satisfies readonly Platform[];
 
 const TRIGGER_SOURCES: readonly TriggerSource[] = [
   "manual",

@@ -5,7 +5,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { persistResumeVersion } from "@/lib/ai/resume/repository";
 import { extractResumeText } from "@/lib/ai/resume/text-extraction";
 import { parseResumeWithProvenance } from "@/lib/ai/resume-parser";
-import { NotFoundError, ValidationError } from "@/lib/api";
+import { NotFoundError, ValidationError } from "@/lib/errors";
 import { MAX_RESUME_FILE_SIZE, MAX_RESUME_TEXT_LENGTH } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { profile, resumes } from "@/lib/db/schema";

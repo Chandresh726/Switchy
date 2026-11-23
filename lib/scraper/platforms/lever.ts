@@ -84,11 +84,6 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
     super(httpClient, { ...DEFAULT_LEVER_CONFIG, ...config });
   }
 
-  validate(url: string): boolean {
-    const urlLower = url.toLowerCase();
-    return urlLower.includes("lever.co") || urlLower.includes("jobs.lever");
-  }
-
   extractIdentifier(url: string): string | null {
     const patterns = [
       /jobs\.lever\.co\/([^\/\?]+)/i,

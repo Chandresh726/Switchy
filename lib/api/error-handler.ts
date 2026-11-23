@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { AppError } from "@/lib/errors";
+
 import { AIError, sanitizeAIError } from "@/lib/ai/shared/errors";
 
 import type {
@@ -9,43 +11,7 @@ import type {
 } from "./contracts/common";
 import { createApiRequestContext, withRequestIdHeader } from "./request-context";
 
-class AppError extends Error {
-  constructor(
-    public readonly code: string,
-    message: string,
-    public readonly statusCode: number = 500,
-    public readonly details?: unknown
-  ) {
-    super(message);
-    this.name = "AppError";
-  }
-}
-
-export class ValidationError extends AppError {
-  constructor(
-    message: string,
-    code = "validation_error",
-    statusCode = 400,
-    details?: unknown
-  ) {
-    super(code, message, statusCode, details);
-    this.name = "ValidationError";
-  }
-}
-
-export class NotFoundError extends AppError {
-  constructor(message: string, code = "not_found") {
-    super(code, message, 404);
-    this.name = "NotFoundError";
-  }
-}
-
-export class ConflictError extends AppError {
-  constructor(message: string, code = "conflict") {
-    super(code, message, 409);
-    this.name = "ConflictError";
-  }
-}
+export { ConflictError, NotFoundError, ValidationError } from "@/lib/errors";
 
 const AI_ERROR_STATUS_BY_TYPE: Partial<Record<AIError["type"], number>> = {
   provider_not_found: 404,

@@ -1,3 +1,5 @@
+import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
+
 import type {
   IScraper,
   ScraperCapabilities,
@@ -30,7 +32,9 @@ export abstract class AbstractBrowserScraper<
     protected readonly config: TConfig
   ) {}
 
-  abstract validate(url: string): boolean;
+  validate(url: string): boolean {
+    return detectPlatformFromUrl(url) === this.platform;
+  }
   abstract scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult>;
   abstract extractIdentifier(url: string): string | null;
   protected abstract bootstrapSession(url: string): Promise<BrowserSession | null>;

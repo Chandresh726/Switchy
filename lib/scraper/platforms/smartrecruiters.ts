@@ -147,14 +147,6 @@ export class SmartRecruitersScraper extends AbstractApiScraper<SmartRecruitersCo
     super(httpClient, { ...DEFAULT_SMARTRECRUITERS_CONFIG, ...config });
   }
 
-  validate(url: string): boolean {
-    try {
-      return SMARTRECRUITERS_HOSTS.has(new URL(url).hostname.toLowerCase());
-    } catch {
-      return false;
-    }
-  }
-
   extractIdentifier(url: string): string | null {
     try {
       const parsed = new URL(url);

@@ -182,18 +182,6 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
     super(httpClient, { ...DEFAULT_ORACLE_CONFIG, ...config });
   }
 
-  validate(url: string): boolean {
-    const parsed = this.parseSourceUrl(url);
-    if (!parsed) return false;
-    const hostname = parsed.hostname.toLowerCase();
-    return (
-      (hostname.endsWith(".oraclecloud.com") &&
-        parsed.pathname.toLowerCase().includes("/hcmui/candidateexperience/")) ||
-      ORACLE_BRANDED_HOSTS.has(hostname) ||
-      hostname === "higher.gs.com"
-    );
-  }
-
   extractIdentifier(url: string): string | null {
     const parsed = this.parseSourceUrl(url);
     if (parsed?.hostname.toLowerCase() === "higher.gs.com") {

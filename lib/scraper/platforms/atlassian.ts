@@ -98,15 +98,6 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
     super(httpClient, { ...DEFAULT_ATLASSIAN_CONFIG, ...config });
   }
 
-  validate(url: string): boolean {
-    const lower = url.toLowerCase();
-    return (
-      lower.includes("atlassian.com/company/careers/all-jobs") ||
-      lower.includes("atlassian.com/company/careers/details") ||
-      lower.includes("atlassian.com/company/careers")
-    );
-  }
-
   extractIdentifier(url: string): string | null {
     try {
       return new URL(url).hostname || "careers";

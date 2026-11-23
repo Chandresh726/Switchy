@@ -1,152 +1,46 @@
-import type { Platform } from "@/lib/scraper/types/platform";
+import { PLATFORMS, PLATFORM_METADATA, type Platform } from "@/lib/companies/platforms";
 
 export type DetectedPlatform = Platform | "custom";
 
+type SourceUrl = { hostname: string; pathname: string };
+const hostIs = (hostname: string, domain: string) => hostname === domain || hostname.endsWith(`.${domain}`);
+const matches: Record<Platform, (source: SourceUrl) => boolean> = {
+  greenhouse: ({ hostname }) => hostIs(hostname, "greenhouse.io"),
+  smartrecruiters: ({ hostname }) => ["careers.smartrecruiters.com", "jobs.smartrecruiters.com"].includes(hostname),
+  lever: ({ hostname }) => hostIs(hostname, "lever.co"),
+  ashby: ({ hostname }) => hostIs(hostname, "ashbyhq.com"),
+  eightfold: ({ hostname }) => hostIs(hostname, "eightfold.ai"),
+  workday: ({ hostname }) => hostIs(hostname, "myworkdayjobs.com"),
+  servicenow: ({ hostname, pathname }) => hostname === "careers.servicenow.com" && pathname.startsWith("/jobs"),
+  turbohire: ({ hostname, pathname }) => (
+    hostname.endsWith(".turbohire.co") &&
+    /^\/careerpage\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/?$/u.test(pathname)
+  ) || (hostIs(hostname, "flipkartcareers.com") && pathname.includes("/flipkart/jobslist")),
+  mynexthire: ({ hostname }) => hostname.endsWith(".mynexthire.com") || hostname === "careers.swiggy.com",
+  uber: ({ hostname, pathname }) => hostname === "jobs.uber.com" || (hostIs(hostname, "uber.com") && pathname.includes("career")),
+  google: ({ hostname, pathname }) => hostname === "careers.google.com" || (hostIs(hostname, "google.com") && pathname.startsWith("/about/careers")),
+  atlassian: ({ hostname, pathname }) => hostIs(hostname, "atlassian.com") && pathname.startsWith("/company/careers"),
+  rippling: ({ hostname, pathname }) => hostIs(hostname, "rippling.com") && pathname.includes("career"),
+  visa: ({ hostname, pathname }) => (hostIs(hostname, "visa.com") || hostIs(hostname, "visa.co.uk")) && pathname.includes("/jobs"),
+  jobvite: ({ hostname }) => hostname === "jobs.jobvite.com" || hostname === "careers.nutanix.com",
+  talentbrew: ({ hostname }) => hostname === "jobs.intuit.com" || hostname === "careers.intuit.com",
+  oracle: ({ hostname, pathname }) => (
+    hostname.endsWith(".oraclecloud.com") && pathname.includes("/hcmui/candidateexperience/")
+  ) || ["careers.oracle.com", "careers.ti.com", "higher.gs.com"].includes(hostname),
+  phenom: ({ hostname }) => ["jobs.ebayinc.com", "careers.cisco.com"].includes(hostname),
+};
+
 export function detectPlatformFromUrl(url: string): DetectedPlatform {
-  const urlLower = url.toLowerCase();
-  let hostname = "";
-  let pathname = "";
-
   try {
     const parsed = new URL(url);
-    hostname = parsed.hostname.toLowerCase();
-    pathname = parsed.pathname.toLowerCase();
-    if (
-      hostname === "careers.smartrecruiters.com" ||
-      hostname === "jobs.smartrecruiters.com"
-    ) {
-      return "smartrecruiters";
-    }
+    if (!["http:", "https:"].includes(parsed.protocol)) return "custom";
+    const source = { hostname: parsed.hostname.toLowerCase(), pathname: parsed.pathname.toLowerCase() };
+    return PLATFORMS.find((platform) => matches[platform](source)) ?? "custom";
   } catch {
-    // Fall through to the existing string-based checks.
+    return "custom";
   }
-
-  if (hostname === "jobs.jobvite.com" || hostname === "careers.nutanix.com") {
-    return "jobvite";
-  }
-  if (hostname === "jobs.intuit.com" || hostname === "careers.intuit.com") {
-    return "talentbrew";
-  }
-  if (
-    (hostname.endsWith(".oraclecloud.com") &&
-      pathname.includes("/hcmui/candidateexperience/")) ||
-    hostname === "careers.oracle.com" ||
-    hostname === "careers.ti.com" ||
-    hostname === "higher.gs.com"
-  ) {
-    return "oracle";
-  }
-  if (hostname === "jobs.ebayinc.com" || hostname === "careers.cisco.com") {
-    return "phenom";
-  }
-
-  if (
-    urlLower.includes("google.com/about/careers/applications/jobs") ||
-    urlLower.includes("google.com/about/careers") ||
-    urlLower.includes("careers.google.com")
-  ) {
-    return "google";
-  }
-  if (urlLower.includes("greenhouse.io") || urlLower.includes("boards.greenhouse")) {
-    return "greenhouse";
-  }
-  if (urlLower.includes("lever.co") || urlLower.includes("jobs.lever")) {
-    return "lever";
-  }
-  if (urlLower.includes("ashbyhq.com") || urlLower.includes("jobs.ashbyhq.com")) {
-    return "ashby";
-  }
-  if (urlLower.includes("myworkdayjobs.com") || /\.wd\d*\.myworkdayjobs\.com/.test(urlLower)) {
-    return "workday";
-  }
-  if (
-    urlLower.includes("careers.servicenow.com/jobs") ||
-    (urlLower.includes("servicenow.com") && urlLower.includes("/jobs/"))
-  ) {
-    return "servicenow";
-  }
-  if (
-    urlLower.includes(".mynexthire.com") ||
-    urlLower.includes("careers.swiggy.com")
-  ) {
-    return "mynexthire";
-  }
-  try {
-    const parsed = new URL(url);
-    if (
-      parsed.hostname.toLowerCase().endsWith(".turbohire.co") &&
-      /^\/careerpage\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/?$/iu.test(
-        parsed.pathname
-      )
-    ) {
-      return "turbohire";
-    }
-  } catch {
-    // Fall through to legacy URL detection.
-  }
-  if (urlLower.includes("flipkartcareers.com/flipkart/jobslist")) {
-    return "turbohire";
-  }
-  if (urlLower.includes("eightfold.ai")) {
-    return "eightfold";
-  }
-  if (
-    urlLower.includes("atlassian.com/company/careers/all-jobs") ||
-    urlLower.includes("atlassian.com/company/careers/details") ||
-    urlLower.includes("atlassian.com/company/careers")
-  ) {
-    return "atlassian";
-  }
-  if (
-    urlLower.includes("uber.com/careers") ||
-    urlLower.includes("jobs.uber.com") ||
-    (urlLower.includes("uber.com") && urlLower.includes("career"))
-  ) {
-    return "uber";
-  }
-  if (
-    urlLower.includes("rippling.com/careers/open-roles") ||
-    urlLower.includes("rippling.com/careers") ||
-    (urlLower.includes("rippling.com") && urlLower.includes("career"))
-  ) {
-    return "rippling";
-  }
-  if (urlLower.includes("/jobs")) {
-    try {
-      const hostname = new URL(urlLower).hostname;
-      if (hostname === "visa.com" || hostname === "www.visa.com" ||
-          hostname.endsWith(".visa.com") || hostname.endsWith(".visa.co.uk")) {
-        return "visa";
-      }
-    } catch {
-      // fall through
-    }
-  }
-  return "custom";
 }
 
 export function getPlatformLabel(platform: DetectedPlatform): string {
-  const labels: Record<DetectedPlatform, string> = {
-    greenhouse: "Greenhouse",
-    smartrecruiters: "SmartRecruiters",
-    lever: "Lever",
-    ashby: "Ashby",
-    eightfold: "Eightfold",
-    workday: "Workday",
-    servicenow: "ServiceNow",
-    turbohire: "TurboHire",
-    mynexthire: "MynextHire",
-    uber: "Uber",
-    google: "Google",
-    atlassian: "Atlassian",
-    rippling: "Rippling",
-    visa: "Visa",
-    jobvite: "Jobvite",
-    talentbrew: "TalentBrew",
-    oracle: "Oracle Recruiting",
-    phenom: "Phenom",
-    custom: "Custom",
-  };
-
-  return labels[platform];
+  return PLATFORM_METADATA[platform].label;
 }

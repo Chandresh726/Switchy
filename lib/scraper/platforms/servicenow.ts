@@ -56,18 +56,6 @@ export class ServiceNowScraper extends AbstractApiScraper<ServiceNowConfig> {
     super(httpClient, { ...DEFAULT_SERVICENOW_CONFIG, ...config });
   }
 
-  validate(url: string): boolean {
-    try {
-      const parsed = new URL(url);
-      return (
-        parsed.hostname.toLowerCase() === "careers.servicenow.com" &&
-        parsed.pathname.toLowerCase().startsWith("/jobs")
-      );
-    } catch {
-      return false;
-    }
-  }
-
   extractIdentifier(url: string): string | null {
     return this.validate(url) ? "servicenow" : null;
   }

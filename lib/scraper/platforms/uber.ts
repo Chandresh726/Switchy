@@ -150,15 +150,6 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
     super(httpClient, { ...DEFAULT_UBER_CONFIG, ...config });
   }
 
-  validate(url: string): boolean {
-    const urlLower = url.toLowerCase();
-    return (
-      urlLower.includes("uber.com/careers") ||
-      urlLower.includes("jobs.uber.com") ||
-      (urlLower.includes("uber.com") && urlLower.includes("career"))
-    );
-  }
-
   extractIdentifier(url: string): string | null {
     void url;
     return "global";

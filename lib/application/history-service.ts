@@ -4,7 +4,7 @@ import { MatchBreakdownSchema, MatchEvidenceSchema } from "@/lib/ai/artifacts/sc
 import { getMatchPresentations } from "@/lib/ai/matcher/presentation";
 import { getMatchPipelineProgress } from "@/lib/ai/matcher/tracking";
 import { getAIRunSummaries } from "@/lib/ai/observability";
-import { ConflictError, NotFoundError } from "@/lib/api";
+import { ConflictError, NotFoundError } from "@/lib/errors";
 import { db } from "@/lib/db";
 import {
   aiWorkItems,

@@ -87,15 +87,6 @@ export class VisaScraper extends AbstractApiScraper<VisaConfig> {
     super(httpClient, { ...DEFAULT_VISA_CONFIG, ...config });
   }
 
-  validate(url: string): boolean {
-    try {
-      const parsed = new URL(url);
-      return parsed.hostname.toLowerCase().includes("visa.") && parsed.pathname.includes("/jobs");
-    } catch {
-      return false;
-    }
-  }
-
   extractIdentifier(url: string): string | null {
     void url;
     return "visa";

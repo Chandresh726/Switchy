@@ -177,11 +177,6 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
     super(httpClient, browserClient, { ...DEFAULT_EIGHTFOLD_CONFIG, ...config });
   }
 
-  validate(url: string): boolean {
-    const urlLower = url.toLowerCase();
-    return urlLower.includes("eightfold.ai");
-  }
-
   extractIdentifier(url: string): string | null {
     try {
       const urlObj = new URL(url);

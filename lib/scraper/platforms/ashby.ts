@@ -73,14 +73,6 @@ export class AshbyScraper extends AbstractApiScraper<AshbyConfig> {
     super(httpClient, { ...DEFAULT_ASHBY_CONFIG, ...config });
   }
 
-  validate(url: string): boolean {
-    const urlLower = url.toLowerCase();
-    if (urlLower.includes("jobs.ashbyhq.com")) {
-      return true;
-    }
-    return false;
-  }
-
   extractIdentifier(url: string): string | null {
     try {
       const parsed = new URL(url);

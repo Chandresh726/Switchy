@@ -3,6 +3,16 @@ import { describe, expect, it } from "vitest";
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 
 describe("platform detection", () => {
+  it.each([
+    "https://unrelated.example/careers?next=lever.co",
+    "https://jobs.lever.co.example/acme",
+    "https://unrelated.example/greenhouse.io/acme",
+    "https://careers.google.com.example/jobs",
+    "not-a-url/ashbyhq.com",
+  ])("rejects platform names outside the actual hostname: %s", (url) => {
+    expect(detectPlatformFromUrl(url)).toBe("custom");
+  });
+
   it("detects known platforms from careers URLs", () => {
     expect(detectPlatformFromUrl("https://boards.greenhouse.io/acme")).toBe("greenhouse");
     expect(detectPlatformFromUrl("https://careers.smartrecruiters.com/Acme")).toBe("smartrecruiters");

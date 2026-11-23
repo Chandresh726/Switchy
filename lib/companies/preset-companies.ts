@@ -1,31 +1,11 @@
 import { z } from "zod";
 
+import { COMPANY_PLATFORMS } from "@/lib/companies/platforms";
+
 import { normalizeCareersUrl } from "./normalization";
 
-const PLATFORM_VALUES = [
-  "greenhouse",
-  "smartrecruiters",
-  "lever",
-  "ashby",
-  "workday",
-  "eightfold",
-  "servicenow",
-  "turbohire",
-  "mynexthire",
-  "uber",
-  "google",
-  "atlassian",
-  "rippling",
-  "visa",
-  "jobvite",
-  "talentbrew",
-  "oracle",
-  "phenom",
-  "custom",
-] as const;
-
 const PlatformSchema = z
-  .union([z.enum(PLATFORM_VALUES), z.literal(""), z.null()])
+  .union([z.enum(COMPANY_PLATFORMS), z.literal(""), z.null()])
   .optional();
 
 const OptionalUrlSchema = z
@@ -68,8 +48,8 @@ function normalizeOptionalText(value?: string | null): string | undefined {
 }
 
 function normalizePlatform(
-  value?: (typeof PLATFORM_VALUES)[number] | "" | null
-): (typeof PLATFORM_VALUES)[number] | undefined {
+  value?: (typeof COMPANY_PLATFORMS)[number] | "" | null
+): (typeof COMPANY_PLATFORMS)[number] | undefined {
   if (!value) return undefined;
   return value;
 }

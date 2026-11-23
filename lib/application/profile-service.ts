@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 
-import { NotFoundError } from "@/lib/api";
+import { NotFoundError } from "@/lib/errors";
 import type {
   educationUpdateBodySchema,
   educationWriteBodySchema,

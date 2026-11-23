@@ -1,29 +1,11 @@
 import { z } from "zod";
 
+import { COMPANY_PLATFORMS } from "@/lib/companies/platforms";
+
 import { positiveIntegerIdSchema } from "./common";
 import { jobStatusSchema } from "./jobs";
 
-export const companyPlatformSchema = z.enum([
-  "greenhouse",
-  "smartrecruiters",
-  "lever",
-  "ashby",
-  "workday",
-  "eightfold",
-  "servicenow",
-  "turbohire",
-  "mynexthire",
-  "uber",
-  "google",
-  "atlassian",
-  "rippling",
-  "visa",
-  "jobvite",
-  "talentbrew",
-  "oracle",
-  "phenom",
-  "custom",
-]);
+export const companyPlatformSchema = z.enum(COMPANY_PLATFORMS);
 
 export const companyIdParamsSchema = z.object({ id: positiveIntegerIdSchema });
 

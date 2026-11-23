@@ -65,13 +65,6 @@ export class TalentBrewScraper extends AbstractApiScraper<TalentBrewConfig> {
     super(httpClient, { ...DEFAULT_TALENTBREW_CONFIG, ...config });
   }
 
-  validate(url: string): boolean {
-    const parsed = this.parseSourceUrl(url);
-    if (!parsed) return false;
-    const hostname = parsed.hostname.toLowerCase();
-    return hostname === "jobs.intuit.com" || hostname === "careers.intuit.com";
-  }
-
   extractIdentifier(url: string): string | null {
     return this.validate(url) ? "27595" : null;
   }

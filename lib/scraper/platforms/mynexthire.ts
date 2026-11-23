@@ -62,11 +62,6 @@ export class MynextHireScraper extends AbstractApiScraper<MynextHireConfig> {
     super(httpClient, { ...DEFAULT_MYNEXTHIRE_CONFIG, ...config });
   }
 
-  validate(url: string): boolean {
-    const lower = url.toLowerCase();
-    return lower.includes(".mynexthire.com") || lower.includes("careers.swiggy.com");
-  }
-
   extractIdentifier(url: string): string | null {
     try {
       const parsed = new URL(url);

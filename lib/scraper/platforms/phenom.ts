@@ -162,12 +162,6 @@ export class PhenomScraper extends AbstractApiScraper<PhenomConfig> {
     super(httpClient, { ...DEFAULT_PHENOM_CONFIG, ...config });
   }
 
-  validate(url: string): boolean {
-    const parsed = this.parseSourceUrl(url);
-    const hostname = parsed?.hostname.toLowerCase();
-    return hostname === "jobs.ebayinc.com" || hostname === "careers.cisco.com";
-  }
-
   extractIdentifier(url: string): string | null {
     const parsed = this.parseSourceUrl(url);
     if (!parsed) return null;

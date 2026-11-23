@@ -2,67 +2,10 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { CLI_MODEL_CACHE_TTL_MS } from "@/lib/ai/local-cli/constants";
-import type { ProviderModelDefinition } from "@/lib/ai/providers/model-catalog";
-import { isReasoningEffort, type LocalCLIProvider } from "@/lib/ai/providers/types";
+import { ProviderModelDefinitionSchema, type ProviderModelDefinition } from "@/lib/ai/providers/model-contract";
+import type { LocalCLIProvider } from "@/lib/ai/providers/types";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
-
-const ReasoningEffortSchema = z.string().refine(isReasoningEffort);
-const boundedDisplayText = (maxLength: number) =>
-  z.string().transform((value) => value.slice(0, maxLength));
-const ReasoningOptionSchema = z.object({
-  value: ReasoningEffortSchema,
-  label: boundedDisplayText(120).optional(),
-  description: boundedDisplayText(500).optional(),
-}).strict();
-const ReasoningControlSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("effort"),
-    options: z.array(ReasoningOptionSchema).min(1).max(100),
-    defaultValue: ReasoningEffortSchema.optional(),
-  }).strict(),
-  z.object({ kind: z.literal("provider_default") }).strict(),
-]);
-const ProviderModelDefinitionSchema = z.object({
-  modelId: z.string().min(1).max(240),
-  label: boundedDisplayText(240),
-  description: boundedDisplayText(2_000),
-  supportsReasoning: z.boolean(),
-  reasoningControl: ReasoningControlSchema,
-  group: boundedDisplayText(240).optional(),
-  upstreamProvider: boundedDisplayText(120).optional(),
-  supportedReasoningEfforts: z.array(ReasoningEffortSchema).max(100).optional(),
-  defaultReasoningEffort: ReasoningEffortSchema.optional(),
-  isDefault: z.boolean().optional(),
-}).strict().superRefine((model, context) => {
-  const efforts = model.supportedReasoningEfforts ?? [];
-  const controlEfforts = model.reasoningControl.kind === "effort"
-    ? model.reasoningControl.options.map(({ value }) => value)
-    : [];
-  if (efforts.join("\0") !== controlEfforts.join("\0")) {
-    context.addIssue({
-      code: "custom",
-      message: "Compatibility efforts must match the reasoning control",
-      path: ["supportedReasoningEfforts"],
-    });
-  }
-  if (model.reasoningControl.kind === "effort" &&
-      model.reasoningControl.defaultValue !== model.defaultReasoningEffort) {
-    context.addIssue({
-      code: "custom",
-      message: "Compatibility default must match the reasoning control",
-      path: ["defaultReasoningEffort"],
-    });
-  }
-  if (model.reasoningControl.kind === "provider_default" &&
-      (efforts.length > 0 || model.defaultReasoningEffort)) {
-    context.addIssue({
-      code: "custom",
-      message: "Provider-default models cannot advertise effort compatibility fields",
-      path: ["reasoningControl"],
-    });
-  }
-});
 
 const StoredCatalogSchema = z.object({
   fetchedAt: z.number().int().nonnegative(),

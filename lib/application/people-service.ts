@@ -11,7 +11,7 @@ import {
 } from "drizzle-orm";
 import type { z } from "zod";
 
-import { ConflictError, NotFoundError, ValidationError } from "@/lib/api";
+import { ConflictError, NotFoundError, ValidationError } from "@/lib/errors";
 import {
   apolloMappingSchema,
   peopleImportModeSchema,

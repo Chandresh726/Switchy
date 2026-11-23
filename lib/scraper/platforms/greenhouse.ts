@@ -75,14 +75,6 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
     super(httpClient, { ...DEFAULT_GREENHOUSE_CONFIG, ...config });
   }
 
-  validate(url: string): boolean {
-    const urlLower = url.toLowerCase();
-    return (
-      urlLower.includes("greenhouse.io") ||
-      urlLower.includes("boards.greenhouse")
-    );
-  }
-
   extractIdentifier(url: string): string | null {
     try {
       const parsedUrl = new URL(url);

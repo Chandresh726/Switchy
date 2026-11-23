@@ -9,27 +9,8 @@ export const MAX_CSV_FILE_SIZE = 10 * 1024 * 1024;
 export const MAX_RESUME_FILE_SIZE = 5 * 1024 * 1024;
 export const MAX_RESUME_TEXT_LENGTH = 60_000;
 
-export const PLATFORM_OPTIONS = [
-  { value: "greenhouse", label: "Greenhouse" },
-  { value: "smartrecruiters", label: "SmartRecruiters" },
-  { value: "lever", label: "Lever" },
-  { value: "ashby", label: "Ashby" },
-  { value: "eightfold", label: "Eightfold" },
-  { value: "workday", label: "Workday" },
-  { value: "servicenow", label: "ServiceNow" },
-  { value: "turbohire", label: "TurboHire" },
-  { value: "mynexthire", label: "MynextHire" },
-  { value: "uber", label: "Uber" },
-  { value: "google", label: "Google" },
-  { value: "atlassian", label: "Atlassian" },
-  { value: "rippling", label: "Rippling" },
-  { value: "visa", label: "Visa" },
-  { value: "jobvite", label: "Jobvite" },
-  { value: "talentbrew", label: "TalentBrew" },
-  { value: "oracle", label: "Oracle Recruiting" },
-  { value: "phenom", label: "Phenom" },
-  { value: "custom", label: "Custom" },
-] as const;
+export { PLATFORM_OPTIONS, PLATFORM_COLORS } from "@/lib/companies/platforms";
+import { PLATFORM_OPTIONS } from "@/lib/companies/platforms";
 
 export const CUSTOM_SCRAPER_PLATFORMS = [
   "servicenow",
@@ -50,24 +31,3 @@ export const COMPANY_FILTER_PLATFORM_OPTIONS = PLATFORM_OPTIONS.filter(
     )
 );
 
-export const PLATFORM_COLORS: Record<string, string> = {
-  greenhouse: "border-green-500/30 bg-green-500/10 text-green-300",
-  smartrecruiters: "border-purple-500/30 bg-purple-500/10 text-purple-300",
-  lever: "border-blue-500/30 bg-blue-500/10 text-blue-300",
-  ashby: "border-sky-500/30 bg-sky-500/10 text-sky-300",
-  eightfold: "border-cyan-500/30 bg-cyan-500/10 text-cyan-300",
-  workday: "border-amber-500/30 bg-amber-500/10 text-amber-300",
-  servicenow: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-  turbohire: "border-orange-500/30 bg-orange-500/10 text-orange-300",
-  mynexthire: "border-teal-500/30 bg-teal-500/10 text-teal-300",
-  uber: "border-neutral-400/30 bg-neutral-400/10 text-neutral-200",
-  google: "border-rose-500/30 bg-rose-500/10 text-rose-300",
-  atlassian: "border-blue-400/30 bg-blue-400/10 text-blue-200",
-  rippling: "border-yellow-500/30 bg-yellow-500/10 text-yellow-300",
-  visa: "border-indigo-500/30 bg-indigo-500/10 text-indigo-300",
-  jobvite: "border-violet-500/30 bg-violet-500/10 text-violet-300",
-  talentbrew: "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-300",
-  oracle: "border-red-500/30 bg-red-500/10 text-red-300",
-  phenom: "border-lime-500/30 bg-lime-500/10 text-lime-300",
-  custom: "border-border bg-muted/40 text-muted-foreground",
-};

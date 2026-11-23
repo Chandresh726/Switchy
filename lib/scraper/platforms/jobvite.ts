@@ -82,13 +82,6 @@ export class JobviteScraper extends AbstractApiScraper<JobviteConfig> {
     super(httpClient, { ...DEFAULT_JOBVITE_CONFIG, ...config });
   }
 
-  validate(url: string): boolean {
-    const parsed = this.parseSourceUrl(url);
-    if (!parsed) return false;
-    const hostname = parsed.hostname.toLowerCase();
-    return hostname === "jobs.jobvite.com" || hostname === "careers.nutanix.com";
-  }
-
   extractIdentifier(url: string): string | null {
     const parsed = this.parseSourceUrl(url);
     if (!parsed) return null;

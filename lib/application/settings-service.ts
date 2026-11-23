@@ -2,7 +2,8 @@ import { eq } from "drizzle-orm";
 
 import { AISettingsUpdateSchema } from "@/lib/ai/contracts";
 import { getCachedProviderModelDefinition } from "@/lib/ai/providers/model-catalog";
-import { ValidationError, logApiFailure, type ApiRequestContext } from "@/lib/api";
+import { logApiFailure, type ApiRequestContext } from "@/lib/api";
+import { ValidationError } from "@/lib/errors";
 import type { settingsUpdateBodySchema } from "@/lib/api/contracts/settings";
 import { db } from "@/lib/db";
 import { getActivitySleepInhibitor } from "@/lib/runtime/activity-sleep-inhibitor";

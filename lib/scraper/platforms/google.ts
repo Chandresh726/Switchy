@@ -67,15 +67,6 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
     super(httpClient, { ...DEFAULT_GOOGLE_CONFIG, ...config });
   }
 
-  validate(url: string): boolean {
-    const lower = url.toLowerCase();
-    return (
-      lower.includes("google.com/about/careers/applications/jobs") ||
-      lower.includes("google.com/about/careers") ||
-      lower.includes("careers.google.com")
-    );
-  }
-
   extractIdentifier(url: string): string | null {
     try {
       const parsed = new URL(url);

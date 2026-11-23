@@ -2,7 +2,7 @@ import cron from "node-cron";
 import { eq, inArray } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
-import { ValidationError } from "@/lib/api";
+import { ValidationError } from "@/lib/errors";
 import { isReasoningEffort } from "@/lib/ai/providers/types";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";

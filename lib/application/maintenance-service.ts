@@ -1,4 +1,4 @@
-import { ConflictError } from "@/lib/api";
+import { ConflictError } from "@/lib/errors";
 import { deleteAllPeople } from "@/lib/people/sync";
 import { getScrapeHistoryStore } from "@/lib/scraper/history";
 import { getLocalDataMaintenanceService } from "@/lib/scraper/maintenance";

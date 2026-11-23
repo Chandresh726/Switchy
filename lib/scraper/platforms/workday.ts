@@ -177,14 +177,6 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
     super(httpClient, browserClient, { ...DEFAULT_WORKDAY_CONFIG, ...config });
   }
 
-  validate(url: string): boolean {
-    const urlLower = url.toLowerCase();
-    return (
-      urlLower.includes("myworkdayjobs.com") ||
-      /\.wd\d*\.myworkdayjobs\.com/.test(urlLower)
-    );
-  }
-
   extractIdentifier(url: string): string | null {
     const parsed = this.parseUrl(url);
     if (!parsed) return null;

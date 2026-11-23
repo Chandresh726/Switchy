@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 
-import { ValidationError } from "@/lib/api";
+import { ValidationError } from "@/lib/errors";
 import type { AIContentType } from "@/lib/ai/contracts";
 import {
   createAICapabilityRuntime,

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { ProviderModelDefinitionSchema } from "@/lib/ai/providers/model-contract";
 import { localCLIConnectionStatusSchema } from "@/lib/api/contracts/providers";
 
 const settingTextInputSchema = z.string().max(20_000);
@@ -154,34 +155,6 @@ const providerSettingsListItemSchema = z.object({
 
 export const providerSettingsListSchema = z.array(providerSettingsListItemSchema);
 
-const reasoningControlSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("provider_default") }),
-  z.object({
-    kind: z.literal("effort"),
-    options: z.array(
-      z.object({
-        value: z.string(),
-        label: z.string().optional(),
-        description: z.string().optional(),
-      })
-    ),
-    defaultValue: z.string().optional(),
-  }),
-]);
-
-const providerModelSchema = z.object({
-  modelId: z.string(),
-  label: z.string(),
-  description: z.string(),
-  supportsReasoning: z.boolean(),
-  reasoningControl: reasoningControlSchema,
-  group: z.string().optional(),
-  upstreamProvider: z.string().optional(),
-  supportedReasoningEfforts: z.array(z.string()).optional(),
-  defaultReasoningEffort: z.string().optional(),
-  isDefault: z.boolean().optional(),
-});
-
 export const providerModelsResponseSchema = z.object({
   providerId: z.string(),
   provider: z.enum([
@@ -196,7 +169,7 @@ export const providerModelsResponseSchema = z.object({
     "opencode_cli",
     "custom",
   ]),
-  models: z.array(providerModelSchema),
+  models: z.array(ProviderModelDefinitionSchema),
   fetchedAt: z.string(),
   isStale: z.boolean(),
   source: z.enum(["live", "cache"]),

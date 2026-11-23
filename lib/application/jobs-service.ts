@@ -24,7 +24,7 @@ import {
 import { buildPreferredMatchResultsQuery } from "@/lib/ai/matcher/presentation-query";
 import { getUnmatchedJobCount, getUnmatchedJobIds } from "@/lib/ai/matcher";
 import { completeEmptyMatchSession, getAIWorkSession, queueMatchWork } from "@/lib/ai/work-items";
-import { NotFoundError } from "@/lib/api";
+import { NotFoundError } from "@/lib/errors";
 import type { jobResourceUpdateBodySchema, jobsQuerySchema } from "@/lib/api/contracts/jobs";
 import { db } from "@/lib/db";
 import {

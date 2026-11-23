@@ -115,15 +115,6 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
     super(httpClient, { ...DEFAULT_RIPPLING_CONFIG, ...config });
   }
 
-  validate(url: string): boolean {
-    const lower = url.toLowerCase();
-    return (
-      lower.includes("rippling.com/careers/open-roles") ||
-      lower.includes("rippling.com/careers") ||
-      (lower.includes("rippling.com") && lower.includes("career"))
-    );
-  }
-
   extractIdentifier(url: string): string | null {
     try {
       const parsed = new URL(url);
