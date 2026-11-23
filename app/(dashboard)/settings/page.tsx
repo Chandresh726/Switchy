@@ -1,22 +1,23 @@
 "use client";
 
-import { useMutation,useQuery,useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useMemo,useState } from "react";
+import { useMemo, useState } from "react";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { AIProvidersManager } from "@/components/settings/ai-providers-manager";
-import { AIWritingSection,type AIWritingSettings } from "@/components/settings/ai-writing-section";
+import { AIWritingSection, type AIWritingSettings } from "@/components/settings/ai-writing-section";
 import { AppearanceSection } from "@/components/settings/appearance-section";
 import { ApplicationSettings } from "@/components/settings/application-settings";
 import { DangerZone } from "@/components/settings/danger-zone";
-import { AI_MODEL_FEATURES,resolveFeatureModel } from "@/components/settings/feature-model-settings";
-import { MatcherFallbackSettings,type FallbackSettings } from "@/components/settings/matcher-fallback-settings";
+import { AI_MODEL_FEATURES, resolveFeatureModel } from "@/components/settings/feature-model-settings";
+import { MatcherFallbackSettings, type FallbackSettings } from "@/components/settings/matcher-fallback-settings";
 import { MatcherSection } from "@/components/settings/matcher-section";
 import { NotificationsSection } from "@/components/settings/notifications-section";
 import {
-hasInvalidReasoningSelection,
-resolveReasoningSelection,
+  hasInvalidReasoningSelection,
+  resolveReasoningSelection,
 } from "@/components/settings/reasoning-effort-control";
 import { ResumeParserSection } from "@/components/settings/resume-parser-section";
 import { ScraperSettings } from "@/components/settings/scraper-settings";
@@ -28,28 +29,28 @@ import { VersionUpdate } from "@/components/settings/version-update";
 import { ApiErrorState } from "@/components/ui/api-error-state";
 import { getProviderMetadata } from "@/lib/ai/providers/metadata";
 import {
-type AIProvider
+  type AIProvider
 } from "@/lib/ai/providers/types";
 import { clearAllAIContent } from "@/lib/api/clients/ai";
-import { getReadiness,getRuntimeHealth } from "@/lib/api/clients/health";
-import { clearJobMatchData,clearJobs } from "@/lib/api/clients/jobs";
+import { getReadiness, getRuntimeHealth } from "@/lib/api/clients/health";
+import { clearJobMatchData, clearJobs } from "@/lib/api/clients/jobs";
 import {
-getUnmatchedJobsCount,
-queueUnmatchedJobs,
+  getUnmatchedJobsCount,
+  queueUnmatchedJobs,
 } from "@/lib/api/clients/runtime";
-import { getSettings,patchSettings } from "@/lib/api/clients/settings";
+import { getSettings, patchSettings } from "@/lib/api/clients/settings";
 import type {
-Settings
+  Settings
 } from "@/lib/api/contracts/settings";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
-import { APP_VERSION,DB_PATH } from "@/lib/constants";
+import { APP_VERSION, DB_PATH } from "@/lib/constants";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
-import { cacheOwnership,queryKeys } from "@/lib/query-keys";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import { SCRAPER_SETTINGS } from "@/lib/scraper/settings/definitions";
 import type {
-ProviderModelsState,
-ReasoningEffort,
+  ProviderModelsState,
+  ReasoningEffort,
 } from "@/lib/settings/types";
 
 const DEFAULT_SCRAPER_MAX_PARALLEL_SCRAPES = SCRAPER_SETTINGS.maxParallelScrapes.defaultValue;

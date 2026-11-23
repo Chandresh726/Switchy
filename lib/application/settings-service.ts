@@ -2,25 +2,25 @@ import { eq } from "drizzle-orm";
 
 import { AISettingsUpdateSchema } from "@/lib/ai/contracts";
 import { getCachedProviderModelDefinition } from "@/lib/ai/providers/model-catalog";
-import { logApiFailure,type ApiRequestContext } from "@/lib/api";
+import { logApiFailure, type ApiRequestContext } from "@/lib/api";
 import type { settingsUpdateBodySchema } from "@/lib/api/contracts/settings";
 import { db } from "@/lib/db";
 import { aiProviders } from "@/lib/db/schema";
 import { ValidationError } from "@/lib/errors";
 import {
-getSchedulerEnabled,
-handleSchedulerDisabled,
-handleSchedulerEnabled,
-restartScheduler,
-stopScheduler,
+  getSchedulerEnabled,
+  handleSchedulerDisabled,
+  handleSchedulerEnabled,
+  restartScheduler,
+  stopScheduler,
 } from "@/lib/jobs/scheduler";
 import { getActivitySleepInhibitor } from "@/lib/runtime/activity-sleep-inhibitor";
 import { AI_REASONING_SETTINGS } from "@/lib/settings/ai-features";
 import {
-getSettingsWithDefaults,
-parseSettingsUpdateBody,
-upsertSettings,
-type SettingKey,
+  getSettingsWithDefaults,
+  parseSettingsUpdateBody,
+  upsertSettings,
+  type SettingKey,
 } from "@/lib/settings/settings-service";
 
 import type { z } from "zod";

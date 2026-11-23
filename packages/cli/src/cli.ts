@@ -1,7 +1,8 @@
 import { parseArguments } from "./arguments.js";
-import { doctorCommand, logsCommand, openCommand, restartCommand, startCommand, statusCommand, stopCommand, updateCommand, versionCommand } from "./commands.js";
+import { doctorCommand, logsCommand, restartCommand, startCommand, statusCommand, stopCommand, updateCommand, versionCommand } from "./commands.js";
 import { DEFAULT_PORT, assertSupportedNodeVersion } from "./config.js";
 import { lifecycleCommand } from "./lifecycle.js";
+import { openCommand } from "./open.js";
 
 async function main(): Promise<void> {
   assertSupportedNodeVersion();

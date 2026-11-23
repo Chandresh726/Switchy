@@ -102,6 +102,7 @@ export interface LocalLeasedWorkRunnerConfig {
   maxRetryDelayMs: number;
   suspensionRetryDelayMs: number;
   rateLimitMaxAgeMs: number;
+  rateLimitDeadlineMessage: string;
   getRateLimitDelayMs?: (error: unknown) => number | undefined;
 }
 
@@ -115,6 +116,7 @@ const DEFAULT_LOCAL_LEASED_WORK_RUNNER_CONFIG: LocalLeasedWorkRunnerConfig = {
   maxRetryDelayMs: 5 * 60 * 1000,
   suspensionRetryDelayMs: 60 * 1000,
   rateLimitMaxAgeMs: Number.POSITIVE_INFINITY,
+  rateLimitDeadlineMessage: "Rate-limit recovery deadline exceeded; will retry in a future run.",
 };
 
 class LocalWorkSuspendedError extends DOMException {
@@ -376,7 +378,7 @@ export class LocalLeasedWorkRunner<
       } else if (rateLimitDelayMs !== undefined && this.repository.defer && item.createdAt &&
         now.getTime() + Math.max(30_000, rateLimitDelayMs) >= item.createdAt.getTime() + this.config.rateLimitMaxAgeMs) {
         const failed = await this.repository.fail(item.id, workerId,
-          "Rate-limit recovery exceeded the six-hour scrape deadline; will retry in a future run.", now);
+          this.config.rateLimitDeadlineMessage, now);
         if (failed) summary.failed += 1;
         else await this.persistRacedCancellation(item.id, workerId, now, summary);
       } else if (rateLimitDelayMs !== undefined && this.repository.defer) {

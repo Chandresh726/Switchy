@@ -1,34 +1,18 @@
 import { and, eq, inArray } from "drizzle-orm";
 
 import { insertAICacheHit } from "@/lib/ai/observability/cache-events";
-import { fetchCandidateProfileSnapshot } from "@/lib/ai/profile/profile-snapshot";
 import { sanitizeAIError } from "@/lib/ai/shared/errors";
 import { db } from "@/lib/db";
 import {
+  aiWorkItems,
   jobs,
   matchLogs,
   matchSessionJobs,
   matchSessions,
-  aiWorkItems,
 } from "@/lib/db/schema";
 import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
 
-import type { UnmatchedJobFilter } from "../presentation";
-import type { ProfileData, JobData } from "../types";
-
-export async function fetchProfileData(): Promise<ProfileData | null> {
-  const snapshot = await fetchCandidateProfileSnapshot();
-  if (!snapshot) {
-    return null;
-  }
-
-  return {
-    profile: snapshot.profile,
-    skills: snapshot.skills,
-    experience: snapshot.experience,
-    education: snapshot.education,
-  };
-}
+import type { JobData } from "../types";
 
 export async function fetchJobsData(
   jobIds: number[],
@@ -96,20 +80,6 @@ export async function persistMatchSuccess(
       }, tx, { createdAt: now });
     }
   }, { behavior: "immediate" });
-}
-
-export async function getUnmatchedJobIds(
-  filter: UnmatchedJobFilter = {}
-): Promise<number[]> {
-  const { getFreshUnmatchedJobIds } = await import("../presentation");
-  return getFreshUnmatchedJobIds(undefined, filter);
-}
-
-export async function getUnmatchedJobCount(
-  filter: UnmatchedJobFilter = {}
-): Promise<number> {
-  const { getFreshUnmatchedJobCount } = await import("../presentation");
-  return getFreshUnmatchedJobCount(undefined, filter);
 }
 
 export async function logMatchFailure(

@@ -1,17 +1,16 @@
-import { spawn } from "node:child_process";
 import path from "node:path";
 
 import { CLI_VERSION } from "./config.js";
 import { restartRuntime, startRuntime, stopRuntime, type StartOptions } from "./controller.js";
 import { readJsonFile } from "./files.js";
-import { prepareLifecycleHost } from "./lifecycle.js";
 import { compareVersions, readPreferences, readUpdateState, saveUpdateState } from "./lifecycle-state.js";
+import { prepareLifecycleHost } from "./lifecycle.js";
 import { readLogTail } from "./logs.js";
 import { ensureSwitchyDirectories, getSwitchyPaths } from "./paths.js";
 import { getRunningProcess, readProcessRecord, waitForForegroundExit } from "./process-manager.js";
 import { resolveLatestStableVersion } from "./release.js";
-import { installUpdate, downloadUpdate } from "./updater.js";
 import type { CurrentVersionRecord } from "./types.js";
+import { downloadUpdate, installUpdate } from "./updater.js";
 
 export async function startCommand(options: StartOptions = {}): Promise<void> {
   const paths = getSwitchyPaths();
@@ -108,18 +107,6 @@ export async function updateCommand(action: "check" | "download" | "install" | "
 
 export async function logsCommand(): Promise<void> {
   console.log(await readLogTail(getSwitchyPaths().logFile));
-}
-
-export async function openCommand(): Promise<void> {
-  const running = await getRunningProcess(getSwitchyPaths());
-  if (!running?.live) throw new Error("Switchy is not running or is unresponsive");
-  const url = `http://${running.record.hostname}:${running.record.port}`;
-  const [executable, args] = process.platform === "darwin" ? ["open", [url]]
-    : process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : ["xdg-open", [url]];
-  const child = spawn(executable, args, { detached: true, stdio: "ignore" });
-  await new Promise<void>((resolve, reject) => { child.once("spawn", resolve); child.once("error", reject); });
-  child.unref();
-  console.log(url);
 }
 
 export function versionCommand(): void { console.log(CLI_VERSION); }

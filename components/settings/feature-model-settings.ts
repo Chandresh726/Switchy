@@ -1,11 +1,11 @@
 import { resolveReasoningSelection } from "@/components/settings/reasoning-effort-control";
 import type {
-ProviderSettingsListItem,
-Settings,
+  ProviderSettingsListItem,
+  Settings,
 } from "@/lib/api/contracts/settings";
 import type {
-ProviderModelsState,
-ReasoningEffort,
+  ProviderModelsState,
+  ReasoningEffort,
 } from "@/lib/settings/types";
 
 import { AI_MODEL_FEATURES } from "@/lib/settings/ai-features";

@@ -1,5 +1,7 @@
 "use client";
 
+import { FilterChip } from "@/components/ui/filter-chip";
+
 import { useMemo, useRef, useState } from "react";
 
 import {
@@ -11,8 +13,7 @@ import {
   Search,
   Sparkles,
   ToggleRight,
-  Trash2,
-  X,
+  Trash2
 } from "lucide-react";
 
 import {
@@ -89,26 +90,6 @@ function getPlatformLabel(value: string): string {
   return COMPANY_FILTER_PLATFORM_OPTIONS.find((option) => option.value === value)?.label ?? value;
 }
 
-function FilterChip({
-  label,
-  onRemove,
-}: {
-  label: string;
-  onRemove: () => void;
-}) {
-  return (
-    <span className="inline-flex items-center gap-1 bg-emerald-500/20 px-2.5 py-1 text-xs text-emerald-400">
-      {label}
-      <button
-        onClick={onRemove}
-        className="p-0.5 hover:bg-emerald-500/30"
-        aria-label={`Remove ${label} filter`}
-      >
-        <X className="h-3 w-3" />
-      </button>
-    </span>
-  );
-}
 
 export function CompanyFilters({
   filters,

@@ -1,10 +1,12 @@
 "use client";
 
+import { FilterChip } from "@/components/ui/filter-chip";
+
 import { Input } from "@/components/ui/input";
 import { TogglePill } from "@/components/ui/toggle-pill";
 import type { JobStatus } from "@/lib/jobs/status";
-import { Search, X, ArrowUpDown, MapPin, Building2, Loader2, Briefcase } from "lucide-react";
-import { useMemo, useState, useRef, useEffect } from "react";
+import { ArrowUpDown, Briefcase, Building2, Loader2, MapPin, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export interface JobFilters {
   search: string;
@@ -68,26 +70,6 @@ const SORT_OPTIONS: Array<{ value: JobFilters["sortBy"]; label: string }> = [
   { value: "title", label: "Job Title" },
 ];
 
-function FilterChip({
-  label,
-  onRemove,
-}: {
-  label: string;
-  onRemove: () => void;
-}) {
-  return (
-    <span className="inline-flex items-center gap-1 bg-emerald-500/20 px-2.5 py-1 text-xs text-emerald-400">
-      {label}
-      <button
-        onClick={onRemove}
-        className="p-0.5 hover:bg-emerald-500/30"
-        aria-label={`Remove ${label} filter`}
-      >
-        <X className="h-3 w-3" />
-      </button>
-    </span>
-  );
-}
 
 function CompanyMultiSelect({
   companies,

@@ -1,7 +1,8 @@
 "use client";
 
-import { useMutation,useQueryClient } from "@tanstack/react-query";
-import { useEffect,useRef } from "react";
+import { useEffect, useRef } from "react";
+
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { resolveFeatureModel } from "@/components/settings/feature-model-settings";

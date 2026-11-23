@@ -95,6 +95,7 @@ export class LocalScrapeQueueService {
       {
         workerIdPrefix: "local-scrape",
         rateLimitMaxAgeMs: 6 * 60 * 60_000,
+        rateLimitDeadlineMessage: "Rate-limit recovery exceeded the six-hour scrape deadline; will retry in a future run.",
         getRateLimitDelayMs: (error) => {
           const failure = createFailureFromUnknown(error).error;
           return failure.code === "rate_limited" ? failure.retryAfterMs ?? 0 : undefined;

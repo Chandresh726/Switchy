@@ -36,9 +36,12 @@ vi.mock("@/lib/ai/runtime", () => ({
   getAIExecutionErrorContext: mocks.getAIExecutionErrorContext,
 }));
 
+vi.mock("@/lib/ai/profile/profile-snapshot", () => ({
+  fetchCandidateProfileSnapshot: mocks.fetchProfileData,
+}));
+
 vi.mock("@/lib/ai/matcher/tracking", () => ({
   fetchJobsData: mocks.fetchJobsData,
-  fetchProfileData: mocks.fetchProfileData,
   logMatchFailure: mocks.logMatchFailure,
   persistMatchSuccess: mocks.persistMatchSuccess,
   markJobAnalysisReady: mocks.markJobAnalysisReady,

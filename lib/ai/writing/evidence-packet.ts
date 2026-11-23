@@ -6,14 +6,14 @@ import {
   type CandidateEvidence,
   type JobAnalysisEvidence,
 } from "@/lib/ai/artifacts";
-import { enrichCandidateEvidence } from "@/lib/ai/matcher/evidence/candidate";
 import { getMatcherConfig } from "@/lib/ai/matcher/config";
+import { enrichCandidateEvidence } from "@/lib/ai/matcher/evidence/candidate";
 import {
   analyzeJobsForMatching,
   buildJobAnalysisVersion,
 } from "@/lib/ai/matcher/evidence/job-analysis";
 import { getMatchPresentationsForJobIds, type MatchPresentation } from "@/lib/ai/matcher/presentation";
-import { fetchJobsData, fetchProfileData } from "@/lib/ai/matcher/tracking";
+import { fetchJobsData } from "@/lib/ai/matcher/tracking";
 import { fetchCandidateProfileSnapshot } from "@/lib/ai/profile/profile-snapshot";
 
 import { fetchJobWithCompany } from "./utils";
@@ -81,14 +81,12 @@ export interface WritingEvidencePacket {
 export async function buildWritingEvidencePacket(jobId: number): Promise<WritingEvidencePacket> {
   const [
     jobWithCompany,
-    profileData,
     profileSnapshot,
     jobsMap,
     matchMap,
     matcherConfig,
   ] = await Promise.all([
     fetchJobWithCompany(jobId),
-    fetchProfileData(),
     fetchCandidateProfileSnapshot(),
     fetchJobsData([jobId]),
     getMatchPresentationsForJobIds([jobId]),
@@ -96,13 +94,13 @@ export async function buildWritingEvidencePacket(jobId: number): Promise<Writing
   ]);
   const job = jobsMap.get(jobId);
   if (!jobWithCompany || !job) throw new Error("Job not found");
-  if (!profileData || !profileSnapshot) {
+  if (!profileSnapshot) {
     throw new Error("Profile not found. Please set up your profile first.");
   }
 
-  const candidateEvidence = enrichCandidateEvidence(buildCandidateEvidence(profileData));
+  const candidateEvidence = enrichCandidateEvidence(buildCandidateEvidence(profileSnapshot));
   const candidateArtifact = await artifactRepository.getOrCreateCandidateSnapshot({
-    sourceProfileId: profileData.profile.id,
+    sourceProfileId: profileSnapshot.profile.id,
     snapshotVersion: CANDIDATE_SNAPSHOT_VERSION,
     evidence: candidateEvidence,
   });

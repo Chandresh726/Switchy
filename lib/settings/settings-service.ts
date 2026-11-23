@@ -1,4 +1,4 @@
-import { eq,inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import cron from "node-cron";
 

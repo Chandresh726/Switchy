@@ -47,37 +47,6 @@ export type StrategyProgressCallback = (
   failed: number
 ) => void;
 
-export interface ProfileData {
-  profile: {
-    id: number;
-    summary: string | null;
-    preferredCountry: string | null;
-    preferredCity: string | null;
-  };
-  skills: Array<{
-    name: string;
-    category: string | null;
-  }>;
-  experience: Array<{
-    title: string;
-    company: string;
-    description: string | null;
-    location: string | null;
-    startDate: string;
-    endDate: string | null;
-    highlights: string | null;
-  }>;
-  education: Array<{
-    institution: string;
-    degree: string;
-    field: string | null;
-    startDate: string | null;
-    endDate: string | null;
-    gpa: string | null;
-    honors: string | null;
-  }>;
-}
-
 export interface JobData {
   id: number;
   title: string;

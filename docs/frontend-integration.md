@@ -148,3 +148,5 @@ Job lists omit detailed match evidence, reasoning, and breakdowns. These remain 
 Company overview accepts `section=jobs|people|activity|notes`. Shared company statistics remain available in every section; unrelated collections are empty and are not queried. Omitting the section preserves the complete overview response. Section query keys share the company overview prefix so mutations invalidate every cached tab; note saves update all cached sections.
 
 Job searches preserve substring matching. Nonempty search pages obtain totals from the same query; empty pages fall back to a count so out-of-range pagination still reports the correct total. Job-list fetches accept an abort signal for superseded queries.
+
+Settings provider queries, CLI status, model catalogs, and provider mutations belong to `useSettingsProviders`. Automatic repair of model selections belongs to `useModelReconciliation`. The page composes these hooks with the existing autosave controller and feature sections. Feature setting keys live in `lib/settings/ai-features.ts`, shared with backend normalization.

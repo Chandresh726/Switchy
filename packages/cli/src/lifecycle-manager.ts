@@ -1,17 +1,17 @@
-import { readdir, rename } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { readdir, rename } from "node:fs/promises";
 import path from "node:path";
 
+import { reconcileRuntime } from "./controller.js";
 import { readJsonFile, removeFile, withDirectoryLock, writeJsonFileAtomic } from "./files.js";
-import { compareVersions, lifecycleFiles, readPreferences, readUpdateState, saveUpdateState, nextUpdateRequest } from "./lifecycle-state.js";
 import type { LifecyclePreferences } from "./lifecycle-state.js";
+import { compareVersions, lifecycleFiles, nextUpdateRequest, readPreferences, readUpdateState, saveUpdateState } from "./lifecycle-state.js";
 import { ensureSwitchyDirectories, getSwitchyPaths } from "./paths.js";
+import { setRunningPreference } from "./preferences.js";
 import { getRunningProcess } from "./process-manager.js";
 import { resolveLatestStableVersion } from "./release.js";
 import { installHost, setStartupRegistration, startHost } from "./startup.js";
 import type { CurrentVersionRecord, SwitchyPaths } from "./types.js";
-import { reconcileRuntime } from "./controller.js";
-import { setRunningPreference } from "./preferences.js";
 import { downloadUpdate, installUpdate } from "./updater.js";
 
 export async function configureLifecycle(paths: SwitchyPaths, changes: Partial<LifecyclePreferences>): Promise<void> {
@@ -43,7 +43,7 @@ export async function lifecycleTick(login = false): Promise<boolean> {
   const preferences = await readPreferences(paths);
   const current = { version: record.version };
   if (login && preferences.openAtLogin) {
-    const { openCommand } = await import("./commands.js");
+    const { openCommand } = await import("./open.js");
     await openCommand();
   }
   const queued = await nextUpdateRequest(paths);

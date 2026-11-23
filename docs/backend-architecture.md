@@ -54,6 +54,8 @@ The request ID is also returned in `x-request-id` and included in structured
 server error logs. Validation errors are `400`, missing resources are `404`,
 conflicts are `409`, and unexpected failures are sanitized `500` responses.
 
+Application error classes live in `lib/errors.ts`; the API handler maps them to HTTP responses. Provider model definitions use the same Zod contract for server catalogs, client responses, and CLI caches. Supported company platforms and their display metadata live in `lib/companies/platforms.ts`.
+
 ## Persistence ownership
 
 SQLite is the only database. Drizzle owns schema definitions and generated,

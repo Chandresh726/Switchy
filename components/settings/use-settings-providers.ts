@@ -1,35 +1,36 @@
 "use client";
 
-import { useMutation,useQueries,useQuery,useQueryClient } from "@tanstack/react-query";
-import { useCallback,useMemo } from "react";
+import { useCallback, useMemo } from "react";
+
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import {
-isLocalCLIProvider,
-type LocalCLIProvider
+  isLocalCLIProvider,
+  type LocalCLIProvider
 } from "@/lib/ai/providers/types";
 import {
-createProvider,
-deleteProvider,
-getLocalCLIStatus,
-getProviderModels,
-getProviders,
-updateProvider,
-updateProviderApiKey,
+  createProvider,
+  deleteProvider,
+  getLocalCLIStatus,
+  getProviderModels,
+  getProviders,
+  updateProvider,
+  updateProviderApiKey,
 } from "@/lib/api/clients/providers";
 import { patchSettings } from "@/lib/api/clients/settings";
 import type {
-ProviderCreateBody,
-ProviderPatchBody,
+  ProviderCreateBody,
+  ProviderPatchBody,
 } from "@/lib/api/contracts/providers";
 import type {
-ProviderModelsResponse,
-ProviderSettingsListItem
+  ProviderModelsResponse,
+  ProviderSettingsListItem
 } from "@/lib/api/contracts/settings";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
-import { cacheOwnership,queryKeys } from "@/lib/query-keys";
+import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import type {
-ProviderModelsState
+  ProviderModelsState
 } from "@/lib/settings/types";
 
 const PROVIDER_MODELS_STALE_TIME_MS = 15 * 60 * 1000;

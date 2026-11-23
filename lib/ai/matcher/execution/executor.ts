@@ -1,3 +1,4 @@
+import { fetchCandidateProfileSnapshot } from "@/lib/ai/profile/profile-snapshot";
 import PQueue from "p-queue";
 
 import { createMatchRuntime, resultModelConfig } from "../fallback";
@@ -38,8 +39,7 @@ import type {
   MatcherConfig,
   MatchResult,
   MatchResultMap,
-  ProfileData,
-  StrategyProgressCallback,
+  StrategyProgressCallback
 } from "../types";
 
 const CANDIDATE_SNAPSHOT_VERSION = "candidate-facts-v2";
@@ -63,11 +63,6 @@ function toPublicMatchResult(score: number, evidence: MatchEvidence): MatchResul
     reasons: evidence.reasoning.map((point) => point.text),
     matchedSkills: evidence.matchedSkills,
   };
-}
-
-async function fetchProfileDataForMatch(): Promise<ProfileData | null> {
-  const { fetchProfileData } = await import("../tracking");
-  return fetchProfileData();
 }
 
 async function persistPublicResult(input: {
@@ -127,7 +122,7 @@ export async function executeMatch(options: ExecuteMatchOptions): Promise<MatchR
 
   const [jobsMap, profileData] = await Promise.all([
     fetchJobsData(jobIds),
-    fetchProfileDataForMatch(),
+    fetchCandidateProfileSnapshot(),
   ]);
   throwIfAborted(signal);
 

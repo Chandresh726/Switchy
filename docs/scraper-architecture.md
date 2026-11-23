@@ -30,7 +30,8 @@ Identical company batches are coalesced while they are in flight even when manua
 `createLocalScrapeQueueService()` and `getLocalScrapeQueueService()` are the public composition boundary. The queue service is a thin façade for enqueueing, waiting, recovery, and cancellation; batch work never bypasses the durable queue.
 
 - `application/` owns the one-company pipeline, work handler, session projection, and retention policy.
-- `runtime/` owns transport-independent leased work, heartbeats, bounded retry, single-flight dispatch, scoped scraper resource coordination, and keyed company locks. Scraping and matching use the same runtime.
+- `lib/runtime/` owns shared leased work, heartbeats, bounded retry, single-flight dispatch, data maintenance gates, keyed locks, and device sleep protection. Scraping and matching supply their own rate-limit policies.
+- `lib/scraper/runtime/` owns scraper resource limits and device-wake checks.
 - `queue/`, `history.ts`, and `maintenance.ts` adapt scraper persistence ports to the existing SQLite schema. `lib/ai/work-items/` owns durable matching work.
 - `platforms/` owns extraction only. Shared listing selection preserves platform object identity while applying early filters and existing-ID exclusion; detail hydration is bounded and cancellation-aware.
 - `settings/` is the typed source for scraper concurrency, filters, and retention defaults.
@@ -53,6 +54,8 @@ External payload validation is strict for the response envelope and job identity
 Queue items use a static platform priority derived from production history. Eightfold is ranked first, Workday next, and fast HTTP adapters follow. The ordered queue interleaves one fast adapter after every two browser-heavy items so the browser cap cannot consume every leased worker. This starts long jobs early, keeps an HTTP lane busy, and remains deterministic.
 
 All adapters share the user-configured total concurrency budget. Eightfold and Workday additionally share a two-job browser-heavy budget, so they can overlap each other without blocking unrelated HTTP adapters. Separate sessions cannot scrape the same company simultaneously.
+
+Adapter results and pipeline exceptions use the same failure classifier in `lib/scraper/types/validation.ts`. It preserves HTTP status and retry hints, distinguishes cancellation from timeout, and keeps retry decisions consistent with terminal scrape logging.
 
 ## Reliability guarantees
 

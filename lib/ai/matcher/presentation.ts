@@ -25,11 +25,11 @@ import { isLocalCLIProvider } from "@/lib/ai/providers/types";
 import { db } from "@/lib/db";
 import { aiProviders, jobs, matchResults } from "@/lib/db/schema";
 
+import { fetchCandidateProfileSnapshot } from "@/lib/ai/profile/profile-snapshot";
 import { getMatcherConfig } from "./config";
 import { buildMatchPolicyVersion } from "./evidence/ai-match";
 import { enrichCandidateEvidence } from "./evidence/candidate";
 import { buildJobAnalysisVersion } from "./evidence/job-analysis";
-import { fetchProfileData } from "./tracking";
 
 const MATCH_RESULT_QUERY_BATCH_SIZE = 400;
 const INACTIVE_JOB_STATUSES: Array<"rejected" | "archived"> = [
@@ -163,7 +163,7 @@ async function resolveActiveProviderId(configuredProviderId?: string): Promise<s
 export async function getCurrentMatchContext(): Promise<CurrentMatchContext | null> {
   const [config, profileData] = await Promise.all([
     getMatcherConfig(),
-    fetchProfileData(),
+    fetchCandidateProfileSnapshot(),
   ]);
   if (!profileData || !config.model || !config.jobAnalysisModel) return null;
 
@@ -432,4 +432,12 @@ export async function getFreshUnmatchedJobCount(
       filter.discoveredSince ? gte(jobs.discoveredAt, filter.discoveredSince) : undefined
     ));
   return result?.value ?? 0;
+}
+
+export function getUnmatchedJobIds(filter: UnmatchedJobFilter = {}): Promise<number[]> {
+  return getFreshUnmatchedJobIds(undefined, filter);
+}
+
+export function getUnmatchedJobCount(filter: UnmatchedJobFilter = {}): Promise<number> {
+  return getFreshUnmatchedJobCount(undefined, filter);
 }
