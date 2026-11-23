@@ -9,7 +9,7 @@
   {
     "name": "Nutanix",
     "careersUrl": "https://jobs.jobvite.com/nutanix/jobs",
-    "logoUrl": "https://yt3.googleusercontent.com/OFaWeOdCeKYSJxO6I7RnEqQlIna_PyJSIkJ4mqAUaH3U2f-YAi5A1JHWreQzeEz6-OaXxHfgkxw=s900-c-k-c0x00ffffff-no-rj",
+    "logoUrl": "https://www.nutanix.com/icon-192x192.png",
     "platform": "jobvite",
     "boardToken": "nutanix",
     "isActive": true
@@ -166,7 +166,7 @@
   {
     "name": "UI Path",
     "careersUrl": "https://jobs.ashbyhq.com/uipath",
-    "logoUrl": "https://images.ctfassets.net/s8trkbswp726/vCaWDCeQVjwusIsBrjdfl/8df599caf4a0e738637260362e67f276/uipath.png?w=400&h=400&fm=webp",
+    "logoUrl": "https://images.ctfassets.net/5965pury2lcm/1tnmFcdDiCxf9zC14g97ri/19aa59ad1ac0f7bab14838fae98fd99c/favicon-icon.png",
     "platform": "ashby",
     "boardToken": "uipath",
     "isActive": true
@@ -366,7 +366,7 @@
   {
     "name": "Glean",
     "careersUrl": "https://job-boards.greenhouse.io/gleanwork",
-    "logoUrl": "https://play-lh.googleusercontent.com/1oYrER4_ZFCJgtrq6OOEFqvPTGMSBsXSpVQE8hSajuQRxENQRMWqgvH3b76258CR2A",
+    "logoUrl": "https://cdn.prod.website-files.com/6127a84dfe068e153ef20572/67189bfac8da27b3a70ddd93_256%20x%20256%20Glean%20Favicon.png",
     "platform": "greenhouse",
     "boardToken": "gleanwork",
     "isActive": true
@@ -422,7 +422,7 @@
   {
     "name": "ServiceNow",
     "careersUrl": "https://careers.servicenow.com/jobs",
-    "logoUrl": "https://monkedo-static.s3.eu-central-1.amazonaws.com/component-icons/service-now.png",
+    "logoUrl": "https://www.google.com/s2/favicons?domain=servicenow.com&sz=128",
     "platform": "servicenow",
     "isActive": true
   },
