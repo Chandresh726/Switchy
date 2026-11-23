@@ -5,16 +5,6 @@ export const fadeInUp: Variants = {
   animate: { opacity: 1, y: 0 },
 };
 
-export const fadeInScale: Variants = {
-  initial: { opacity: 0, scale: 0.9 },
-  animate: { opacity: 1, scale: 1 },
-};
-
-export const fadeInY: Variants = {
-  initial: { opacity: 0, y: 50 },
-  animate: { opacity: 1, y: 0 },
-};
-
 export const slideInX: Variants = {
   initial: { opacity: 0, x: -20 },
   animate: { opacity: 1, x: 0 },

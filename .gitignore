@@ -2,7 +2,7 @@
 
 # dependencies
 node_modules/
-/.pnpm-store/
+.pnpm-store/
 /.pnp
 .pnp.*
 .yarn/*
@@ -12,10 +12,13 @@ node_modules/
 !.yarn/versions
 
 # testing
-/coverage
+coverage/
+test-results/
+playwright-report/
+blob-report/
 
 # next.js
-/.next/
+.next/
 /out/
 
 # production

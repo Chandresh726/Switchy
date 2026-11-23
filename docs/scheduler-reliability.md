@@ -1,13 +1,13 @@
 # Scheduler reliability
 
-The scraper schedule is backend-owned. The frontend only edits three settings
-via `PATCH /api/settings`; it never schedules work.
+The scraper schedule is backend-owned. The frontend edits settings via
+`PATCH /api/settings`; it never schedules work.
 
 | Setting | Key | Effect |
 |---|---|---|
 | Auto-scrape on/off | `scheduler_enabled` | Starts/stops the in-process cron task, installs/removes the macOS host agents |
 | Schedule | `scheduler_cron` | Restarts the in-process cron task (`node-cron` validated) |
-| Keep Mac awake | `scraper_keep_device_awake` | Holds a `caffeinate -i` assertion while auto-scrape is enabled (macOS only) |
+| Keep awake while scraping or matching | `scraper_keep_device_awake` | Holds a macOS idle-sleep assertion during active work, independently of scheduling |
 
 ## Backend layers
 
@@ -33,13 +33,9 @@ via `PATCH /api/settings`; it never schedules work.
 3. **Watchdog** (`ensureSchedulerWatchdog` + `runSchedulerWatchdogTick`,
    every 120s): restarts a missing task when enabled and drains pending
    recovery. Never throws.
-4. **Persistent idle-sleep assertion**: while the scheduler is enabled and
-   keep-awake is on, the backend holds `caffeinate -i` for the whole enabled
-   period (in addition to the per-dispatch assertion in
-   `LocalScrapeQueueService`). Display may still sleep; lid-close still sleeps.
-5. **macOS host agents** (`lib/jobs/scheduler-host.ts`):
+4. **macOS host agents** (`lib/jobs/scheduler-host.ts`):
    - `com.switchy.app`: `KeepAlive` + `RunAtLoad` wrapper around
-     `pnpm start`, so the server (and layers 1-4) survives reboots and process
+     `pnpm start`, so the server (and layers 1-3) survives reboots and process
      exits. The plist pins the installing shell's `PATH` so launchd can find
      `pnpm`, and a plist that drifted from the expected contents is rewritten
      and reloaded. Logs to `~/.switchy/logs/switchy-server.*.log`. Installed
@@ -58,6 +54,10 @@ via `PATCH /api/settings`; it never schedules work.
      working. Manage manually with
      `pnpm scheduler:host:{install,uninstall,status,sync}` or
      `POST /api/scheduler/host`.
+
+Sleep protection belongs to the shared activity manager, not the scheduler.
+See [Local resource controls](scraper-architecture.md#local-resource-controls)
+for assertion lifetime, retry behavior, and operating-system limits.
 
 ## Concurrency
 
@@ -80,7 +80,7 @@ share one runner, one concurrency gate, and one browser.
 
 ## Frontend role
 
-- `ScraperSettings` edits the three settings above.
+- `ScraperSettings` edits the schedule. The Power section controls sleep protection.
 - `ScrapeCountdown` polls `GET /api/scheduler/status` (display only).
 - `SchedulerRecoveryListener` is a best-effort hint that shortens the wait
   after sleep/wake when a tab happens to be open. Recovery works without it.

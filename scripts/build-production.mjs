@@ -52,6 +52,12 @@ try {
       else reject(new Error(`next build exited with code ${code}`));
     });
   });
+  // Instrumentation tracing can copy previous release outputs into standalone
+  // builds. They are not part of the application.
+  await rm(path.join(projectDirectory, ".next", "standalone", "dist"), {
+    recursive: true,
+    force: true,
+  });
 } finally {
   await rm(buildStateDirectory, { recursive: true, force: true });
 }
