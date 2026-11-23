@@ -226,7 +226,7 @@ describe("AIWritingHistoryPage", () => {
     expect(
       telemetry?.querySelector<HTMLElement>("[data-inline-telemetry-metrics]")
         ?.style.gridTemplateColumns
-    ).toBe("repeat(5, minmax(0, 1fr))");
+    ).toBe("repeat(5, minmax(0px, 1fr))");
 
     await userEvent.click(screen.getByRole("button", { name: /Staff Engineer/ }));
     expect(mocks.push).toHaveBeenCalledWith(

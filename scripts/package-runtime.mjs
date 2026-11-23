@@ -102,22 +102,8 @@ const projectPlaywrightSource = await realpath(
 const projectBetterSqliteSource = await realpath(
   path.join(projectDirectory, "node_modules", "better-sqlite3")
 );
-const projectBetterSqliteRequire = createRequire(
-  path.join(projectBetterSqliteSource, "package.json")
-);
-const projectBindingsSource = path.dirname(
-  projectBetterSqliteRequire.resolve("bindings/package.json")
-);
-const projectBindingsRequire = createRequire(
-  path.join(projectBindingsSource, "package.json")
-);
-const projectFileUriToPathSource = path.dirname(
-  projectBindingsRequire.resolve("file-uri-to-path/package.json")
-);
 const preferredPackageSources = new Map([
   ["better-sqlite3", projectBetterSqliteSource],
-  ["bindings", projectBindingsSource],
-  ["file-uri-to-path", projectFileUriToPathSource],
   ["playwright", projectPlaywrightSource],
   [
     "playwright-core",
@@ -249,6 +235,12 @@ for (const packageName of await packageEntries(runtimeNodeModules)) {
   const destination = path.join(runtimeNodeModules, packageName);
   await materializePackage(destination, destination);
 }
+// The migration bundle imports SQLite by package name even when Turbopack
+// traces the application through a platform-specific package entrypoint.
+await materializePackage(
+  projectBetterSqliteSource,
+  path.join(runtimeNodeModules, "better-sqlite3")
+);
 await materializeTracedPackages(
   path.join(standaloneAppDirectory, ".next"),
   path.join(runtimeDirectory, ".next"),
