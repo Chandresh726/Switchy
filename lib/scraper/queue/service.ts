@@ -1,3 +1,5 @@
+import { createFailureFromUnknown } from "@/lib/scraper/types/validation";
+
 import type { ScrapeQueueItem } from "@/lib/db/schema";
 import { getActivitySleepInhibitor, withSleepProtection } from "@/lib/runtime/activity-sleep-inhibitor";
 import {
@@ -17,12 +19,12 @@ import { serializeFetchResult } from "@/lib/scraper/queue/fetch-result-persisten
 import {
   LocalLeasedWorkRunner,
   type LocalLeasedWorkRunnerConfig,
-} from "@/lib/scraper/runtime/leased-work-runner";
-import { ScheduledSingleFlightDispatcher } from "@/lib/scraper/runtime/single-flight-dispatcher";
+} from "@/lib/runtime/leased-work-runner";
+import { ScheduledSingleFlightDispatcher } from "@/lib/runtime/single-flight-dispatcher";
 import { createDeviceWakeCheck } from "@/lib/scraper/runtime/device-wake-state";
 import {
   type DeviceSleepInhibitor,
-} from "@/lib/scraper/runtime/device-sleep-inhibitor";
+} from "@/lib/runtime/device-sleep-inhibitor";
 import type { ScrapeSettingsProvider } from "@/lib/scraper/settings/provider";
 import type {
   BatchFetchResult,
@@ -90,7 +92,15 @@ export class LocalScrapeQueueService {
       (item, { signal }) => withSleepProtection(
         this.deviceSleepInhibitor, () => this.workHandler.handle(item, signal)
       ),
-      { workerIdPrefix: "local-scrape", rateLimitMaxAgeMs: 6 * 60 * 60_000, ...dependencies.runnerConfig },
+      {
+        workerIdPrefix: "local-scrape",
+        rateLimitMaxAgeMs: 6 * 60 * 60_000,
+        getRateLimitDelayMs: (error) => {
+          const failure = createFailureFromUnknown(error).error;
+          return failure.code === "rate_limited" ? failure.retryAfterMs ?? 0 : undefined;
+        },
+        ...dependencies.runnerConfig,
+      },
       (item) => this.projector.reconcileSession(item.sessionId),
       serializeFetchResult
     );

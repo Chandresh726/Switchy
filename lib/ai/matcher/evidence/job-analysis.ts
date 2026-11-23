@@ -1,7 +1,7 @@
 import { z } from "zod";
 import PQueue from "p-queue";
 
-import { KeyedExecutionLock } from "@/lib/scraper/runtime/keyed-lock";
+import { KeyedExecutionLock } from "@/lib/runtime/keyed-lock";
 import { processSingleton } from "@/lib/runtime/process-singleton";
 
 import {

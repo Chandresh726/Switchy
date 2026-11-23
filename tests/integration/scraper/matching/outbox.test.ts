@@ -26,7 +26,7 @@ import { LocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 import { stopMatchSession } from "@/lib/scraper/matching/lifecycle";
 import { AIWorkDispatcher } from "@/lib/ai/work-items/dispatcher";
 import { DrizzleAIWorkStore, enqueueMatchWork } from "@/lib/ai/work-items/repository";
-import { InProcessLocalDataOperationGate } from "@/lib/scraper/runtime/data-operation-gate";
+import { InProcessLocalDataOperationGate } from "@/lib/runtime/data-operation-gate";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 vi.mock("@/lib/db", () => ({ db: {} }));

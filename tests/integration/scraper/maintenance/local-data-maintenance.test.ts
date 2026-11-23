@@ -19,7 +19,7 @@ import type { ScrapeCompanyPipeline } from "@/lib/scraper/application/scrape-com
 import type { ScrapeSessionProjector } from "@/lib/scraper/application/scrape-session-projector";
 import { LocalDataMaintenanceService } from "@/lib/scraper/maintenance";
 import type { ScrapeSessionProjectionStore } from "@/lib/scraper/queue/projection-store";
-import { InProcessLocalDataOperationGate } from "@/lib/scraper/runtime/data-operation-gate";
+import { InProcessLocalDataOperationGate } from "@/lib/runtime/data-operation-gate";
 import type { ScrapeSettingsProvider } from "@/lib/scraper/settings/provider";
 
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";

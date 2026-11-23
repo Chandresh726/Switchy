@@ -31,7 +31,7 @@ import {
   type ScrapedJob,
   type ScraperResult,
 } from "@/lib/scraper/types";
-import { KeyedExecutionLock } from "@/lib/scraper/runtime/keyed-lock";
+import { KeyedExecutionLock } from "@/lib/runtime/keyed-lock";
 
 import { AbstractBrowserScraper, DEFAULT_BROWSER_CONFIG } from "../core";
 import {

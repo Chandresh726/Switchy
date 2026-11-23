@@ -18,7 +18,7 @@ import {
 import {
   getLocalDataOperationGate,
   type LocalDataOperationGate,
-} from "@/lib/scraper/runtime/data-operation-gate";
+} from "@/lib/runtime/data-operation-gate";
 
 type Database = typeof db;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];

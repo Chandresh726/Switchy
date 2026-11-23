@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { aiRuns, aiWorkItems, scrapeMatchOutbox, scrapeQueueItems, scrapeSessions } from "@/lib/db/schema";
 import { getSchedulerStatus } from "@/lib/jobs/scheduler";
 import { hasRecentMutation } from "@/lib/runtime/update-maintenance";
-import { getLocalDataOperationGate } from "@/lib/scraper/runtime/data-operation-gate";
+import { getLocalDataOperationGate } from "@/lib/runtime/data-operation-gate";
 import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
 async function isIdle(): Promise<boolean> {

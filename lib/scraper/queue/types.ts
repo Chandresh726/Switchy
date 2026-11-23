@@ -2,7 +2,7 @@ import type { ScrapeQueueItem } from "@/lib/db/schema";
 import type {
   LocalLeasedWorkRunSummary,
   LocalLeasedWorkStore,
-} from "@/lib/scraper/runtime/leased-work-runner";
+} from "@/lib/runtime/leased-work-runner";
 import type { TriggerSource } from "@/lib/scraper/types";
 
 export interface EnqueueScrapeSession {

@@ -80,4 +80,20 @@ describe("scraper payload validation", () => {
       },
     });
   });
+  it.each([
+    [new Error("Request timeout"), "timeout", true],
+    [new Error("connect ECONNRESET"), "network_error", true],
+    [new Error("rate limit exceeded"), "rate_limited", true],
+    [Object.assign(new Error("request failed"), { status: 425 }), "network_error", true],
+    [Object.assign(new Error("request failed"), { status: 404 }), "board_not_found", false],
+    [new Error("invalid implementation"), "unknown", false],
+  ] as const)("classifies thrown %s consistently with adapter failures", (error, code, retryable) => {
+    expect(createFailureFromUnknown(error).error).toMatchObject({ code, retryable });
+  });
+
+  it("preserves rate-limit retry hints from the pipeline", () => {
+    const error = Object.assign(new Error("HTTP 429"), { retryAfterMs: 90_000 });
+    expect(createFailureFromUnknown(error).error).toMatchObject({ code: "rate_limited", retryAfterMs: 90_000 });
+  });
+
 });

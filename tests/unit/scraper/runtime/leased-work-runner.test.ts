@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { AIRateLimitError } from "@/lib/ai/shared/errors";
+import { AIRateLimitError, getRateLimitDelayMs } from "@/lib/ai/shared/errors";
 import type { ScrapeQueueItem } from "@/lib/db/schema";
 
 import {
   LocalLeasedWorkRunner,
   type LocalLeasedWorkStore,
-} from "@/lib/scraper/runtime/leased-work-runner";
+} from "@/lib/runtime/leased-work-runner";
 import type { QueueRecoveryResult } from "@/lib/scraper/queue/types";
 import { createScrapeQueueItem } from "@test/fixtures/scraper/queue-items";
 
@@ -36,7 +36,7 @@ describe("LocalLeasedWorkRunner", () => {
     })]);
     const runner = new LocalLeasedWorkRunner(repository, async () => {
       throw new AIRateLimitError("limited", undefined, 60_000);
-    }, { concurrency: 1, rateLimitMaxAgeMs: 6 * 60 * 60_000 });
+    }, { concurrency: 1, getRateLimitDelayMs, rateLimitMaxAgeMs: 6 * 60 * 60_000 });
     expect(await runner.runAvailable()).toMatchObject({ failed: 1, retried: 0 });
     expect(repository.defer).not.toHaveBeenCalled();
   });
@@ -56,7 +56,7 @@ describe("LocalLeasedWorkRunner", () => {
     const before = Date.now();
     const runner = new LocalLeasedWorkRunner(repository, async () => {
       throw new AIRateLimitError("limited", undefined, 600_000);
-    }, { concurrency: 1, maxRetryDelayMs: 1000 });
+    }, { concurrency: 1, getRateLimitDelayMs, maxRetryDelayMs: 1000 });
     expect(await runner.runAvailable()).toMatchObject({ retried: 1, failed: 0 });
     expect(repository.fail).not.toHaveBeenCalled();
     const args = vi.mocked(repository.defer).mock.calls[0];

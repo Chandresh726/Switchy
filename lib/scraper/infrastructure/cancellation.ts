@@ -1,3 +1,5 @@
+import { createAbortError } from "@/lib/runtime/cancellation";
+
 interface SignalStorage {
   run<T>(signal: AbortSignal, callback: () => Promise<T>): Promise<T>;
   getStore(): AbortSignal | undefined;
@@ -29,13 +31,7 @@ export function getActiveScrapeSignal(): AbortSignal | undefined {
 }
 
 export function createScrapeAbortError(signal?: AbortSignal): DOMException {
-  if (signal?.reason instanceof DOMException && signal.reason.name === "AbortError") {
-    return signal.reason;
-  }
-  const message = signal?.reason instanceof Error
-    ? signal.reason.message
-    : "The scrape was cancelled";
-  return new DOMException(message, "AbortError");
+  return createAbortError(signal, "The scrape was cancelled");
 }
 
 function isAbortError(error: unknown): boolean {

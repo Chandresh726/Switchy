@@ -1,4 +1,4 @@
-import { sanitizeAIError } from "@/lib/ai/shared/errors";
+import { getRateLimitDelayMs, sanitizeAIError } from "@/lib/ai/shared/errors";
 import { db } from "@/lib/db";
 import { reconcileMatchNotifications } from "@/lib/notifications/service";
 import type { AIWorkItem } from "@/lib/db/schema";
@@ -6,8 +6,8 @@ import {
   LocalLeasedWorkRunner,
   type LocalLeasedWorkRunOptions,
   type LocalLeasedWorkRunSummary,
-} from "@/lib/scraper/runtime/leased-work-runner";
-import { ScheduledSingleFlightDispatcher } from "@/lib/scraper/runtime/single-flight-dispatcher";
+} from "@/lib/runtime/leased-work-runner";
+import { ScheduledSingleFlightDispatcher } from "@/lib/runtime/single-flight-dispatcher";
 import {
   recordDispatchSuccess,
   recordRuntimeError,
@@ -15,7 +15,7 @@ import {
 } from "@/lib/runtime/health";
 import { processSingleton } from "@/lib/runtime/process-singleton";
 import { getActivitySleepInhibitor, withSleepProtection } from "@/lib/runtime/activity-sleep-inhibitor";
-import type { DeviceSleepInhibitor } from "@/lib/scraper/runtime/device-sleep-inhibitor";
+import type { DeviceSleepInhibitor } from "@/lib/runtime/device-sleep-inhibitor";
 
 import type { MatchWorkResult } from "./contracts";
 import { AIMatchWorkHandler, type MatchWorkExecutor } from "./match-handler";
@@ -52,7 +52,7 @@ export class AIWorkDispatcher {
       (item, { signal, workerId }) => withSleepProtection(
         sleepInhibitor, () => handler.handle(item, signal, workerId)
       ),
-      { ...merged, workerIdPrefix: "ai-work" }
+      { ...merged, workerIdPrefix: "ai-work", getRateLimitDelayMs }
     );
   }
 

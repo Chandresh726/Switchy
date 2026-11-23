@@ -1,6 +1,5 @@
 import { isUpdateMaintenance } from "@/lib/runtime/update-maintenance";
-import { getRetryAfterMs, isRateLimitError } from "@/lib/ai/shared/errors";
-import { createScrapeAbortError } from "@/lib/scraper/infrastructure/cancellation";
+import { createAbortError } from "./cancellation";
 
 import { resolveRetryDelay } from "./retry-policy";
 
@@ -103,6 +102,7 @@ export interface LocalLeasedWorkRunnerConfig {
   maxRetryDelayMs: number;
   suspensionRetryDelayMs: number;
   rateLimitMaxAgeMs: number;
+  getRateLimitDelayMs?: (error: unknown) => number | undefined;
 }
 
 const DEFAULT_LOCAL_LEASED_WORK_RUNNER_CONFIG: LocalLeasedWorkRunnerConfig = {
@@ -316,11 +316,11 @@ export class LocalLeasedWorkRunner<
 
     try {
       const result = await this.handler(item, { signal: controller.signal, workerId });
-      if (controller.signal.aborted) throw createScrapeAbortError(controller.signal);
+      if (controller.signal.aborted) throw createAbortError(controller.signal);
       cancellationRequested = await this.repository.isCancellationRequested(item.id, workerId);
       if (cancellationRequested) {
         controller.abort(new DOMException("Queue item cancelled", "AbortError"));
-        throw createScrapeAbortError(controller.signal);
+        throw createAbortError(controller.signal);
       }
       const resultJson = this.serializeResult(result);
       const completed = await this.repository.complete(item.id, workerId, resultJson, new Date());
@@ -328,13 +328,14 @@ export class LocalLeasedWorkRunner<
         cancellationRequested = await this.repository.isCancellationRequested(item.id, workerId);
         if (cancellationRequested) {
           controller.abort(new DOMException("Queue item cancelled", "AbortError"));
-          throw createScrapeAbortError(controller.signal);
+          throw createAbortError(controller.signal);
         }
         throw new Error("Queue item ownership was lost before completion.");
       }
       summary.completed += 1;
     } catch (error) {
       const now = new Date();
+      const rateLimitDelayMs = this.config.getRateLimitDelayMs?.(error);
       if (!cancellationRequested) {
         cancellationRequested = await this.repository.isCancellationRequested(
           item.id,
@@ -372,14 +373,14 @@ export class LocalLeasedWorkRunner<
         const failed = await this.repository.fail(item.id, workerId, error.message, now);
         if (failed) summary.failed += 1;
         else await this.persistRacedCancellation(item.id, workerId, now, summary);
-      } else if (isRateLimitError(error) && this.repository.defer && item.createdAt &&
-        now.getTime() + Math.max(30_000, getRetryAfterMs(error) ?? 0) >= item.createdAt.getTime() + this.config.rateLimitMaxAgeMs) {
+      } else if (rateLimitDelayMs !== undefined && this.repository.defer && item.createdAt &&
+        now.getTime() + Math.max(30_000, rateLimitDelayMs) >= item.createdAt.getTime() + this.config.rateLimitMaxAgeMs) {
         const failed = await this.repository.fail(item.id, workerId,
           "Rate-limit recovery exceeded the six-hour scrape deadline; will retry in a future run.", now);
         if (failed) summary.failed += 1;
         else await this.persistRacedCancellation(item.id, workerId, now, summary);
-      } else if (isRateLimitError(error) && this.repository.defer) {
-        const until = new Date(Math.ceil((now.getTime() + Math.max(30_000, getRetryAfterMs(error) ?? 0)) / 1000) * 1000);
+      } else if (rateLimitDelayMs !== undefined && this.repository.defer) {
+        const until = new Date(Math.ceil((now.getTime() + Math.max(30_000, rateLimitDelayMs)) / 1000) * 1000);
         const deferred = await this.repository.defer(item.id, workerId,
           error instanceof Error ? error : new Error("Provider rate limited"), until, now, Math.max(0, item.attemptCount - 1));
         if (deferred) summary.retried += 1;

@@ -1,4 +1,4 @@
-import { BrowserSessionBootstrapError } from "@/lib/scraper/infrastructure/browser-session-error";
+import { createFailureFromUnknown } from "@/lib/scraper/types/validation";
 import type { ScrapeCompanyStore } from "@/lib/scraper/infrastructure/types";
 import type { ScrapeOptions } from "@/lib/scraper/core/types";
 import {
@@ -191,36 +191,7 @@ export class ScrapeCompanyPipeline {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       logger.error(errorMessage);
 
-      const httpStatus =
-        error instanceof Error
-          ? (error as Error & { status?: unknown }).status
-          : undefined;
-      const retryableStatus =
-        typeof httpStatus === "number" &&
-        (httpStatus === 408 ||
-          httpStatus === 425 ||
-          httpStatus === 429 ||
-          httpStatus === 502 ||
-          httpStatus === 503 ||
-          httpStatus === 504 ||
-          (httpStatus >= 500 && httpStatus < 600));
-      const lowerMessage = errorMessage.toLowerCase();
-      const retryable =
-        retryableStatus ||
-        // Browser bootstrap failures map to retryable `browser_error` in
-        // createFailureFromUnknown; agree with that classification here so
-        // the log-suppression decision matches the queue-retry decision.
-        error instanceof BrowserSessionBootstrapError ||
-        (error instanceof Error &&
-          (error.name === "ScrapeAbortError" ||
-            lowerMessage.includes("timeout") ||
-            lowerMessage.includes("timed out") ||
-            lowerMessage.includes("econnreset") ||
-            lowerMessage.includes("econnrefused") ||
-            lowerMessage.includes("econnaborted") ||
-            lowerMessage.includes("rate limit") ||
-            lowerMessage.includes("too many requests") ||
-            lowerMessage.includes("service unavailable")));
+      const { retryable, retryAfterMs } = createFailureFromUnknown(error).error;
 
       // The queue retries retryable failures, so only the terminal attempt
       // writes an error log. Otherwise every retry leaves its own row and a
@@ -266,6 +237,7 @@ export class ScrapeCompanyPipeline {
         jobsArchived: 0,
         error: errorMessage,
         retryable,
+        retryAfterMs,
         duration: Date.now() - startTime,
       });
     }

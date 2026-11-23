@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveRetryDelay } from "@/lib/scraper/runtime/retry-policy";
+import { resolveRetryDelay } from "@/lib/runtime/retry-policy";
 
 const policy = {
   baseRetryDelayMs: 100,

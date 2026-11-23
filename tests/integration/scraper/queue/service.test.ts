@@ -16,8 +16,8 @@ import { ScrapeWorkHandler } from "@/lib/scraper/application/scrape-work-handler
 import { DrizzleScrapeHistoryStore } from "@/lib/scraper/history";
 import { DrizzleScraperRepository } from "@/lib/scraper/infrastructure/repository";
 import { DrizzleScrapeSessionProjectionStore } from "@/lib/scraper/queue/projection-store";
-import type { LocalLeasedWorkRunnerConfig } from "@/lib/scraper/runtime/leased-work-runner";
-import type { DeviceSleepInhibitor } from "@/lib/scraper/runtime/device-sleep-inhibitor";
+import type { LocalLeasedWorkRunnerConfig } from "@/lib/runtime/leased-work-runner";
+import type { DeviceSleepInhibitor } from "@/lib/runtime/device-sleep-inhibitor";
 import type { IScraperRegistry } from "@/lib/scraper/services";
 import {
   type ScrapeSettingsProvider,

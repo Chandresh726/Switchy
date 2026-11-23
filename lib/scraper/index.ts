@@ -3,7 +3,7 @@ import { DrizzleScrapeFetchStateStore } from "./infrastructure/fetch-state-store
 import type { IScraperRepository } from "./infrastructure/types";
 import type { IHttpClient, HttpClientConfig } from "./infrastructure/http-client";
 import type { IBrowserClient, BrowserSessionConfig } from "./infrastructure/browser-client";
-import type { LocalLeasedWorkRunnerConfig } from "./runtime/leased-work-runner";
+import type { LocalLeasedWorkRunnerConfig } from "@/lib/runtime/leased-work-runner";
 import type { ScrapeCompanyPipelineConfig } from "./application/scrape-company-pipeline";
 import {
   StoredScrapeSettingsProvider,

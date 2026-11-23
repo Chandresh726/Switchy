@@ -1,7 +1,7 @@
 import {
   getLocalDataOperationGate,
   type LocalDataOperationGate,
-} from "@/lib/scraper/runtime/data-operation-gate";
+} from "@/lib/runtime/data-operation-gate";
 
 import { getMatcherConfig } from "../config";
 import type {

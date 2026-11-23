@@ -6,7 +6,7 @@ import {
 import {
   getLocalDataOperationGate,
   type LocalDataOperationGate,
-} from "@/lib/scraper/runtime/data-operation-gate";
+} from "@/lib/runtime/data-operation-gate";
 
 export async function stopMatchSession(
   sessionId: string,

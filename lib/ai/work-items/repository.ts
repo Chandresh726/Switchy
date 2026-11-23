@@ -13,7 +13,7 @@ import {
   type AIWorkItem,
 } from "@/lib/db/schema";
 import { chunkSqliteParameters, createSqliteBusyRetry } from "@/lib/db/sqlite-utils";
-import type { LocalLeasedWorkStore } from "@/lib/scraper/runtime/leased-work-runner";
+import type { LocalLeasedWorkStore } from "@/lib/runtime/leased-work-runner";
 
 import { serializeWorkError, deserializeWorkError } from "./errors";
 

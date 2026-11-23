@@ -99,14 +99,25 @@ export function createFailureFromUnknown(error: unknown): ScraperErrorResult {
     return createFailureForHttpStatus(error.status, error.message, error.retryAfterMs);
   }
 
-  if (error instanceof TypeError) {
-    return createScraperFailure("network_error", error.message);
+  const message = error instanceof Error ? error.message : "Unknown error";
+  const retryAfterMs = error instanceof Error && "retryAfterMs" in error &&
+    typeof error.retryAfterMs === "number" && Number.isFinite(error.retryAfterMs)
+    ? Math.max(0, error.retryAfterMs) : undefined;
+  if (error instanceof Error && "status" in error && typeof error.status === "number") {
+    return createFailureForHttpStatus(error.status, message, retryAfterMs);
   }
-
-  return createScraperFailure(
-    "unknown",
-    error instanceof Error ? error.message : "Unknown error"
-  );
+  if (error instanceof Error) {
+    if (/(?:rate limit|too many requests|tokens per|token limit|quota|throttl|(?:status|http|error)[:\s]*429)/i.test(message)) {
+      return createScraperFailure("rate_limited", message, { retryAfterMs });
+    }
+    if (error.name === "ScrapeAbortError" || /timeout|timed\s*out/i.test(message)) {
+      return createScraperFailure("timeout", message);
+    }
+    if (error instanceof TypeError || /econnreset|econnrefused|econnaborted|service unavailable/i.test(message)) {
+      return createScraperFailure("network_error", message);
+    }
+  }
+  return createScraperFailure("unknown", message);
 }
 
 function classifyHttpStatus(status: number): ScraperErrorCode {
@@ -114,7 +125,7 @@ function classifyHttpStatus(status: number): ScraperErrorCode {
   if (status === 408) return "timeout";
   if (status === 401 || status === 403) return "auth_required";
   if (status === 404) return "board_not_found";
-  if (status >= 500) return "network_error";
+  if (status === 425 || (status >= 500 && status < 600)) return "network_error";
   return "unknown";
 }
 

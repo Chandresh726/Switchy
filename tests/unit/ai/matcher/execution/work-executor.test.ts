@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { InProcessLocalDataOperationGate } from "@/lib/scraper/runtime/data-operation-gate";
+import { InProcessLocalDataOperationGate } from "@/lib/runtime/data-operation-gate";
 import type { MatcherConfig } from "@/lib/ai/matcher/types";
 
 const mocks = vi.hoisted(() => ({

@@ -6,8 +6,8 @@ import type { ILocalScrapeQueueRepository } from "@/lib/scraper/queue/types";
 import {
   getLocalDataOperationGate,
   type LocalDataOperationGate,
-} from "@/lib/scraper/runtime/data-operation-gate";
-import { KeyedExecutionLock } from "@/lib/scraper/runtime/keyed-lock";
+} from "@/lib/runtime/data-operation-gate";
+import { KeyedExecutionLock } from "@/lib/runtime/keyed-lock";
 import {
   ScrapeResourceExecutionGate,
   type ScrapeResourceClass,

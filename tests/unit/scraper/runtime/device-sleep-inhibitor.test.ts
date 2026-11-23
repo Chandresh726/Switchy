@@ -3,7 +3,7 @@ import type { ChildProcess } from "node:child_process";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { CaffeinateDeviceSleepInhibitor } from "@/lib/scraper/runtime/device-sleep-inhibitor";
+import { CaffeinateDeviceSleepInhibitor } from "@/lib/runtime/device-sleep-inhibitor";
 
 function createChildProcess() {
   const child = new EventEmitter() as ChildProcess;

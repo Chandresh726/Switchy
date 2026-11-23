@@ -312,3 +312,7 @@ export function sanitizeAIError(error: unknown): SanitizedAIError {
     message: messages[code] ?? messages.unknown,
   };
 }
+
+export function getRateLimitDelayMs(error: unknown): number | undefined {
+  return isRateLimitError(error) ? getRetryAfterMs(error) ?? 0 : undefined;
+}

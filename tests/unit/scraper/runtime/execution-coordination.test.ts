@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { KeyedExecutionLock } from "@/lib/scraper/runtime/keyed-lock";
+import { KeyedExecutionLock } from "@/lib/runtime/keyed-lock";
 import { ScrapeResourceExecutionGate } from "@/lib/scraper/runtime/resource-execution-gate";
 
 describe("ScrapeResourceExecutionGate", () => {

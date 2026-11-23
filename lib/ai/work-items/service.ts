@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import {
   getLocalDataOperationGate,
   type LocalDataOperationGate,
-} from "@/lib/scraper/runtime/data-operation-gate";
+} from "@/lib/runtime/data-operation-gate";
 
 import type { MatchWorkPayload } from "./contracts";
 import { dispatchPendingAIWork } from "./dispatcher";

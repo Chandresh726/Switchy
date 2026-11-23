@@ -6,7 +6,7 @@ import {
   createDeviceSleepInhibitor,
   type DeviceSleepInhibitor,
   type DeviceSleepInhibitorLease,
-} from "@/lib/scraper/runtime/device-sleep-inhibitor";
+} from "@/lib/runtime/device-sleep-inhibitor";
 
 import { processSingleton } from "./process-singleton";
 

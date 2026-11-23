@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ScheduledSingleFlightDispatcher } from "@/lib/scraper/runtime/single-flight-dispatcher";
+import { ScheduledSingleFlightDispatcher } from "@/lib/runtime/single-flight-dispatcher";
 
 interface DispatchResult {
   nextAvailableAt: Date | null;

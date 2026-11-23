@@ -28,7 +28,7 @@ import {
   settings as settingsTable,
 } from "@/lib/db/schema";
 import { processSingleton } from "@/lib/runtime/process-singleton";
-import { ScheduledSingleFlightDispatcher } from "@/lib/scraper/runtime/single-flight-dispatcher";
+import { ScheduledSingleFlightDispatcher } from "@/lib/runtime/single-flight-dispatcher";
 import { getSettingsWithDefaults } from "@/lib/settings/settings-service";
 
 import { sendNativeNotification } from "./native-notifier";
