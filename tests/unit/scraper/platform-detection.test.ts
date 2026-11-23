@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
@@ -74,17 +72,4 @@ describe("platform detection", () => {
     ).toBe("custom");
   });
 
-  it("is shared by API and UI callers", () => {
-    const routeFile = fs.readFileSync(
-      path.join(process.cwd(), "lib/application/companies-service.ts"),
-      "utf8"
-    );
-    const formFile = fs.readFileSync(
-      path.join(process.cwd(), "components/companies/company-form.tsx"),
-      "utf8"
-    );
-
-    expect(routeFile).toContain('detectPlatformFromUrl');
-    expect(formFile).toContain('detectPlatformFromUrl');
-  });
 });

@@ -108,6 +108,7 @@ describe("CustomProvider real SDK authentication", () => {
     const config = { modelId: "claude-model", reasoningEffort: "high" };
     const providerConfig = {
         apiFormat: "anthropic_messages",
+        apiKey: "standard-key",
         baseUrl: "https://proxy.example/v1",
         headers: {
           "X-API-Key": "header-key",

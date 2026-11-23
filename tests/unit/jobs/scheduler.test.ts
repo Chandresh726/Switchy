@@ -558,4 +558,193 @@ describe("scheduler recovery", () => {
     expect(secondRecovery.status).toBe("already_running");
     expect(store.scrapeAllCompanies).toHaveBeenCalledTimes(1);
   });
+  it("does not call an executed occurrence missed, even before lastRun is saved", async () => {
+    store.settings.set("scheduler.lastRun", {
+      key: "scheduler.lastRun", value: new Date(2026, 3, 5, 0).toISOString(),
+    });
+    store.sessions.push({ status: "in_progress", scheduledForAt: new Date(2026, 3, 5, 6) });
+    const scheduler = await import("@/lib/jobs/scheduler");
+    expect(await scheduler.reconcileMissedRunsOnBoot(new Date(2026, 3, 5, 13)))
+      .toEqual({ reconciled: 1, pendingMissedCount: 1 });
+    expect(store.sessions).toHaveLength(2);
+    expect(await scheduler.reconcileMissedRunsOnBoot(new Date(2026, 3, 5, 13)))
+      .toEqual({ reconciled: 0, pendingMissedCount: 1 });
+  });
+
+  it("enumerates cron occurrences strictly after the baseline", async () => {
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    const missed = scheduler.listMissedOccurrences(
+      "0 * * * *",
+      new Date(2026, 3, 5, 10, 15),
+      new Date(2026, 3, 5, 12, 5)
+    );
+
+    expect(missed.map((date) => date.toISOString())).toEqual([
+      new Date(2026, 3, 5, 11).toISOString(),
+      new Date(2026, 3, 5, 12).toISOString(),
+    ]);
+  });
+
+  it("reconciles ticks missed while the process was down, without UI involvement", async () => {
+    store.settings.set("scheduler.lastRun", {
+      key: "scheduler.lastRun",
+      value: new Date(2026, 3, 5, 0).toISOString(),
+    });
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    const result = await scheduler.reconcileMissedRunsOnBoot(
+      new Date(2026, 3, 5, 13)
+    );
+
+    expect(result.reconciled).toBe(2);
+    expect(result.pendingMissedCount).toBe(2);
+    expect(store.sessions).toHaveLength(2);
+    expect(store.sessions[0]?.status).toBe("skipped");
+    expect(store.sessions[0]?.triggerSource).toBe("scheduler");
+  });
+
+  it("appends ticks missed after an already-pending miss instead of hiding them", async () => {
+    store.settings.set("scheduler.lastRun", {
+      key: "scheduler.lastRun",
+      value: new Date(2026, 3, 5, 0).toISOString(),
+    });
+    store.settings.set("scheduler.recovery.v1", {
+      key: "scheduler.recovery.v1",
+      value: JSON.stringify({
+        version: 1,
+        pendingMissedCount: 1,
+        oldestMissedRun: new Date(2026, 3, 5, 6).toISOString(),
+        latestMissedRun: new Date(2026, 3, 5, 6).toISOString(),
+      }),
+    });
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    const result = await scheduler.reconcileMissedRunsOnBoot(
+      new Date(2026, 3, 5, 13)
+    );
+
+    expect(result.reconciled).toBe(1);
+    expect(result.pendingMissedCount).toBe(2);
+    const status = await scheduler.getSchedulerStatus();
+    expect(status.latestMissedRun?.toISOString()).toBe(
+      new Date(2026, 3, 5, 12).toISOString()
+    );
+  });
+
+  it("resets the baseline on enable so disabled windows never backfill", async () => {
+    store.settings.set("scheduler.lastRun", {
+      key: "scheduler.lastRun",
+      value: new Date(2026, 3, 2, 0).toISOString(),
+    });
+    const scheduler = await import("@/lib/jobs/scheduler");
+    const now = new Date(2026, 3, 5, 13);
+
+    await scheduler.handleSchedulerEnabled(now);
+
+    const result = await scheduler.reconcileMissedRunsOnBoot(now);
+    expect(result).toEqual({ reconciled: 0, pendingMissedCount: 0 });
+    expect(store.sessions).toEqual([]);
+  });
+
+  it("drops pending recovery on disable", async () => {
+    store.settings.set("scheduler.recovery.v1", {
+      key: "scheduler.recovery.v1",
+      value: JSON.stringify({
+        version: 1,
+        pendingMissedCount: 2,
+        oldestMissedRun: new Date(2026, 3, 5, 0).toISOString(),
+        latestMissedRun: new Date(2026, 3, 5, 6).toISOString(),
+      }),
+    });
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    await scheduler.handleSchedulerDisabled();
+
+    const status = await scheduler.getSchedulerStatus();
+    expect(status.pendingMissedCount).toBe(0);
+  });
+
+  it("does not reconcile when the scheduler is disabled", async () => {
+    store.settings.set("scheduler_enabled", { key: "scheduler_enabled", value: "false" });
+    store.settings.set("scheduler.lastRun", {
+      key: "scheduler.lastRun",
+      value: new Date(2026, 3, 5, 0).toISOString(),
+    });
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    const result = await scheduler.reconcileMissedRunsOnBoot(
+      new Date(2026, 3, 5, 13)
+    );
+
+    expect(result).toEqual({ reconciled: 0, pendingMissedCount: 0 });
+    expect(store.sessions).toEqual([]);
+  });
+
+  it("does not reconcile on first boot when no run history exists", async () => {
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    const result = await scheduler.reconcileMissedRunsOnBoot(
+      new Date(2026, 3, 5, 13)
+    );
+
+    expect(result).toEqual({ reconciled: 0, pendingMissedCount: 0 });
+    expect(store.sessions).toEqual([]);
+  });
+
+  it("runs one coalesced boot recovery batch and skips reconciliation on repeat calls", async () => {
+    store.settings.set("scheduler.lastRun", {
+      key: "scheduler.lastRun",
+      value: new Date(2026, 3, 5, 0).toISOString(),
+    });
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    const first = await scheduler.recoverSchedulerOnBoot(
+      new Date(2026, 3, 5, 13),
+      "boot"
+    );
+    const status = await scheduler.getSchedulerStatus();
+    const second = await scheduler.recoverSchedulerOnBoot(
+      new Date(2026, 3, 5, 13),
+      "boot"
+    );
+
+    expect(first.status).toBe("started");
+    expect(store.scrapeAllCompanies).toHaveBeenCalledTimes(1);
+    expect(store.scrapeAllCompanies).toHaveBeenCalledWith("scheduler_recovery");
+    expect(status.pendingMissedCount).toBe(0);
+    expect(second.status).toBe("not_needed");
+    expect(store.sessions).toHaveLength(2);
+  });
+
+  it("never rewinds the recovery baseline when a stale batch finishes", async () => {
+    const seededLastRun = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+    store.settings.set("scheduler.lastRun", {
+      key: "scheduler.lastRun",
+      value: seededLastRun,
+    });
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    await scheduler.startScheduler();
+    await store.task?.execute();
+
+    expect(store.scrapeAllCompanies).toHaveBeenCalledWith("scheduler");
+    expect(store.settings.get("scheduler.lastRun")?.value).toBe(seededLastRun);
+  });
+
+  it("drains pending recovery from the server-side watchdog tick", async () => {
+    const scheduler = await import("@/lib/jobs/scheduler");
+
+    await scheduler.startScheduler();
+    await store.task?.listeners.get("execution:missed")?.({
+      date: new Date("2026-04-05T06:30:00.000Z"),
+    });
+
+    await scheduler.runSchedulerWatchdogTick();
+
+    expect(store.scrapeAllCompanies).toHaveBeenCalledWith("scheduler_recovery");
+    const status = await scheduler.getSchedulerStatus();
+    expect(status.pendingMissedCount).toBe(0);
+    expect(status.backendOwned).toBe(true);
+  });
 });

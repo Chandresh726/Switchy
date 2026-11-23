@@ -5,26 +5,14 @@ import { PLATFORM_COLORS, PLATFORM_OPTIONS } from "@/lib/constants";
 import { PLATFORMS } from "@/lib/scraper/types/platform";
 
 describe("scraper platform contracts", () => {
-  it("publishes TurboHire through API, runtime, and UI platform lists", () => {
-    expect(companyPlatformSchema.parse("turbohire")).toBe("turbohire");
-    expect(PLATFORMS).toContain("turbohire");
-    expect(PLATFORM_OPTIONS).toContainEqual({
-      value: "turbohire",
-      label: "TurboHire",
-    });
-    expect(PLATFORM_COLORS.turbohire).toBeTruthy();
-  });
-
-  it.each([
-    ["jobvite", "Jobvite"],
-    ["talentbrew", "TalentBrew"],
-    ["oracle", "Oracle Recruiting"],
-    ["phenom", "Phenom"],
-  ] as const)("publishes %s through every platform contract", (platform, label) => {
-    expect(companyPlatformSchema.parse(platform)).toBe(platform);
-    expect(PLATFORMS).toContain(platform);
-    expect(PLATFORM_OPTIONS).toContainEqual({ value: platform, label });
-    expect(PLATFORM_COLORS[platform]).toBeTruthy();
+  it("exposes every runtime platform through the API and company picker", () => {
+    expect(companyPlatformSchema.options.filter((platform) => platform !== "custom").sort())
+      .toEqual([...PLATFORMS].sort());
+    expect(PLATFORM_OPTIONS.filter(({ value }) => value !== "custom").map(({ value }) => value).sort())
+      .toEqual([...PLATFORMS].sort());
+    for (const platform of PLATFORMS) {
+      expect(PLATFORM_COLORS[platform], platform).toBeTruthy();
+    }
   });
 
   it("removes the dedicated Nutanix platform contract", () => {

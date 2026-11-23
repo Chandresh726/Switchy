@@ -3,21 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import type { IBrowserClient } from "@/lib/scraper/infrastructure/browser-client";
-import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import { getActiveScrapeSignal } from "@/lib/scraper/infrastructure/cancellation";
 import type { IScraper } from "@/lib/scraper/core/types";
+import { PLATFORMS } from "@/lib/scraper/types/platform";
+import { createHttpClientStub } from "@test/helpers/scraper-clients";
 import {
   createScraperRegistry,
   ScraperRegistry,
 } from "@/lib/scraper/services/registry";
-
-function createHttpClient(): IHttpClient {
-  return {
-    fetch: vi.fn() as IHttpClient["fetch"],
-    get: vi.fn() as IHttpClient["get"],
-    post: vi.fn() as IHttpClient["post"],
-  };
-}
 
 function createBrowserClient(): IBrowserClient {
   return {
@@ -30,50 +23,18 @@ function createBrowserClient(): IBrowserClient {
 }
 
 describe("createScraperRegistry", () => {
-  it("registers the supported reusable platform scrapers", () => {
+  it("registers every supported scraper with its scheduling capabilities", () => {
     const registry = createScraperRegistry({
-      httpClient: createHttpClient(),
+      httpClient: createHttpClientStub(),
       browserClient: createBrowserClient(),
     });
 
-    expect(registry.getScraperByPlatform("servicenow")?.platform).toBe("servicenow");
-    expect(registry.getScraperByPlatform("smartrecruiters")?.platform).toBe("smartrecruiters");
-    expect(registry.getScraperByPlatform("turbohire")?.platform).toBe("turbohire");
-    expect(registry.getScraperByPlatform("mynexthire")?.platform).toBe("mynexthire");
-    expect(registry.getScraperByPlatform("visa")?.platform).toBe("visa");
-    expect(registry.getScraperByPlatform("jobvite")?.platform).toBe("jobvite");
-    expect(registry.getScraperByPlatform("talentbrew")?.platform).toBe("talentbrew");
-    expect(registry.getScraperByPlatform("oracle")?.platform).toBe("oracle");
-    expect(registry.getScraperByPlatform("phenom")?.platform).toBe("phenom");
-  });
-
-  it("publishes capability metadata used by local scheduling", () => {
-    const registry = createScraperRegistry({
-      httpClient: createHttpClient(),
-      browserClient: createBrowserClient(),
-    });
-
-    expect(registry.getScraperByPlatform("greenhouse")?.capabilities).toEqual({
-      concurrency: "parallel",
-    });
-    expect(registry.getScraperByPlatform("smartrecruiters")?.capabilities).toEqual({
-      concurrency: "parallel",
-    });
-    expect(registry.getScraperByPlatform("servicenow")?.capabilities).toEqual({
-      concurrency: "parallel",
-    });
-    expect(registry.getScraperByPlatform("eightfold")?.capabilities).toEqual({
-      concurrency: "browser_limited",
-    });
-    expect(registry.getScraperByPlatform("workday")?.capabilities).toEqual({
-      concurrency: "browser_limited",
-    });
-    expect(registry.getScraperByPlatform("uber")?.capabilities).toEqual({
-      concurrency: "parallel",
-    });
-    for (const platform of ["jobvite", "talentbrew", "oracle", "phenom"] as const) {
-      expect(registry.getScraperByPlatform(platform)?.capabilities).toEqual({
-        concurrency: "parallel",
+    for (const platform of PLATFORMS) {
+      expect(registry.getScraperByPlatform(platform), platform).toMatchObject({
+        platform,
+        capabilities: {
+          concurrency: ["eightfold", "workday"].includes(platform) ? "browser_limited" : "parallel",
+        },
       });
     }
   });

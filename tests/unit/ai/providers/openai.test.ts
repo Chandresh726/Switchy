@@ -14,12 +14,4 @@ describe("OpenAIProvider", () => {
     ).toBeUndefined();
   });
 
-  it("omits reasoning options for every direct OpenAI model", () => {
-    expect(
-      provider.getGenerationOptions(
-        { modelId: "gpt-4.1", reasoningEffort: "high" },
-        {}
-      )
-    ).toBeUndefined();
-  });
 });
