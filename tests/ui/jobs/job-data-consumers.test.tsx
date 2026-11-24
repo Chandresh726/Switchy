@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   getJobStatusCounts: vi.fn(),
   getProfile: vi.fn(),
   getStats: vi.fn(),
+  getDashboard: vi.fn(),
   replace: vi.fn(),
   routeId: "42",
 }));
@@ -37,7 +38,7 @@ vi.mock("@/lib/api/clients/jobs", () => ({
   updateJob: vi.fn(),
 }));
 vi.mock("@/lib/api/clients/profile", () => ({ getProfile: mocks.getProfile }));
-vi.mock("@/lib/api/clients/stats", () => ({ getStats: mocks.getStats }));
+vi.mock("@/lib/api/clients/stats", () => ({ getStats: mocks.getStats, getDashboard: mocks.getDashboard }));
 vi.mock("@/lib/hooks/use-queued-job-match", () => ({
   useQueuedJobMatch: () => ({
     mutation: { isPending: false, mutate: vi.fn() },
@@ -145,6 +146,20 @@ describe("job data consumers", () => {
     mocks.getCompanies.mockResolvedValue([company]);
     mocks.getJob.mockResolvedValue(detailJob);
     mocks.getProfile.mockResolvedValue({ id: 1, name: "Test User" });
+    mocks.getDashboard.mockImplementation(async () => {
+      const entries = await Promise.allSettled([
+        mocks.getStats(), mocks.getJobs({ matchBands: ["high", "good"] }),
+        mocks.getJobs({ sortBy: "discoveredAt" }), mocks.getJobs({ status: "applied" }),
+      ]);
+      const errors: Record<string, unknown> = {};
+      const keys = ["stats", "highMatches", "recentJobs", "appliedJobs"];
+      const values = Object.fromEntries(entries.map((entry, index) => {
+        if (entry.status === "fulfilled") return [keys[index], entry.value];
+        errors[keys[index]] = { error: entry.reason.message, code: entry.reason.code, requestId: entry.reason.requestId };
+        return [keys[index], null];
+      }));
+      return { ...values, errors };
+    });
     mocks.getStats.mockResolvedValue({
       totalJobs: 3,
       totalCompanies: 1,

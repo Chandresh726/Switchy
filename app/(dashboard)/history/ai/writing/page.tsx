@@ -21,9 +21,9 @@ import { StatusRail } from "@/components/history/shared/session-primitives";
 import { ApiErrorState } from "@/components/ui/api-error-state";
 import type { AIContentType } from "@/lib/ai/contracts";
 import { getContentTypeLabel, getWorkspacePathWithVariant } from "@/lib/ai/writing/workspace/routes";
-import { deleteAIContent, getAIHistory } from "@/lib/api/clients/ai";
+import { deleteAIContent, getAIHistory, getAIHistoryDetail } from "@/lib/api/clients/ai";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
-import type { GeneratedContent } from "@/lib/api/contracts/ai";
+import type { AIHistorySummary } from "@/lib/api/contracts/ai";
 import { cn } from "@/lib/utils";
 import { queryKeys } from "@/lib/query-keys";
 import {
@@ -38,6 +38,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Pagination } from "@/components/ui/pagination";
 import { Button } from "@/components/ui/button";
 
 function formatDate(dateStr: string) {
@@ -84,7 +85,7 @@ function getTypeConfig(type: AIContentType) {
 }
 
 interface AIHistoryCardProps {
-  content: GeneratedContent;
+  content: AIHistorySummary;
   isDeleting: boolean;
   onClick: () => void;
   onDelete: (id: number) => void;
@@ -92,15 +93,17 @@ interface AIHistoryCardProps {
 
 function AIHistoryCard({ content, isDeleting, onClick, onDelete }: AIHistoryCardProps) {
   const typeConfig = getTypeConfig(content.type);
-  const currentVariant = content.history.find(
-    (history) => history.id === content.currentVariantId
-  );
-  const displayVariant = currentVariant ?? content.history[content.history.length - 1];
-  const latestRun = displayVariant?.aiRun ??
-    content.history.findLast((history) => history.aiRun)?.aiRun;
-  const events = content.history.flatMap((history) => history.events);
-  const copiedCount = events.filter((event) => event.action === "copied").length;
-  const discardedCount = events.filter((event) => event.action === "discarded").length;
+  const [telemetryOpen, setTelemetryOpen] = useState(false);
+  const detail = useQuery({
+    queryKey: [...queryKeys.ai.history(), "detail", content.id],
+    queryFn: () => getAIHistoryDetail(content.id),
+    enabled: telemetryOpen,
+  });
+  const history = detail.data?.content?.history ?? [];
+  const displayVariant = history.find((variant) => variant.id === content.displayVariantId);
+  const telemetryRun = displayVariant?.aiRun ?? history.findLast((variant) => variant.aiRun)?.aiRun;
+  const latestRun = content.latestRun;
+  const { copiedCount, discardedCount } = content;
 
   const handleDelete = (event: React.MouseEvent) => {
     event.preventDefault();
@@ -201,7 +204,7 @@ function AIHistoryCard({ content, isDeleting, onClick, onDelete }: AIHistoryCard
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
           <span className="flex items-center gap-1 text-muted-foreground">
             <Layers className="h-3 w-3" />
-            {content.history.length} variant{content.history.length === 1 ? "" : "s"}
+            {content.variantCount} variant{content.variantCount === 1 ? "" : "s"}
           </span>
           {copiedCount > 0 ? (
             <Badge variant="outline">{copiedCount} copied</Badge>
@@ -211,7 +214,7 @@ function AIHistoryCard({ content, isDeleting, onClick, onDelete }: AIHistoryCard
           ) : null}
 
           <span className="mr-4 min-w-0 flex-1 truncate">
-            {(displayVariant?.variant || content.content).slice(0, 80)}...
+            {content.preview}...
           </span>
 
           <div className="flex shrink-0 items-center gap-3">
@@ -227,10 +230,14 @@ function AIHistoryCard({ content, isDeleting, onClick, onDelete }: AIHistoryCard
           </div>
         </div>
       </div>
-      <AIRunTelemetry
-        runs={[{ label: "Writing generation", run: latestRun }]}
-        variant="inline"
-      />
+      {latestRun ? <div className="px-5 pb-3">
+        <Button variant="ghost" size="sm" aria-expanded={telemetryOpen} onClick={() => setTelemetryOpen((open) => !open)}>
+          {telemetryOpen ? "Hide generation details" : "Generation details"}
+        </Button>
+        {telemetryOpen && detail.isLoading ? <Loader2 className="size-4 animate-spin" /> : null}
+        {telemetryOpen && detail.isError ? <ApiErrorState error={detail.error} fallbackMessage="Generation details could not be loaded." onRetry={() => void detail.refetch()} /> : null}
+        {telemetryOpen && telemetryRun ? <AIRunTelemetry runs={[{ label: "Writing generation", run: telemetryRun }]} variant="inline" /> : null}
+      </div> : null}
     </div>
   );
 }
@@ -238,12 +245,14 @@ function AIHistoryCard({ content, isDeleting, onClick, onDelete }: AIHistoryCard
 export default function AIWritingHistoryPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const { data, error, isError, isLoading, refetch } = useQuery({
-    queryKey: queryKeys.ai.history(),
+    queryKey: [...queryKeys.ai.history(), { limit: pageSize, offset: (currentPage - 1) * pageSize }],
     queryFn: async () => {
-      return getAIHistory();
+      return getAIHistory({ limit: pageSize, offset: (currentPage - 1) * pageSize });
     },
   });
 
@@ -255,6 +264,7 @@ export default function AIWritingHistoryPage() {
       queryClient.invalidateQueries({ queryKey: queryKeys.ai.history() });
       toast.success("Deleted successfully");
       setDeletingId(null);
+      if (data?.contents.length === 1) setCurrentPage((page) => Math.max(1, page - 1));
     },
     onError: (mutationError) => {
       toast.error(getApiErrorMessage(mutationError, "Failed to delete generated content"));
@@ -282,16 +292,15 @@ export default function AIWritingHistoryPage() {
     if (!acc[key]) acc[key] = [];
     acc[key].push(content);
     return acc;
-  }, {} as Record<string, GeneratedContent[]>);
+  }, {} as Record<string, AIHistorySummary[]>);
 
   const handleDelete = (id: number) => {
     setDeletingId(id);
     deleteMutation.mutate(id);
   };
 
-  const handleCardClick = (content: GeneratedContent) => {
-    const displayVariantId = content.currentVariantId ??
-      content.history[content.history.length - 1]?.id;
+  const handleCardClick = (content: AIHistorySummary) => {
+    const displayVariantId = content.displayVariantId ?? undefined;
     router.push(getWorkspacePathWithVariant(content.jobId, content.type, displayVariantId));
   };
 
@@ -342,6 +351,11 @@ export default function AIWritingHistoryPage() {
           </div>
         </div>
       ))}
+      {data && data.pagination.total > 0 ? <Pagination
+        currentPage={currentPage} totalPages={Math.max(1, Math.ceil(data.pagination.total / pageSize))}
+        totalCount={data.pagination.total} pageSize={pageSize} itemLabel="items"
+        onPageChange={setCurrentPage} onPageSizeChange={(size) => { setPageSize(size); setCurrentPage(1); }}
+      /> : null}
     </div>
   );
 }

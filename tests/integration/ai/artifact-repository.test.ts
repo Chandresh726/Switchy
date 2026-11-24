@@ -1,3 +1,4 @@
+import { preCanonicalCompanies } from "@test/helpers/migration-schema";
 import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -176,7 +177,7 @@ function insertPreProjectionJob(
   database: ReturnType<typeof harness.createDatabase>["database"],
   matchScore: number
 ) {
-  const company = database.insert(companies).values({
+  const company = database.insert(preCanonicalCompanies).values({
     name: `Legacy ${crypto.randomUUID()}`,
     careersUrl: `https://legacy-${crypto.randomUUID()}.example.com/careers`,
   }).returning().get();

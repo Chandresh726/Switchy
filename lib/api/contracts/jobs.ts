@@ -58,6 +58,7 @@ export const jobsQuerySchema = z
       ])
       .default("matchScore"),
     sortOrder: z.enum(["asc", "desc"]).default("desc"),
+    includeTotal: z.enum(["true", "false"]).optional(),
     offset: z.coerce.number().int().nonnegative().max(1_000_000).default(0),
     limit: z.coerce.number().int().positive().max(100).default(25),
   })
@@ -149,7 +150,7 @@ export const jobSchema = jobSummarySchema.extend({
 
 export const jobsResponseSchema = z.object({
   jobs: z.array(jobSummarySchema),
-  totalCount: z.number().int().nonnegative(),
+  totalCount: z.number().int().nonnegative().nullable(),
   hasMore: z.boolean(),
 });
 

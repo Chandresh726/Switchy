@@ -1,3 +1,4 @@
+import { preCanonicalCompanies } from "@test/helpers/migration-schema";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 
@@ -142,7 +143,7 @@ describe("resume artifact repository", () => {
       institution: "Example University",
       degree: "BS",
     }).run();
-    const company = database.insert(companies).values({
+    const company = database.insert(preCanonicalCompanies).values({
       name: "Acme",
       careersUrl: "https://example.com/careers",
     }).returning().get();
@@ -165,7 +166,7 @@ describe("resume artifact repository", () => {
       skills: database.select().from(skills).all().length,
       experience: database.select().from(experience).all().length,
       education: database.select().from(education).all().length,
-      companies: database.select().from(companies).all().length,
+      companies: database.select({ id: companies.id }).from(companies).all().length,
       jobs: database.select().from(jobs).all().length,
       scrapeSessions: database.select().from(scrapeSessions).all().length,
     };
@@ -186,7 +187,7 @@ describe("resume artifact repository", () => {
       skills: database.select().from(skills).all().length,
       experience: database.select().from(experience).all().length,
       education: database.select().from(education).all().length,
-      companies: database.select().from(companies).all().length,
+      companies: database.select({ id: companies.id }).from(companies).all().length,
       jobs: database.select().from(jobs).all().length,
       scrapeSessions: database.select().from(scrapeSessions).all().length,
     }).toEqual(countsBefore);

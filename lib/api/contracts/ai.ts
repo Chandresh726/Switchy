@@ -104,7 +104,24 @@ const generatedContentSchema = z.object({
   companyLogoUrl: z.string().nullable().optional(),
 });
 
-export const aiHistoryResponseSchema = z.object({ contents: z.array(generatedContentSchema) });
+export const aiHistoryQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(100).default(25),
+  offset: z.coerce.number().int().nonnegative().max(1_000_000).default(0),
+});
+export const aiHistorySummarySchema = generatedContentSchema.pick({
+  id: true, jobId: true, type: true, currentVariantId: true, updatedAt: true,
+  jobTitle: true, companyName: true, companyLogoUrl: true,
+}).extend({
+  preview: z.string().max(80), displayVariantId: z.number().int().positive().nullable(),
+  variantCount: z.number().int().nonnegative(), copiedCount: z.number().int().nonnegative(),
+  discardedCount: z.number().int().nonnegative(),
+  latestRun: z.object({ id: z.string(), provider: z.string(), modelId: z.string() }).nullable(),
+});
+export const aiHistoryResponseSchema = z.object({
+  contents: z.array(aiHistorySummarySchema),
+  pagination: z.object({ total: z.number().int().nonnegative(), limit: z.number().int().positive(), offset: z.number().int().nonnegative(), hasMore: z.boolean() }),
+});
+export type AIHistorySummary = z.infer<typeof aiHistorySummarySchema>;
 export const aiContentEnvelopeSchema = z.object({ exists: z.boolean(), content: generatedContentSchema.nullable() });
 export const aiContentWriteResponseSchema = z.object({ content: generatedContentSchema, runId: z.string().nullable().optional() });
 export const aiStreamDeltaSchema = z.object({ text: z.string() });

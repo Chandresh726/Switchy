@@ -52,7 +52,7 @@ export function migrateOutdatedScraperSources(
   database: BetterSQLite3Database<typeof schema>
 ): void {
   database.transaction((tx) => {
-    const stored = tx.select().from(companies).all();
+    const stored = tx.select({ id: companies.id, careersUrl: companies.careersUrl, platform: companies.platform, isActive: companies.isActive }).from(companies).all();
     const now = new Date();
     for (const migration of SOURCE_MIGRATIONS) {
       const retired = stored.filter((company) =>

@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+import { apiErrorEnvelopeSchema } from "./common";
+import { jobsResponseSchema } from "./jobs";
+
 export const statsQuerySchema = z.object({
   days: z.enum(["7", "30", "90"]).default("7").transform(
     (value) => Number(value) as 7 | 30 | 90
@@ -55,3 +58,11 @@ export const statsResponseSchema = z.object({
 });
 
 export type StatsResponse = z.infer<typeof statsResponseSchema>;
+
+export const dashboardResponseSchema = z.object({
+  stats: statsResponseSchema.nullable(),
+  highMatches: jobsResponseSchema.nullable(),
+  recentJobs: jobsResponseSchema.nullable(),
+  appliedJobs: jobsResponseSchema.nullable(),
+  errors: z.record(z.string(), apiErrorEnvelopeSchema),
+});

@@ -1,0 +1,1 @@
+CREATE INDEX `ai_generation_history_content_created_id_idx` ON `aiGenerationHistory` (`content_id`,`created_at`,`id`);

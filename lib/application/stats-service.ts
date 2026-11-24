@@ -15,13 +15,14 @@ type DashboardStats = Omit<StatsResponse, "lastScan"> & {
 
 export async function getDashboardStats(
   days: 7 | 30 | 90 = 7,
-  now: Date = new Date()
+  now: Date = new Date(),
+  contextInput?: Awaited<ReturnType<typeof getCurrentMatchContext>>
 ): Promise<DashboardStats> {
   const periodStart = new Date(now.getTime() - days * DAY_MS);
   const discoveredInPeriod = and(gte(jobs.discoveredAt, periodStart), lte(jobs.discoveredAt, now));
   const viewedInPeriod = and(gte(jobs.viewedAt, periodStart), lte(jobs.viewedAt, now));
   const appliedInPeriod = and(gte(jobs.appliedAt, periodStart), lte(jobs.appliedAt, now));
-  const currentContext = await getCurrentMatchContext();
+  const currentContext = contextInput === undefined ? await getCurrentMatchContext() : contextInput;
   const preferredMatchResults = matchResults;
   const preferredResultJoin = eq(matchResults.id, buildPreferredMatchResultId(currentContext));
   const effectiveScore = sql<number | null>`coalesce(${preferredMatchResults.score}, ${jobs.matchScore})`;

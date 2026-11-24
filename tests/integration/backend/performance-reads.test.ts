@@ -36,6 +36,18 @@ async function setup() {
 }
 
 describe("optimized resource reads", () => {
+  it("shares match context across dashboard sections and skips preview totals", async () => {
+    await setup();
+    const { getDashboard } = await import("@/lib/application/dashboard-service");
+    const { getCurrentMatchContext } = await import("@/lib/ai/matcher/presentation");
+    const response = await getDashboard({ requestId: "dashboard-test" });
+    expect(response.errors).toEqual({});
+    expect(response.stats?.totalJobs).toBe(3);
+    expect(response.recentJobs?.totalCount).toBeNull();
+    expect(response.recentJobs?.jobs).toHaveLength(1);
+    expect(getCurrentMatchContext).toHaveBeenCalledTimes(1);
+  });
+
   it("returns current status counts, including zero buckets, after a job mutation", async () => {
     await setup();
     const { GET } = await import("@/app/api/jobs/counts/route");

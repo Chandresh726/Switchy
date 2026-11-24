@@ -789,7 +789,9 @@ export const aiGenerationHistory = sqliteTable("aiGenerationHistory", {
   editDistance: integer("edit_distance"),
   editDistanceRatio: real("edit_distance_ratio"),
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
-});
+}, (table) => ({
+  contentCreatedIdIdx: index("ai_generation_history_content_created_id_idx").on(table.contentId, table.createdAt, table.id),
+}));
 
 export const aiGenerationEvents = sqliteTable("ai_generation_events", {
   id: integer("id").primaryKey({ autoIncrement: true }),

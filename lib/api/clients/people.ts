@@ -13,6 +13,7 @@ import {
   peopleImportSessionsResponseSchema,
   peopleListQuerySchema,
   peopleListResponseSchema,
+  peopleSummaryResponseSchema,
   peopleSourceSchema,
   peopleClearResponseSchema,
   peopleOperationResponseSchema,
@@ -86,7 +87,7 @@ export type UnmatchedCompanyPeopleQueryInput = Pick<
   "companyNormalized"
 > & Partial<Omit<UnmatchedCompanyPeopleQuery, "companyNormalized">>;
 
-export const getPeople = (params: PeopleQueryInput = {}): Promise<PeopleResponse> => apiGet(appendQuery("/api/people", serializeQuery(peopleListQuerySchema, params)), peopleListResponseSchema, "Failed to fetch people");
+export const getPeople = (params: PeopleQueryInput = {}, signal?: AbortSignal): Promise<PeopleResponse> => apiGet(appendQuery("/api/people", serializeQuery(peopleListQuerySchema, params)), peopleListResponseSchema, "Failed to fetch people", signal);
 export const createPerson = (body: z.output<typeof manualPersonBodySchema>): Promise<Person> => apiJsonMutation("/api/people", "POST", manualPersonBodySchema, body, personResponseSchema, "Failed to create person");
 export const patchPerson = (id: number, body: z.output<typeof personPatchBodySchema>) => apiJsonMutation(`/api/people/${personPath(id)}`, "PATCH", personPatchBodySchema, body, personResponseSchema, "Failed to update person");
 export const clearPeople = () => apiCommand("/api/maintenance/people/clear", "POST", peopleClearResponseSchema, "Failed to clear people");
@@ -103,3 +104,5 @@ export const importPeople = (formData: FormData): Promise<PeopleImportResponse> 
   peopleImportFormSchema.parse(peopleImportFormInput(formData));
   return apiRequest("/api/people/import", { method: "POST", headers: APP_REQUEST_HEADERS, body: formData }, peopleImportResponseSchema, "Failed to import people");
 };
+
+export const getPeopleSummary = (signal?: AbortSignal) => apiGet("/api/people/summary", peopleSummaryResponseSchema, "Failed to fetch people summary", signal);

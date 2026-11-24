@@ -1,5 +1,7 @@
 "use client";
 
+import { useDebounce } from "@/lib/hooks/use-debounce";
+
 import dynamic from "next/dynamic";
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -27,7 +29,7 @@ import {
   clearPeople,
   getPeople,
   getPeopleImportSessions,
-  getUnmatchedCompanies,
+  getPeopleSummary,
   patchPerson,
   refreshUnmatchedCompanyMappings,
 } from "@/lib/api/clients/people";
@@ -167,6 +169,7 @@ export default function PeoplePage() {
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 250);
   const [companyId, setCompanyId] = useState<string>("");
   const [source, setSource] = useState<PersonSource | "all">("all");
   const [showStarredOnly, setShowStarredOnly] = useState(false);
@@ -205,7 +208,7 @@ export default function PeoplePage() {
         ? "true" as const
         : undefined;
     return {
-      search: search || undefined,
+      search: debouncedSearch || undefined,
       companyId: companyId ? Number(companyId) : undefined,
       source: source === "all" ? undefined : source,
       starred: showStarredOnly ? "true" as const : undefined,
@@ -216,30 +219,18 @@ export default function PeoplePage() {
       sortBy: "lastSeenAt" as const,
       sortOrder: "desc" as const,
     };
-  }, [activityScope, companyId, currentPage, mappingScope, pageSize, search, showStarredOnly, source]);
+  }, [activityScope, companyId, currentPage, mappingScope, pageSize, debouncedSearch, showStarredOnly, source]);
 
   const peopleQuery = useQuery<PeopleResponse>({
     queryKey: queryKeys.people.list(peopleParams),
-    queryFn: async () => {
-      return getPeople(peopleParams);
-    },
+    queryFn: ({ signal }) => getPeople(peopleParams, signal),
   });
 
-  const totalPeopleQuery = useQuery<PeopleResponse>({
-    queryKey: queryKeys.people.list({ active: "all", limit: 1 }),
-    queryFn: async () => {
-      return getPeople({ active: "all", limit: 1 });
-    },
+  const summaryQuery = useQuery({
+    queryKey: ["people", "summary"],
+    queryFn: ({ signal }) => getPeopleSummary(signal),
   });
-
-  const totalPeopleCount = totalPeopleQuery.data?.totalCount || 0;
-
-  const unmatchedSummaryQuery = useQuery({
-    queryKey: queryKeys.people.unmatchedCompanies.list({ summaryOnly: "true" }),
-    queryFn: async () => {
-      return getUnmatchedCompanies({ summaryOnly: "true" });
-    },
-  });
+  const totalPeopleCount = summaryQuery.data?.totalCount ?? 0;
 
   const patchMutation = useMutation({
     mutationFn: async (payload: { id: number; body: Parameters<typeof patchPerson>[1] }) => {
@@ -292,7 +283,7 @@ export default function PeoplePage() {
 
   const companies = companiesQuery.data ?? [];
   const sessions = sessionsQuery.data ?? [];
-  const unmatchedSummary = unmatchedSummaryQuery.data;
+  const unmatchedSummary = summaryQuery.data;
   const people = peopleQuery.data?.people || [];
   const totalCount = peopleQuery.data?.totalCount || 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
@@ -347,15 +338,14 @@ export default function PeoplePage() {
         />
       ) : null}
 
-      {companiesQuery.isError || sessionsQuery.isError || totalPeopleQuery.isError || unmatchedSummaryQuery.isError ? (
+      {companiesQuery.isError || sessionsQuery.isError || summaryQuery.isError ? (
         <ApiErrorState
-          error={companiesQuery.error ?? sessionsQuery.error ?? totalPeopleQuery.error ?? unmatchedSummaryQuery.error}
+          error={companiesQuery.error ?? sessionsQuery.error ?? summaryQuery.error}
           fallbackMessage="Supporting people data could not be loaded."
           onRetry={() => {
             void companiesQuery.refetch();
             void sessionsQuery.refetch();
-            void totalPeopleQuery.refetch();
-            void unmatchedSummaryQuery.refetch();
+            void summaryQuery.refetch();
           }}
         />
       ) : null}

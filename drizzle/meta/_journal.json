@@ -309,6 +309,13 @@
       "when": 1795495078343,
       "tag": "0043_big_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "6",
+      "when": 1795495467777,
+      "tag": "0044_cold_the_enforcers",
+      "breakpoints": true
     }
   ]
 }

@@ -26,7 +26,7 @@ describe("AIWritingHistoryPage", () => {
     });
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url === "/api/ai/history") return historyResponse;
+      if (url.startsWith("/api/ai/history?")) return historyResponse;
       if (url === "/api/ai/usage?days=7&group=writing") {
         return Promise.resolve(Response.json({
           days: 7,
@@ -61,7 +61,7 @@ describe("AIWritingHistoryPage", () => {
     );
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/ai/history", {
+      expect(fetchMock).toHaveBeenCalledWith("/api/ai/history?limit=25&offset=0", {
         method: "GET",
         cache: "no-store",
       });
@@ -72,7 +72,7 @@ describe("AIWritingHistoryPage", () => {
     });
 
     await act(async () => {
-      resolveHistory?.(Response.json({ contents: [] }));
+      resolveHistory?.(Response.json({ contents: [], pagination: { total: 0, limit: 25, offset: 0, hasMore: false } }));
       await historyResponse;
     });
   });
@@ -80,8 +80,8 @@ describe("AIWritingHistoryPage", () => {
   it("shows a streamlined writing card and opens the current variant", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url === "/api/ai/history") {
-        return Response.json({
+      if (url.startsWith("/api/ai/history")) {
+        const fixture = {
           contents: [{
             id: 1,
             jobId: 8,
@@ -161,7 +161,16 @@ describe("AIWritingHistoryPage", () => {
               }],
             }],
           }],
-        });
+        };
+        if (url === "/api/ai/history/1") return Response.json({ exists: true, content: fixture.contents[0] });
+        const content = fixture.contents[0];
+        return Response.json({ contents: [{
+          id: content.id, jobId: content.jobId, type: content.type, currentVariantId: content.currentVariantId,
+          updatedAt: content.updatedAt, jobTitle: content.jobTitle, companyName: content.companyName, companyLogoUrl: null,
+          preview: "Current draft", displayVariantId: 11, variantCount: 2, copiedCount: 1, discardedCount: 0,
+          latestRun: { id: "writing-run-1", provider: "openai", modelId: "gpt-5" },
+        }], pagination: { total: 1, limit: 25, offset: 0, hasMore: false } });
+
       }
       if (url === "/api/ai/usage?days=7&group=writing") {
         return Response.json({
@@ -202,7 +211,9 @@ describe("AIWritingHistoryPage", () => {
     expect(screen.getByText("1 copied")).toBeTruthy();
     expect(screen.getByText("openai · gpt-5")).toBeTruthy();
     expect(screen.queryByText("openai · gpt-5 · 120 tokens")).toBeNull();
-    expect(screen.getByText("AI telemetry · 1 run")).toBeTruthy();
+    expect(screen.queryByText("AI telemetry · 1 run")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Generation details" }));
+    expect(await screen.findByText("AI telemetry · 1 run")).toBeTruthy();
 
     const telemetrySummary = screen.getByText("AI telemetry · 1 run");
     const telemetry = telemetrySummary.closest("details");

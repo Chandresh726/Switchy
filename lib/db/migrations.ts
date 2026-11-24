@@ -286,9 +286,9 @@ function backfillWritingEvents(
 export function migrateLegacyScraperCompanies(
   database: BetterSQLite3Database<typeof databaseSchema>
 ): void {
-  let storedCompanies: Array<typeof companies.$inferSelect>;
+  let storedCompanies: Array<Pick<typeof companies.$inferSelect, "id" | "name" | "careersUrl" | "platform" | "boardToken" | "isActive">>;
   try {
-    storedCompanies = database.select().from(companies).all();
+    storedCompanies = database.select({ id: companies.id, name: companies.name, careersUrl: companies.careersUrl, platform: companies.platform, boardToken: companies.boardToken, isActive: companies.isActive }).from(companies).all();
   } catch (error) {
     if (isMissingTableError(error)) return;
     throw error;
@@ -430,7 +430,7 @@ function normalizeMigrationUrl(value: string): string {
 
 function reusableMigrationMatchesCompany(
   migration: ReusableScraperCompanyMigration,
-  company: typeof companies.$inferSelect
+  company: Pick<typeof companies.$inferSelect, "name" | "careersUrl">
 ): boolean {
   const normalizedName = company.name.trim().toLowerCase();
   if (migration.legacyNames.includes(normalizedName)) return true;
@@ -447,6 +447,9 @@ function toJobviteNutanixExternalId(externalId: string | null): string | null {
 }
 
 function backfillCompanyIdentities(database: BetterSQLite3Database<typeof databaseSchema>): void {
+  // Upgrade tests and restore tooling may deliberately apply an older prefix.
+  const columns = (database as unknown as { $client: Database.Database }).$client.pragma("table_info(companies)") as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === "normalized_careers_url")) return;
   database.transaction((tx) => {
     const changed = tx.select({ id: companies.id, careersUrl: companies.careersUrl, normalized: companies.normalizedCareersUrl })
       .from(companies).all().filter((company) => company.normalized !== normalizeCareersUrl(company.careersUrl));

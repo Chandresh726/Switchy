@@ -75,7 +75,7 @@ describe("JobCard match actions", () => {
     await waitFor(() => expect(requests).toContainEqual({ method: "POST", url: "/api/match" }));
     await waitFor(() => expect(requests).toContainEqual({
       method: "GET",
-      url: "/api/match/sessions/session-42",
+      url: "/api/match/sessions/session-42?summary=true",
     }));
   });
 });

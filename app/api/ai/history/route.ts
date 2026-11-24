@@ -3,16 +3,17 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   clearWritingHistory,
-  getWritingHistoryContents,
+  getWritingHistoryPage,
 } from "@/lib/ai/observability";
 import { assertAppRequest, handleApiError } from "@/lib/api";
+import { aiHistoryQuerySchema } from "@/lib/api/contracts/ai";
 import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
 export async function GET(request: NextRequest) {
   return withApiTiming(async () => {
   try {
     return NextResponse.json(
-      { contents: await getWritingHistoryContents() },
+      await getWritingHistoryPage(aiHistoryQuerySchema.parse(Object.fromEntries(new URL(request.url).searchParams))),
       { headers: NO_STORE_HEADERS }
     );
   } catch (error) {

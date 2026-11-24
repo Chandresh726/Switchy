@@ -26,13 +26,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { isNewJob } from "@/lib/jobs/is-new-job";
 import { formatRelativeTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
-import { getJobs } from "@/lib/api/clients/jobs";
 import { getProfile } from "@/lib/api/clients/profile";
-import { getStats } from "@/lib/api/clients/stats";
+import { APIClientError } from "@/lib/api/errors";
+import { getDashboard } from "@/lib/api/clients/stats";
 import type { JobSummary } from "@/lib/api/contracts/jobs";
 import { queryKeys } from "@/lib/query-keys";
 
-const DASHBOARD_LIST_MAX_ITEMS = 20;
 
 function StatCard({
   title,
@@ -168,68 +167,23 @@ export default function DashboardPage() {
     },
   });
 
-  const statsQuery = useQuery({
-    queryKey: queryKeys.stats.detail(),
-    queryFn: async () => {
-      return getStats();
-    },
+  const dashboardQuery = useQuery({
+    queryKey: [...queryKeys.stats.all, "dashboard"],
+    queryFn: ({ signal }) => getDashboard(signal),
   });
-
+  const section = <T,>(key: string, data: T | null | undefined) => {
+    const error = dashboardQuery.data?.errors[key];
+    return { data, isLoading: dashboardQuery.isLoading, isError: dashboardQuery.isError || Boolean(error),
+      error: error ? new APIClientError(error.error, 500, error.code, undefined, error.requestId) : dashboardQuery.error,
+      refetch: dashboardQuery.refetch };
+  };
+  const statsQuery = section("stats", dashboardQuery.data?.stats);
+  const highMatchQuery = section("highMatches", dashboardQuery.data?.highMatches);
+  const recentJobsQuery = section("recentJobs", dashboardQuery.data?.recentJobs);
+  const appliedJobsQuery = section("appliedJobs", dashboardQuery.data?.appliedJobs);
   const profile = profileQuery.data;
   const stats = statsQuery.data;
   const isInitialLoading = profileQuery.isLoading || statsQuery.isLoading;
-
-  // Top five roles in the good-or-better compatibility bands.
-  const highMatchQuery = useQuery({
-    queryKey: queryKeys.jobs.list({
-      matchBands: ["high", "good"],
-      excludeStatus: ["applied", "archived"],
-      sortBy: "matchScore",
-      sortOrder: "desc",
-      limit: DASHBOARD_LIST_MAX_ITEMS,
-    }),
-    queryFn: async () => {
-      return getJobs({
-        matchBands: ["high", "good"],
-        excludeStatus: ["applied", "archived"],
-        sortBy: "matchScore",
-        sortOrder: "desc",
-        limit: DASHBOARD_LIST_MAX_ITEMS,
-      });
-    },
-  });
-
-  // Recently discovered jobs
-  const recentJobsQuery = useQuery({
-    queryKey: queryKeys.jobs.list({
-      excludeStatus: ["applied", "archived"],
-      sortBy: "discoveredAt",
-      sortOrder: "desc",
-      limit: DASHBOARD_LIST_MAX_ITEMS,
-    }),
-    queryFn: async () => {
-      return getJobs({
-        excludeStatus: ["applied", "archived"],
-        sortBy: "discoveredAt",
-        sortOrder: "desc",
-        limit: DASHBOARD_LIST_MAX_ITEMS,
-      });
-    },
-  });
-
-  // Recently applied jobs
-  const appliedJobsQuery = useQuery({
-    queryKey: queryKeys.jobs.list({
-      status: "applied",
-      sortBy: "discoveredAt",
-      sortOrder: "desc",
-      limit: 5,
-    }),
-    queryFn: async () => {
-      return getJobs({ status: "applied", sortBy: "discoveredAt", sortOrder: "desc", limit: 5 });
-    },
-  });
-
   const highMatchData = highMatchQuery.data;
   const recentJobsData = recentJobsQuery.data;
   const appliedJobsData = appliedJobsQuery.data;

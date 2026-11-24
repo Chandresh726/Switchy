@@ -65,7 +65,7 @@ describe("useQueuedJobMatch", () => {
     await act(async () => result.current.mutation.mutateAsync());
     await waitFor(() => expect(requests).toContainEqual({
       method: "GET",
-      url: "/api/match/sessions/session-42",
+      url: "/api/match/sessions/session-42?summary=true",
     }));
     await waitFor(() => expect(result.current.isMatching).toBe(false));
 

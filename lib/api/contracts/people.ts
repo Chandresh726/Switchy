@@ -203,6 +203,7 @@ const unmatchedSummarySchema = z.object({
   unmatchedPeopleCount: z.number().int().nonnegative(),
   ignoredCompanyCount: z.number().int().nonnegative(),
 });
+export const peopleSummaryResponseSchema = z.object({ totalCount: z.number().int().nonnegative(), summary: unmatchedSummarySchema });
 export const unmatchedCompaniesResponseSchema = z.object({
   summary: unmatchedSummarySchema,
   groups: z.array(z.object({

@@ -1,3 +1,4 @@
+import { preCanonicalCompanies } from "@test/helpers/migration-schema";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 
@@ -8,6 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   clearWritingHistory,
   getWritingHistoryContents,
+  getWritingHistoryPage,
 } from "@/lib/ai/observability/writing-history";
 import {
   persistWritingVariant,
@@ -18,7 +20,6 @@ import {
   aiGenerationEvents,
   aiGenerationHistory,
   aiRuns,
-  companies,
   jobs,
 } from "@/lib/db/schema";
 import { migrateLocalDatabase } from "@/lib/db/migrations";
@@ -58,7 +59,7 @@ function migrationsThrough(maxIndex: number): string {
 }
 
 function insertJob(database: ReturnType<typeof harness.createDatabase>["database"]) {
-  const company = database.insert(companies).values({
+  const company = database.insert(preCanonicalCompanies).values({
     name: "Example",
     careersUrl: "https://example.com/careers",
   }).returning().get();
@@ -123,6 +124,14 @@ describe("AI writing history persistence", () => {
         expect.objectContaining({ action: "copied", source: "copy" }),
       ]));
     const history = await getWritingHistoryContents(database);
+    const page = await getWritingHistoryPage({ limit: 1, offset: 0 }, database);
+    expect(page.pagination).toMatchObject({ total: 1, limit: 1, offset: 0, hasMore: false });
+    expect(page.contents[0]).toMatchObject({ copiedCount: 1, variantCount: variants.length, displayVariantId: variants[0].id });
+    expect(page.contents[0]).not.toHaveProperty("history");
+    expect(page.contents[0]).not.toHaveProperty("content");
+    expect(page.contents[0].preview.length).toBeLessThanOrEqual(80);
+    expect((await getWritingHistoryPage({ limit: 1, offset: 1 }, database)).contents).toEqual([]);
+
     expect(history[0]?.history[0]?.events).toEqual(expect.arrayContaining([
       expect.objectContaining({ action: "selected", source: "generated" }),
       expect.objectContaining({ action: "selected", source: "navigation" }),
@@ -185,7 +194,7 @@ describe("AI writing history persistence", () => {
   it("loads and atomically clears more than one SQLite parameter chunk", async () => {
     const { database } = harness.createDatabase();
     const count = 401;
-    const company = database.insert(companies).values({
+    const company = database.insert(preCanonicalCompanies).values({
       name: "History Scale Test",
       careersUrl: "https://example.com/history-scale",
     }).returning().get();

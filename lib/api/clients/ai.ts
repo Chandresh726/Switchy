@@ -12,6 +12,7 @@ import {
   aiContentEnvelopeSchema,
   aiContentWriteResponseSchema,
   aiHistoryResponseSchema,
+  aiHistoryQuerySchema,
   aiStreamCompleteSchema,
   aiStreamDeltaSchema,
   aiStreamErrorSchema,
@@ -32,7 +33,7 @@ import { APP_REQUEST_HEADERS } from "../request-headers";
 
 const contentPath = (id: number) => serializePathParam(numericIdParamsSchema, { id });
 
-export const getAIHistory = (): Promise<AIHistoryResponse> => apiRequest("/api/ai/history", { method: "GET", cache: "no-store" }, aiHistoryResponseSchema, "Failed to fetch AI history");
+export const getAIHistory = (params: Partial<z.input<typeof aiHistoryQuerySchema>> = {}): Promise<AIHistoryResponse> => apiRequest(appendQuery("/api/ai/history", serializeQuery(aiHistoryQuerySchema, params)), { method: "GET", cache: "no-store" }, aiHistoryResponseSchema, "Failed to fetch AI history");
 export const clearAIHistory = () => apiCommand("/api/ai/history", "DELETE", successSchema, "Failed to clear AI history");
 export const clearAllAIContent = (): Promise<ClearAIContentResponse> => apiCommand("/api/ai/content", "DELETE", clearAiContentResponseSchema, "Failed to clear AI content");
 export const deleteAIContent = (id: number) => apiCommand(`/api/ai/content/${contentPath(id)}`, "DELETE", successSchema, "Failed to delete AI content");
@@ -101,3 +102,5 @@ export async function consumeAIContentStream(
   if (!complete) throw new Error("Generation stream ended before completion");
   return complete;
 }
+
+export const getAIHistoryDetail = (id: number) => apiRequest(`/api/ai/history/${contentPath(id)}`, { method: "GET", cache: "no-store" }, aiContentEnvelopeSchema, "Failed to fetch writing details");

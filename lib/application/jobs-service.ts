@@ -171,7 +171,9 @@ async function getStoredJobIntelligence(jobId: number, matchResultId: string | n
   };
 }
 
-export async function listJobs(query: JobsQuery) {
+export async function listJobs(query: JobsQuery, contextInput?: Awaited<ReturnType<typeof getCurrentMatchContext>>) {
+  const includeTotal = query.includeTotal !== "false";
+  const fetchLimit = query.limit + (includeTotal ? 0 : 1);
   const conditions = baseConditions(query);
   if (query.scrapeSessionId) {
     conditions.push(exists(
@@ -192,15 +194,15 @@ export async function listJobs(query: JobsQuery) {
     || query.maxScore !== undefined || requestedBands.length > 0;
   const baseWhere = conditions.length > 0 ? and(...conditions) : undefined;
   if (!scoreAware) {
-    const select = db.select({ ...JOB_SUMMARY_SELECTION, total: query.search ? sql<number>`count(*) over ()` : sql<number>`0` }).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id)).where(baseWhere);
-    const rows = await select.orderBy(...orderByFor(query)).limit(query.limit).offset(query.offset);
-    const totalCount = query.search && rows.length > 0
+    const select = db.select({ ...JOB_SUMMARY_SELECTION, total: query.search && includeTotal ? sql<number>`count(*) over ()` : sql<number>`0` }).from(jobs).innerJoin(companies, eq(jobs.companyId, companies.id)).where(baseWhere);
+    const rows = await select.orderBy(...orderByFor(query)).limit(fetchLimit).offset(query.offset);
+    const totalCount = !includeTotal ? null : query.search && rows.length > 0
       ? rows[0].total
       : (await db.select({ value: count() }).from(jobs).where(baseWhere))[0].value;
-    return { jobs: await presentRows(rows), totalCount, hasMore: query.offset + query.limit < totalCount };
+    return { jobs: await presentRows(rows.slice(0, query.limit), contextInput), totalCount, hasMore: totalCount === null ? rows.length > query.limit : query.offset + query.limit < totalCount };
   }
 
-  const currentContext = await getCurrentMatchContext();
+  const currentContext = contextInput === undefined ? await getCurrentMatchContext() : contextInput;
   const preferredMatchResults = matchResults;
   const preferredResultJoin = eq(matchResults.id, buildPreferredMatchResultId(currentContext));
   const effectiveScore = sql<number | null>`coalesce(${preferredMatchResults.score}, ${jobs.matchScore})`;
@@ -219,19 +221,19 @@ export async function listJobs(query: JobsQuery) {
     );
   }
   const where = scoreConditions.length > 0 ? and(...scoreConditions) : undefined;
-  const rows = await db.select({ ...JOB_SUMMARY_SELECTION, match: MATCH_SUMMARY_SELECTION, total: query.search ? sql<number>`count(*) over ()` : sql<number>`0` }).from(jobs)
+  const rows = await db.select({ ...JOB_SUMMARY_SELECTION, match: MATCH_SUMMARY_SELECTION, total: query.search && includeTotal ? sql<number>`count(*) over ()` : sql<number>`0` }).from(jobs)
     .innerJoin(companies, eq(jobs.companyId, companies.id))
     .leftJoin(preferredMatchResults, preferredResultJoin)
     .where(where)
     .orderBy(...orderByFor(query, effectiveScore))
-    .limit(query.limit)
+    .limit(fetchLimit)
     .offset(query.offset);
   const scoreFiltered = query.minScore !== undefined || query.maxScore !== undefined || requestedBands.length > 0;
-  const totalCount = query.search && rows.length > 0 ? rows[0].total : (scoreFiltered
+  const totalCount = !includeTotal ? null : query.search && rows.length > 0 ? rows[0].total : (scoreFiltered
     ? await db.select({ value: count() }).from(jobs)
       .leftJoin(preferredMatchResults, preferredResultJoin).where(where)
     : await db.select({ value: count() }).from(jobs).where(baseWhere))[0].value;
-  return { jobs: await presentRows(rows, currentContext, new Map(rows.map(({ job, match }) => [job.id, presentMatchSummary({ ...job, description: null }, match, currentContext)]))), totalCount, hasMore: query.offset + query.limit < totalCount };
+  return { jobs: await presentRows(rows.slice(0, query.limit), currentContext, new Map(rows.map(({ job, match }) => [job.id, presentMatchSummary({ ...job, description: null }, match, currentContext)]))), totalCount, hasMore: totalCount === null ? rows.length > query.limit : query.offset + query.limit < totalCount };
 }
 
 export async function getJob(id: number) {

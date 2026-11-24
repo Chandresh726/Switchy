@@ -6,6 +6,7 @@ import {
   eq,
   inArray,
   isNotNull,
+  isNull,
   ne,
   sql,
 } from "drizzle-orm";
@@ -499,4 +500,9 @@ export async function importPeople(formData: FormData) {
     mapping = apolloMappingSchema.parse(JSON.parse(mappingRaw)) as ApolloColumnMapping;
   }
   return importPeopleCsv({ source, content: await file.text(), fileName: file.name, mapping, importMode });
+}
+
+export async function getPeopleSummary() {
+  const [{ totalCount }] = await db.select({ totalCount: count() }).from(people).where(isNull(people.archivedAt));
+  return { totalCount, summary: await getUnmatchedCompaniesSummary() };
 }
