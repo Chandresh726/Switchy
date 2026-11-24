@@ -114,6 +114,12 @@ describe("authoritative match presentation queries", () => {
       matchStale: true,
     });
 
+    // List summaries must not read or parse detail evidence.
+    const summary = await getMatchPresentations([job], {
+      candidateFingerprint: "a".repeat(64), scoringPolicyVersion: "policy-current",
+    }, { summaryOnly: true });
+    expect(summary.get(job.id)).toMatchObject({ matchResultId: "current-result", matchScore: 86, matchReasons: [], matchBreakdown: null });
+
     const freshOnly = await getMatchPresentations(
       [job],
       {

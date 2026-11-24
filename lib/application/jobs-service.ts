@@ -19,9 +19,12 @@ import type { z } from "zod";
 import { JobAnalysisEvidenceSchema, MatchSourceSchema } from "@/lib/ai/artifacts";
 import {
   getCurrentMatchContext,
+  MATCH_SUMMARY_SELECTION,
+  presentMatchSummary,
+  type MatchPresentation,
   getMatchPresentations,
 } from "@/lib/ai/matcher/presentation";
-import { buildPreferredMatchResultsQuery } from "@/lib/ai/matcher/presentation-query";
+import { buildPreferredMatchResultId } from "@/lib/ai/matcher/presentation-query";
 import { getUnmatchedJobCount, getUnmatchedJobIds } from "@/lib/ai/matcher";
 import { completeEmptyMatchSession, getAIWorkSession, queueMatchWork } from "@/lib/ai/work-items";
 import { NotFoundError } from "@/lib/errors";
@@ -103,9 +106,9 @@ function orderByFor(query: JobsQuery, scoreExpression: typeof jobs.matchScore | 
   }
 }
 
-async function presentRows(rows: Array<{ job: Omit<Parameters<typeof getMatchPresentations>[0][number], "description"> & Record<string, unknown>; company: { id: number; name: string; logoUrl: string | null; platform: string | null } }>, context?: Awaited<ReturnType<typeof getCurrentMatchContext>>) {
+async function presentRows(rows: Array<{ job: Omit<Parameters<typeof getMatchPresentations>[0][number], "description"> & Record<string, unknown>; company: { id: number; name: string; logoUrl: string | null; platform: string | null } }>, context?: Awaited<ReturnType<typeof getCurrentMatchContext>>, preloaded?: Map<number, MatchPresentation>) {
   const matchableJobs = rows.map(({ job }) => ({ ...job, description: null }));
-  const presentations = await getMatchPresentations(matchableJobs, context);
+  const presentations = preloaded ?? await getMatchPresentations(matchableJobs, context, { summaryOnly: true });
   return rows.map(({ job, company }) => {
     const presentation = presentations.get(job.id);
     if (!presentation) throw new Error(`Missing match presentation for job ${job.id}`);
@@ -198,11 +201,8 @@ export async function listJobs(query: JobsQuery) {
   }
 
   const currentContext = await getCurrentMatchContext();
-  const preferredMatchResults = buildPreferredMatchResultsQuery(currentContext);
-  const preferredResultJoin = and(
-    eq(preferredMatchResults.jobId, jobs.id),
-    eq(preferredMatchResults.presentationRank, 1)
-  );
+  const preferredMatchResults = matchResults;
+  const preferredResultJoin = eq(matchResults.id, buildPreferredMatchResultId(currentContext));
   const effectiveScore = sql<number | null>`coalesce(${preferredMatchResults.score}, ${jobs.matchScore})`;
   const scoreConditions = [...conditions];
   if (query.minScore !== undefined) scoreConditions.push(gte(effectiveScore, query.minScore));
@@ -219,7 +219,7 @@ export async function listJobs(query: JobsQuery) {
     );
   }
   const where = scoreConditions.length > 0 ? and(...scoreConditions) : undefined;
-  const rows = await db.select({ ...JOB_SUMMARY_SELECTION, total: query.search ? sql<number>`count(*) over ()` : sql<number>`0` }).from(jobs)
+  const rows = await db.select({ ...JOB_SUMMARY_SELECTION, match: MATCH_SUMMARY_SELECTION, total: query.search ? sql<number>`count(*) over ()` : sql<number>`0` }).from(jobs)
     .innerJoin(companies, eq(jobs.companyId, companies.id))
     .leftJoin(preferredMatchResults, preferredResultJoin)
     .where(where)
@@ -231,7 +231,7 @@ export async function listJobs(query: JobsQuery) {
     ? await db.select({ value: count() }).from(jobs)
       .leftJoin(preferredMatchResults, preferredResultJoin).where(where)
     : await db.select({ value: count() }).from(jobs).where(baseWhere))[0].value;
-  return { jobs: await presentRows(rows, currentContext), totalCount, hasMore: query.offset + query.limit < totalCount };
+  return { jobs: await presentRows(rows, currentContext, new Map(rows.map(({ job, match }) => [job.id, presentMatchSummary({ ...job, description: null }, match, currentContext)]))), totalCount, hasMore: query.offset + query.limit < totalCount };
 }
 
 export async function getJob(id: number) {

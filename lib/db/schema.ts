@@ -650,7 +650,8 @@ export const matchResults = sqliteTable("match_results", {
     table.jobFingerprint,
     table.scoringPolicyVersion
   ),
-  jobCreatedIdx: index("match_results_job_created_idx").on(table.jobId, table.createdAt),
+  jobCreatedIdx: index("match_results_job_created_idx").on(table.jobId, table.createdAt, table.id),
+  presentationIdx: index("match_results_presentation_idx").on(table.jobId, table.candidateFingerprint, table.isStale, table.createdAt, table.id),
   freshnessIdx: index("match_results_freshness_idx").on(
     table.jobId,
     table.candidateFingerprint,

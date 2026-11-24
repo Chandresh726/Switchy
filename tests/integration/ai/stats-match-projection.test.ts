@@ -16,7 +16,8 @@ describe("dashboard match statistics", () => {
   it("returns contract-valid empty statistics for explicit 30 and 90 day periods", async () => {
     const { database } = harness.createDatabase();
     vi.doMock("@/lib/db", () => ({ db: database }));
-    vi.doMock("@/lib/ai/matcher/presentation", () => ({
+    vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
+    ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue(null),
     }));
     const { GET } = await import("@/app/api/stats/route");
@@ -42,7 +43,8 @@ describe("dashboard match statistics", () => {
   it("counts explicit legacy matches when a current matcher context exists", async () => {
     const { database } = harness.createDatabase();
     vi.doMock("@/lib/db", () => ({ db: database }));
-    vi.doMock("@/lib/ai/matcher/presentation", () => ({
+    vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
+    ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue({
         candidateFingerprint: "a".repeat(64),
         scoringPolicyVersion: "current-policy",
@@ -78,7 +80,8 @@ describe("dashboard match statistics", () => {
   it("reports current status counts and bounded recent activity without changing legacy counters", async () => {
     const { database } = harness.createDatabase();
     vi.doMock("@/lib/db", () => ({ db: database }));
-    vi.doMock("@/lib/ai/matcher/presentation", () => ({
+    vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
+    ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue(null),
     }));
     const company = database.insert(companies).values({
@@ -125,7 +128,8 @@ describe("dashboard match statistics", () => {
     const { database } = harness.createDatabase();
     const candidateFingerprint = "a".repeat(64);
     vi.doMock("@/lib/db", () => ({ db: database }));
-    vi.doMock("@/lib/ai/matcher/presentation", () => ({
+    vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
+    ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue({
         candidateFingerprint,
         scoringPolicyVersion: "current-policy",
@@ -168,7 +172,8 @@ describe("dashboard match statistics", () => {
   it("keeps prior-profile match scores in dashboard totals", async () => {
     const { database } = harness.createDatabase();
     vi.doMock("@/lib/db", () => ({ db: database }));
-    vi.doMock("@/lib/ai/matcher/presentation", () => ({
+    vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
+    ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue({
         candidateFingerprint: "b".repeat(64),
         scoringPolicyVersion: "current-policy",

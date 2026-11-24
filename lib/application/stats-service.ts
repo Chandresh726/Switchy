@@ -1,10 +1,10 @@
 import { and, count, desc, eq, gte, lte, sql } from "drizzle-orm";
 
 import { getCurrentMatchContext } from "@/lib/ai/matcher/presentation";
-import { buildPreferredMatchResultsQuery } from "@/lib/ai/matcher/presentation-query";
+import { buildPreferredMatchResultId } from "@/lib/ai/matcher/presentation-query";
 import type { StatsResponse } from "@/lib/api/contracts/stats";
 import { db } from "@/lib/db";
-import { companies, jobs, people, scrapeSessions } from "@/lib/db/schema";
+import { companies, jobs, matchResults, people, scrapeSessions } from "@/lib/db/schema";
 import { getUnmatchedCompaniesSummary } from "@/lib/people/sync/unmatched";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -22,11 +22,8 @@ export async function getDashboardStats(
   const viewedInPeriod = and(gte(jobs.viewedAt, periodStart), lte(jobs.viewedAt, now));
   const appliedInPeriod = and(gte(jobs.appliedAt, periodStart), lte(jobs.appliedAt, now));
   const currentContext = await getCurrentMatchContext();
-  const preferredMatchResults = buildPreferredMatchResultsQuery(currentContext);
-  const preferredResultJoin = and(
-    eq(preferredMatchResults.jobId, jobs.id),
-    eq(preferredMatchResults.presentationRank, 1)
-  );
+  const preferredMatchResults = matchResults;
+  const preferredResultJoin = eq(matchResults.id, buildPreferredMatchResultId(currentContext));
   const effectiveScore = sql<number | null>`coalesce(${preferredMatchResults.score}, ${jobs.matchScore})`;
   const [
     jobStatsResult,

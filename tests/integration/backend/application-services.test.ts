@@ -32,7 +32,8 @@ describe("backend application services", () => {
   it("owns job status transitions and missing-resource behavior", async () => {
     const { database } = harness.createDatabase();
     vi.doMock("@/lib/db", () => ({ db: database }));
-    vi.doMock("@/lib/ai/matcher/presentation", () => ({
+    vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
+    ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue(null),
       getMatchPresentations: vi.fn().mockImplementation(async (rows: Array<{ id: number; matchScore: number | null }>) =>
         new Map(rows.map((row) => [row.id, {
@@ -73,7 +74,8 @@ describe("backend application services", () => {
   it("keeps 5,000-job list reads bounded, stable, and free of descriptions", async () => {
     const { database } = harness.createDatabase();
     vi.doMock("@/lib/db", () => ({ db: database }));
-    vi.doMock("@/lib/ai/matcher/presentation", () => ({
+    vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
+    ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue(null),
       getMatchPresentations: vi.fn().mockImplementation(async (rows: Array<{ id: number; matchScore: number | null }>) =>
         new Map(rows.map((row) => [row.id, {

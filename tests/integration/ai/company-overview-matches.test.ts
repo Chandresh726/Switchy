@@ -17,7 +17,8 @@ describe("company overview match projections", () => {
   it("returns authoritative top matches beyond the newest 50 display jobs", async () => {
     const { database } = harness.createDatabase();
     vi.doMock("@/lib/db", () => ({ db: database }));
-    vi.doMock("@/lib/ai/matcher/presentation", () => ({
+    vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
+    ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue(null),
       getMatchPresentations: vi.fn().mockImplementation(async (
         jobRows: Array<{ id: number; matchScore: number | null }>

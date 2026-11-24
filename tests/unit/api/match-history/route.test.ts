@@ -13,7 +13,8 @@ vi.mock("@/lib/db", () => ({
   db: { select: mocks.select },
 }));
 
-vi.mock("@/lib/ai/matcher/presentation", () => ({
+vi.mock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
+    ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
   getMatchPresentations: mocks.getMatchPresentations,
 }));
 

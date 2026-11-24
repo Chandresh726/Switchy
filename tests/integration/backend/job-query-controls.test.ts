@@ -27,7 +27,8 @@ function mockJobDependencies(
   context: { candidateFingerprint: string; scoringPolicyVersion: string } | null = null
 ) {
   vi.doMock("@/lib/db", () => ({ db: database }));
-  vi.doMock("@/lib/ai/matcher/presentation", () => ({
+  vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
+    ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
     getCurrentMatchContext: vi.fn().mockResolvedValue(context),
     getMatchPresentations: vi.fn().mockImplementation(async (rows: Array<{ id: number; matchScore: number | null }>) => (
       new Map(rows.map((row) => [row.id, { ...EMPTY_PRESENTATION, matchScore: row.matchScore }]))

@@ -22,7 +22,8 @@ describe("score-aware jobs pagination", () => {
       scoringPolicyVersion: "policy-current",
     };
     vi.doMock("@/lib/db", () => ({ db: database }));
-    vi.doMock("@/lib/ai/matcher/presentation", () => ({
+    vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
+    ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue(context),
       getMatchPresentations: vi.fn().mockImplementation(async (
         jobRows: Array<{ id: number }>
@@ -89,7 +90,8 @@ describe("score-aware jobs pagination", () => {
       scoringPolicyVersion: "policy-current",
     };
     vi.doMock("@/lib/db", () => ({ db: database }));
-    vi.doMock("@/lib/ai/matcher/presentation", () => ({
+    vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
+    ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue(context),
       getMatchPresentations: vi.fn().mockImplementation(async (
         jobRows: Array<{ id: number; matchScore: number | null }>
@@ -266,7 +268,8 @@ describe("score-aware jobs pagination", () => {
   it("sorts and filters legacy scores when current match context is unavailable", async () => {
     const { database } = harness.createDatabase();
     vi.doMock("@/lib/db", () => ({ db: database }));
-    vi.doMock("@/lib/ai/matcher/presentation", () => ({
+    vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
+    ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue(null),
       getMatchPresentations: vi.fn().mockImplementation(async (
         jobRows: Array<{ id: number; matchScore: number | null }>

@@ -213,7 +213,8 @@ describe("scheduled match notifications", () => {
     const scheduled = await seedMatchedScrape(database, "scheduler", "03");
     await seedMatchedScrape(database, "scheduler", "04");
     vi.doMock("@/lib/db", () => ({ db: database }));
-    vi.doMock("@/lib/ai/matcher/presentation", () => ({
+    vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
+    ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue(null),
       getMatchPresentations: vi.fn().mockImplementation(async (rows: Array<{ id: number; matchScore: number | null }>) =>
         new Map(rows.map((row) => [row.id, {

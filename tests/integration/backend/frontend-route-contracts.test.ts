@@ -56,7 +56,8 @@ describe("actual frontend route contract compatibility", () => {
   it("serializes real job list, detail, and mutation service output", async () => {
     const { database } = harness.createDatabase();
     vi.doMock("@/lib/db", () => ({ db: database }));
-    vi.doMock("@/lib/ai/matcher/presentation", () => ({
+    vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
+    ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue(null),
       getMatchPresentations: vi.fn().mockImplementation(
         async (rows: Array<{ id: number; matchScore: number | null }>) =>

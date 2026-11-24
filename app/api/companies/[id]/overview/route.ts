@@ -1,3 +1,4 @@
+import { withApiTiming } from "@/lib/api/timing";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
@@ -6,6 +7,7 @@ import { companyIdParamsSchema, companyOverviewQuerySchema } from "@/lib/api/con
 import { getCompanyOverview } from "@/lib/application/companies-service";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  return withApiTiming(async () => {
   try {
     const { id } = companyIdParamsSchema.parse(await params);
     const { section } = companyOverviewQuerySchema.parse(Object.fromEntries(new URL(request.url).searchParams));
@@ -13,4 +15,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   } catch (error) {
     return handleApiError(error, { request, fallbackMessage: "Failed to fetch company overview", fallbackCode: "company_overview_fetch_failed" });
   }
+
+  });
 }

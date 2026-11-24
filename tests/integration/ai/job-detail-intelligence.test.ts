@@ -28,7 +28,8 @@ function mockJobDependencies(
   presentation: MatchPresentation
 ) {
   vi.doMock("@/lib/db", () => ({ db: database }));
-  vi.doMock("@/lib/ai/matcher/presentation", () => ({
+  vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
+    ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
     getCurrentMatchContext: vi.fn().mockResolvedValue(null),
     getMatchPresentations: vi.fn().mockImplementation(async (rows: Array<{ id: number }>) => (
       new Map(rows.map((row) => [row.id, presentation]))

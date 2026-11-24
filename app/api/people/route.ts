@@ -1,3 +1,4 @@
+import { withApiTiming } from "@/lib/api/timing";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
@@ -6,12 +7,15 @@ import { manualPersonBodySchema, peopleListQuerySchema } from "@/lib/api/contrac
 import { createPerson, listPeople } from "@/lib/application/people-service";
 
 export async function GET(request: NextRequest) {
+  return withApiTiming(async () => {
   try {
     const query = peopleListQuerySchema.parse(Object.fromEntries(request.nextUrl.searchParams));
     return NextResponse.json(await listPeople(query));
   } catch (error) {
     return handleApiError(error, { request, fallbackMessage: "Failed to fetch people", fallbackCode: "people_fetch_failed" });
   }
+
+  });
 }
 
 export async function POST(request: NextRequest) {

@@ -15,11 +15,11 @@ import {
   getCurrentMatchContext,
   getMatchPresentations,
 } from "@/lib/ai/matcher/presentation";
-import { buildPreferredMatchResultsQuery } from "@/lib/ai/matcher/presentation-query";
+import { buildPreferredMatchResultId } from "@/lib/ai/matcher/presentation-query";
 import { isCompanyScrapeSupported } from "@/lib/companies/scrape-support";
 import { normalizeCareersUrl } from "@/lib/companies/normalization";
 import { db } from "@/lib/db";
-import { companies, jobs, matchSessions, people, scrapingLogs } from "@/lib/db/schema";
+import { companies, jobs, matchResults, matchSessions, people, scrapingLogs } from "@/lib/db/schema";
 import { completeEmptyMatchSession, fetchCompanyJobIds, queueMatchWork } from "@/lib/ai/work-items";
 import { refreshUnmatchedCompanyMappings } from "@/lib/people/sync";
 import { isRecruiterPosition } from "@/lib/people/position";
@@ -314,11 +314,8 @@ export async function getCompanyOverview(id: number, now = new Date(), section: 
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1_000);
   const discoveredLast7Days = and(gte(jobs.discoveredAt, sevenDaysAgo), lte(jobs.discoveredAt, now));
   const currentContext = await getCurrentMatchContext();
-  const preferredMatchResults = buildPreferredMatchResultsQuery(currentContext, id);
-  const preferredResultJoin = and(
-    eq(preferredMatchResults.jobId, jobs.id),
-    eq(preferredMatchResults.presentationRank, 1)
-  );
+  const preferredMatchResults = matchResults;
+  const preferredResultJoin = eq(matchResults.id, buildPreferredMatchResultId(currentContext));
   const effectiveScore = sql<number | null>`coalesce(${preferredMatchResults.score}, ${jobs.matchScore})`;
   const promotionCountQuery = db.select({
     value: sql<number>`coalesce(sum(case when ${effectiveScore} >= 70 then 1 else 0 end), 0)`,
@@ -376,10 +373,8 @@ export async function getCompanyOverview(id: number, now = new Date(), section: 
     promotionCountPromise,
     includeJobs ? topMatchJobsPromise : Promise.resolve([]),
   ]);
-  const [presentations, topPresentations] = await Promise.all([
-    getMatchPresentations(companyJobs.map((job) => ({ ...job, description: null })), currentContext),
-    getMatchPresentations(topMatchJobs.map((job) => ({ ...job, description: null })), currentContext),
-  ]);
+  const presentationJobs = [...new Map([...companyJobs, ...topMatchJobs].map((job) => [job.id, job])).values()];
+  const presentations = await getMatchPresentations(presentationJobs.map((job) => ({ ...job, description: null })), currentContext, { summaryOnly: true });
   const present = (rows: typeof companyJobs, values: Awaited<ReturnType<typeof getMatchPresentations>>) => rows.map((job) => {
     const presentation = values.get(job.id);
     if (!presentation) throw new Error(`Missing match presentation for job ${job.id}`);
@@ -411,7 +406,7 @@ export async function getCompanyOverview(id: number, now = new Date(), section: 
           .where(eq(jobs.companyId, id)).orderBy(desc(jobs.discoveredAt), desc(jobs.id)).limit(1))[0]?.discoveredAt ?? null,
     },
     jobs: present(companyJobs, presentations),
-    topMatches: present(topMatchJobs, topPresentations),
+    topMatches: present(topMatchJobs, presentations),
     people: companyPeople.map((person) => ({
       ...person,
       isRecruiter: isRecruiterPosition(person.position),
