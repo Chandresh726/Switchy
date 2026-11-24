@@ -36,21 +36,7 @@ const INACTIVE_JOB_STATUSES: Array<"rejected" | "archived"> = [
   "archived",
 ];
 
-type MatchableJob = Pick<
-  typeof jobs.$inferSelect,
-  | "id"
-  | "title"
-  | "description"
-  | "location"
-  | "locationType"
-  | "seniorityLevel"
-  | "department"
-  | "employmentType"
-  | "salary"
-  | "matchScore"
-  | "matchReasons"
-  | "matchedSkills"
->;
+type MatchableJob = { id: number };
 
 type PresentationMatchRow = Pick<
   typeof matchResults.$inferSelect,
@@ -113,36 +99,6 @@ const EMPTY_MATCH_PRESENTATION: MatchPresentation = {
   scoringPolicyVersion: null,
 };
 
-function parseLegacyStringArray(value: string | null): string[] {
-  if (!value) return [];
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === "string")
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function buildLegacyPresentation(job: MatchableJob): MatchPresentation | null {
-  if (job.matchScore === null) return null;
-  return {
-    matchScore: job.matchScore,
-    matchReasons: parseLegacyStringArray(job.matchReasons),
-    matchedSkills: parseLegacyStringArray(job.matchedSkills),
-    matchResultId: null,
-    matchBreakdown: null,
-    matchStale: false,
-    matchLegacy: true,
-    matchSummary: "",
-    matchReasoning: [],
-    matchRunId: null,
-    matchPolicyVersion: null,
-    scoringPolicyVersion: "legacy",
-  };
-}
-
 async function resolveActiveProviderId(configuredProviderId?: string): Promise<string | null> {
   if (configuredProviderId) {
     const rows = await db.select({ id: aiProviders.id }).from(aiProviders).where(and(
@@ -183,37 +139,25 @@ export async function getCurrentMatchContext(): Promise<CurrentMatchContext | nu
   };
 }
 
-function parseMatchRow(row: PresentationMatchRow, summaryOnly = false): {
-  presentation: MatchPresentation;
-  candidateFingerprint: string;
-  jobFingerprint: string;
-  isStale: boolean;
-} {
+function parseMatchRow(row: PresentationMatchRow, summaryOnly = false): MatchPresentation {
   const evidence: MatchEvidence = summaryOnly ? { summary: "", reasoning: [], matchedSkills: [] } : MatchEvidenceSchema.parse(JSON.parse(row.evidenceJson));
-  const breakdown = summaryOnly ? null : MatchBreakdownSchema.parse(JSON.parse(row.breakdownJson));
   return {
-    presentation: {
-      matchScore: row.score,
-      matchReasons: evidence.reasoning.map((point) => point.text),
-      matchedSkills: evidence.matchedSkills,
-      matchResultId: row.id,
-      matchBreakdown: breakdown,
-      matchStale: false,
-      matchLegacy: row.source === "legacy",
-      matchSummary: evidence.summary,
-      matchReasoning: evidence.reasoning,
-      matchRunId: row.matchRunId ?? null,
-      matchPolicyVersion: row.matchPolicyVersion ?? row.scoringPolicyVersion,
-      scoringPolicyVersion: row.scoringPolicyVersion,
-    },
-    candidateFingerprint: row.candidateFingerprint,
-    jobFingerprint: row.jobFingerprint,
-    isStale: row.isStale,
+    ...EMPTY_MATCH_PRESENTATION,
+    matchScore: row.score,
+    matchReasons: evidence.reasoning.map((point) => point.text),
+    matchedSkills: evidence.matchedSkills,
+    matchResultId: row.id,
+    matchBreakdown: summaryOnly || row.source === "legacy" ? null : MatchBreakdownSchema.parse(JSON.parse(row.breakdownJson)),
+    matchLegacy: row.source === "legacy",
+    matchSummary: evidence.summary,
+    matchReasoning: evidence.reasoning,
+    matchRunId: row.matchRunId ?? null,
+    matchPolicyVersion: row.matchPolicyVersion ?? row.scoringPolicyVersion,
+    scoringPolicyVersion: row.scoringPolicyVersion,
   };
 }
 
 export function selectMatchPresentation(
-  job: MatchableJob,
   rowsInput: PresentationMatchRow[],
   context: CurrentMatchContext | null,
   summaryOnly = false
@@ -221,34 +165,10 @@ export function selectMatchPresentation(
   const rows = [...rowsInput].sort(
     (left, right) => right.createdAt.getTime() - left.createdAt.getTime() || right.id.localeCompare(left.id)
   );
-  const latest = rows[0] ? parseMatchRow(rows[0], summaryOnly) : null;
-  const freshRow = context
-    ? rows.find((row) =>
-        !row.isStale &&
-        row.candidateFingerprint === context.candidateFingerprint
-      )
-    : undefined;
-
-  if (freshRow) return parseMatchRow(freshRow, summaryOnly).presentation;
-  if (latest?.presentation.matchLegacy) {
-    return {
-      ...latest.presentation,
-      matchBreakdown: null,
-      matchStale: false,
-    };
-  }
-  const legacy = buildLegacyPresentation(job);
-  if (legacy) return legacy;
-  if (latest) {
-    return {
-      ...latest.presentation,
-      matchStale: true,
-    };
-  }
-  return {
-    ...EMPTY_MATCH_PRESENTATION,
-    scoringPolicyVersion: context?.scoringPolicyVersion ?? null,
-  };
+  const fresh = context ? rows.find((row) => !row.isStale && row.candidateFingerprint === context.candidateFingerprint) : undefined;
+  const selected = fresh ?? rows[0];
+  if (!selected) return { ...EMPTY_MATCH_PRESENTATION, scoringPolicyVersion: context?.scoringPolicyVersion ?? null };
+  return { ...parseMatchRow(selected, summaryOnly), matchStale: !fresh && selected.source !== "legacy" };
 }
 
 export const MATCH_SUMMARY_SELECTION = {
@@ -266,11 +186,10 @@ export const MATCH_SUMMARY_SELECTION = {
 };
 
 export function presentMatchSummary(
-  job: MatchableJob,
   row: Pick<PresentationMatchRow, keyof typeof MATCH_SUMMARY_SELECTION> | null,
   context: CurrentMatchContext | null
 ): MatchPresentation {
-  return selectMatchPresentation(job, row ? [{ ...row, evidenceJson: "", breakdownJson: "" }] : [], context, true);
+  return selectMatchPresentation(row ? [{ ...row, evidenceJson: "", breakdownJson: "" }] : [], context, true);
 }
 
 export async function getMatchPresentations(
@@ -301,7 +220,7 @@ export async function getMatchPresentations(
     }
   }
   return new Map(jobRows.map((job) => [job.id,
-    selectMatchPresentation(job, rowsByJobId.get(job.id) ?? [], context, options.summaryOnly),
+    selectMatchPresentation(rowsByJobId.get(job.id) ?? [], context, options.summaryOnly),
   ]));
 }
 
@@ -315,7 +234,6 @@ export async function getFreshUnmatchedJobIds(
   if (!context) {
     return (await db.select({ id: jobs.id }).from(jobs)
       .where(and(
-        isNull(jobs.matchScore),
         notInArray(jobs.status, INACTIVE_JOB_STATUSES),
         filter.discoveredSince ? gte(jobs.discoveredAt, filter.discoveredSince) : undefined
       ))).map((job) => job.id);
@@ -329,7 +247,6 @@ export async function getFreshUnmatchedJobIds(
     .leftJoin(matchResults, currentResultJoin)
     .where(and(
       isNull(matchResults.id),
-      isNull(jobs.matchScore),
       notInArray(jobs.status, INACTIVE_JOB_STATUSES),
       filter.discoveredSince ? gte(jobs.discoveredAt, filter.discoveredSince) : undefined
     ));
@@ -345,20 +262,7 @@ export async function getMatchPresentationsForJobIds(
 
 async function getMatchableJobsByIds(jobIds?: number[]): Promise<MatchableJob[]> {
   if (jobIds && jobIds.length === 0) return [];
-  const query = db.select({
-    id: jobs.id,
-    title: jobs.title,
-    description: jobs.description,
-    location: jobs.location,
-    locationType: jobs.locationType,
-    seniorityLevel: jobs.seniorityLevel,
-    department: jobs.department,
-    employmentType: jobs.employmentType,
-    salary: jobs.salary,
-    matchScore: jobs.matchScore,
-    matchReasons: jobs.matchReasons,
-    matchedSkills: jobs.matchedSkills,
-  }).from(jobs);
+  const query = db.select({ id: jobs.id }).from(jobs);
   return jobIds
     ? query.where(inArray(jobs.id, jobIds))
     : query;
@@ -374,7 +278,6 @@ export async function getFreshUnmatchedJobCount(
   if (!context) {
     const [result] = await db.select({ value: count() }).from(jobs)
       .where(and(
-        isNull(jobs.matchScore),
         notInArray(jobs.status, INACTIVE_JOB_STATUSES),
         filter.discoveredSince ? gte(jobs.discoveredAt, filter.discoveredSince) : undefined
       ));
@@ -389,7 +292,6 @@ export async function getFreshUnmatchedJobCount(
     .leftJoin(matchResults, currentResultJoin)
     .where(and(
       isNull(matchResults.id),
-      isNull(jobs.matchScore),
       notInArray(jobs.status, INACTIVE_JOB_STATUSES),
       filter.discoveredSince ? gte(jobs.discoveredAt, filter.discoveredSince) : undefined
     ));

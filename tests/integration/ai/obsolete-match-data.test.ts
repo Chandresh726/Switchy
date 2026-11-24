@@ -16,22 +16,13 @@ import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 const harness = createSqliteTestHarness("switchy-obsolete-match-data-");
 
 describe("obsolete match data cleanup", () => {
-  it("removes old artifacts and legacy job payloads while retaining current matches", () => {
+  it("removes old artifacts while retaining jobs and current matches", () => {
     const { database } = harness.createDatabase();
     const company = database.insert(companies).values({
       name: "Cleanup fixture",
       careersUrl: "https://example.com/careers",
     }).returning().get();
-    const oldJob = database.insert(jobs).values({
-      companyId: company.id,
-      title: "Old match",
-      url: "https://example.com/jobs/old",
-      matchScore: 82,
-      matchReasons: '["Old reason"]',
-      matchedSkills: '["TypeScript"]',
-      missingSkills: '["Rust"]',
-      recommendations: '["Practice Rust"]',
-    }).returning().get();
+    const oldJob = database.insert(jobs).values({ companyId: company.id, title: "Old match", url: "https://example.com/jobs/old" }).returning().get();
     const currentJob = database.insert(jobs).values({
       companyId: company.id,
       title: "Current match",
@@ -98,7 +89,6 @@ describe("obsolete match data cleanup", () => {
       deletedMatchResults: 1,
       deletedMatchHistorySessions: 1,
       deletedMatchHistoryLogs: 2,
-      clearedLegacyJobs: 1,
     });
     expect(database.select().from(matchResults).all()).toMatchObject([{
       id: "current-result",
@@ -110,14 +100,7 @@ describe("obsolete match data cleanup", () => {
       matchResultId: "current-result",
       score: 80,
     }]);
-    expect(database.select().from(jobs).where(eq(jobs.id, oldJob.id)).get())
-      .toMatchObject({
-        matchScore: null,
-        matchReasons: null,
-        matchedSkills: null,
-        missingSkills: null,
-        recommendations: null,
-      });
+    expect(database.select().from(jobs).where(eq(jobs.id, oldJob.id)).get()).toMatchObject({ id: oldJob.id });
     expect(database.select().from(settings)
       .where(eq(settings.key, "ai.match_history_v3_cleanup_completed")).get()?.value)
       .toBeTruthy();
@@ -126,7 +109,6 @@ describe("obsolete match data cleanup", () => {
       deletedMatchResults: 0,
       deletedMatchHistorySessions: 0,
       deletedMatchHistoryLogs: 0,
-      clearedLegacyJobs: 0,
     });
   });
 });

@@ -9,6 +9,7 @@ import {
   education,
   experience,
   jobs,
+  matchResults,
   peopleImportSessions,
   profile,
   resumes,
@@ -90,7 +91,8 @@ export function runPersistencePreflight(
     ...database.select({ profileId: experience.profileId }).from(experience).all(),
     ...database.select({ profileId: education.profileId }).from(education).all(),
   ];
-  const jobRows = database.select({ status: jobs.status, matchScore: jobs.matchScore }).from(jobs).all();
+  const jobRows = database.select({ status: jobs.status }).from(jobs).all();
+  const matchRows = database.select({ score: matchResults.score }).from(matchResults).all();
   const scrapeSessionRows = database.select({
     companiesTotal: scrapeSessions.companiesTotal,
     companiesCompleted: scrapeSessions.companiesCompleted,
@@ -144,8 +146,8 @@ export function runPersistencePreflight(
     invalidJobStatuses: jobRows.filter((row) =>
       !JOB_STATUSES.includes(row.status)
     ).length,
-    invalidMatchScores: jobRows.filter((row) =>
-      row.matchScore !== null && (row.matchScore < 0 || row.matchScore > 100)
+    invalidMatchScores: matchRows.filter((row) =>
+      row.score < 0 || row.score > 100
     ).length,
     invalidNonNegativeCounters: [
       ...scrapeSessionRows.flatMap(Object.values),

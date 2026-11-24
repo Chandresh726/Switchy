@@ -108,7 +108,7 @@ export const aiHistoryQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(25),
   offset: z.coerce.number().int().nonnegative().max(1_000_000).default(0),
 });
-export const aiHistorySummarySchema = generatedContentSchema.pick({
+const aiHistorySummarySchema = generatedContentSchema.pick({
   id: true, jobId: true, type: true, currentVariantId: true, updatedAt: true,
   jobTitle: true, companyName: true, companyLogoUrl: true,
 }).extend({
@@ -185,6 +185,5 @@ export const aiUsageResponseSchema = z.object({
   failures: z.array(z.object({ code: z.string(), count: z.number().int().nonnegative() })),
 });
 
-export type GeneratedContent = z.infer<typeof generatedContentSchema>;
 export type AIHistoryResponse = z.infer<typeof aiHistoryResponseSchema>;
 export type AIUsageResponse = z.infer<typeof aiUsageResponseSchema>;

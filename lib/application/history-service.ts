@@ -186,9 +186,6 @@ export async function getMatchHistoryDetail(
       department: jobs.department,
       employmentType: jobs.employmentType,
       salary: jobs.salary,
-      matchScore: jobs.matchScore,
-      matchReasons: jobs.matchReasons,
-      matchedSkills: jobs.matchedSkills,
     }).from(jobs).where(inArray(jobs.id, ids))
   );
   const currentPresentations = await getMatchPresentations(currentJobs, undefined, { includeStale: false });

@@ -1,8 +1,9 @@
+import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 import type { NextRequest } from "next/server";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { companies, jobs } from "@/lib/db/schema";
+import { companies } from "@/lib/db/schema";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-company-overview-matches-");
@@ -20,40 +21,27 @@ describe("company overview match projections", () => {
     vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
     ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue(null),
-      getMatchPresentations: vi.fn().mockImplementation(async (
-        jobRows: Array<{ id: number; matchScore: number | null }>
-      ) => new Map(jobRows.map((job) => [job.id, {
-        matchScore: job.matchScore,
-        matchReasons: [],
-        matchedSkills: [],
-        matchResultId: null,
-        matchBreakdown: null,
-        matchStale: false,
-        matchLegacy: job.matchScore !== null,
-        matchSummary: "",
-        matchReasoning: [],
-        scoringPolicyVersion: job.matchScore === null ? null : "legacy",
-      }]))),
+
     }));
     const { GET } = await import("@/app/api/companies/[id]/overview/route");
     const company = database.insert(companies).values({
       name: "Overview fixture",
       careersUrl: "https://example.com/careers",
     }).returning().get();
-    const oldestTopMatch = database.insert(jobs).values({
+    const oldestTopMatch = insertJobsWithMatches(database, {
       companyId: company.id,
       title: "Oldest top match",
       url: "https://example.com/jobs/top",
       matchScore: 96,
       discoveredAt: new Date("2020-01-01T00:00:00.000Z"),
-    }).returning().get();
-    database.insert(jobs).values(Array.from({ length: 54 }, (_, index) => ({
+    })[0];
+    insertJobsWithMatches(database, Array.from({ length: 54 }, (_, index) => ({
       companyId: company.id,
       title: `Newer role ${index}`,
       url: `https://example.com/jobs/newer-${index}`,
       matchScore: index === 0 ? 75 : null,
       discoveredAt: new Date(`2025-01-${String((index % 28) + 1).padStart(2, "0")}T00:00:00.000Z`),
-    }))).run();
+    })));
 
     const response = await GET(
       new Request(`http://localhost/api/companies/${company.id}/overview`) as NextRequest,

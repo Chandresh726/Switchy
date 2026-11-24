@@ -216,22 +216,7 @@ describe("scheduled match notifications", () => {
     vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
     ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue(null),
-      getMatchPresentations: vi.fn().mockImplementation(async (rows: Array<{ id: number; matchScore: number | null }>) =>
-        new Map(rows.map((row) => [row.id, {
-          matchScore: row.matchScore,
-          matchReasons: [],
-          matchedSkills: [],
-          matchResultId: null,
-          matchBreakdown: null,
-          matchStale: false,
-          matchLegacy: false,
-          matchSummary: "",
-          matchReasoning: [],
-          matchRunId: null,
-          matchPolicyVersion: null,
-          scoringPolicyVersion: null,
-        }]))
-      ),
+
     }));
 
     const { listJobs } = await import("@/lib/application/jobs-service");

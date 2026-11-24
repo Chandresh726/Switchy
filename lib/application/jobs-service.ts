@@ -6,6 +6,7 @@ import {
   eq,
   exists,
   gte,
+  inArray,
   like,
   lt,
   lte,
@@ -57,7 +58,6 @@ const JOB_SUMMARY_SELECTION = {
     seniorityLevel: jobs.seniorityLevel, status: jobs.status, postedDate: jobs.postedDate,
     discoveredAt: jobs.discoveredAt, updatedAt: jobs.updatedAt, archivedAt: jobs.archivedAt,
     archiveSource: jobs.archiveSource, viewedAt: jobs.viewedAt, appliedAt: jobs.appliedAt,
-    matchScore: jobs.matchScore, matchReasons: jobs.matchReasons, matchedSkills: jobs.matchedSkills,
   },
   company: { id: companies.id, name: companies.name, logoUrl: companies.logoUrl, platform: companies.platform },
 } as const;
@@ -92,7 +92,7 @@ function baseConditions(query: JobsQuery) {
   return conditions;
 }
 
-function orderByFor(query: JobsQuery, scoreExpression: typeof jobs.matchScore | SQL<number | null> = jobs.matchScore) {
+function orderByFor(query: JobsQuery, scoreExpression: typeof matchResults.score | SQL<number | null> = matchResults.score) {
   const direction = query.sortOrder === "asc" ? asc : desc;
   switch (query.sortBy) {
     case "postedDate": return [sql`CASE WHEN ${jobs.postedDate} IS NULL THEN 1 ELSE 0 END`, direction(jobs.postedDate), desc(jobs.id)] as const;
@@ -112,12 +112,8 @@ async function presentRows(rows: Array<{ job: Omit<Parameters<typeof getMatchPre
   return rows.map(({ job, company }) => {
     const presentation = presentations.get(job.id);
     if (!presentation) throw new Error(`Missing match presentation for job ${job.id}`);
-    const { matchReasons, matchedSkills, ...summary } = job;
-    // Legacy evidence is used for presentation selection but stays on the detail endpoint.
-    void matchReasons;
-    void matchedSkills;
     return {
-      ...summary, company,
+      ...job, company,
       matchScore: presentation.matchScore,
       matchResultId: presentation.matchResultId,
       matchStale: presentation.matchStale,
@@ -205,7 +201,7 @@ export async function listJobs(query: JobsQuery, contextInput?: Awaited<ReturnTy
   const currentContext = contextInput === undefined ? await getCurrentMatchContext() : contextInput;
   const preferredMatchResults = matchResults;
   const preferredResultJoin = eq(matchResults.id, buildPreferredMatchResultId(currentContext));
-  const effectiveScore = sql<number | null>`coalesce(${preferredMatchResults.score}, ${jobs.matchScore})`;
+  const effectiveScore = preferredMatchResults.score;
   const scoreConditions = [...conditions];
   if (query.minScore !== undefined) scoreConditions.push(gte(effectiveScore, query.minScore));
   if (query.maxScore !== undefined) scoreConditions.push(lte(effectiveScore, query.maxScore));
@@ -221,19 +217,30 @@ export async function listJobs(query: JobsQuery, contextInput?: Awaited<ReturnTy
     );
   }
   const where = scoreConditions.length > 0 ? and(...scoreConditions) : undefined;
-  const rows = await db.select({ ...JOB_SUMMARY_SELECTION, match: MATCH_SUMMARY_SELECTION, total: query.search && includeTotal ? sql<number>`count(*) over ()` : sql<number>`0` }).from(jobs)
+  // Sort a narrow ID page before loading job text and summary columns.
+  // The default score ordering can scan the discovery index without reading
+  // every description-bearing job row.
+  const pageQuery = db.select({ id: jobs.id, match: MATCH_SUMMARY_SELECTION,
+    total: query.search && includeTotal ? sql<number>`count(*) over ()` : sql<number>`0`,
+  }).from(jobs).leftJoin(preferredMatchResults, preferredResultJoin);
+  const sortable = query.sortBy === "companyName"
+    ? pageQuery.innerJoin(companies, eq(jobs.companyId, companies.id)) : pageQuery;
+  const page = await sortable.where(where).orderBy(...orderByFor(query, effectiveScore))
+    .limit(fetchLimit).offset(query.offset);
+  const rows = page.length ? await db.select(JOB_SUMMARY_SELECTION).from(jobs)
     .innerJoin(companies, eq(jobs.companyId, companies.id))
-    .leftJoin(preferredMatchResults, preferredResultJoin)
-    .where(where)
-    .orderBy(...orderByFor(query, effectiveScore))
-    .limit(fetchLimit)
-    .offset(query.offset);
+    .where(inArray(jobs.id, page.slice(0, query.limit).map((row) => row.id))) : [];
+  const rowsById = new Map(rows.map((row) => [row.job.id, row]));
+  const orderedRows = page.slice(0, query.limit).flatMap((row) => {
+    const detail = rowsById.get(row.id);
+    return detail ? [detail] : [];
+  });
   const scoreFiltered = query.minScore !== undefined || query.maxScore !== undefined || requestedBands.length > 0;
-  const totalCount = !includeTotal ? null : query.search && rows.length > 0 ? rows[0].total : (scoreFiltered
+  const totalCount = !includeTotal ? null : query.search && page.length > 0 ? page[0].total : (scoreFiltered
     ? await db.select({ value: count() }).from(jobs)
       .leftJoin(preferredMatchResults, preferredResultJoin).where(where)
     : await db.select({ value: count() }).from(jobs).where(baseWhere))[0].value;
-  return { jobs: await presentRows(rows.slice(0, query.limit), currentContext, new Map(rows.map(({ job, match }) => [job.id, presentMatchSummary({ ...job, description: null }, match, currentContext)]))), totalCount, hasMore: totalCount === null ? rows.length > query.limit : query.offset + query.limit < totalCount };
+  return { jobs: await presentRows(orderedRows, currentContext, new Map(page.map(({ id, match }) => [id, presentMatchSummary(match, currentContext)]))), totalCount, hasMore: totalCount === null ? page.length > query.limit : query.offset + query.limit < totalCount };
 }
 
 export async function getJob(id: number) {

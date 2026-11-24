@@ -1,3 +1,4 @@
+import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -111,12 +112,12 @@ describe("local persistence invariants", () => {
       url: "https://example.com/jobs/invalid-status",
       status: "unknown" as never,
     }).run()).toThrow();
-    expect(() => database.insert(jobs).values({
+    expect(() => insertJobsWithMatches(database, {
       companyId: company.id,
       title: "Invalid score",
       url: "https://example.com/jobs/invalid-score",
       matchScore: 101,
-    }).run()).toThrow();
+    })).toThrow();
   });
 
   it("preflight rejects semantic company duplicates before migration", () => {

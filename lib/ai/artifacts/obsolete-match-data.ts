@@ -4,7 +4,7 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { AI_MATCH_POLICY_BASE_VERSION } from "@/lib/ai/matcher/evidence/ai-match";
 import type * as databaseSchema from "@/lib/db/schema";
 import { db } from "@/lib/db";
-import { jobs, matchLogs, matchResults, matchSessions, settings } from "@/lib/db/schema";
+import { matchLogs, matchResults, matchSessions, settings } from "@/lib/db/schema";
 import { chunkSqliteParameters } from "@/lib/db/sqlite-utils";
 
 type ArtifactDatabase = BetterSQLite3Database<typeof databaseSchema>;
@@ -16,7 +16,6 @@ export interface ObsoleteMatchDataCleanupResult {
   deletedMatchResults: number;
   deletedMatchHistorySessions: number;
   deletedMatchHistoryLogs: number;
-  clearedLegacyJobs: number;
 }
 
 export function removeObsoleteMatchData(
@@ -76,25 +75,10 @@ export function removeObsoleteMatchData(
         .returning({ id: matchResults.id }).all().length;
     }
 
-    const clearedLegacyJobs = tx.update(jobs).set({
-      matchScore: null,
-      matchReasons: null,
-      matchedSkills: null,
-      missingSkills: null,
-      recommendations: null,
-    }).where(or(
-      isNotNull(jobs.matchScore),
-      isNotNull(jobs.matchReasons),
-      isNotNull(jobs.matchedSkills),
-      isNotNull(jobs.missingSkills),
-      isNotNull(jobs.recommendations)
-    )).returning({ id: jobs.id }).all().length;
-
     return {
       deletedMatchResults,
       deletedMatchHistorySessions,
       deletedMatchHistoryLogs,
-      clearedLegacyJobs,
     };
   }, { behavior: "immediate" });
 }

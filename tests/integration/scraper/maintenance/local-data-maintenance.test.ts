@@ -1,3 +1,4 @@
+import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 
@@ -355,9 +356,7 @@ describe("LocalDataMaintenanceService", () => {
     const database = createTestDatabase();
     const company = seedCompany(database, "MatchData");
     const contentUpdatedAt = new Date("2026-01-15T00:00:00.000Z");
-    const matchedJob = database
-      .insert(jobs)
-      .values({
+    const matchedJob = insertJobsWithMatches(database, {
         companyId: company.id,
         externalId: "matched-role",
         title: "Matched role",
@@ -368,9 +367,7 @@ describe("LocalDataMaintenanceService", () => {
         missingSkills: "[]",
         recommendations: '["apply"]',
         updatedAt: contentUpdatedAt,
-      })
-      .returning({ id: jobs.id })
-      .get();
+      })[0];
     database.insert(matchResults).values({
       id: "match-result-1",
       jobId: matchedJob.id,
@@ -457,14 +454,7 @@ describe("LocalDataMaintenanceService", () => {
     expect(database.select().from(matchSessions).all()).toHaveLength(0);
     expect(database.select().from(scrapeMatchOutbox).all()).toHaveLength(0);
     expect(database.select().from(matchResults).all()).toHaveLength(0);
-    expect(database.select().from(jobs).get()).toMatchObject({
-      matchScore: 94,
-      matchReasons: '["fit"]',
-      matchedSkills: '["typescript"]',
-      missingSkills: "[]",
-      recommendations: '["apply"]',
-      updatedAt: contentUpdatedAt,
-    });
+    expect(database.select().from(jobs).get()).toMatchObject({ id: matchedJob.id, updatedAt: contentUpdatedAt });
     expect(database.select().from(scrapingLogs).get()).toMatchObject({
       matcherStatus: null,
       matcherJobsTotal: null,

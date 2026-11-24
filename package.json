@@ -22,6 +22,7 @@
     "native:prepare": "node scripts/build-macos-notifier.mjs",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "benchmark:api": "node --import tsx scripts/benchmark-api-reads.mts",
     "deadcode": "SWITCHY_ANALYSIS=1 knip",
     "test": "node scripts/run-tests.mjs",
     "test:run": "node scripts/run-tests.mjs --run --project unit --project integration --project ui --project eval",

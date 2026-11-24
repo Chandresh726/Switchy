@@ -1,3 +1,4 @@
+import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 import type { NextRequest } from "next/server";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -25,20 +26,7 @@ describe("score-aware jobs pagination", () => {
     vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
     ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue(context),
-      getMatchPresentations: vi.fn().mockImplementation(async (
-        jobRows: Array<{ id: number }>
-      ) => new Map(jobRows.map((job) => [job.id, {
-        matchScore: 93,
-        matchReasons: [],
-        matchedSkills: [],
-        matchResultId: "prior-profile-result",
-        matchBreakdown: null,
-        matchStale: true,
-        matchLegacy: false,
-        matchSummary: "Strong fit based on the previous profile.",
-        matchReasoning: [],
-        scoringPolicyVersion: "policy-prior",
-      }]))),
+
     }));
     const { GET } = await import("@/app/api/jobs/route");
     const company = database.insert(companies).values({
@@ -93,24 +81,7 @@ describe("score-aware jobs pagination", () => {
     vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
     ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue(context),
-      getMatchPresentations: vi.fn().mockImplementation(async (
-        jobRows: Array<{ id: number; matchScore: number | null }>
-      ) => new Map(jobRows.map((job) => [job.id, {
-        matchScore: job.id === 1 ? 80 : job.id === 2 ? 97 : job.id === 5 ? 99 : job.matchScore,
-        matchReasons: [],
-        matchedSkills: [],
-        matchResultId: job.id === 1
-          ? "fresh-result"
-          : job.id === 2
-            ? "changed-job-result"
-            : job.id === 5
-              ? "insufficient-result"
-              : null,
-        matchBreakdown: null,
-        matchStale: false,
-        matchLegacy: job.matchScore !== null,
-        scoringPolicyVersion: context.scoringPolicyVersion,
-      }]))),
+
     }));
     const { GET } = await import("@/app/api/jobs/route");
 
@@ -167,7 +138,7 @@ describe("score-aware jobs pagination", () => {
         salary: null,
       }),
     }));
-    database.insert(jobs).values(jobValues).run();
+    insertJobsWithMatches(database, jobValues);
     database.insert(matchResults).values([
       {
         id: "fresh-result",
@@ -271,25 +242,14 @@ describe("score-aware jobs pagination", () => {
     vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
     ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue(null),
-      getMatchPresentations: vi.fn().mockImplementation(async (
-        jobRows: Array<{ id: number; matchScore: number | null }>
-      ) => new Map(jobRows.map((job) => [job.id, {
-        matchScore: job.matchScore,
-        matchReasons: [],
-        matchedSkills: [],
-        matchResultId: null,
-        matchBreakdown: null,
-        matchStale: false,
-        matchLegacy: job.matchScore !== null,
-        scoringPolicyVersion: job.matchScore !== null ? "legacy" : null,
-      }]))),
+
     }));
     const { GET } = await import("@/app/api/jobs/route");
     const company = database.insert(companies).values({
       name: "Legacy-only pagination fixture",
       careersUrl: "https://example.com/legacy-only-careers",
     }).returning().get();
-    database.insert(jobs).values([
+    insertJobsWithMatches(database, [
       {
         companyId: company.id,
         title: "Legacy good match",
@@ -307,7 +267,7 @@ describe("score-aware jobs pagination", () => {
         title: "No score",
         url: "https://example.com/jobs/no-score",
       },
-    ]).run();
+    ]);
 
     const response = await GET(new Request(
       "http://localhost/api/jobs?minScore=75&sortBy=matchScore&limit=10"

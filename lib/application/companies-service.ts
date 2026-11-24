@@ -49,8 +49,7 @@ const COMPANY_JOB_SELECTION = {
   id: jobs.id, title: jobs.title, url: jobs.url,
   status: jobs.status, location: jobs.location, locationType: jobs.locationType,
   seniorityLevel: jobs.seniorityLevel, department: jobs.department,
-  employmentType: jobs.employmentType, salary: jobs.salary, matchScore: jobs.matchScore,
-  matchReasons: jobs.matchReasons, matchedSkills: jobs.matchedSkills,
+  employmentType: jobs.employmentType, salary: jobs.salary,
   discoveredAt: jobs.discoveredAt, viewedAt: jobs.viewedAt,
 } as const;
 
@@ -290,7 +289,7 @@ export async function getCompanyOverview(id: number, now = new Date(), section: 
   const currentContext = await getCurrentMatchContext();
   const preferredMatchResults = matchResults;
   const preferredResultJoin = eq(matchResults.id, buildPreferredMatchResultId(currentContext));
-  const effectiveScore = sql<number | null>`coalesce(${preferredMatchResults.score}, ${jobs.matchScore})`;
+  const effectiveScore = preferredMatchResults.score;
   const promotionCountQuery = db.select({
     value: sql<number>`coalesce(sum(case when ${effectiveScore} >= 70 then 1 else 0 end), 0)`,
   }).from(jobs).leftJoin(preferredMatchResults, preferredResultJoin);

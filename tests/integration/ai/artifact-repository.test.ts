@@ -1,3 +1,4 @@
+import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 import { preCanonicalCompanies } from "@test/helpers/migration-schema";
 import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -156,7 +157,7 @@ function insertJob(database: ReturnType<typeof harness.createDatabase>["database
     name: "Example",
     careersUrl: "https://example.com/careers",
   }).returning().get();
-  return database.insert(jobs).values({
+  return insertJobsWithMatches(database, {
     companyId: company.id,
     title: "Backend Engineer",
     description: "TypeScript services",
@@ -170,7 +171,7 @@ function insertJob(database: ReturnType<typeof harness.createDatabase>["database
     matchedSkills: matchScore === undefined ? null : '["TypeScript"]',
     missingSkills: matchScore === undefined ? null : "[]",
     recommendations: matchScore === undefined ? null : '["Apply"]',
-  }).returning().get();
+  })[0];
 }
 
 function insertPreProjectionJob(

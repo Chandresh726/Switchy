@@ -1,3 +1,4 @@
+import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -135,7 +136,7 @@ describe("authoritative match presentation queries", () => {
     });
   });
 
-  it("shows legacy columns and excludes them from unmatched jobs", async () => {
+  it("excludes current matches and inactive jobs from the unmatched discovery window", async () => {
     const { database } = harness.createDatabase();
     vi.doMock("@/lib/db", () => ({ db: database }));
     const {
@@ -147,15 +148,12 @@ describe("authoritative match presentation queries", () => {
       name: "Legacy presentation fixture",
       careersUrl: "https://example.com/legacy-careers",
     }).returning().get();
-    const [legacyJob, unmatchedJob, olderUnmatchedJob] = database.insert(jobs).values([
+    const [legacyJob, unmatchedJob, olderUnmatchedJob] = insertJobsWithMatches(database, [
       {
         companyId: company.id,
         title: "Legacy matched role",
         description: "Old matcher result",
         url: "https://example.com/jobs/legacy-matched",
-        matchScore: 79,
-        matchReasons: '["Relevant experience"]',
-        matchedSkills: '["TypeScript"]',
       },
       {
         companyId: company.id,
@@ -187,21 +185,26 @@ describe("authoritative match presentation queries", () => {
         status: "rejected",
         discoveredAt: new Date("2026-07-15T00:00:00.000Z"),
       },
-    ]).returning().all();
+    ]);
     const context = {
       candidateFingerprint: "d".repeat(64),
       scoringPolicyVersion: "policy-current",
     };
 
+    database.insert(matchResults).values({
+      id: "matched-result", jobId: legacyJob.id, candidateFingerprint: context.candidateFingerprint,
+      jobFingerprint: "matched-job", scoringPolicyVersion: "current", score: 79, source: "ai", confidence: 0,
+      breakdownJson: "{}", evidenceJson: JSON.stringify({ summary: "Match", reasoning: [], matchedSkills: ["TypeScript"] }),
+    }).run();
     const presentations = await getMatchPresentations(
       [legacyJob, unmatchedJob],
       context
     );
     expect(presentations.get(legacyJob.id)).toMatchObject({
       matchScore: 79,
-      matchReasons: ["Relevant experience"],
+      matchReasons: [],
       matchedSkills: ["TypeScript"],
-      matchLegacy: true,
+      matchLegacy: false,
       matchStale: false,
     });
     expect(presentations.get(unmatchedJob.id)).toMatchObject({
@@ -214,10 +217,11 @@ describe("authoritative match presentation queries", () => {
     ]);
     expect(await getFreshUnmatchedJobCount(context)).toBe(2);
     expect(await getFreshUnmatchedJobIds(null)).toEqual([
+      legacyJob.id,
       unmatchedJob.id,
       olderUnmatchedJob.id,
     ]);
-    expect(await getFreshUnmatchedJobCount(null)).toBe(2);
+    expect(await getFreshUnmatchedJobCount(null)).toBe(3);
     const recentFilter = { discoveredSince: new Date("2026-07-10T00:00:00.000Z") };
     expect(await getFreshUnmatchedJobIds(context, recentFilter)).toEqual([unmatchedJob.id]);
     expect(await getFreshUnmatchedJobCount(context, recentFilter)).toBe(1);

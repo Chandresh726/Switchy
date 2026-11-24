@@ -1,7 +1,8 @@
+import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { jobsQuerySchema, jobsResponseSchema, jobStatusCountsSchema } from "@/lib/api/contracts/jobs";
-import { companies, jobs } from "@/lib/db/schema";
+import { companies } from "@/lib/db/schema";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-performance-reads-");
@@ -18,20 +19,14 @@ async function setup() {
   vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
     ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
     getCurrentMatchContext: vi.fn().mockResolvedValue(null),
-    getMatchPresentations: vi.fn().mockImplementation(async (rows: Array<{ id: number; matchScore: number | null }>) =>
-      new Map(rows.map((row) => [row.id, {
-        matchScore: row.matchScore, matchResultId: null, matchStale: false, matchLegacy: false,
-        matchRunId: null, matchPolicyVersion: null, scoringPolicyVersion: null,
-        matchReasons: ["detail evidence"], matchedSkills: [], matchBreakdown: null,
-        matchSummary: "detail summary", matchReasoning: [],
-      }]))),
+
   }));
   const company = database.insert(companies).values({ name: "Acme", careersUrl: "https://example.test/jobs" }).returning().get();
-  database.insert(jobs).values([
+  insertJobsWithMatches(database, [
     { companyId: company.id, title: "Engineer", description: "TypeScript", url: "https://example.test/1", status: "new", matchScore: 90 },
     { companyId: company.id, title: "Engineer", description: "TypeScript", url: "https://example.test/2", status: "applied", matchScore: 80 },
     { companyId: company.id, title: "Designer", description: "Design", url: "https://example.test/3", status: "archived", matchScore: 50 },
-  ]).run();
+  ]);
   return { database, company };
 }
 

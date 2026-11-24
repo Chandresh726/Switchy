@@ -1,3 +1,4 @@
+import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -7,21 +8,6 @@ import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-job-query-controls-");
 
-const EMPTY_PRESENTATION = {
-  matchScore: null,
-  matchReasons: [],
-  matchedSkills: [],
-  matchResultId: null,
-  matchBreakdown: null,
-  matchStale: false,
-  matchLegacy: false,
-  matchSummary: "",
-  matchReasoning: [],
-  matchRunId: null,
-  matchPolicyVersion: null,
-  scoringPolicyVersion: null,
-};
-
 function mockJobDependencies(
   database: ReturnType<typeof harness.createDatabase>["database"],
   context: { candidateFingerprint: string; scoringPolicyVersion: string } | null = null
@@ -30,9 +16,7 @@ function mockJobDependencies(
   vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
     ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
     getCurrentMatchContext: vi.fn().mockResolvedValue(context),
-    getMatchPresentations: vi.fn().mockImplementation(async (rows: Array<{ id: number; matchScore: number | null }>) => (
-      new Map(rows.map((row) => [row.id, { ...EMPTY_PRESENTATION, matchScore: row.matchScore }]))
-    )),
+
   }));
 }
 
@@ -142,11 +126,11 @@ describe("job query date controls", () => {
       name: "Legacy score path",
       careersUrl: "https://example.com/legacy-score-path",
     }).returning().get();
-    database.insert(jobs).values([
+    insertJobsWithMatches(database, [
       { companyId: company.id, title: "Legacy older", url: "https://example.com/legacy-older", matchScore: 80, appliedAt: new Date("2026-07-16T00:00:00.000Z") },
       { companyId: company.id, title: "Legacy newer", url: "https://example.com/legacy-newer", matchScore: 90, appliedAt: new Date("2026-07-18T00:00:00.000Z") },
       { companyId: company.id, title: "Below threshold", url: "https://example.com/below", matchScore: 50, appliedAt: new Date("2026-07-19T00:00:00.000Z") },
-    ]).run();
+    ]);
     const { GET } = await import("@/app/api/jobs/route");
 
     const response = await GET(new NextRequest(
@@ -165,10 +149,10 @@ describe("job query date controls", () => {
       name: "Current score path",
       careersUrl: "https://example.com/current-score-path",
     }).returning().get();
-    const [currentHigh, currentLow] = database.insert(jobs).values([
+    const [currentHigh, currentLow] = insertJobsWithMatches(database, [
       { companyId: company.id, title: "Current high", url: "https://example.com/current-high", matchScore: 10, viewedAt: new Date("2026-07-18T00:00:00.000Z") },
       { companyId: company.id, title: "Current low", url: "https://example.com/current-low", matchScore: 95, viewedAt: new Date("2026-07-19T00:00:00.000Z") },
-    ]).returning().all();
+    ]);
     database.insert(matchResults).values([
       { id: "current-high", jobId: currentHigh.id, candidateFingerprint, jobFingerprint: "d".repeat(64), scoringPolicyVersion: "current-policy", score: 88, breakdownJson: "{}", evidenceJson: "{}", confidence: 0, source: "deterministic", isStale: false },
       { id: "current-low", jobId: currentLow.id, candidateFingerprint, jobFingerprint: "e".repeat(64), scoringPolicyVersion: "current-policy", score: 40, breakdownJson: "{}", evidenceJson: "{}", confidence: 0, source: "deterministic", isStale: false },

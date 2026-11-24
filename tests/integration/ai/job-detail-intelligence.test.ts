@@ -1,39 +1,23 @@
+import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { MatchPresentation } from "@/lib/ai/matcher/presentation";
 import { jobSchema, jobsResponseSchema } from "@/lib/api/contracts/jobs";
 import { companies, jobAnalyses, jobs, matchResults } from "@/lib/db/schema";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-job-detail-intelligence-");
 
-const EMPTY_PRESENTATION: MatchPresentation = {
-  matchScore: null,
-  matchReasons: [],
-  matchedSkills: [],
-  matchResultId: null,
-  matchBreakdown: null,
-  matchStale: false,
-  matchLegacy: false,
-  matchSummary: "",
-  matchReasoning: [],
-  matchRunId: null,
-  matchPolicyVersion: null,
-  scoringPolicyVersion: null,
-};
+
 
 function mockJobDependencies(
-  database: ReturnType<typeof harness.createDatabase>["database"],
-  presentation: MatchPresentation
+  database: ReturnType<typeof harness.createDatabase>["database"]
 ) {
   vi.doMock("@/lib/db", () => ({ db: database }));
   vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
     ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
     getCurrentMatchContext: vi.fn().mockResolvedValue(null),
-    getMatchPresentations: vi.fn().mockImplementation(async (rows: Array<{ id: number }>) => (
-      new Map(rows.map((row) => [row.id, presentation]))
-    )),
+
   }));
 }
 
@@ -92,12 +76,7 @@ describe("job detail intelligence", () => {
       isStale: stale,
       createdAt: matchCreatedAt,
     }).run();
-    mockJobDependencies(database, {
-      ...EMPTY_PRESENTATION,
-      matchScore: stale ? null : 86,
-      matchResultId: `result-${stale}`,
-      matchStale: stale,
-    });
+    mockJobDependencies(database);
     const { GET } = await import("@/app/api/jobs/[id]/route");
 
     const response = await GET(
@@ -125,22 +104,19 @@ describe("job detail intelligence", () => {
     });
   });
 
-  it.each([
-    { label: "unmatched", presentation: EMPTY_PRESENTATION },
-    { label: "legacy", presentation: { ...EMPTY_PRESENTATION, matchScore: 75, matchLegacy: true } },
-  ])("returns null intelligence for a $label job", async ({ label, presentation }) => {
+  it.each(["unmatched", "legacy"])("returns no analysis for a %s job", async (label) => {
     const { database } = harness.createDatabase();
     const company = database.insert(companies).values({
       name: `${label} fixture`,
       careersUrl: `https://example.com/${label}`,
     }).returning().get();
-    const job = database.insert(jobs).values({
+    const job = insertJobsWithMatches(database, {
       companyId: company.id,
       title: `${label} job`,
       url: `https://example.com/jobs/${label}`,
       matchScore: label === "legacy" ? 75 : null,
-    }).returning().get();
-    mockJobDependencies(database, presentation);
+    })[0];
+    mockJobDependencies(database);
     const { GET } = await import("@/app/api/jobs/[id]/route");
 
     const response = await GET(
@@ -149,7 +125,8 @@ describe("job detail intelligence", () => {
     );
     const payload = jobSchema.parse(await response.json());
 
-    expect(payload.matchMetadata).toBeNull();
+    if (label === "legacy") expect(payload.matchMetadata).toMatchObject({ source: "legacy" });
+    else expect(payload.matchMetadata).toBeNull();
     expect(payload.jobAnalysis).toBeNull();
   });
 
@@ -178,11 +155,7 @@ describe("job detail intelligence", () => {
       source: "deterministic",
       createdAt: matchCreatedAt,
     }).run();
-    mockJobDependencies(database, {
-      ...EMPTY_PRESENTATION,
-      matchScore: 70,
-      matchResultId: "result-without-analysis",
-    });
+    mockJobDependencies(database);
     const { GET } = await import("@/app/api/jobs/[id]/route");
 
     const response = await GET(
@@ -235,11 +208,7 @@ describe("job detail intelligence", () => {
       source: "deterministic",
       createdAt: matchCreatedAt,
     }).run();
-    mockJobDependencies(database, {
-      ...EMPTY_PRESENTATION,
-      matchScore: 82,
-      matchResultId: resultId,
-    });
+    mockJobDependencies(database);
     const { GET } = await import("@/app/api/jobs/[id]/route");
 
     const response = await GET(
@@ -279,11 +248,7 @@ describe("job detail intelligence", () => {
       confidence: 0,
       source: "future-source",
     }).run();
-    mockJobDependencies(database, {
-      ...EMPTY_PRESENTATION,
-      matchScore: 80,
-      matchResultId: "result-unknown-source",
-    });
+    mockJobDependencies(database);
     const { GET } = await import("@/app/api/jobs/[id]/route");
 
     const response = await GET(
@@ -308,7 +273,7 @@ describe("job detail intelligence", () => {
       title: "List job",
       url: "https://example.com/jobs/list",
     }).run();
-    mockJobDependencies(database, EMPTY_PRESENTATION);
+    mockJobDependencies(database);
     const { GET } = await import("@/app/api/jobs/route");
 
     const response = await GET(new NextRequest("http://localhost/api/jobs?sortBy=discoveredAt"));

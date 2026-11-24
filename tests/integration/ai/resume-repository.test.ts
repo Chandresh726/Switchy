@@ -152,7 +152,6 @@ describe("resume artifact repository", () => {
       title: "Engineer",
       url: "https://example.com/jobs/1",
       status: "interested",
-      matchScore: 82,
     }).run();
     database.insert(scrapeSessions).values({
       id: "migration-24-session",

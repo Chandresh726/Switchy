@@ -1,0 +1,1 @@
+CREATE INDEX `jobs_dashboard_idx` ON `jobs` (`status`,`discovered_at`,`viewed_at`,`applied_at`,`id`);

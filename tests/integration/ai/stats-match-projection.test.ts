@@ -1,3 +1,4 @@
+import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { statsResponseSchema } from "@/lib/api/contracts/stats";
@@ -55,7 +56,7 @@ describe("dashboard match statistics", () => {
       name: "Stats fixture",
       careersUrl: "https://example.com/careers",
     }).returning().get();
-    database.insert(jobs).values([{
+    insertJobsWithMatches(database, [{
       companyId: company.id,
       title: "Legacy good match",
       url: "https://example.com/jobs/legacy-good",
@@ -64,7 +65,7 @@ describe("dashboard match statistics", () => {
       companyId: company.id,
       title: "Unmatched role",
       url: "https://example.com/jobs/unmatched",
-    }]).run();
+    }]);
 
     const response = await GET(new Request("http://localhost/api/stats"));
 
@@ -91,14 +92,14 @@ describe("dashboard match statistics", () => {
     const now = new Date("2026-07-18T12:00:00.000Z");
     const periodStart = new Date("2026-07-11T12:00:00.000Z");
     const beforePeriod = new Date(periodStart.getTime() - 1);
-    database.insert(jobs).values([
+    insertJobsWithMatches(database, [
       { companyId: company.id, title: "New", url: "https://example.com/new", status: "new", discoveredAt: periodStart },
       { companyId: company.id, title: "Viewed", url: "https://example.com/viewed", status: "viewed", discoveredAt: now, viewedAt: periodStart },
       { companyId: company.id, title: "Interested", url: "https://example.com/interested", status: "interested", discoveredAt: beforePeriod },
       { companyId: company.id, title: "Applied", url: "https://example.com/applied", status: "applied", discoveredAt: beforePeriod, appliedAt: now },
       { companyId: company.id, title: "Rejected", url: "https://example.com/rejected", status: "rejected", discoveredAt: beforePeriod },
       { companyId: company.id, title: "Archived", url: "https://example.com/archived", status: "archived", discoveredAt: beforePeriod, matchScore: 90 },
-    ]).run();
+    ]);
 
     const { getDashboardStats } = await import("@/lib/application/stats-service");
     const stats = await getDashboardStats(7, now);
@@ -139,13 +140,13 @@ describe("dashboard match statistics", () => {
       name: "Current score fixture",
       careersUrl: "https://example.com/current-score",
     }).returning().get();
-    const job = database.insert(jobs).values({
+    const job = insertJobsWithMatches(database, {
       companyId: company.id,
       title: "Current high match",
       url: "https://example.com/current-high",
       status: "new",
       matchScore: 40,
-    }).returning().get();
+    })[0];
     database.insert(matchResults).values({
       id: "current-result",
       jobId: job.id,

@@ -129,11 +129,6 @@ export const jobs = sqliteTable("jobs", {
   seniorityLevel: text("seniority_level"), // "entry", "mid", "senior", "lead", "manager"
   aiFingerprint: text("ai_fingerprint"), // Derived from AI-relevant job content; maintained without touching updatedAt
   status: text("status").$type<JobStatus>().notNull().default("new"),
-  matchScore: real("match_score"), // 0-100
-  matchReasons: text("match_reasons"), // JSON array
-  matchedSkills: text("matched_skills"), // JSON array
-  missingSkills: text("missing_skills"), // JSON array
-  recommendations: text("recommendations"), // JSON array
   postedDate: integer("posted_date", { mode: "timestamp" }),
   discoveredAt: integer("discovered_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
@@ -144,16 +139,15 @@ export const jobs = sqliteTable("jobs", {
 }, (table) => ({
   companyIdIdx: index("jobs_company_id_idx").on(table.companyId),
   statusIdx: index("jobs_status_idx").on(table.status),
+  dashboardIdx: index("jobs_dashboard_idx").on(table.status, table.discoveredAt, table.viewedAt, table.appliedAt, table.id),
   statusDiscoveredIdIdx: index("jobs_status_discovered_id_idx").on(table.status, table.discoveredAt, table.id),
   staleArchiveIdx: index("jobs_stale_archive_idx").on(table.status, table.postedDate, table.discoveredAt),
   companyDiscoveredIdIdx: index("jobs_company_discovered_id_idx").on(table.companyId, table.discoveredAt, table.id),
   discoveredIdIdx: index("jobs_discovered_id_idx").on(table.discoveredAt, table.id),
-  matchScoreIdx: index("jobs_match_score_idx").on(table.matchScore),
   aiFingerprintIdx: index("jobs_ai_fingerprint_idx").on(table.aiFingerprint),
   companyExternalIdUnique: unique("jobs_company_external_id_unique").on(table.companyId, table.externalId),
   companyUrlUnique: unique("jobs_company_url_unique").on(table.companyId, table.url),
   statusCheck: check("jobs_status_check", sql`${table.status} in ('new', 'viewed', 'interested', 'applied', 'rejected', 'archived')`),
-  matchScoreCheck: check("jobs_match_score_check", sql`${table.matchScore} is null or (${table.matchScore} >= 0 and ${table.matchScore} <= 100)`),
 }));
 
 // Scrape Sessions - Track batch scrape operations
@@ -646,6 +640,7 @@ export const matchResults = sqliteTable("match_results", {
   isStale: integer("is_stale", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 }, (table) => ({
+  scoreCheck: check("match_results_score_check", sql`${table.score} >= 0 and ${table.score} <= 100`),
   artifactUnique: unique("match_results_artifact_unique").on(
     table.jobId,
     table.candidateFingerprint,

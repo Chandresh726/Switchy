@@ -46,14 +46,12 @@ async function main(): Promise<void> {
       if (
         obsoleteMatchData.deletedMatchResults > 0 ||
         obsoleteMatchData.deletedMatchHistorySessions > 0 ||
-        obsoleteMatchData.deletedMatchHistoryLogs > 0 ||
-        obsoleteMatchData.clearedLegacyJobs > 0
+        obsoleteMatchData.deletedMatchHistoryLogs > 0
       ) {
         console.log(
           `[AI artifacts] Removed ${obsoleteMatchData.deletedMatchResults} obsolete match result(s); ` +
           `${obsoleteMatchData.deletedMatchHistorySessions} obsolete match session(s); ` +
-          `${obsoleteMatchData.deletedMatchHistoryLogs} obsolete match log(s); ` +
-          `cleared legacy match data from ${obsoleteMatchData.clearedLegacyJobs} job(s).`
+          `${obsoleteMatchData.deletedMatchHistoryLogs} obsolete match log(s).`
         );
       }
     } finally {

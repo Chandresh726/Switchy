@@ -3,26 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { companyOverviewResponseSchema } from "@/lib/api/contracts/companies";
 import { peopleListResponseSchema } from "@/lib/api/contracts/people";
-import type { MatchPresentation } from "@/lib/ai/matcher/presentation";
 import { companies, jobs, people } from "@/lib/db/schema";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
 
 const harness = createSqliteTestHarness("switchy-company-people-insights-");
-
-const EMPTY_PRESENTATION: MatchPresentation = {
-  matchScore: null,
-  matchReasons: [],
-  matchedSkills: [],
-  matchResultId: null,
-  matchBreakdown: null,
-  matchStale: false,
-  matchLegacy: false,
-  matchSummary: "",
-  matchReasoning: [],
-  matchRunId: null,
-  matchPolicyVersion: null,
-  scoringPolicyVersion: null,
-};
 
 afterEach(() => {
   vi.useRealTimers();
@@ -38,9 +22,7 @@ describe("company and people insights", () => {
     vi.doMock("@/lib/ai/matcher/presentation", async (importOriginal) => ({
     ...await importOriginal<typeof import("@/lib/ai/matcher/presentation")>(),
       getCurrentMatchContext: vi.fn().mockResolvedValue(null),
-      getMatchPresentations: vi.fn().mockImplementation(async (rows: Array<{ id: number }>) => (
-        new Map(rows.map((row) => [row.id, EMPTY_PRESENTATION]))
-      )),
+
     }));
     const company = database.insert(companies).values({
       name: "Insight Company",

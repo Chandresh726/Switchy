@@ -25,7 +25,7 @@ export async function getDashboardStats(
   const currentContext = contextInput === undefined ? await getCurrentMatchContext() : contextInput;
   const preferredMatchResults = matchResults;
   const preferredResultJoin = eq(matchResults.id, buildPreferredMatchResultId(currentContext));
-  const effectiveScore = sql<number | null>`coalesce(${preferredMatchResults.score}, ${jobs.matchScore})`;
+  const effectiveScore = preferredMatchResults.score;
   const [
     jobStatsResult,
     companyStatsResult,
