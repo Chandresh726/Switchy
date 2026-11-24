@@ -98,6 +98,7 @@ export const companies = sqliteTable("companies", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   careersUrl: text("careers_url").notNull(),
+  normalizedCareersUrl: text("normalized_careers_url"),
   logoUrl: text("logo_url"),
   notes: text("notes"),
   platform: text("platform"), // "greenhouse", "lever", "custom"
@@ -108,6 +109,7 @@ export const companies = sqliteTable("companies", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
 }, (table) => ({
   careersUrlUnique: uniqueIndex("companies_careers_url_unique").on(table.careersUrl),
+  normalizedCareersUrlUnique: uniqueIndex("companies_normalized_careers_url_unique").on(table.normalizedCareersUrl),
 }));
 
 // Jobs - Job postings with match scores

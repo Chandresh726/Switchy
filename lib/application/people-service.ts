@@ -126,7 +126,6 @@ export async function updatePerson(id: number, input: PersonPatchInput) {
 }
 
 export async function getPersonDetail(id: number) {
-  backfillPersonSourceRecords();
   const [person] = await db.select().from(people).where(eq(people.id, id)).limit(1);
   if (!person) throw new NotFoundError("Person not found", "person_not_found");
   const sources = await db.select().from(personSourceRecords)
@@ -160,7 +159,6 @@ export async function purgePerson(id: number) {
 }
 
 export async function listPeopleDuplicates(query: PeopleDuplicatesQuery) {
-  backfillPersonSourceRecords();
   const profileGroups = await db.select({
     identityValue: personSourceRecords.profileUrlNormalized,
     personCount: sql<number>`count(distinct ${personSourceRecords.personId})`.as("person_count"),

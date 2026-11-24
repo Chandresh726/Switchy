@@ -36,6 +36,17 @@ function personValues(identityKey: string, source: "linkedin" | "apollo", name: 
 }
 
 describe("people management infrastructure", () => {
+  it("keeps person and duplicate reads free of source backfill writes", async () => {
+    const { database } = harness.createDatabase();
+    vi.doMock("@/lib/db", () => ({ db: database }));
+    const person = database.insert(people).values(personValues("linkedin:unmigrated", "linkedin", "Read Only")).returning().get();
+    const { getPersonDetail, listPeopleDuplicates } = await import("@/lib/application/people-service");
+    const { peopleDuplicatesQuerySchema } = await import("@/lib/api/contracts/people");
+    expect((await getPersonDetail(person.id)).sources).toEqual([]);
+    await listPeopleDuplicates(peopleDuplicatesQuerySchema.parse({}));
+    expect(database.select().from(personSourceRecords).all()).toEqual([]);
+  });
+
   it("backfills source records idempotently without merging exact duplicates", async () => {
     const { database } = harness.createDatabase();
     vi.doMock("@/lib/db", () => ({ db: database }));
@@ -192,6 +203,8 @@ describe("people management infrastructure", () => {
     database.insert(peopleImportSessions).values({ id: "history", fileName: "past.csv", source: "linkedin", status: "completed" }).run();
     const service = await import("@/lib/application/people-service");
 
+    const { backfillPersonSourceRecords } = await import("@/lib/people/source-records");
+    backfillPersonSourceRecords(); // Startup migration precedes normal reads.
     const duplicates = await service.listPeopleDuplicates({ limit: 25, offset: 0 });
     expect(duplicates.totalCount).toBeGreaterThan(0);
     expect(duplicates.groups.find((group) => group.identityKind === "linkedin_url")).toMatchObject({

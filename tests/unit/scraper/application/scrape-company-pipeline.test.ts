@@ -33,6 +33,7 @@ const company: Company = {
   id: 1,
   name: "Acme",
   careersUrl: "https://jobs.example.com",
+  normalizedCareersUrl: "jobs.example.com/",
   logoUrl: null,
   notes: null,
   platform: "greenhouse",

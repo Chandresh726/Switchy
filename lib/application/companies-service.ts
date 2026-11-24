@@ -105,6 +105,7 @@ function companyValues(input: PreparedCompany) {
   const platform = input.platform ?? detectPlatformFromUrl(input.careersUrl);
   return {
     careersUrl: input.careersUrl,
+    normalizedCareersUrl: input.normalizedCareersUrl,
     name: input.name,
     logoUrl: normalizeOptionalText(input.logoUrl),
     notes: normalizeOptionalText(input.notes),
@@ -132,24 +133,20 @@ function runCompanyWrite<T>(operation: () => T): T {
 
 type CompanyTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-function upsertPreparedCompany(
-  tx: CompanyTransaction,
-  input: PreparedCompany,
-  existingCompanies: Array<typeof companies.$inferSelect>
-) {
+function findCompanyByIdentity(tx: CompanyTransaction, normalized: string) {
+  const indexed = tx.select().from(companies).where(eq(companies.normalizedCareersUrl, normalized)).get();
+  if (indexed) return indexed;
+  // Supports rows inserted by older integrations until their next migration.
+  return tx.select().from(companies).where(isNull(companies.normalizedCareersUrl)).all()
+    .find((company) => normalizeCareersUrl(company.careersUrl) === normalized);
+}
+
+function upsertPreparedCompany(tx: CompanyTransaction, input: PreparedCompany) {
   const values = companyValues(input);
-  const existing = existingCompanies.find(
-    (company) => normalizeCareersUrl(company.careersUrl) === input.normalizedCareersUrl
-  );
-  if (existing) {
-    const updated = tx.update(companies).set({ ...values, updatedAt: new Date() })
-      .where(eq(companies.id, existing.id)).returning().get();
-    Object.assign(existing, updated);
-    return updated;
-  }
-  const created = tx.insert(companies).values(values).returning().get();
-  existingCompanies.push(created);
-  return created;
+  const existing = findCompanyByIdentity(tx, input.normalizedCareersUrl);
+  return existing
+    ? tx.update(companies).set({ ...values, updatedAt: new Date() }).where(eq(companies.id, existing.id)).returning().get()
+    : tx.insert(companies).values(values).returning().get();
 }
 
 export const listCompanies = () => db.select().from(companies).orderBy(desc(companies.createdAt));
@@ -158,8 +155,7 @@ export async function importCompanies(input: CompanyImportInput, context: ApiReq
   const isBulk = Array.isArray(input);
   const items = prepareCompanies(isBulk ? input : [input]);
   const results = runCompanyWrite(() => db.transaction((tx) => {
-    const existingCompanies = tx.select().from(companies).all();
-    return items.map((item) => upsertPreparedCompany(tx, item, existingCompanies));
+    return items.map((item) => upsertPreparedCompany(tx, item));
   }, { behavior: "immediate" }));
   await refreshMappings(context, results.map(({ id }) => id));
   return isBulk ? results : results[0];
@@ -170,7 +166,7 @@ export async function syncCompanies(input: CompanyInput[], context: ApiRequestCo
   const touchedIds = runCompanyWrite(() => db.transaction((tx) => {
     const existingCompanies = tx.select().from(companies).all();
     const incomingUrls = new Set(items.map(({ normalizedCareersUrl }) => normalizedCareersUrl));
-    const ids = items.map((item) => upsertPreparedCompany(tx, item, existingCompanies).id);
+    const ids = items.map((item) => upsertPreparedCompany(tx, item).id);
     const now = new Date();
     for (const company of existingCompanies) {
       if (!incomingUrls.has(normalizeCareersUrl(company.careersUrl)) && company.isActive) {
@@ -193,14 +189,10 @@ export async function getCompany(id: number) {
 export async function replaceCompany(id: number, input: CompanyReplaceInput, context: ApiRequestContext) {
   const prepared = prepareCompany(input);
   const updated = runCompanyWrite(() => db.transaction((tx) => {
-    const existingCompanies = tx.select().from(companies).all();
-    const existing = existingCompanies.find((company) => company.id === id);
+    const existing = tx.select().from(companies).where(eq(companies.id, id)).get();
     if (!existing) throw new NotFoundError("Company not found", "company_not_found");
-    const duplicate = existingCompanies.find((company) =>
-      company.id !== id &&
-      normalizeCareersUrl(company.careersUrl) === prepared.normalizedCareersUrl
-    );
-    if (duplicate) {
+    const duplicate = findCompanyByIdentity(tx, prepared.normalizedCareersUrl);
+    if (duplicate && duplicate.id !== id) {
       throw new ConflictError("Company careers URL already exists", "duplicate_company_url");
     }
     return tx.update(companies).set({
@@ -215,8 +207,7 @@ export async function replaceCompany(id: number, input: CompanyReplaceInput, con
 
 export async function patchCompany(id: number, input: CompanyPatchInput, context: ApiRequestContext) {
   const updated = runCompanyWrite(() => db.transaction((tx) => {
-    const existingCompanies = tx.select().from(companies).all();
-    const existing = existingCompanies.find((company) => company.id === id);
+    const existing = tx.select().from(companies).where(eq(companies.id, id)).get();
     if (!existing) throw new NotFoundError("Company not found", "company_not_found");
     const existingPlatform = companyPlatformSchema.nullable().safeParse(existing.platform);
     const effectivePlatform = input.platform !== undefined
@@ -228,23 +219,23 @@ export async function patchCompany(id: number, input: CompanyPatchInput, context
 
     if (input.careersUrl !== undefined) {
       const normalizedCareersUrl = normalizeCareersUrl(effectiveCareersUrl);
-      const duplicate = existingCompanies.find((company) =>
-        company.id !== id && normalizeCareersUrl(company.careersUrl) === normalizedCareersUrl
-      );
-      if (duplicate) {
+      const duplicate = findCompanyByIdentity(tx, normalizedCareersUrl);
+      if (duplicate && duplicate.id !== id) {
         throw new ConflictError("Company careers URL already exists", "duplicate_company_url");
       }
     }
 
     const updateData: CompanyUpdatePayload = { updatedAt: new Date() };
     if (input.name !== undefined) updateData.name = input.name;
-    if (input.careersUrl !== undefined) updateData.careersUrl = effectiveCareersUrl;
+    if (input.careersUrl !== undefined) {
+      updateData.careersUrl = effectiveCareersUrl;
+    }
     if (input.logoUrl !== undefined) updateData.logoUrl = normalizeOptionalText(input.logoUrl);
     if (input.notes !== undefined) updateData.notes = normalizeOptionalText(input.notes);
     if (input.isActive !== undefined) updateData.isActive = input.isActive;
     if (input.platform !== undefined) updateData.platform = input.platform;
     if (input.boardToken !== undefined) updateData.boardToken = normalizeOptionalText(input.boardToken);
-    return tx.update(companies).set(updateData).where(eq(companies.id, id)).returning().get();
+    return tx.update(companies).set({ ...updateData, ...(input.careersUrl !== undefined ? { normalizedCareersUrl: normalizeCareersUrl(effectiveCareersUrl) } : {}) }).where(eq(companies.id, id)).returning().get();
   }, { behavior: "immediate" }));
   if (input.name !== undefined) await refreshMappings(context, [updated.id]);
   return updated;

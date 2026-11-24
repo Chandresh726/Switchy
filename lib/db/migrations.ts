@@ -3,6 +3,8 @@ import { and, asc, desc, eq, isNull, ne } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
+import { normalizeCareersUrl } from "@/lib/companies/normalization";
+
 import type * as databaseSchema from "./schema";
 import { migrateOutdatedScraperSources } from "./scraper-source-migrations";
 import {
@@ -444,6 +446,16 @@ function toJobviteNutanixExternalId(externalId: string | null): string | null {
   return externalId.replace(/^nutanix-nutanix-/u, "jobvite-nutanix-");
 }
 
+function backfillCompanyIdentities(database: BetterSQLite3Database<typeof databaseSchema>): void {
+  database.transaction((tx) => {
+    const changed = tx.select({ id: companies.id, careersUrl: companies.careersUrl, normalized: companies.normalizedCareersUrl })
+      .from(companies).all().filter((company) => company.normalized !== normalizeCareersUrl(company.careersUrl));
+    // Clear changed identities before assigning them, keeping swaps atomic.
+    for (const company of changed) tx.update(companies).set({ normalizedCareersUrl: null }).where(eq(companies.id, company.id)).run();
+    for (const company of changed) tx.update(companies).set({ normalizedCareersUrl: normalizeCareersUrl(company.careersUrl) }).where(eq(companies.id, company.id)).run();
+  }, { behavior: "immediate" });
+}
+
 export function migrateLocalDatabase(
   database: BetterSQLite3Database<typeof databaseSchema>,
   migrationsFolder: string
@@ -455,6 +467,7 @@ export function migrateLocalDatabase(
     migrate(database, { migrationsFolder });
     migrateLegacyScraperCompanies(database);
     migrateOutdatedScraperSources(database);
+    backfillCompanyIdentities(database);
     backfillAICacheEvents(database);
     backfillWritingEvents(database);
   } finally {
