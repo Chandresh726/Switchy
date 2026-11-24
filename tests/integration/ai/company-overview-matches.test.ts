@@ -1,10 +1,10 @@
-import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 import type { NextRequest } from "next/server";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { companies } from "@/lib/db/schema";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
+import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 
 const harness = createSqliteTestHarness("switchy-company-overview-matches-");
 

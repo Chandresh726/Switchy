@@ -1,9 +1,9 @@
-import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { statsResponseSchema } from "@/lib/api/contracts/stats";
 import { companies, jobs, matchResults } from "@/lib/db/schema";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
+import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 
 const harness = createSqliteTestHarness("switchy-stats-match-projection-");
 

@@ -1,4 +1,3 @@
-import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 import type { NextRequest } from "next/server";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -6,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildJobFingerprintFromRecord } from "@/lib/ai/artifacts/fingerprints";
 import { companies, jobs, matchResults } from "@/lib/db/schema";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
+import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 
 const harness = createSqliteTestHarness("switchy-jobs-match-pagination-");
 

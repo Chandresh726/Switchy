@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { expect, it } from "vitest";
 
+import { runPersistencePreflight } from "@/lib/db/persistence-preflight";
 import { migrateLocalDatabase } from "@/lib/db/migrations";
 import { companies, jobs, matchResults } from "@/lib/db/schema";
 import { createMigrationsThrough } from "@test/helpers/migrations";
@@ -25,5 +26,14 @@ it("drops obsolete job match storage while preserving application and result ide
     const columns = connection.pragma("table_info(jobs)") as Array<{ name: string }>;
     expect(columns.map((column) => column.name)).not.toContain("match_score");
     expect(connection.pragma("foreign_key_check")).toEqual([]);
+  } finally { rmSync(previous, { recursive: true, force: true }); }
+});
+
+it("allows preflight before the versioned match ledger exists", () => {
+  const { database } = harness.createDatabase({ migrate: false });
+  const previous = createMigrationsThrough(15, "switchy-before-match-ledger-");
+  try {
+    migrateLocalDatabase(database, previous);
+    expect(runPersistencePreflight(database)).toMatchObject({ existingSchema: true, invalidMatchScores: 0 });
   } finally { rmSync(previous, { recursive: true, force: true }); }
 });

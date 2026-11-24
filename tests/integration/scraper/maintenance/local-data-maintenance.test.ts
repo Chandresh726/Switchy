@@ -1,4 +1,3 @@
-import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 
@@ -24,6 +23,7 @@ import { InProcessLocalDataOperationGate } from "@/lib/runtime/data-operation-ga
 import type { ScrapeSettingsProvider } from "@/lib/scraper/settings/provider";
 
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
+import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 
 vi.mock("@/lib/db", () => ({ db: {} }));
 

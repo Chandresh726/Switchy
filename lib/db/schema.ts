@@ -620,7 +620,7 @@ export const jobAnalyses = sqliteTable("job_analyses", {
   createdAtIdx: index("job_analyses_created_at_idx").on(table.createdAt),
 }));
 
-// Immutable versioned match outcomes. Deprecated job columns are cleared during startup cleanup.
+// Versioned match outcomes are the authoritative source for job scores.
 export const matchResults = sqliteTable("match_results", {
   id: text("id").primaryKey(),
   jobId: integer("job_id").references(() => jobs.id, { onDelete: "cascade" }).notNull(),

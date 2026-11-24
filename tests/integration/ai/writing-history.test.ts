@@ -1,4 +1,3 @@
-import { preCanonicalCompanies } from "@test/helpers/migration-schema";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 
@@ -25,6 +24,7 @@ import {
 import { migrateLocalDatabase } from "@/lib/db/migrations";
 import { createMigrationsThrough } from "@test/helpers/migrations";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
+import { preCanonicalCompanies } from "@test/helpers/migration-schema";
 
 const harness = createSqliteTestHarness("switchy-writing-history-");
 const temporaryMigrationFolders: string[] = [];

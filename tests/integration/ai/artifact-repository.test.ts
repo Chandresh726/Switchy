@@ -1,5 +1,3 @@
-import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
-import { preCanonicalCompanies } from "@test/helpers/migration-schema";
 import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,6 +24,8 @@ import {
 } from "@/lib/db/schema";
 import { migrateLocalDatabase } from "@/lib/db/migrations";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
+import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
+import { preCanonicalCompanies } from "@test/helpers/migration-schema";
 
 const harness = createSqliteTestHarness("switchy-artifacts-");
 const preLinkMatchLogs = sqliteTable("match_logs", {

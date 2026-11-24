@@ -92,7 +92,13 @@ export function runPersistencePreflight(
     ...database.select({ profileId: education.profileId }).from(education).all(),
   ];
   const jobRows = database.select({ status: jobs.status }).from(jobs).all();
-  const matchRows = database.select({ score: matchResults.score }).from(matchResults).all();
+  let matchRows: Array<{ score: number }> = [];
+  try {
+    matchRows = database.select({ score: matchResults.score }).from(matchResults).all();
+  } catch (error) {
+    // Installations predating versioned match results have no ledger yet.
+    if (!(error instanceof Error && error.message.includes("no such table: match_results"))) throw error;
+  }
   const scrapeSessionRows = database.select({
     companiesTotal: scrapeSessions.companiesTotal,
     companiesCompleted: scrapeSessions.companiesCompleted,

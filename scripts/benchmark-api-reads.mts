@@ -21,6 +21,8 @@ try {
     const { migrateLocalDatabase } = await import("../lib/db/migrations");
     migrateLocalDatabase(db, path.join(process.cwd(), "drizzle"));
     const { listJobs, getJobStatusCounts } = await import("../lib/application/jobs-service");
+    const { getDashboard } = await import("../lib/application/dashboard-service");
+    const { getWritingHistoryPage } = await import("../lib/ai/observability/writing-history");
     const { getDashboardStats } = await import("../lib/application/stats-service");
     const { jobsQuerySchema } = await import("../lib/api/contracts/jobs");
     const { withApiTiming } = await import("../lib/api/timing");
@@ -30,6 +32,8 @@ try {
       ["jobs_score", () => listJobs(jobsQuerySchema.parse({ sortBy: "matchScore" }))],
       ["job_counts", () => getJobStatusCounts()],
       ["dashboard_stats", () => getDashboardStats()],
+      ["dashboard_page", () => getDashboard({ requestId: "benchmark" })],
+      ["writing_history", () => getWritingHistoryPage({ limit: 25, offset: 0 })],
     ] as const) {
       const times: number[] = [];
       let bytes = 0;

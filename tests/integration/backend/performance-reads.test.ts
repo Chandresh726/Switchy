@@ -1,9 +1,9 @@
-import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { jobsQuerySchema, jobsResponseSchema, jobStatusCountsSchema } from "@/lib/api/contracts/jobs";
 import { companies } from "@/lib/db/schema";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
+import { insertJobsWithMatches } from "@test/helpers/match-fixtures";
 
 const harness = createSqliteTestHarness("switchy-performance-reads-");
 
