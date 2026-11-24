@@ -42,6 +42,8 @@ import type { MatchHistoryDetailResponse } from "@/lib/api/contracts/history";
 import { cn } from "@/lib/utils";
 import { formatDurationMs, formatDurationFromDates, formatDateTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
+import { useMatchSession } from "@/lib/hooks/use-match-session";
+import { useProgressRefresh } from "@/lib/hooks/use-progress-refresh";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
@@ -186,17 +188,16 @@ export function MatchSessionDetail({ sessionId }: MatchSessionDetailProps) {
     workOffset: offset,
     workLimit: pageSize,
   };
+  const sessionProgress = useMatchSession(sessionId);
+  useProgressRefresh(queryKeys.matchHistory.detail(sessionId, detailParams), sessionProgress.data?.revision);
   const { data, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: queryKeys.matchHistory.detail(sessionId, detailParams),
     queryFn: async () => {
       return getMatchHistoryDetail(sessionId, detailParams);
     },
-    refetchInterval: (query) => {
-      const session = query.state.data?.session;
-      if (!session) return 1000;
-      return session.status === "in_progress" || session.status === "queued" ? 1000 : false;
-    },
-    refetchIntervalInBackground: true,
+    // Periodic fallback catches metadata edits with unchanged progress counts.
+    refetchInterval: () => sessionProgress.data && (sessionProgress.data.status === "in_progress" || sessionProgress.data.status === "queued") ? 30_000 : false,
+
   });
 
   const stopMutation = useMutation({

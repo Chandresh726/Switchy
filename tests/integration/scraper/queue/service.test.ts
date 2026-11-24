@@ -121,6 +121,28 @@ function createService(
 }
 
 describe("LocalScrapeQueueService", () => {
+  it("acknowledges a committed session before its scrape finishes", async () => {
+    const database = createTestDatabase();
+    const company = database.insert(companies).values({ name: "Submitted", careersUrl: "https://example.com/submitted" }).returning().get();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const normal = createPipeline();
+    const pipeline: Pick<ScrapeCompanyPipeline, "scrape"> = {
+      scrape: async (...args) => { await gate; return normal.pipeline.scrape(...args); },
+    };
+    const { service } = createService(database, { pipeline });
+    try {
+      const queued = await service.submitCompanies([company.id, company.id], "manual");
+      expect(queued).toMatchObject({ status: "queued", totalCompanies: 1 });
+      expect(database.select().from(scrapeSessions).get()).toMatchObject({ id: queued.sessionId, completedAt: null });
+      expect(database.select().from(scrapeQueueItems).all()).toHaveLength(1);
+      expect(normal.scrapeCompany).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await service.recoverPending();
+    }
+  });
+
   it("leaves queued and expired final-attempt work untouched during DarkWake", async () => {
     vi.useFakeTimers();
     try {

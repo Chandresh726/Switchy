@@ -34,6 +34,7 @@ import {
 } from "@/lib/companies/preset-companies";
 import { usePresetCompanies } from "@/lib/hooks/use-preset-companies";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
+import { useScrapeSession } from "@/lib/hooks/use-scrape-session";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
@@ -92,6 +93,13 @@ function CompaniesPageContent() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [matchSessionId, setMatchSessionId] = useState<string | null>(null);
+  const [scrapeSessionId, setScrapeSessionId] = useState<string | null>(null);
+  useScrapeSession(scrapeSessionId, (progress) => {
+    setScrapeSessionId(null);
+    if (progress.status === "failed") toast.error("Job refresh failed. See scrape history for details.");
+    else if (progress.status === "partial") toast.warning("Job refresh finished with errors. See scrape history for details.");
+    else toast.success("Job refresh finished");
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   useMatchSession(matchSessionId, { onSettled: () => setMatchSessionId(null) });
@@ -272,7 +280,8 @@ function CompaniesPageContent() {
     },
     onSuccess: (data) => {
       void cacheOwnership.companyMutation(queryClient, { affectsScrapeHistory: true });
-      toast.success(data.message || "Jobs refreshed successfully");
+      setScrapeSessionId(data.sessionId);
+      toast.success(`Queued ${data.totalCompanies} companies for job refresh`);
     },
     onError: (error) => {
       toast.error(getApiErrorMessage(error, "Failed to refresh jobs"));
@@ -473,7 +482,7 @@ function CompaniesPageContent() {
             });
           }}
           onAddCompany={openAddCompanyPanel}
-          isRefreshing={bulkRefreshMutation.isPending}
+          isRefreshing={bulkRefreshMutation.isPending || Boolean(scrapeSessionId)}
           isMatching={bulkMatchMutation.isPending || Boolean(matchSessionId)}
           isDeletingJobs={bulkDeleteJobsMutation.isPending}
           isDeletingCompanies={bulkDeleteCompaniesMutation.isPending}
@@ -553,7 +562,7 @@ function CompaniesPageContent() {
             onEditCompany={openEditCompanyPanel}
             onRefreshJobs={handleRefreshCompanyJobs}
             onRefreshMatches={handleRefreshCompanyMatches}
-            isRefreshing={bulkRefreshMutation.isPending}
+            isRefreshing={bulkRefreshMutation.isPending || Boolean(scrapeSessionId)}
             isMatching={bulkMatchMutation.isPending || Boolean(matchSessionId)}
           />
         )

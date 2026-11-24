@@ -25,7 +25,6 @@ export function SessionList() {
       const sessions = query.state.data?.sessions || [];
       return historyPollingInterval(sessions);
     },
-    refetchIntervalInBackground: true,
   });
 
   if (isLoading) {

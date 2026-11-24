@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
   try {
     assertAppRequest(request);
     const { companyIds } = companyIdsBodySchema.parse(await request.json());
-    return NextResponse.json(await refreshCompanyJobs(companyIds));
+    return NextResponse.json(await refreshCompanyJobs(companyIds), { status: 202 });
   } catch (error) {
     return handleApiError(error, { request, fallbackMessage: "Failed to refresh company jobs", fallbackCode: "company_jobs_refresh_failed" });
   }

@@ -355,18 +355,17 @@ describe("SessionDetail", () => {
 
   it("polls active sessions and stops polling after the session and queue become terminal", async () => {
     vi.useFakeTimers();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        jsonResponse(sessionResponse("in_progress", [queueItem()]))
-      )
-      .mockResolvedValueOnce(
-        jsonResponse(
-          sessionResponse("completed", [
-            queueItem({ status: "completed", completedAt: "2026-07-13T10:01:00.000Z" }),
-          ])
-        )
-      );
+    let progressReads = 0;
+    let detailReads = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/progress")) {
+        progressReads += 1;
+        const active = progressReads === 1;
+        return jsonResponse({ sessionId: SESSION_ID, status: active ? "in_progress" : "completed", revision: String(progressReads), total: 2, completed: active ? 1 : 2, hasActiveWork: active, nextAttemptAt: null });
+      }
+      detailReads += 1;
+      return jsonResponse(sessionResponse(detailReads === 1 ? "in_progress" : "completed", [queueItem({ status: detailReads === 1 ? "running" : "completed" })]));
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     renderWithQueryClient(<SessionDetail sessionId={SESSION_ID} />);
@@ -377,12 +376,14 @@ describe("SessionDetail", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
     });
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(progressReads).toBe(2));
+    await vi.waitFor(() => expect(detailReads).toBeGreaterThanOrEqual(2));
+    const callsAfterCompletion = fetchMock.mock.calls.length;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2_000);
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(callsAfterCompletion);
   });
 
   it("renders a stable error state when session loading fails", async () => {

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, max, sql } from "drizzle-orm";
 
 import { insertAICacheHit } from "@/lib/ai/observability/cache-events";
 import { db } from "@/lib/db";
@@ -38,6 +38,7 @@ interface MatchSessionJobProgress {
 }
 
 export interface MatchPipelineProgress {
+  revision: string;
   analysis: MatchPipelinePhaseProgress;
   matching: MatchPipelinePhaseProgress;
   jobs: MatchSessionJobProgress[];
@@ -131,9 +132,10 @@ export async function markJobMatchStarted(
 export async function getMatchPipelineProgress(
   sessionId: string,
   database: typeof db = db,
-  page: { limit: number; offset: number } = { limit: 100, offset: 0 }
+  page: { limit: number; offset: number; summaryOnly?: boolean } = { limit: 100, offset: 0 }
 ): Promise<MatchPipelineProgress> {
   const [summary] = await database.select({
+    updatedAt: max(matchSessionJobs.updatedAt),
     total: sql<number>`count(*)`,
     analysisCompleted: sql<number>`sum(case when ${matchSessionJobs.analysisStatus} in ('ready', 'cached', 'failed') then 1 else 0 end)`,
     analysisActive: sql<number>`sum(case when ${matchSessionJobs.analysisStatus} = 'analyzing' then 1 else 0 end)`,
@@ -146,7 +148,7 @@ export async function getMatchPipelineProgress(
     matchingCached: sql<number>`sum(case when ${matchSessionJobs.matchStatus} = 'cached' then 1 else 0 end)`,
     matchingFailed: sql<number>`sum(case when ${matchSessionJobs.matchStatus} = 'failed' then 1 else 0 end)`,
   }).from(matchSessionJobs).where(eq(matchSessionJobs.sessionId, sessionId));
-  const rows = await database.select({
+  const rows = page.summaryOnly ? [] : await database.select({
     jobId: matchSessionJobs.jobId,
     jobTitle: jobs.title,
     companyName: companies.name,
@@ -174,6 +176,7 @@ export async function getMatchPipelineProgress(
     .offset(page.offset);
   const total = Number(summary?.total ?? 0);
   return {
+    revision: JSON.stringify(summary),
     analysis: {
       total,
       completed: Number(summary?.analysisCompleted ?? 0),

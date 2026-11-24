@@ -60,10 +60,10 @@ export async function stopAIWorkSession(
   return new DrizzleAIWorkStore(database).stopSession(sessionId);
 }
 
-export async function getAIWorkSession(sessionId: string) {
+export async function getAIWorkSession(sessionId: string, summaryOnly = false) {
   const [session, pipeline] = await Promise.all([
     getMatchSessionStatus(sessionId),
-    getMatchPipelineProgress(sessionId),
+    getMatchPipelineProgress(sessionId, db, { limit: 100, offset: 0, summaryOnly }),
   ]);
   return session ? { ...session, pipeline } : null;
 }

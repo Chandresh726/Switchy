@@ -26,6 +26,7 @@ import {
     refreshCompanyJobs,
 } from "@/lib/api/clients/companies";
 import type { CompanyOverviewResponse } from "@/lib/api/contracts/companies";
+import { useScrapeSession } from "@/lib/hooks/use-scrape-session";
 import { useMatchSession } from "@/lib/hooks/use-match-session";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import { getApiErrorMessage, isApiNotFoundError } from "@/lib/api/error-presentation";
@@ -39,6 +40,12 @@ function CompanyLayoutContent({
     const pathname = usePathname();
     const queryClient = useQueryClient();
     const [matchSessionId, setMatchSessionId] = useState<string | null>(null);
+    const [scrapeSessionId, setScrapeSessionId] = useState<string | null>(null);
+    useScrapeSession(scrapeSessionId, (progress) => {
+        setScrapeSessionId(null);
+        if (progress.status === "failed" || progress.status === "partial") toast.error("Job refresh finished with errors. See scrape history for details.");
+        else toast.success("Job refresh finished");
+    });
     const { noteSaveIndicator } = useCompanyNotesContext();
 
     const companyId = Number(params.id);
@@ -70,7 +77,8 @@ function CompanyLayoutContent({
                 companyId,
                 affectsScrapeHistory: true,
             });
-            toast.success(result.message || "Jobs refreshed successfully");
+            setScrapeSessionId(result.sessionId);
+            toast.success("Job refresh queued");
         },
         onError: (mutationError) => {
             toast.error(getApiErrorMessage(mutationError, "Failed to refresh jobs"));
@@ -131,7 +139,7 @@ function CompanyLayoutContent({
                         <CompanyActions
                             canRefreshJobs={data.company.canScrapeJobs}
                             canRunMatching={data.stats.openJobs > 0}
-                            isRefreshing={refreshJobsMutation.isPending}
+                            isRefreshing={refreshJobsMutation.isPending || Boolean(scrapeSessionId)}
                             isMatching={runMatchingMutation.isPending || Boolean(matchSessionId)}
                             onRefreshJobs={() => refreshJobsMutation.mutate()}
                             onRunMatching={() => runMatchingMutation.mutate()}

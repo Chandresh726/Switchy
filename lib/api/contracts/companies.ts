@@ -77,16 +77,9 @@ export const companyJobsDeleteResponseSchema = z.object({
 });
 
 export const companyRefreshResponseSchema = z.object({
-  success: z.boolean(),
   sessionId: z.string(),
+  status: z.enum(["queued", "completed"]),
   totalCompanies: z.number().int().nonnegative(),
-  refreshedCompanies: z.number().int().nonnegative(),
-  skippedCompanies: z.number().int().nonnegative(),
-  totalJobsFound: z.number().int().nonnegative(),
-  totalJobsAdded: z.number().int().nonnegative(),
-  totalJobsFiltered: z.number().int().nonnegative(),
-  failedCompanies: z.number().int().nonnegative(),
-  message: z.string(),
 });
 
 const companyJobSchema = z.object({

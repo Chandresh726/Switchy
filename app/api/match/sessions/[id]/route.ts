@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
+
 import { NextResponse } from "next/server";
 
 import { getAIWorkSession, stopAIWorkSession } from "@/lib/ai/work-items";
 import { assertAppRequest, handleApiError, NotFoundError } from "@/lib/api";
-import { matchSessionParamsSchema } from "@/lib/api/contracts/runtime";
+import { matchSessionParamsSchema, matchSessionQuerySchema } from "@/lib/api/contracts/runtime";
 import { NO_STORE_HEADERS } from "@/lib/utils/api-headers";
 
 interface RouteParams {
@@ -12,11 +14,13 @@ interface RouteParams {
 export async function GET(request: Request, { params }: RouteParams) {
   try {
     const { id } = matchSessionParamsSchema.parse(await params);
-    const session = await getAIWorkSession(id);
+    const { summary } = matchSessionQuerySchema.parse(Object.fromEntries(new URL(request.url).searchParams));
+    const session = await getAIWorkSession(id, summary === "true");
     if (!session) {
       throw new NotFoundError("Session not found", "session_not_found");
     }
     return NextResponse.json({
+      revision: createHash("sha256").update(JSON.stringify([session.status, session.jobsCompleted, session.nextAttemptAt, session.waitReason, session.pipeline.revision])).digest("hex"),
       sessionId: session.id,
       status: session.status,
       nextAttemptAt: session.status === "queued" ? session.nextAttemptAt : null,

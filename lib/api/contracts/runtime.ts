@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const matchSessionQuerySchema = z.object({ summary: z.enum(["true"]).optional() });
+
 export const matchSessionParamsSchema = z.object({
   id: z.string().trim().min(1).max(200),
 });
@@ -71,6 +73,7 @@ export const matchJobProgressSchema = z.object({
   updatedAt: z.string(),
 });
 export const matchSessionProgressResponseSchema = z.object({
+  revision: z.string().optional(),
   nextAttemptAt: z.string().nullable().optional(),
   waitReason: z.string().nullable().optional(),
   sessionId: z.string(),
@@ -98,3 +101,11 @@ export type SchedulerHostSyncResponse = z.infer<typeof schedulerHostSyncResponse
 export type MatchPhaseProgress = z.infer<typeof matchPhaseProgressSchema>;
 export type MatchJobProgress = z.infer<typeof matchJobProgressSchema>;
 export type MatchSessionProgress = z.infer<typeof matchSessionProgressResponseSchema>;
+
+export const scrapeSessionProgressResponseSchema = z.object({
+  sessionId: z.string(), status: z.string(), revision: z.string(),
+  total: z.number().int().nonnegative(), completed: z.number().int().nonnegative(),
+  hasActiveWork: z.boolean(),
+  nextAttemptAt: z.string().nullable(),
+});
+export type ScrapeSessionProgress = z.infer<typeof scrapeSessionProgressResponseSchema>;

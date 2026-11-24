@@ -7,28 +7,39 @@ import { getMatchSession } from "@/lib/api/clients/runtime";
 import type { MatchSessionProgress } from "@/lib/api/contracts/runtime";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 
+import { useProgressRefresh } from "./use-progress-refresh";
+import { sessionPollingInterval } from "./history-polling";
+
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
 export function useMatchSession(
   sessionId: string | null,
   options: {
+    includeJobs?: boolean;
     onSettled?: (progress: MatchSessionProgress) => void;
   } = {}
 ) {
   const queryClient = useQueryClient();
   const settledSessions = useRef(new Set<string>());
   const query = useQuery<MatchSessionProgress | null>({
-    queryKey: queryKeys.runtime.matchSession(sessionId),
+    queryKey: [...queryKeys.runtime.matchSession(sessionId), "summary"],
     queryFn: async () => {
       if (!sessionId) return null;
-      return getMatchSession(sessionId);
+      return getMatchSession(sessionId, true);
     },
     enabled: Boolean(sessionId),
-    refetchInterval: ({ state }) => {
-      const progress = state.data;
-      return progress && TERMINAL_STATUSES.has(progress.status) ? false : 1_000;
-    },
+    refetchInterval: ({ state }) => sessionPollingInterval(state.data ?? undefined),
+
   });
+
+  const detailKey = [...queryKeys.runtime.matchSession(sessionId), "detail"];
+  const detail = useQuery({
+    queryKey: detailKey,
+    queryFn: () => getMatchSession(sessionId!),
+    enabled: Boolean(sessionId && options.includeJobs),
+    refetchInterval: () => sessionPollingInterval(query.data ?? undefined) === false ? false : 30_000,
+  });
+  useProgressRefresh(detailKey, options.includeJobs ? query.data?.revision : undefined);
 
   const onSettledRef = useRef(options.onSettled);
   useEffect(() => {
@@ -44,5 +55,7 @@ export function useMatchSession(
     onSettledRef.current?.(progress);
   }, [progress, queryClient]);
 
-  return query;
+  return { ...query, data: query.data && options.includeJobs && detail.data
+    ? { ...query.data, jobs: detail.data.jobs, jobPagination: detail.data.jobPagination }
+    : query.data };
 }

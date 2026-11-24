@@ -147,6 +147,20 @@ export class LocalScrapeQueueService {
     );
   }
 
+  async submitCompanies(companyIds: number[], triggerSource: TriggerSource) {
+    const requested = new Set(companyIds);
+    const companies = await this.dependencies.companyCatalog.getActiveCompanies();
+    const ordered = this.orderByStaticPriority(companies.filter((company) => requested.has(company.id)));
+    const sessionId = crypto.randomUUID();
+    await this.queueStore.createSessionAndEnqueue({ sessionId, triggerSource, companyIds: ordered });
+    // The durable session is committed before dispatch. Boot recovery resumes it
+    // if the process exits after this acknowledgement.
+    void this.recoverPending().catch((error: unknown) => {
+      console.error("[Scrape queue] Submitted work will retry through queue recovery", error);
+    });
+    return { sessionId, status: ordered.length ? "queued" as const : "completed" as const, totalCompanies: ordered.length };
+  }
+
   private orderByStaticPriority(
     companies: Awaited<ReturnType<CompanyCatalog["getActiveCompanies"]>>
   ): number[] {

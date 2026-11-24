@@ -672,6 +672,7 @@ function SettingsContent() {
   const [matchSessionId, setMatchSessionId] = useState<string | null>(null);
 
   const { data: matchProgress } = useMatchSession(matchSessionId, {
+    includeJobs: true,
     onSettled: () => {
       setMatchSessionId(null);
       void queryClient.invalidateQueries({ queryKey: queryKeys.runtime.unmatchedJobs() });

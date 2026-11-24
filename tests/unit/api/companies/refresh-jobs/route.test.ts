@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertAppRequest: vi.fn(),
-  scrapeCompanies: vi.fn(),
+  submitCompanies: vi.fn(),
 }));
 
 vi.mock("@/lib/api", async (importOriginal) => ({
@@ -14,7 +14,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 
 vi.mock("@/lib/scraper", () => ({
   getLocalScrapeQueueService: () => ({
-    scrapeCompanies: mocks.scrapeCompanies,
+    submitCompanies: mocks.submitCompanies,
   }),
 }));
 
@@ -30,21 +30,7 @@ function createRequest(body: unknown): NextRequest {
 
 describe("manual company refresh route", () => {
   beforeEach(() => {
-    mocks.scrapeCompanies.mockResolvedValue({
-      sessionId: "session-1",
-      results: [],
-      summary: {
-        totalCompanies: 3,
-        successfulCompanies: 1,
-        skippedCompanies: 1,
-        failedCompanies: 1,
-        totalJobsFound: 12,
-        totalJobsAdded: 4,
-        totalJobsFiltered: 2,
-        totalJobsArchived: 0,
-        totalDuration: 100,
-      },
-    });
+    mocks.submitCompanies.mockResolvedValue({ sessionId: "session-1", status: "queued", totalCompanies: 3 });
   });
 
   it.each([
@@ -61,7 +47,7 @@ describe("manual company refresh route", () => {
       code: "invalid_request",
       requestId: expect.any(String),
     });
-    expect(mocks.scrapeCompanies).not.toHaveBeenCalled();
+    expect(mocks.submitCompanies).not.toHaveBeenCalled();
   });
 
   it("maps an empty request body to the existing invalid JSON response", async () => {
@@ -78,25 +64,13 @@ describe("manual company refresh route", () => {
     });
   });
 
-  it("dispatches the durable queue with a manual trigger and preserves response mapping", async () => {
+  it("dispatches the durable queue with a manual trigger and acknowledges submission", async () => {
     const response = await POST(createRequest({ companyIds: [1, "2", 3] }));
     const body = await response.json();
 
     expect(mocks.assertAppRequest).toHaveBeenCalledTimes(1);
-    expect(mocks.scrapeCompanies).toHaveBeenCalledWith([1, 2, 3], "manual");
-    expect(response.status).toBe(200);
-    expect(body).toEqual({
-      success: false,
-      sessionId: "session-1",
-      totalCompanies: 3,
-      refreshedCompanies: 1,
-      skippedCompanies: 1,
-      totalJobsFound: 12,
-      totalJobsAdded: 4,
-      totalJobsFiltered: 2,
-      failedCompanies: 1,
-      message:
-        "Refreshed 1 company, skipped 1 custom company without scraping support, 1 company failed. Found 12 jobs, added 4 new.",
-    });
+    expect(mocks.submitCompanies).toHaveBeenCalledWith([1, 2, 3], "manual");
+    expect(response.status).toBe(202);
+    expect(body).toEqual({ sessionId: "session-1", status: "queued", totalCompanies: 3 });
   });
 });

@@ -2,7 +2,7 @@ import { QueryClient, type QueryKey } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 
 import { cacheOwnership, canonicalQueryParams, queryKeys } from "@/lib/query-keys";
-import { historyPollingInterval } from "@/lib/hooks/history-polling";
+import { sessionPollingInterval, historyPollingInterval } from "@/lib/hooks/history-polling";
 
 function invalidatedKeys(spy: { mock: { calls: unknown[][] } }): Array<QueryKey | undefined> {
   return spy.mock.calls.map((call) => {
@@ -254,4 +254,10 @@ describe("cache ownership", () => {
       queryKeys.ai.contents(),
     ]);
   });
+});
+
+it("slows progress polling during cooldown and stops for terminal sessions", () => {
+  expect(sessionPollingInterval({ status: "queued", nextAttemptAt: new Date(Date.now() + 60_000) })).toBe(15_000);
+  expect(sessionPollingInterval({ status: "completed" })).toBe(false);
+  expect(sessionPollingInterval({ status: "in_progress" })).toBe(1_000);
 });

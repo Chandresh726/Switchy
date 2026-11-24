@@ -36,6 +36,8 @@ import {
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
+import { useScrapeSession } from "@/lib/hooks/use-scrape-session";
+import { useProgressRefresh } from "@/lib/hooks/use-progress-refresh";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
 
@@ -55,17 +57,16 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
     offset,
     limit: pageSize,
   };
+  const sessionProgress = useScrapeSession(sessionId);
+  useProgressRefresh(queryKeys.scrapeHistory.detail(sessionId, detailParams), sessionProgress.data?.revision);
   const { data, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: queryKeys.scrapeHistory.detail(sessionId, detailParams),
     queryFn: async () => {
       return getScrapeHistoryDetail(sessionId, detailParams);
     },
-    refetchInterval: (query) => {
-      const session = query.state.data?.session;
-      if (!session) return 1000;
-      return session.status === "in_progress" || query.state.data?.hasActiveWork ? 1000 : false;
-    },
-    refetchIntervalInBackground: true,
+    // Periodic fallback catches metadata edits with unchanged progress counts.
+    refetchInterval: () => sessionProgress.data && (sessionProgress.data.status === "in_progress" || sessionProgress.data.status === "queued") ? 30_000 : false,
+
   });
 
   const stopMutation = useMutation({

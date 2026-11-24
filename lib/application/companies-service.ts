@@ -276,25 +276,8 @@ export async function queueCompaniesMatch(companyIds: number[]) {
     : queueMatchWork({ jobIds, triggerSource: "manual" });
 }
 
-export async function refreshCompanyJobs(companyIds: number[]) {
-  const result = await getLocalScrapeQueueService().scrapeCompanies(companyIds, "manual");
-  const { summary } = result;
-  const messageParts = [`Refreshed ${summary.successfulCompanies} compan${summary.successfulCompanies === 1 ? "y" : "ies"}`];
-  if (summary.skippedCompanies > 0) messageParts.push(`skipped ${summary.skippedCompanies} custom compan${summary.skippedCompanies === 1 ? "y" : "ies"} without scraping support`);
-  if (summary.failedCompanies > 0) messageParts.push(`${summary.failedCompanies} compan${summary.failedCompanies === 1 ? "y failed" : "ies failed"}`);
-  if (summary.reusedCompanies > 0) messageParts.push(`reused a concurrent refresh for ${summary.reusedCompanies} compan${summary.reusedCompanies === 1 ? "y" : "ies"}`);
-  return {
-    success: summary.failedCompanies === 0,
-    sessionId: result.sessionId,
-    totalCompanies: summary.totalCompanies,
-    refreshedCompanies: summary.successfulCompanies,
-    skippedCompanies: summary.skippedCompanies,
-    totalJobsFound: summary.totalJobsFound,
-    totalJobsAdded: summary.totalJobsAdded,
-    totalJobsFiltered: summary.totalJobsFiltered,
-    failedCompanies: summary.failedCompanies,
-    message: `${messageParts.join(", ")}. Found ${summary.totalJobsFound} jobs, added ${summary.totalJobsAdded} new.`,
-  };
+export function refreshCompanyJobs(companyIds: number[]) {
+  return getLocalScrapeQueueService().submitCompanies(companyIds, "manual");
 }
 
 export async function getCompanyOverview(id: number, now = new Date(), section: CompanyOverviewSection = "all") {

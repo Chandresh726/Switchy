@@ -10,6 +10,7 @@ import {
   unmatchedJobsCountResponseSchema,
 } from "@/lib/api/contracts/settings";
 import {
+  scrapeSessionProgressResponseSchema,
   matchSessionProgressResponseSchema,
   matchSessionParamsSchema,
   schedulerHostActionSchema,
@@ -30,6 +31,8 @@ export const recoverScheduler = () => apiCommand("/api/scheduler/recover", "POST
 export const getSchedulerHost = (): Promise<SchedulerHostStatusResponse> => apiRequest("/api/scheduler/host", { method: "GET", cache: "no-store" }, schedulerHostStatusResponseSchema, "Failed to fetch scheduler host status");
 export const syncSchedulerHost = (action: "sync" | "install" | "uninstall"): Promise<SchedulerHostSyncResponse> => apiJsonMutation("/api/scheduler/host", "POST", schedulerHostActionSchema, { action }, schedulerHostSyncResponseSchema, "Failed to sync scheduler host");
 export const queueJobMatch = (jobId: number) => apiJsonMutation("/api/match", "POST", MatchRouteBodySchema, { jobId }, queuedMatchResponseSchema, "Failed to calculate match");
-export const getMatchSession = (sessionId: string) => apiRequest(`/api/match/sessions/${matchSessionPath(sessionId)}`, { method: "GET", cache: "no-store" }, matchSessionProgressResponseSchema, "Failed to read match progress");
+export const getMatchSession = (sessionId: string, summaryOnly = false) => apiRequest(`/api/match/sessions/${matchSessionPath(sessionId)}${summaryOnly ? "?summary=true" : ""}`, { method: "GET", cache: "no-store" }, matchSessionProgressResponseSchema, "Failed to read match progress");
 export const getUnmatchedJobsCount = (days: number): Promise<UnmatchedJobsCountResponse> => apiGet(`/api/jobs/match-unmatched?${serializeQuery(MatchUnmatchedQuerySchema, { days })}`, unmatchedJobsCountResponseSchema, "Failed to fetch unmatched count");
 export const queueUnmatchedJobs = (days: number): Promise<QueuedMatchResponse> => apiJsonMutation("/api/jobs/match-unmatched", "POST", MatchUnmatchedBodySchema, { days }, queuedMatchResponseSchema, "Failed to match jobs");
+
+export const getScrapeSessionProgress = (sessionId: string) => apiGet(`/api/scrape-history/${matchSessionPath(sessionId)}/progress`, scrapeSessionProgressResponseSchema, "Failed to read scrape progress");
