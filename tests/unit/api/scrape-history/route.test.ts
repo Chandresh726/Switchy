@@ -86,13 +86,15 @@ describe("scrape history route", () => {
       companyId: 7,
       companyName: "Acme",
       status: "running",
+      progressStatus: "running",
       attemptCount: 2,
       maxAttempts: 3,
       leaseExpiresAt: new Date("2026-07-13T12:00:00.000Z"),
       lastError: "previous attempt failed",
     };
     const pagination = { total: 1, limit: 50, offset: 0, hasMore: false };
-    store.getDetail.mockReturnValue({ session, logs: [log], pagination, hasActiveWork: true, queueItems: [queueItem] });
+    const progressCounts = { queued: 0, running: 1, success: 0, partial: 0, failed: 0, cancelled: 0 };
+    store.getDetail.mockReturnValue({ session, logs: [log], pagination, hasActiveWork: true, progressCounts, queueItems: [queueItem] });
 
     const response = await getDetail(createRequest("GET", "/session-1"), { params: Promise.resolve({ id: "session-1" }) });
 
@@ -102,6 +104,7 @@ describe("scrape history route", () => {
       logs: [log],
       pagination,
       hasActiveWork: true,
+      progressCounts,
       queueItems: [
         {
           ...queueItem,

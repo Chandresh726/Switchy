@@ -127,6 +127,62 @@ describe("deleteScrapeHistory", () => {
 });
 
 describe("DrizzleScrapeHistoryStore", () => {
+  it("prioritizes active companies before pagination and counts actual outcomes across all 151 companies", () => {
+    const database = createTestDatabase();
+    const rows = database.insert(companies).values(Array.from({ length: 151 }, (_, index) => ({
+      name: `Company ${String(index).padStart(3, "0")}`, careersUrl: `https://example.com/${index}`,
+    }))).returning().all();
+    database.insert(scrapeSessions).values({
+      id: "live", triggerSource: "manual", status: "in_progress", companiesTotal: 151,
+    }).run();
+    const resultJson = (companyId: number, outcome: "success" | "partial" | "error") => JSON.stringify({
+      companyId, companyName: "Company", success: outcome === "success", outcome, platform: null,
+      jobsFound: 0, jobsAdded: 0, jobsUpdated: 0, jobsFiltered: 0, jobsArchived: 0, duration: 1,
+    });
+    database.insert(scrapeQueueItems).values(rows.map((company, index) => ({
+      id: `item-${index}`, sessionId: "live", companyId: company.id,
+      status: index === 150 ? "running" : index === 149 ? "queued" : index === 148 ? "cancelled" : "completed",
+      resultJson: index === 147 ? resultJson(company.id, "error")
+        : index === 146 ? resultJson(company.id, "partial")
+        : index === 145 ? resultJson(company.id, "success") : null,
+    }))).run();
+    // A successful recovered result supersedes an older error log.
+    database.insert(scrapingLogs).values({
+      companyId: rows[145].id, sessionId: "live", status: "error",
+    }).run();
+    const store = new DrizzleScrapeHistoryStore(database);
+    const expected = { success: 146, partial: 1, failed: 1, cancelled: 1, running: 1, queued: 1 };
+    expect(store.getDetail("live", { limit: 1, offset: 0 })).toMatchObject({
+      queueItems: [{ companyName: "Company 150", progressStatus: "running" }], progressCounts: expected,
+    });
+    expect(store.getDetail("live", { limit: 1, offset: 1 })).toMatchObject({
+      queueItems: [{ companyName: "Company 149", progressStatus: "queued" }], progressCounts: expected,
+    });
+    expect(store.getDetail("live", { limit: 50, offset: 50 })?.progressCounts).toEqual(expected);
+    database.update(scrapeQueueItems).set({ status: "completed" }).where(eq(scrapeQueueItems.status, "running")).run();
+    database.update(scrapeQueueItems).set({ status: "completed" }).where(eq(scrapeQueueItems.status, "queued")).run();
+    database.update(scrapeSessions).set({ status: "partial" }).where(eq(scrapeSessions.id, "live")).run();
+    expect(store.getDetail("live", { limit: 1, offset: 0 })).toMatchObject({
+      hasActiveWork: false, queueItems: [{ companyName: "Company 000" }],
+      progressCounts: { ...expected, success: 148, queued: 0, running: 0 },
+    });
+  });
+
+  it("counts the latest legacy company outcome once and retains standalone logs", () => {
+    const database = createTestDatabase();
+    const company = database.insert(companies).values({ name: "Legacy", careersUrl: "https://example.com/legacy" }).returning().get();
+    database.insert(scrapeSessions).values({ id: "legacy", triggerSource: "manual", status: "partial" }).run();
+    database.insert(scrapingLogs).values([
+      { sessionId: "legacy", companyId: company.id, status: "error", startedAt: new Date(1000) },
+      { sessionId: "legacy", companyId: company.id, status: "success", startedAt: new Date(2000) },
+      { sessionId: "legacy", companyId: null, status: "partial", startedAt: new Date(3000) },
+    ]).run();
+    expect(new DrizzleScrapeHistoryStore(database).getDetail("legacy", { limit: 1, offset: 0 })).toMatchObject({
+      pagination: { total: 2 },
+      progressCounts: { success: 1, partial: 1, failed: 0, cancelled: 0, running: 0, queued: 0 },
+    });
+  });
+
   it("owns detail, list, and status projections for the history API", () => {
     const database = createTestDatabase();
     const company = database

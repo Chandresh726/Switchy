@@ -121,12 +121,14 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
     );
   }
 
-  const { session, logs, pagination, hasActiveWork, queueItems } = data;
+  const { session, logs, pagination, hasActiveWork, queueItems, progressCounts } = data;
   const sessionStatusConfig = getSessionStatusConfig(session.status);
   const SessionStatusIcon = sessionStatusConfig.icon;
   const sessionDisplayTime = session.scheduledForAt ? new Date(session.scheduledForAt) : session.startedAt;
-  const progress = session.companiesTotal
-    ? Math.round(((session.companiesCompleted || 0) / session.companiesTotal) * 100)
+  const finished = progressCounts.success + progressCounts.partial + progressCounts.failed + progressCounts.cancelled;
+  const totalCompanies = Math.max(session.companiesTotal ?? 0, pagination.total);
+  const progress = totalCompanies
+    ? Math.round((finished / totalCompanies) * 100)
     : 0;
   const hasActiveQueueWork = hasActiveWork;
   const hasJobStats = [
@@ -231,7 +233,7 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
         <div className="flex flex-wrap items-center gap-x-7 gap-y-2.5 border-t border-border/60 px-5 py-3.5">
           <SessionStat
             size="md"
-            value={`${session.companiesCompleted || 0}/${session.companiesTotal || 0}`}
+            value={`${finished}/${totalCompanies}`}
             label="companies"
             icon={Building2}
           />
@@ -265,9 +267,24 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
             </>
           )}
         </div>
+        <div
+          role="group"
+          aria-label="Session company progress"
+          className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1.5 border-t border-border/60 px-5 py-3 text-xs tabular-nums"
+        >
+          <span className="mr-auto text-muted-foreground">{finished} of {totalCompanies} finished</span>
+          <span className="text-emerald-400">{progressCounts.success} successful</span>
+          <span className="text-amber-400">{progressCounts.partial} partial</span>
+          <span className="text-red-400">{progressCounts.failed} failed</span>
+          <span className="text-blue-400">{progressCounts.running} running</span>
+          <span className="text-muted-foreground">{progressCounts.queued} waiting</span>
+          {progressCounts.cancelled > 0 && (
+            <span className="text-muted-foreground">{progressCounts.cancelled} cancelled</span>
+          )}
+        </div>
       </div>
 
-      <CompanyProgressList queueItems={queueItems} logs={logs} />
+      <CompanyProgressList queueItems={queueItems} logs={logs} prioritizeActive={hasActiveWork} />
       {totalPages > 1 && (
         <Pagination
           ariaLabel="Session records pagination"

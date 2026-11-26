@@ -150,6 +150,14 @@ export const scrapeHistoryDetailResponseSchema = z.object({
   })),
   pagination: paginationResponseSchema,
   hasActiveWork: z.boolean(),
+  progressCounts: z.object({
+    queued: z.number().int().nonnegative(),
+    running: z.number().int().nonnegative(),
+    success: z.number().int().nonnegative(),
+    partial: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+    cancelled: z.number().int().nonnegative(),
+  }),
   queueItems: z.array(z.object({
     id: z.string(),
     companyId: z.number().int().positive(),
@@ -157,6 +165,7 @@ export const scrapeHistoryDetailResponseSchema = z.object({
     companyLogoUrl: z.string().nullable(),
     platform: z.string().nullable(),
     status: z.string(),
+    progressStatus: z.enum(["queued", "running", "success", "partial", "failed", "cancelled"]),
     attemptCount: z.number().int().nonnegative(),
     maxAttempts: z.number().int().positive(),
     availableAt: z.union([z.string(), z.date()]),

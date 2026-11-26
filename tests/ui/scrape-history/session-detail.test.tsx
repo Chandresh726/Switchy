@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,6 +22,8 @@ vi.mock("sonner", () => ({
 }));
 
 import { SessionDetail } from "@/components/scrape-history/session-detail";
+import { resolveScrapeCompanyProgressStatus, type ScrapeCompanyProgressStatus } from "@/lib/scraper/progress-status";
+import { queryKeys } from "@/lib/query-keys";
 
 const SESSION_ID = "session/with spaces";
 
@@ -33,7 +35,14 @@ function sessionResponse(
     item.status === "queued" || item.status === "running"
   )
 ) {
+  const statuses = new Map<string, ScrapeCompanyProgressStatus>();
+  for (const log of logs) statuses.set(log.companyId == null ? `log-${log.id}` : `company-${log.companyId}`,
+    resolveScrapeCompanyProgressStatus(undefined, undefined, String(log.status)));
+  for (const item of queueItems) statuses.set(`company-${item.companyId}`, item.progressStatus as ScrapeCompanyProgressStatus);
+  const progressCounts = { queued: 0, running: 0, success: 0, partial: 0, failed: 0, cancelled: 0 };
+  for (const status of statuses.values()) progressCounts[status]++;
   return {
+    progressCounts,
     session: {
       id: SESSION_ID,
       triggerSource: "manual",
@@ -101,6 +110,7 @@ function queueItem(overrides: Record<string, unknown> = {}) {
     companyLogoUrl: null,
     platform: "eightfold",
     status: "running",
+    progressStatus: resolveScrapeCompanyProgressStatus(String(overrides.status ?? "running")),
     attemptCount: 2,
     maxAttempts: 3,
     availableAt: "2026-07-13T10:00:00.000Z",
@@ -130,14 +140,54 @@ function renderWithQueryClient(children: ReactNode) {
       mutations: { retry: false },
     },
   });
-  return render(
+  return { ...render(
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  );
+  ), queryClient };
 }
 
 describe("SessionDetail", () => {
   beforeEach(() => {
     mocks.push.mockReset();
+  });
+
+  it("keeps session-wide counts in the overview and preserves the selected page through completion", async () => {
+    let completed = false;
+    const counts = { success: 140, partial: 3, failed: 2, cancelled: 1, running: 1, queued: 4 };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/progress")) return jsonResponse({
+        sessionId: SESSION_ID, status: completed ? "partial" : "in_progress", revision: "1",
+        total: 151, completed: completed ? 151 : 146, hasActiveWork: !completed, nextAttemptAt: null,
+      });
+      const offset = Number(new URL(String(input), "http://localhost").searchParams.get("offset"));
+      const response = sessionResponse(completed ? "partial" : "in_progress", [queueItem({
+        companyName: offset ? "Page two company" : "Active company", status: offset || completed ? "completed" : "running",
+      })], [], !completed);
+      response.session.companiesTotal = 151;
+      response.pagination = { total: 151, limit: 50, offset, hasMore: true };
+      response.progressCounts = completed ? { ...counts, success: 145, running: 0, queued: 0 } : counts;
+      return jsonResponse(response);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    const { queryClient } = renderWithQueryClient(<SessionDetail sessionId={SESSION_ID} />);
+    const overview = await screen.findByRole("group", { name: "Session company progress" });
+    expect(within(overview).getByText("146 of 151 finished")).toBeTruthy();
+    expect(within(overview).getByText("140 successful")).toBeTruthy();
+    expect(within(overview).getByText("4 waiting")).toBeTruthy();
+    expect(within(screen.getByRole("region", { name: "Company progress" })).queryByText("4 waiting")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Page 2" }));
+    expect(await screen.findByText("Page two company")).toBeTruthy();
+    expect(within(overview).getByText("1 running")).toBeTruthy();
+    expect(within(overview).getByText("3 partial")).toBeTruthy();
+    expect(within(overview).getByText("2 failed")).toBeTruthy();
+    completed = true;
+    await act(async () => { await queryClient.invalidateQueries({
+      queryKey: queryKeys.scrapeHistory.detail(SESSION_ID, { limit: 50, offset: 50 }),
+    }); });
+    expect(await screen.findByText("151 of 151 finished")).toBeTruthy();
+    expect(screen.getByText("51-100 of 151 session records")).toBeTruthy();
+    expect(screen.getByText("Page two company")).toBeTruthy();
+    expect(within(screen.getByRole("group", { name: "Session company progress" })).getByText("0 running")).toBeTruthy();
   });
 
   it("shows deferred retry timing even when rate limits preserve the attempt budget", async () => {

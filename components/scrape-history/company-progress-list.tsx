@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { formatDateTime, formatDurationMs } from "@/lib/utils/format";
 import { MATCHER_STATUS_CONFIG } from "@/lib/utils/status-config";
 import type { ScrapeHistoryDetailResponse } from "@/lib/api/contracts/history";
+import { resolveScrapeCompanyProgressStatus } from "@/lib/scraper/progress-status";
 
 type SessionLog = ScrapeHistoryDetailResponse["logs"][number];
 type ScrapeQueueItem = ScrapeHistoryDetailResponse["queueItems"][number];
@@ -102,17 +103,12 @@ const DEFAULT_STATUS_STYLE: StatusStyle = {
 const STATUS_ORDER: Record<string, number> = {
   running: 0,
   queued: 1,
-  partial: 2,
-  failed: 2,
-  error: 2,
-  cancelled: 3,
-  completed: 4,
-  success: 4,
 };
 
 function mergeCompanyProgress(
   queueItems: ScrapeQueueItem[],
-  logs: SessionLog[]
+  logs: SessionLog[],
+  prioritizeActive: boolean
 ): CompanyProgress[] {
   const progress = new Map<string, CompanyProgress>();
 
@@ -139,9 +135,9 @@ function mergeCompanyProgress(
   }
 
   return Array.from(progress.values()).sort((left, right) => {
-    const statusDifference =
-      (STATUS_ORDER[getProgressStatus(left)] ?? 5) -
-      (STATUS_ORDER[getProgressStatus(right)] ?? 5);
+    const statusDifference = prioritizeActive
+      ? (STATUS_ORDER[getProgressStatus(left)] ?? 2) - (STATUS_ORDER[getProgressStatus(right)] ?? 2)
+      : 0;
     if (statusDifference !== 0) return statusDifference;
     return getCompanyName(left).localeCompare(getCompanyName(right));
   });
@@ -152,14 +148,9 @@ function getLatestLog(progress: CompanyProgress): SessionLog | undefined {
 }
 
 function getProgressStatus(progress: CompanyProgress): string {
-  const queueStatus = progress.queueItem?.status;
-  if (queueStatus === "queued" || queueStatus === "running") {
-    return queueStatus;
-  }
-  if (queueStatus === "failed" || queueStatus === "cancelled") {
-    return queueStatus;
-  }
-  return getLatestLog(progress)?.status ?? queueStatus ?? "queued";
+  return progress.queueItem?.progressStatus ?? resolveScrapeCompanyProgressStatus(
+    undefined, undefined, getLatestLog(progress)?.status
+  );
 }
 
 function getCompanyName(progress: CompanyProgress): string {
@@ -377,20 +368,13 @@ function CompanyProgressRow({ progress }: { progress: CompanyProgress }) {
 export function CompanyProgressList({
   queueItems,
   logs,
+  prioritizeActive,
 }: {
   queueItems: ScrapeQueueItem[];
   logs: SessionLog[];
+  prioritizeActive: boolean;
 }) {
-  const companies = mergeCompanyProgress(queueItems, logs);
-  const statuses = companies.map(getProgressStatus);
-  const running = statuses.filter((status) => status === "running").length;
-  const waiting = statuses.filter((status) => status === "queued").length;
-  const attention = statuses.filter((status) =>
-    ["partial", "failed", "error"].includes(status)
-  ).length;
-  const complete = statuses.filter((status) =>
-    ["completed", "success"].includes(status)
-  ).length;
+  const companies = mergeCompanyProgress(queueItems, logs, prioritizeActive);
 
   return (
     <section aria-labelledby="company-progress-heading">
@@ -402,26 +386,6 @@ export function CompanyProgressList({
           <p className="mt-1 text-sm text-muted-foreground">
             Queue state, scrape results, retries, and matching in one live view.
           </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          {running > 0 && (
-            <span className="rounded-full border border-blue-500/20 bg-blue-500/10 px-2.5 py-1 text-blue-400">
-              {running} scraping
-            </span>
-          )}
-          {waiting > 0 && (
-            <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-amber-400">
-              {waiting} waiting
-            </span>
-          )}
-          {attention > 0 && (
-            <span className="rounded-full border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-red-400">
-              {attention} need attention
-            </span>
-          )}
-          <span className="rounded-full border border-border bg-muted/30 px-2.5 py-1 text-muted-foreground">
-            {complete} complete
-          </span>
         </div>
       </div>
 

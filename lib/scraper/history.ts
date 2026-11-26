@@ -11,6 +11,12 @@ import {
   scrapeSessions,
   scrapingLogs,
 } from "@/lib/db/schema";
+import { parseFetchResult } from "@/lib/scraper/queue/fetch-result-persistence";
+import {
+  resolveScrapeCompanyProgressStatus,
+  type ScrapeCompanyProgressCounts,
+  type ScrapeCompanyProgressStatus,
+} from "@/lib/scraper/progress-status";
 
 export interface DeleteScrapeHistoryResult {
   active: boolean;
@@ -36,6 +42,7 @@ interface ScrapeProgressKey {
   companyName: string | null;
   queueItemId: string | null;
   standaloneLogId: number | null;
+  status: ScrapeCompanyProgressStatus;
 }
 
 export interface ScrapeHistoryDetail {
@@ -76,6 +83,7 @@ export interface ScrapeHistoryDetail {
     hasMore: boolean;
   };
   hasActiveWork: boolean;
+  progressCounts: ScrapeCompanyProgressCounts;
   queueItems: Array<{
     id: string;
     companyId: number;
@@ -83,6 +91,7 @@ export interface ScrapeHistoryDetail {
     companyLogoUrl: string | null;
     platform: string | null;
     status: string;
+    progressStatus: ScrapeCompanyProgressStatus;
     attemptCount: number;
     maxAttempts: number;
     availableAt: Date;
@@ -144,7 +153,20 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
     if (!session) return null;
 
     const progressKeys = this.getProgressKeys(sessionId);
+    const progressCounts = progressKeys.reduce<ScrapeCompanyProgressCounts>((counts, item) => {
+      counts[item.status] += 1;
+      return counts;
+    }, { queued: 0, running: 0, success: 0, partial: 0, failed: 0, cancelled: 0 });
+    const hasActiveWork = progressCounts.queued + progressCounts.running > 0;
+    const rank = (status: ScrapeCompanyProgressStatus) =>
+      hasActiveWork ? status === "running" ? 0 : status === "queued" ? 1 : 2 : 0;
+    progressKeys.sort((left, right) => {
+      return rank(left.status) - rank(right.status) ||
+        (left.companyName ?? "Unknown company").localeCompare(right.companyName ?? "Unknown company") ||
+        left.key.localeCompare(right.key);
+    });
     const pageKeys = progressKeys.slice(page.offset, page.offset + page.limit);
+    const statusByQueueItem = new Map(pageKeys.map((item) => [item.queueItemId, item.status]));
     const selectedQueueItemIds = pageKeys.flatMap((item) =>
       item.queueItemId === null ? [] : [item.queueItemId]
     );
@@ -221,12 +243,10 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
         eq(scrapeQueueItems.sessionId, sessionId),
         inArray(scrapeQueueItems.id, selectedQueueItemIds)
       ))
-      .all();
-    const activeQueueItems = Number(this.database.select({ value: sql<number>`count(*)` })
-      .from(scrapeQueueItems).where(and(
-        eq(scrapeQueueItems.sessionId, sessionId),
-        inArray(scrapeQueueItems.status, ["queued", "running"])
-      )).get()?.value ?? 0);
+      .all().map((item) => ({
+        ...item,
+        progressStatus: statusByQueueItem.get(item.id)!,
+      }));
 
     const queueStatusByCompany = new Map(
       queueItems.map((item) => [item.companyId, item.status])
@@ -267,7 +287,8 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
         offset: page.offset,
         hasMore: page.offset + pageKeys.length < progressKeys.length,
       },
-      hasActiveWork: activeQueueItems > 0,
+      hasActiveWork,
+      progressCounts,
       queueItems,
     };
   }
@@ -278,6 +299,8 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
         queueItemId: scrapeQueueItems.id,
         companyId: scrapeQueueItems.companyId,
         companyName: companies.name,
+        status: scrapeQueueItems.status,
+        resultJson: scrapeQueueItems.resultJson,
       })
       .from(scrapeQueueItems)
       .leftJoin(companies, eq(companies.id, scrapeQueueItems.companyId))
@@ -288,6 +311,7 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
         logId: scrapingLogs.id,
         companyId: scrapingLogs.companyId,
         companyName: companies.name,
+        status: scrapingLogs.status,
       })
       .from(scrapingLogs)
       .leftJoin(companies, eq(companies.id, scrapingLogs.companyId))
@@ -295,6 +319,9 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
       .orderBy(scrapingLogs.startedAt, scrapingLogs.id)
       .all();
     const progress = new Map<string, ScrapeProgressKey>();
+    const latestLogs = new Map(logKeys.map((log) => [
+      log.companyId === null ? `log-${log.logId}` : `company-${log.companyId}`, log,
+    ]));
 
     for (const item of queueKeys) {
       const key = `company-${item.companyId}`;
@@ -304,10 +331,15 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
         companyName: item.companyName,
         queueItemId: item.queueItemId,
         standaloneLogId: null,
+        status: resolveScrapeCompanyProgressStatus(
+          item.status,
+          item.resultJson ? parseFetchResult(item.resultJson, item.companyId)?.outcome : undefined,
+          latestLogs.get(key)?.status
+        ),
       });
     }
 
-    for (const log of logKeys) {
+    for (const log of latestLogs.values()) {
       const key = log.companyId === null ? `log-${log.logId}` : `company-${log.companyId}`;
       if (progress.has(key)) continue;
       progress.set(key, {
@@ -316,15 +348,11 @@ export class DrizzleScrapeHistoryStore implements ScrapeHistoryStore {
         companyName: log.companyName,
         queueItemId: null,
         standaloneLogId: log.companyId === null ? log.logId : null,
+        status: resolveScrapeCompanyProgressStatus(undefined, undefined, log.status),
       });
     }
 
-    return Array.from(progress.values()).sort((left, right) => {
-      const companyDifference = (left.companyName ?? "Unknown company").localeCompare(
-        right.companyName ?? "Unknown company"
-      );
-      return companyDifference === 0 ? left.key.localeCompare(right.key) : companyDifference;
-    });
+    return Array.from(progress.values());
   }
 
   /**
