@@ -177,14 +177,23 @@ export function useSettingsProviders() {
   }, [providerModelsQueries, providers]);
 
   const refreshProviderModels = async (providerId: string): Promise<void> => {
+    const provider = providerRecords.find((provider) => provider.id === providerId);
+    const localCLI = provider && isLocalCLIProvider(provider.provider);
     try {
-      const models = await fetchProviderModels(providerId, true);
+      // CLI validation refreshes both availability and its shared model catalog.
+      // Read that catalog afterwards so the refresh icon does not discover twice.
+      if (localCLI) await checkProviderConnection(providerId);
+      const models = await fetchProviderModels(providerId, !localCLI);
       queryClient.setQueryData(queryKeys.providers.model(providerId), models);
       if (models.isStale) toast.warning(models.warning ?? "Could not refresh models. Showing the saved list.");
       else toast.success("Model list refreshed");
-      await queryClient.invalidateQueries({ queryKey: queryKeys.providers.list() });
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Failed to refresh model list"));
+    } finally {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.providers.list() }),
+        ...(localCLI ? [queryClient.invalidateQueries({ queryKey: queryKeys.providers.status(providerId) })] : []),
+      ]);
     }
   };
 
@@ -197,17 +206,6 @@ export function useSettingsProviders() {
     await cacheOwnership.providerMutation(queryClient);
   }, [queryClient]);
 
-
-  const checkConnection = async (id: string): Promise<void> => {
-    try {
-      await checkProviderConnection(id);
-      toast.success("Connection checked");
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Could not check connection"));
-    } finally {
-      await cacheOwnership.providerMutation(queryClient);
-    }
-  };
 
   const addProviderMutation = useMutation({
     mutationFn: async (input: ProviderCreateBody) => {
@@ -233,12 +231,9 @@ export function useSettingsProviders() {
 
   const deleteProviderMutation = useMutation({
     mutationFn: deleteProvider,
-    onSuccess: (result) => {
+    onSuccess: () => {
       void cacheOwnership.providerMutation(queryClient);
-      const detail = result.updatedFeatures.length > 0
-        ? result.fallbackModelId ? ` Features now use ${result.fallbackModelId}.` : " Affected features need a provider."
-        : "";
-      toast.success(`Provider removed.${detail}${result.disabledFallbacks.length ? " Affected matching fallbacks were disabled." : ""}`);
+      toast.success("Provider deleted successfully");
     },
     onError: (error) => toast.error(getApiErrorMessage(error, "Failed to delete provider")),
   });
@@ -263,5 +258,5 @@ export function useSettingsProviders() {
     onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update provider connection")),
   });
 
-  return { checkConnection, providersQuery, providers, providerModelsById, refreshProviderModels, saveCLIExecutablePaths, addProviderMutation, deleteProviderMutation, updateProviderApiKeyMutation, updateProviderMutation };
+  return { providersQuery, providers, providerModelsById, refreshProviderModels, saveCLIExecutablePaths, addProviderMutation, deleteProviderMutation, updateProviderApiKeyMutation, updateProviderMutation };
 }

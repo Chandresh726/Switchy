@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/input-group";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -58,8 +59,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getAllProviderMetadata, type ProviderMetadata } from "@/lib/ai/providers/metadata";
-import { CLI_EXECUTABLE_CONFIG } from "@/lib/ai/local-cli/constants";
-import { isLocalCLIProvider } from "@/lib/ai/providers/types";
 import type {
   ProviderCreateBody,
   ProviderPatchBody,
@@ -79,7 +78,6 @@ interface AIProvidersManagerProps {
   onRefreshProviderModels: (id: string) => Promise<void>;
   codexExecutablePath: string;
   openCodeExecutablePath: string;
-  onCheckConnection: (id: string) => Promise<void>;
   onSaveExecutablePaths: (paths: Partial<{ codex: string; opencode: string }>) => Promise<void>;
 }
 
@@ -121,23 +119,28 @@ function providerStatus(provider: ProviderSettingsListItem): {
   ready: boolean;
   message: string;
 } {
-  if (provider.connectionStatus && provider.connectionStatus !== "ready") {
+  if (provider.kind === "local_cli") {
+    const isReady = provider.connectionStatus === "ready";
     return {
-      label: provider.connectionStatus === "not_authenticated" ? "sign in required" : "needs attention",
-      ready: false,
-      message: provider.statusMessage ?? "Check the connection and try again.",
+      label: isReady
+        ? "connected"
+        : provider.connectionStatus?.replaceAll("_", " ") ?? "checking",
+      ready: isReady,
+      message: provider.statusMessage ?? "Switchy is checking this CLI automatically.",
     };
   }
-  const verified = provider.connectionStatus === "ready" && !provider.statusIsStale && provider.modelDiscovery !== "manual";
-  return {
-    label: verified ? "verified" : "configured",
-    ready: verified,
-    message: provider.statusMessage ?? (provider.kind === "local_cli"
-      ? "Uses the login saved by your CLI. Availability is checked separately."
-      : provider.kind === "custom"
-        ? `${provider.apiFormat ? API_FORMAT_LABELS[provider.apiFormat] : "Custom API"} · ${provider.baseUrl ?? "Configured endpoint"}`
-        : provider.hasApiKey ? "API key saved. Check connection to verify access." : "Add an API key to use this provider"),
-  };
+
+  if (provider.kind === "custom") {
+    return {
+      label: "connected",
+      ready: true,
+      message: `${provider.apiFormat ? API_FORMAT_LABELS[provider.apiFormat] : "Custom API"} · ${provider.baseUrl ?? "Configured endpoint"}`,
+    };
+  }
+
+  return provider.hasApiKey
+    ? { label: "connected", ready: true, message: "API key configured" }
+    : { label: "needs key", ready: false, message: "Add an API key to use this provider" };
 }
 
 export function AIProvidersManager({
@@ -149,7 +152,6 @@ export function AIProvidersManager({
   codexExecutablePath,
   openCodeExecutablePath,
   onSaveExecutablePaths,
-  onCheckConnection,
 }: AIProvidersManagerProps) {
   const metadata = getAllProviderMetadata();
   const [isAddingProvider, setIsAddingProvider] = useState(false);
@@ -157,7 +159,6 @@ export function AIProvidersManager({
   const [apiKey, setApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [pathPending, setPathPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
@@ -166,7 +167,6 @@ export function AIProvidersManager({
   const [customForm, setCustomForm] = useState<CustomFormState>(EMPTY_CUSTOM_FORM);
   const [editCustomForm, setEditCustomForm] = useState<CustomFormState | null>(null);
   const [refreshingProviderIds, setRefreshingProviderIds] = useState<Record<string, boolean>>({});
-  const [checkingProviderIds, setCheckingProviderIds] = useState<Record<string, boolean>>({});
 
   const selectedMetadata = metadata.find((item) => item.id === selectedProviderType);
   const availableProviders = metadata.filter(
@@ -333,10 +333,9 @@ export function AIProvidersManager({
               const providerMetadata = metadata.find((item) => item.id === provider.provider);
               const status = providerStatus(provider);
               const isCLI = provider.kind === "local_cli";
-              const isChecking = Boolean(provider.checking || checkingProviderIds[provider.id]);
+              const isStatusLoading = isCLI && provider.connectionStatus === undefined;
               const isEditing = editingProviderId === provider.id;
               const refreshing = Boolean(refreshingProviderIds[provider.id]);
-              const canRefresh = true;
               const pathKey = provider.provider === "codex_cli" ? "codex" : "opencode";
               const providerName = provider.displayName ?? providerMetadata?.displayName ?? provider.provider;
 
@@ -349,25 +348,33 @@ export function AIProvidersManager({
                         <span className="font-medium">{providerName}</span>
                         {provider.cliVersion ? <span className="text-muted-foreground">v{provider.cliVersion}</span> : null}
                       </div>
-                      <p className="mt-1 text-xs text-muted-foreground">{status.message}</p>
-                      {provider.lastCheckedAt ? <p className="mt-1 text-xs text-muted-foreground">Last checked {new Date(provider.lastCheckedAt).toLocaleString()}{provider.statusIsStale ? " · saved status" : ""}</p> : null}
+                      {isStatusLoading ? (
+                        <Skeleton
+                          className="mt-1 h-3 w-48"
+                          aria-label={`${providerName} status loading`}
+                        />
+                      ) : (
+                        <p className="mt-1 text-xs text-muted-foreground">{status.message}</p>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="outline" className={cn("text-xs capitalize", providerStatusClass(provider, status.ready))}>
-                        {isChecking ? <Loader2 className="animate-spin" data-icon="inline-start" /> : status.ready ? <Check data-icon="inline-start" /> : null}
-                        {status.label}
-                      </Badge>
-                      <Button variant="outline" size="sm" disabled={isChecking} onClick={async () => {
-                        setCheckingProviderIds((current) => ({ ...current, [provider.id]: true }));
-                        try { await onCheckConnection(provider.id); }
-                        finally { setCheckingProviderIds((current) => ({ ...current, [provider.id]: false })); }
-                      }}>Check connection</Button>
+                      {isStatusLoading ? (
+                        <Skeleton className="h-6 w-24 rounded-full" />
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className={cn("text-xs capitalize", providerStatusClass(provider, status.ready))}
+                        >
+                          {status.ready ? <Check data-icon="inline-start" /> : <X data-icon="inline-start" />}
+                          {status.label}
+                        </Badge>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"
                         onClick={() => handleRefreshModels(provider.id)}
-                        disabled={!canRefresh || refreshing}
+                        disabled={refreshing}
                         aria-label="Refresh models"
                         title="Refresh models"
                       >
@@ -392,7 +399,7 @@ export function AIProvidersManager({
                             <AlertDialogHeader>
                               <AlertDialogTitle>Delete {provider.displayName ?? providerMetadata?.displayName ?? "provider"}?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Its saved connection will be removed. Features using it will switch to an available provider and model, or require setup if none is available. Any matching fallbacks using it will be disabled.
+                                Its connection and cached model list will be removed. This cannot be undone.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -407,12 +414,14 @@ export function AIProvidersManager({
 
                   {isEditing ? (
                     isCLI ? (
-                      <CLIExecutableField
-                        id={`executable-${provider.id}`}
-                        value={pathKey === "codex" ? codexExecutablePath : openCodeExecutablePath}
-                        command={pathKey === "codex" ? "codex" : "opencode"}
-                        onSave={(value) => onSaveExecutablePaths({ [pathKey]: value })}
-                      />
+                      <FieldGroup>
+                        <CLIExecutableField
+                          id={`executable-${provider.id}`}
+                          value={pathKey === "codex" ? codexExecutablePath : openCodeExecutablePath}
+                          command={pathKey === "codex" ? "codex" : "opencode"}
+                          onSave={(value) => onSaveExecutablePaths({ [pathKey]: value })}
+                        />
+                      </FieldGroup>
                     ) : provider.kind === "custom" && editCustomForm ? (
                       <FieldGroup>
                         <CustomProviderFields
@@ -493,18 +502,10 @@ export function AIProvidersManager({
               <CustomProviderFields value={customForm} onChange={setCustomForm} />
             ) : null}
 
-            {selectedMetadata && isLocalCLIProvider(selectedMetadata.id) ? (
-              <div className="grid gap-3">
-                <p className="text-xs text-muted-foreground">Install {CLI_EXECUTABLE_CONFIG[selectedMetadata.id].command}, then run <code>{CLI_EXECUTABLE_CONFIG[selectedMetadata.id].setupCommand}</code> in your terminal. Switchy reuses that login and verifies usable models before adding the provider.</p>
-                <CLIExecutableField
-                  key={selectedMetadata.id}
-                  id="new-cli-executable"
-                  onPendingChange={setPathPending}
-                  value={selectedMetadata.id === "codex_cli" ? codexExecutablePath : openCodeExecutablePath}
-                  command={CLI_EXECUTABLE_CONFIG[selectedMetadata.id].command}
-                  onSave={(value) => onSaveExecutablePaths(selectedMetadata.id === "codex_cli" ? { codex: value } : { opencode: value })}
-                />
-              </div>
+            {selectedMetadata?.kind === "local_cli" ? (
+              <p className="text-xs text-muted-foreground">
+                Switchy will verify that the CLI is installed, authenticated, and exposes usable models before adding it.
+              </p>
             ) : null}
 
             {selectedMetadata?.requiresApiKey ? (
@@ -545,7 +546,7 @@ export function AIProvidersManager({
               </Button>
               <Button
                 onClick={handleAddProvider}
-                disabled={adding || pathPending || !selectedProviderType}
+                disabled={adding || !selectedProviderType}
                 className="flex-1 bg-emerald-600 text-foreground hover:bg-emerald-500"
               >
                 {adding ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}

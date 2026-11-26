@@ -32,7 +32,6 @@ function props() {
         updatedAt: null,
       },
     ],
-    onCheckConnection: vi.fn().mockResolvedValue(undefined),
     onAddProvider: vi.fn(),
     onDeleteProvider: vi.fn(),
     onUpdateProvider: vi.fn(),
@@ -44,7 +43,18 @@ function props() {
 }
 
 describe("AIProvidersManager local CLI providers", () => {
-  it("keeps a saved CLI configured while its first status check is pending", () => {
+  it("keeps the saved connected status visible during background checks", () => {
+    const input = props();
+    const provider = { ...input.providers[0], statusIsStale: true, checking: true, lastCheckedAt: "2026-11-01T00:00:00Z" };
+    const { container } = render(<AIProvidersManager {...input} providers={[provider]} />);
+    expect(screen.getByText("connected")).toBeTruthy();
+    expect(screen.queryByLabelText("Codex CLI status loading")).toBeNull();
+    expect(screen.queryByText(/Last checked/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Check connection" })).toBeNull();
+    expect(container.querySelector(".animate-spin")).toBeNull();
+  });
+
+  it("uses the original loading placeholder only when no CLI status is saved", () => {
     const input = props();
     const pendingProvider = {
       ...input.providers[0],
@@ -57,7 +67,8 @@ describe("AIProvidersManager local CLI providers", () => {
     render(<AIProvidersManager {...input} providers={[pendingProvider]} />);
 
     expect(screen.getByText("Codex CLI")).toBeTruthy();
-    expect(screen.getByText("configured")).toBeTruthy();
+    expect(screen.getByLabelText("Codex CLI status loading")).toBeTruthy();
+    expect(screen.queryByText("configured")).toBeNull();
     expect(screen.queryByText("checking")).toBeNull();
     expect(screen.getByRole("button", { name: "Edit executable path" })).toBeTruthy();
   });
@@ -82,7 +93,7 @@ describe("AIProvidersManager local CLI providers", () => {
     expect(input.onDeleteProvider).toHaveBeenCalledWith("builtin:codex-cli");
   });
 
-  it("distinguishes a saved API key from verified access", () => {
+  it("restores the original API-key status and compact icon actions", () => {
     const input = props();
     const apiProvider = {
       id: "provider-cerebras",
@@ -98,8 +109,9 @@ describe("AIProvidersManager local CLI providers", () => {
       <AIProvidersManager {...input} providers={[apiProvider]} />
     );
 
-    expect(screen.getByText("configured")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Check connection" })).toBeTruthy();
+    expect(screen.getByText("connected")).toBeTruthy();
+    expect(screen.getByText("API key configured")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Check connection" })).toBeNull();
     expect(screen.queryByText("API key")).toBeNull();
     expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
     expect(container.querySelectorAll("svg.lucide-key")).toHaveLength(1);
@@ -108,11 +120,12 @@ describe("AIProvidersManager local CLI providers", () => {
     expect(addButton.className).toContain("text-emerald-400");
   });
 
-  it("lets an unavailable CLI be checked again without changing its setup", async () => {
+  it("keeps the refresh icon usable for an unavailable CLI", async () => {
     const input = props();
     render(<AIProvidersManager {...input} providers={[input.providers[1]]} />);
-    fireEvent.click(screen.getByRole("button", { name: "Check connection" }));
-    expect(input.onCheckConnection).toHaveBeenCalledWith("builtin:opencode-cli");
+    fireEvent.click(screen.getByRole("button", { name: "Refresh models" }));
+    expect(input.onRefreshProviderModels).toHaveBeenCalledWith("builtin:opencode-cli");
+    expect(screen.getByText("not authenticated")).toBeTruthy();
     expect(input.onSaveExecutablePaths).not.toHaveBeenCalled();
   });
 
@@ -154,7 +167,8 @@ describe("AIProvidersManager local CLI providers", () => {
     fireEvent.click(screen.getByLabelText("Provider"));
     fireEvent.click(screen.getByRole("option", { name: "OpenCode · Local CLI" }));
 
-    expect(screen.getByText(/opencode auth login/i)).toBeTruthy();
+    expect(screen.getByText(/Switchy will verify that the CLI is installed/i)).toBeTruthy();
+    expect(screen.queryByLabelText("Executable path")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Add Provider" }));
     expect(input.onAddProvider).toHaveBeenCalledWith({
       provider: "opencode_cli",
@@ -218,6 +232,7 @@ describe("AIProvidersManager local CLI providers", () => {
       apiFormat: "anthropic_messages" as const,
       baseUrl: `http://127.0.0.1:${8317 + index}/v1`,
       headerNames: ["Authorization"],
+      modelDiscovery: "manual" as const,
       manualModelIds: ["claude-proxy"],
       reasoningEfforts: ["low", "medium", "high"],
       isActive: true,
@@ -233,13 +248,14 @@ describe("AIProvidersManager local CLI providers", () => {
     expect(screen.getByRole("button", { name: "Add Another Provider" })).toBeTruthy();
     fireEvent.click(screen.getAllByRole("button", { name: "Edit connection" })[0]);
     expect(screen.getByLabelText("Header 1 value").getAttribute("placeholder")).toBe("Stored value");
+    expect(screen.queryByLabelText("Model discovery")).toBeNull();
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Renamed proxy" } });
     fireEvent.click(screen.getByRole("button", { name: "Update connection" }));
 
     expect(input.onUpdateProvider).toHaveBeenCalledWith("custom-0", {
       displayName: "Renamed proxy",
       apiFormat: "anthropic_messages",
-      modelDiscovery: "auto",
+      modelDiscovery: "manual",
       baseUrl: "http://127.0.0.1:8317/v1",
       apiKey: undefined,
       headers: [{ name: "Authorization" }],

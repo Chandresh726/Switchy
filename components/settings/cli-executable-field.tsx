@@ -14,19 +14,14 @@ interface CLIExecutableFieldProps {
   command: string;
   value: string;
   onSave: (value: string) => Promise<void>;
-  onPendingChange?: (pending: boolean) => void;
 }
 
-export function CLIExecutableField({ id, command, value, onSave, onPendingChange }: CLIExecutableFieldProps) {
+export function CLIExecutableField({ id, command, value, onSave }: CLIExecutableFieldProps) {
   const [draft, setDraft] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   const save = useRef(onSave);
   useEffect(() => { save.current = onSave; }, [onSave]);
-  useEffect(() => {
-    onPendingChange?.(draft !== undefined);
-    return () => onPendingChange?.(false);
-  }, [draft, onPendingChange]);
   useEffect(() => {
     if (draft === undefined || saving || error) return;
     const snapshot = draft;
@@ -43,8 +38,10 @@ export function CLIExecutableField({ id, command, value, onSave, onPendingChange
 
   return (
     <Field>
-      <FieldLabel htmlFor={id}>Executable path</FieldLabel>
-      <FieldDescription>Leave empty to use {command} from PATH. Changes save automatically.</FieldDescription>
+      <div className="flex items-baseline justify-between gap-3">
+        <FieldLabel htmlFor={id}>Executable path</FieldLabel>
+        <FieldDescription className="mt-0">Leave empty to use the executable from PATH.</FieldDescription>
+      </div>
       <InputGroup>
         <InputGroupInput id={id} value={draft ?? value} placeholder={`Use ${command} from PATH`}
           onChange={(event) => { setDraft(event.target.value); setError(undefined); }} />

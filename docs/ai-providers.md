@@ -4,31 +4,34 @@ Provider configuration is local and survives browser refreshes and application
 restarts. API credentials and custom headers are encrypted in SQLite. CLI
 credentials remain under the control of the installed CLI.
 
-Settings separates saved configuration from availability. `Configured` means
-Switchy has saved the setup. `Verified` means the most recent availability check
-succeeded. API checks verify model discovery rather than running a billable
-inference request. Individual model access can still fail at execution time.
-Saved observations include their check time; an old observation is shown as a
-saved status while it is rechecked. A failed check does not erase configuration.
+Settings uses the original provider rows, connection badges, and refresh, edit,
+and delete icons. Saved CLI status stays visible while background checks run.
+The loading placeholder appears only when no CLI observation is available.
+There is no separate connection-check button or last-checked timestamp.
+API-key badges describe the saved setup; model discovery and execution report
+availability errors separately. Individual model access can still fail at
+execution time. A failed check does not erase configuration.
 
-Use **Check connection** after signing into a CLI externally or changing an API
-credential. **Refresh models** explicitly rediscovers models. Both actions remain
-available when the previous check failed. Failed refreshes retain saved models
-and report that the refresh failed.
+Use the existing **Refresh models** icon after signing into a CLI externally or
+changing credentials. For a CLI, it rechecks availability and refreshes the
+shared model catalog, then reads that catalog without discovering models twice.
+The icon remains available when the previous check failed. Failed refreshes
+retain saved models and update the availability state.
 
-Executable overrides can be set before adding a CLI. Only the changed CLI is
-reset after saving a new path. The supervised CLI process can stop after five
-idle minutes and restart for subsequent work without requiring setup again.
+Executable overrides are edited through the existing provider's edit icon and
+save automatically. Only the changed CLI is reset after saving a new path. The
+supervised CLI process can stop after five idle minutes and restart for
+subsequent work without requiring setup again.
 
 Custom APIs default to automatic discovery through `/models`, with optional
-manual additions. Choose **Use manual model IDs only** for an endpoint without a
-model-list API. At least one ID is required in that mode. Saving manual IDs does
-not verify that inference or authentication works.
+manual additions. The original form has no model-discovery selector. Existing
+manual-only configurations retain that mode when edited, including their model
+IDs and masked headers. At least one ID is required for those configurations.
+Saving manual IDs does not verify that inference or authentication works.
 
 Removing a provider repairs primary feature assignments using an available
 replacement model, or clears the assignments if none is available. Matching
-fallbacks referencing the removed provider are disabled. The removal dialog and
-completion notification explain these effects.
+fallbacks referencing the removed provider are disabled.
 
 ## Code ownership
 

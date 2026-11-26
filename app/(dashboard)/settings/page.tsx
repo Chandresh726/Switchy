@@ -141,7 +141,7 @@ function SettingsContent() {
   });
 
   const settings = settingsQuery.data;
-  const { checkConnection, providersQuery, providers, providerModelsById, refreshProviderModels, saveCLIExecutablePaths, addProviderMutation, deleteProviderMutation, updateProviderApiKeyMutation, updateProviderMutation } = useSettingsProviders();
+  const { providersQuery, providers, providerModelsById, refreshProviderModels, saveCLIExecutablePaths, addProviderMutation, deleteProviderMutation, updateProviderApiKeyMutation, updateProviderMutation } = useSettingsProviders();
   const readinessQuery = useQuery({
     queryKey: queryKeys.runtime.readiness(),
     queryFn: getReadiness,
@@ -731,7 +731,6 @@ function SettingsContent() {
             codexExecutablePath={settings?.codex_cli_executable ?? ""}
             openCodeExecutablePath={settings?.opencode_cli_executable ?? ""}
             onSaveExecutablePaths={saveCLIExecutablePaths}
-            onCheckConnection={checkConnection}
           />
 
           <MatcherSection

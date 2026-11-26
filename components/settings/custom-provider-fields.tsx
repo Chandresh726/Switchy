@@ -182,16 +182,6 @@ export function CustomProviderFields({ value, onChange, editing = false }: Custo
         )}
       </div>
       <div className="grid gap-2">
-        <Label htmlFor={editing ? "edit-model-discovery" : "model-discovery"}>Model discovery</Label>
-        <Select value={value.modelDiscovery} onValueChange={(mode) => update("modelDiscovery", mode as "auto" | "manual")}>
-          <SelectTrigger id={editing ? "edit-model-discovery" : "model-discovery"}><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="auto">Discover models automatically</SelectItem>
-            <SelectItem value="manual">Use manual model IDs only</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="grid gap-2">
         <Label htmlFor={editing ? "edit-custom-models" : "custom-models"}>Manual model IDs (optional)</Label>
         <Textarea
           id={editing ? "edit-custom-models" : "custom-models"}
@@ -199,7 +189,7 @@ export function CustomProviderFields({ value, onChange, editing = false }: Custo
           onChange={(event) => update("manualModels", event.target.value)}
           placeholder="One model ID per line"
         />
-        <p className="text-xs text-muted-foreground">{value.modelDiscovery === "manual" ? "Enter at least one model ID. Switchy will skip /models; inference verifies access." : "Manual IDs are merged with models returned by /models."}</p>
+        <p className="text-xs text-muted-foreground">{value.modelDiscovery === "manual" ? "Uses the saved manual model IDs without requesting /models." : "Manual IDs are merged with models returned by /models."}</p>
       </div>
       <div className="grid gap-2">
         <Label htmlFor={editing ? "edit-custom-reasoning" : "custom-reasoning"}>Reasoning levels (optional)</Label>
