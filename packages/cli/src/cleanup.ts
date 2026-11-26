@@ -6,7 +6,7 @@ import type { SwitchyPaths } from "./types.js";
 
 const STABLE_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
 const DOWNLOAD_ARCHIVE_PATTERN =
-  /^switchy-(\d+\.\d+\.\d+)-(?:darwin|linux|win32)-(?:arm64|x64)\.tar\.gz$/u;
+  /^switchy-(\d+\.\d+\.\d+)-(?:darwin|linux|win32)-(?:arm64|x64)\.tar\.gz(?:\.part(?:\.json)?)?$/u;
 const INSTALL_DIRECTORY_PREFIX = ".install-";
 const UPDATE_SNAPSHOT_PREFIX = "update-";
 export const RETAINED_UPDATE_SNAPSHOTS = 3;

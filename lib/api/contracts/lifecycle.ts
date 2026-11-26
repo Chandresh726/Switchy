@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { UPDATE_STAGES } from "@/lib/runtime/update-progress";
+
 export const lifecyclePreferencesPatchSchema = z.object({
   startAtLogin: z.boolean().optional(),
   openAtLogin: z.boolean().optional(),
@@ -12,7 +14,9 @@ export const lifecycleStatusSchema = z.object({
     automaticUpdates: z.boolean(), running: z.boolean(), port: z.number().int() }),
   update: z.object({ phase: z.enum(["idle", "checking", "available", "downloading", "ready", "waiting", "installing", "failed"]),
     lastCheckedAt: z.string().nullable(), latestVersion: z.string().nullable(),
-    failedVersion: z.string().nullable(), downloadedVersion: z.string().nullable().default(null), message: z.string().nullable() }),
+    failedVersion: z.string().nullable(), downloadedVersion: z.string().nullable().default(null), message: z.string().nullable(),
+    progress: z.object({ stage: z.enum(UPDATE_STAGES), completedBytes: z.number().nonnegative().optional(), totalBytes: z.number().positive().optional() }).nullable().optional(),
+    timings: z.partialRecord(z.enum(UPDATE_STAGES), z.number().nonnegative()).optional() }),
 });
 
 export const lifecycleActionSchema = z.object({ action: z.enum(["check", "download", "install"]) }).strict();

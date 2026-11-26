@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { getLifecycleStatus, requestLifecycleUpdate } from "@/lib/api/clients/lifecycle";
 import { queryKeys } from "@/lib/query-keys";
+import { requestBrowserReconnect, updateWasRequested } from "@/lib/runtime/browser-update";
+import { UPDATE_STAGE_LABELS } from "@/lib/runtime/update-progress";
 
 interface VersionUpdateProps {
   version: string;
@@ -22,7 +24,8 @@ export const VersionUpdate = ({ version }: VersionUpdateProps) => {
   const { data, error } = useQuery({
     queryKey: queryKeys.runtime.lifecycle(),
     queryFn: getLifecycleStatus,
-    refetchInterval: (query) => query.state.data?.supported === false ? false : 5000,
+    refetchInterval: (query) => query.state.data?.supported === false ? false
+      : ["checking", "downloading", "installing"].includes(query.state.data?.update.phase ?? "") ? 1000 : 5000,
   });
   const update = data?.update;
   const signature = JSON.stringify(update);
@@ -40,7 +43,7 @@ export const VersionUpdate = ({ version }: VersionUpdateProps) => {
         : action === "download" ? "Downloading update…" : "Restart requested…", { id: TOAST_ID });
     },
     onSuccess: (_, action) => {
-      if (action === "install") window.sessionStorage.setItem("switchy-update-requested", "true");
+      if (action === "install") requestBrowserReconnect();
       void client.invalidateQueries({ queryKey: queryKeys.runtime.lifecycle() });
     },
     onError: (error: Error) => {
@@ -50,7 +53,7 @@ export const VersionUpdate = ({ version }: VersionUpdateProps) => {
   });
 
   useEffect(() => {
-    if (error) toast.error("Could not check updates.", { id: TOAST_ID });
+    if (error && !updateWasRequested()) toast.error("Could not check updates.", { id: TOAST_ID });
   }, [error]);
 
   useEffect(() => {
@@ -59,13 +62,17 @@ export const VersionUpdate = ({ version }: VersionUpdateProps) => {
     observed.current = signature;
     if (first) return;
     const options = { id: TOAST_ID };
+    const progress = update.progress;
+    const percent = progress?.totalBytes && progress.completedBytes !== undefined
+      ? ` ${Math.min(100, Math.floor(progress.completedBytes / progress.totalBytes * 100))}%` : "";
+    const progressLabel = progress ? `${UPDATE_STAGE_LABELS[progress.stage]}${percent}` : null;
     switch (update.phase) {
       case "checking": toast.loading("Checking for updates…", options); break;
-      case "downloading": toast.loading("Downloading update…", options); break;
+      case "downloading": toast.loading(progressLabel ?? "Downloading update…", options); break;
       case "ready": toast.success("Downloaded. Restart to update.", options); break;
       case "available": toast.info(`Version ${update.latestVersion} is available.`, options); break;
       case "waiting": toast.info("Update queued until Switchy is idle.", options); break;
-      case "installing": toast.loading("Restarting Switchy…", options); break;
+      case "installing": toast.loading(progressLabel ?? "Restarting Switchy…", options); break;
       case "failed": toast.error("Update failed. Try again.", options); break;
       case "idle": toast.success("You're up to date.", options); break;
     }

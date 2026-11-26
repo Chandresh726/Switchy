@@ -47,12 +47,14 @@ describe("Switchy CLI install cleanup", () => {
         path.join(paths.downloads, `switchy-${version}-darwin-arm64.tar.gz`),
         "archive"
       );
+      for (const suffix of [".part", ".part.json"]) await writeFile(path.join(paths.downloads, `switchy-${version}-darwin-arm64.tar.gz${suffix}`), "partial");
     }
 
     const result = await pruneInstallArtifacts(paths, ["1.2.0", "1.1.0"]);
 
     expect(result.versions).toEqual(["1.0.0"]);
-    expect(result.downloads).toEqual(["switchy-1.0.0-darwin-arm64.tar.gz"]);
+    expect(result.downloads.sort()).toEqual(["switchy-1.0.0-darwin-arm64.tar.gz", "switchy-1.0.0-darwin-arm64.tar.gz.part", "switchy-1.0.0-darwin-arm64.tar.gz.part.json"]);
+    expect(existsSync(path.join(paths.downloads, "switchy-1.2.0-darwin-arm64.tar.gz.part"))).toBe(true);
     expect(existsSync(path.join(paths.versions, "1.1.0"))).toBe(true);
     expect(existsSync(path.join(paths.versions, "1.2.0"))).toBe(true);
     expect(existsSync(path.join(paths.versions, "1.2.1-before-fix"))).toBe(true);

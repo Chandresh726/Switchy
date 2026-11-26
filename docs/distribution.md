@@ -197,6 +197,13 @@ without stopping Switchy. Once downloaded, it becomes a restart icon. Restarting
 permits installation with tabs open; save edits first. Queued and running work
 must finish before installation proceeds.
 
+With automatic updates enabled, preparation can run while work or tabs are
+active. Only installation waits for them to finish. Downloading a release never
+changes the selected runtime or startup/update preferences. Settings show the
+current preparation stage and download percentage. After a requested restart,
+the browser checks immediately, then reconnects at one-to-five-second intervals
+until the new version is ready. Ordinary browser heartbeats remain 30 seconds.
+
 Update preferences and recovery records live outside the database in
 `~/.switchy/runtime/`. An update downloads and checksum-verifies the runtime and
 prepares Chromium before closing admission. It then rechecks activity, stops
@@ -210,6 +217,28 @@ the launcher's published PID and instance ID. Candidate runtimes must declare li
 without these guarantees are rejected. It then resumes normal operation. It retains
 the previous runtime and the three most recent update snapshots. The previous
 version is recorded explicitly and survives ordinary restarts.
+
+Runtime archives omit SQLite build sources and native binaries for other
+platforms. Identical dependency files share archive storage while retaining all
+module paths, including Turbopack aliases. New runtimes declare
+`browserMode: "headless-shell"`, allowing Playwright to install only Chromium's
+headless shell and FFmpeg in the existing shared cache. Older runtime metadata
+keeps the full Chromium installer for compatibility.
+
+Interrupted downloads retain `.tar.gz.part` and `.tar.gz.part.json` files in
+`~/.switchy/cache/downloads/`. Partial metadata binds the transfer to its URL,
+size, and expected checksum. Resuming uses HTTP Range and If-Range when a
+validator is available, handles servers that restart the download, and checks
+the complete SHA-256 before publishing the cached archive. Transient failures
+get at most three attempts within five minutes. Invalid ranges, sizes, and
+checksums fail closed. Old partial files are pruned with their release artifacts.
+
+Snapshots and restores request filesystem copy-on-write cloning, with ordinary
+copying as the fallback. They remain independent copies, include the full data
+directory, and are synced before migration. After durable commit, admission
+reopens before old artifacts are pruned. The update-state record includes
+optional `progress` and per-stage `timings` in milliseconds without changing the
+lifecycle protocol or outer phase names.
 
 Downloads hold the update lock, leaving stop available. Activation takes the
 start lock after preparation; the lock order is update, start, then preferences.

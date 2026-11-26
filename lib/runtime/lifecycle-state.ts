@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { readJsonFile, writeJsonFileAtomic } from "./atomic-file";
+import type { UpdateProgress, UpdateStage } from "./update-progress";
 
 export interface LifecyclePaths {
   root: string;
@@ -24,6 +25,8 @@ export interface UpdateState {
   failedVersion: string | null;
   downloadedVersion?: string | null;
   message: string | null;
+  progress?: UpdateProgress | null;
+  timings?: Partial<Record<UpdateStage, number>>;
 }
 
 export interface UpdateTransaction {
@@ -41,7 +44,7 @@ const DEFAULT_PREFERENCES: LifecyclePreferences = {
   running: true, port: 6767,
 };
 const DEFAULT_UPDATE_STATE: UpdateState = {
-  phase: "idle", lastCheckedAt: null, latestVersion: null, failedVersion: null, downloadedVersion: null, message: null,
+  phase: "idle", lastCheckedAt: null, latestVersion: null, failedVersion: null, downloadedVersion: null, message: null, progress: null, timings: {},
 };
 
 export function lifecycleFiles(paths: LifecyclePaths) {

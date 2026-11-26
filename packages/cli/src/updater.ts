@@ -1,3 +1,4 @@
+import { constants } from "node:fs";
 import { cp, readdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
@@ -10,6 +11,7 @@ import { installRuntime, setCurrentVersion } from "./release.js";
 import { createUpdateSnapshot, ensurePlaywrightBrowser, runDatabaseMigration, syncTree } from "./runtime.js";
 import type { CurrentVersionRecord, SwitchyPaths } from "./types.js";
 import type { UpdateTransaction } from "./lifecycle-state.js";
+import { trackUpdateStage, updateProgressReporter } from "./update-progress.js";
 
 async function appRequest(paths: SwitchyPaths, route: string, method = "GET"): Promise<Response> {
   const running = await getRunningProcess(paths);
@@ -77,7 +79,7 @@ async function restoreSnapshot(paths: SwitchyPaths, transaction: UpdateTransacti
   const staging = path.join(paths.data, ".update-restore");
   const failed = path.join(paths.data, ".update-failed");
   await rm(staging, { recursive: true, force: true });
-  await cp(original, staging, { recursive: true });
+  await cp(original, staging, { recursive: true, mode: constants.COPYFILE_FICLONE });
   await syncTree(staging);
   await rm(failed, { recursive: true, force: true });
   if (await stat(paths.productionData).catch(() => null)) await rename(paths.productionData, failed);
@@ -135,8 +137,9 @@ export async function downloadUpdate(paths: SwitchyPaths, version: string): Prom
 
 async function prepareUpdate(paths: SwitchyPaths, version: string): Promise<string> {
   const staged = (await readUpdateState(paths)).downloadedVersion === version;
-  if (!staged) await saveUpdateState(paths, { phase: "downloading", message: null });
-  const directory = await installRuntime(version, paths);
+  const report = updateProgressReporter(paths);
+  if (!staged) await saveUpdateState(paths, { phase: "downloading", message: null, progress: null, timings: {} });
+  const directory = await installRuntime(version, paths, report);
   if (!(await stat(path.join(directory, "bin/lifecycle.cjs")).catch(() => null))?.isFile()) {
     throw new Error("The candidate runtime is missing lifecycle support");
   }
@@ -144,8 +147,8 @@ async function prepareUpdate(paths: SwitchyPaths, version: string): Promise<stri
   if (metadata?.lifecycleProtocol !== 2) throw new Error("This release does not support safe managed updates. Choose a current release.");
   // Download browser dependencies before interrupting the running version.
   if (!staged) {
-    await ensurePlaywrightBrowser(directory, paths);
-    await saveUpdateState(paths, { phase: "ready", downloadedVersion: version, message: null });
+    await trackUpdateStage("browser", report, () => ensurePlaywrightBrowser(directory, paths));
+    await saveUpdateState(paths, { phase: "ready", downloadedVersion: version, message: null, progress: null });
   }
   return directory;
 }
@@ -161,12 +164,13 @@ export async function installUpdate(paths: SwitchyPaths, version: string, manual
     const current = await readJsonFile<CurrentVersionRecord>(paths.currentVersion);
     if (current && compareVersions(version, current.version) <= 0) return false;
     const preferences = await readPreferences(paths);
+    if (!manual && !preferences.automaticUpdates) return false;
+    // Prepare while the app is in use; only activation needs an idle app.
+    const directory = await prepareUpdate(paths, version);
     if (!await applicationIsIdle(paths) || (!manual && await browsersAreOpen(paths))) {
       await saveUpdateState(paths, { phase: "waiting", message: "Waiting for active work to finish and Switchy tabs to close." });
       return false;
     }
-    // Downloads and browser preparation must not hold the server control lock.
-    const directory = await prepareUpdate(paths, version);
     return withDirectoryLock(paths.startLock, async () => {
       await recoverInterruptedUpdate(paths);
       const selected = await readJsonFile<CurrentVersionRecord>(paths.currentVersion);
@@ -181,6 +185,7 @@ export async function installUpdate(paths: SwitchyPaths, version: string, manual
 
 async function activateRuntime(paths: SwitchyPaths, directory: string, version: string, current: CurrentVersionRecord | null, options: InstallOptions): Promise<boolean> {
   const files = lifecycleFiles(paths);
+  const report = updateProgressReporter(paths);
   await writeJsonFileAtomic(files.maintenance, { startedAt: new Date().toISOString() });
   try {
     if (!await applicationIsIdle(paths)) {
@@ -201,16 +206,16 @@ async function activateRuntime(paths: SwitchyPaths, directory: string, version: 
     transaction.stage = "stopped";
     await writeJsonFileAtomic(files.transaction, transaction);
     if (transaction.hadData) {
-      transaction.snapshot = await createUpdateSnapshot(paths, current?.version ?? "unmanaged", version);
+      transaction.snapshot = await trackUpdateStage("snapshot", report, () => createUpdateSnapshot(paths, current?.version ?? "unmanaged", version));
       if (!transaction.snapshot) throw new Error("Cannot update without a recovery snapshot");
     }
     transaction.stage = "snapshot";
     await writeJsonFileAtomic(files.transaction, transaction);
-    await runDatabaseMigration(directory, paths);
+    await trackUpdateStage("migrate", report, () => runDatabaseMigration(directory, paths));
     transaction.stage = "starting";
     await writeJsonFileAtomic(files.transaction, transaction);
-    await startSwitchyProcess({ paths, runtimeDirectory: directory, version, port: transaction.port,
-      foreground: options.foreground ?? false, candidate: true });
+    await trackUpdateStage("start", report, () => startSwitchyProcess({ paths, runtimeDirectory: directory, version, port: transaction.port,
+      foreground: options.foreground ?? false, candidate: true }));
     const live = await getRunningProcess(paths);
     const identity = live && await fetchLiveness(live.record);
     if (!identity || identity.version !== version || identity.instanceId !== live?.record.instanceId) {
@@ -220,11 +225,14 @@ async function activateRuntime(paths: SwitchyPaths, directory: string, version: 
     await setRunningPreference(paths, !options.foreground, transaction.port);
     transaction.stage = "committed";
     await writeJsonFileAtomic(files.transaction, transaction);
-    await saveUpdateState(paths, { phase: "idle", failedVersion: null, downloadedVersion: null, message: null });
+    await saveUpdateState(paths, { phase: "idle", failedVersion: null, downloadedVersion: null, message: null, progress: null });
     await removeFile(files.transaction);
-    await pruneInstallArtifacts(paths, [version, current?.version ?? null]).catch((error: unknown) => {
+    // The candidate and commit are durable. Reopen admission before slow pruning.
+    await removeFile(files.maintenance);
+    await trackUpdateStage("cleanup", report, () => pruneInstallArtifacts(paths, [version, current?.version ?? null])).catch((error: unknown) => {
       console.warn("Could not prune old update artifacts:", error);
     });
+    await saveUpdateState(paths, { progress: null });
     return true;
   } catch (error) {
     await recoverInterruptedUpdate(paths);

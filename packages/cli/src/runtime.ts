@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
+import { constants } from "node:fs";
 import { cp, mkdir, open, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { syncDirectory } from "./lifecycle-state.js";
-import { writeJsonFileAtomic } from "./files.js";
+import { readJsonFile, writeJsonFileAtomic } from "./files.js";
 import type { SwitchyPaths } from "./types.js";
 
 async function run(
@@ -56,7 +57,10 @@ export async function ensurePlaywrightBrowser(
   if (!(await stat(cliPath).catch(() => null))?.isFile()) {
     throw new Error("The packaged runtime is missing the Playwright installer");
   }
-  await run(process.execPath, [cliPath, "install", "chromium"], {
+  const metadata = await readJsonFile<{ browserMode?: string }>(path.join(runtimeDirectory, "switchy-runtime.json"));
+  const args = [cliPath, "install", "chromium"];
+  if (metadata?.browserMode === "headless-shell") args.push("--only-shell");
+  await run(process.execPath, args, {
     cwd: runtimeDirectory,
     env: {
       ...process.env,
@@ -100,6 +104,7 @@ export async function createUpdateSnapshot(
   await mkdir(snapshotDirectory, { recursive: true, mode: 0o700 });
   await cp(paths.productionData, path.join(snapshotDirectory, "production"), {
     recursive: true,
+    mode: constants.COPYFILE_FICLONE,
   });
   await syncTree(path.join(snapshotDirectory, "production"));
   await writeJsonFileAtomic(path.join(snapshotDirectory, "update.json"), {

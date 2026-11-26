@@ -19,6 +19,7 @@ import { build } from "esbuild";
 import { buildMacOSNotifierBundle } from "./build-macos-notifier.mjs";
 import { materializeTracedPackages } from "./runtime-traced-packages.mjs";
 import { brandStandaloneServer } from "./runtime-server-branding.mjs";
+import { optimizeRuntime } from "./optimize-runtime.mjs";
 
 const projectDirectory = process.cwd();
 const releasePackageJson = JSON.parse(
@@ -300,11 +301,13 @@ await writeFile(
     version: releasePackageJson.version,
     target,
     lifecycleProtocol: 2,
+    browserMode: "headless-shell",
     nodeVersion: process.versions.node,
     builtAt: new Date().toISOString(),
   }, null, 2)}\n`
 );
 
+console.log("Runtime optimization:", await optimizeRuntime(runtimeDirectory, target));
 const archiveName = `switchy-${releasePackageJson.version}-${target}.tar.gz`;
 const archivePath = path.join(releaseAssetsDirectory, archiveName);
 await rm(archivePath, { force: true });

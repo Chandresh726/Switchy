@@ -16,6 +16,10 @@ const processManager = vi.hoisted(() => ({
   getRunningProcess: vi.fn(), stopSwitchy: vi.fn(), startSwitchyProcess: vi.fn(), fetchLiveness: vi.fn(),
 }));
 vi.mock("../../../packages/cli/src/process-manager", () => processManager);
+vi.mock("../../../packages/cli/src/cleanup", async (original) => {
+  const actual = await original<typeof import("../../../packages/cli/src/cleanup")>();
+  return { ...actual, pruneInstallArtifacts: vi.fn(actual.pruneInstallArtifacts) };
+});
 vi.mock("../../../packages/cli/src/release", () => ({
   installRuntime: vi.fn(async (_version, paths) => path.join(paths.versions, "1.1.0")),
   setCurrentVersion: vi.fn(async (paths, version) => writeJsonFileAtomic(paths.currentVersion, { schemaVersion: 1, version })),
@@ -63,11 +67,13 @@ describe("Switchy lifecycle", () => {
   });
 
   it("treats any fresh browser heartbeat as active", async () => {
+    await writeJsonFileAtomic(lifecycleFiles(paths).preferences, { ...await readPreferences(paths), automaticUpdates: true });
     expect(await browsersAreOpen(paths)).toBe(false);
     await mkdir(lifecycleFiles(paths).browser, { recursive: true });
     await writeFile(path.join(lifecycleFiles(paths).browser, "tab"), "");
     expect(await browsersAreOpen(paths)).toBe(true);
     expect(await installUpdate(paths, "1.1.0", false)).toBe(false);
+    expect(await readJsonFile(lifecycleFiles(paths).state)).toMatchObject({ phase: "waiting", downloadedVersion: "1.1.0" });
     expect(processManager.stopSwitchy).not.toHaveBeenCalled();
   });
 
@@ -135,6 +141,13 @@ it("restores the previous database and restarts the previous runtime after migra
 });
 
 it("closes admission before migration and commits before allowing new writes", async () => {
+  const { pruneInstallArtifacts } = await import("../../../packages/cli/src/cleanup");
+  vi.mocked(pruneInstallArtifacts).mockImplementationOnce(async () => {
+    expect(await readJsonFile(lifecycleFiles(paths).maintenance)).toBeNull();
+    expect(await readJsonFile(lifecycleFiles(paths).transaction)).toBeNull();
+    expect(await readJsonFile(paths.currentVersion)).toMatchObject({ version: "1.1.0" });
+    return { versions: [], downloads: [], snapshots: [] };
+  });
   const { runDatabaseMigration } = await import("../../../packages/cli/src/runtime");
   vi.mocked(runDatabaseMigration).mockImplementationOnce(async () => {
     expect(await readJsonFile(lifecycleFiles(paths).maintenance)).not.toBeNull();
@@ -151,6 +164,33 @@ it("closes admission before migration and commits before allowing new writes", a
   expect(await readJsonFile(lifecycleFiles(paths).maintenance)).toBeNull();
   expect(await readJsonFile(lifecycleFiles(paths).transaction)).toBeNull();
   expect(await readFile(path.join(paths.productionData, "switchy.db"), "utf8")).toBe("new schema");
+});
+
+it("does not prepare automatic updates without consent", async () => {
+  const { installRuntime } = await import("../../../packages/cli/src/release");
+  expect(await installUpdate(paths, "1.1.0", false)).toBe(false);
+  expect(installRuntime).not.toHaveBeenCalled();
+});
+
+it("prepares updates during active work without entering maintenance", async () => {
+  await writeJsonFileAtomic(lifecycleFiles(paths).preferences, { ...await readPreferences(paths), automaticUpdates: true });
+  processManager.getRunningProcess.mockResolvedValue({ record: { port: 6767, instanceId: "abc" }, live: { instanceId: "abc" } });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ idle: false })));
+  expect(await installUpdate(paths, "1.1.0", false)).toBe(false);
+  expect(await readJsonFile(lifecycleFiles(paths).state)).toMatchObject({ phase: "waiting", downloadedVersion: "1.1.0" });
+  expect(await readJsonFile(lifecycleFiles(paths).maintenance)).toBeNull();
+  expect(processManager.stopSwitchy).not.toHaveBeenCalled();
+});
+
+it("keeps snapshot files independent from changes to the live data", async () => {
+  const { createUpdateSnapshot } = await import("../../../packages/cli/src/runtime");
+  await writeFile(path.join(paths.productionData, "encryption.secret"), "original secret");
+  const snapshot = await createUpdateSnapshot(paths, "1.0.0", "1.1.0");
+  expect(snapshot).not.toBeNull();
+  await writeFile(path.join(paths.productionData, "switchy.db"), "new data");
+  expect(await readFile(path.join(snapshot!, "production/switchy.db"), "utf8")).toBe("before migration");
+  await writeFile(path.join(snapshot!, "production/encryption.secret"), "changed snapshot");
+  expect(await readFile(path.join(paths.productionData, "encryption.secret"), "utf8")).toBe("original secret");
 });
 
 it("packages a syntactically valid supervisor without relying on the CLI installation", async () => {

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -217,6 +217,10 @@ it.each(["success", "checksum", "interrupted"])("handles a streamed runtime down
   const paths = getSwitchyPaths(root);
   await ensureSwitchyDirectories(paths);
   await writeRuntimeFiles(source);
+  await mkdir(path.join(source, "node_modules/fixture"), { recursive: true });
+  await mkdir(path.join(source, ".next/node_modules/fixture-alias"), { recursive: true });
+  await writeFile(path.join(source, "node_modules/fixture/index.js"), "module.exports = 'fixture'");
+  await link(path.join(source, "node_modules/fixture/index.js"), path.join(source, ".next/node_modules/fixture-alias/index.js"));
   await writeFile(path.join(source, "switchy-runtime.json"), JSON.stringify({
     schemaVersion: 1, version: "1.0.2", target: currentTarget(), nodeVersion: process.versions.node, builtAt: new Date().toISOString(),
   }));
@@ -236,7 +240,12 @@ it.each(["success", "checksum", "interrupted"])("handles a streamed runtime down
   });
   vi.stubGlobal("fetch", fetch);
   try {
-    if (outcome === "success") expect(await installRuntime("1.0.2", paths)).toBe(path.join(paths.versions, "1.0.2"));
+    if (outcome === "success") {
+      const installed = await installRuntime("1.0.2", paths);
+      expect(installed).toBe(path.join(paths.versions, "1.0.2"));
+      expect(await readFile(path.join(installed, ".next/node_modules/fixture-alias/index.js"), "utf8")).toBe("module.exports = 'fixture'");
+      expect(await readFile(path.join(installed, "node_modules/fixture/index.js"), "utf8")).toBe("module.exports = 'fixture'");
+    }
     else {
       await expect(installRuntime("1.0.2", paths)).rejects.toThrow(outcome === "checksum" ? "checksum" : "network interrupted");
       expect(await readdir(paths.downloads)).toEqual([]);
