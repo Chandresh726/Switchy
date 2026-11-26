@@ -248,6 +248,7 @@ export class PhenomScraper extends AbstractApiScraper<PhenomConfig> {
       const openExternalIds = allListings.map((listing) =>
         this.externalId(refNum, listing.reqId)
       );
+      const listingJobs: ScrapedJob[] = allListings.map((item) => this.mapListingToJob(refNum, item));
       const selection = selectListingsForHydration({
         listings: allListings,
         filters: options?.filters,
@@ -272,7 +273,7 @@ export class PhenomScraper extends AbstractApiScraper<PhenomConfig> {
         if (result.failed) detailFailures++;
         return result.job;
       });
-      const issues = [];
+      const issues = [...hydrated.issues];
       if (!listingComplete) {
         issues.push(
           createScraperError(
@@ -297,6 +298,7 @@ export class PhenomScraper extends AbstractApiScraper<PhenomConfig> {
             ? "success"
             : "partial",
         jobs,
+        listingJobs,
         totalListings: allListings.length,
         advertisedTotal: first.totalHits,
         openExternalIds,
@@ -310,7 +312,7 @@ export class PhenomScraper extends AbstractApiScraper<PhenomConfig> {
     }
   }
 
-  private async fetchPage(url: string, offset: number, sessionCookie?: string): Promise<
+  private async fetchPage(url: string, offset: number, sessionCookie?: string, retryBootstrap = true): Promise<
     | {
         ok: true;
         refNum: string;
@@ -330,6 +332,11 @@ export class PhenomScraper extends AbstractApiScraper<PhenomConfig> {
       });
       if (!response.ok) return { ok: false, status: response.status };
       const rawDdo = this.extractDdo(await response.text());
+      if (rawDdo && typeof rawDdo === "object" && "eagerLoadRefineSearch" in rawDdo &&
+          rawDdo.eagerLoadRefineSearch == null) {
+        if (retryBootstrap) return this.fetchPage(url, offset, sessionCookie, false);
+        throw new TypeError("Phenom search data was temporarily unavailable after reloading.");
+      }
       const ddo = parseExternalPayload(
         PhenomDdoSchema,
         rawDdo,
@@ -429,6 +436,7 @@ export class PhenomScraper extends AbstractApiScraper<PhenomConfig> {
               detail.structureData?.datePosted ??
               listing.postedDate
           ),
+          descriptionQuality: processed?.text ? "full" : fallback.descriptionQuality,
           description: processed?.text ?? fallback.description,
           descriptionFormat: processed?.format ?? fallback.descriptionFormat,
         },
@@ -456,6 +464,7 @@ export class PhenomScraper extends AbstractApiScraper<PhenomConfig> {
       department: listing.category ?? undefined,
       employmentType: parseEmploymentType(listing.type ?? undefined),
       postedDate: this.parseDate(listing.postedDate),
+      descriptionQuality: "teaser",
       description: processed?.text ?? undefined,
       descriptionFormat: processed?.format,
     };

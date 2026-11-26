@@ -30,6 +30,7 @@
     "test:integration": "node scripts/run-tests.mjs --run --project integration",
     "test:ui": "node scripts/run-tests.mjs --run --project ui --passWithNoTests",
     "ai:eval": "node scripts/run-tests.mjs --run --project eval",
+    "scraper:check-contracts": "node --import tsx scripts/check-scraper-contracts.mts",
     "scraper:validate-live": "tsx scripts/validate-reusable-ats-boards.mts",
     "scraper:validate-state": "tsx scripts/validate-reusable-ats-state.mts",
     "test:coverage": "node scripts/run-tests.mjs --run --coverage --project unit --project integration --project ui --project eval",

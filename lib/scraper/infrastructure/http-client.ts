@@ -14,6 +14,7 @@ export interface HttpClientConfig {
   maxDelay: number;
   maxConcurrencyPerHost: number;
   jitterRatio: number;
+  maxResponseBytes: number;
 }
 
 export interface HttpRequestOptions extends RequestInit {
@@ -39,6 +40,7 @@ const DEFAULT_HTTP_CONFIG: HttpClientConfig = {
   maxDelay: 16000,
   maxConcurrencyPerHost: 6,
   jitterRatio: 0.2,
+  maxResponseBytes: 64 * 1024 * 1024,
 };
 
 interface HostWaiter {
@@ -203,6 +205,8 @@ export class FetchHttpClient implements IHttpClient {
       // host's limit instead of reusing the origin host's slot.
       this.checkCooldown(currentUrl);
       const release = await this.acquireHostSlot(currentUrl, args.signal);
+      let released = false;
+      const releaseAttempt = () => { if (!released) { released = true; release(); } };
       const attemptController = new AbortController();
       const onAbort = () => attemptController.abort(args.signal?.reason);
       args.signal?.addEventListener("abort", onAbort, { once: true });
@@ -296,6 +300,8 @@ export class FetchHttpClient implements IHttpClient {
           args.maxDelay,
           attempt
         );
+        clearTimeout(timeoutId);
+        releaseAttempt();
         await this.delay(delayMs, args.signal);
       } catch (error) {
         if (args.signal?.aborted) {
@@ -306,11 +312,13 @@ export class FetchHttpClient implements IHttpClient {
         const delayMs = this.applyJitter(
           Math.min(args.maxDelay, args.baseDelay * 2 ** attempt)
         );
+        clearTimeout(timeoutId);
+        releaseAttempt();
         await this.delay(delayMs, args.signal);
       } finally {
         clearTimeout(timeoutId);
         args.signal?.removeEventListener("abort", onAbort);
-        release();
+        releaseAttempt();
       }
 
       attempt += 1;
@@ -415,7 +423,40 @@ export class FetchHttpClient implements IHttpClient {
   }
 
   private async bufferResponse(response: Response, requestUrl: string): Promise<Response> {
-    const body = await response.arrayBuffer();
+    const limit = this.defaultConfig.maxResponseBytes;
+    const declared = Number(response.headers.get("content-length"));
+    const oversized = () => new HttpError(413, `Scraper response exceeded ${limit} bytes`, requestUrl);
+    if (declared > limit) {
+      await this.discardResponse(response);
+      throw oversized();
+    }
+    let body: ArrayBuffer;
+    if (!response.body) {
+      body = await response.arrayBuffer();
+      if (body.byteLength > limit) throw oversized();
+    } else {
+      const reader = response.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      try {
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          size += chunk.value.byteLength;
+          if (size > limit) throw oversized();
+          chunks.push(chunk.value);
+        }
+      } catch (error) {
+        await reader.cancel().catch(() => undefined);
+        throw error;
+      } finally {
+        reader.releaseLock();
+      }
+      const bytes = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+      body = bytes.buffer;
+    }
     const buffered = new Response(body.byteLength > 0 ? body : null, {
       status: response.status,
       statusText: response.statusText,

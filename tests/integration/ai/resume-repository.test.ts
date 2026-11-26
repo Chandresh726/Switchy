@@ -23,7 +23,7 @@ import { migrateLocalDatabase } from "@/lib/db/migrations";
 import { runPersistencePreflight } from "@/lib/db/persistence-preflight";
 import { createMigrationsThrough } from "@test/helpers/migrations";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
-import { preCanonicalCompanies } from "@test/helpers/migration-schema";
+import { preCanonicalCompanies, preScraperFreshnessJobs } from "@test/helpers/migration-schema";
 
 const harness = createSqliteTestHarness("switchy-resume-repository-");
 const temporaryMigrationFolders: string[] = [];
@@ -147,7 +147,7 @@ describe("resume artifact repository", () => {
       name: "Acme",
       careersUrl: "https://example.com/careers",
     }).returning().get();
-    database.insert(jobs).values({
+    database.insert(preScraperFreshnessJobs).values({
       companyId: company.id,
       title: "Engineer",
       url: "https://example.com/jobs/1",
@@ -166,7 +166,7 @@ describe("resume artifact repository", () => {
       experience: database.select().from(experience).all().length,
       education: database.select().from(education).all().length,
       companies: database.select({ id: companies.id }).from(companies).all().length,
-      jobs: database.select().from(jobs).all().length,
+      jobs: database.select().from(preScraperFreshnessJobs).all().length,
       scrapeSessions: database.select().from(scrapeSessions).all().length,
     };
 

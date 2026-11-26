@@ -15,3 +15,13 @@ export const preMatchColumnsJobs = sqliteTable("jobs", {
   matchScore: integer("match_score"),
   matchReasons: text("match_reasons"),
 });
+
+/** Minimal job shape for seeding historical databases before scraper timestamps. */
+export const preScraperFreshnessJobs = sqliteTable("jobs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  companyId: integer("company_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  url: text("url").notNull(),
+  status: text("status").notNull().default("new"),
+});

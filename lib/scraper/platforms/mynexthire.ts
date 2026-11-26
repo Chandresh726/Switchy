@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 
 import { containsHtml, decodeHtmlEntities, processDescription } from "@/lib/jobs/description-processor";
-import { parseEmploymentType, parseExternalPayload } from "@/lib/scraper/types";
+import { createScraperError, parseEmploymentType, parseExternalItems, parseExternalPayload } from "@/lib/scraper/types";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import type { ApiScraperConfig, ScrapeOptions, ScrapedJob, ScraperResult } from "../core/types";
 
@@ -21,32 +21,19 @@ type MynextHireJob = {
   ctcBandHighEnd?: string | number | null;
 };
 
-type MynextHireResponse = {
-  reqDetailsBOList: MynextHireJob[];
-};
-
-const MynextHireResponseSchema = z
-  .object({
-    requesterTitle: z.unknown().optional(),
-    reqDetailsBOList: z.array(
-      z
-        .object({
-          reqId: z.number(),
-          reqTitle: z.string(),
-          buName: z.string().optional(),
-          location: z.string().optional(),
-          locationAddress: z.string().optional(),
-          jdDisplay: z.string().optional(),
-          approvedOn: z.union([z.string(), z.number()]).nullish(),
-          employmentType: z.string().optional(),
-          reqCurrency: z.string().optional(),
-          ctcBandLowEnd: z.union([z.string(), z.number(), z.null()]).optional(),
-          ctcBandHighEnd: z.union([z.string(), z.number(), z.null()]).optional(),
-        })
-        .passthrough()
-    ),
-  })
-  .passthrough();
+const MynextHireJobSchema = z.object({
+  reqId: z.number(), reqTitle: z.string().min(1),
+  buName: z.string().nullish().transform((value) => value ?? undefined),
+  location: z.string().nullish().transform((value) => value ?? undefined),
+  locationAddress: z.string().nullish().transform((value) => value ?? undefined),
+  jdDisplay: z.string().nullish().transform((value) => value ?? undefined),
+  approvedOn: z.union([z.string(), z.number()]).nullish(),
+  employmentType: z.string().nullish().transform((value) => value ?? undefined),
+  reqCurrency: z.string().nullish().transform((value) => value ?? undefined),
+  ctcBandLowEnd: z.union([z.string(), z.number()]).nullish(),
+  ctcBandHighEnd: z.union([z.string(), z.number()]).nullish(),
+}).passthrough();
+const MynextHireResponseSchema = z.object({ reqDetailsBOList: z.array(z.unknown()) }).passthrough();
 
 export type MynextHireConfig = ApiScraperConfig;
 
@@ -101,21 +88,23 @@ export class MynextHireScraper extends AbstractApiScraper<MynextHireConfig> {
           headers: this.requestHeaders("application/json, text/plain, */*"),
         }
       );
-      const data: MynextHireResponse = parseExternalPayload(
+      const data = parseExternalPayload(
         MynextHireResponseSchema,
         payload,
         "MynextHire"
       );
 
-      const jobs = data.reqDetailsBOList.map((job) => this.mapJob(tenant, tenantHost, url, job));
+      const parsed = parseExternalItems(MynextHireJobSchema, data.reqDetailsBOList, "MynextHire jobs");
+      const jobs = parsed.items.map((job) => this.mapJob(tenant, tenantHost, url, job));
 
       return {
-        outcome: "success",
+        outcome: parsed.invalidCount ? "partial" : "success",
         jobs,
-        totalListings: jobs.length,
+        totalListings: data.reqDetailsBOList.length,
         detectedBoardToken: !options?.boardToken ? tenant : undefined,
         openExternalIds: jobs.map((job) => job.externalId),
-        listingCompleteness: "complete",
+        listingCompleteness: parsed.invalidCount ? "partial" : "complete",
+        issues: parsed.invalidCount ? [createScraperError("parse_error", `${parsed.invalidCount} MynextHire listings had invalid required fields.`)] : undefined,
       };
     } catch (error) {
       return this.failureFromUnknown(error);

@@ -156,6 +156,7 @@ export class TalentBrewScraper extends AbstractApiScraper<TalentBrewConfig> {
       const openExternalIds = allListings.map((listing) =>
         this.externalId(companyId, listing.id)
       );
+      const listingJobs: ScrapedJob[] = allListings.map((item) => this.mapListingToJob(companyId, item));
       const selection = selectListingsForHydration({
         listings: allListings,
         filters: options?.filters,
@@ -180,7 +181,7 @@ export class TalentBrewScraper extends AbstractApiScraper<TalentBrewConfig> {
         if (result.failed) detailFailures++;
         return result.job;
       });
-      const issues = [];
+      const issues = [...hydrated.issues];
       if (!listingComplete) {
         issues.push(
           createScraperError(
@@ -205,6 +206,7 @@ export class TalentBrewScraper extends AbstractApiScraper<TalentBrewConfig> {
             ? "success"
             : "partial",
         jobs,
+        listingJobs,
         totalListings: allListings.length,
         advertisedTotal: firstPage.advertisedTotal,
         openExternalIds,

@@ -15,6 +15,7 @@ import {
   createScraperError,
   parseEmploymentType,
   parseExternalPayload,
+  parseExternalItems,
   ScraperPayloadError,
   type BrowserScraperConfig,
   type ScrapeOptions,
@@ -75,10 +76,10 @@ const EightfoldPositionSchema = z
     id: z.number(),
     name: z.string(),
     locations: z.array(z.string()),
-    department: z.string().optional(),
-    workLocationOption: z.string().optional(),
-    postedTs: z.number().optional(),
-    positionUrl: z.string().optional(),
+    department: z.string().nullish().transform((value) => value ?? undefined),
+    workLocationOption: z.string().nullish().transform((value) => value ?? undefined),
+    postedTs: z.number().nullish().transform((value) => value ?? undefined),
+    positionUrl: z.string().nullish().transform((value) => value ?? undefined),
   })
   .passthrough();
 
@@ -87,7 +88,7 @@ const EightfoldSearchResponseSchema = z
     status: z.number(),
     data: z
       .object({
-        positions: z.array(EightfoldPositionSchema),
+        positions: z.array(z.unknown()),
         count: z.number(),
       })
       .passthrough()
@@ -105,8 +106,8 @@ const EightfoldPositionDetailsSchema = z
         locations: z.array(z.string()),
         jobDescription: z.string(),
         publicUrl: z.string(),
-        department: z.string().optional(),
-        workLocationOption: z.string().optional(),
+        department: z.string().nullish().transform((value) => value ?? undefined),
+        workLocationOption: z.string().nullish().transform((value) => value ?? undefined),
         efcustomTextTimeType: z.array(z.string()).optional(),
       })
       .passthrough()
@@ -166,7 +167,7 @@ const DEFAULT_EIGHTFOLD_CONFIG: EightfoldConfig = {
 export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
   readonly platform = "eightfold" as const;
   override readonly capabilities = {
-    concurrency: "browser_limited",
+    concurrency: "parallel",
   } as const;
 
   constructor(
@@ -257,6 +258,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         };
       }
 
+      const listingJobs: ScrapedJob[] = allPositions.map((item) => this.mapPositionToScrapedJob(baseUrl, boardToken, item, item));
       const selection = selectListingsForHydration({
         listings: allPositions,
         filters: options?.filters,
@@ -277,6 +279,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         return {
           outcome: listResult.isComplete ? "success" : "partial",
           jobs: [],
+          listingJobs,
           totalListings: allPositions.length,
           detectedBoardToken: options?.boardToken ? undefined : resolvedDomain,
           earlyFiltered: selection.earlyFiltered,
@@ -371,6 +374,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       return {
         outcome: isPartial ? "partial" : "success",
         jobs: scrapedJobs,
+        listingJobs,
         totalListings: allPositions.length,
         advertisedTotal: listResult.advertisedCount,
         detectedBoardToken: options?.boardToken ? undefined : resolvedDomain,
@@ -462,11 +466,10 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
           url
         );
       }
-      return parseExternalPayload(
-        EightfoldSearchResponseSchema,
-        await response.json(),
-        "Eightfold search"
-      );
+      const payload = parseExternalPayload(EightfoldSearchResponseSchema, await response.json(), "Eightfold search");
+      if (!payload.data) return { status: payload.status };
+      const parsed = parseExternalItems(EightfoldPositionSchema, payload.data.positions, "Eightfold positions");
+      return { status: payload.status, data: { count: payload.data.count, positions: parsed.items } };
     } catch (error) {
       if (error instanceof HttpError || error instanceof ScraperPayloadError) throw error;
       throwIfScrapeAborted(error);

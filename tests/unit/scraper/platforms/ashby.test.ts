@@ -99,7 +99,7 @@ describe("AshbyScraper", () => {
 
   it("accepts a minimal usable payload without unused metadata", async () => {
     const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ jobs: [{ title: "Engineer" }] }), {
+      new Response(JSON.stringify({ jobs: [{ title: "Engineer", jobUrl: "https://jobs.ashbyhq.com/acme/engineer" }] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       })
@@ -236,4 +236,18 @@ describe("AshbyScraper", () => {
       );
     }
   );
+  it("preserves hybrid type, compensation and every location and excludes unlisted roles", async () => {
+    const scraper = new AshbyScraper(createHttpClientStub({ fetch: async () => Response.json({ jobs: [
+      { title: "Engineer", jobUrl: "https://jobs.ashbyhq.com/acme/one", location: "London", isRemote: true,
+        workplaceType: "Hybrid", secondaryLocations: [{ location: "Bengaluru, India" }],
+        compensation: { scrapeableCompensationSalarySummary: "100 - 200 GBP" } },
+      { title: "Private role", jobUrl: "https://jobs.ashbyhq.com/acme/private", isListed: false },
+    ] }) }));
+    const result = await scraper.scrape("https://jobs.ashbyhq.com/acme");
+    expect(result.jobs).toHaveLength(1);
+    expect(result.jobs[0]).toMatchObject({ locationType: "hybrid", salary: "100 - 200 GBP",
+      locations: ["London", "Bengaluru, India"] });
+    expect(result.jobs[0]?.location).toContain("Bengaluru");
+  });
+
 });

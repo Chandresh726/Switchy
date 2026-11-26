@@ -10,6 +10,7 @@ export interface ScrapedJob {
   title: string;
   url: string;
   location?: string;
+  locations?: string[];
   locationType?: LocationType;
   department?: string;
   description?: string;
@@ -18,4 +19,6 @@ export interface ScrapedJob {
   employmentType?: EmploymentType;
   seniorityLevel?: SeniorityLevel;
   postedDate?: Date;
+  sourceUpdatedAt?: Date;
+  descriptionQuality?: "full" | "teaser";
 }

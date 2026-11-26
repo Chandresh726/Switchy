@@ -1,4 +1,4 @@
-# Scraper Architecture
+# Scraper architecture
 
 Switchy runs its scraping pipeline entirely on the user's device. SQLite is the durable coordinator; there is no cloud queue, remote worker service, Redis dependency, or external control plane.
 
@@ -23,16 +23,16 @@ flowchart LR
 
 Manual and scheduled requests use the same in-process supervisor. Each company is represented by a durable queue item with an attempt count, retry time, cancellation flag, worker lease, and serialized result. A process restart recovers expired leases and continues unfinished work.
 
-Identical company batches are coalesced while they are in flight even when manual and scheduler triggers overlap. The first request owns the durable session metadata; concurrent callers receive that same session result instead of scraping the same companies twice.
+Synchronous batch callers coalesce identical in-flight company batches. Manual HTTP submissions retain separate durable sessions. Company locks and committed-result reuse prevent overlapping sessions from fetching the same company twice. Stored queue timestamps have one-second precision, so requests in the same second can reuse the earlier result.
 
 ## Module boundaries
 
-`createLocalScrapeQueueService()` and `getLocalScrapeQueueService()` are the public composition boundary. The queue service is a thin façade for enqueueing, waiting, recovery, and cancellation; batch work never bypasses the durable queue.
+`createLocalScrapeQueueService()` and `getLocalScrapeQueueService()` are the public composition boundary. The factory accepts a database, HTTP/browser clients, persistence ports, clock, matching callbacks, and runtime checks. The one-company pipeline imports no global AI configuration or dispatcher. Production defaults are wired only in the composition root. The queue service is a thin façade for enqueueing, waiting, recovery, and cancellation; batch work never bypasses the durable queue.
 
 - `application/` owns the one-company pipeline, work handler, session projection, and retention policy.
 - `lib/runtime/` owns shared leased work, heartbeats, bounded retry, single-flight dispatch, data maintenance gates, keyed locks, and device sleep protection. Scraping and matching supply their own rate-limit policies.
 - `lib/scraper/runtime/` owns scraper resource limits and device-wake checks.
-- `queue/`, `history.ts`, and `maintenance.ts` adapt scraper persistence ports to the existing SQLite schema. `lib/ai/work-items/` owns durable matching work.
+- `queue/`, `history.ts`, and `maintenance/` adapt scraper persistence ports to the existing SQLite schema. `lib/ai/work-items/` owns durable matching work.
 - `platforms/` owns extraction only. Shared listing selection preserves platform object identity while applying early filters and existing-ID exclusion; detail hydration is bounded and cancellation-aware.
 - `settings/` is the typed source for scraper concurrency, filters, and retention defaults.
 
@@ -51,9 +51,9 @@ This hybrid approach remains the right fit for a local application. Replacing ev
 
 External payload validation is strict for the response envelope and job identity fields, but tolerant of optional, nullable, and polymorphic metadata. Workday accepts null optional listing metadata, reports the names of rejected fields without logging payload values, and keeps malformed or incomplete lists partial. Eightfold first-page failures retain the fetch stage, offset and HTTP status. When some jobs are malformed, adapters retain usable jobs, mark listing completeness as partial, and prevent missing-job archival.
 
-Queue items use a static platform priority derived from production history. Eightfold is ranked first, Workday next, and fast HTTP adapters follow. The ordered queue interleaves one fast adapter after every two browser-heavy items so the browser cap cannot consume every leased worker. This starts long jobs early, keeps an HTTP lane busy, and remains deterministic.
+Queue items use a static platform priority derived from production history. Eightfold is ranked first, Workday next, and fast HTTP adapters follow. The ordered queue interleaves one fast adapter after every two long-running items. This starts long jobs early, keeps an HTTP lane busy, and remains deterministic.
 
-All adapters share the user-configured total concurrency budget. Eightfold and Workday additionally share a two-job browser-heavy budget, so they can overlap each other without blocking unrelated HTTP adapters. Separate sessions cannot scrape the same company simultaneously.
+All adapters share the user-configured total concurrency budget. Actual browser lifetimes share a two-browser gate inside the browser client. HTTP-only Eightfold and Workday runs do not occupy browser permits. Workday retains its global company serialization and paced host requests. Separate sessions cannot scrape the same company simultaneously.
 
 Adapter results and pipeline exceptions use the same failure classifier in `lib/scraper/types/validation.ts`. It preserves HTTP status and retry hints, distinguishes cancellation from timeout, and keeps retry decisions consistent with terminal scrape logging.
 
@@ -69,20 +69,73 @@ Adapter results and pipeline exceptions use the same failure classifier in `lib/
 - Browser-session bootstrap failures identify the sanitized launch, navigation, settle, or session-extraction stage without persisting cookies, tokens, headers, or response bodies.
 - On macOS, dispatch checks system CPU, Graphics and Network capabilities before recovering leases or claiming work. CPU/network-only maintenance DarkWake defers dispatch for a minute; recovery remains backend-owned and needs no open browser tab. If the OS probe is unavailable, dispatch falls back to clock-gap recovery with a warning.
 - Eightfold and Workday retry missing list offsets with one refreshed browser session before committing a partial result. Workday also retries failed details once and retains listing-only jobs when hydration remains unavailable.
-- Uber follows the current server-rendered jobs pagination and hydrates details only for new jobs that pass early filters; verification pages are classified as retryable network failures.
-- ServiceNow follows all advertised listing pages up to a 100-page safety cap, retries failed navigation, and applies early filtering before detail hydration.
+- Uber and Oracle use shared native recruitingCE schemas, URL construction, pagination and completeness handling, with separate tenant configuration and field mapping. Oracle retains overlapping pages to limit pagination drift.
+- ServiceNow reads the complete XML feed in one request. It does not perform HTML pagination or per-job detail downloads.
 - Cancellation stops the parent session, cancels queued items immediately, and signals running items.
 - Job or company deletion terminates related scrape and match work before data is removed.
 - SQLite busy errors on queue transitions receive short bounded retries.
 
 The queue provides at-least-once execution with idempotent completion. Platform fetches can be repeated after a crash, but committed job results are not repeated once their success or partial log exists.
 
+## Discovery, updates and archival
+
+`openExternalIds` represents discovered listings independently of detail success.
+Adapters that hydrate details also return `listingJobs` so known jobs can receive
+listing metadata without downloading their descriptions. The pipeline uses exact
+URLs to preserve historical IDs when listing and detail identifiers differ.
+Jobvite selects details before downloading them and retains listing identities
+when individual detail requests fail.
+
+Updates compare all supplied source fields. Missing fields do not erase saved
+values, and a teaser cannot replace an existing description. Only exact ID or URL
+matches can update saved content; fuzzy title matches cannot overwrite it.
+Deduplication indexes IDs and URLs once per batch and limits fuzzy comparisons to
+compatible location and identity candidates.
+
+Jobs record source publication and update dates, all available source locations,
+`lastSeenAt`, `detailsFetchedAt`, and description quality. Greenhouse publication
+uses `first_published`, independently of `updated_at`. Ashby and Lever use
+explicit workplace fields before inferring type from location text. Ashby
+compensation and secondary locations are retained; unlisted Ashby posts are
+excluded. Lever supports global and EU hosts and bounded explicit pagination.
+
+Full existing descriptions refresh after 24 hours. At most 50 existing described
+jobs per company run are selected for refresh, oldest first. Legacy jobs without
+refresh timestamps join that bounded queue. Empty descriptions remain eligible
+for backfill. Failed details and teasers are eligible on subsequent runs; a
+successful detail refresh advances its timestamp even if content is unchanged.
+This policy is configurable through pipeline construction.
+
+Archival requires a complete discovery snapshot and an exact advertised total
+when available. Across every platform, a disappearance exceeding the larger of
+five jobs or five percent of eligible saved jobs pauses archival. The same
+missing set must appear in a second complete snapshot at least one minute later
+and within 24 hours. Confirmation survives restarts in `scrape_fetch_state`;
+incomplete snapshots reset it. A paused archival adds a visible warning.
+
+Source-closed jobs reopen when they are listed again. Age-archived jobs stay
+hidden when still listed, preventing the age policy and source reconciliation
+from repeatedly reopening and archiving them. Manual archives and application
+statuses remain protected. Last-seen timestamps advance independently of
+content updates.
+
+The atomic AI handoff includes newly inserted full descriptions and eligible
+existing jobs whose AI fingerprint changed, including description backfills.
+Unchanged refreshes and teaser-only insertions do not create matching work.
+Refresh timestamps alone do not increment `jobsUpdated`.
+
+HTTP responses are limited to 64 MiB, checked both against Content-Length and
+while consuming the decoded stream. Short retry backoffs release host slots.
+Long rate limits retain Retry-After for durable queue deferral. Detail batch
+exceptions preserve bounded structured issue information instead of only a
+failure count.
+
 ## Local resource controls
 
 The Settings page exposes:
 
 - **Max Parallel Scrapes**: the shared API/browser concurrency limit, from 1 to 10.
-- **History Retention**: terminal scrape sessions and logs are pruned after 7 to 3,650 days; the default is 90 days.
+- **History Retention**: terminal scrape sessions and logs are pruned after 7 to 3,650 days; the default is 60 days.
 
 Retention never deletes jobs, companies, uploads, active/leased queue work, or an active matching handoff. Pruning runs on the first supervisor pass after startup and is then throttled to at most once per day for that process.
 
@@ -108,6 +161,34 @@ For local troubleshooting:
 Known retired Postman and Swiggy sources are migrated in place to Workday and SmartRecruiters. The obsolete JioHotstar Lever source is disabled when a JioStar Workday board already exists, or migrated in place otherwise. These idempotent data repairs preserve disabled states, company IDs, jobs and application history. New installs use the updated preset catalog.
 
 Generated migrations are append-only once they may have been applied to a local database. Migrations 0012 through 0014 intentionally remain as a correction chain: the final schema is correct for fresh installs, while retaining the intermediate hashes keeps existing local databases compatible. Do not squash or rewrite those files; generate any future schema change with Drizzle.
+
+## Contract checks and source changes
+
+Run `pnpm scraper:check-contracts` for bounded public-listing checks using the real
+adapters, or pass platform names to select checks. Each adapter receives up to
+four HTTP operations and a 20-second deadline. Transport redirects remain
+bounded separately. The checks exclude detail downloads by title filter, use no
+browser or application database, and report compatible samples separately from
+contract failures and inconclusive network/challenge responses. Visa also gets a
+one-request check of its official careers redirect, reported separately from
+legacy-feed compatibility. The weekly
+`Scraper contracts` workflow runs the same checks and can be started manually.
+These probes do not establish full pagination coverage or tenant-wide parity.
+Fixture tests and the dedicated live validation commands complement them.
+
+The November 26 source review confirmed current public contracts for Greenhouse,
+Lever, Ashby and SmartRecruiters. Workday CXS, Eightfold PCSX, TurboHire guest
+requests, Oracle recruitingCE and company careers endpoints depend on observed
+native interfaces and need continued monitoring. Phenom null search bootstrap
+responses receive one bounded reload and cannot become complete empty boards.
+
+Visa's official jobs entry now redirects to
+`https://visa.wd5.myworkdayjobs.com/Visa`. Its older feed still returns listings.
+The new board remained challenged during a bounded direct and browser-backed
+probe. Keep the current source until complete parity and identity mapping can be
+verified. Switching platform or rewriting saved IDs without that evidence would
+risk duplicate jobs and broken application links. No Visa data migration is
+activated in this release.
 
 ## Adding a platform
 

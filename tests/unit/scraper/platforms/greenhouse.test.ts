@@ -105,4 +105,12 @@ describe("GreenhouseScraper", () => {
     });
     expect(result.jobs).toHaveLength(1);
   });
+  it("keeps publication and modification dates separate", async () => {
+    const scraper = new GreenhouseScraper(createHttpClientStub({ fetch: async () => Response.json({ jobs: [
+      { id: 1, title: "Engineer", absolute_url: "https://example.com/1", first_published: "2026-01-01T00:00:00Z", updated_at: "2026-11-01T00:00:00Z" },
+    ] }) }));
+    const result = await scraper.scrape("https://boards.greenhouse.io/acme");
+    expect(result.jobs[0]).toMatchObject({ postedDate: new Date("2026-01-01T00:00:00Z"), sourceUpdatedAt: new Date("2026-11-01T00:00:00Z") });
+  });
+
 });

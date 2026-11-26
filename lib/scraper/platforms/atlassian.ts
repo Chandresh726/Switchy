@@ -119,8 +119,8 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
       });
 
       if (!response.ok) {
-        return this.failureForHttpStatus(
-          response.status,
+        return this.failureForResponse(
+          response,
           "Failed to fetch Atlassian jobs list.",
         );
       }

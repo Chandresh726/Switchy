@@ -130,6 +130,11 @@ export const jobs = sqliteTable("jobs", {
   aiFingerprint: text("ai_fingerprint"), // Derived from AI-relevant job content; maintained without touching updatedAt
   status: text("status").$type<JobStatus>().notNull().default("new"),
   postedDate: integer("posted_date", { mode: "timestamp" }),
+  sourceUpdatedAt: integer("source_updated_at", { mode: "timestamp" }),
+  lastSeenAt: integer("last_seen_at", { mode: "timestamp" }),
+  detailsFetchedAt: integer("details_fetched_at", { mode: "timestamp" }),
+  descriptionQuality: text("description_quality").$type<"full" | "teaser">(),
+  sourceLocations: text("source_locations", { mode: "json" }).$type<string[]>(),
   discoveredAt: integer("discovered_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
   archivedAt: integer("archived_at", { mode: "timestamp" }),

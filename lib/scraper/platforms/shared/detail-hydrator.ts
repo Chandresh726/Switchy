@@ -2,6 +2,8 @@ import {
   abortableDelay,
   throwIfScrapeAborted,
 } from "@/lib/scraper/infrastructure/cancellation";
+import { createFailureFromUnknown } from "@/lib/scraper/types/validation";
+import type { ScraperError } from "@/lib/scraper/types";
 
 export interface DetailHydratorOptions<TItem, TResult> {
   items: TItem[];
@@ -17,6 +19,7 @@ export interface DetailHydratorOptions<TItem, TResult> {
 export interface DetailHydratorResult<TResult> {
   results: TResult[];
   failures: number;
+  issues: ScraperError[];
 }
 
 export async function hydrateDetailsInBatches<TItem, TResult>(
@@ -35,6 +38,7 @@ export async function hydrateDetailsInBatches<TItem, TResult>(
 
   const results: TResult[] = [];
   let failures = 0;
+  const issues: ScraperError[] = [];
   let index = 0;
   let currentBatchSize = Math.max(minBatchSize, Math.min(maxBatchSize, initialBatchSize));
   let currentDelayMs = Math.max(minDelayMs, Math.min(maxDelayMs, initialDelayMs));
@@ -48,6 +52,7 @@ export async function hydrateDetailsInBatches<TItem, TResult>(
           return await fetcher(item);
         } catch (error) {
           throwIfScrapeAborted(error);
+          if (issues.length < 10) issues.push(createFailureFromUnknown(error).error);
           return null;
         }
       })
@@ -77,5 +82,5 @@ export async function hydrateDetailsInBatches<TItem, TResult>(
     }
   }
 
-  return { results, failures };
+  return { results, failures, issues };
 }

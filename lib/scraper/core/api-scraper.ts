@@ -1,5 +1,6 @@
 import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
 
+import { HttpError } from "@/lib/scraper/infrastructure/http-client";
 import type {
   IHttpClient,
   HttpRequestOptions,
@@ -130,5 +131,9 @@ export abstract class AbstractApiScraper<
     message: string
   ): ReturnType<typeof createScraperFailure> {
     return createFailureForHttpStatus(status, message);
+  }
+
+  protected failureForResponse(response: Response, message: string): ReturnType<typeof createScraperFailure> {
+    return createFailureFromUnknown(new HttpError(response.status, message, response.url, response.headers));
   }
 }

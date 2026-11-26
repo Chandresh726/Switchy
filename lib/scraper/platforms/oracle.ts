@@ -1,5 +1,3 @@
-import { z } from "zod";
-
 import {
   containsHtml,
   processDescription,
@@ -27,72 +25,11 @@ import type {
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
 import {
   isDetailFailuresTolerable,
-  resolveListingCompleteness,
 } from "./shared/completeness";
 import { selectListingsForHydration } from "./shared/listing-selection";
 
-const NullableStringSchema = z.string().nullable().optional();
-const OracleLocationSchema = z
-  .object({ LocationName: NullableStringSchema })
-  .passthrough();
-const OracleListingSchema = z
-  .object({
-    Id: z.union([z.string(), z.number()]).transform(String),
-    Title: z.string().min(1),
-    PrimaryLocation: NullableStringSchema,
-    PrimaryLocationCountry: NullableStringSchema,
-    PostedDate: NullableStringSchema,
-    WorkplaceType: NullableStringSchema,
-    JobType: NullableStringSchema,
-    JobFamily: NullableStringSchema,
-    JobFunction: NullableStringSchema,
-    Department: NullableStringSchema,
-    Organization: NullableStringSchema,
-    otherWorkLocations: z.array(OracleLocationSchema).optional(),
-    secondaryLocations: z.array(OracleLocationSchema).optional(),
-  })
-  .passthrough();
-const OracleListingPayloadSchema = z
-  .object({
-    items: z
-      .array(
-        z
-          .object({
-            Limit: z.number().int().positive(),
-            Offset: z.number().int().nonnegative(),
-            TotalJobsCount: z.number().int().nonnegative(),
-            requisitionList: z.array(z.unknown()),
-          })
-          .passthrough()
-      )
-      .min(1),
-  })
-  .passthrough();
-const OracleDetailSchema = z
-  .object({
-    Id: z.union([z.string(), z.number()]).transform(String),
-    Title: z.string().min(1),
-    PrimaryLocation: NullableStringSchema,
-    ExternalDescriptionStr: NullableStringSchema,
-    ExternalResponsibilitiesStr: NullableStringSchema,
-    ExternalQualificationsStr: NullableStringSchema,
-    ShortDescriptionStr: NullableStringSchema,
-    WorkplaceType: NullableStringSchema,
-    JobType: NullableStringSchema,
-    JobFamily: NullableStringSchema,
-    JobFunction: NullableStringSchema,
-    Department: NullableStringSchema,
-    Organization: NullableStringSchema,
-    otherWorkLocations: z.array(OracleLocationSchema).optional(),
-    secondaryLocations: z.array(OracleLocationSchema).optional(),
-  })
-  .passthrough();
-const OracleDetailPayloadSchema = z
-  .object({ items: z.array(OracleDetailSchema) })
-  .passthrough();
-
-type OracleListingRecord = z.infer<typeof OracleListingSchema>;
-type OracleDetailRecord = z.infer<typeof OracleDetailSchema>;
+import { OracleListingSchema, OracleListingPayloadSchema, OracleDetailPayloadSchema, type OracleListingRecord, type OracleDetailRecord } from "./shared/oracle-api";
+import { createOracleListingUrl, fetchOracleListingPages } from "./shared/oracle-pagination";
 
 interface OracleBoard {
   origin: string;
@@ -237,6 +174,7 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
       const openExternalIds = listings.map((listing) =>
         this.externalId(board, listing.id)
       );
+      const listingJobs: ScrapedJob[] = listings.map((item) => this.mapListingToJob(board, item));
       const selection = selectListingsForHydration({
         listings,
         filters: options?.filters,
@@ -261,7 +199,7 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
         if (result.failed) detailFailures++;
         return result.job;
       });
-      const issues = [];
+      const issues = [...hydrated.issues];
       if (!listingResult.isComplete) {
         issues.push(this.createListingIssue(listingResult, listings.length));
       }
@@ -281,6 +219,7 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
       return {
         outcome: listingResult.isComplete && detailsTolerable ? "success" : "partial",
         jobs,
+        listingJobs,
         totalListings: listings.length,
         advertisedTotal: listingResult.advertisedTotal,
         openExternalIds,
@@ -392,67 +331,10 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
     truncated: boolean;
     isComplete: boolean;
   }> {
-    const first = await this.fetchListingPage(board, 0);
-    if (!first.ok) {
-      return {
-        listings: [],
-        advertisedTotal: 0,
-        failedOffsets: [first],
-        invalidListings: 0,
-        truncated: false,
-        isComplete: false,
-      };
-    }
-    const successes: OraclePageSuccess[] = [first];
-    const failedOffsets: OraclePageFailure[] = [];
-    const overlap = first.limit >= 50
-      ? Math.min(20, Math.ceil(first.limit * 0.05))
-      : 0;
-    const pageStride = first.limit - overlap;
-    const requiredPages = first.totalJobs <= first.limit
-      ? 1
-      : 1 + Math.ceil((first.totalJobs - first.limit) / pageStride);
-    const pageCount = Math.min(requiredPages, this.config.maxListingPages);
-    const pageResults = await Promise.all(
-      Array.from({ length: Math.max(0, pageCount - 1) }, (_value, index) =>
-        this.fetchListingPage(board, first.offset + (index + 1) * pageStride)
-      )
-    );
-    for (const page of pageResults) {
-      if (page.ok) successes.push(page);
-      else failedOffsets.push(page);
-    }
-    successes.sort((left, right) => left.offset - right.offset);
-    const listings = successes.flatMap((page) => page.listings);
-    const advertisedTotal = Math.max(...successes.map((page) => page.totalJobs));
-    const invalidListings = successes.reduce(
-      (total, page) => total + page.invalidListings,
-      0
-    );
-    const lastPage = successes.at(-1) ?? first;
-    const truncated =
-      requiredPages > this.config.maxListingPages ||
-      (failedOffsets.length === 0 &&
-        lastPage.offset + lastPage.limit < advertisedTotal);
-    const uniqueCount = this.dedupeListings(listings).length;
-    // Board totals routinely drift by a few jobs; exact equality turned
-    // "7326 of 7328" into a board failure. Invalid listings are already
-    // excluded from `listings`, so they count toward the tolerated gap.
-    const { isComplete: countsComplete } = resolveListingCompleteness(
-      uniqueCount,
-      advertisedTotal
-    );
-    return {
-      listings,
-      advertisedTotal,
-      failedOffsets,
-      invalidListings,
-      truncated,
-      isComplete:
-        failedOffsets.length === 0 &&
-        !truncated &&
-        countsComplete,
-    };
+    return fetchOracleListingPages({
+      fetchPage: (offset) => this.fetchListingPage(board, offset),
+      maxPages: this.config.maxListingPages, overlapRatio: 0.05,
+    });
   }
 
   private async fetchListingPage(
@@ -491,26 +373,7 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
   }
 
   private createListingUrl(board: OracleBoard, offset: number): string {
-    const endpoint = new URL(
-      "/hcmRestApi/resources/latest/recruitingCEJobRequisitions",
-      board.apiOrigin
-    );
-    endpoint.searchParams.set("onlyData", "true");
-    endpoint.searchParams.set(
-      "expand",
-      "requisitionList.workLocation,requisitionList.otherWorkLocations,requisitionList.secondaryLocations"
-    );
-    endpoint.searchParams.set(
-      "finder",
-      `findReqs;${[
-        `siteNumber=${board.siteNumber}`,
-        "facetsList=WORK_LOCATIONS;WORKPLACE_TYPES;TITLES;CATEGORIES;ORGANIZATIONS;POSTING_DATES;FLEX_FIELDS;LOCATIONS",
-        `limit=${this.config.listingPageSize}`,
-        `offset=${offset}`,
-        "sortBy=POSTING_DATES_DESC",
-      ].join(",")}`
-    );
-    return endpoint.toString();
+    return createOracleListingUrl(board.apiOrigin, board.siteNumber, this.config.listingPageSize, offset);
   }
 
   private async fetchDetail(

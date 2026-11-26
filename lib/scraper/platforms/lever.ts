@@ -2,76 +2,55 @@ import { z } from "zod";
 
 import { processDescription } from "@/lib/jobs/description-processor";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
-import { parseEmploymentType, parseExternalPayload } from "@/lib/scraper/types";
+import { createScraperError, parseEmploymentType, parseExternalItems, parseExternalPayload } from "@/lib/scraper/types";
 
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
+import { formatSalaryRange, parseSourceDate, parseWorkplaceType } from "./shared/source-fields";
 import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig } from "../core/types";
 
-interface LeverList {
-  text?: string;
-  content?: string;
-}
+type LeverJob = z.infer<typeof LeverJobSchema>;
 
-interface LeverJob {
-  id: string;
-  text: string;
-  hostedUrl: string;
-  categories?: {
-    location?: string;
-    team?: string;
-    department?: string;
-    commitment?: string;
-  };
-  description?: string;
-  descriptionBody?: string;
-  descriptionBodyPlain?: string;
-  descriptionPlain?: string;
-  additional?: string;
-  additionalPlain?: string;
-  opening?: string;
-  openingPlain?: string;
-  lists?: LeverList[];
-  createdAt?: number;
-}
-
-const LeverJobsSchema = z.array(
-  z
+const LeverJobSchema = z
     .object({
-      id: z.string(),
-      text: z.string(),
-      hostedUrl: z.string(),
+      id: z.string().min(1),
+      text: z.string().min(1),
+      hostedUrl: z.string().min(1),
       categories: z
         .object({
-          location: z.string().optional(),
-          team: z.string().optional(),
-          department: z.string().optional(),
-          commitment: z.string().optional(),
+          location: z.string().nullish(),
+          team: z.string().nullish(),
+          department: z.string().nullish(),
+          commitment: z.string().nullish(),
         })
         .passthrough()
-        .optional(),
-      description: z.string().optional(),
-      descriptionBody: z.string().optional(),
-      descriptionBodyPlain: z.string().optional(),
-      descriptionPlain: z.string().optional(),
-      additional: z.string().optional(),
-      additionalPlain: z.string().optional(),
-      opening: z.string().optional(),
-      openingPlain: z.string().optional(),
+        .nullish(),
+      description: z.string().nullish(),
+      descriptionBody: z.string().nullish(),
+      descriptionBodyPlain: z.string().nullish(),
+      descriptionPlain: z.string().nullish(),
+      additional: z.string().nullish(),
+      additionalPlain: z.string().nullish(),
+      opening: z.string().nullish(),
+      openingPlain: z.string().nullish(),
       lists: z
         .array(
-          z.object({ text: z.string().optional(), content: z.string().optional() }).passthrough()
+          z.object({ text: z.string().nullish(), content: z.string().nullish() }).passthrough()
         )
-        .optional(),
-      createdAt: z.number().optional(),
+        .nullish(),
+      createdAt: z.number().nullish(),
+      workplaceType: z.string().nullish(),
+      country: z.string().nullish(),
+      salaryRange: z.object({ min: z.number().nullish(), max: z.number().nullish(), currency: z.string().nullish(), interval: z.string().nullish() }).passthrough().nullish(),
     })
-    .passthrough()
-);
+    .passthrough();
 
-export type LeverConfig = ApiScraperConfig;
+export type LeverConfig = ApiScraperConfig & { listingPageSize: number; maxListingPages: number };
 
 const DEFAULT_LEVER_CONFIG: LeverConfig = {
   ...DEFAULT_API_CONFIG,
   baseUrl: "https://api.lever.co",
+  listingPageSize: 100,
+  maxListingPages: 100,
 };
 
 export class LeverScraper extends AbstractApiScraper<LeverConfig> {
@@ -85,19 +64,14 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
   }
 
   extractIdentifier(url: string): string | null {
-    const patterns = [
-      /jobs\.lever\.co\/([^\/\?]+)/i,
-      /([^\.]+)\.lever\.co/i,
-    ];
-
-    for (const pattern of patterns) {
-      const match = url.match(pattern);
-      if (match && match[1] && match[1] !== "jobs") {
-        return match[1];
+    try {
+      const parsed = new URL(url);
+      if (parsed.hostname === "jobs.lever.co" || parsed.hostname === "jobs.eu.lever.co") {
+        return parsed.pathname.split("/").filter(Boolean)[0] ?? null;
       }
-    }
-
-    return null;
+      const match = parsed.hostname.match(/^([^.]+)\.lever\.co$/i);
+      return match && !["jobs", "api"].includes(match[1]) ? match[1] : null;
+    } catch { return null; }
   }
 
   async scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult> {
@@ -112,25 +86,32 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
         );
       }
 
-      const apiUrl = `${this.config.baseUrl}/v0/postings/${encodeURIComponent(companySlug)}?mode=json`;
-
-      const response = await this.fetchResponse(apiUrl, {
-        headers: this.jsonRequestHeaders(),
-      });
-
-      if (!response.ok) {
-        return this.failureForHttpStatus(
-          response.status,
-          `Failed to fetch jobs: ${response.status}`
-        );
+      const apiBase = new URL(url).hostname.endsWith(".eu.lever.co") ? "https://api.eu.lever.co" : this.config.baseUrl;
+      const payload: unknown[] = [];
+      const pageSignatures = new Set<string>();
+      let complete = false;
+      let listingIssue: ReturnType<typeof createScraperError> | undefined;
+      for (let page = 0; page < this.config.maxListingPages; page++) {
+        const apiUrl = `${apiBase}/v0/postings/${encodeURIComponent(companySlug)}?mode=json&limit=${this.config.listingPageSize}&skip=${page * this.config.listingPageSize}`;
+        const response = await this.fetchResponse(apiUrl, { headers: this.jsonRequestHeaders() });
+        if (!response.ok) {
+          const failure = this.failureForResponse(response, `Failed to fetch Lever listings: ${response.status}`);
+          if (page === 0) return failure;
+          listingIssue = failure.error;
+          break;
+        }
+        const entries = parseExternalPayload(z.array(z.unknown()), await response.json(), "Lever");
+        const signature = JSON.stringify(entries.map((entry) => entry && typeof entry === "object" && "id" in entry ? entry.id : entry));
+        if (entries.length > 0 && pageSignatures.has(signature)) break;
+        pageSignatures.add(signature);
+        payload.push(...entries);
+        if (entries.length < this.config.listingPageSize) { complete = true; break; }
       }
-
-      const data: LeverJob[] = parseExternalPayload(
-        LeverJobsSchema,
-        await response.json(),
-        "Lever"
-      );
-      return this.parseJobs(data, companySlug, detectedBoardToken);
+      const parsed = parseExternalItems(LeverJobSchema, payload, "Lever jobs");
+      const result = this.parseJobs(parsed.items, companySlug, detectedBoardToken, payload.length, parsed.invalidCount);
+      if (result.outcome === "error" || complete) return result;
+      return { ...result, outcome: "partial", listingCompleteness: "partial",
+        issues: [...(result.issues ?? []), listingIssue ?? createScraperError("network_error", "Lever pagination did not reach a confirmed final page.")] };
     } catch (error) {
       return this.failureFromUnknown(error);
     }
@@ -139,11 +120,13 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
   private parseJobs(
     data: LeverJob[],
     companySlug: string,
-    detectedBoardToken?: string
+    detectedBoardToken?: string,
+    totalListings = data.length,
+    invalidCount = 0
   ): ScraperResult {
     const jobs: ScrapedJob[] = data.map((job) => {
       const { location, locationType } = this.normalizeLocation(
-        job.categories?.location
+        [job.categories?.location, job.country].filter(Boolean).join(", ")
       );
       const { description, descriptionFormat } = this.buildDescription(job);
 
@@ -152,24 +135,26 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
         title: job.text,
         url: job.hostedUrl,
         location,
-        locationType,
-        department: job.categories?.team || job.categories?.department,
-        employmentType: parseEmploymentType(job.categories?.commitment),
+        locationType: parseWorkplaceType(job.workplaceType) ?? locationType,
+        salary: formatSalaryRange(job.salaryRange),
+        department: job.categories?.team || job.categories?.department || undefined,
+        employmentType: parseEmploymentType(job.categories?.commitment ?? undefined),
         description,
         descriptionFormat,
-        postedDate: job.createdAt ? new Date(job.createdAt) : undefined,
+        postedDate: parseSourceDate(job.createdAt),
       };
     });
 
     const openExternalIds = jobs.map((job) => job.externalId);
 
     return {
-      outcome: "success",
+      outcome: invalidCount > 0 ? "partial" : "success",
       jobs,
-      totalListings: jobs.length,
+      totalListings,
       detectedBoardToken,
       openExternalIds,
-      listingCompleteness: "complete",
+      listingCompleteness: invalidCount > 0 ? "partial" : "complete",
+      issues: invalidCount ? [createScraperError("parse_error", `${invalidCount} Lever listings had invalid required fields.`)] : undefined,
     };
   }
 
@@ -202,6 +187,7 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
 
   private buildHtmlDescription(job: LeverJob): string | null {
     const parts: string[] = [];
+    if (job.opening && job.descriptionBody && job.opening !== job.descriptionBody) parts.push(job.opening);
     const baseHtml = job.descriptionBody || job.description || job.opening;
     const basePlain =
       job.descriptionBodyPlain || job.descriptionPlain || job.openingPlain;
@@ -251,6 +237,7 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
 
   private buildPlainDescription(job: LeverJob): string | null {
     const parts: string[] = [];
+    if (job.openingPlain && job.descriptionBodyPlain && job.openingPlain !== job.descriptionBodyPlain) parts.push(job.openingPlain);
     const basePlain =
       job.descriptionBodyPlain || job.descriptionPlain || job.openingPlain;
 

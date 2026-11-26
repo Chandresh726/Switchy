@@ -13,6 +13,7 @@ import {
   scrapeSessions,
   scrapingLogs,
   settings,
+  type Job,
 } from "@/lib/db/schema";
 
 import type {
@@ -97,6 +98,11 @@ export class DrizzleScraperRepository implements IScraperRepository {
         employmentType: jobs.employmentType,
         seniorityLevel: jobs.seniorityLevel,
         postedDate: jobs.postedDate,
+        sourceUpdatedAt: jobs.sourceUpdatedAt,
+        sourceLocations: jobs.sourceLocations,
+        lastSeenAt: jobs.lastSeenAt,
+        detailsFetchedAt: jobs.detailsFetchedAt,
+        descriptionQuality: jobs.descriptionQuality,
       })
       .from(jobs)
       .where(eq(jobs.companyId, companyId));
@@ -132,30 +138,36 @@ export class DrizzleScraperRepository implements IScraperRepository {
           url: jobs.url,
           status: jobs.status,
           archiveSource: jobs.archiveSource,
-          title: jobs.title,
-          description: jobs.description,
-          location: jobs.location,
-          locationType: jobs.locationType,
-          seniorityLevel: jobs.seniorityLevel,
-          department: jobs.department,
-          employmentType: jobs.employmentType,
-          salary: jobs.salary,
+
         })
         .from(jobs)
         .where(eq(jobs.companyId, input.companyId))
         .all();
-      const currentJobsById = new Map(currentJobs.map((job) => [job.id, job]));
+      // Only update candidates need full descriptions inside the transaction.
+      const currentJobsById = new Map<number, Job>();
+      const updateIds = [...new Set(input.existingJobUpdates.map((update) => update.existingJobId))];
+      for (const ids of chunkSqliteParameters(updateIds)) {
+        const rows = tx.select().from(jobs)
+          .where(and(eq(jobs.companyId, input.companyId), inArray(jobs.id, ids))).all();
+        for (const row of rows) currentJobsById.set(row.id, row);
+      }
       const currentJobsByUrl = new Map(currentJobs.map((job) => [job.url, job]));
+
+      const seenJobIds = currentJobs.filter((job) => job.externalId && openExternalIds.has(job.externalId)).map((job) => job.id);
+      for (const ids of chunkSqliteParameters(seenJobIds)) {
+        tx.update(jobs).set({ lastSeenAt: writeStartedAt })
+          .where(and(eq(jobs.companyId, input.companyId), inArray(jobs.id, ids))).run();
+      }
 
       const jobIdsToReopen = currentJobs
         .filter(
           (job) =>
             job.status === "archived" &&
-            (job.archiveSource === "scraper" || job.archiveSource === "stale") &&
+            job.archiveSource === "scraper" &&
             Boolean(job.externalId && openExternalIds.has(job.externalId))
         )
         .map((job) => job.id);
-      const jobIdsToReopenSet = new Set(jobIdsToReopen);
+      const listedJobIds = new Set(seenJobIds);
       const jobIdsToArchive = input.archiveMissing
         ? currentJobs
             .filter((job) => {
@@ -180,7 +192,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
             and(
               eq(jobs.companyId, input.companyId),
               eq(jobs.status, "archived"),
-              inArray(jobs.archiveSource, ["scraper", "stale"]),
+              eq(jobs.archiveSource, "scraper"),
               inArray(jobs.id, jobIdChunk)
             )
           )
@@ -211,10 +223,11 @@ export class DrizzleScraperRepository implements IScraperRepository {
       const updatedMatchableIds = new Set<number>();
       let jobsUpdated = 0;
       const persistenceWarnings: string[] = [];
-      for (const { existingJobId, job } of input.existingJobUpdates) {
+      for (const { existingJobId, job, detailsFetchedAt } of input.existingJobUpdates) {
         const existingJob = currentJobsById.get(existingJobId);
         if (!existingJob) continue;
-        const mergedJob = { ...existingJob, ...Object.fromEntries(Object.entries(job).filter(([, value]) => value !== undefined)) };
+        const incoming = { ...job, description: job.description?.trim() ? job.description : undefined };
+        const mergedJob = { ...existingJob, ...Object.fromEntries(Object.entries(incoming).filter(([, value]) => value !== undefined)) };
         const fingerprint = buildScrapedJobFingerprint(mergedJob);
         const previousFingerprint = buildScrapedJobFingerprint(existingJob);
         const urlOwner = currentJobsByUrl.get(job.url);
@@ -222,13 +235,13 @@ export class DrizzleScraperRepository implements IScraperRepository {
           if (
             urlOwner.status !== "archived" ||
             (urlOwner.archiveSource !== "scraper" && urlOwner.archiveSource !== "stale") ||
-            jobIdsToReopenSet.has(urlOwner.id)
+            listedJobIds.has(urlOwner.id)
           ) {
             // A single unresolvable URL collision must not discard the whole
             // company's fetch. Skip this hydration candidate and record a
             // warning so the collision stays visible in the scraping log.
-            const collisionReason = jobIdsToReopenSet.has(urlOwner.id)
-              ? "which is being reopened in this run"
+            const collisionReason = listedJobIds.has(urlOwner.id)
+              ? "which is still listed in this run"
               : urlOwner.status !== "archived"
                 ? "which is active"
                 : `which is archived (archiveSource=${urlOwner.archiveSource ?? "unknown"})`;
@@ -250,7 +263,12 @@ export class DrizzleScraperRepository implements IScraperRepository {
           });
         }
 
-        jobsUpdated += tx
+        const contentChanged = fingerprint !== previousFingerprint || job.url !== existingJob.url ||
+          (job.postedDate !== undefined && job.postedDate.getTime() !== existingJob.postedDate?.getTime()) ||
+          (job.sourceUpdatedAt !== undefined && job.sourceUpdatedAt.getTime() !== existingJob.sourceUpdatedAt?.getTime()) ||
+          (job.descriptionFormat !== undefined && job.descriptionFormat !== existingJob.descriptionFormat) ||
+          (job.locations !== undefined && JSON.stringify(job.locations) !== JSON.stringify(existingJob.sourceLocations));
+        const affected = tx
           .update(jobs)
           .set({
             title: job.title,
@@ -265,13 +283,18 @@ export class DrizzleScraperRepository implements IScraperRepository {
             seniorityLevel: job.seniorityLevel,
             aiFingerprint: fingerprint,
             postedDate: job.postedDate,
-            updatedAt: writeStartedAt,
+            sourceUpdatedAt: job.sourceUpdatedAt,
+            sourceLocations: job.locations,
+            descriptionQuality: job.description?.trim() ? job.descriptionQuality ?? "full" : undefined,
+            detailsFetchedAt: detailsFetchedAt ?? (job.description?.trim() && job.descriptionQuality !== "teaser" ? writeStartedAt : undefined),
+            updatedAt: contentChanged ? writeStartedAt : undefined,
           })
           .where(and(eq(jobs.id, existingJobId), eq(jobs.companyId, input.companyId)))
           .returning({ id: jobs.id })
           .all().length;
-        if (fingerprint !== previousFingerprint && mergedJob.description?.trim() &&
-            ["new", "viewed", "interested", "rejected"].includes(existingJob.status)) {
+        if (contentChanged) jobsUpdated += affected;
+        if (fingerprint !== previousFingerprint && mergedJob.description?.trim() && job.descriptionQuality !== "teaser" &&
+            (["new", "viewed", "interested", "rejected"].includes(existingJob.status) || jobIdsToReopen.includes(existingJobId))) {
           updatedMatchableIds.add(existingJobId);
         }
         if (existingJob) {
@@ -280,7 +303,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
         }
       }
 
-      const insertedJobs: Array<{ id: number; description: string | null }> = [];
+      const insertedJobs: Array<{ id: number; description: string | null; descriptionQuality: "full" | "teaser" | null }> = [];
       for (const jobsToInsert of chunkSqliteParameters(
         input.jobsToInsert,
         SQLITE_INSERT_CHUNK_SIZE
@@ -291,12 +314,15 @@ export class DrizzleScraperRepository implements IScraperRepository {
             .values(
               jobsToInsert.map((job) => ({
                 ...job,
+                lastSeenAt: writeStartedAt,
+                detailsFetchedAt: job.detailsFetchedAt ?? (job.description?.trim() && job.descriptionQuality !== "teaser" ? writeStartedAt : undefined),
+                descriptionQuality: job.description?.trim() ? job.descriptionQuality ?? "full" : undefined,
                 companyId: input.companyId,
                 aiFingerprint: buildScrapedJobFingerprint(job),
               }))
             )
             .onConflictDoNothing()
-            .returning({ id: jobs.id, description: jobs.description })
+            .returning({ id: jobs.id, description: jobs.description, descriptionQuality: jobs.descriptionQuality })
             .all()
         );
       }
@@ -314,7 +340,7 @@ export class DrizzleScraperRepository implements IScraperRepository {
         ? [...updatedMatchableIds, ...insertedJobs
             .filter(
               (job) =>
-                typeof job.description === "string" && job.description.trim().length > 0
+                typeof job.description === "string" && job.description.trim().length > 0 && job.descriptionQuality !== "teaser"
             )
             .map((job) => job.id)]
         : [];
@@ -456,8 +482,4 @@ export class DrizzleScraperRepository implements IScraperRepository {
     return inserted?.id ?? 0;
   }
 
-}
-
-export function createScraperRepository(): IScraperRepository {
-  return new DrizzleScraperRepository();
 }

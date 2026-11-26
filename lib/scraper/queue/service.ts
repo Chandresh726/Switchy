@@ -45,8 +45,8 @@ const PLATFORM_QUEUE_PRIORITY: Record<string, number> = {
   workday: 20,
 };
 const DEFAULT_QUEUE_PRIORITY = 100;
-const BROWSER_HEAVY_PLATFORMS = new Set(["eightfold", "workday"]);
-const BROWSER_HEAVY_PRIORITY_BURST = 2;
+const LONG_RUNNING_PLATFORMS = new Set(["eightfold", "workday"]);
+const LONG_RUNNING_PRIORITY_BURST = 2;
 
 export interface LocalScrapeQueueServiceDependencies {
   companyCatalog: CompanyCatalog;
@@ -174,14 +174,14 @@ export class LocalScrapeQueueService {
       return leftPriority - rightPriority || left.id - right.id;
     });
     const browserHeavy = byPriority.filter((company) =>
-      BROWSER_HEAVY_PLATFORMS.has(company.platform ?? "")
+      LONG_RUNNING_PLATFORMS.has(company.platform ?? "")
     );
     const standard = byPriority.filter(
-      (company) => !BROWSER_HEAVY_PLATFORMS.has(company.platform ?? "")
+      (company) => !LONG_RUNNING_PLATFORMS.has(company.platform ?? "")
     );
     const ordered: typeof byPriority = [];
     while (browserHeavy.length > 0 || standard.length > 0) {
-      ordered.push(...browserHeavy.splice(0, BROWSER_HEAVY_PRIORITY_BURST));
+      ordered.push(...browserHeavy.splice(0, LONG_RUNNING_PRIORITY_BURST));
       const nextStandard = standard.shift();
       if (nextStandard) ordered.push(nextStandard);
     }

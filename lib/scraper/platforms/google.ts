@@ -146,6 +146,7 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
       }
 
       const filters = options?.filters;
+      const listingJobs: ScrapedJob[] = listings.map((item) => this.mapListingToJob(item));
       const selection = selectListingsForHydration({
         listings,
         filters,
@@ -164,6 +165,7 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
           outcome: listingIsComplete ? "success" : "partial",
           issues: listingIsComplete ? undefined : [{ code: "parse_error", message: "Google listing pagination was incomplete or contained an unrecognized page.", retryable: false }],
           jobs: [],
+          listingJobs,
           totalListings: listings.length,
           earlyFiltered: selection.earlyFiltered,
           openExternalIds,
@@ -190,6 +192,7 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
         outcome,
         issues: outcome === "partial" ? [{ code: "network_error", message: `Google scrape incomplete: listing completeness=${listingIsComplete}; ${detailFailures} detail requests failed.`, retryable: true }] : undefined,
         jobs: scrapedJobs,
+        listingJobs,
         totalListings: listings.length,
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,

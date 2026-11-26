@@ -236,4 +236,14 @@ describe("FetchHttpClient", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+  it("rejects oversized declared and streamed responses without retrying", async () => {
+    for (const headers of [new Headers({ "content-length": "10" }), new Headers()]) {
+      const fetch = vi.fn(async () => new Response("0123456789", { headers }));
+      vi.stubGlobal("fetch", fetch);
+      const client = new FetchHttpClient({ maxResponseBytes: 5, retries: 3 });
+      await expect(client.fetch("https://example.com/jobs")).rejects.toMatchObject({ status: 413 });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    }
+  });
+
 });

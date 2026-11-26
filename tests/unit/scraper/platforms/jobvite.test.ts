@@ -65,7 +65,7 @@ describe("JobviteScraper", () => {
       earlyFiltered: { total: 1, city: 1 },
     });
     expect(new Set(result.openExternalIds)).toEqual(
-      new Set(["jobvite-acme-1001", "jobvite-acme-opaque-one", "jobvite-acme-opaque-two"])
+      new Set(["jobvite-acme-1001", "jobvite-acme-opaque-two"])
     );
     expect(fetchMock.mock.calls.some(([url]) => url.includes("/job/opaque-two"))).toBe(false);
     expect(result.jobs).toHaveLength(1);
@@ -290,6 +290,17 @@ describe("JobviteScraper", () => {
     expect(result.listingCompleteness).toBe("complete");
     expect(result.openExternalIds).toContain("jobvite-acme-opaque-two");
     expect(result.listingJobs).toHaveLength(2);
+  });
+
+  it("retains discovered listings when a later page fails at the transport", async () => {
+    const scraper = new JobviteScraper(createHttpClientStub({ fetch: async (url) => {
+      if (url.includes("/search/")) throw new TypeError("network unavailable");
+      if (url.includes("/job/")) return new Response(detailPage("opaque-one"));
+      return new Response(listingPage(1));
+    } }), { detailDelayMs: 0 });
+    const result = await scraper.scrape("https://jobs.jobvite.com/acme/jobs");
+    expect(result).toMatchObject({ outcome: "partial", listingCompleteness: "partial", totalListings: 1 });
+    expect(result.openExternalIds).toEqual(["jobvite-acme-1001"]);
   });
 
 });

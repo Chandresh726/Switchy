@@ -198,4 +198,22 @@ describe("GenericBrowserClient", () => {
     await vi.waitFor(() => expect(browserMocks.browser.close).toHaveBeenCalledTimes(1));
     expect(browserMocks.browser.newContext).not.toHaveBeenCalled();
   });
+  it("limits actual browser lifetimes while allowing the next browser after cleanup", async () => {
+    const client = new GenericBrowserClient();
+    const releases: Array<() => void> = [];
+    const first = client.withBrowser(() => new Promise<void>((resolve) => releases.push(resolve)));
+    const second = client.withBrowser(() => new Promise<void>((resolve) => releases.push(resolve)));
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    const thirdStarted = vi.fn();
+    const third = client.withBrowser(async () => { thirdStarted(); });
+    await Promise.resolve();
+    expect(browserMocks.launch).toHaveBeenCalledTimes(2);
+    releases[0]();
+    await third;
+    expect(thirdStarted).toHaveBeenCalledOnce();
+    expect(browserMocks.launch).toHaveBeenCalledTimes(3);
+    releases[1]();
+    await Promise.all([first, second]);
+  });
+
 });

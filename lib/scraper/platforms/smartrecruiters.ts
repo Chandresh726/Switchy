@@ -173,6 +173,7 @@ export class SmartRecruitersScraper extends AbstractApiScraper<SmartRecruitersCo
       const openExternalIds = listingResult.listings.map((listing) =>
         this.externalId(identifier, listing.id)
       );
+      const listingJobs: ScrapedJob[] = listingResult.listings.map((item) => this.mapJob(identifier, item));
       const selection = selectListingsForHydration({
         listings: listingResult.listings,
         filters: options?.filters,
@@ -203,7 +204,7 @@ export class SmartRecruitersScraper extends AbstractApiScraper<SmartRecruitersCo
         if (result.failed) detailFailures += 1;
         return result.job;
       });
-      const issues = [...listingResult.issues];
+      const issues = [...listingResult.issues, ...hydrated.issues];
       if (detailFailures > 0) {
         issues.push(
           createScraperError(
@@ -216,6 +217,7 @@ export class SmartRecruitersScraper extends AbstractApiScraper<SmartRecruitersCo
       return {
         outcome: issues.length > 0 ? "partial" : "success",
         jobs,
+        listingJobs,
         totalListings: listingResult.listings.length,
         detectedBoardToken,
         earlyFiltered: selection.earlyFiltered,

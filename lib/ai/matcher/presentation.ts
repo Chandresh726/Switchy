@@ -236,7 +236,7 @@ export async function getFreshUnmatchedJobIds(
       .where(and(
         notInArray(jobs.status, INACTIVE_JOB_STATUSES),
         filter.discoveredSince ? gte(jobs.discoveredAt, filter.discoveredSince) : undefined
-      ))).map((job) => job.id);
+      )).orderBy(asc(jobs.id))).map((job) => job.id);
   }
   const currentResultJoin = and(
     eq(matchResults.jobId, jobs.id),
@@ -249,7 +249,7 @@ export async function getFreshUnmatchedJobIds(
       isNull(matchResults.id),
       notInArray(jobs.status, INACTIVE_JOB_STATUSES),
       filter.discoveredSince ? gte(jobs.discoveredAt, filter.discoveredSince) : undefined
-    ));
+    )).orderBy(asc(jobs.id));
   return rows.map((job) => job.id);
 }
 

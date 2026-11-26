@@ -149,7 +149,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: true, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
 
     const result = await pipeline.scrape(company.id, {
@@ -202,7 +203,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: false, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
 
     const result = await pipeline.scrape(company.id, {
@@ -231,7 +233,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: false, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
 
     const retried = await pipeline.scrape(company.id, {
@@ -270,7 +273,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: false, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
 
     const result = await pipeline.scrape(company.id, {
@@ -295,7 +299,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: false, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
 
     const retried = await pipeline.scrape(company.id, {
@@ -335,7 +340,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: false, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
 
     const result = await pipeline.scrape(company.id, {
@@ -371,7 +377,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: false, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
     const controller = new AbortController();
 
@@ -405,7 +412,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: false, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
 
     const result = await pipeline.scrape(company.id, {
@@ -447,7 +455,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: true, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
 
     const result = await pipeline.scrape(company.id, {
@@ -482,7 +491,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: true, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
 
     const result = await pipeline.scrape(customCompany.id, {
@@ -530,7 +540,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: true, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
 
     const result = await pipeline.scrape(serviceNowCompany.id, {
@@ -584,7 +595,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: true, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
 
     await pipeline.scrape(uberCompany.id, {
@@ -627,7 +639,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: true, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
 
     await pipeline.scrape(uberCompany.id, {
@@ -673,7 +686,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: true, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
 
     await pipeline.scrape(uberCompany.id, {
@@ -714,7 +728,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: true, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
 
     await pipeline.scrape(company.id, {
@@ -755,7 +770,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: true, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
 
     await pipeline.scrape(company.id, {
@@ -809,7 +825,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: true, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
 
     await pipeline.scrape(company.id, {
@@ -878,7 +895,8 @@ describe("ScrapeCompanyPipeline", () => {
       new TitleBasedDeduplicationService(),
       new DefaultFilterService(),
       { autoMatchAfterScrape: true, defaultFilters: {} },
-      new StoredScrapeSettingsProvider(repository)
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => (await matcherMocks.getMatcherConfig()).autoMatchAfterScrape, dispatchMatching: outboxMocks.dispatchPendingAIWork }
     );
 
     await pipeline.scrape(company.id, {
@@ -906,7 +924,8 @@ describe("ScrapeCompanyPipeline", () => {
     });
     const pipeline = new ScrapeCompanyPipeline(repository, registry,
       new TitleBasedDeduplicationService(), new DefaultFilterService(),
-      { autoMatchAfterScrape: false, defaultFilters: {} }, new StoredScrapeSettingsProvider(repository));
+      { autoMatchAfterScrape: false, defaultFilters: {} }, new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => false, dispatchMatching: outboxMocks.dispatchPendingAIWork });
     await pipeline.scrape(company.id, { sessionId: "metadata", triggerSource: "manual" });
     expect(repository.persistScrapeResult).toHaveBeenCalledWith(expect.objectContaining({
       openExternalIds: expect.arrayContaining(["legacy-id", "opaque-id"]),

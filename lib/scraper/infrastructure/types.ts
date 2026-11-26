@@ -24,6 +24,11 @@ export interface ExistingJob {
   seniorityLevel?: Job["seniorityLevel"];
   descriptionFormat?: string | null;
   postedDate?: Date | null;
+  sourceUpdatedAt?: Date | null;
+  lastSeenAt?: Date | null;
+  detailsFetchedAt?: Date | null;
+  descriptionQuality?: "full" | "teaser" | null;
+  sourceLocations?: string[] | null;
 }
 
 export interface SessionProgressUpdate {
@@ -78,7 +83,7 @@ export interface PersistScrapeResultInput {
     NewJob,
     "id" | "companyId" | "discoveredAt" | "updatedAt"
   >[];
-  existingJobUpdates: Array<{ existingJobId: number; job: ScrapedJob }>;
+  existingJobUpdates: Array<{ existingJobId: number; job: ScrapedJob; detailsFetchedAt?: Date }>;
   companyBoardToken?: string;
   startedAtMs: number;
   persistenceStartedAtMs?: number;

@@ -24,7 +24,7 @@ import {
 import { migrateLocalDatabase } from "@/lib/db/migrations";
 import { createMigrationsThrough } from "@test/helpers/migrations";
 import { createSqliteTestHarness } from "@test/helpers/sqlite-test-database";
-import { preCanonicalCompanies } from "@test/helpers/migration-schema";
+import { preCanonicalCompanies, preScraperFreshnessJobs } from "@test/helpers/migration-schema";
 
 const harness = createSqliteTestHarness("switchy-writing-history-");
 const temporaryMigrationFolders: string[] = [];
@@ -63,7 +63,7 @@ function insertJob(database: ReturnType<typeof harness.createDatabase>["database
     name: "Example",
     careersUrl: "https://example.com/careers",
   }).returning().get();
-  return database.insert(jobs).values({
+  return database.insert(preScraperFreshnessJobs).values({
     companyId: company.id,
     title: "Staff Engineer",
     description: "Build reliable systems",

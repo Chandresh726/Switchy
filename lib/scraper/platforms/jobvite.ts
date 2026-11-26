@@ -146,8 +146,9 @@ export class JobviteScraper extends AbstractApiScraper<JobviteConfig> {
       });
       const detailFailures = hydrated.failures + hydrated.results.filter((result) => result.failed).length;
       const jobs = hydrated.results.map((result) => result.job);
+      const hydratedIdsByUrl = new Map(jobs.map((job) => [job.url, job.externalId]));
       const isComplete = listingResult.isComplete && detailFailures === 0;
-      const issues = [];
+      const issues = [...hydrated.issues];
       if (!listingResult.isComplete) {
         issues.push(
           createScraperError(
@@ -170,7 +171,7 @@ export class JobviteScraper extends AbstractApiScraper<JobviteConfig> {
         jobs,
         listingJobs,
         totalListings: listingResult.listings.length,
-        openExternalIds: [...new Set([...listingJobs, ...jobs].map((job) => job.externalId))],
+        openExternalIds: listingJobs.map((job) => hydratedIdsByUrl.get(job.url) ?? job.externalId),
         listingCompleteness: listingResult.isComplete ? "complete" : "partial",
         earlyFiltered: selection.earlyFiltered,
         detectedBoardToken: options?.boardToken ? undefined : slug,
@@ -235,7 +236,14 @@ export class JobviteScraper extends AbstractApiScraper<JobviteConfig> {
     ) {
       const pageUrl = new URL(`/${slug}/search/`, this.config.baseUrl);
       pageUrl.searchParams.set("p", String(page));
-      const result = await this.fetchJobvitePage(pageUrl.toString());
+      let result: JobvitePage;
+      try {
+        result = await this.fetchJobvitePage(pageUrl.toString());
+      } catch (error) {
+        throwIfScrapeAborted(error);
+        failedPages.push(page);
+        break;
+      }
       if (result.status || result.unavailable) {
         failedPages.push(page);
         unavailable ||= result.unavailable;

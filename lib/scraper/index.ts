@@ -1,42 +1,50 @@
-import { DrizzleScrapeFetchStateStore } from "./infrastructure/fetch-state-store";
-
-import type { IScraperRepository } from "./infrastructure/types";
-import type { IHttpClient, HttpClientConfig } from "./infrastructure/http-client";
-import type { IBrowserClient, BrowserSessionConfig } from "./infrastructure/browser-client";
+import { getMatcherConfig } from "@/lib/ai/matcher";
+import { dispatchPendingAIWork } from "@/lib/ai/work-items/dispatcher";
+import type { db } from "@/lib/db";
 import type { LocalLeasedWorkRunnerConfig } from "@/lib/runtime/leased-work-runner";
-import type { ScrapeCompanyPipelineConfig } from "./application/scrape-company-pipeline";
-import {
-  StoredScrapeSettingsProvider,
-  type ScrapeSettingsProvider,
-} from "./settings/provider";
-
 import { processSingleton } from "@/lib/runtime/process-singleton";
 
+import { HistoryRetentionService } from "./application/history-retention-service";
 import {
   createScrapeCompanyPipeline,
   DEFAULT_SCRAPE_COMPANY_PIPELINE_CONFIG,
   type ScrapeCompanyPipeline,
+  type ScrapeCompanyPipelineConfig,
+  type ScrapePipelineDependencies,
 } from "./application/scrape-company-pipeline";
-import { HistoryRetentionService } from "./application/history-retention-service";
+import { ScrapeSessionProjector } from "./application/scrape-session-projector";
+import { ScrapeWorkHandler } from "./application/scrape-work-handler";
 import {
   DrizzleStaleJobArchiveStore,
   StaleJobArchivalService,
+  type StaleJobArchiveStore,
 } from "./application/stale-job-archival-service";
-import { ScrapeSessionProjector } from "./application/scrape-session-projector";
-import { ScrapeWorkHandler } from "./application/scrape-work-handler";
-import { DrizzleScrapeHistoryStore } from "./history";
-import { createHttpClient, createScraperRepository } from "./infrastructure";
-import { createBrowserClient } from "./infrastructure";
-import { DrizzleScrapeSessionProjectionStore } from "./queue/projection-store";
+import { DrizzleScrapeHistoryStore, type ScrapeHistoryRetentionStore } from "./history";
+import { createBrowserClient, type IBrowserClient, type BrowserSessionConfig } from "./infrastructure/browser-client";
+import type { ScrapeFetchStateStore } from "./infrastructure/fetch-state";
+import { DrizzleScrapeFetchStateStore } from "./infrastructure/fetch-state-store";
+import { createHttpClient, type IHttpClient, type HttpClientConfig } from "./infrastructure/http-client";
+import { DrizzleScraperRepository } from "./infrastructure/repository";
+import type { IScraperRepository } from "./infrastructure/types";
+import { DrizzleScrapeSessionProjectionStore, type ScrapeSessionProjectionStore } from "./queue/projection-store";
 import { DrizzleLocalScrapeQueueRepository } from "./queue/repository";
-import { LocalScrapeQueueService } from "./queue/service";
-import {
-  createDeduplicationService,
-  createFilterService,
-  createScraperRegistry,
-} from "./services";
+import { LocalScrapeQueueService, type LocalScrapeQueueServiceDependencies } from "./queue/service";
+import type { ILocalScrapeQueueRepository } from "./queue/types";
+import { createDeduplicationService, createFilterService, createScraperRegistry } from "./services";
+import { StoredScrapeSettingsProvider, type ScrapeSettingsProvider } from "./settings/provider";
 
 interface ScrapingModuleConfig {
+  runtime?: Pick<LocalScrapeQueueServiceDependencies, "deviceSleepInhibitor" | "isDeviceAwake">;
+  database?: typeof db;
+  clients?: { http?: IHttpClient; browser?: IBrowserClient };
+  stores?: {
+    fetchState?: ScrapeFetchStateStore;
+    queue?: ILocalScrapeQueueRepository;
+    projection?: ScrapeSessionProjectionStore;
+    history?: ScrapeHistoryRetentionStore;
+    staleJobs?: StaleJobArchiveStore;
+  };
+  dependencies?: Partial<ScrapePipelineDependencies>;
   httpClient?: Partial<HttpClientConfig>;
   browserClient?: Partial<BrowserSessionConfig>;
   pipeline?: Partial<ScrapeCompanyPipelineConfig>;
@@ -54,12 +62,12 @@ interface ScrapingModule {
 }
 
 function createScrapingModule(config: ScrapingModuleConfig = {}): ScrapingModule {
-  const repository = config.repository ?? createScraperRepository();
+  const repository = config.repository ?? new DrizzleScraperRepository(config.database);
   const settingsProvider =
     config.settingsProvider ?? new StoredScrapeSettingsProvider(repository);
-  const fetchState = new DrizzleScrapeFetchStateStore();
-  const httpClient = createHttpClient(config.httpClient, fetchState);
-  const browserClient = createBrowserClient(config.browserClient);
+  const fetchState = config.stores?.fetchState ?? new DrizzleScrapeFetchStateStore(config.database);
+  const httpClient = config.clients?.http ?? createHttpClient(config.httpClient, fetchState);
+  const browserClient = config.clients?.browser ?? createBrowserClient(config.browserClient);
 
   const registry = createScraperRegistry({ httpClient, browserClient, fetchState });
   const deduplicationService = createDeduplicationService();
@@ -71,6 +79,12 @@ function createScrapingModule(config: ScrapingModuleConfig = {}): ScrapingModule
     deduplicationService,
     filterService,
     settingsProvider,
+    dependencies: {
+      fetchState,
+      matchingEnabled: async () => (await getMatcherConfig()).autoMatchAfterScrape,
+      dispatchMatching: dispatchPendingAIWork,
+      ...config.dependencies,
+    },
     config: {
       ...DEFAULT_SCRAPE_COMPANY_PIPELINE_CONFIG,
       ...config.pipeline,
@@ -87,13 +101,13 @@ function createScrapingModule(config: ScrapingModuleConfig = {}): ScrapingModule
   };
 }
 
-function createLocalScrapeQueueService(
+export function createLocalScrapeQueueService(
   config: ScrapingModuleConfig = {},
   runnerConfig: Partial<LocalLeasedWorkRunnerConfig> = {}
 ): LocalScrapeQueueService {
   const scrapingModule = createScrapingModule(config);
-  const queueStore = new DrizzleLocalScrapeQueueRepository();
-  const projectionStore = new DrizzleScrapeSessionProjectionStore();
+  const queueStore = config.stores?.queue ?? new DrizzleLocalScrapeQueueRepository(config.database);
+  const projectionStore = config.stores?.projection ?? new DrizzleScrapeSessionProjectionStore(config.database);
   const projector = new ScrapeSessionProjector(
     queueStore,
     projectionStore,
@@ -110,18 +124,21 @@ function createLocalScrapeQueueService(
     scrapingModule.registry
   );
   return new LocalScrapeQueueService({
+    ...config.runtime,
     companyCatalog: scrapingModule.repository,
     sessionStore: scrapingModule.repository,
     queueStore,
     workHandler,
     projector,
     historyRetention: new HistoryRetentionService(
-      new DrizzleScrapeHistoryStore(),
-      scrapingModule.settingsProvider
+      config.stores?.history ?? new DrizzleScrapeHistoryStore(config.database),
+      scrapingModule.settingsProvider,
+      config.dependencies?.now
     ),
     staleJobArchival: new StaleJobArchivalService(
-      new DrizzleStaleJobArchiveStore(),
-      scrapingModule.settingsProvider
+      config.stores?.staleJobs ?? new DrizzleStaleJobArchiveStore(config.database),
+      scrapingModule.settingsProvider,
+      config.dependencies?.now
     ),
     settingsProvider: scrapingModule.settingsProvider,
     runnerConfig: { concurrency: 10, ...runnerConfig },

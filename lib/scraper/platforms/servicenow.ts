@@ -66,8 +66,8 @@ export class ServiceNowScraper extends AbstractApiScraper<ServiceNowConfig> {
         headers: this.requestHeaders("application/xml, text/xml, */*"),
       });
       if (!response.ok) {
-        return this.failureForHttpStatus(
-          response.status,
+        return this.failureForResponse(
+          response,
           `Failed to fetch ServiceNow jobs feed: HTTP ${response.status}`
         );
       }

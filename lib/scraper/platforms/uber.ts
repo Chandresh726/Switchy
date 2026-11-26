@@ -1,5 +1,3 @@
-import { z } from "zod";
-
 import { containsHtml, processDescription } from "@/lib/jobs/description-processor";
 import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
@@ -17,70 +15,11 @@ import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
 import {
   isDetailFailuresTolerable,
-  resolveListingCompleteness,
 } from "./shared/completeness";
 import { selectListingsForHydration } from "./shared/listing-selection";
 
-const NullableStringSchema = z.string().nullable().optional();
-const UberLocationSchema = z
-  .object({
-    LocationName: NullableStringSchema,
-  })
-  .passthrough();
-const UberListingSchema = z
-  .object({
-    Id: z.union([z.string(), z.number()]).transform(String),
-    Title: z.string().min(1),
-    PrimaryLocation: NullableStringSchema,
-    PrimaryLocationCountry: NullableStringSchema,
-    PostedDate: NullableStringSchema,
-    WorkplaceType: NullableStringSchema,
-    Category: NullableStringSchema,
-    Department: NullableStringSchema,
-    Organization: NullableStringSchema,
-    otherWorkLocations: z.array(UberLocationSchema).optional(),
-    secondaryLocations: z.array(UberLocationSchema).optional(),
-  })
-  .passthrough();
-const UberListingPayloadSchema = z
-  .object({
-    items: z
-      .array(
-        z
-          .object({
-            Limit: z.number().int().positive(),
-            Offset: z.number().int().nonnegative(),
-            TotalJobsCount: z.number().int().nonnegative(),
-            requisitionList: z.array(z.unknown()),
-          })
-          .passthrough()
-      )
-      .min(1),
-  })
-  .passthrough();
-const UberDetailSchema = z
-  .object({
-    Id: z.union([z.string(), z.number()]).transform(String),
-    Title: z.string().min(1),
-    PrimaryLocation: NullableStringSchema,
-    ExternalDescriptionStr: NullableStringSchema,
-    ExternalResponsibilitiesStr: NullableStringSchema,
-    ExternalQualificationsStr: NullableStringSchema,
-    ShortDescriptionStr: NullableStringSchema,
-    Category: NullableStringSchema,
-    Department: NullableStringSchema,
-    Organization: NullableStringSchema,
-    WorkplaceType: NullableStringSchema,
-  })
-  .passthrough();
-const UberDetailPayloadSchema = z
-  .object({
-    items: z.array(UberDetailSchema),
-  })
-  .passthrough();
-
-type UberListingRecord = z.infer<typeof UberListingSchema>;
-type UberDetailRecord = z.infer<typeof UberDetailSchema>;
+import { OracleListingSchema as UberListingSchema, OracleListingPayloadSchema as UberListingPayloadSchema, OracleDetailPayloadSchema as UberDetailPayloadSchema, type OracleListingRecord as UberListingRecord, type OracleDetailRecord as UberDetailRecord } from "./shared/oracle-api";
+import { createOracleListingUrl, fetchOracleListingPages } from "./shared/oracle-pagination";
 
 interface UberListingJob {
   id: string;
@@ -101,6 +40,7 @@ interface UberListingPageSuccess {
   ok: true;
   offset: number;
   totalJobs: number;
+  limit: number;
   listings: UberListingJob[];
   invalidListings: number;
 }
@@ -192,6 +132,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
       const openExternalIds = listings.map((listing) =>
         this.generateExternalId(this.platform, listing.id)
       );
+      const listingJobs: ScrapedJob[] = listings.map((item) => this.mapListingToJob(item));
       const selection = selectListingsForHydration({
         listings,
         filters: options?.filters,
@@ -208,6 +149,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
         return {
           outcome: listingResult.isComplete ? "success" : "partial",
           jobs: [],
+          listingJobs,
           totalListings: listings.length,
           earlyFiltered: selection.earlyFiltered,
           openExternalIds,
@@ -235,7 +177,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
       const isPartial =
         !listingResult.isComplete ||
         !isDetailFailuresTolerable(detailFailures, selection.listings.length);
-      const issues = [];
+      const issues = [...hydrated.issues];
       if (!listingResult.isComplete) {
         issues.push(this.createListingIssue(listingResult, listings.length));
       }
@@ -251,6 +193,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
       return {
         outcome: isPartial ? "partial" : "success",
         jobs,
+        listingJobs,
         totalListings: listings.length,
         advertisedTotal: listingResult.advertisedTotal,
         earlyFiltered: selection.earlyFiltered,
@@ -264,67 +207,11 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
   }
 
   private async fetchAllListings(): Promise<UberListingFetchResult> {
-    const firstPage = await this.fetchListingPage(0);
-    if (!firstPage.ok) {
-      return {
-        listings: [],
-        advertisedTotal: 0,
-        failedOffsets: [firstPage],
-        invalidListings: 0,
-        truncatedByMaxPages: false,
-        isComplete: false,
-      };
-    }
-
-    const requiredPages = Math.ceil(
-      firstPage.totalJobs / this.config.listingPageSize
-    );
-    const pageCount = Math.min(requiredPages, this.config.maxListingPages);
-    const offsets = Array.from(
-      { length: Math.max(0, pageCount - 1) },
-      (_value, index) => (index + 1) * this.config.listingPageSize
-    );
-    const remainingPages = await Promise.all(
-      offsets.map((offset) => this.fetchListingPage(offset))
-    );
-    const successfulPages = [
-      firstPage,
-      ...remainingPages.filter(
-        (page): page is UberListingPageSuccess => page.ok
-      ),
-    ];
-    const failedOffsets = remainingPages.filter(
-      (page): page is UberListingPageFailure => !page.ok
-    );
-    const advertisedTotal = Math.max(
-      ...successfulPages.map((page) => page.totalJobs)
-    );
-    const listings = successfulPages.flatMap((page) => page.listings);
-    const invalidListings = successfulPages.reduce(
-      (total, page) => total + page.invalidListings,
-      0
-    );
-    const truncatedByMaxPages = requiredPages > this.config.maxListingPages;
-    const uniqueListingCount = this.dedupeListings(listings).length;
-    // Invalid listings are already excluded from `listings`, so they count
-    // toward the tolerated gap instead of failing the board alone.
-    const { isComplete: countsComplete } = resolveListingCompleteness(
-      uniqueListingCount,
-      advertisedTotal
-    );
-    const isComplete =
-      failedOffsets.length === 0 &&
-      !truncatedByMaxPages &&
-      countsComplete;
-
-    return {
-      listings,
-      advertisedTotal,
-      failedOffsets,
-      invalidListings,
-      truncatedByMaxPages,
-      isComplete,
-    };
+    const result = await fetchOracleListingPages({
+      fetchPage: (offset) => this.fetchListingPage(offset),
+      maxPages: this.config.maxListingPages, overlapRatio: 0,
+    });
+    return { ...result, truncatedByMaxPages: result.truncated };
   }
 
   private async fetchListingPage(offset: number): Promise<UberListingPageResult> {
@@ -359,6 +246,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
         ok: true,
         offset,
         totalJobs: page.TotalJobsCount,
+        limit: page.Limit,
         listings: parsedListings.items.map((listing) =>
           this.mapOracleListing(listing)
         ),
@@ -371,26 +259,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
   }
 
   private createListingApiUrl(offset: number): string {
-    const endpoint = new URL(
-      "/hcmRestApi/resources/latest/recruitingCEJobRequisitions",
-      this.config.apiBaseUrl
-    );
-    endpoint.searchParams.set("onlyData", "true");
-    endpoint.searchParams.set(
-      "expand",
-      "requisitionList.workLocation,requisitionList.otherWorkLocations,requisitionList.secondaryLocations"
-    );
-    endpoint.searchParams.set(
-      "finder",
-      `findReqs;${[
-        `siteNumber=${this.config.siteNumber}`,
-        "facetsList=WORK_LOCATIONS;WORKPLACE_TYPES;TITLES;CATEGORIES;ORGANIZATIONS;POSTING_DATES;FLEX_FIELDS;LOCATIONS",
-        `limit=${this.config.listingPageSize}`,
-        `offset=${offset}`,
-        "sortBy=POSTING_DATES_DESC",
-      ].join(",")}`
-    );
-    return endpoint.toString();
+    return createOracleListingUrl(this.config.apiBaseUrl, this.config.siteNumber, this.config.listingPageSize, offset);
   }
 
   private mapOracleListing(listing: UberListingRecord): UberListingJob {

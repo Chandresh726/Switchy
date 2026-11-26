@@ -9,22 +9,10 @@ import {
 } from "@/lib/scraper/types";
 import { processDescription } from "@/lib/jobs/description-processor";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
+import { parseSourceDate, parseWorkplaceType, sourceLocations } from "./shared/source-fields";
 import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig } from "../core/types";
 
-interface AshbyJob {
-  title: string;
-  location?: string | null;
-  secondaryLocations?: { location?: string | null }[] | null;
-  department?: string | null;
-  team?: string | null;
-  isRemote?: boolean | null;
-  descriptionHtml?: string | null;
-  descriptionPlain?: string | null;
-  publishedAt?: string | null;
-  employmentType?: string | null;
-  jobUrl?: string | null;
-  applyUrl?: string | null;
-}
+type AshbyJob = z.infer<typeof AshbyJobSchema>;
 
 interface AshbyResponse {
   jobs: AshbyJob[];
@@ -32,7 +20,14 @@ interface AshbyResponse {
 
 const AshbyJobSchema = z
   .object({
-    title: z.string(),
+    title: z.string().min(1),
+    id: z.string().nullish(),
+    isListed: z.boolean().nullish(),
+    workplaceType: z.string().nullish(),
+    compensation: z.object({
+      scrapeableCompensationSalarySummary: z.string().nullish(),
+      compensationTierSummary: z.string().nullish(),
+    }).passthrough().nullish(),
     location: z.string().nullish(),
     secondaryLocations: z
       .array(z.object({ location: z.string().nullish() }).passthrough())
@@ -47,7 +42,7 @@ const AshbyJobSchema = z
     jobUrl: z.string().nullish(),
     applyUrl: z.string().nullish(),
   })
-  .passthrough();
+  .passthrough().refine((job) => Boolean(job.jobUrl || job.applyUrl), { path: ["jobUrl"], message: "A job URL is required" });
 
 const AshbyResponseSchema = z
   .object({
@@ -114,9 +109,10 @@ export class AshbyScraper extends AbstractApiScraper<AshbyConfig> {
         if (response.ok || response.status !== 404) break;
       }
 
-      if (!response?.ok) {
-        return this.failureForHttpStatus(
-          response?.status ?? 500,
+      if (!response) return this.failure("network_error", "Ashby did not return a response.");
+      if (!response.ok) {
+        return this.failureForResponse(
+          response,
           `Failed to fetch Ashby jobs: ${response?.status ?? "unknown"}`
         );
       }
@@ -158,13 +154,10 @@ export class AshbyScraper extends AbstractApiScraper<AshbyConfig> {
     totalListings: number,
     invalidJobs: number
   ): ScraperResult {
-    const jobs: ScrapedJob[] = data.jobs.map((job, index) => {
-      const primaryLocation =
-        job.location ||
-        job.secondaryLocations?.[0]?.location ||
-        (job.isRemote ? "Remote" : undefined);
-
-      const { location, locationType } = this.normalizeLocation(primaryLocation);
+    const jobs: ScrapedJob[] = data.jobs.filter((job) => job.isListed !== false).map((job) => {
+      const locations = sourceLocations([job.location, ...(job.secondaryLocations ?? []).map((item) => item.location)]);
+      const normalized = this.normalizeLocation(locations.join("; ") || (job.isRemote ? "Remote" : undefined));
+      const locationType = parseWorkplaceType(job.workplaceType) ?? (job.isRemote ? "remote" : normalized.locationType);
 
       let description: string | undefined;
       let descriptionFormat: "markdown" | "plain" | "html" = "plain";
@@ -195,20 +188,22 @@ export class AshbyScraper extends AbstractApiScraper<AshbyConfig> {
       const externalId = this.generateExternalId(
         this.platform,
         boardName,
-        job.jobUrl || job.applyUrl || index
+        job.jobUrl || job.applyUrl || job.id || ""
       );
 
       return {
         externalId,
         title: job.title,
         url: job.jobUrl || job.applyUrl || "",
-        location,
+        location: normalized.location,
+        locations,
         locationType,
+        salary: job.compensation?.scrapeableCompensationSalarySummary || job.compensation?.compensationTierSummary || undefined,
         department: job.team || job.department || undefined,
         description,
         descriptionFormat,
         employmentType,
-        postedDate: job.publishedAt ? new Date(job.publishedAt) : undefined,
+        postedDate: parseSourceDate(job.publishedAt),
       };
     });
 

@@ -1,3 +1,4 @@
+import type { ScrapeFetchStateStore } from "@/lib/scraper/infrastructure/fetch-state";
 import { createFailureFromUnknown } from "@/lib/scraper/types/validation";
 import type { ExistingJob, ScrapeCompanyStore } from "@/lib/scraper/infrastructure/types";
 import type { ScrapeOptions } from "@/lib/scraper/core/types";
@@ -12,11 +13,11 @@ import {
   type ScraperResult,
   type ScrapedJob,
 } from "@/lib/scraper/types";
-import { dispatchPendingAIWork } from "@/lib/ai/work-items/dispatcher";
 import type { ScrapeSettingsProvider } from "@/lib/scraper/settings/provider";
 import { ScraperLogger } from "@/lib/scraper/utils/logger";
-import { getMatcherConfig } from "@/lib/ai/matcher";
 
+import { selectFreshJobIdentities } from "../services/job-refresh-policy";
+import { canArchiveMissingJobs } from "../services/listing-reconciliation";
 import type { IDeduplicationService } from "../services/deduplication-service";
 import type { IFilterService, JobFilters } from "../services/filter-service";
 import type { IScraperRegistry } from "../services/registry";
@@ -24,6 +25,8 @@ import type { IScraperRegistry } from "../services/registry";
 export interface ScrapeCompanyPipelineConfig {
   autoMatchAfterScrape: boolean;
   defaultFilters: JobFilters;
+  detailsRefreshIntervalMs?: number;
+  maxExistingDetailsPerRun?: number;
 }
 
 export const DEFAULT_SCRAPE_COMPANY_PIPELINE_CONFIG: ScrapeCompanyPipelineConfig = {
@@ -32,9 +35,6 @@ export const DEFAULT_SCRAPE_COMPANY_PIPELINE_CONFIG: ScrapeCompanyPipelineConfig
 };
 
 const ARCHIVABLE_JOB_STATUSES = ["new", "viewed", "interested", "rejected"] as const;
-const ARCHIVABLE_JOB_STATUS_SET: ReadonlySet<string> = new Set(ARCHIVABLE_JOB_STATUSES);
-const PARTIAL_LISTING_MISSING_ABSOLUTE_THRESHOLD = 5;
-const PARTIAL_LISTING_MISSING_RATIO_THRESHOLD = 0.05;
 const SAFE_HYDRATION_MATCH_REASONS: DeduplicationMatchReason[] = ["externalId", "url"];
 
 class ScrapingLogWriteError extends Error {
@@ -79,6 +79,14 @@ interface ScrapeExecutionResult {
 interface DuplicateHydrationCandidate {
   existingJobId: number;
   job: ScrapedJob;
+  detailsFetchedAt?: Date;
+}
+
+export interface ScrapePipelineDependencies {
+  fetchState?: ScrapeFetchStateStore;
+  now?: () => Date;
+  matchingEnabled: () => Promise<boolean>;
+  dispatchMatching: () => Promise<unknown>;
 }
 
 export class ScrapeCompanyPipeline {
@@ -88,7 +96,8 @@ export class ScrapeCompanyPipeline {
     private readonly deduplicationService: IDeduplicationService,
     private readonly filterService: IFilterService,
     private readonly config: ScrapeCompanyPipelineConfig,
-    private readonly settingsProvider: ScrapeSettingsProvider
+    private readonly settingsProvider: ScrapeSettingsProvider,
+    private readonly dependencies: ScrapePipelineDependencies
   ) {}
 
   async scrape(
@@ -137,14 +146,10 @@ export class ScrapeCompanyPipeline {
 
     try {
       const existingJobs = await this.repository.getExistingJobs(companyId);
-      // Hydration skip-set: only jobs with descriptions. Jobs with empty
-      // descriptions stay hydratable so later scrapes can backfill them.
-      const existingExternalIds = new Set<string>(
-        existingJobs
-          .filter((job) => this.hasNonEmptyDescription(job.description))
-          .map((job) => job.externalId)
-          .filter((externalId): externalId is string => Boolean(externalId))
-      );
+      const freshIdentities = selectFreshJobIdentities(existingJobs,
+        this.dependencies.now?.() ?? new Date(), this.config.detailsRefreshIntervalMs,
+        this.config.maxExistingDetailsPerRun);
+      const { existingExternalIds } = freshIdentities;
 
       const filters = await this.loadFilters();
       const scraperOptions = this.createScraperOptions(
@@ -153,9 +158,7 @@ export class ScrapeCompanyPipeline {
         existingExternalIds,
         options.signal
       );
-      scraperOptions.existingJobUrls = new Set(existingJobs.filter((job) =>
-        job.externalId && existingExternalIds.has(job.externalId)
-      ).map((job) => job.url));
+      scraperOptions.existingJobUrls = freshIdentities.existingJobUrls;
 
       fetchStartedAt = Date.now();
       const scraperResult = await this.registry.scrape(
@@ -385,7 +388,8 @@ export class ScrapeCompanyPipeline {
       // failure only leaves the listing URL available.
       ...listingJobs.flatMap((job) => existingByUrl.get(job.url)?.externalId ?? []),
     ].filter(Boolean)));
-    const jobsByUrl = new Map(listingJobs.filter((job) => existingByUrl.has(job.url))
+    const existingByExternalId = new Map(existingJobs.map((job) => [job.externalId, job]));
+    const jobsByUrl = new Map(listingJobs.filter((job) => existingByUrl.has(job.url) || existingByExternalId.has(job.externalId))
       .map((job) => [job.url, job]));
     for (const job of scraperResult.jobs) jobsByUrl.set(job.url, job);
 
@@ -395,13 +399,13 @@ export class ScrapeCompanyPipeline {
     // Unknown totals (field absent) preserve legacy behavior.
     const listingsExact =
       scraperResult.advertisedTotal == null || totalFetched >= scraperResult.advertisedTotal;
-    const archiveMissing =
-      scraperResult.listingCompleteness === "complete" &&
-      listingsExact &&
-      !(
-        (platform === "uber" || platform === "oracle") &&
-        this.shouldSkipIncompleteArchival(openExternalIds, existingJobs)
-      );
+    const archival = canArchiveMissingJobs({
+      companyId, source: `${platform}:${boardToken}`, existing: existingJobs,
+      complete: scraperResult.listingCompleteness === "complete" && listingsExact,
+      openIds: openExternalIds, now: this.dependencies.now?.() ?? new Date(),
+      state: this.dependencies.fetchState,
+    });
+    const archiveMissing = archival.allowed;
 
     const dedupeResult = this.deduplicationService.batchDeduplicate(
       [...jobsByUrl.values()],
@@ -421,12 +425,13 @@ export class ScrapeCompanyPipeline {
       });
     }
 
-    const matcherConfig = await getMatcherConfig();
+    const matchingEnabled = this.config.autoMatchAfterScrape && await this.dependencies.matchingEnabled();
     const logStatus = outcome === "success" ? "success" : "partial";
     // Issues on a success outcome are tolerated gaps (see completeness
     // helper); surface them as warnings instead of dropping them. The
     // error branch above returns early, so only success/partial reach here.
-    const scraperWarnings = scraperResult.issues?.map((issue) => issue.message);
+    const scraperWarnings = [...(scraperResult.issues?.map((issue) => issue.message) ?? []),
+      ...(archival.warning ? [archival.warning] : [])];
     const jobsFiltered = filterResult.filteredOut + (scraperResult.earlyFiltered?.total || 0);
     const persistenceStartedAtMs = Date.now();
     const persistenceResult = await this.repository.persistScrapeResult({
@@ -447,6 +452,11 @@ export class ScrapeCompanyPipeline {
         employmentType: job.employmentType,
         seniorityLevel: job.seniorityLevel,
         postedDate: job.postedDate,
+        sourceUpdatedAt: job.sourceUpdatedAt,
+        sourceLocations: job.locations,
+        lastSeenAt: new Date(startTime),
+        detailsFetchedAt: job.description?.trim() && job.descriptionQuality !== "teaser" ? new Date(startTime) : undefined,
+        descriptionQuality: job.descriptionQuality,
         status: "new" as const,
       })),
       existingJobUpdates: duplicateHydrationCandidates,
@@ -457,7 +467,7 @@ export class ScrapeCompanyPipeline {
       startedAtMs: startTime,
       persistenceStartedAtMs,
       enableMatching:
-        this.config.autoMatchAfterScrape && matcherConfig.autoMatchAfterScrape,
+        this.config.autoMatchAfterScrape && matchingEnabled,
       log: {
         sessionId,
         triggerSource,
@@ -473,7 +483,7 @@ export class ScrapeCompanyPipeline {
 
     logger.added(persistenceResult.jobsAdded, dedupeResult.duplicates.length);
     if (persistenceResult.matchOutboxId) {
-      void dispatchPendingAIWork();
+      void this.dependencies.dispatchMatching();
     }
 
     // Persistence-level skips (e.g. unresolvable URL collisions) are merged
@@ -493,55 +503,27 @@ export class ScrapeCompanyPipeline {
     };
   }
 
-  private shouldSkipIncompleteArchival(
-    openExternalIds: string[],
-    existingJobs: Array<{
-      id: number;
-      externalId: string | null;
-      title: string;
-      url: string;
-      status: string;
-      description: string | null;
-    }>
-  ): boolean {
-    const openExternalIdSet = new Set(openExternalIds);
-    const archivableJobs = existingJobs.filter(
-      (job) => Boolean(job.externalId) && ARCHIVABLE_JOB_STATUS_SET.has(job.status)
-    );
-
-    if (archivableJobs.length === 0) {
-      return false;
-    }
-
-    const missingCount = archivableJobs.reduce((total, job) => {
-      if (!job.externalId) return total;
-      return openExternalIdSet.has(job.externalId) ? total : total + 1;
-    }, 0);
-
-    const threshold = Math.max(
-      PARTIAL_LISTING_MISSING_ABSOLUTE_THRESHOLD,
-      Math.ceil(archivableJobs.length * PARTIAL_LISTING_MISSING_RATIO_THRESHOLD)
-    );
-
-    return missingCount > threshold;
-  }
-
   private getDuplicateHydrationCandidates(
     duplicates: BatchDeduplicationResult["duplicates"],
     existingJobs: ExistingJob[]
   ): DuplicateHydrationCandidate[] {
     const existingById = new Map(existingJobs.map((job) => [job.id, job]));
-    const fields = ["title", "url", "location", "locationType", "department", "salary",
-      "employmentType", "seniorityLevel", "description", "descriptionFormat", "postedDate"] as const;
+    const fields = [
+      "title", "url", "location", "locationType", "department", "salary",
+      "employmentType", "seniorityLevel", "description", "descriptionFormat",
+      "postedDate", "sourceUpdatedAt", "descriptionQuality",
+    ] as const;
     const candidates: DuplicateHydrationCandidate[] = [];
     for (const duplicate of duplicates) {
       if (!SAFE_HYDRATION_MATCH_REASONS.includes(duplicate.matchReason)) continue;
       const existing = existingById.get(duplicate.existingJobId);
       if (!existing) continue;
       const job = { ...duplicate.job };
-      if (!this.hasNonEmptyDescription(job.description)) {
+      if (!this.hasNonEmptyDescription(job.description) ||
+          (job.descriptionQuality === "teaser" && this.hasNonEmptyDescription(existing.description))) {
         delete job.description;
         delete job.descriptionFormat;
+        delete job.descriptionQuality;
       }
       const changed = fields.some((field) => {
         const value = job[field];
@@ -550,7 +532,13 @@ export class ScrapeCompanyPipeline {
         return value instanceof Date ? value.getTime() !== (previous instanceof Date ? previous.getTime() : null)
           : value !== previous;
       });
-      if (changed) candidates.push({ existingJobId: existing.id, job });
+      const detailsFetchedAt = job.description?.trim() && job.descriptionQuality !== "teaser"
+        ? this.dependencies.now?.() ?? new Date() : undefined;
+      const locationsChanged = job.locations !== undefined &&
+        job.locations.join(";") !== (existing.sourceLocations ?? []).join(";");
+      if (changed || detailsFetchedAt || locationsChanged) {
+        candidates.push({ existingJobId: existing.id, job, ...(detailsFetchedAt ? { detailsFetchedAt } : {}) });
+      }
     }
     return candidates;
   }
@@ -678,6 +666,7 @@ export interface CreateScrapeCompanyPipelineConfig {
   filterService: IFilterService;
   settingsProvider: ScrapeSettingsProvider;
   config?: Partial<ScrapeCompanyPipelineConfig>;
+  dependencies: ScrapePipelineDependencies;
 }
 
 export function createScrapeCompanyPipeline(
@@ -689,6 +678,7 @@ export function createScrapeCompanyPipeline(
     config.deduplicationService,
     config.filterService,
     { ...DEFAULT_SCRAPE_COMPANY_PIPELINE_CONFIG, ...config.config },
-    config.settingsProvider
+    config.settingsProvider,
+    config.dependencies
   );
 }

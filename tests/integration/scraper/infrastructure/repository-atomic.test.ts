@@ -411,7 +411,7 @@ describe("DrizzleScraperRepository atomic persistence", () => {
     });
   });
 
-  it("reopens a stale-archived job when its external id is still open", async () => {
+  it("keeps age-archived jobs hidden while recording that they are still listed", async () => {
     const database = createTestDatabase();
     const company = seedCompanyAndSession(database);
     const reopened = database
@@ -450,12 +450,13 @@ describe("DrizzleScraperRepository atomic persistence", () => {
 
     const stored = database.select().from(jobs).where(eq(jobs.id, reopened.id)).get();
     expect(stored).toMatchObject({
-      status: "new",
-      archiveSource: null,
+      status: "archived",
+      archiveSource: "stale",
+      lastSeenAt: expect.any(Date),
     });
   });
 
-  it("skips URL claims against a stale-archived job that is being reopened", async () => {
+  it("skips URL claims against an age-archived job that is still listed", async () => {
     const database = createTestDatabase();
     const company = seedCompanyAndSession(database);
     const [archivedJob, currentJob] = database
@@ -523,9 +524,9 @@ describe("DrizzleScraperRepository atomic persistence", () => {
     expect(storedCurrentJob).toMatchObject({
       url: "https://tenant.example.com/careers/job/123",
     });
-    // The reopened archived job is still revived; only the colliding hydration is skipped.
+    // Age-based hiding persists while its URL remains protected from another job.
     const storedArchivedJob = database.select().from(jobs).where(eq(jobs.id, archivedJob.id)).get();
-    expect(storedArchivedJob).toMatchObject({ status: "new" });
+    expect(storedArchivedJob).toMatchObject({ status: "archived", archiveSource: "stale" });
     const storedLog = database.select().from(scrapingLogs).where(eq(scrapingLogs.id, result.logId)).get();
     expect(storedLog?.errorMessage).toContain(`Skipped hydration for job ${currentJob.id}`);
   });
@@ -600,7 +601,7 @@ describe("DrizzleScraperRepository atomic persistence", () => {
     expect(result.warnings).toHaveLength(1);
     const storedLog = database.select().from(scrapingLogs).where(eq(scrapingLogs.id, result.logId)).get();
     expect(storedLog?.errorMessage).toBe(
-      `listings drifted by 1; Skipped hydration for job ${currentJob.id}: URL owned by job ${archivedJob.id} which is being reopened in this run.`
+      `listings drifted by 1; Skipped hydration for job ${currentJob.id}: URL owned by job ${archivedJob.id} which is still listed in this run.`
     );
   });
 
@@ -760,4 +761,28 @@ describe("DrizzleScraperRepository atomic persistence", () => {
     expect(insertedJob?.companyId).toBe(company.id);
     expect(log?.companyId).toBe(company.id);
   });
+  it("does not rematch unchanged refreshes and matches metadata updates without losing the description", async () => {
+    const database = createTestDatabase();
+    const company = seedCompanyAndSession(database);
+    const repository = new DrizzleScraperRepository(database);
+    const job = { externalId: "one", title: "Engineer", url: "https://example.com/one", description: "Build systems", salary: "100 GBP" };
+    const base = { companyId: company.id, openExternalIds: ["one"], archiveMissing: false,
+      statusesToArchive: ["new"] as const, startedAtMs: Date.now(), enableMatching: true,
+      log: { sessionId: "session-1", status: "success" as const, jobsFound: 1, jobsFiltered: 0 } };
+    const first = await repository.persistScrapeResult({ ...base,
+      jobsToInsert: [{ ...job, status: "interested" }], existingJobUpdates: [] });
+    const id = first.insertedJobIds[0];
+    const second = await repository.persistScrapeResult({ ...base, jobsToInsert: [],
+      existingJobUpdates: [{ existingJobId: id, job }] });
+    expect(second).toMatchObject({ jobsUpdated: 0, matchableJobIds: [], matchOutboxId: null });
+    const third = await repository.persistScrapeResult({ ...base, jobsToInsert: [],
+      existingJobUpdates: [{ existingJobId: id, job: { ...job, description: undefined, salary: "200 GBP" } }] });
+    expect(third).toMatchObject({ jobsUpdated: 1, matchableJobIds: [id] });
+    expect(database.select().from(jobs).where(eq(jobs.id, id)).get()).toMatchObject({
+      status: "interested", salary: "200 GBP", description: "Build systems", lastSeenAt: expect.any(Date),
+      detailsFetchedAt: expect.any(Date), descriptionQuality: "full",
+    });
+    expect(database.select().from(aiWorkItems).all()).toHaveLength(2);
+  });
+
 });

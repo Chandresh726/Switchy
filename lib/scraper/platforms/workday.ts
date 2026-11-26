@@ -165,7 +165,7 @@ const DEFAULT_WORKDAY_CONFIG: WorkdayConfig = {
 export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
   readonly platform = "workday" as const;
   override readonly capabilities = {
-    concurrency: "browser_limited",
+    concurrency: "parallel",
   } as const;
 
   constructor(
@@ -276,6 +276,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         };
       }
 
+      const listingJobs: ScrapedJob[] = allJobListItems.map((item) => this.mapListingFallback(parsedUrl, item));
       const selection = selectListingsForHydration({
         listings: allJobListItems,
         filters: options?.filters,
@@ -302,6 +303,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         return {
           outcome: baseOutcome,
           jobs: [],
+          listingJobs,
           totalListings: allJobListItems.length,
           detectedBoardToken,
           earlyFiltered: selection.earlyFiltered,
@@ -369,6 +371,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       return {
         outcome: isPartial ? "partial" : "success",
         jobs: scrapedJobs,
+        listingJobs,
         totalListings: allJobListItems.length,
         advertisedTotal: listResult.advertisedCount,
         detectedBoardToken,

@@ -11,6 +11,7 @@ import {
   createScraperError,
   parseEmploymentType,
   parseExternalPayload,
+  parseExternalItems,
   type ApiScraperConfig,
   type EmploymentType,
   type ScraperError,
@@ -63,7 +64,7 @@ const RipplingAlgoliaResponseSchema = z
     results: z.array(
       z
         .object({
-          hits: z.array(RipplingAlgoliaHitSchema),
+          hits: z.array(z.unknown()),
           page: z.number().int().nonnegative(),
           nbPages: z.number().int().nonnegative(),
         })
@@ -151,6 +152,7 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
       }
 
       const filters = options?.filters;
+      const listingJobs: ScrapedJob[] = listings.map((item) => ({ externalId: this.generateExternalId(this.platform, item.id), title: item.title, url: item.url, location: item.location, locationType: item.locationType, department: item.department }));
       const selection = selectListingsForHydration({
         listings,
         filters,
@@ -168,6 +170,7 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
         return {
           outcome: listingResult.isComplete ? "success" : "partial",
           jobs: [],
+          listingJobs,
           totalListings: listings.length,
           earlyFiltered: selection.earlyFiltered,
           openExternalIds,
@@ -194,7 +197,7 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
         return result.job;
       });
 
-      const issues: ScraperError[] = [];
+      const issues: ScraperError[] = [...hydrated.issues];
       if (!listingResult.isComplete) {
         issues.push(
           createScraperError(
@@ -215,6 +218,7 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
       return {
         outcome: issues.length > 0 ? "partial" : "success",
         jobs: scrapedJobs,
+        listingJobs,
         totalListings: listings.length,
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,
@@ -264,8 +268,10 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
           throw new Error("Rippling Algolia returned no search result.");
         }
         totalPages = result.nbPages;
+        const hits = parseExternalItems(RipplingAlgoliaHitSchema, result.hits, "Rippling hits");
+        if (hits.invalidCount > 0) isComplete = false;
         entries.push(
-          ...result.hits.map((hit) => ({
+          ...hits.items.map((hit) => ({
             id: hit.jobId,
             name: hit.name.trim(),
             url: hit.url,

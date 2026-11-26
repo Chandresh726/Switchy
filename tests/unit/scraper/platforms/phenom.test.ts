@@ -259,4 +259,29 @@ describe("PhenomScraper", () => {
       error: { code: "rate_limited", retryable: true },
     });
   });
+  it("reloads a null search bootstrap once and never treats it as an empty board", async () => {
+    const missing = { siteConfig: { data: { refNum: "CISCISGLOBAL" } }, eagerLoadRefineSearch: null };
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(ddoHtml(missing)))
+      .mockResolvedValueOnce(new Response(ddoHtml(searchPayload([], 0, 0, "CISCISGLOBAL"))));
+    const scraper = new PhenomScraper(createHttpClientStub({ fetch }));
+    await expect(scraper.scrape("https://careers.cisco.com/global/en/search-results")).resolves.toMatchObject({
+      outcome: "success", listingCompleteness: "complete", totalListings: 0,
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    fetch.mockReset().mockImplementation(async () => new Response(ddoHtml(missing)));
+    await expect(scraper.scrape("https://careers.cisco.com/global/en/search-results")).resolves.toMatchObject({
+      outcome: "error", listingCompleteness: "unknown", error: { code: "network_error", retryable: true },
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("marks retained fallback descriptions as teasers", async () => {
+    const scraper = new PhenomScraper(createHttpClientStub({ fetch: async (url) =>
+      url.includes("/job/") ? new Response("unavailable", { status: 503 })
+        : new Response(ddoHtml(searchPayload([listing("one")], 1, 1)))
+    }), { detailDelayMs: 0 });
+    const result = await scraper.scrape("https://jobs.ebayinc.com/us/en/search-results");
+    expect(result.jobs[0]).toMatchObject({ descriptionQuality: "teaser", description: "Build systems one." });
+  });
+
 });

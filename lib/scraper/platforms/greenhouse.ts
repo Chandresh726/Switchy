@@ -8,6 +8,7 @@ import {
   parseExternalPayload,
 } from "@/lib/scraper/types";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
+import { parseSourceDate } from "./shared/source-fields";
 import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig } from "../core/types";
 
 interface GreenhouseJob {
@@ -17,6 +18,7 @@ interface GreenhouseJob {
   location?: { name?: string | null } | null;
   departments?: { name?: string | null }[] | null;
   updated_at?: string | null;
+  first_published?: string | null;
   content?: string | null;
   metadata?: { name?: string | null; value?: unknown }[] | null;
 }
@@ -38,6 +40,7 @@ const GreenhouseJobSchema = z
       .array(z.object({ name: z.string().nullish() }).passthrough())
       .nullish(),
     updated_at: z.string().nullish(),
+    first_published: z.string().nullish(),
     content: z.string().nullish(),
     metadata: z
       .array(
@@ -142,8 +145,8 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
         });
 
         if (!altResponse.ok) {
-          return this.failureForHttpStatus(
-            altResponse.status,
+          return this.failureForResponse(
+            altResponse,
             `Failed to fetch jobs: ${altResponse.status}`
           );
         }
@@ -228,7 +231,8 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
         department: job.departments?.[0]?.name ?? undefined,
         description,
         descriptionFormat,
-        postedDate: job.updated_at ? new Date(job.updated_at) : undefined,
+        postedDate: parseSourceDate(job.first_published),
+        sourceUpdatedAt: parseSourceDate(job.updated_at),
       };
     });
 

@@ -1,6 +1,8 @@
 import { chromium } from "playwright";
 import type { Browser, BrowserContext, Page, Request } from "playwright";
 
+import { ScrapeResourceExecutionGate } from "@/lib/scraper/runtime/resource-execution-gate";
+
 import {
   createScrapeAbortError,
   getActiveScrapeSignal,
@@ -51,11 +53,13 @@ interface BrowserResources {
   browser: Browser;
   context: BrowserContext;
   page: Page;
+  releasePermit?: () => void;
 }
 
 abstract class PlaywrightBrowserClient implements IBrowserClient {
   protected readonly config: BrowserSessionConfig;
   private readonly activeResources = new Set<BrowserResources>();
+  private readonly browserGate = new ScrapeResourceExecutionGate(2);
 
   constructor(config: Partial<BrowserSessionConfig> = {}) {
     this.config = { ...DEFAULT_BROWSER_CONFIG, ...config };
@@ -84,13 +88,20 @@ abstract class PlaywrightBrowserClient implements IBrowserClient {
   protected async launchBrowser(): Promise<BrowserResources> {
     const signal = getActiveScrapeSignal();
     throwIfScrapeAborted();
-    const browser = await chromium.launch({
+    const releasePermit = await this.browserGate.acquire("standard", signal ?? new AbortController().signal);
+    let browser: Browser;
+    try {
+      browser = await chromium.launch({
       headless: this.config.headless,
       args: [
         "--disable-blink-features=AutomationControlled",
         "--disable-features=IsolateOrigins,site-per-process",
       ],
-    });
+      });
+    } catch (error) {
+      releasePermit();
+      throw error;
+    }
 
     try {
       if (signal?.aborted) throw createScrapeAbortError(signal);
@@ -108,11 +119,11 @@ abstract class PlaywrightBrowserClient implements IBrowserClient {
         await context.close();
         throw createScrapeAbortError(signal);
       }
-      const resources = { browser, context, page };
+      const resources = { browser, context, page, releasePermit };
       this.activeResources.add(resources);
       return resources;
     } catch (error) {
-      await browser.close();
+      try { await browser.close(); } finally { releasePermit(); }
       throw error;
     }
   }
@@ -141,7 +152,7 @@ abstract class PlaywrightBrowserClient implements IBrowserClient {
     try {
       await resources.context.close();
     } finally {
-      await resources.browser.close();
+      try { await resources.browser.close(); } finally { resources.releasePermit?.(); }
     }
   }
 
