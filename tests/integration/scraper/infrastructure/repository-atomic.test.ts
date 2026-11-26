@@ -147,7 +147,7 @@ describe("DrizzleScraperRepository atomic persistence", () => {
       logId: storedLog.id,
       matchOutboxId: storedOutbox.id,
     });
-    expect(result.matchableJobIds).toHaveLength(1);
+    expect(result.matchableJobIds).toHaveLength(2);
     expect(storedLog.startedAt?.getTime()).toBe(
       Math.floor(startedAtMs / 1_000) * 1_000
     );
@@ -189,7 +189,7 @@ describe("DrizzleScraperRepository atomic persistence", () => {
       jobsUpdated: 1,
       jobsArchived: 1,
       matcherStatus: "pending",
-      matcherJobsTotal: 1,
+      matcherJobsTotal: 2,
     });
     expect(storedLog.duration).toBeGreaterThanOrEqual(200);
     expect(storedOutbox).toMatchObject({
@@ -209,7 +209,7 @@ describe("DrizzleScraperRepository atomic persistence", () => {
       triggerSource: "auto_match",
       companyId: company.id,
       status: "queued",
-      jobsTotal: 1,
+      jobsTotal: 2,
       jobsCompleted: 0,
     });
   });

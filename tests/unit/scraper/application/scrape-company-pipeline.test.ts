@@ -892,4 +892,29 @@ describe("ScrapeCompanyPipeline", () => {
       })
     );
   });
+  it("updates metadata without replacing a saved description and preserves URL aliases", async () => {
+    const existing: ExistingJob = {
+      id: 41, externalId: "legacy-id", title: "Engineer", url: "https://example.com/job/1",
+      status: "interested", description: "Unchanged description", location: "London",
+    };
+    const repository = createRepositoryMock({ existingJobs: [existing] });
+    const registry = createRegistryMock({
+      outcome: "partial", listingCompleteness: "complete", totalListings: 1,
+      openExternalIds: ["opaque-id"],
+      listingJobs: [{ externalId: "opaque-id", title: "Senior Engineer", url: existing.url, location: "Bengaluru" }],
+      jobs: [],
+    });
+    const pipeline = new ScrapeCompanyPipeline(repository, registry,
+      new TitleBasedDeduplicationService(), new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} }, new StoredScrapeSettingsProvider(repository));
+    await pipeline.scrape(company.id, { sessionId: "metadata", triggerSource: "manual" });
+    expect(repository.persistScrapeResult).toHaveBeenCalledWith(expect.objectContaining({
+      openExternalIds: expect.arrayContaining(["legacy-id", "opaque-id"]),
+      jobsToInsert: [],
+      existingJobUpdates: [{ existingJobId: 41, job: {
+        externalId: "opaque-id", title: "Senior Engineer", url: existing.url, location: "Bengaluru",
+      } }],
+    }));
+  });
+
 });

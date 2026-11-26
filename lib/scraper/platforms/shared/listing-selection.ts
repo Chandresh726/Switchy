@@ -11,6 +11,8 @@ export interface ListingSelectionOptions<T> {
   existingExternalIds?: ReadonlySet<string>;
   toFilterable: (listing: T) => FilterableItem;
   getExternalId: (listing: T) => string | null | undefined;
+  existingJobUrls?: ReadonlySet<string>;
+  getUrl?: (listing: T) => string;
 }
 
 export interface ListingSelection<T> {
@@ -24,6 +26,8 @@ export function selectListingsForHydration<T>({
   existingExternalIds,
   toFilterable,
   getExternalId,
+  existingJobUrls,
+  getUrl,
 }: ListingSelectionOptions<T>): ListingSelection<T> {
   const candidates = listings.map((listing) => ({
     listing,
@@ -33,6 +37,7 @@ export function selectListingsForHydration<T>({
   const selected = filtered.filtered
     .map((candidate) => candidate.listing)
     .filter((listing) => {
+      if (getUrl && existingJobUrls?.has(getUrl(listing))) return false;
       if (!existingExternalIds || existingExternalIds.size === 0) {
         return true;
       }

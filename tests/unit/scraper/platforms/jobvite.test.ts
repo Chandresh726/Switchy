@@ -65,8 +65,9 @@ describe("JobviteScraper", () => {
       earlyFiltered: { total: 1, city: 1 },
     });
     expect(new Set(result.openExternalIds)).toEqual(
-      new Set(["jobvite-acme-1001", "jobvite-acme-1002"])
+      new Set(["jobvite-acme-1001", "jobvite-acme-opaque-one", "jobvite-acme-opaque-two"])
     );
+    expect(fetchMock.mock.calls.some(([url]) => url.includes("/job/opaque-two"))).toBe(false);
     expect(result.jobs).toHaveLength(1);
     expect(result.jobs[0]).toMatchObject({
       externalId: "jobvite-acme-1001",
@@ -214,7 +215,7 @@ describe("JobviteScraper", () => {
     });
   });
 
-  it("returns partial and non-complete listings when a required detail fails", async () => {
+  it("preserves complete listing identities when a required detail fails", async () => {
     const fetchMock = vi.fn(async (url: string) =>
       url.includes("/job/")
         ? new Response("blocked", { status: 403 })
@@ -228,9 +229,9 @@ describe("JobviteScraper", () => {
 
     expect(result).toMatchObject({
       outcome: "partial",
-      listingCompleteness: "partial",
-      openExternalIds: [],
-      jobs: [],
+      listingCompleteness: "complete",
+      openExternalIds: ["jobvite-acme-opaque-one"],
+      jobs: [{ externalId: "jobvite-acme-opaque-one" }],
     });
   });
 
@@ -275,4 +276,20 @@ describe("JobviteScraper", () => {
       listingCompleteness: "complete",
     });
   });
+  it("retains both open IDs when one of two details fails", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/job/opaque-two")) return new Response("blocked", { status: 403 });
+      if (url.includes("/job/opaque-one")) return new Response(detailPage("opaque-one"));
+      return new Response(listingPage(Number(new URL(url).searchParams.get("p"))));
+    });
+    const scraper = new JobviteScraper(createHttpClientStub({ fetch: fetchMock }), {
+      detailDelayMs: 0, unavailableRetryDelayMs: 0,
+    });
+    const result = await scraper.scrape("https://jobs.jobvite.com/acme/jobs");
+    expect(result.outcome).toBe("partial");
+    expect(result.listingCompleteness).toBe("complete");
+    expect(result.openExternalIds).toContain("jobvite-acme-opaque-two");
+    expect(result.listingJobs).toHaveLength(2);
+  });
+
 });

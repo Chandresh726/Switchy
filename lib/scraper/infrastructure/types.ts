@@ -1,4 +1,4 @@
-import type { Company, NewJob } from "@/lib/db/schema";
+import type { Company, Job, NewJob } from "@/lib/db/schema";
 import type { JobStatus } from "@/lib/jobs/status";
 import type {
   Platform,
@@ -17,6 +17,13 @@ export interface ExistingJob {
   location?: string | null;
   status: string;
   description: string | null;
+  locationType?: Job["locationType"];
+  department?: string | null;
+  salary?: string | null;
+  employmentType?: Job["employmentType"];
+  seniorityLevel?: Job["seniorityLevel"];
+  descriptionFormat?: string | null;
+  postedDate?: Date | null;
 }
 
 export interface SessionProgressUpdate {

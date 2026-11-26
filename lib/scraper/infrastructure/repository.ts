@@ -90,6 +90,13 @@ export class DrizzleScraperRepository implements IScraperRepository {
         location: jobs.location,
         status: jobs.status,
         description: jobs.description,
+        descriptionFormat: jobs.descriptionFormat,
+        locationType: jobs.locationType,
+        department: jobs.department,
+        salary: jobs.salary,
+        employmentType: jobs.employmentType,
+        seniorityLevel: jobs.seniorityLevel,
+        postedDate: jobs.postedDate,
       })
       .from(jobs)
       .where(eq(jobs.companyId, companyId));
@@ -201,10 +208,15 @@ export class DrizzleScraperRepository implements IScraperRepository {
           .all().length;
       }
 
+      const updatedMatchableIds = new Set<number>();
       let jobsUpdated = 0;
       const persistenceWarnings: string[] = [];
       for (const { existingJobId, job } of input.existingJobUpdates) {
         const existingJob = currentJobsById.get(existingJobId);
+        if (!existingJob) continue;
+        const mergedJob = { ...existingJob, ...Object.fromEntries(Object.entries(job).filter(([, value]) => value !== undefined)) };
+        const fingerprint = buildScrapedJobFingerprint(mergedJob);
+        const previousFingerprint = buildScrapedJobFingerprint(existingJob);
         const urlOwner = currentJobsByUrl.get(job.url);
         if (existingJob && urlOwner && urlOwner.id !== existingJobId) {
           if (
@@ -246,27 +258,22 @@ export class DrizzleScraperRepository implements IScraperRepository {
             location: job.location,
             locationType: job.locationType,
             department: job.department,
-            description: job.description,
-            descriptionFormat: job.descriptionFormat ?? "plain",
+            description: job.description?.trim() ? job.description : undefined,
+            descriptionFormat: job.description?.trim() ? job.descriptionFormat : undefined,
             salary: job.salary,
             employmentType: job.employmentType,
             seniorityLevel: job.seniorityLevel,
-            aiFingerprint: buildScrapedJobFingerprint({
-              title: job.title,
-              description: job.description ?? existingJob?.description,
-              location: job.location ?? existingJob?.location,
-              locationType: job.locationType ?? existingJob?.locationType,
-              seniorityLevel: job.seniorityLevel ?? existingJob?.seniorityLevel,
-              department: job.department ?? existingJob?.department,
-              employmentType: job.employmentType ?? existingJob?.employmentType,
-              salary: job.salary ?? existingJob?.salary,
-            }),
+            aiFingerprint: fingerprint,
             postedDate: job.postedDate,
             updatedAt: writeStartedAt,
           })
           .where(and(eq(jobs.id, existingJobId), eq(jobs.companyId, input.companyId)))
           .returning({ id: jobs.id })
           .all().length;
+        if (fingerprint !== previousFingerprint && mergedJob.description?.trim() &&
+            ["new", "viewed", "interested", "rejected"].includes(existingJob.status)) {
+          updatedMatchableIds.add(existingJobId);
+        }
         if (existingJob) {
           currentJobsByUrl.delete(existingJob.url);
           currentJobsByUrl.set(job.url, { ...existingJob, url: job.url });
@@ -304,12 +311,12 @@ export class DrizzleScraperRepository implements IScraperRepository {
         );
       }
       const matchableJobIds = input.enableMatching
-        ? insertedJobs
+        ? [...updatedMatchableIds, ...insertedJobs
             .filter(
               (job) =>
                 typeof job.description === "string" && job.description.trim().length > 0
             )
-            .map((job) => job.id)
+            .map((job) => job.id)]
         : [];
 
       const completedAt = new Date();

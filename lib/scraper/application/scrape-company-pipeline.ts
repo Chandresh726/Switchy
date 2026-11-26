@@ -1,5 +1,5 @@
 import { createFailureFromUnknown } from "@/lib/scraper/types/validation";
-import type { ScrapeCompanyStore } from "@/lib/scraper/infrastructure/types";
+import type { ExistingJob, ScrapeCompanyStore } from "@/lib/scraper/infrastructure/types";
 import type { ScrapeOptions } from "@/lib/scraper/core/types";
 import {
   isPlatform,
@@ -153,6 +153,9 @@ export class ScrapeCompanyPipeline {
         existingExternalIds,
         options.signal
       );
+      scraperOptions.existingJobUrls = new Set(existingJobs.filter((job) =>
+        job.externalId && existingExternalIds.has(job.externalId)
+      ).map((job) => job.url));
 
       fetchStartedAt = Date.now();
       const scraperResult = await this.registry.scrape(
@@ -281,14 +284,7 @@ export class ScrapeCompanyPipeline {
     companyId: number;
     platform: Platform | null;
     boardToken: string | null;
-    existingJobs: Array<{
-      id: number;
-      externalId: string | null;
-      title: string;
-      url: string;
-      status: string;
-      description: string | null;
-    }>;
+    existingJobs: ExistingJob[];
     filters: JobFilters;
     sessionId: string;
     triggerSource: TriggerSource;
@@ -381,13 +377,17 @@ export class ScrapeCompanyPipeline {
       logger.fetched(totalFetched);
     }
 
-    const openExternalIds = Array.from(
-      new Set(
-        (scraperResult.openExternalIds ?? scraperResult.jobs.map((job) => job.externalId)).filter(
-          (externalId): externalId is string => Boolean(externalId)
-        )
-      )
-    );
+    const listingJobs = scraperResult.listingJobs ?? scraperResult.jobs;
+    const existingByUrl = new Map(existingJobs.map((job) => [job.url, job]));
+    const openExternalIds = Array.from(new Set([
+      ...(scraperResult.openExternalIds ?? listingJobs.map((job) => job.externalId)),
+      // Preserve historical identities when a source changes its ID or a detail
+      // failure only leaves the listing URL available.
+      ...listingJobs.flatMap((job) => existingByUrl.get(job.url)?.externalId ?? []),
+    ].filter(Boolean)));
+    const jobsByUrl = new Map(listingJobs.filter((job) => existingByUrl.has(job.url))
+      .map((job) => [job.url, job]));
+    for (const job of scraperResult.jobs) jobsByUrl.set(job.url, job);
 
     // Stale archival is only safe on exact listings. Tolerance-completed
     // runs (fetched < advertised) skip it: the gap may still be open, and
@@ -404,7 +404,7 @@ export class ScrapeCompanyPipeline {
       );
 
     const dedupeResult = this.deduplicationService.batchDeduplicate(
-      scraperResult.jobs,
+      [...jobsByUrl.values()],
       existingJobs
     );
     const filterResult = this.filterService.applyFilters(dedupeResult.newJobs, filters);
@@ -528,43 +528,30 @@ export class ScrapeCompanyPipeline {
 
   private getDuplicateHydrationCandidates(
     duplicates: BatchDeduplicationResult["duplicates"],
-    existingJobs: Array<{ id: number; description: string | null }>
+    existingJobs: ExistingJob[]
   ): DuplicateHydrationCandidate[] {
-    if (duplicates.length === 0) {
-      return [];
-    }
-
-    const existingJobsById = new Map(existingJobs.map((existingJob) => [existingJob.id, existingJob]));
-
+    const existingById = new Map(existingJobs.map((job) => [job.id, job]));
+    const fields = ["title", "url", "location", "locationType", "department", "salary",
+      "employmentType", "seniorityLevel", "description", "descriptionFormat", "postedDate"] as const;
     const candidates: DuplicateHydrationCandidate[] = [];
-
     for (const duplicate of duplicates) {
-      if (!SAFE_HYDRATION_MATCH_REASONS.includes(duplicate.matchReason)) {
-        continue;
+      if (!SAFE_HYDRATION_MATCH_REASONS.includes(duplicate.matchReason)) continue;
+      const existing = existingById.get(duplicate.existingJobId);
+      if (!existing) continue;
+      const job = { ...duplicate.job };
+      if (!this.hasNonEmptyDescription(job.description)) {
+        delete job.description;
+        delete job.descriptionFormat;
       }
-
-      const existingJob = existingJobsById.get(duplicate.existingJobId);
-      if (!existingJob) {
-        continue;
-      }
-
-      if (!this.hasNonEmptyDescription(duplicate.job.description)) {
-        continue;
-      }
-
-      const existingDescription = existingJob.description?.trim() ?? "";
-      const scrapedDescription = duplicate.job.description?.trim() ?? "";
-
-      if (existingDescription === scrapedDescription) {
-        continue;
-      }
-
-      candidates.push({
-        existingJobId: duplicate.existingJobId,
-        job: duplicate.job,
+      const changed = fields.some((field) => {
+        const value = job[field];
+        if (value === undefined) return false;
+        const previous = existing[field];
+        return value instanceof Date ? value.getTime() !== (previous instanceof Date ? previous.getTime() : null)
+          : value !== previous;
       });
+      if (changed) candidates.push({ existingJobId: existing.id, job });
     }
-
     return candidates;
   }
 

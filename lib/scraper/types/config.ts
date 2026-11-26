@@ -8,6 +8,8 @@ export interface ScrapeOptions {
   boardToken?: string;
   filters?: JobFilters;
   existingExternalIds?: Set<string>;
+  /** Fresh existing jobs keyed by URL, for sources whose requisition ID needs details. */
+  existingJobUrls?: ReadonlySet<string>;
   signal?: AbortSignal;
 }
 

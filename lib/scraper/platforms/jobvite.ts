@@ -22,7 +22,6 @@ import type {
   ScraperResult,
 } from "../core/types";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
-import { isDetailFailuresTolerable } from "./shared/completeness";
 import { selectListingsForHydration } from "./shared/listing-selection";
 
 interface JobviteListing {
@@ -127,38 +126,27 @@ export class JobviteScraper extends AbstractApiScraper<JobviteConfig> {
         return this.failure("parse_error", `Jobvite board ${slug} returned no usable jobs.`);
       }
 
-      const hydrated = await hydrateDetailsInBatches<
-        JobviteListing,
-        JobviteHydratedJob
-      >({
-        items: listingResult.listings,
+      const listingJobs = listingResult.listings.map((listing) =>
+        this.mapListingToJob(slug, listing, listing.opaqueId)
+      );
+      const selection = selectListingsForHydration({
+        listings: listingResult.listings,
+        filters: options?.filters,
+        existingExternalIds: options?.existingExternalIds,
+        existingJobUrls: options?.existingJobUrls,
+        getUrl: (listing) => listing.url,
+        toFilterable: (listing) => ({ title: listing.title, location: listing.location }),
+        getExternalId: (listing) => this.generateExternalId(this.platform, slug, listing.opaqueId),
+      });
+      const hydrated = await hydrateDetailsInBatches<JobviteListing, JobviteHydratedJob>({
+        items: selection.listings,
         initialBatchSize: this.config.detailBatchSize,
         initialDelayMs: this.config.detailDelayMs,
         fetcher: (listing) => this.fetchJobDetail(slug, listing),
       });
-      let detailFailures = hydrated.failures;
-      const allJobs = hydrated.results.flatMap((result) => {
-        if (result.failed) {
-          detailFailures++;
-          return [];
-        }
-        return [result.job];
-      });
-      const selection = selectListingsForHydration({
-        listings: allJobs,
-        filters: options?.filters,
-        existingExternalIds: options?.existingExternalIds,
-        toFilterable: (job) => ({ title: job.title, location: job.location }),
-        getExternalId: (job) => job.externalId,
-      });
-      // Failed details are dropped (not retained as fallbacks), so the
-      // attempted count includes them. Tolerance still requires at least one
-      // hydrated job: a board that produced nothing stays partial.
-      const detailsTolerable =
-        allJobs.length > 0 &&
-        isDetailFailuresTolerable(detailFailures, allJobs.length + detailFailures);
-      const isComplete =
-        listingResult.isComplete && (detailFailures === 0 || detailsTolerable);
+      const detailFailures = hydrated.failures + hydrated.results.filter((result) => result.failed).length;
+      const jobs = hydrated.results.map((result) => result.job);
+      const isComplete = listingResult.isComplete && detailFailures === 0;
       const issues = [];
       if (!listingResult.isComplete) {
         issues.push(
@@ -179,10 +167,11 @@ export class JobviteScraper extends AbstractApiScraper<JobviteConfig> {
 
       return {
         outcome: isComplete ? "success" : "partial",
-        jobs: selection.listings,
+        jobs,
+        listingJobs,
         totalListings: listingResult.listings.length,
-        openExternalIds: allJobs.map((job) => job.externalId),
-        listingCompleteness: isComplete ? "complete" : "partial",
+        openExternalIds: [...new Set([...listingJobs, ...jobs].map((job) => job.externalId))],
+        listingCompleteness: listingResult.isComplete ? "complete" : "partial",
         earlyFiltered: selection.earlyFiltered,
         detectedBoardToken: options?.boardToken ? undefined : slug,
         issues: issues.length > 0 ? issues : undefined,

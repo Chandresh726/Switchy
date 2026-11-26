@@ -52,6 +52,8 @@ export interface EarlyFilterStats {
 
 interface ScraperResultBase<T extends ScrapedJob> {
   jobs: T[];
+  /** Listing metadata, independent of filtering and detail-download success. */
+  listingJobs?: ScrapedJob[];
   metadata?: ScraperMetadata;
   detectedBoardToken?: string;
   earlyFiltered?: EarlyFilterStats;
