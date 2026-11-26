@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { AI_PROVIDER_IDS } from "@/lib/ai/providers/types";
 import { ProviderModelDefinitionSchema } from "@/lib/ai/providers/model-contract";
 import { localCLIConnectionStatusSchema } from "@/lib/api/contracts/providers";
 
@@ -144,6 +145,7 @@ const providerSettingsListItemSchema = z.object({
   ]).optional(),
   baseUrl: z.string().optional(),
   headerNames: z.array(z.string()).optional(),
+  modelDiscovery: z.enum(["auto", "manual"]).optional(),
   manualModelIds: z.array(z.string()).optional(),
   reasoningEfforts: z.array(z.string()).optional(),
   connectionStatus: localCLIConnectionStatusSchema.optional(),
@@ -151,24 +153,15 @@ const providerSettingsListItemSchema = z.object({
   cliVersion: z.string().optional(),
   statusMessage: z.string().optional(),
   lastCheckedAt: z.string().optional(),
+  statusIsStale: z.boolean().optional(),
+  checking: z.boolean().optional(),
 });
 
 export const providerSettingsListSchema = z.array(providerSettingsListItemSchema);
 
 export const providerModelsResponseSchema = z.object({
   providerId: z.string(),
-  provider: z.enum([
-    "anthropic",
-    "openai",
-    "gemini_api_key",
-    "openrouter",
-    "cerebras",
-    "groq",
-    "nvidia",
-    "codex_cli",
-    "opencode_cli",
-    "custom",
-  ]),
+  provider: z.enum(AI_PROVIDER_IDS),
   models: z.array(ProviderModelDefinitionSchema),
   fetchedAt: z.string(),
   isStale: z.boolean(),

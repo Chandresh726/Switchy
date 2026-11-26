@@ -14,7 +14,7 @@ import type {
   BackendStreamingInput,
   BackendStructuredInput,
   BackendTextInput,
-} from "@/lib/ai/local-cli/types";
+} from "@/lib/ai/runtime/backend";
 
 function normalizeUsage(usage: LanguageModelUsage) {
   return {

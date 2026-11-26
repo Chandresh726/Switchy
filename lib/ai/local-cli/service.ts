@@ -1,13 +1,13 @@
+import type { ProviderConnectionSnapshot as LocalCLIStatus } from "@/lib/ai/providers/connections/contracts";
+import { connectionStatusRepository } from "@/lib/ai/providers/connections/repository";
 import {
+  BUILTIN_CLI_PROVIDER_IDS,
   CLI_MODEL_CACHE_TTL_MS,
   CLI_STATUS_CACHE_TTL_MS,
 } from "@/lib/ai/local-cli/constants";
 import { resolveCLIExecutable } from "@/lib/ai/local-cli/executable";
-import type {
-  AIGenerationBackend,
-  LocalCLIStatus,
-} from "@/lib/ai/local-cli/types";
-import type { ProviderModelDefinition } from "@/lib/ai/providers/model-catalog";
+import type { AIGenerationBackend } from "@/lib/ai/runtime/backend";
+import type { ProviderModelDefinition } from "@/lib/ai/providers/catalog/service";
 import type { LocalCLIProvider } from "@/lib/ai/providers/types";
 import { AIError } from "@/lib/ai/shared/errors";
 
@@ -33,11 +33,13 @@ interface StatusEntry {
 interface ModelEntry {
   expiresAt: number;
   models: ProviderModelDefinition[];
+  fetchedAt: number;
 }
 
 const backendCache = new Map<LocalCLIProvider, BackendEntry>();
 const statusCache = new Map<LocalCLIProvider, StatusEntry>();
 const modelCache = new Map<LocalCLIProvider, ModelEntry>();
+const statusFlights = new Map<LocalCLIProvider, Promise<LocalCLIStatus>>();
 const modelFlights = new Map<string, Promise<ProviderModelDefinition[]>>();
 
 export async function warmLocalCLIStatuses(
@@ -54,7 +56,19 @@ export function getCachedLocalCLIStatus(
   provider: LocalCLIProvider
 ): LocalCLIStatus | undefined {
   const cached = statusCache.get(provider);
-  return cached && cached.expiresAt > Date.now() ? cached.value : undefined;
+  return cached ? { ...cached.value, isStale: cached.expiresAt <= Date.now() } : undefined;
+}
+
+export async function getStoredLocalCLIStatus(provider: LocalCLIProvider): Promise<LocalCLIStatus | undefined> {
+  const cached = getCachedLocalCLIStatus(provider);
+  if (cached) return cached;
+  const stored = await connectionStatusRepository.load(BUILTIN_CLI_PROVIDER_IDS[provider]);
+  if (!stored) return undefined;
+  statusCache.set(provider, {
+    value: stored,
+    expiresAt: Date.parse(stored.lastCheckedAt) + CLI_STATUS_CACHE_TTL_MS,
+  });
+  return getCachedLocalCLIStatus(provider);
 }
 
 async function getBackendEntry(provider: LocalCLIProvider): Promise<BackendEntry | null> {
@@ -94,11 +108,20 @@ export async function getLocalCLIStatus(
   provider: LocalCLIProvider,
   options: { forceRefresh?: boolean } = {}
 ): Promise<LocalCLIStatus> {
-  const cached = statusCache.get(provider);
-  if (!options.forceRefresh && cached && cached.expiresAt > Date.now()) {
-    return cached.value;
+  const cached = await getStoredLocalCLIStatus(provider);
+  if (!options.forceRefresh && cached && !cached.isStale) return cached;
+  const existing = statusFlights.get(provider);
+  if (existing) return existing;
+  const flight = checkLocalCLIStatus(provider, options.forceRefresh === true);
+  statusFlights.set(provider, flight);
+  try {
+    return await flight;
+  } finally {
+    if (statusFlights.get(provider) === flight) statusFlights.delete(provider);
   }
+}
 
+async function checkLocalCLIStatus(provider: LocalCLIProvider, refreshModels: boolean): Promise<LocalCLIStatus> {
   let value: LocalCLIStatus;
   const entry = await getBackendEntry(provider);
   if (!entry) {
@@ -112,7 +135,7 @@ export async function getLocalCLIStatus(
           value = status("not_authenticated", "Codex CLI is installed but not logged in.", version);
         } else {
           const models = await getLocalCLIModels(provider, {
-            forceRefresh: options.forceRefresh,
+            forceRefresh: refreshModels,
           });
           value = models.length > 0
             ? status("ready", `${models.length} text models available.`, version)
@@ -120,7 +143,7 @@ export async function getLocalCLIStatus(
         }
       } else {
         const models = await getLocalCLIModels(provider, {
-          forceRefresh: options.forceRefresh,
+          forceRefresh: refreshModels,
         });
         if (models.length > 0) {
           value = status("ready", `${models.length} text models available.`, version);
@@ -146,6 +169,7 @@ export async function getLocalCLIStatus(
     value,
     expiresAt: Date.now() + CLI_STATUS_CACHE_TTL_MS,
   });
+  await connectionStatusRepository.save(BUILTIN_CLI_PROVIDER_IDS[provider], value);
   return value;
 }
 
@@ -162,6 +186,7 @@ export async function getLocalCLIModels(
     if (stored) {
       modelCache.set(provider, {
         models: stored.models,
+        fetchedAt: stored.fetchedAt,
         expiresAt: stored.fetchedAt + CLI_MODEL_CACHE_TTL_MS,
       });
       return stored.models;
@@ -182,6 +207,7 @@ export async function getLocalCLIModels(
     const models = validateLocalCLIModelCatalog(discoveredModels);
     modelCache.set(provider, {
       models,
+      fetchedAt: Date.now(),
       expiresAt: Date.now() + CLI_MODEL_CACHE_TTL_MS,
     });
     await saveStoredLocalCLICatalog(provider, models);
@@ -192,6 +218,43 @@ export async function getLocalCLIModels(
     return await flight;
   } finally {
     if (modelFlights.get(flightKey) === flight) modelFlights.delete(flightKey);
+  }
+}
+
+// The CLI catalog is owned here for settings, validation, and execution alike.
+export async function getLocalCLIModelCatalog(
+  provider: LocalCLIProvider,
+  options: { forceRefresh?: boolean; preferCache?: boolean; allowStaleOnError?: boolean } = {}
+) {
+  let cached = modelCache.get(provider);
+  if (!cached) {
+    const stored = await loadStoredLocalCLICatalog(provider, { allowExpired: true });
+    if (stored) {
+      cached = { ...stored, expiresAt: stored.fetchedAt + CLI_MODEL_CACHE_TTL_MS };
+      modelCache.set(provider, cached);
+    }
+  }
+  const response = (entry: ModelEntry, source: "live" | "cache", warning?: string) => ({
+    models: entry.models,
+    fetchedAt: new Date(entry.fetchedAt).toISOString(),
+    source,
+    isStale: Boolean(warning) || entry.expiresAt <= Date.now(),
+    ...(warning ? { warning } : {}),
+  });
+  if (!options.forceRefresh && cached && (cached.expiresAt > Date.now() || options.preferCache)) {
+    return response(cached, "cache");
+  }
+  try {
+    const models = await getLocalCLIModels(provider, { forceRefresh: options.forceRefresh });
+    if (models.length === 0) {
+      throw new AIError({ type: "invalid_model", message: "The CLI has no available text models. Check its installation and login.", retryable: false });
+    }
+    return response(modelCache.get(provider) ?? { models, fetchedAt: Date.now(), expiresAt: Date.now() + CLI_MODEL_CACHE_TTL_MS }, "live");
+  } catch (error) {
+    if (cached && options.allowStaleOnError !== false) {
+      return response(cached, "cache", "Could not refresh the CLI model list. Showing saved models.");
+    }
+    throw error;
   }
 }
 
@@ -287,6 +350,7 @@ export function clearLocalCLICaches(provider?: LocalCLIProvider): void {
 }
 
 export async function retireLocalCLIProvider(provider: LocalCLIProvider): Promise<void> {
+  await statusFlights.get(provider)?.catch(() => undefined);
   const flights = Array.from(modelFlights.entries())
     .filter(([key]) => key.startsWith(`${provider}:`));
   await Promise.all(flights.map(([, flight]) => flight.catch(() => undefined)));
@@ -300,6 +364,7 @@ export async function retireLocalCLIProvider(provider: LocalCLIProvider): Promis
 export async function resetLocalCLIProvider(provider: LocalCLIProvider): Promise<void> {
   await retireLocalCLIProvider(provider);
   await deleteStoredLocalCLICatalog(provider);
+  await connectionStatusRepository.delete(BUILTIN_CLI_PROVIDER_IDS[provider]);
 }
 
 export function shutdownLocalCLIBackends(): void {

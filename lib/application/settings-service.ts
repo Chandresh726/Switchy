@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 
 import { AISettingsUpdateSchema } from "@/lib/ai/contracts";
-import { getCachedProviderModelDefinition } from "@/lib/ai/providers/model-catalog";
+import { getCachedProviderModelDefinition } from "@/lib/ai/providers/catalog/service";
 import { logApiFailure, type ApiRequestContext } from "@/lib/api";
 import type { settingsUpdateBodySchema } from "@/lib/api/contracts/settings";
 import { db } from "@/lib/db";
@@ -86,6 +86,8 @@ export async function updateSettings(input: SettingsUpdateInput, context: ApiReq
   const current = await getSettingsWithDefaults();
   const merged = { ...current, ...input };
   for (const stage of ["job_analysis", "matcher"] as const) {
+    const relatedKeys = [`${stage}_fallback_enabled`, `${stage}_fallback_provider_id`, `${stage}_fallback_model`, `${stage}_fallback_reasoning_effort`, `${stage}_provider_id`, `${stage}_model`];
+    if (!relatedKeys.some((key) => key in input)) continue;
     if (String(merged[`${stage}_fallback_enabled`]) !== "true") continue;
     const provider = String(merged[`${stage}_fallback_provider_id`] ?? "").trim();
     const model = String(merged[`${stage}_fallback_model`] ?? "").trim();
@@ -105,17 +107,19 @@ export async function updateSettings(input: SettingsUpdateInput, context: ApiReq
   const { updates, cronUpdated, enabledChanged, newEnabledValue, keepAwakeChanged = false } = parseSettingsUpdateBody(reconciled);
   if (updates.length > 0) {
     await upsertSettings(updates);
-    const cliProviders = updates.flatMap(({ key }) => key === "codex_cli_executable"
+    const cliProviders = updates.filter(({ key, value }) => current[key] !== value).flatMap(({ key }) => key === "codex_cli_executable"
       ? ["codex_cli" as const]
       : key === "opencode_cli_executable" ? ["opencode_cli" as const] : []);
     if (cliProviders.length > 0) {
       const { getLocalCLIStatus, resetLocalCLIProvider } = await import("@/lib/ai/local-cli/service");
-      const { deleteStoredProviderModelsCache } = await import("@/lib/ai/providers/model-catalog");
+      const { deleteStoredProviderModelsCache } = await import("@/lib/ai/providers/catalog/service");
       await Promise.all(cliProviders.map(async (provider) => {
         const records = await db.select({ id: aiProviders.id }).from(aiProviders).where(eq(aiProviders.provider, provider));
         await resetLocalCLIProvider(provider);
         await Promise.all(records.map(({ id }) => deleteStoredProviderModelsCache(id)));
-        await getLocalCLIStatus(provider, { forceRefresh: true });
+        void getLocalCLIStatus(provider).catch((error) => {
+          console.error("[Settings] Failed to refresh CLI availability:", error);
+        });
       }));
     }
   }

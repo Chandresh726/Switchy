@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
       : provider.provider.endsWith("_cli") ? "local_cli" : "api_key",
     selectable: true,
   })),
-  getCachedLocalCLIStatus: vi.fn(),
+  getStoredLocalCLIStatus: vi.fn(),
   getLocalCLIStatus: vi.fn(),
 }));
 
@@ -26,16 +26,18 @@ vi.mock("@/lib/ai/providers/provider-service", () => ({
   toProviderPublic: mocks.toProviderPublic,
 }));
 
-vi.mock("@/lib/ai/providers/model-catalog", () => ({
+vi.mock("@/lib/ai/providers/catalog/service", () => ({
   getProviderModels: mocks.getProviderModels,
 }));
 
 vi.mock("@/lib/settings/settings-service", () => ({ upsertSettings: vi.fn() }));
 
 vi.mock("@/lib/ai/local-cli/service", () => ({
-  getCachedLocalCLIStatus: mocks.getCachedLocalCLIStatus,
+  getStoredLocalCLIStatus: mocks.getStoredLocalCLIStatus,
   getLocalCLIStatus: mocks.getLocalCLIStatus,
 }));
+
+vi.mock("@/lib/ai/providers/connections/repository", () => ({ connectionStatusRepository: { load: vi.fn().mockResolvedValue(undefined) } }));
 
 import { GET, POST } from "@/app/api/providers/route";
 
@@ -46,7 +48,7 @@ describe("GET /api/providers", () => {
       { id: "builtin:codex-cli", provider: "codex_cli" },
       { id: "provider-openai", provider: "openai" },
     ]);
-    mocks.getCachedLocalCLIStatus.mockReturnValue(undefined);
+    mocks.getStoredLocalCLIStatus.mockReturnValue(undefined);
     mocks.getLocalCLIStatus.mockResolvedValue({
       status: "ready",
       selectable: true,
@@ -56,21 +58,21 @@ describe("GET /api/providers", () => {
     });
   });
 
-  it("returns a non-selectable CLI record without blocking on a cold status probe", async () => {
+  it("returns saved provider configuration without blocking on a cold status probe", async () => {
     const response = await GET(new NextRequest("http://localhost/api/providers"));
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(mocks.getLocalCLIStatus).not.toHaveBeenCalled();
     expect(body[0]).toMatchObject({
-      selectable: false,
+      selectable: true,
     });
     expect(body[0]).not.toHaveProperty("connectionStatus");
     expect(body[1]).not.toHaveProperty("connectionStatus");
   });
 
   it("uses a warmed status without probing again", async () => {
-    mocks.getCachedLocalCLIStatus.mockReturnValue({
+    mocks.getStoredLocalCLIStatus.mockReturnValue({
       status: "not_authenticated",
       selectable: false,
       statusMessage: "Codex CLI is installed but not logged in.",

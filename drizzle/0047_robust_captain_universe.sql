@@ -1,0 +1,1 @@
+ALTER TABLE `aiProviders` ADD `model_discovery` text DEFAULT 'auto' NOT NULL;

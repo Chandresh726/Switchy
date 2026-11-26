@@ -2,7 +2,7 @@ import { zodSchema } from "ai";
 import { z } from "zod";
 
 import { isUpdateMaintenance } from "@/lib/runtime/update-maintenance";
-import type { AIGenerationBackend } from "@/lib/ai/local-cli/types";
+import type { AIGenerationBackend } from "@/lib/ai/runtime/backend";
 import type { AIContextOverrides } from "@/lib/ai/runtime-context";
 import { resolveAIContextForCapability } from "@/lib/ai/runtime-context";
 import {

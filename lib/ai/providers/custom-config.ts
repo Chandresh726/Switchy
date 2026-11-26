@@ -31,6 +31,7 @@ export interface CustomProviderConnection {
   baseUrl: string;
   apiKey?: string;
   headers: Record<string, string>;
+  modelDiscovery?: "auto" | "manual";
   manualModelIds: string[];
   reasoningEfforts: string[];
 }
@@ -41,6 +42,7 @@ interface StoredCustomProviderRecord {
   apiFormat: string | null;
   baseUrl: string | null;
   encryptedHeaders: string | null;
+  modelDiscovery?: string | null;
   manualModelIds: string | null;
   reasoningEfforts: string | null;
 }
@@ -264,6 +266,7 @@ export function resolveStoredCustomProvider(
     baseUrl: normalizeCustomBaseUrl(record.baseUrl ?? ""),
     apiKey,
     headers: decryptCustomHeaders(record.encryptedHeaders),
+    modelDiscovery: record.modelDiscovery === "manual" ? "manual" : "auto",
     manualModelIds: parseStoredManualModelIds(record.manualModelIds),
     reasoningEfforts: parseStoredReasoningEfforts(record.reasoningEfforts),
   };

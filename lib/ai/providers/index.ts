@@ -1,4 +1,4 @@
-import { SimpleProviderRegistry } from "./base-provider";
+import { SDKProviderRegistry } from "./base-provider";
 import { anthropicProvider } from "./anthropic";
 import { googleProvider } from "./google";
 import { openaiProvider } from "./openai";
@@ -9,7 +9,7 @@ import { nvidiaProvider } from "./nvidia";
 import { customProvider } from "./custom";
 
 // Create and populate the global provider registry
-export const providerRegistry = new SimpleProviderRegistry();
+export const providerRegistry = new SDKProviderRegistry();
 
 // Register all providers
 providerRegistry.register(anthropicProvider);

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   CUSTOM_API_FORMATS,
+  LOCAL_CLI_PROVIDER_IDS,
   isReasoningEffort,
 } from "@/lib/ai/providers/types";
 
@@ -9,25 +10,11 @@ export const providerModelsQuerySchema = z.object({
   refresh: z.enum(["1", "true", "0", "false"]).optional(),
 });
 export const localCLIStatusQuerySchema = z.object({
-  provider: z.enum(["codex_cli", "opencode_cli"]),
+  provider: z.enum(LOCAL_CLI_PROVIDER_IDS),
 });
 
-export const localCLIConnectionStatusSchema = z.enum([
-  "ready",
-  "not_installed",
-  "not_authenticated",
-  "no_models",
-  "incompatible",
-  "error",
-]);
-
-export const localCLIStatusResponseSchema = z.object({
-  status: localCLIConnectionStatusSchema,
-  selectable: z.boolean(),
-  cliVersion: z.string().optional(),
-  statusMessage: z.string(),
-  lastCheckedAt: z.string(),
-});
+export { providerConnectionStatusSchema as localCLIConnectionStatusSchema } from "@/lib/ai/providers/connections/contracts";
+export { providerConnectionSnapshotSchema as localCLIStatusResponseSchema } from "@/lib/ai/providers/connections/contracts";
 
 const customHeaderCreateSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -55,6 +42,7 @@ export const providerPatchBodySchema = z.object({
   apiFormat: customProviderFields.apiFormat.optional(),
   baseUrl: customProviderFields.baseUrl.optional(),
   headers: z.array(customHeaderPatchSchema).max(50).optional(),
+  modelDiscovery: z.enum(["auto", "manual"]).optional(),
   manualModelIds: z.array(z.string().max(240)).max(200).optional(),
   reasoningEfforts: customProviderFields.reasoningEfforts.optional(),
 });
@@ -65,6 +53,7 @@ export const providerCreateBodySchema = z.object({
   apiFormat: customProviderFields.apiFormat.optional(),
   baseUrl: customProviderFields.baseUrl.optional(),
   headers: z.array(customHeaderCreateSchema).max(50).optional(),
+  modelDiscovery: z.enum(["auto", "manual"]).optional(),
   manualModelIds: customProviderFields.manualModelIds.optional(),
   reasoningEfforts: customProviderFields.reasoningEfforts.optional(),
 }).superRefine((value, context) => {
@@ -82,3 +71,15 @@ export const providerCreateBodySchema = z.object({
 
 export type ProviderCreateBody = z.output<typeof providerCreateBodySchema>;
 export type ProviderPatchBody = z.output<typeof providerPatchBodySchema>;
+
+export const providerValidationResponseSchema = z.object({
+  valid: z.literal(true),
+  provider: z.string(),
+});
+export const providerDeletionResponseSchema = z.object({
+  success: z.boolean(),
+  fallbackProviderId: z.string().optional(),
+  fallbackModelId: z.string().optional(),
+  updatedFeatures: z.array(z.string()).default([]),
+  disabledFallbacks: z.array(z.string()).default([]),
+});

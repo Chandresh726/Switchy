@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getProviderModels } from "@/lib/ai/providers/model-catalog";
+import { getProviderModels } from "@/lib/ai/providers/catalog/service";
 import { getProviderMetadata } from "@/lib/ai/providers/metadata";
 import {
   createProvider,
@@ -9,24 +9,26 @@ import {
 } from "@/lib/ai/providers/provider-service";
 import { isAIProvider, isLocalCLIProvider } from "@/lib/ai/providers/types";
 import {
-  getCachedLocalCLIStatus,
+  getStoredLocalCLIStatus,
   getLocalCLIStatus,
 } from "@/lib/ai/local-cli/service";
 import { assertAppRequest, handleApiError, ValidationError } from "@/lib/api";
 import { providerCreateBodySchema } from "@/lib/api/contracts/providers";
+import { connectionStatusRepository } from "@/lib/ai/providers/connections/repository";
 import { upsertSettings } from "@/lib/settings/settings-service";
 
 export async function GET(request: NextRequest) {
   try {
     const providers = await listProviders();
-    return NextResponse.json(providers.map((provider) => {
+    return NextResponse.json(await Promise.all(providers.map(async (provider) => {
       const publicProvider = toProviderPublic(provider);
-      if (!isLocalCLIProvider(provider.provider)) return publicProvider;
-      const connection = getCachedLocalCLIStatus(provider.provider);
+      const connection = isLocalCLIProvider(provider.provider)
+        ? await getStoredLocalCLIStatus(provider.provider)
+        : await connectionStatusRepository.load(provider.id, provider.updatedAt?.getTime() ?? 0);
       if (!connection) {
         return {
           ...publicProvider,
-          selectable: false,
+          selectable: publicProvider.selectable,
         };
       }
       return {
@@ -36,8 +38,9 @@ export async function GET(request: NextRequest) {
         cliVersion: connection.cliVersion,
         statusMessage: connection.statusMessage,
         lastCheckedAt: connection.lastCheckedAt,
+        statusIsStale: connection.isStale ?? Date.parse(connection.lastCheckedAt) + 30_000 <= Date.now(),
       };
-    }));
+    })));
   } catch (error) {
     return handleApiError(error, { request, fallbackMessage: "Failed to fetch providers", fallbackCode: "providers_fetch_failed" });
   }
@@ -86,7 +89,7 @@ export async function POST(request: NextRequest) {
     if (created.isDefault) {
       try {
         const providerModels = await getProviderModels(created.id, { forceRefresh: true });
-        const firstModelId = providerModels.models[0]?.modelId;
+        const firstModelId = (providerModels.models.find((model) => model.isDefault) ?? providerModels.models[0])?.modelId;
 
         if (!firstModelId) {
           autoConfiguredWarning = "Provider added, but no text/chat model was available for auto-configuration.";

@@ -7,6 +7,8 @@ import {
   providerCreateBodySchema,
   providerModelsQuerySchema,
   providerPatchBodySchema,
+  providerValidationResponseSchema,
+  providerDeletionResponseSchema,
 } from "@/lib/api/contracts/providers";
 import { ProviderRouteParamsSchema } from "@/lib/ai/contracts";
 import {
@@ -84,6 +86,13 @@ export const updateProviderApiKey = (
 export const deleteProvider = (providerId: string) => apiCommand(
   `/api/providers/${providerPath(providerId)}`,
   "DELETE",
-  successSchema,
+  providerDeletionResponseSchema,
   "Failed to delete provider"
+);
+
+export const checkProviderConnection = (providerId: string) => apiCommand(
+  `/api/providers/${providerPath(providerId)}/validate`,
+  "POST",
+  providerValidationResponseSchema,
+  "Failed to check provider connection"
 );

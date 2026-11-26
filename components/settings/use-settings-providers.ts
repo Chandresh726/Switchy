@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import {
   type LocalCLIProvider
 } from "@/lib/ai/providers/types";
 import {
+  checkProviderConnection,
   createProvider,
   deleteProvider,
   getLocalCLIStatus,
@@ -63,6 +64,15 @@ export function useSettingsProviders() {
     queries: localCLIProviders.map((provider) => ({
       queryKey: queryKeys.providers.status(provider.id),
       queryFn: () => getLocalCLIStatus(provider.provider),
+      initialData: provider.connectionStatus && provider.lastCheckedAt ? {
+        status: provider.connectionStatus,
+        selectable: provider.selectable,
+        cliVersion: provider.cliVersion,
+        statusMessage: provider.statusMessage ?? "Saved connection",
+        lastCheckedAt: provider.lastCheckedAt,
+        isStale: provider.statusIsStale,
+      } : undefined,
+      initialDataUpdatedAt: provider.lastCheckedAt ? Date.parse(provider.lastCheckedAt) : undefined,
       staleTime: LOCAL_CLI_STATUS_STALE_TIME_MS,
       retry: 1,
     })),
@@ -88,6 +98,8 @@ export function useSettingsProviders() {
           cliVersion: connection.cliVersion,
           statusMessage: connection.statusMessage,
           lastCheckedAt: connection.lastCheckedAt,
+          statusIsStale: connection.isStale,
+          checking: statusQuery?.isFetching,
         };
       }
       if (statusQuery?.isError) {
@@ -98,7 +110,7 @@ export function useSettingsProviders() {
           statusMessage: getApiErrorMessage(statusQuery.error, "Failed to check local CLI"),
         };
       }
-      return provider;
+      return { ...provider, checking: statusQuery?.isFetching };
     });
   }, [localCLIProviders, localCLIStatusQueries, providerRecords]);
 
@@ -106,11 +118,36 @@ export function useSettingsProviders() {
     queries: providers.map((provider) => ({
       queryKey: queryKeys.providers.model(provider.id),
       queryFn: async () => fetchProviderModels(provider.id),
-      enabled: Boolean(provider.id) && (provider.kind === "api_key" || provider.selectable),
+      enabled: Boolean(provider.id) && provider.isActive,
       staleTime: PROVIDER_MODELS_STALE_TIME_MS,
       retry: 1,
     })),
   });
+
+  const attemptedCatalogRefreshes = useRef(new Set<string>());
+  const observedCatalogs = useRef(new Set<string>());
+  useEffect(() => {
+    providers.forEach((provider, index) => {
+      const catalog = providerModelsQueries[index]?.data;
+      if (catalog && provider.kind !== "local_cli" && catalog.source === "live" && !catalog.isStale
+          && Date.parse(catalog.fetchedAt) > Date.parse(provider.lastCheckedAt ?? "1970-01-01")) {
+        const observation = `${provider.id}:${catalog.fetchedAt}`;
+        if (!observedCatalogs.current.has(observation)) {
+          observedCatalogs.current.add(observation);
+          void queryClient.invalidateQueries({ queryKey: queryKeys.providers.list() });
+        }
+      }
+      if (!catalog?.isStale || catalog.warning) return;
+      const key = `${provider.id}:${catalog.fetchedAt}`;
+      if (attemptedCatalogRefreshes.current.has(key)) return;
+      attemptedCatalogRefreshes.current.add(key);
+      void queryClient.fetchQuery({
+        queryKey: queryKeys.providers.model(provider.id),
+        queryFn: () => getProviderModels(provider.id, { refresh: "1" }),
+        staleTime: 0,
+      }).catch(() => undefined);
+    });
+  }, [providers, providerModelsQueries, queryClient]);
 
   const providerModelsById = useMemo<Record<string, ProviderModelsState>>(() => {
     const state: Record<string, ProviderModelsState> = {};
@@ -143,20 +180,34 @@ export function useSettingsProviders() {
     try {
       const models = await fetchProviderModels(providerId, true);
       queryClient.setQueryData(queryKeys.providers.model(providerId), models);
-      toast.success("Model list refreshed");
+      if (models.isStale) toast.warning(models.warning ?? "Could not refresh models. Showing the saved list.");
+      else toast.success("Model list refreshed");
+      await queryClient.invalidateQueries({ queryKey: queryKeys.providers.list() });
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Failed to refresh model list"));
     }
   };
 
-  const saveCLIExecutablePaths = useCallback(async (paths: { codex: string; opencode: string }) => {
-    await patchSettings({
-        codex_cli_executable: paths.codex,
-        opencode_cli_executable: paths.opencode,
+  const saveCLIExecutablePaths = useCallback(async (paths: Partial<{ codex: string; opencode: string }>) => {
+    const settings = await patchSettings({
+        ...(paths.codex !== undefined ? { codex_cli_executable: paths.codex } : {}),
+        ...(paths.opencode !== undefined ? { opencode_cli_executable: paths.opencode } : {}),
       });
+    queryClient.setQueryData(queryKeys.settings.detail(), settings);
     await cacheOwnership.providerMutation(queryClient);
   }, [queryClient]);
 
+
+  const checkConnection = async (id: string): Promise<void> => {
+    try {
+      await checkProviderConnection(id);
+      toast.success("Connection checked");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Could not check connection"));
+    } finally {
+      await cacheOwnership.providerMutation(queryClient);
+    }
+  };
 
   const addProviderMutation = useMutation({
     mutationFn: async (input: ProviderCreateBody) => {
@@ -182,9 +233,12 @@ export function useSettingsProviders() {
 
   const deleteProviderMutation = useMutation({
     mutationFn: deleteProvider,
-    onSuccess: () => {
+    onSuccess: (result) => {
       void cacheOwnership.providerMutation(queryClient);
-      toast.success("Provider deleted successfully");
+      const detail = result.updatedFeatures.length > 0
+        ? result.fallbackModelId ? ` Features now use ${result.fallbackModelId}.` : " Affected features need a provider."
+        : "";
+      toast.success(`Provider removed.${detail}${result.disabledFallbacks.length ? " Affected matching fallbacks were disabled." : ""}`);
     },
     onError: (error) => toast.error(getApiErrorMessage(error, "Failed to delete provider")),
   });
@@ -209,5 +263,5 @@ export function useSettingsProviders() {
     onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update provider connection")),
   });
 
-  return { providersQuery, providers, providerModelsById, refreshProviderModels, saveCLIExecutablePaths, addProviderMutation, deleteProviderMutation, updateProviderApiKeyMutation, updateProviderMutation };
+  return { checkConnection, providersQuery, providers, providerModelsById, refreshProviderModels, saveCLIExecutablePaths, addProviderMutation, deleteProviderMutation, updateProviderApiKeyMutation, updateProviderMutation };
 }

@@ -24,8 +24,8 @@ import type {
   BackendStreamingInput,
   BackendStructuredInput,
   BackendTextInput,
-} from "@/lib/ai/local-cli/types";
-import type { ProviderModelDefinition } from "@/lib/ai/providers/model-catalog";
+} from "@/lib/ai/runtime/backend";
+import type { ProviderModelDefinition } from "@/lib/ai/providers/catalog/service";
 import {
   createEffortReasoningControl,
   withReasoningControl,

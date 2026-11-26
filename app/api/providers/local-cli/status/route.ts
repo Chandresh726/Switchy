@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
       Object.fromEntries(request.nextUrl.searchParams)
     );
 
-    return NextResponse.json(await getLocalCLIStatus(provider, { forceRefresh: true }));
+    return NextResponse.json(await getLocalCLIStatus(provider));
   } catch (error) {
     return handleApiError(error, { request, fallbackMessage: "Failed to check local CLI", fallbackCode: "provider_validation_failed" });
   }

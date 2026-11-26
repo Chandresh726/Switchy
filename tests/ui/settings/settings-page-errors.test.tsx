@@ -35,6 +35,7 @@ vi.mock("@/lib/api/clients/settings", () => ({
   patchSettings: mocks.patchSettings,
 }));
 vi.mock("@/lib/api/clients/providers", () => ({
+  checkProviderConnection: vi.fn(),
   createProvider: vi.fn(),
   deleteProvider: vi.fn(),
   getLocalCLIStatus: mocks.getLocalCLIStatus,
@@ -249,6 +250,21 @@ describe("settings failure recovery", () => {
     }));
 
     expect(await screen.findByText("codex_cli:ready")).toBeTruthy();
+  });
+
+  it("keeps the last CLI status visible and loads models while a stale status is rechecked", async () => {
+    mocks.getSettings.mockResolvedValue(settings);
+    mocks.getProviders.mockResolvedValue([{
+      id: "builtin:codex-cli", provider: "codex_cli", kind: "local_cli", isActive: true,
+      hasApiKey: false, selectable: true, connectionStatus: "ready", statusMessage: "Saved connection",
+      lastCheckedAt: new Date(Date.now() - 60_000).toISOString(), statusIsStale: true,
+      createdAt: null, updatedAt: null,
+    }]);
+    mocks.getLocalCLIStatus.mockImplementation(() => new Promise(() => undefined));
+    renderSettings();
+    expect(await screen.findByText("codex_cli:ready")).toBeTruthy();
+    await waitFor(() => expect(mocks.getProviderModels).toHaveBeenCalledWith("builtin:codex-cli", {}));
+    expect(screen.queryByText("codex_cli:checking")).toBeNull();
   });
 
   it("autosaves fallback edits with the matching engine settings", async () => {

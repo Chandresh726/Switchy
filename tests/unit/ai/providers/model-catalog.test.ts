@@ -20,11 +20,15 @@ vi.mock("@/lib/encryption", () => ({
 
 vi.mock("server-only", () => ({}));
 
+vi.mock("@/lib/ai/providers/connections/repository", () => ({
+  connectionStatusRepository: { save: vi.fn().mockResolvedValue(undefined) },
+}));
+
 import {
   clearProviderModelsCache,
   discoverCustomProviderModels,
   getProviderModels,
-} from "@/lib/ai/providers/model-catalog";
+} from "@/lib/ai/providers/catalog/service";
 
 interface SelectResponse {
   limit?: unknown[];
@@ -106,6 +110,29 @@ describe("model catalog", () => {
     expect(second.models.map((model) => model.modelId)).toEqual(["gpt-4o-mini"]);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses manual-only model IDs without contacting a discovery endpoint", async () => {
+    const models = await discoverCustomProviderModels({
+      displayName: "Offline catalog", apiFormat: "openai_chat_completions",
+      baseUrl: "http://127.0.0.1:8317/v1", headers: {},
+      modelDiscovery: "manual", manualModelIds: ["custom-model"], reasoningEfforts: [],
+    });
+    expect(models.map(({ modelId }) => modelId)).toEqual(["custom-model"]);
+    expect(fetchMock).not.toHaveBeenCalled();
+    await expect(discoverCustomProviderModels({
+      displayName: "Empty catalog", apiFormat: "openai_responses", baseUrl: "http://127.0.0.1:8317/v1",
+      headers: {}, modelDiscovery: "manual", manualModelIds: [], reasoningEfforts: [],
+    })).rejects.toMatchObject({ type: "invalid_model" });
+  });
+
+  it("returns an expired saved catalog immediately when requested by settings", async () => {
+    queueSelectResponses({ limit: [{ id: "saved", provider: "openai", apiKey: "encrypted" }] }, { limit: [{ value: JSON.stringify({
+      schemaVersion: 2, providerUpdatedAtMs: 0, fetchedAt: "2020-01-01T00:00:00.000Z",
+      models: [{ modelId: "saved-model", label: "Saved", description: "", supportsReasoning: false, reasoningControl: { kind: "provider_default" } }],
+    }) }] });
+    await expect(getProviderModels("saved", { preferCache: true })).resolves.toMatchObject({ source: "cache", isStale: true, models: [{ modelId: "saved-model" }] });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("discovers OpenAI-style custom models with bearer authentication and manual additions", async () => {
@@ -455,7 +482,7 @@ describe("model catalog", () => {
     );
 
     const { getCachedProviderModelDefinition } = await import(
-      "@/lib/ai/providers/model-catalog"
+      "@/lib/ai/providers/catalog/service"
     );
     const cached = await getCachedProviderModelDefinition(
       providerRecord.id,

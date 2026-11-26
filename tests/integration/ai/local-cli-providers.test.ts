@@ -7,11 +7,13 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
+import { createConnectionStatusRepository } from "@/lib/ai/providers/connections/repository";
 import { createLocalCLICatalogCache } from "@/lib/ai/local-cli/catalog-cache";
 import {
   createProvider,
   deleteProvider,
   listProviders,
+  reconcileConfiguredLocalCLIProviders,
   toProviderPublic,
 } from "@/lib/ai/providers/provider-service";
 import { aiProviders, settings } from "@/lib/db/schema";
@@ -144,6 +146,37 @@ describe("local CLI provider records", () => {
     expect(readded.id).toBe("builtin:codex-cli");
   });
 
+  it("persists connection observations independently of process memory and rejects old config revisions", async () => {
+    const { database } = harness.createDatabase();
+    const snapshot = { status: "ready" as const, selectable: true, statusMessage: "Models available", lastCheckedAt: new Date().toISOString() };
+    await createConnectionStatusRepository(database).save("provider", snapshot, 7);
+    const repository = createConnectionStatusRepository(database);
+    await expect(repository.load("provider", 7)).resolves.toEqual(snapshot);
+    await expect(repository.load("provider", 8)).resolves.toBeUndefined();
+    await repository.delete("provider");
+    await expect(repository.load("provider", 7)).resolves.toBeUndefined();
+  });
+
+  it("clears deleted-provider fallback references while leaving other fallbacks intact", async () => {
+    const { database } = harness.createDatabase();
+    const provider = await createProvider({ provider: "openai" }, database);
+    database.insert(settings).values([
+      { key: "matcher_fallback_provider_id", value: provider.id },
+      { key: "matcher_fallback_enabled", value: "true" },
+      { key: "matcher_fallback_model", value: "old-model" },
+      { key: "matcher_fallback_reasoning_effort", value: "high" },
+      { key: "job_analysis_fallback_provider_id", value: "another-provider" },
+    ]).run();
+    const result = await deleteProvider(provider.id, { database, deleteModelsCache: vi.fn().mockResolvedValue(undefined) });
+    expect(result.disabledFallbacks).toEqual(["matcher"]);
+    const saved = new Map(database.select().from(settings).all().map(({ key, value }) => [key, value]));
+    expect(saved.get("matcher_fallback_enabled")).toBe("false");
+    expect(saved.get("matcher_fallback_provider_id")).toBe("");
+    expect(saved.get("matcher_fallback_model")).toBe("");
+    expect(saved.get("matcher_fallback_reasoning_effort")).toBe("");
+    expect(saved.get("job_analysis_fallback_provider_id")).toBe("another-provider");
+  });
+
   it("removes obsolete active matching preferences while preserving other settings", async () => {
     const { database } = harness.createDatabase();
     database.insert(settings).values([
@@ -176,7 +209,7 @@ describe("local CLI provider records", () => {
       },
     ]).run();
 
-    await listProviders(database);
+    await reconcileConfiguredLocalCLIProviders(database);
 
     expect(database.select().from(aiProviders)
       .where(eq(aiProviders.provider, "codex_cli")).all()).toEqual([
@@ -243,6 +276,7 @@ describe("local CLI provider records", () => {
       (await database.select().from(settings)).map(({ key, value }) => [key, value])
     );
     expect(result).toEqual({
+      disabledFallbacks: [],
       fallbackProviderId: fallback.id,
       fallbackModelId: "fallback-model",
       updatedFeatures: ["matcher_provider_id", "ai_writing_provider_id"],
@@ -282,6 +316,7 @@ describe("local CLI provider records", () => {
     });
 
     expect(result).toEqual({
+      disabledFallbacks: [],
       fallbackProviderId: codex.id,
       fallbackModelId: "cli-model",
       updatedFeatures: ["matcher_provider_id"],

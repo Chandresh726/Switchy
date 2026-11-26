@@ -51,7 +51,7 @@ export const ProviderModelFields = ({
   onReasoningChange,
 }: ProviderModelFieldsProps) => {
   const selectedModel = models.find((model) => model.modelId === modelId);
-  const unavailable = Boolean(modelId) && !selectedModel;
+  const unavailable = Boolean(modelId) && !selectedModel && !loading;
   const analysis = variant === "analysis";
   const stacked = variant === "resume";
   const warnings = [
@@ -63,8 +63,8 @@ export const ProviderModelFields = ({
       : undefined,
     stale && !error
       ? analysis
-        ? "Showing cached analysis models (latest refresh failed)"
-        : "Showing cached model list (latest refresh failed)"
+        ? "Showing saved analysis models while availability is checked"
+        : "Showing saved models while availability is checked"
       : undefined,
   ].filter((message): message is string => Boolean(message));
   const providerSelect = (

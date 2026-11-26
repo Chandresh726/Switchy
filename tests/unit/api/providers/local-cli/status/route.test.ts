@@ -29,7 +29,7 @@ describe("GET /api/providers/local-cli/status", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ status: "ready", selectable: true });
-    expect(mocks.getLocalCLIStatus).toHaveBeenCalledWith("codex_cli", { forceRefresh: true });
+    expect(mocks.getLocalCLIStatus).toHaveBeenCalledWith("codex_cli");
   });
 
   it("rejects non-CLI provider identifiers", async () => {

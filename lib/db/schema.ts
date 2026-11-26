@@ -401,6 +401,7 @@ export const aiProviders = sqliteTable("aiProviders", {
   baseUrl: text("base_url"),
   encryptedHeaders: text("encrypted_headers"),
   manualModelIds: text("manual_model_ids"),
+  modelDiscovery: text("model_discovery", { enum: ["auto", "manual"] }).notNull().default("auto"),
   reasoningEfforts: text("reasoning_efforts"),
   isActive: integer("is_active", { mode: "boolean" }).default(true),
   isDefault: integer("is_default", { mode: "boolean" }).default(false),

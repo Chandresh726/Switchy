@@ -9,6 +9,7 @@ import {
   CLI_EXECUTABLE_CONFIG,
 } from "@/lib/ai/local-cli/constants";
 import { retireLocalCLIProvider } from "@/lib/ai/local-cli/service";
+import { AI_MODEL_FEATURES } from "@/lib/settings/ai-features";
 import { db } from "@/lib/db";
 import {
   aiProviders,
@@ -27,7 +28,8 @@ import {
   discoverCustomProviderModels,
   getProviderModels,
   type ProviderModelsResponse,
-} from "./model-catalog";
+} from "./catalog/service";
+import { createConnectionStatusRepository } from "./connections/repository";
 import { getProviderMetadata } from "./metadata";
 import { providerRegistry } from "./index";
 import {
@@ -64,6 +66,7 @@ export interface ProviderPublic {
   apiFormat?: CustomProviderConnection["apiFormat"];
   baseUrl?: string;
   headerNames?: string[];
+  modelDiscovery?: "auto" | "manual";
   manualModelIds?: string[];
   reasoningEfforts?: string[];
 }
@@ -96,6 +99,7 @@ export function toProviderPublic(record: ProviderRecord): ProviderPublic {
           apiFormat: custom.apiFormat,
           baseUrl: custom.baseUrl,
           headerNames: Object.keys(custom.headers),
+          modelDiscovery: custom.modelDiscovery,
           manualModelIds: custom.manualModelIds,
           reasoningEfforts: custom.reasoningEfforts,
         }
@@ -106,7 +110,6 @@ export function toProviderPublic(record: ProviderRecord): ProviderPublic {
 export async function listProviders(
   database: BetterSQLite3Database<typeof databaseSchema> = db
 ): Promise<ProviderRecord[]> {
-  await reconcileConfiguredLocalCLIProviders(database);
   return database.select().from(aiProviders).orderBy(aiProviders.createdAt);
 }
 
@@ -179,28 +182,10 @@ export async function getProviderById(
   return result[0] ?? null;
 }
 
-const FEATURE_PROVIDER_SETTINGS = [
-  {
-    provider: "job_analysis_provider_id",
-    model: "job_analysis_model",
-    effort: "job_analysis_reasoning_effort",
-  },
-  {
-    provider: "matcher_provider_id",
-    model: "matcher_model",
-    effort: "matcher_reasoning_effort",
-  },
-  {
-    provider: "resume_parser_provider_id",
-    model: "resume_parser_model",
-    effort: "resume_parser_reasoning_effort",
-  },
-  {
-    provider: "ai_writing_provider_id",
-    model: "ai_writing_model",
-    effort: "ai_writing_reasoning_effort",
-  },
-] as const;
+const FEATURE_PROVIDER_SETTINGS = Object.values(AI_MODEL_FEATURES).map(({ provider, model, reasoning }) => ({
+  provider, model, effort: reasoning,
+}));
+const FALLBACK_STAGES = ["job_analysis", "matcher"] as const;
 
 interface DeleteProviderOptions {
   database?: BetterSQLite3Database<typeof databaseSchema>;
@@ -215,6 +200,7 @@ export interface ProviderDeletionResult {
   fallbackProviderId?: string;
   fallbackModelId?: string;
   updatedFeatures: string[];
+  disabledFallbacks: string[];
 }
 
 export async function requireProviderById(
@@ -271,6 +257,7 @@ function buildNewCustomConnection(options: ProviderCreateBody): CustomProviderCo
     baseUrl: normalizeCustomBaseUrl(options.baseUrl),
     apiKey: options.apiKey?.trim() || undefined,
     headers: normalizeCustomHeaders(options.headers ?? []),
+    modelDiscovery: options.modelDiscovery ?? "auto",
     manualModelIds: normalizeManualModelIds(options.manualModelIds ?? []),
     reasoningEfforts: normalizeCustomReasoningEfforts(options.reasoningEfforts ?? []),
   };
@@ -328,6 +315,7 @@ export async function createProvider(
       encryptedHeaders: customConnection
         ? encryptCustomHeaders(customConnection.headers)
         : undefined,
+      modelDiscovery: customConnection?.modelDiscovery,
       manualModelIds: customConnection
         ? JSON.stringify(customConnection.manualModelIds)
         : undefined,
@@ -374,6 +362,7 @@ export async function updateProvider(
       headers: patch.headers === undefined
         ? current.headers
         : mergeCustomHeaderPatch(current.headers, patch.headers),
+      modelDiscovery: patch.modelDiscovery ?? current.modelDiscovery,
       manualModelIds: patch.manualModelIds === undefined
         ? current.manualModelIds
         : normalizeManualModelIds(patch.manualModelIds),
@@ -381,11 +370,15 @@ export async function updateProvider(
         ? current.reasoningEfforts
         : normalizeCustomReasoningEfforts(patch.reasoningEfforts),
     };
+    if (customConnection.modelDiscovery === "manual" && customConnection.manualModelIds.length === 0) {
+      throw new AIError({ type: "validation", message: "Enter at least one manual model ID", retryable: false });
+    }
     customConnectivityChanged = patch.apiKey !== undefined ||
       patch.apiFormat !== undefined ||
       patch.baseUrl !== undefined ||
       patch.headers !== undefined;
     customCatalogChanged = customConnectivityChanged ||
+      patch.modelDiscovery !== undefined ||
       patch.manualModelIds !== undefined ||
       patch.reasoningEfforts !== undefined;
     if (customConnectivityChanged) {
@@ -397,6 +390,7 @@ export async function updateProvider(
     patch.apiFormat !== undefined ||
     patch.baseUrl !== undefined ||
     patch.headers !== undefined ||
+    patch.modelDiscovery !== undefined ||
     patch.manualModelIds !== undefined ||
     patch.reasoningEfforts !== undefined
   ) {
@@ -424,6 +418,7 @@ export async function updateProvider(
             apiFormat: customConnection.apiFormat,
             baseUrl: customConnection.baseUrl,
             encryptedHeaders: encryptCustomHeaders(customConnection.headers),
+            modelDiscovery: customConnection.modelDiscovery,
             manualModelIds: JSON.stringify(customConnection.manualModelIds),
             reasoningEfforts: JSON.stringify(customConnection.reasoningEfforts),
           }
@@ -431,6 +426,7 @@ export async function updateProvider(
       updatedAt: new Date(),
     })
     .where(eq(aiProviders.id, providerId));
+  await createConnectionStatusRepository(database).delete(providerId);
 }
 
 export async function deleteProvider(
@@ -492,10 +488,22 @@ export async function deleteProvider(
   }
 
   await deleteModelsCache(providerId, database);
+  await createConnectionStatusRepository(database).delete(providerId);
   if (isLocalCLIProvider(provider.provider)) {
     await retireLocalCLIProvider(provider.provider);
   }
+  const disabledFallbacks: string[] = [];
   database.transaction((tx) => {
+    for (const stage of FALLBACK_STAGES) {
+      const reference = tx.select({ value: settings.value }).from(settings)
+        .where(eq(settings.key, `${stage}_fallback_provider_id`)).get();
+      if (reference?.value !== providerId) continue;
+      disabledFallbacks.push(stage);
+      for (const [suffix, value] of [["enabled", "false"], ["provider_id", ""], ["model", ""], ["reasoning_effort", ""]]) {
+        tx.insert(settings).values({ key: `${stage}_fallback_${suffix}`, value, updatedAt: new Date() })
+          .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: new Date() } }).run();
+      }
+    }
     tx.delete(aiProviders).where(eq(aiProviders.id, providerId)).run();
 
     if (isLocalCLIProvider(provider.provider)) {
@@ -547,6 +555,7 @@ export async function deleteProvider(
     fallbackProviderId: fallback?.providerId,
     fallbackModelId: fallback?.modelId,
     updatedFeatures: impactedFeatures.map(({ provider: key }) => key),
+    disabledFallbacks,
   };
 }
 

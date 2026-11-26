@@ -24,7 +24,7 @@ vi.mock("@/lib/encryption", () => ({
   decryptSecret: mocks.decryptSecret,
 }));
 
-vi.mock("@/lib/ai/providers/model-catalog", () => ({
+vi.mock("@/lib/ai/providers/catalog/service", () => ({
   getProviderModelsForResolvedProvider: mocks.getProviderModelsForResolvedProvider,
   getCachedProviderModelDefinition: mocks.getCachedProviderModelDefinition,
 }));
@@ -62,6 +62,7 @@ function providerRecord(): ProviderRecord {
     baseUrl: null,
     encryptedHeaders: null,
     manualModelIds: null,
+    modelDiscovery: "auto",
     reasoningEfforts: null,
     isActive: true,
     isDefault: true,

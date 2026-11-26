@@ -43,13 +43,24 @@ vi.mock("@/lib/settings/settings-service", () => ({
   upsertSettings: mocks.upsertSettings,
 }));
 
-vi.mock("@/lib/ai/providers/model-catalog", () => ({
+vi.mock("@/lib/ai/providers/catalog/service", () => ({
   getCachedProviderModelDefinition: mocks.getCachedProviderModelDefinition,
 }));
 
 import { GET, PATCH } from "@/app/api/settings/route";
 
 describe("settings route", () => {
+  it("allows unrelated settings to save when an old fallback is unavailable", async () => {
+    mocks.getSettingsWithDefaults.mockResolvedValue({ matcher_fallback_enabled: "true", matcher_fallback_provider_id: "deleted", matcher_fallback_model: "old" });
+    mocks.getCachedProviderModelDefinition.mockResolvedValue(null);
+    const response = await PATCH(new Request("http://localhost/api/settings", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scraper_keep_device_awake: false }),
+    }));
+    expect(response.status).toBe(200);
+    expect(mocks.getCachedProviderModelDefinition).not.toHaveBeenCalled();
+  });
+
   it("refreshes active work protection independently of the scheduler", async () => {
     mocks.parseSettingsUpdateBody.mockReturnValue({
       updates: [{ key: "scraper_keep_device_awake", value: "false" }],

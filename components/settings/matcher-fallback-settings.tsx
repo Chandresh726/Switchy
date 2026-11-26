@@ -94,7 +94,7 @@ export const MatcherFallbackSettings = ({
               <AlertTriangle className="h-3.5 w-3.5" />
               {sameAsPrimary ? "Choose a different provider or model from the primary." : models?.error ?? (unavailable
                 ? "The configured fallback model is unavailable. Choose an available model or refresh the catalog."
-                : "Showing cached model list (latest refresh failed)")}
+                : "Showing saved models while availability is checked")}
             </p>
           )}
         </div>

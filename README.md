@@ -45,6 +45,8 @@ stable application release.
 - Codex CLI (uses the CLI's existing login; no credential is stored by Switchy)
 - OpenCode (uses OpenCode's existing provider configuration; no credential is stored by Switchy)
 
+See [provider setup and lifecycle](docs/ai-providers.md) for connection checks, CLI authentication, and manual model catalogs.
+
 ## Prerequisites
 
 - Node.js `v24`

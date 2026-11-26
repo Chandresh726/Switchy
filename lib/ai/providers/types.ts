@@ -3,7 +3,7 @@ import type { LanguageModel } from "ai";
 /**
  * Supported AI providers
  */
-const AI_PROVIDER_IDS = [
+export const AI_PROVIDER_IDS = [
   "anthropic",
   "openai",
   "gemini_api_key",
@@ -18,7 +18,7 @@ const AI_PROVIDER_IDS = [
 
 export type AIProvider = (typeof AI_PROVIDER_IDS)[number];
 
-const LOCAL_CLI_PROVIDER_IDS = ["codex_cli", "opencode_cli"] as const;
+export const LOCAL_CLI_PROVIDER_IDS = ["codex_cli", "opencode_cli"] as const;
 export type LocalCLIProvider = (typeof LOCAL_CLI_PROVIDER_IDS)[number];
 
 export const CUSTOM_API_FORMATS = [
@@ -91,7 +91,7 @@ export interface CreateModelOptions {
 /**
  * Interface that all AI providers must implement
  */
-export interface AIProviderInterface {
+export interface SDKProviderInterface {
   /** Unique identifier for the provider */
   readonly id: AIProvider;
   /** Human-readable name */

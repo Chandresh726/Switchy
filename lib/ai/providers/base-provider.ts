@@ -1,6 +1,6 @@
 import type { LanguageModel } from "ai";
 import {
-  type AIProviderInterface,
+  type SDKProviderInterface,
   type AIProvider,
   type CreateModelOptions,
   type ProviderConfig,
@@ -12,7 +12,7 @@ import {
  * Abstract base class for AI providers
  * Implements common functionality and enforces interface compliance
  */
-export abstract class BaseProvider implements AIProviderInterface {
+export abstract class BaseProvider implements SDKProviderInterface {
   abstract readonly id: AIProvider;
   abstract readonly name: string;
   abstract readonly requiresApiKey: boolean;
@@ -89,7 +89,7 @@ export function makeSdkProvider(args: {
   id: AIProvider;
   name: string;
   createClient: (apiKey: string | undefined) => (modelId: string) => LanguageModel;
-}): AIProviderInterface {
+}): SDKProviderInterface {
   const { id, name, createClient } = args;
   class SdkProvider extends BaseProvider {
     readonly id: AIProvider = id;
@@ -108,18 +108,18 @@ export function makeSdkProvider(args: {
 /**
  * Simple implementation of provider registry
  */
-export class SimpleProviderRegistry {
-  private providers = new Map<AIProvider, AIProviderInterface>();
+export class SDKProviderRegistry {
+  private providers = new Map<AIProvider, SDKProviderInterface>();
 
-  register(provider: AIProviderInterface): void {
+  register(provider: SDKProviderInterface): void {
     this.providers.set(provider.id, provider);
   }
 
-  get(providerId: AIProvider): AIProviderInterface | undefined {
+  get(providerId: AIProvider): SDKProviderInterface | undefined {
     return this.providers.get(providerId);
   }
 
-  getAll(): AIProviderInterface[] {
+  getAll(): SDKProviderInterface[] {
     return Array.from(this.providers.values());
   }
 

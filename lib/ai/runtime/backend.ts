@@ -1,20 +1,4 @@
-import type { AIExecutionUsage } from "@/lib/ai/runtime/types";
-
-type LocalCLIConnectionStatus =
-  | "ready"
-  | "not_installed"
-  | "not_authenticated"
-  | "no_models"
-  | "incompatible"
-  | "error";
-
-export interface LocalCLIStatus {
-  status: LocalCLIConnectionStatus;
-  selectable: boolean;
-  cliVersion?: string;
-  statusMessage: string;
-  lastCheckedAt: string;
-}
+import type { AIExecutionUsage } from "./types";
 
 export interface BackendResult<T> {
   output: T;

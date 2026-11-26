@@ -141,7 +141,7 @@ function SettingsContent() {
   });
 
   const settings = settingsQuery.data;
-  const { providersQuery, providers, providerModelsById, refreshProviderModels, saveCLIExecutablePaths, addProviderMutation, deleteProviderMutation, updateProviderApiKeyMutation, updateProviderMutation } = useSettingsProviders();
+  const { checkConnection, providersQuery, providers, providerModelsById, refreshProviderModels, saveCLIExecutablePaths, addProviderMutation, deleteProviderMutation, updateProviderApiKeyMutation, updateProviderMutation } = useSettingsProviders();
   const readinessQuery = useQuery({
     queryKey: queryKeys.runtime.readiness(),
     queryFn: getReadiness,
@@ -317,6 +317,8 @@ function SettingsContent() {
       settings?.matcher_provider_id,
       settings?.resume_parser_provider_id,
       settings?.ai_writing_provider_id,
+      settings?.job_analysis_fallback_provider_id,
+      settings?.matcher_fallback_provider_id,
     ].filter(Boolean));
     return providers.filter(
       (provider) => provider.selectable || configuredProviderIds.has(provider.id)
@@ -729,6 +731,7 @@ function SettingsContent() {
             codexExecutablePath={settings?.codex_cli_executable ?? ""}
             openCodeExecutablePath={settings?.opencode_cli_executable ?? ""}
             onSaveExecutablePaths={saveCLIExecutablePaths}
+            onCheckConnection={checkConnection}
           />
 
           <MatcherSection

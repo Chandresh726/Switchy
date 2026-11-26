@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+
 import {
   Check,
   Eye,
@@ -48,8 +49,6 @@ import {
 } from "@/components/ui/input-group";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -59,7 +58,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getAllProviderMetadata, type ProviderMetadata } from "@/lib/ai/providers/metadata";
-import type { CustomAPIFormat } from "@/lib/ai/providers/types";
+import { CLI_EXECUTABLE_CONFIG } from "@/lib/ai/local-cli/constants";
+import { isLocalCLIProvider } from "@/lib/ai/providers/types";
 import type {
   ProviderCreateBody,
   ProviderPatchBody,
@@ -67,6 +67,9 @@ import type {
 import type { ProviderSettingsListItem } from "@/lib/api/contracts/settings";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
 import { cn } from "@/lib/utils";
+
+import { CustomProviderFields, EMPTY_CUSTOM_FORM, API_FORMAT_LABELS, parseManualModels, parseReasoningEfforts, createHeaderDraft, type CustomFormState } from "./custom-provider-fields";
+import { CLIExecutableField } from "./cli-executable-field";
 
 interface AIProvidersManagerProps {
   providers: ProviderSettingsListItem[];
@@ -76,203 +79,8 @@ interface AIProvidersManagerProps {
   onRefreshProviderModels: (id: string) => Promise<void>;
   codexExecutablePath: string;
   openCodeExecutablePath: string;
-  onSaveExecutablePaths: (paths: { codex: string; opencode: string }) => Promise<void>;
-}
-
-interface HeaderDraft {
-  id: string;
-  name: string;
-  value: string;
-  configured?: boolean;
-}
-
-interface CustomFormState {
-  displayName: string;
-  apiFormat: CustomAPIFormat;
-  baseUrl: string;
-  apiKey: string;
-  removeApiKey: boolean;
-  headers: HeaderDraft[];
-  manualModels: string;
-  reasoningEfforts: string;
-}
-
-const EMPTY_CUSTOM_FORM: CustomFormState = {
-  displayName: "",
-  apiFormat: "openai_chat_completions",
-  baseUrl: "",
-  apiKey: "",
-  removeApiKey: false,
-  headers: [],
-  manualModels: "",
-  reasoningEfforts: "",
-};
-
-const API_FORMAT_LABELS: Record<CustomAPIFormat, string> = {
-  openai_chat_completions: "OpenAI Chat Completions",
-  openai_responses: "OpenAI Responses",
-  anthropic_messages: "Anthropic Messages",
-};
-
-function parseManualModels(value: string): string[] {
-  return value.split(/[\n,]/).map((model) => model.trim()).filter(Boolean);
-}
-
-function parseReasoningEfforts(value: string): string[] {
-  return value.split(/[\n,]/).map((effort) => effort.trim()).filter(Boolean);
-}
-
-function createHeaderDraft(input: Omit<HeaderDraft, "id">): HeaderDraft {
-  return { id: crypto.randomUUID(), ...input };
-}
-
-interface CustomProviderFieldsProps {
-  value: CustomFormState;
-  onChange: (value: CustomFormState) => void;
-  editing?: boolean;
-}
-
-function CustomProviderFields({ value, onChange, editing = false }: CustomProviderFieldsProps) {
-  const update = <K extends keyof CustomFormState>(key: K, next: CustomFormState[K]) => {
-    onChange({ ...value, [key]: next });
-  };
-
-  return (
-    <div className="grid gap-4">
-      <div className="grid gap-2">
-        <Label htmlFor={editing ? "edit-custom-name" : "custom-name"}>Name</Label>
-        <Input
-          id={editing ? "edit-custom-name" : "custom-name"}
-          value={value.displayName}
-          onChange={(event) => update("displayName", event.target.value)}
-          placeholder="CLI Proxy API"
-        />
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor={editing ? "edit-custom-format" : "custom-format"}>API format</Label>
-        <Select
-          value={value.apiFormat}
-          onValueChange={(apiFormat) => update("apiFormat", apiFormat as CustomAPIFormat)}
-        >
-          <SelectTrigger id={editing ? "edit-custom-format" : "custom-format"} className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(API_FORMAT_LABELS).map(([format, label]) => (
-              <SelectItem key={format} value={format}>{label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor={editing ? "edit-custom-url" : "custom-url"}>Base URL</Label>
-        <Input
-          id={editing ? "edit-custom-url" : "custom-url"}
-          value={value.baseUrl}
-          onChange={(event) => update("baseUrl", event.target.value)}
-          placeholder="http://127.0.0.1:8317/v1"
-        />
-        <p className="text-xs text-muted-foreground">Switchy appends /models and the selected API route.</p>
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor={editing ? "edit-custom-api-key" : "custom-api-key"}>API key or token (optional)</Label>
-        <Input
-          id={editing ? "edit-custom-api-key" : "custom-api-key"}
-          type="password"
-          value={value.apiKey}
-          onChange={(event) => update("apiKey", event.target.value)}
-          placeholder={editing ? "Leave blank to keep the stored credential" : "Uses the format's standard auth header"}
-          disabled={value.removeApiKey}
-        />
-        {editing ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="justify-self-start"
-            onClick={() => update("removeApiKey", !value.removeApiKey)}
-          >
-            {value.removeApiKey ? "Keep stored credential" : "Remove stored credential"}
-          </Button>
-        ) : null}
-      </div>
-      <div className="grid gap-2">
-        <div className="flex items-center justify-between gap-2">
-          <Label>Custom headers</Label>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => update("headers", [
-              ...value.headers,
-              createHeaderDraft({ name: "", value: "" }),
-            ])}
-          >
-            <Plus data-icon="inline-start" />
-            Add header
-          </Button>
-        </div>
-        {value.headers.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No additional headers.</p>
-        ) : (
-          <div className="grid gap-2">
-            {value.headers.map((header, index) => (
-              <div key={header.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
-                <Input
-                  aria-label={`Header ${index + 1} name`}
-                  value={header.name}
-                  onChange={(event) => update("headers", value.headers.map((item, itemIndex) =>
-                    itemIndex === index ? { ...item, name: event.target.value } : item
-                  ))}
-                  placeholder="Header name"
-                />
-                <Input
-                  aria-label={`Header ${index + 1} value`}
-                  type="password"
-                  value={header.value}
-                  onChange={(event) => update("headers", value.headers.map((item, itemIndex) =>
-                    itemIndex === index ? { ...item, value: event.target.value } : item
-                  ))}
-                  placeholder={header.configured ? "Stored value" : "Header value"}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`Remove header ${index + 1}`}
-                  onClick={() => update("headers", value.headers.filter((_, itemIndex) => itemIndex !== index))}
-                >
-                  <X />
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor={editing ? "edit-custom-models" : "custom-models"}>Manual model IDs (optional)</Label>
-        <Textarea
-          id={editing ? "edit-custom-models" : "custom-models"}
-          value={value.manualModels}
-          onChange={(event) => update("manualModels", event.target.value)}
-          placeholder="One model ID per line"
-        />
-        <p className="text-xs text-muted-foreground">Manual IDs are merged with models returned by /models.</p>
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor={editing ? "edit-custom-reasoning" : "custom-reasoning"}>Reasoning levels (optional)</Label>
-        <Input
-          id={editing ? "edit-custom-reasoning" : "custom-reasoning"}
-          value={value.reasoningEfforts}
-          onChange={(event) => update("reasoningEfforts", event.target.value)}
-          placeholder="low, medium, high"
-        />
-        <p className="text-xs text-muted-foreground">
-          Enables reasoning selectors for every model from this provider. Add xhigh or max only when those models accept it.
-        </p>
-      </div>
-    </div>
-  );
+  onCheckConnection: (id: string) => Promise<void>;
+  onSaveExecutablePaths: (paths: Partial<{ codex: string; opencode: string }>) => Promise<void>;
 }
 
 interface ProviderApiKeyHelpProps {
@@ -313,28 +121,23 @@ function providerStatus(provider: ProviderSettingsListItem): {
   ready: boolean;
   message: string;
 } {
-  if (provider.kind === "local_cli") {
-    const isReady = provider.connectionStatus === "ready";
+  if (provider.connectionStatus && provider.connectionStatus !== "ready") {
     return {
-      label: isReady
-        ? "connected"
-        : provider.connectionStatus?.replaceAll("_", " ") ?? "checking",
-      ready: isReady,
-      message: provider.statusMessage ?? "Switchy is checking this CLI automatically.",
+      label: provider.connectionStatus === "not_authenticated" ? "sign in required" : "needs attention",
+      ready: false,
+      message: provider.statusMessage ?? "Check the connection and try again.",
     };
   }
-
-  if (provider.kind === "custom") {
-    return {
-      label: "connected",
-      ready: true,
-      message: `${provider.apiFormat ? API_FORMAT_LABELS[provider.apiFormat] : "Custom API"} · ${provider.baseUrl ?? "Configured endpoint"}`,
-    };
-  }
-
-  return provider.hasApiKey
-    ? { label: "connected", ready: true, message: "API key configured" }
-    : { label: "needs key", ready: false, message: "Add an API key to use this provider" };
+  const verified = provider.connectionStatus === "ready" && !provider.statusIsStale && provider.modelDiscovery !== "manual";
+  return {
+    label: verified ? "verified" : "configured",
+    ready: verified,
+    message: provider.statusMessage ?? (provider.kind === "local_cli"
+      ? "Uses the login saved by your CLI. Availability is checked separately."
+      : provider.kind === "custom"
+        ? `${provider.apiFormat ? API_FORMAT_LABELS[provider.apiFormat] : "Custom API"} · ${provider.baseUrl ?? "Configured endpoint"}`
+        : provider.hasApiKey ? "API key saved. Check connection to verify access." : "Add an API key to use this provider"),
+  };
 }
 
 export function AIProvidersManager({
@@ -346,6 +149,7 @@ export function AIProvidersManager({
   codexExecutablePath,
   openCodeExecutablePath,
   onSaveExecutablePaths,
+  onCheckConnection,
 }: AIProvidersManagerProps) {
   const metadata = getAllProviderMetadata();
   const [isAddingProvider, setIsAddingProvider] = useState(false);
@@ -353,6 +157,7 @@ export function AIProvidersManager({
   const [apiKey, setApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [pathPending, setPathPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
@@ -361,42 +166,13 @@ export function AIProvidersManager({
   const [customForm, setCustomForm] = useState<CustomFormState>(EMPTY_CUSTOM_FORM);
   const [editCustomForm, setEditCustomForm] = useState<CustomFormState | null>(null);
   const [refreshingProviderIds, setRefreshingProviderIds] = useState<Record<string, boolean>>({});
-  const [executablePaths, setExecutablePaths] = useState({
-    codex: codexExecutablePath,
-    opencode: openCodeExecutablePath,
-  });
-  const [savingPaths, setSavingPaths] = useState(false);
+  const [checkingProviderIds, setCheckingProviderIds] = useState<Record<string, boolean>>({});
 
   const selectedMetadata = metadata.find((item) => item.id === selectedProviderType);
   const availableProviders = metadata.filter(
     (item) => item.id === "custom" ||
       !providers.some((provider) => provider.provider === item.id)
   );
-
-  useEffect(() => {
-    if (
-      executablePaths.codex === codexExecutablePath &&
-      executablePaths.opencode === openCodeExecutablePath
-    ) {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      setSavingPaths(true);
-      setError(null);
-      void onSaveExecutablePaths(executablePaths)
-        .catch((saveError: unknown) => {
-          setError(getApiErrorMessage(saveError, "Failed to update executable path"));
-        })
-        .finally(() => setSavingPaths(false));
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [
-    codexExecutablePath,
-    executablePaths,
-    onSaveExecutablePaths,
-    openCodeExecutablePath,
-  ]);
 
   const resetAddForm = () => {
     setIsAddingProvider(false);
@@ -435,6 +211,7 @@ export function AIProvidersManager({
           baseUrl: customForm.baseUrl,
           apiKey: customForm.apiKey.trim() || undefined,
           headers: customForm.headers.map(({ name, value }) => ({ name, value })),
+          modelDiscovery: customForm.modelDiscovery,
           manualModelIds: parseManualModels(customForm.manualModels),
           reasoningEfforts: parseReasoningEfforts(customForm.reasoningEfforts),
         });
@@ -485,6 +262,7 @@ export function AIProvidersManager({
             value: "",
             configured: true,
           })),
+          modelDiscovery: provider.modelDiscovery ?? "auto",
           manualModels: (provider.manualModelIds ?? []).join("\n"),
           reasoningEfforts: (provider.reasoningEfforts ?? []).join(", "),
         }
@@ -508,6 +286,7 @@ export function AIProvidersManager({
           name,
           ...(value.length > 0 || !configured ? { value } : {}),
         })),
+        modelDiscovery: editCustomForm.modelDiscovery,
         manualModelIds: parseManualModels(editCustomForm.manualModels),
         reasoningEfforts: parseReasoningEfforts(editCustomForm.reasoningEfforts),
       });
@@ -554,10 +333,10 @@ export function AIProvidersManager({
               const providerMetadata = metadata.find((item) => item.id === provider.provider);
               const status = providerStatus(provider);
               const isCLI = provider.kind === "local_cli";
-              const isStatusLoading = isCLI && provider.connectionStatus === undefined;
+              const isChecking = Boolean(provider.checking || checkingProviderIds[provider.id]);
               const isEditing = editingProviderId === provider.id;
               const refreshing = Boolean(refreshingProviderIds[provider.id]);
-              const canRefresh = status.ready;
+              const canRefresh = true;
               const pathKey = provider.provider === "codex_cli" ? "codex" : "opencode";
               const providerName = provider.displayName ?? providerMetadata?.displayName ?? provider.provider;
 
@@ -570,28 +349,20 @@ export function AIProvidersManager({
                         <span className="font-medium">{providerName}</span>
                         {provider.cliVersion ? <span className="text-muted-foreground">v{provider.cliVersion}</span> : null}
                       </div>
-                      {isStatusLoading ? (
-                        <Skeleton
-                          className="mt-1 h-3 w-48"
-                          aria-label={`${providerName} status loading`}
-                        />
-                      ) : (
-                        <p className="mt-1 text-xs text-muted-foreground">{status.message}</p>
-                      )}
+                      <p className="mt-1 text-xs text-muted-foreground">{status.message}</p>
+                      {provider.lastCheckedAt ? <p className="mt-1 text-xs text-muted-foreground">Last checked {new Date(provider.lastCheckedAt).toLocaleString()}{provider.statusIsStale ? " · saved status" : ""}</p> : null}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      {isStatusLoading ? (
-                        <Skeleton className="h-6 w-24 rounded-full" />
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          className={cn("text-xs capitalize", providerStatusClass(provider, status.ready))}
-                        >
-                          {status.ready ? <Check data-icon="inline-start" /> : <X data-icon="inline-start" />}
-                          {status.label}
-                        </Badge>
-                      )}
+                      <Badge variant="outline" className={cn("text-xs capitalize", providerStatusClass(provider, status.ready))}>
+                        {isChecking ? <Loader2 className="animate-spin" data-icon="inline-start" /> : status.ready ? <Check data-icon="inline-start" /> : null}
+                        {status.label}
+                      </Badge>
+                      <Button variant="outline" size="sm" disabled={isChecking} onClick={async () => {
+                        setCheckingProviderIds((current) => ({ ...current, [provider.id]: true }));
+                        try { await onCheckConnection(provider.id); }
+                        finally { setCheckingProviderIds((current) => ({ ...current, [provider.id]: false })); }
+                      }}>Check connection</Button>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -621,7 +392,7 @@ export function AIProvidersManager({
                             <AlertDialogHeader>
                               <AlertDialogTitle>Delete {provider.displayName ?? providerMetadata?.displayName ?? "provider"}?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Its connection and cached model list will be removed. This cannot be undone.
+                                Its saved connection will be removed. Features using it will switch to an available provider and model, or require setup if none is available. Any matching fallbacks using it will be disabled.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -636,31 +407,12 @@ export function AIProvidersManager({
 
                   {isEditing ? (
                     isCLI ? (
-                      <FieldGroup>
-                        <Field>
-                          <div className="flex items-baseline justify-between gap-3">
-                            <FieldLabel htmlFor={`executable-${provider.id}`}>Executable path</FieldLabel>
-                            <FieldDescription className="mt-0">Leave empty to use the executable from PATH.</FieldDescription>
-                          </div>
-                          <InputGroup>
-                            <InputGroupInput
-                              id={`executable-${provider.id}`}
-                              value={executablePaths[pathKey]}
-                              onChange={(event) => setExecutablePaths((current) => ({
-                                ...current,
-                                [pathKey]: event.target.value,
-                              }))}
-                              placeholder={provider.provider === "codex_cli" ? "Use codex from PATH" : "Use opencode from PATH"}
-                            />
-                            {savingPaths ? (
-                              <InputGroupAddon align="inline-end">
-                                <Loader2 className="animate-spin" />
-                                Saving
-                              </InputGroupAddon>
-                            ) : null}
-                          </InputGroup>
-                        </Field>
-                      </FieldGroup>
+                      <CLIExecutableField
+                        id={`executable-${provider.id}`}
+                        value={pathKey === "codex" ? codexExecutablePath : openCodeExecutablePath}
+                        command={pathKey === "codex" ? "codex" : "opencode"}
+                        onSave={(value) => onSaveExecutablePaths({ [pathKey]: value })}
+                      />
                     ) : provider.kind === "custom" && editCustomForm ? (
                       <FieldGroup>
                         <CustomProviderFields
@@ -741,10 +493,18 @@ export function AIProvidersManager({
               <CustomProviderFields value={customForm} onChange={setCustomForm} />
             ) : null}
 
-            {selectedMetadata?.kind === "local_cli" ? (
-              <p className="text-xs text-muted-foreground">
-                Switchy will verify that the CLI is installed, authenticated, and exposes usable models before adding it.
-              </p>
+            {selectedMetadata && isLocalCLIProvider(selectedMetadata.id) ? (
+              <div className="grid gap-3">
+                <p className="text-xs text-muted-foreground">Install {CLI_EXECUTABLE_CONFIG[selectedMetadata.id].command}, then run <code>{CLI_EXECUTABLE_CONFIG[selectedMetadata.id].setupCommand}</code> in your terminal. Switchy reuses that login and verifies usable models before adding the provider.</p>
+                <CLIExecutableField
+                  key={selectedMetadata.id}
+                  id="new-cli-executable"
+                  onPendingChange={setPathPending}
+                  value={selectedMetadata.id === "codex_cli" ? codexExecutablePath : openCodeExecutablePath}
+                  command={CLI_EXECUTABLE_CONFIG[selectedMetadata.id].command}
+                  onSave={(value) => onSaveExecutablePaths(selectedMetadata.id === "codex_cli" ? { codex: value } : { opencode: value })}
+                />
+              </div>
             ) : null}
 
             {selectedMetadata?.requiresApiKey ? (
@@ -785,7 +545,7 @@ export function AIProvidersManager({
               </Button>
               <Button
                 onClick={handleAddProvider}
-                disabled={adding || !selectedProviderType}
+                disabled={adding || pathPending || !selectedProviderType}
                 className="flex-1 bg-emerald-600 text-foreground hover:bg-emerald-500"
               >
                 {adding ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}

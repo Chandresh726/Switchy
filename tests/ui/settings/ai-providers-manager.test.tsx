@@ -32,6 +32,7 @@ function props() {
         updatedAt: null,
       },
     ],
+    onCheckConnection: vi.fn().mockResolvedValue(undefined),
     onAddProvider: vi.fn(),
     onDeleteProvider: vi.fn(),
     onUpdateProvider: vi.fn(),
@@ -43,7 +44,7 @@ function props() {
 }
 
 describe("AIProvidersManager local CLI providers", () => {
-  it("limits a pending CLI check skeleton to that provider's status", () => {
+  it("keeps a saved CLI configured while its first status check is pending", () => {
     const input = props();
     const pendingProvider = {
       ...input.providers[0],
@@ -56,7 +57,7 @@ describe("AIProvidersManager local CLI providers", () => {
     render(<AIProvidersManager {...input} providers={[pendingProvider]} />);
 
     expect(screen.getByText("Codex CLI")).toBeTruthy();
-    expect(screen.getByLabelText("Codex CLI status loading")).toBeTruthy();
+    expect(screen.getByText("configured")).toBeTruthy();
     expect(screen.queryByText("checking")).toBeNull();
     expect(screen.getByRole("button", { name: "Edit executable path" })).toBeTruthy();
   });
@@ -81,7 +82,7 @@ describe("AIProvidersManager local CLI providers", () => {
     expect(input.onDeleteProvider).toHaveBeenCalledWith("builtin:codex-cli");
   });
 
-  it("keeps API provider status colorful on the right without a row icon or check action", () => {
+  it("distinguishes a saved API key from verified access", () => {
     const input = props();
     const apiProvider = {
       id: "provider-cerebras",
@@ -97,13 +98,22 @@ describe("AIProvidersManager local CLI providers", () => {
       <AIProvidersManager {...input} providers={[apiProvider]} />
     );
 
-    expect(screen.getByText(/connected/i).className).toContain("text-green-400");
+    expect(screen.getByText("configured")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Check connection" })).toBeTruthy();
     expect(screen.queryByText("API key")).toBeNull();
     expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
     expect(container.querySelectorAll("svg.lucide-key")).toHaveLength(1);
     const addButton = screen.getByRole("button", { name: "Add Another Provider" });
     expect(addButton.className).toContain("w-full");
     expect(addButton.className).toContain("text-emerald-400");
+  });
+
+  it("lets an unavailable CLI be checked again without changing its setup", async () => {
+    const input = props();
+    render(<AIProvidersManager {...input} providers={[input.providers[1]]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Check connection" }));
+    expect(input.onCheckConnection).toHaveBeenCalledWith("builtin:opencode-cli");
+    expect(input.onSaveExecutablePaths).not.toHaveBeenCalled();
   });
 
   it("auto-saves an executable override", async () => {
@@ -119,7 +129,6 @@ describe("AIProvidersManager local CLI providers", () => {
 
     expect(input.onSaveExecutablePaths).toHaveBeenCalledWith({
       codex: "/opt/codex",
-      opencode: "",
     });
     expect(screen.queryByRole("button", { name: /save/i })).toBeNull();
     vi.useRealTimers();
@@ -145,7 +154,7 @@ describe("AIProvidersManager local CLI providers", () => {
     fireEvent.click(screen.getByLabelText("Provider"));
     fireEvent.click(screen.getByRole("option", { name: "OpenCode · Local CLI" }));
 
-    expect(screen.getByText(/verify that the CLI is installed/i)).toBeTruthy();
+    expect(screen.getByText(/opencode auth login/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Add Provider" }));
     expect(input.onAddProvider).toHaveBeenCalledWith({
       provider: "opencode_cli",
@@ -186,16 +195,17 @@ describe("AIProvidersManager local CLI providers", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Add Provider" }));
 
-    expect(input.onAddProvider).toHaveBeenCalledWith({
+    expect(input.onAddProvider).toHaveBeenCalledWith(expect.objectContaining({
       provider: "custom",
       displayName: "CLI Proxy API",
       apiFormat: "openai_chat_completions",
+      modelDiscovery: "auto",
       baseUrl: "http://127.0.0.1:8317/v1",
       apiKey: "proxy-secret",
       headers: [{ name: "X-Route", value: "codex" }],
       manualModelIds: ["manual-one", "manual-two"],
       reasoningEfforts: ["low", "medium", "high", "xhigh"],
-    });
+    }));
   });
 
   it("renders multiple named custom providers and preserves masked headers while editing", async () => {
@@ -229,6 +239,7 @@ describe("AIProvidersManager local CLI providers", () => {
     expect(input.onUpdateProvider).toHaveBeenCalledWith("custom-0", {
       displayName: "Renamed proxy",
       apiFormat: "anthropic_messages",
+      modelDiscovery: "auto",
       baseUrl: "http://127.0.0.1:8317/v1",
       apiKey: undefined,
       headers: [{ name: "Authorization" }],

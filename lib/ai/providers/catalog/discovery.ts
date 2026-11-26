@@ -1,44 +1,14 @@
-import "server-only";
-
-import { and, eq } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { z } from "zod";
 
-import { db } from "@/lib/db";
-import { aiProviders, settings } from "@/lib/db/schema";
-import type * as databaseSchema from "@/lib/db/schema";
-import { decryptApiKey } from "@/lib/encryption";
 import { AIError } from "@/lib/ai/shared/errors";
-import { getLocalCLIModels } from "@/lib/ai/local-cli/service";
 
-import {
-  buildCustomRequestHeaders,
-  resolveStoredCustomProvider,
-  type CustomProviderConnection,
-} from "./custom-config";
-import {
-  cancelCustomProviderResponse,
-  customProviderFetch,
-} from "./custom-fetch";
+import { buildCustomRequestHeaders, type CustomProviderConnection } from "../custom-config";
+import { cancelCustomProviderResponse, customProviderFetch } from "../custom-fetch";
+import { createEffortReasoningControl, withReasoningControl, type ProviderReasoningControl } from "../reasoning-controls";
+import type { ProviderModelDefinition } from "../model-contract";
+import type { AIProvider } from "../types";
+import type { ResolvedProviderCatalogRecord as ProviderRecord } from "./types";
 
-import {
-  isAIProvider,
-  isLocalCLIProvider,
-  type AIProvider,
-} from "./types";
-import {
-  createEffortReasoningControl,
-  withReasoningControl,
-  type ProviderReasoningControl,
-} from "./reasoning-controls";
-
-import { ProviderModelDefinitionSchema, type ProviderModelDefinition } from "./model-contract";
-
-export type { ProviderModelDefinition } from "./model-contract";
-export type { ProviderReasoningControl } from "./reasoning-controls";
-
-const MODEL_CACHE_TTL_MS = 15 * 60 * 1000;
-const MODEL_CATALOG_SCHEMA_VERSION = 2;
 const CUSTOM_MODEL_DISCOVERY_TIMEOUT_MS = 10_000;
 const CUSTOM_MODEL_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
 
@@ -69,23 +39,6 @@ const NON_TEXT_MODEL_PATTERNS = [
   "dall-e",
   "vision-preview",
 ];
-
-export interface ResolvedProviderCatalogRecord {
-  id: string;
-  provider: AIProvider;
-  apiKey?: string;
-  updatedAt: Date | null;
-  customConnection?: CustomProviderConnection;
-}
-
-type ProviderRecord = ResolvedProviderCatalogRecord;
-
-interface CachedProviderModels {
-  providerUpdatedAtMs: number;
-  models: ProviderModelDefinition[];
-  fetchedAt: string;
-  expiresAt: number;
-}
 
 interface OpenAIModelsResponse {
   data?: Array<{
@@ -142,33 +95,6 @@ interface OpenRouterModelsResponse {
 }
 
 type OpenRouterModelRecord = NonNullable<OpenRouterModelsResponse["data"]>[number];
-
-export interface ProviderModelsResponse {
-  providerId: string;
-  provider: AIProvider;
-  models: ProviderModelDefinition[];
-  fetchedAt: string;
-  isStale: boolean;
-  source: "live" | "cache";
-  warning?: string;
-}
-
-export interface GetProviderModelsOptions {
-  forceRefresh?: boolean;
-  allowStaleOnError?: boolean;
-}
-
-const providerModelCache = new Map<string, CachedProviderModels>();
-const StoredProviderCatalogSchema = z.object({
-  schemaVersion: z.literal(MODEL_CATALOG_SCHEMA_VERSION),
-  providerUpdatedAtMs: z.number().int().nonnegative(),
-  fetchedAt: z.string().datetime(),
-  models: z.array(ProviderModelDefinitionSchema).max(1_000),
-}).strict();
-
-function catalogSettingKey(providerId: string): string {
-  return `provider_model_catalog:${providerId}`;
-}
 
 function isLikelyTextModel(modelId: string, label?: string, description?: string): boolean {
   const haystack = `${modelId} ${label ?? ""} ${description ?? ""}`.toLowerCase();
@@ -235,6 +161,7 @@ async function fetchJson<T>(
     response = await fetcher(url, {
       ...options,
       cache: "no-store",
+      signal: options.signal ?? AbortSignal.timeout(10_000),
     });
   } catch (error) {
     if (error instanceof AIError) throw error;
@@ -303,52 +230,6 @@ async function fetchJson<T>(
       cause: error instanceof Error ? error : undefined,
     });
   }
-}
-
-async function getProviderRecord(providerId: string): Promise<ProviderRecord> {
-  const result = await db
-    .select()
-    .from(aiProviders)
-    .where(and(eq(aiProviders.id, providerId), eq(aiProviders.isActive, true)))
-    .limit(1);
-
-  const provider = result[0];
-  if (!provider) {
-    throw new AIError({
-      type: "provider_not_found",
-      message: `Provider "${providerId}" not found`,
-    });
-  }
-
-  if (!isAIProvider(provider.provider)) {
-    throw new AIError({
-      type: "provider_not_found",
-      message: `Provider "${provider.provider}" is not supported`,
-    });
-  }
-
-  let decryptedApiKey: string | undefined;
-  if (provider.apiKey) {
-    try {
-      decryptedApiKey = decryptApiKey(provider.apiKey);
-    } catch (error) {
-      throw new AIError({
-        type: "decryption_failed",
-        message: `Failed to decrypt API key for provider "${provider.provider}"`,
-        cause: error instanceof Error ? error : undefined,
-      });
-    }
-  }
-
-  return {
-    id: provider.id,
-    provider: provider.provider,
-    apiKey: decryptedApiKey,
-    updatedAt: provider.updatedAt,
-    customConnection: provider.provider === "custom"
-      ? resolveStoredCustomProvider(provider, decryptedApiKey)
-      : undefined,
-  };
 }
 
 function ensureApiKey(provider: ProviderRecord): string {
@@ -431,7 +312,9 @@ async function fetchAnthropicModels(
 export async function discoverCustomProviderModels(
   connection: CustomProviderConnection
 ): Promise<ProviderModelDefinition[]> {
-  const payload = await fetchJson<unknown>(
+  const payload = connection.modelDiscovery === "manual"
+    ? { data: [] }
+    : await fetchJson<unknown>(
     `${connection.baseUrl}/models`,
     {
       method: "GET",
@@ -602,14 +485,10 @@ async function fetchOpenRouterModels(
   return dedupeModels(normalized);
 }
 
-async function fetchProviderModels(
+export async function discoverProviderModels(
   provider: ProviderRecord,
-  forceRefresh = false
 ): Promise<ProviderModelDefinition[]> {
   const providerType = provider.provider;
-  if (isLocalCLIProvider(providerType)) {
-    return getLocalCLIModels(providerType, { forceRefresh });
-  }
   if (providerType === "custom") {
     if (!provider.customConnection) {
       throw new AIError({
@@ -643,181 +522,4 @@ async function fetchProviderModels(
         message: `Provider "${providerType}" is not supported`,
       });
   }
-}
-
-function getProviderUpdatedAtMs(provider: { updatedAt: Date | null }): number {
-  return provider.updatedAt?.getTime() ?? 0;
-}
-
-function getCacheEntry(provider: ProviderRecord): CachedProviderModels | null {
-  const entry = providerModelCache.get(provider.id);
-  if (!entry) {
-    return null;
-  }
-
-  if (entry.providerUpdatedAtMs !== getProviderUpdatedAtMs(provider)) {
-    providerModelCache.delete(provider.id);
-    return null;
-  }
-
-  return entry;
-}
-
-async function loadStoredCacheEntry(
-  provider: Pick<ProviderRecord, "id" | "updatedAt">
-): Promise<CachedProviderModels | null> {
-  const row = await db.select({ value: settings.value })
-    .from(settings)
-    .where(eq(settings.key, catalogSettingKey(provider.id)))
-    .limit(1);
-  if (!row[0]?.value) return null;
-
-  try {
-    const stored = StoredProviderCatalogSchema.parse(JSON.parse(row[0].value));
-    if (stored.providerUpdatedAtMs !== getProviderUpdatedAtMs(provider)) {
-      return null;
-    }
-    const fetchedAtMs = Date.parse(stored.fetchedAt);
-    return {
-      ...stored,
-      expiresAt: fetchedAtMs + MODEL_CACHE_TTL_MS,
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function saveStoredCacheEntry(
-  provider: ProviderRecord,
-  entry: CachedProviderModels
-): Promise<void> {
-  const value = JSON.stringify(StoredProviderCatalogSchema.parse({
-    schemaVersion: MODEL_CATALOG_SCHEMA_VERSION,
-    providerUpdatedAtMs: entry.providerUpdatedAtMs,
-    fetchedAt: entry.fetchedAt,
-    models: entry.models,
-  }));
-  await db.insert(settings).values({
-    key: catalogSettingKey(provider.id),
-    value,
-    updatedAt: new Date(),
-  }).onConflictDoUpdate({
-    target: settings.key,
-    set: { value, updatedAt: new Date() },
-  });
-}
-
-function buildResponse(
-  provider: ProviderRecord,
-  cacheEntry: CachedProviderModels,
-  source: "live" | "cache",
-  isStale: boolean,
-  warning?: string
-): ProviderModelsResponse {
-  return {
-    providerId: provider.id,
-    provider: provider.provider,
-    models: cacheEntry.models,
-    fetchedAt: cacheEntry.fetchedAt,
-    isStale,
-    source,
-    warning,
-  };
-}
-
-export async function getProviderModels(
-  providerId: string,
-  options: GetProviderModelsOptions = {}
-): Promise<ProviderModelsResponse> {
-  const provider = await getProviderRecord(providerId);
-  return getProviderModelsForResolvedProvider(provider, options);
-}
-
-export async function getProviderModelsForResolvedProvider(
-  provider: ResolvedProviderCatalogRecord,
-  options: GetProviderModelsOptions = {}
-): Promise<ProviderModelsResponse> {
-  const now = Date.now();
-  let cacheEntry = getCacheEntry(provider);
-  if (!cacheEntry) {
-    cacheEntry = await loadStoredCacheEntry(provider);
-    if (cacheEntry) providerModelCache.set(provider.id, cacheEntry);
-  }
-
-  if (!options.forceRefresh && cacheEntry && cacheEntry.expiresAt > now) {
-    return buildResponse(provider, cacheEntry, "cache", false);
-  }
-
-  try {
-    const discoveredModels = await fetchProviderModels(provider, options.forceRefresh);
-    const models = z.array(ProviderModelDefinitionSchema).max(1_000).parse(discoveredModels);
-    if (models.length === 0) {
-      throw new AIError({
-        type: "invalid_model",
-        message: `No supported text/chat models found for provider "${provider.provider}"`,
-      });
-    }
-
-    const freshEntry: CachedProviderModels = {
-      providerUpdatedAtMs: getProviderUpdatedAtMs(provider),
-      models,
-      fetchedAt: new Date().toISOString(),
-      expiresAt: now + MODEL_CACHE_TTL_MS,
-    };
-
-    providerModelCache.set(provider.id, freshEntry);
-    await saveStoredCacheEntry(provider, freshEntry);
-
-    return buildResponse(provider, freshEntry, "live", false);
-  } catch (error) {
-    if (cacheEntry && options.allowStaleOnError !== false) {
-      const warning = error instanceof Error ? error.message : "Failed to refresh provider models";
-      return buildResponse(provider, cacheEntry, "cache", true, warning);
-    }
-
-    throw error;
-  }
-}
-
-export async function getCachedProviderModelDefinition(
-  providerId: string,
-  modelId: string
-): Promise<ProviderModelDefinition | null> {
-  const row = await db.select({
-    id: aiProviders.id,
-    updatedAt: aiProviders.updatedAt,
-  }).from(aiProviders).where(and(
-    eq(aiProviders.id, providerId),
-    eq(aiProviders.isActive, true)
-  )).limit(1);
-  const provider = row[0];
-  if (!provider) return null;
-
-  let entry = providerModelCache.get(provider.id) ?? null;
-  if (entry?.providerUpdatedAtMs !== getProviderUpdatedAtMs(provider)) {
-    entry = null;
-  }
-  if (!entry) {
-    entry = await loadStoredCacheEntry(provider);
-    if (entry) providerModelCache.set(provider.id, entry);
-  }
-
-  return entry?.models.find((model) => model.modelId === modelId) ?? null;
-}
-
-export async function deleteStoredProviderModelsCache(
-  providerId: string,
-  database: BetterSQLite3Database<typeof databaseSchema> = db
-): Promise<void> {
-  clearProviderModelsCache(providerId);
-  await database.delete(settings).where(eq(settings.key, catalogSettingKey(providerId)));
-}
-
-export function clearProviderModelsCache(providerId?: string): void {
-  if (providerId) {
-    providerModelCache.delete(providerId);
-    return;
-  }
-
-  providerModelCache.clear();
 }

@@ -1,14 +1,10 @@
-import type { LanguageModel } from "ai";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
 import {
-  getCachedProviderModelDefinition,
   getProviderModelsForResolvedProvider,
-  type ProviderReasoningControl,
-} from "@/lib/ai/providers/model-catalog";
-import { getLocalCLIExecutionTarget } from "@/lib/ai/local-cli/service";
-import type { AIGenerationBackend } from "@/lib/ai/local-cli/types";
-import { providerRegistry } from "@/lib/ai/providers";
+} from "@/lib/ai/providers/catalog/service";
+import type { AIGenerationBackend } from "@/lib/ai/runtime/backend";
+import { resolveProviderBackend } from "@/lib/ai/providers/adapters/registry";
 import {
   resolveStoredCustomProvider,
   type CustomProviderConnection,
@@ -19,10 +15,8 @@ import {
   isReasoningEffort,
   type AIProvider,
   isLocalCLIProvider,
-  type ModelConfig,
 } from "@/lib/ai/providers/types";
 import type { AICapability, ResolvedModelSnapshot } from "@/lib/ai/runtime/types";
-import { AISDKGenerationBackend } from "@/lib/ai/runtime/ai-sdk-backend";
 import { fingerprintAIInput } from "@/lib/ai/runtime/fingerprint";
 import { db } from "@/lib/db";
 import { aiProviders, settings } from "@/lib/db/schema";
@@ -60,6 +54,7 @@ function providerConfigFingerprint(providerRecord: ResolvedProviderRecord): stri
           apiFormat: providerRecord.customConnection.apiFormat,
           baseUrl: providerRecord.customConnection.baseUrl,
           headerNames: Object.keys(providerRecord.customConnection.headers).sort(),
+          modelDiscovery: providerRecord.customConnection.modelDiscovery,
           manualModelIds: providerRecord.customConnection.manualModelIds,
           reasoningEfforts: providerRecord.customConnection.reasoningEfforts,
         }
@@ -161,32 +156,6 @@ async function getFeatureSettings(feature: AIFeature): Promise<{
   };
 }
 
-function resolveAdvertisedReasoningEffort(
-  requested: string | undefined,
-  control: ProviderReasoningControl | undefined,
-  modelId: string
-): string | undefined {
-  if (!requested) {
-    return undefined;
-  }
-  if (!control) {
-    throw new AIError({
-      type: "reasoning_not_supported",
-      message: `Reasoning capabilities are unavailable for model "${modelId}"; refresh models before using the configured value`,
-      retryable: false,
-    });
-  }
-  if (control.kind === "provider_default") return undefined;
-  if (!control.options.some(({ value }) => value === requested)) {
-    throw new AIError({
-      type: "reasoning_not_supported",
-      message: `Configured reasoning effort "${requested}" is unavailable for model "${modelId}"; refresh models and choose an advertised value`,
-      retryable: false,
-    });
-  }
-  return requested;
-}
-
 function decryptProviderKey(record: typeof aiProviders.$inferSelect): string | undefined {
   if (!record.apiKey) return undefined;
 
@@ -277,7 +246,7 @@ async function initializeConcreteModel(
     if (persistedModel) return persistedModel;
 
     const catalog = await getProviderModelsForResolvedProvider(provider);
-    const modelId = catalog.models[0]?.modelId;
+    const modelId = (catalog.models.find((model) => model.isDefault) ?? catalog.models[0])?.modelId;
     if (!modelId) {
       throw new AIError({
         type: "invalid_model",
@@ -315,78 +284,14 @@ async function resolveAIContext(
   const modelId =
     normalizeOptional(options.modelId) ??
     await initializeConcreteModel(providerRecord, modelSettingKey);
-  const provider = providerRegistry.get(providerRecord.provider);
-
-  if (isLocalCLIProvider(providerRecord.provider)) {
-    const target = await getLocalCLIExecutionTarget(providerRecord.provider, modelId);
-    const reasoningEffort = resolveAdvertisedReasoningEffort(
-      requestedReasoningEffort,
-      target.reasoningControl,
-      modelId
-    );
-    return {
-      providerRecordId: providerRecord.id,
-      providerId: providerRecord.id,
-      provider: providerRecord.provider,
-      modelId,
-      providerConfigFingerprint: providerConfigFingerprint(providerRecord),
-      reasoningEffort,
-      backendKind: providerRecord.provider,
-      backend: target.backend,
-      cliVersion: target.cliVersion,
-      upstreamProvider: target.upstreamProvider,
-    };
-  }
-
-  if (!provider) {
-    throw new AIError({
-      type: "provider_not_found",
-      message: `Provider "${providerRecord.provider}" is not registered`,
-    });
-  }
-  if (!providerRecord.apiKey && provider.requiresApiKey) {
-    throw new AIError({
-      type: "missing_api_key",
-      message: `API key is required for provider "${providerRecord.provider}"`,
-    });
-  }
-
-  const cachedModel = await getCachedProviderModelDefinition(providerRecord.id, modelId);
-  const reasoningEffort = resolveAdvertisedReasoningEffort(
-    requestedReasoningEffort,
-    cachedModel?.reasoningControl,
-    modelId
-  );
-  const modelConfig: ModelConfig = {
-    modelId,
-    ...(reasoningEffort ? { reasoningEffort } : {}),
-  };
-  const providerConfig = providerRecord.customConnection
-    ? {
-        apiKey: providerRecord.customConnection.apiKey,
-        baseUrl: providerRecord.customConnection.baseUrl,
-        apiFormat: providerRecord.customConnection.apiFormat,
-        headers: providerRecord.customConnection.headers,
-      }
-    : { apiKey: providerRecord.apiKey };
-  const model: LanguageModel = provider.createModel({
-    config: modelConfig,
-    providerConfig,
-  });
-  const providerOptions = provider.getGenerationOptions(
-    modelConfig,
-    providerConfig
-  );
-
+  const target = await resolveProviderBackend(providerRecord, modelId, requestedReasoningEffort);
   return {
     providerRecordId: providerRecord.id,
     providerId: providerRecord.id,
     provider: providerRecord.provider,
     modelId,
     providerConfigFingerprint: providerConfigFingerprint(providerRecord),
-    reasoningEffort,
-    backendKind: "ai_sdk",
-    backend: new AISDKGenerationBackend(model, providerOptions),
+    ...target,
   };
 }
 

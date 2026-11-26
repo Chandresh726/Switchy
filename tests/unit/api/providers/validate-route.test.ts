@@ -17,7 +17,7 @@ vi.mock("@/lib/ai/providers/provider-service", () => ({
 vi.mock("@/lib/ai/local-cli/service", () => ({
   getLocalCLIStatus: mocks.getLocalCLIStatus,
 }));
-vi.mock("@/lib/ai/providers/model-catalog", () => ({
+vi.mock("@/lib/ai/providers/catalog/service", () => ({
   getProviderModels: mocks.getProviderModels,
 }));
 vi.mock("@/lib/ai/providers", () => ({

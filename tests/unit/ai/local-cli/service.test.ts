@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   executable: "/fake/codex",
+  loadStatus: vi.fn(),
+  saveStatus: vi.fn(),
+  deleteStatus: vi.fn(),
   readAccount: vi.fn(),
   listCodexModels: vi.fn(),
   codexVersion: vi.fn(),
@@ -16,6 +19,10 @@ const mocks = vi.hoisted(() => ({
   retireCodex: vi.fn(),
   retireOpenCode: vi.fn(),
   hasAuthenticatedOpenCodeProviders: vi.fn(),
+}));
+
+vi.mock("@/lib/ai/providers/connections/repository", () => ({
+  connectionStatusRepository: { load: mocks.loadStatus, save: mocks.saveStatus, delete: mocks.deleteStatus },
 }));
 
 vi.mock("@/lib/ai/local-cli/catalog-cache", () => ({
@@ -52,7 +59,9 @@ vi.mock("@/lib/ai/local-cli/opencode-backend", () => ({
 import {
   clearLocalCLICaches,
   getCachedLocalCLIStatus,
+  getStoredLocalCLIStatus,
   getLocalCLIModels,
+  getLocalCLIModelCatalog,
   getLocalCLIExecutionTarget,
   getLocalCLIStatus,
   resetLocalCLIProvider,
@@ -64,6 +73,9 @@ describe("local CLI connection status", () => {
   beforeEach(() => {
     clearLocalCLICaches();
     vi.clearAllMocks();
+    mocks.loadStatus.mockResolvedValue(undefined);
+    mocks.saveStatus.mockResolvedValue(undefined);
+    mocks.deleteStatus.mockResolvedValue(undefined);
     mocks.executable = "/fake/codex";
     mocks.codexVersion.mockResolvedValue("1.0.0");
     mocks.openCodeVersion.mockResolvedValue("2.0.0");
@@ -116,7 +128,7 @@ describe("local CLI connection status", () => {
     expect(mocks.listCodexModels).toHaveBeenCalledTimes(2);
   });
 
-  it("does not expose an expired startup status as current", async () => {
+  it("keeps the last observed status and marks it stale", async () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(new Date("2026-07-16T00:00:00.000Z"));
@@ -124,10 +136,32 @@ describe("local CLI connection status", () => {
       expect(getCachedLocalCLIStatus("codex_cli")?.status).toBe("ready");
 
       vi.setSystemTime(new Date("2026-07-16T00:00:31.000Z"));
-      expect(getCachedLocalCLIStatus("codex_cli")).toBeUndefined();
+      expect(getCachedLocalCLIStatus("codex_cli")).toMatchObject({ status: "ready", isStale: true });
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("restores a saved observation without starting a CLI and rechecks it after expiration", async () => {
+    const snapshot = {
+      status: "ready", selectable: true, lastCheckedAt: new Date().toISOString(),
+      statusMessage: "2 text models available.",
+    };
+    mocks.loadStatus.mockResolvedValue(snapshot);
+    await expect(getStoredLocalCLIStatus("codex_cli")).resolves.toMatchObject({ status: "ready", isStale: false });
+    await expect(getLocalCLIStatus("codex_cli")).resolves.toMatchObject({ status: "ready" });
+    expect(mocks.readAccount).not.toHaveBeenCalled();
+    clearLocalCLICaches();
+    mocks.loadStatus.mockResolvedValue({ ...snapshot, lastCheckedAt: new Date(Date.now() - 60_000).toISOString() });
+    mocks.readAccount.mockResolvedValue({ authenticated: false });
+    await expect(getLocalCLIStatus("codex_cli")).resolves.toMatchObject({ status: "not_authenticated" });
+    expect(mocks.saveStatus).toHaveBeenCalledWith("builtin:codex-cli", expect.objectContaining({ status: "not_authenticated" }));
+  });
+
+  it("shares concurrent CLI status checks", async () => {
+    await Promise.all([getLocalCLIStatus("codex_cli"), getLocalCLIStatus("codex_cli")]);
+    expect(mocks.readAccount).toHaveBeenCalledOnce();
+    expect(mocks.listCodexModels).toHaveBeenCalledOnce();
   });
 
   it("warms both CLI statuses independently", async () => {
@@ -176,6 +210,11 @@ describe("local CLI connection status", () => {
 
     await getLocalCLIModels("codex_cli", { forceRefresh: true });
     expect(mocks.listCodexModels).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not advertise an expiring empty catalog for an uninstalled CLI", async () => {
+    mocks.executable = "";
+    await expect(getLocalCLIModelCatalog("codex_cli", { preferCache: true })).rejects.toMatchObject({ type: "invalid_model" });
   });
 
   it("validates a discovered catalog before caching it in memory", async () => {

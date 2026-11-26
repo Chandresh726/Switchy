@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { ProviderRouteParamsSchema } from "@/lib/ai/contracts";
-import { getProviderModels } from "@/lib/ai/providers/model-catalog";
+import { getProviderModels } from "@/lib/ai/providers/catalog/service";
 import {
   getProviderValidationContext,
 } from "@/lib/ai/providers/provider-service";
@@ -52,9 +52,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const modelsResponse = await getProviderModels(
       parsedParams.id,
-      context.providerType === "custom"
-        ? { forceRefresh: true, allowStaleOnError: false }
-        : undefined
+      { forceRefresh: true, allowStaleOnError: false }
     );
     const models = modelsResponse.models;
 

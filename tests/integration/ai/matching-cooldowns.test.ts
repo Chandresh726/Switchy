@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { withMatchFallback } from "@/lib/ai/matcher/fallback";
-import type { BackendResult } from "@/lib/ai/local-cli/types";
+import type { BackendResult } from "@/lib/ai/runtime/backend";
 import { adaptiveProviderLimiter, resetAdaptiveProviderLimiter } from "@/lib/ai/runtime/adaptive-provider-limiter";
 import { createAICapabilityRuntime } from "@/lib/ai/runtime/capability-runtime";
 import { acquireMatchingProviderPermit } from "@/lib/ai/runtime/matching-provider-permit";
