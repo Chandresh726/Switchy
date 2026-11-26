@@ -133,6 +133,7 @@ export class JobviteScraper extends AbstractApiScraper<JobviteConfig> {
         listings: listingResult.listings,
         filters: options?.filters,
         existingExternalIds: options?.existingExternalIds,
+        detailRefresh: options?.detailRefresh,
         existingJobUrls: options?.existingJobUrls,
         getUrl: (listing) => listing.url,
         toFilterable: (listing) => ({ title: listing.title, location: listing.location }),

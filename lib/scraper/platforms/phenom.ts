@@ -253,6 +253,7 @@ export class PhenomScraper extends AbstractApiScraper<PhenomConfig> {
         listings: allListings,
         filters: options?.filters,
         existingExternalIds: options?.existingExternalIds,
+        detailRefresh: options?.detailRefresh,
         toFilterable: (listing) => ({
           title: listing.title,
           location: listing.location ?? undefined,

@@ -147,11 +147,13 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
         };
       }
 
+      const listingJobs = scopedListings.map((listing) => ({ ...this.mapListingToJob(listing, origin), ...this.composeDescription(listing) }));
       const filters = options?.filters;
       const selection = selectListingsForHydration({
         listings: scopedListings,
         filters,
         existingExternalIds: options?.existingExternalIds,
+        detailRefresh: options?.detailRefresh,
         toFilterable: (listing) => ({
           title: listing.title,
           location: listing.location,
@@ -165,6 +167,7 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
         return {
           outcome: "success",
           jobs: [],
+          listingJobs,
           totalListings: scopedListings.length,
           earlyFiltered: selection.earlyFiltered,
           openExternalIds,
@@ -188,6 +191,7 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
       return {
         outcome: detailFailures > 0 ? "partial" : "success",
         jobs,
+        listingJobs,
         totalListings: scopedListings.length,
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,

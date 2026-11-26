@@ -100,7 +100,8 @@ compensation and secondary locations are retained; unlisted Ashby posts are
 excluded. Lever supports global and EU hosts and bounded explicit pagination.
 
 Full existing descriptions refresh after 24 hours. At most 50 existing described
-jobs per company run are selected for refresh, oldest first. Legacy jobs without
+jobs present in the current filtered listing are selected per company run,
+oldest first. Closed and filtered historical jobs cannot consume this budget. Legacy jobs without
 refresh timestamps join that bounded queue. Empty descriptions remain eligible
 for backfill. Failed details and teasers are eligible on subsequent runs; a
 successful detail refresh advances its timestamp even if content is unchanged.

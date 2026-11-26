@@ -1,4 +1,5 @@
 import type { EarlyFilterStats, JobFilters } from "@/lib/scraper/types";
+import type { ScrapeOptions } from "@/lib/scraper/types/config";
 import {
   applyEarlyFilters,
   toEarlyFilterStats,
@@ -13,6 +14,7 @@ export interface ListingSelectionOptions<T> {
   getExternalId: (listing: T) => string | null | undefined;
   existingJobUrls?: ReadonlySet<string>;
   getUrl?: (listing: T) => string;
+  detailRefresh?: ScrapeOptions["detailRefresh"];
 }
 
 export interface ListingSelection<T> {
@@ -28,6 +30,7 @@ export function selectListingsForHydration<T>({
   getExternalId,
   existingJobUrls,
   getUrl,
+  detailRefresh,
 }: ListingSelectionOptions<T>): ListingSelection<T> {
   const candidates = listings.map((listing) => ({
     listing,
@@ -46,8 +49,21 @@ export function selectListingsForHydration<T>({
       return Boolean(externalId && !existingExternalIds.has(externalId));
     });
 
+  // Spend the refresh budget only on jobs present in this filtered snapshot.
+  // Historical jobs absent from the source cannot consume detail capacity.
+  const previousFetch = (listing: T): number | undefined => {
+    const id = getExternalId(listing);
+    return (id ? detailRefresh?.fetchedAtByIdentity.get(id) : undefined) ??
+      (getUrl ? detailRefresh?.fetchedAtByIdentity.get(getUrl(listing)) : undefined);
+  };
+  const newJobs = selected.filter((listing) => previousFetch(listing) === undefined);
+  const refreshJobs = selected.filter((listing) => previousFetch(listing) !== undefined)
+    .sort((left, right) => previousFetch(left)! - previousFetch(right)!);
+
   return {
-    listings: selected,
+    listings: detailRefresh
+      ? [...newJobs, ...refreshJobs.slice(0, detailRefresh.limit)]
+      : selected,
     earlyFiltered: toEarlyFilterStats(filtered),
   };
 }

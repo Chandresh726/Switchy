@@ -151,6 +151,7 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
         listings,
         filters,
         existingExternalIds: options?.existingExternalIds,
+        detailRefresh: options?.detailRefresh,
         toFilterable: (listing) => ({
           title: listing.title,
           location: listing.location,

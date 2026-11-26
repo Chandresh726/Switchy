@@ -157,6 +157,7 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
         listings,
         filters,
         existingExternalIds: options?.existingExternalIds,
+        detailRefresh: options?.detailRefresh,
         toFilterable: (listing) => ({
           title: listing.title,
           location: listing.location,

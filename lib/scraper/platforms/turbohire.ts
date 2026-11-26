@@ -192,10 +192,12 @@ export class TurboHireScraper extends AbstractApiScraper<TurboHireConfig> {
             };
       }
 
+      const listingJobs = listings.map((job) => this.mapJob(job, organizationId, origin));
       const selection = selectListingsForHydration({
         listings,
         filters: options?.filters,
         existingExternalIds: options?.existingExternalIds,
+        detailRefresh: options?.detailRefresh,
         toFilterable: (job) => ({
           title: job.JobTitle,
           location: this.stringifyValue(job.Location),
@@ -210,6 +212,7 @@ export class TurboHireScraper extends AbstractApiScraper<TurboHireConfig> {
       return {
         outcome: isComplete ? "success" : "partial",
         jobs,
+        listingJobs,
         totalListings: listings.length,
         detectedBoardToken: options?.boardToken ? undefined : organizationId,
         earlyFiltered: selection.earlyFiltered,

@@ -137,6 +137,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
         listings,
         filters: options?.filters,
         existingExternalIds: options?.existingExternalIds,
+        detailRefresh: options?.detailRefresh,
         toFilterable: (listing) => ({
           title: listing.title,
           location: listing.location,

@@ -10,6 +10,10 @@ export interface ScrapeOptions {
   existingExternalIds?: Set<string>;
   /** Fresh existing jobs keyed by URL, for sources whose requisition ID needs details. */
   existingJobUrls?: ReadonlySet<string>;
+  detailRefresh?: {
+    fetchedAtByIdentity: ReadonlyMap<string, number>;
+    limit: number;
+  };
   signal?: AbortSignal;
 }
 

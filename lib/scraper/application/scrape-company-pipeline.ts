@@ -159,6 +159,7 @@ export class ScrapeCompanyPipeline {
         options.signal
       );
       scraperOptions.existingJobUrls = freshIdentities.existingJobUrls;
+      scraperOptions.detailRefresh = freshIdentities.detailRefresh;
 
       fetchStartedAt = Date.now();
       const scraperResult = await this.registry.scrape(

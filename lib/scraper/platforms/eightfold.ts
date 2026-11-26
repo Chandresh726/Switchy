@@ -263,6 +263,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         listings: allPositions,
         filters: options?.filters,
         existingExternalIds: options?.existingExternalIds,
+        detailRefresh: options?.detailRefresh,
         toFilterable: (position) => ({
           title: position.name,
           location: position.locations?.join(", ") || "",

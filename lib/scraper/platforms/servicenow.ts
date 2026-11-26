@@ -92,6 +92,7 @@ export class ServiceNowScraper extends AbstractApiScraper<ServiceNowConfig> {
         listings,
         filters: options?.filters,
         existingExternalIds: options?.existingExternalIds,
+        detailRefresh: options?.detailRefresh,
         toFilterable: (job) => ({
           title: job.title,
           location: job.location,
@@ -102,6 +103,7 @@ export class ServiceNowScraper extends AbstractApiScraper<ServiceNowConfig> {
       return {
         outcome: isComplete ? "success" : "partial",
         jobs: selection.listings,
+        listingJobs: listings,
         totalListings: listings.length,
         earlyFiltered: selection.earlyFiltered,
         openExternalIds: listings.map((job) => job.externalId),

@@ -178,6 +178,7 @@ export class SmartRecruitersScraper extends AbstractApiScraper<SmartRecruitersCo
         listings: listingResult.listings,
         filters: options?.filters,
         existingExternalIds: options?.existingExternalIds,
+        detailRefresh: options?.detailRefresh,
         toFilterable: (listing) => ({
           title: listing.name,
           location: this.locationText(listing.location),

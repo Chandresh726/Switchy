@@ -281,6 +281,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         listings: allJobListItems,
         filters: options?.filters,
         existingExternalIds: options?.existingExternalIds,
+        detailRefresh: options?.detailRefresh,
         toFilterable: (job) => ({
           title: job.title,
           location: job.locationsText,
