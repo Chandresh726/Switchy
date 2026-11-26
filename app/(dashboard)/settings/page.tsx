@@ -875,9 +875,9 @@ function SettingsContent() {
             onFilterTitleKeywordsChange={setFilterTitleKeywords}
           />
 
-          <ApplicationSettings
-            keepDeviceAwake={keepDeviceAwake}
-            onKeepDeviceAwakeChange={setKeepDeviceAwake}
+          <NotificationsSection
+            enabled={settings?.notifications_enabled === "true"}
+            threshold={Number(settings?.notifications_match_score_threshold ?? "75")}
           />
 
           <ResumeParserSection
@@ -902,9 +902,9 @@ function SettingsContent() {
             onResumeParserReasoningEffortChange={setResumeParserReasoningEffort}
           />
 
-          <NotificationsSection
-            enabled={settings?.notifications_enabled === "true"}
-            threshold={Number(settings?.notifications_match_score_threshold ?? "75")}
+          <ApplicationSettings
+            keepDeviceAwake={keepDeviceAwake}
+            onKeepDeviceAwakeChange={setKeepDeviceAwake}
           />
 
           <AppearanceSection />

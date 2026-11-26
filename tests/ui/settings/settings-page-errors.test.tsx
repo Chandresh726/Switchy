@@ -176,7 +176,7 @@ function renderSettings() {
 }
 
 describe("settings failure recovery", () => {
-  it("places startup controls between scraper and resume settings and saves its power toggle independently", async () => {
+  it("orders scraper, notifications, resume, and startup settings and saves its power toggle independently", async () => {
     mocks.getSettings.mockResolvedValue({ ...settings, scraper_keep_device_awake: "false" });
     mocks.patchSettings.mockResolvedValue({ ...settings, scraper_keep_device_awake: "true" });
     renderSettings();
@@ -185,8 +185,10 @@ describe("settings failure recovery", () => {
     const application = screen.getByText("Startup, power & updates");
     const scraper = screen.getByRole("button", { name: `cron:${settings.scheduler_cron}` });
     const resume = screen.getByText("Resume parser");
-    expect(scraper.compareDocumentPosition(application) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(application.compareDocumentPosition(resume) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const notifications = screen.getByText("Notifications");
+    expect(scraper.compareDocumentPosition(notifications) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(notifications.compareDocumentPosition(resume) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(resume.compareDocumentPosition(application) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     fireEvent.click(toggle);
     await waitFor(() => expect(mocks.patchSettings).toHaveBeenCalledWith({ scraper_keep_device_awake: true }));
   });
