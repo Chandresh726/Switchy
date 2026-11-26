@@ -26,6 +26,32 @@ function createQueueDatabases() {
 }
 
 describe("DrizzleLocalScrapeQueueRepository", () => {
+  it("keeps Workday waiters unleased across dispatchers and sessions, including URL-detected platforms", async () => {
+    const { firstDatabase, secondDatabase } = createQueueDatabases();
+    const rows = firstDatabase.insert(companies).values([
+      { name: "Workday one", careersUrl: "https://one.myworkdayjobs.com/jobs", platform: "workday" },
+      { name: "Workday two", careersUrl: "https://two.myworkdayjobs.com/jobs", platform: null },
+      { name: "API", careersUrl: "https://boards.greenhouse.io/api", platform: "greenhouse" },
+    ]).returning().all();
+    const first = new DrizzleLocalScrapeQueueRepository(firstDatabase);
+    const second = new DrizzleLocalScrapeQueueRepository(secondDatabase);
+    const now = new Date();
+    await first.createSessionAndEnqueue({ sessionId: "one", triggerSource: "manual", companyIds: [rows[0].id], availableAt: now });
+    const workday = await first.claimNext("workday", now, 60_000);
+    await second.createSessionAndEnqueue({ sessionId: "two", triggerSource: "manual", companyIds: rows.map((row) => row.id), availableAt: now });
+    const api = await second.claimNext("api", now, 60_000);
+    expect(api?.companyId).toBe(rows[2].id);
+    expect(await second.claimNext("blocked", now, 60_000)).toBeNull();
+    expect(firstDatabase.select().from(scrapeQueueItems).all().filter((row) => row.status === "queued")
+      .every((row) => row.attemptCount === 0 && row.workerId === null)).toBe(true);
+    expect((await second.getNextAvailableAt())!.getTime()).toBeGreaterThan(now.getTime());
+    await first.complete(workday!.id, "workday", null, now);
+    const resumed = await second.claimNext("resumed", now, 60_000);
+    expect(resumed?.companyId).toBe(rows[0].id);
+    await second.cancel(resumed!.id, "resumed", now);
+    expect((await second.claimNext("detected", now, 60_000))?.companyId).toBe(rows[1].id);
+  });
+
   it.each(["defer", "deferSuspended"] as const)("%s persists a delay without exhausting work and rejects a racing cancellation", async (method) => {
     const { firstDatabase } = createQueueDatabases();
     const company = firstDatabase.insert(companies).values({ name: "Acme", careersUrl: "https://example.com/jobs" }).returning().get();

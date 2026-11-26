@@ -30,4 +30,18 @@ export class DrizzleScrapeFetchStateStore implements ScrapeFetchStateStore {
   delete(key: string): void {
     this.database.delete(scrapeFetchState).where(eq(scrapeFetchState.key, key)).run();
   }
+
+  mutate<T>(key: string, expiresAt: Date, update: (previous: unknown) => T): T {
+    return this.database.transaction((tx) => {
+      const row = tx.select().from(scrapeFetchState).where(eq(scrapeFetchState.key, key)).get();
+      let previous: unknown;
+      if (row && row.expiresAt.getTime() > Date.now()) {
+        try { previous = JSON.parse(row.value); } catch { /* Treat invalid cache data as absent. */ }
+      }
+      const value = update(previous);
+      tx.insert(scrapeFetchState).values({ key, value: JSON.stringify(value), expiresAt })
+        .onConflictDoUpdate({ target: scrapeFetchState.key, set: { value: JSON.stringify(value), expiresAt } }).run();
+      return value;
+    }, { behavior: "immediate" });
+  }
 }

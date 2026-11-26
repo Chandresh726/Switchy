@@ -1,8 +1,44 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FetchHttpClient, HttpError } from "@/lib/scraper/infrastructure/http-client";
+import { createScrapeMetrics, withScrapeMetrics } from "@/lib/scraper/infrastructure/metrics";
 
 describe("FetchHttpClient", () => {
+  it("records actual requests, retry waits, and pacing separately for a scrape", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response("retry", { status: 503 }))
+      .mockImplementation(async () => new Response("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+    const metrics = createScrapeMetrics(0);
+    const client = new FetchHttpClient({ baseDelay: 100, jitterRatio: 0, retries: 1 });
+    const pending = withScrapeMetrics(metrics, async () => {
+      await client.get("https://example.com/one", { minIntervalMs: 1500 });
+      await client.get("https://example.com/two", { minIntervalMs: 1500 });
+    });
+    await vi.runAllTimersAsync();
+    await pending;
+    expect(metrics.httpRequests).toBe(3);
+    expect(metrics.retries).toBe(1);
+    expect(metrics.retryWaitMs).toBe(100);
+    expect(metrics.pacingWaitMs).toBeGreaterThanOrEqual(1500);
+    expect(metrics.httpMs).toBeLessThan(metrics.pacingWaitMs);
+  });
+
+  it("keeps concurrent companies' HTTP metrics isolated", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}")));
+    const one = createScrapeMetrics(0);
+    const two = createScrapeMetrics(0);
+    const client = new FetchHttpClient();
+    await Promise.all([
+      withScrapeMetrics(one, () => client.get("https://one.example.com/jobs")),
+      withScrapeMetrics(two, async () => {
+        await client.get("https://two.example.com/jobs");
+        await client.get("https://two.example.com/details");
+      }),
+    ]);
+    expect(one.httpRequests).toBe(1);
+    expect(two.httpRequests).toBe(2);
+  });
+
   beforeEach(() => {
     vi.useFakeTimers();
   });

@@ -124,6 +124,23 @@ export function createScraperFailure(
   };
 }
 
+const ScrapeMetricsSchema = z.object({
+  readyQueueMs: z.number().nonnegative(),
+  executionWaitMs: z.number().nonnegative(),
+  platformLockWaitMs: z.number().nonnegative(),
+  hostSlotWaitMs: z.number().nonnegative(),
+  httpRequests: z.number().nonnegative(),
+  httpMs: z.number().nonnegative(),
+  pacingWaitMs: z.number().nonnegative(),
+  retryWaitMs: z.number().nonnegative(),
+  retries: z.number().nonnegative(),
+  rateLimits: z.number().nonnegative(),
+  cooldownBlocks: z.number().nonnegative(),
+  priorityDetailsSelected: z.number().nonnegative(),
+  maintenanceDetailsSelected: z.number().nonnegative(),
+});
+export type ScrapeMetrics = z.infer<typeof ScrapeMetricsSchema>;
+
 export const FetchResultSchema = z.object({
   companyId: z.number(),
   companyName: z.string(),
@@ -143,6 +160,7 @@ export const FetchResultSchema = z.object({
   warnings: z.array(z.string()).optional(),
   duration: z.number(),
   logId: z.number().optional(),
+  metrics: ScrapeMetricsSchema.optional(),
   /** Set when a concurrent session already scraped this company after it was requested. */
   reusedFromSessionId: z.string().optional(),
 });

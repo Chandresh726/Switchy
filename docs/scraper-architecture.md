@@ -55,6 +55,15 @@ Queue items use a static platform priority derived from production history. Eigh
 
 All adapters share the user-configured total concurrency budget. Actual browser lifetimes share a two-browser gate inside the browser client. HTTP-only Eightfold and Workday runs do not occupy browser permits. Workday retains its global company serialization and paced host requests. Separate sessions cannot scrape the same company simultaneously.
 
+Queue admission enforces serialization before leasing work. While a Workday
+company is running, other Workday companies stay queued without consuming
+workers or execution permits. The claim transaction also excludes companies
+already running in another session. URL detection covers legacy records without
+a valid saved platform. The in-process Workday lock remains a safety guard for
+direct scraper calls; the browser-limited classification also reserves general
+HTTP execution capacity. Admission constraints live in
+`services/execution-policy.ts`, independently of browser allocation.
+
 Adapter results and pipeline exceptions use the same failure classifier in `lib/scraper/types/validation.ts`. It preserves HTTP status and retry hints, distinguishes cancellation from timeout, and keeps retry decisions consistent with terminal scrape logging.
 
 ## Reliability guarantees
@@ -99,13 +108,36 @@ explicit workplace fields before inferring type from location text. Ashby
 compensation and secondary locations are retained; unlisted Ashby posts are
 excluded. Lever supports global and EU hosts and bounded explicit pagination.
 
-Full existing descriptions refresh after 24 hours. At most 50 existing described
-jobs present in the current filtered listing are selected per company run,
-oldest first. Closed and filtered historical jobs cannot consume this budget. Legacy jobs without
-refresh timestamps join that bounded queue. Empty descriptions remain eligible
-for backfill. Failed details and teasers are eligible on subsequent runs; a
-successful detail refresh advances its timestamp even if content is unchanged.
-This policy is configurable through pipeline construction.
+Full existing descriptions become eligible after a deterministic 24-to-30-hour
+window, spread by job identity. Description maintenance selects at most five
+existing described jobs per company, oldest first, and shares a durable
+25-record budget across the session. A company waits six hours after reserving a
+maintenance batch, leaving subsequent runs' capacity available to other
+companies. Capacity is also reserved for older unmet demand so companies later
+in the queue are not starved across repeated runs; unseen demand expires after
+24 hours. These are eligibility windows, not a promise that every description
+is refreshed daily; large backlogs are processed gradually within the budget.
+
+New jobs, missing descriptions, and teasers have priority and do not spend the
+maintenance quota. Closed and filtered historical jobs cannot consume it.
+Legacy descriptions with unknown freshness use the maintenance budget without
+inventing a fetch timestamp. A successful refresh advances its timestamp even
+when content is unchanged. Failed maintenance retains the saved description.
+The budget and cooldown persist in `scrape_fetch_state`; quota increments are
+atomic, and failure to reserve capacity skips optional maintenance rather than
+failing discovery. Per-company and session limits, cooldown, and freshness
+interval are configurable through pipeline construction; zero disables the
+corresponding maintenance quota.
+
+Each attempt emits a structured `scrape_timing` event. Successful queue results
+also retain the metrics in their existing result JSON. Metrics distinguish
+ready-queue waiting, execution admission, the Workday lock, host-slot waiting,
+HTTP attempt time including response buffering, pacing, retry delays, actual
+HTTP requests, server rate limits, local cooldown blocks, and selected priority
+and maintenance details. Selected details are not an HTTP request count, since
+retries and browser recovery can make additional requests. Existing aggregate
+fetch timing remains compatible and includes adapter-level lock waiting. No
+metrics controls or new diagnostics are added to the settings UI.
 
 Archival requires a complete discovery snapshot and an exact advertised total
 when available. Across every platform, a disappearance exceeding the larger of

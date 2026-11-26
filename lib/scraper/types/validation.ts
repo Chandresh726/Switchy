@@ -1,7 +1,7 @@
 import type { z } from "zod";
 
 import { BrowserSessionBootstrapError } from "@/lib/scraper/infrastructure/browser-session-error";
-import { HttpError } from "@/lib/scraper/infrastructure/http-client";
+import { HttpError } from "@/lib/scraper/infrastructure/http-error";
 
 import {
   createScraperFailure,

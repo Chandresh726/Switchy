@@ -1,8 +1,10 @@
-import { and, asc, eq, gte, isNotNull, lt, lte } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, lte, notInArray, or } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { scrapeQueueItems, scrapeSessions } from "@/lib/db/schema";
+import { companies, scrapeQueueItems, scrapeSessions } from "@/lib/db/schema";
 import { createSqliteBusyRetry } from "@/lib/db/sqlite-utils";
+import { getCompanyScrapePlatform, SERIAL_SCRAPE_PLATFORMS } from "@/lib/scraper/services/execution-policy";
+import { PLATFORMS } from "@/lib/scraper/types/platform";
 
 import type {
   EnqueueScrapeSession,
@@ -86,23 +88,7 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
   async claimNext(workerId: string, now: Date, leaseDurationMs: number) {
     return this.retryBusy(() =>
       this.database.transaction((tx) => {
-        const candidate = tx
-          .select()
-          .from(scrapeQueueItems)
-          .where(
-            and(
-              eq(scrapeQueueItems.status, "queued"),
-              eq(scrapeQueueItems.cancelRequested, false),
-              lte(scrapeQueueItems.availableAt, now)
-            )
-          )
-          .orderBy(
-            asc(scrapeQueueItems.priority),
-            asc(scrapeQueueItems.createdAt),
-            asc(scrapeQueueItems.id)
-          )
-          .limit(1)
-          .get();
+        const candidate = this.findClaimable(tx, now);
 
         if (!candidate) return null;
         const leaseExpiresAt = new Date(now.getTime() + leaseDurationMs);
@@ -128,6 +114,43 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
           .get() ?? null;
       }, { behavior: "immediate" })
     );
+  }
+
+  private findClaimable(database: Pick<typeof db, "select">, now: Date) {
+    const running = database.select({
+      id: companies.id, platform: companies.platform, careersUrl: companies.careersUrl,
+    }).from(scrapeQueueItems).innerJoin(companies, eq(companies.id, scrapeQueueItems.companyId))
+      .where(eq(scrapeQueueItems.status, "running")).all();
+    const blocked = new Set(running.map((company) => company.id));
+    const saturated = new Set(running.map(getCompanyScrapePlatform)
+      .filter((platform) => platform !== "custom" && SERIAL_SCRAPE_PLATFORMS.includes(platform)));
+    if (saturated.size > 0) {
+      const candidates = database.select({ id: companies.id, platform: companies.platform, careersUrl: companies.careersUrl })
+        .from(companies).where(or(
+          inArray(companies.platform, [...saturated]), isNull(companies.platform), notInArray(companies.platform, [...PLATFORMS])
+        )).all();
+      for (const company of candidates) {
+        if (saturated.has(getCompanyScrapePlatform(company))) blocked.add(company.id);
+      }
+    }
+    return database
+      .select()
+      .from(scrapeQueueItems)
+      .where(
+        and(
+          eq(scrapeQueueItems.status, "queued"),
+          eq(scrapeQueueItems.cancelRequested, false),
+          lte(scrapeQueueItems.availableAt, now),
+          blocked.size ? notInArray(scrapeQueueItems.companyId, [...blocked]) : undefined
+        )
+      )
+      .orderBy(
+        asc(scrapeQueueItems.priority),
+        asc(scrapeQueueItems.createdAt),
+        asc(scrapeQueueItems.id)
+      )
+      .limit(1)
+      .get();
   }
 
   async heartbeat(itemId: string, workerId: string, leaseExpiresAt: Date): Promise<boolean> {
@@ -415,6 +438,12 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
       (value): value is Date => value instanceof Date
     );
     if (candidates.length === 0) return null;
+    const now = new Date();
+    if (queued[0]?.availableAt && queued[0].availableAt <= now && !this.findClaimable(this.database, now)) {
+      // Another dispatcher owns the resource. Poll at a bounded interval rather
+      // than scheduling an immediate loop on an ineligible ready item.
+      return new Date(now.getTime() + 1_000);
+    }
     return new Date(Math.min(...candidates.map((value) => value.getTime())));
   }
 

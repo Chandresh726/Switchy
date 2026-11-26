@@ -1,6 +1,7 @@
 import type { ScrapeQueueItem } from "@/lib/db/schema";
 import type { CompanyCatalog } from "@/lib/scraper/infrastructure/types";
-import { detectPlatformFromUrl } from "@/lib/scraper/platform-detection";
+import { getCompanyScrapePlatform } from "@/lib/scraper/services/execution-policy";
+import { createScrapeMetrics, recordScrapeMetric, withScrapeMetrics } from "@/lib/scraper/infrastructure/metrics";
 import type { ScrapeSessionProjectionStore } from "@/lib/scraper/queue/projection-store";
 import type { ILocalScrapeQueueRepository } from "@/lib/scraper/queue/types";
 import {
@@ -16,7 +17,6 @@ import { SCRAPER_SETTINGS } from "@/lib/scraper/settings/definitions";
 import type { ScrapeSettingsProvider } from "@/lib/scraper/settings/provider";
 import type { IScraperRegistry } from "@/lib/scraper/services";
 import {
-  isPlatform,
   isTriggerSource,
   type FetchResult,
 } from "@/lib/scraper/types";
@@ -62,14 +62,27 @@ export class ScrapeWorkHandler {
     item: ScrapeQueueItem,
     signal: AbortSignal
   ): Promise<FetchResult> {
-    return this.dataOperationGate.runScrape(item.companyId, signal, (workSignal) =>
-      this.handleWithDataFence(item, workSignal)
-    );
+    const metrics = createScrapeMetrics(Date.now() - item.availableAt.getTime());
+    return withScrapeMetrics(metrics, async () => {
+      const started = performance.now();
+      let outcome: string = "error";
+      try {
+        const result = await this.dataOperationGate.runScrape(item.companyId, signal, (workSignal) =>
+          this.handleWithDataFence(item, workSignal, started)
+        );
+        outcome = result.outcome;
+        return { ...result, metrics };
+      } finally {
+        console.info(JSON.stringify({ event: "scrape_timing", sessionId: item.sessionId, companyId: item.companyId,
+          attempt: item.attemptCount, outcome: signal.aborted ? "cancelled" : outcome, ...metrics }));
+      }
+    });
   }
 
   private async handleWithDataFence(
     item: ScrapeQueueItem,
-    signal: AbortSignal
+    signal: AbortSignal,
+    admissionStarted: number
   ): Promise<FetchResult> {
     const session = await this.projectionStore.getSession(item.sessionId);
     if (
@@ -101,6 +114,7 @@ export class ScrapeWorkHandler {
 
       const executionMode = await this.resolveExecutionMode(item.companyId);
       releaseExecution = await this.executionGate.acquire(executionMode, signal);
+      recordScrapeMetric("executionWaitMs", performance.now() - admissionStarted);
       const result = await this.pipeline.scrape(item.companyId, {
         sessionId: item.sessionId,
         triggerSource: session.triggerSource,
@@ -128,10 +142,7 @@ export class ScrapeWorkHandler {
     if (!this.registry) return "standard";
     const company = await this.companyCatalog.getCompany(companyId);
     if (!company) return "standard";
-    const detected =
-      company.platform && isPlatform(company.platform)
-        ? company.platform
-        : detectPlatformFromUrl(company.careersUrl);
+    const detected = getCompanyScrapePlatform(company);
     if (detected === "custom") return "standard";
     const scraper = this.registry.getScraperByPlatform(detected);
     return scraper?.capabilities.concurrency === "browser_limited"

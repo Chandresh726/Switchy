@@ -33,7 +33,7 @@ describe("createScraperRegistry", () => {
       expect(registry.getScraperByPlatform(platform), platform).toMatchObject({
         platform,
         capabilities: {
-          concurrency: "parallel",
+          concurrency: platform === "workday" ? "browser_limited" : "parallel",
         },
       });
     }

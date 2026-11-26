@@ -121,6 +121,40 @@ function createService(
 }
 
 describe("LocalScrapeQueueService", () => {
+  it("finishes fast work in a 151-company batch while a Workday request is blocked", async () => {
+    const database = createTestDatabase();
+    const stored = database.insert(companies).values(Array.from({ length: 151 }, (_, index) => ({
+      name: `Company ${index}`, platform: index < 16 ? "workday" : "greenhouse",
+      careersUrl: index < 16 ? `https://company${index}.myworkdayjobs.com/jobs` : `https://boards.greenhouse.io/company${index}`,
+    }))).returning().all();
+    const workdayIds = new Set(stored.slice(0, 16).map((company) => company.id));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let fastCompleted = 0;
+    let workdayStarted = 0;
+    const normal = createPipeline();
+    const pipeline: Pick<ScrapeCompanyPipeline, "scrape"> = {
+      scrape: async (...args) => {
+        if (workdayIds.has(args[0])) { workdayStarted++; await gate; }
+        else fastCompleted++;
+        return normal.pipeline.scrape(...args);
+      },
+    };
+    const { service, queueRepository } = createService(database, { pipeline, runnerConfig: { concurrency: 10 } });
+    // Put all sixteen serialized jobs first, a stronger case than ordinary interleaving.
+    await queueRepository.createSessionAndEnqueue({ sessionId: "fairness", triggerSource: "manual", companyIds: stored.map((company) => company.id) });
+    const pending = service.recoverPending();
+    try {
+      await vi.waitFor(() => expect(fastCompleted).toBe(135), { timeout: 3000 });
+      expect(workdayStarted).toBe(1);
+      const waiting = database.select().from(scrapeQueueItems).all().filter((item) => workdayIds.has(item.companyId) && item.status === "queued");
+      expect(waiting).toHaveLength(15);
+      expect(waiting.every((item) => item.attemptCount === 0 && item.lockedAt === null)).toBe(true);
+    } finally { release(); await pending; }
+    expect(workdayStarted).toBe(16);
+    expect(database.select().from(scrapeSessions).get()?.companiesCompleted).toBe(151);
+  });
+
   it("acknowledges a committed session before its scrape finishes", async () => {
     const database = createTestDatabase();
     const company = database.insert(companies).values({ name: "Submitted", careersUrl: "https://example.com/submitted" }).returning().get();

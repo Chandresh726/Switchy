@@ -1,5 +1,6 @@
 import type { EarlyFilterStats, JobFilters } from "@/lib/scraper/types";
 import type { ScrapeOptions } from "@/lib/scraper/types/config";
+import { recordScrapeMetric } from "@/lib/scraper/infrastructure/metrics";
 import {
   applyEarlyFilters,
   toEarlyFilterStats,
@@ -59,10 +60,14 @@ export function selectListingsForHydration<T>({
   const newJobs = selected.filter((listing) => previousFetch(listing) === undefined);
   const refreshJobs = selected.filter((listing) => previousFetch(listing) !== undefined)
     .sort((left, right) => previousFetch(left)! - previousFetch(right)!);
+  const maintenance = refreshJobs.slice(0, detailRefresh?.limit ?? 0);
+  const allowed = detailRefresh?.reserve?.(maintenance.length) ?? maintenance.length;
+  recordScrapeMetric("priorityDetailsSelected", detailRefresh ? newJobs.length : selected.length);
+  recordScrapeMetric("maintenanceDetailsSelected", detailRefresh ? Math.min(maintenance.length, allowed) : 0);
 
   return {
     listings: detailRefresh
-      ? [...newJobs, ...refreshJobs.slice(0, detailRefresh.limit)]
+      ? [...newJobs, ...maintenance.slice(0, allowed)]
       : selected,
     earlyFiltered: toEarlyFilterStats(filtered),
   };

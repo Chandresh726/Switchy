@@ -32,6 +32,7 @@ import {
   type ScraperResult,
 } from "@/lib/scraper/types";
 import { KeyedExecutionLock } from "@/lib/runtime/keyed-lock";
+import { measureScrapeMetric } from "@/lib/scraper/infrastructure/metrics";
 
 import { AbstractBrowserScraper, DEFAULT_BROWSER_CONFIG } from "../core";
 import {
@@ -165,7 +166,7 @@ const DEFAULT_WORKDAY_CONFIG: WorkdayConfig = {
 export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
   readonly platform = "workday" as const;
   override readonly capabilities = {
-    concurrency: "parallel",
+    concurrency: "browser_limited",
   } as const;
 
   constructor(
@@ -184,7 +185,8 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
   }
 
   async scrape(url: string, options?: ScrapeOptions): Promise<ScraperResult> {
-    const release = await workdayLock.acquire("workday", getActiveScrapeSignal() ?? new AbortController().signal);
+    const release = await measureScrapeMetric("platformLockWaitMs", () =>
+      workdayLock.acquire("workday", getActiveScrapeSignal() ?? new AbortController().signal));
     try {
       try {
         return await this.scrapeAttempt(url, options);
@@ -281,6 +283,8 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         listings: allJobListItems,
         filters: options?.filters,
         existingExternalIds: options?.existingExternalIds,
+        existingJobUrls: options?.existingJobUrls,
+        getUrl: (job) => `${parsedUrl.baseUrl}/${parsedUrl.board}${job.externalPath || ""}`,
         detailRefresh: options?.detailRefresh,
         toFilterable: (job) => ({
           title: job.title,
@@ -674,7 +678,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           break;
         }
         if (this.config.listDelayMs > 0) {
-          await abortableDelay(this.config.listDelayMs, getActiveScrapeSignal());
+          await measureScrapeMetric("pacingWaitMs", () => abortableDelay(this.config.listDelayMs, getActiveScrapeSignal()));
         }
         const batch = offsets.slice(index, index + this.config.parallelListFetches);
         const results = await Promise.all(batch.map(async (offset) => {

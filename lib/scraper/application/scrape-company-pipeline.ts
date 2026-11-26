@@ -17,6 +17,7 @@ import type { ScrapeSettingsProvider } from "@/lib/scraper/settings/provider";
 import { ScraperLogger } from "@/lib/scraper/utils/logger";
 
 import { selectFreshJobIdentities } from "../services/job-refresh-policy";
+import { DescriptionRefreshBudget } from "../services/description-refresh-budget";
 import { canArchiveMissingJobs } from "../services/listing-reconciliation";
 import type { IDeduplicationService } from "../services/deduplication-service";
 import type { IFilterService, JobFilters } from "../services/filter-service";
@@ -27,6 +28,8 @@ export interface ScrapeCompanyPipelineConfig {
   defaultFilters: JobFilters;
   detailsRefreshIntervalMs?: number;
   maxExistingDetailsPerRun?: number;
+  maxExistingDetailsPerSession?: number;
+  detailsRefreshCooldownMs?: number;
 }
 
 export const DEFAULT_SCRAPE_COMPANY_PIPELINE_CONFIG: ScrapeCompanyPipelineConfig = {
@@ -90,6 +93,7 @@ export interface ScrapePipelineDependencies {
 }
 
 export class ScrapeCompanyPipeline {
+  private readonly refreshBudget: DescriptionRefreshBudget;
   constructor(
     private readonly repository: ScrapeCompanyStore,
     private readonly registry: IScraperRegistry,
@@ -98,7 +102,9 @@ export class ScrapeCompanyPipeline {
     private readonly config: ScrapeCompanyPipelineConfig,
     private readonly settingsProvider: ScrapeSettingsProvider,
     private readonly dependencies: ScrapePipelineDependencies
-  ) {}
+  ) {
+    this.refreshBudget = new DescriptionRefreshBudget(dependencies.fetchState);
+  }
 
   async scrape(
     companyId: number,
@@ -160,6 +166,10 @@ export class ScrapeCompanyPipeline {
       );
       scraperOptions.existingJobUrls = freshIdentities.existingJobUrls;
       scraperOptions.detailRefresh = freshIdentities.detailRefresh;
+      scraperOptions.detailRefresh.reserve = (requested) => this.refreshBudget.reserve(
+        options.sessionId, companyId, requested, this.dependencies.now?.() ?? new Date(),
+        this.config.maxExistingDetailsPerSession, this.config.detailsRefreshCooldownMs
+      );
 
       fetchStartedAt = Date.now();
       const scraperResult = await this.registry.scrape(

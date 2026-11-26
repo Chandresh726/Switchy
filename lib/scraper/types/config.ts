@@ -13,6 +13,7 @@ export interface ScrapeOptions {
   detailRefresh?: {
     fetchedAtByIdentity: ReadonlyMap<string, number>;
     limit: number;
+    reserve?: (requested: number) => number;
   };
   signal?: AbortSignal;
 }

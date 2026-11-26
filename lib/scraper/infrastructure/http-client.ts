@@ -1,4 +1,8 @@
 import type { ScrapeFetchStateStore } from "./fetch-state";
+import { HttpError } from "./http-error";
+
+export { HttpError } from "./http-error";
+import { measureScrapeMetric, recordScrapeMetric } from "./metrics";
 
 import {
   abortableDelay,
@@ -161,6 +165,7 @@ export class FetchHttpClient implements IHttpClient {
   private checkCooldown(url: string): void {
     const entry = this.state?.get(`cooldown:${parseScrapeHost(url)}`) as { until?: number } | undefined;
     if (typeof entry?.until === "number" && entry.until > Date.now()) {
+      recordScrapeMetric("cooldownBlocks");
       throw new HttpError(429, "Host rate limit cooldown is active", url,
         new Headers({ "retry-after": String(Math.ceil((entry.until - Date.now()) / 1000)) }));
     }
@@ -204,9 +209,16 @@ export class FetchHttpClient implements IHttpClient {
       // Per-hop concurrency slot so cross-host redirects respect the target
       // host's limit instead of reusing the origin host's slot.
       this.checkCooldown(currentUrl);
-      const release = await this.acquireHostSlot(currentUrl, args.signal);
+      const release = await measureScrapeMetric("hostSlotWaitMs", () => this.acquireHostSlot(currentUrl, args.signal));
       let released = false;
-      const releaseAttempt = () => { if (!released) { released = true; release(); } };
+      let requestStarted: number | undefined;
+      const releaseAttempt = () => {
+        if (!released) {
+          released = true;
+          if (requestStarted !== undefined) recordScrapeMetric("httpMs", performance.now() - requestStarted);
+          release();
+        }
+      };
       const attemptController = new AbortController();
       const onAbort = () => attemptController.abort(args.signal?.reason);
       args.signal?.addEventListener("abort", onAbort, { once: true });
@@ -218,9 +230,11 @@ export class FetchHttpClient implements IHttpClient {
       try {
         const host = parseScrapeHost(currentUrl);
         const waitMs = (this.lastRequestAt.get(host) ?? 0) + args.minIntervalMs - Date.now();
-        if (waitMs > 0) await this.delay(waitMs, attemptController.signal);
+        if (waitMs > 0) await measureScrapeMetric("pacingWaitMs", () => this.delay(waitMs, attemptController.signal));
         this.checkCooldown(currentUrl);
         this.lastRequestAt.set(host, Date.now());
+        requestStarted = performance.now();
+        recordScrapeMetric("httpRequests");
         const response = await (args.transport ?? fetch)(currentUrl, {
           redirect: "manual",
           ...currentOptions,
@@ -263,6 +277,7 @@ export class FetchHttpClient implements IHttpClient {
           await this.discardResponse(response);
           throw new HttpError(response.status, "Blocked by browser challenge", currentUrl, response.headers);
         }
+        if (response.status === 429) recordScrapeMetric("rateLimits");
         if (response.ok && this.state) {
           const key = `cooldown:${host}`;
           const previous = this.state.get(key) as { strikes?: number } | undefined;
@@ -302,7 +317,8 @@ export class FetchHttpClient implements IHttpClient {
         );
         clearTimeout(timeoutId);
         releaseAttempt();
-        await this.delay(delayMs, args.signal);
+        recordScrapeMetric("retries");
+        await measureScrapeMetric("retryWaitMs", () => this.delay(delayMs, args.signal));
       } catch (error) {
         if (args.signal?.aborted) {
           this.throwIfAborted(args.signal);
@@ -314,7 +330,8 @@ export class FetchHttpClient implements IHttpClient {
         );
         clearTimeout(timeoutId);
         releaseAttempt();
-        await this.delay(delayMs, args.signal);
+        recordScrapeMetric("retries");
+        await measureScrapeMetric("retryWaitMs", () => this.delay(delayMs, args.signal));
       } finally {
         clearTimeout(timeoutId);
         args.signal?.removeEventListener("abort", onAbort);
@@ -471,43 +488,6 @@ export class FetchHttpClient implements IHttpClient {
 
   private abortReason(signal?: AbortSignal): unknown {
     return createScrapeAbortError(signal);
-  }
-}
-
-export class HttpError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-    public readonly url: string,
-    public readonly responseHeaders?: Headers
-  ) {
-    super(message);
-    this.name = "HttpError";
-  }
-
-  get retryAfterMs(): number | undefined {
-    const value = this.responseHeaders?.get("retry-after");
-    if (!value) return undefined;
-    const seconds = Number(value);
-    if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
-    const date = Date.parse(value);
-    return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
-  }
-
-  get isBrowserChallenge(): boolean {
-    return this.responseHeaders?.get("cf-mitigated") === "challenge";
-  }
-
-  get isRateLimited(): boolean {
-    return this.status === 429 && !this.isBrowserChallenge;
-  }
-
-  get isClientError(): boolean {
-    return this.status >= 400 && this.status < 500;
-  }
-
-  get isServerError(): boolean {
-    return this.status >= 500;
   }
 }
 
