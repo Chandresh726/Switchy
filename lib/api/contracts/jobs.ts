@@ -95,6 +95,7 @@ const jobSummarySchema = z.object({
   descriptionFormat: z.enum(["markdown", "plain", "html"]),
   url: z.string(),
   location: z.string().nullable(),
+  sourceLocations: z.array(z.string()).nullable().optional(),
   locationType: z.string().nullable(),
   salary: z.string().nullable(),
   department: z.string().nullable(),

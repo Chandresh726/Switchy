@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { updateJob } from "@/lib/api/clients/jobs";
 import { isNewJob } from "@/lib/jobs/is-new-job";
+import { formatJobLocation } from "@/lib/jobs/locations";
 import type { JobStatus } from "@/lib/jobs/status";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/utils/format";
@@ -41,6 +42,7 @@ const LOCATION_TYPE_LABELS: Record<string, string> = {
 };
 
 export function CompanyJobCard({ companyId, job, currentTime }: CompanyJobCardProps) {
+  const location = formatJobLocation(job.location, job.sourceLocations);
   const queryClient = useQueryClient();
   const shouldShowNewTag = isNewJob({
     discoveredAt: job.discoveredAt,
@@ -80,10 +82,10 @@ export function CompanyJobCard({ companyId, job, currentTime }: CompanyJobCardPr
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            {job.location && (
+            {location && (
               <span className="flex items-center gap-1">
                 <MapPin className="h-3 w-3" />
-                {job.location}
+                {location}
               </span>
             )}
             {job.locationType && (

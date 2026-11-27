@@ -50,7 +50,8 @@ describe("JobCard match actions", () => {
           id: 42,
           title: "Synthetic Engineer",
           url: "https://example.test/jobs/42",
-          location: "Remote",
+          location: "2 Locations",
+          sourceLocations: ["New Delhi", "Mumbai"],
           locationType: "remote",
           department: "Engineering",
           salary: null,
@@ -65,6 +66,8 @@ describe("JobCard match actions", () => {
       </QueryClientProvider>
     );
     const user = userEvent.setup();
+    expect(screen.getByText("New Delhi; Mumbai")).toBeTruthy();
+    expect(screen.queryByText("2 Locations")).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Mark Applied" }));
     await waitFor(() => expect(requests).toContainEqual({ method: "PATCH", url: "/api/jobs/42" }));

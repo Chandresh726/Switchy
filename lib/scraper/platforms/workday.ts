@@ -2,6 +2,7 @@ import type { Page } from "playwright";
 import { z } from "zod";
 
 import { containsHtml, processDescription } from "@/lib/jobs/description-processor";
+import { formatJobLocation, isLocationCountLabel } from "@/lib/jobs/locations";
 import type {
   BrowserSession,
   IBrowserClient,
@@ -198,6 +199,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           title: job.title,
           location: job.locationsText,
           country: listResult.country,
+          locationsPending: isLocationCountLabel(job.locationsText),
         }),
         getExternalId: (job) => {
           return this.generateExternalId(
@@ -687,7 +689,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           externalId,
           title: job.title,
           url: jobUrl,
-          location: job.locationsText || detail.jobPostingInfo.location || "",
+          location: formatJobLocation(job.locationsText, locations) ?? undefined,
           country: countryHint || undefined,
           locations: locations.length ? locations : undefined,
           locationType: this.parseRemoteType(job.remoteType),

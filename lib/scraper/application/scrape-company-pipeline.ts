@@ -15,6 +15,7 @@ import {
 } from "@/lib/scraper/types";
 import type { ScrapeSettingsProvider } from "@/lib/scraper/settings/provider";
 import { ScraperLogger } from "@/lib/scraper/utils/logger";
+import { formatJobLocation } from "@/lib/jobs/locations";
 
 import { selectFreshJobIdentities } from "../services/job-refresh-policy";
 import { DescriptionRefreshBudget } from "../services/description-refresh-budget";
@@ -539,6 +540,9 @@ export class ScrapeCompanyPipeline {
       const existing = existingById.get(duplicate.existingJobId);
       if (!existing) continue;
       const job = { ...duplicate.job };
+      if (job.location !== undefined || job.locations !== undefined) {
+        job.location = formatJobLocation(job.location, job.locations ?? existing.sourceLocations) ?? undefined;
+      }
       if (!this.hasNonEmptyDescription(job.description) ||
           (job.descriptionQuality === "teaser" && this.hasNonEmptyDescription(existing.description))) {
         delete job.description;

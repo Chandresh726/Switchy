@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { ApiErrorState } from "@/components/ui/api-error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isNewJob } from "@/lib/jobs/is-new-job";
+import { formatJobLocation } from "@/lib/jobs/locations";
 import { formatRelativeTime } from "@/lib/utils/format";
 import { getSessionStatusConfig } from "@/lib/utils/status-config";
 import { getProfile } from "@/lib/api/clients/profile";
@@ -98,6 +99,7 @@ function JobRow({
   currentTime: number;
   showNewTag?: boolean;
 }) {
+  const location = formatJobLocation(job.location, job.sourceLocations);
   const shouldShowNewTag = showNewTag && isNewJob({
     discoveredAt: job.discoveredAt,
     viewedAt: job.viewedAt,
@@ -128,12 +130,12 @@ function JobRow({
             </h3>
             {shouldShowNewTag && <NewJobBadge />}
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+          <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground mt-0.5">
             <span>{job.company.name}</span>
-            {job.location && (
+            {location && (
               <>
                 <span>&bull;</span>
-                <span>{job.location}</span>
+                <span className="truncate" title={location}>{location}</span>
               </>
             )}
           </div>

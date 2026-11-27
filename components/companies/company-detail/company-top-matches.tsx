@@ -7,6 +7,7 @@ import { MatchBadge } from "@/components/jobs/match-badge";
 import { Badge } from "@/components/ui/badge";
 import { formatRelativeTime } from "@/lib/utils/format";
 import { isPromotedMatch } from "@/lib/ai/matcher/promotion";
+import { formatJobLocation } from "@/lib/jobs/locations";
 
 import type { CompanyJob } from "@/lib/api/contracts/companies";
 
@@ -44,6 +45,7 @@ export function CompanyTopMatches({ jobs }: CompanyTopMatchesProps) {
 
       <div className="grid grid-cols-3 gap-3">
         {topJobs.map((job) => {
+          const location = formatJobLocation(job.location, job.sourceLocations);
           const postedDate = parseDate(job.discoveredAt);
 
           return (
@@ -58,10 +60,10 @@ export function CompanyTopMatches({ jobs }: CompanyTopMatchesProps) {
               </div>
 
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                {job.location && (
+                {location && (
                   <span className="flex items-center gap-1">
                     <MapPin className="h-3 w-3" />
-                    {job.location}
+                    {location}
                   </span>
                 )}
                 {job.locationType && (

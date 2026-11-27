@@ -147,7 +147,7 @@ describe("Workday country discovery and coverage", () => {
       } })) as IHttpClient["get"],
     });
     const result = await new WorkdayScraper(http, browser, { listDelayMs: 0 }).scrape(url, { filters: { country: "India" } });
-    expect(result).toMatchObject({ outcome: "success", jobs: [{ location: "India / USA", locations: ["USA", "Bangalore, India"] }] });
+    expect(result).toMatchObject({ outcome: "success", jobs: [{ location: "USA; Bangalore, India", locations: ["USA", "Bangalore, India"] }] });
     expect(new DefaultFilterService().matchesFilters(result.jobs[0], { country: "India" })).toBe(true);
   });
 

@@ -1,7 +1,8 @@
 import type { EarlyFilterStats, JobFilters } from "@/lib/scraper/types";
+import { formatJobLocation, normalizeJobLocations } from "@/lib/jobs/locations";
 import {
   matchesPreferredCity,
-  matchesPreferredCountry,
+  matchesJobCountry,
   matchesTitleKeywords,
 } from "./filter-service";
 
@@ -9,6 +10,9 @@ export interface FilterableItem {
   title?: string;
   location?: string;
   country?: string;
+  locations?: string[];
+  /** Opt in only when listing metadata explicitly defers names to job details. */
+  locationsPending?: boolean;
 }
 
 interface EarlyFilterBreakdown {
@@ -49,12 +53,15 @@ export function applyEarlyFilters<T extends FilterableItem>(
   const filtered: T[] = [];
 
   for (const item of items) {
-    if (safeFilters.country && !matchesPreferredCountry(item.country ?? item.location, safeFilters.country)) {
+    const location = formatJobLocation(item.location, item.locations) ?? undefined;
+    const pending = item.locationsPending && normalizeJobLocations(item.location, item.locations).length === 0;
+    if (safeFilters.country && !(pending && !item.country) &&
+        !matchesJobCountry(item, safeFilters.country)) {
       breakdown.country++;
       continue;
     }
 
-    if (safeFilters.city && !matchesPreferredCity(item.location, safeFilters.city)) {
+    if (safeFilters.city && !pending && !matchesPreferredCity(location, safeFilters.city)) {
       breakdown.city++;
       continue;
     }

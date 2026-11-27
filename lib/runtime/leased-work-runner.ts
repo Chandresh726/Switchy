@@ -8,6 +8,7 @@ export interface LeasedWorkItem {
   attemptCount: number;
   maxAttempts: number;
   createdAt?: Date;
+  startedAt?: Date | null;
 }
 
 export interface LocalLeasedWorkStore<
@@ -338,6 +339,7 @@ export class LocalLeasedWorkRunner<
     } catch (error) {
       const now = new Date();
       const rateLimitDelayMs = this.config.getRateLimitDelayMs?.(error);
+      const rateLimitStartedAt = item.startedAt ?? item.createdAt;
       if (!cancellationRequested) {
         cancellationRequested = await this.repository.isCancellationRequested(
           item.id,
@@ -375,8 +377,8 @@ export class LocalLeasedWorkRunner<
         const failed = await this.repository.fail(item.id, workerId, error.message, now);
         if (failed) summary.failed += 1;
         else await this.persistRacedCancellation(item.id, workerId, now, summary);
-      } else if (rateLimitDelayMs !== undefined && this.repository.defer && item.createdAt &&
-        now.getTime() + Math.max(30_000, rateLimitDelayMs) >= item.createdAt.getTime() + this.config.rateLimitMaxAgeMs) {
+      } else if (rateLimitDelayMs !== undefined && this.repository.defer && rateLimitStartedAt &&
+        now.getTime() + Math.max(30_000, rateLimitDelayMs) >= rateLimitStartedAt.getTime() + this.config.rateLimitMaxAgeMs) {
         const failed = await this.repository.fail(item.id, workerId,
           this.config.rateLimitDeadlineMessage, now);
         if (failed) summary.failed += 1;

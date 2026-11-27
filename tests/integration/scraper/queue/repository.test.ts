@@ -63,7 +63,7 @@ describe("DrizzleLocalScrapeQueueRepository", () => {
     expect(await repository[method](item!.id, "worker", new Error("Suspended"), resume, now, 0)).toBe(true);
     expect(firstDatabase.select().from(scrapeQueueItems).get()).toMatchObject({ status: "queued", attemptCount: 0, availableAt: resume, lastError: "Suspended", workerId: null });
     expect(await repository.claimNext("early-worker", now, 60_000)).toBeNull();
-    expect(await repository.claimNext("resumed-worker", resume, 60_000)).toMatchObject({ attemptCount: 1 });
+    expect(await repository.claimNext("resumed-worker", resume, 60_000)).toMatchObject({ attemptCount: 1, lastError: null });
     await repository.requestSessionCancellation("suspension", resume);
     expect(await repository[method](item!.id, "resumed-worker", new Error("Suspended"), resume, resume, 0)).toBe(false);
   });

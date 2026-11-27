@@ -101,6 +101,7 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
             leaseExpiresAt,
             startedAt: candidate.startedAt ?? now,
             attemptCount: candidate.attemptCount + 1,
+            lastError: null,
             updatedAt: now,
           })
           .where(
@@ -195,6 +196,7 @@ export class DrizzleLocalScrapeQueueRepository implements ILocalScrapeQueueRepos
     return this.finishOwnedItem(itemId, workerId, {
       status: "completed",
       resultJson,
+      lastError: null,
       completedAt: now,
       updatedAt: now,
     }, true);

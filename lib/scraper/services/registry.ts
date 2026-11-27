@@ -111,7 +111,7 @@ export function createScraperRegistry(config: ScraperRegistryConfig): IScraperRe
   registry.register(new GreenhouseScraper(config.httpClient));
   registry.register(new LeverScraper(config.httpClient, {}, queries));
   registry.register(new AshbyScraper(config.httpClient));
-  registry.register(new EightfoldScraper(config.httpClient, config.browserClient, {}, queries));
+  registry.register(new EightfoldScraper(config.httpClient, config.browserClient, {}, queries, config.fetchState));
   registry.register(new WorkdayScraper(config.httpClient, config.browserClient, config.workday, config.fetchState));
   registry.register(new ServiceNowScraper(config.httpClient));
   registry.register(new SmartRecruitersScraper(config.httpClient, {}, queries));

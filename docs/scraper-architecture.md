@@ -133,6 +133,30 @@ Workday company serialization and default listing/detail concurrency stay at
 one. Optional detail country, locations, and publication dates are retained
 when available; malformed optional metadata cannot discard a valid description.
 
+Count-only Workday location summaries defer country/city decisions until details
+are available, while verified query countries and title constraints still apply.
+Actual detail locations replace the summary count. Listing-only updates retain
+known location arrays. Shared location formatting feeds job and company views;
+API responses expose `sourceLocations`, and location search includes secondary
+locations. Startup repair replaces stored count/empty labels from existing arrays
+and updates their derived AI fingerprint without changing user state or scrape
+freshness. Counts remain visible when names are unavailable.
+
+Eightfold now starts requests at least 750 ms apart per host, with two listing
+requests in flight and adaptive pacing up to eight seconds after throttling.
+Successful listing pages are checkpointed as separate records in
+`scrape_fetch_state`, avoiding repeated serialization of the full board. A retry
+rechecks the first page and reuses pages only when the source query, total, first
+page IDs and 30-minute checkpoint age agree. Parallel requests settle before
+the retry is deferred, preserving completed pages and the longest cooldown.
+Resumed snapshots remain partial and cannot authorize archival or country-query
+validation until a fresh complete crawl verifies coverage.
+
+Scraper rate-limit recovery is bounded to 30 minutes from a company's first
+attempt, independent of time spent waiting in the queue. A later scheduled run
+can try again. Reclaiming work clears the previous queue error; deferred retries
+show Cooling down or Waiting for retry with their scheduled retry time.
+
 ## Query optimization across ATS adapters
 
 The composition factory accepts `queryPolicies` for TalentBrew, Lever, Eightfold,

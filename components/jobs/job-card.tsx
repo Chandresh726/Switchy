@@ -11,6 +11,7 @@ import { MatchBadge } from "./match-badge";
 import { ApplyButton } from "./apply-button";
 import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
 import type { JobStatus } from "@/lib/jobs/status";
+import { formatJobLocation } from "@/lib/jobs/locations";
 import { cacheOwnership } from "@/lib/query-keys";
 import { getApiErrorMessage } from "@/lib/api/error-presentation";
 import {
@@ -31,6 +32,7 @@ interface JobCardProps {
     | "title"
     | "url"
     | "location"
+    | "sourceLocations"
     | "locationType"
     | "department"
     | "salary"
@@ -71,6 +73,7 @@ const SENIORITY_LABELS: Record<string, string> = {
 
 export function JobCard({ job }: JobCardProps) {
   const queryClient = useQueryClient();
+  const location = formatJobLocation(job.location, job.sourceLocations);
   const {
     mutation: calculateMatchMutation,
     isMatching,
@@ -152,10 +155,10 @@ export function JobCard({ job }: JobCardProps) {
             {SENIORITY_LABELS[job.seniorityLevel] || job.seniorityLevel}
           </Badge>
         )}
-        {job.location && (
+        {location && (
           <span className="flex items-center gap-1">
             <MapPin className="h-3.5 w-3.5" />
-            {job.location}
+            {location}
           </span>
         )}
         {job.locationType && (

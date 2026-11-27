@@ -20,6 +20,7 @@ import { getJob, updateJob } from "@/lib/api/clients/jobs";
 import { getApiErrorMessage, isApiNotFoundError } from "@/lib/api/error-presentation";
 import { sanitizeHtmlContent } from "@/lib/jobs/description-processor";
 import type { JobStatus } from "@/lib/jobs/status";
+import { formatJobLocation } from "@/lib/jobs/locations";
 import { useQueuedJobMatch } from "@/lib/hooks/use-queued-job-match";
 import { cacheOwnership, queryKeys } from "@/lib/query-keys";
 import {
@@ -62,6 +63,7 @@ export default function JobDetailPage() {
   } = useQueuedJobMatch({
     jobId: hasValidJobId ? jobId : 0,
   });
+  const location = formatJobLocation(job?.location, job?.sourceLocations);
   const isReadOnlyPostingAction = job?.status === "applied" || job?.status === "archived";
 
   const updateStatusMutation = useMutation({
@@ -176,10 +178,10 @@ export default function JobDetailPage() {
                   {job.seniorityLevel.charAt(0).toUpperCase() + job.seniorityLevel.slice(1)}
                 </Badge>
               )}
-              {job.location && (
+              {location && (
                 <span className="flex items-center gap-1">
                   <MapPin className="h-4 w-4" />
-                  {job.location}
+                  {location}
                 </span>
               )}
               {job.locationType && (

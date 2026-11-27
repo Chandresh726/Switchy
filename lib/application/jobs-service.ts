@@ -53,7 +53,7 @@ const JOB_SUMMARY_SELECTION = {
   job: {
     id: jobs.id, companyId: jobs.companyId, externalId: jobs.externalId,
     title: jobs.title, descriptionFormat: jobs.descriptionFormat,
-    url: jobs.url, location: jobs.location, locationType: jobs.locationType,
+    url: jobs.url, location: jobs.location, sourceLocations: jobs.sourceLocations, locationType: jobs.locationType,
     salary: jobs.salary, department: jobs.department, employmentType: jobs.employmentType,
     seniorityLevel: jobs.seniorityLevel, status: jobs.status, postedDate: jobs.postedDate,
     discoveredAt: jobs.discoveredAt, updatedAt: jobs.updatedAt, archivedAt: jobs.archivedAt,
@@ -84,7 +84,10 @@ function baseConditions(query: JobsQuery) {
   const seniorityLevels = query.seniorityLevel?.split(",").filter(Boolean) ?? [];
   if (seniorityLevels.length === 1) conditions.push(eq(jobs.seniorityLevel, seniorityLevels[0]));
   else if (seniorityLevels.length > 1) conditions.push(or(...seniorityLevels.map((value) => eq(jobs.seniorityLevel, value))));
-  if (query.locationSearch) conditions.push(like(jobs.location, `%${query.locationSearch}%`));
+  if (query.locationSearch) conditions.push(or(
+    like(jobs.location, `%${query.locationSearch}%`),
+    like(jobs.sourceLocations, `%${query.locationSearch}%`)
+  ));
   if (query.discoveredSince) conditions.push(gte(jobs.discoveredAt, query.discoveredSince));
   if (query.updatedSince) conditions.push(gte(jobs.updatedAt, query.updatedSince));
   if (query.viewedSince) conditions.push(gte(jobs.viewedAt, query.viewedSince));

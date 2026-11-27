@@ -12,6 +12,40 @@ vi.mock("@/lib/db", () => ({ db: {} }));
 const sqlite = createSqliteTestHarness("switchy-composition-");
 
 describe("scraper composition", () => {
+  it("hydrates count-only locations before city filtering and retains names on listing-only refreshes", async () => {
+    const { database } = sqlite.createDatabase();
+    const url = "https://acme.wd5.myworkdayjobs.com/Board";
+    const company = database.insert(companies).values({ name: "Locations", platform: "workday", careersUrl: url }).returning().get();
+    database.insert(settings).values([
+      { key: "scraper_filter_country", value: "India" }, { key: "scraper_filter_city", value: "Mumbai" },
+      { key: "scraper_keep_device_awake", value: "false" },
+    ]).run();
+    const post = vi.fn(async () => ({ total: 2, jobPostings: [1, 2].map((id) => ({
+      title: "Engineer", externalPath: `/job/REQ-${id}`, locationsText: "2 Locations",
+    })) }));
+    const get = vi.fn(async (url: string) => ({ jobPostingInfo: {
+      jobDescription: "Full description", timeType: "Full time", externalUrl: `${company.careersUrl}/job/${url.split("/").pop()}`,
+      location: url.endsWith("1") ? "New Delhi" : "Paris",
+      additionalLocations: [{ descriptor: url.endsWith("1") ? "Mumbai" : "London" }],
+      country: { descriptor: url.endsWith("1") ? "India" : "France" },
+    } }));
+    const service = createLocalScrapeQueueService({ database,
+      clients: { http: createHttpClientStub({ post: post as IHttpClient["post"], get: get as IHttpClient["get"] }) },
+      dependencies: { matchingEnabled: async () => false, dispatchMatching: async () => undefined },
+      runtime: { isDeviceAwake: async () => true, deviceSleepInhibitor: { acquire: async () => ({ release: async () => undefined }) } },
+    });
+    const first = (await service.scrapeCompanies([company.id], "manual")).results[0];
+    expect(first).toMatchObject({ outcome: "success", jobsAdded: 1, jobsFiltered: 1 });
+    const saved = database.select().from(jobs).get()!;
+    expect(saved).toMatchObject({ location: "New Delhi; Mumbai", sourceLocations: ["New Delhi", "Mumbai"] });
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    expect((await service.scrapeCompanies([company.id], "manual")).results[0]).toMatchObject({ outcome: "success", jobsAdded: 0 });
+    expect(database.select().from(jobs).all()).toHaveLength(1);
+    expect(database.select().from(jobs).get()).toMatchObject({ id: saved.id, location: saved.location,
+      sourceLocations: saved.sourceLocations, detailsFetchedAt: saved.detailsFetchedAt });
+    expect(get.mock.calls.filter(([url]) => url.endsWith("1"))).toHaveLength(1);
+  });
+
   it("starts Visa as a new Workday company and deduplicates repeat ingestion", async () => {
     const { database } = sqlite.createDatabase();
     const old = database.insert(companies).values({ name: "Visa", platform: "visa",

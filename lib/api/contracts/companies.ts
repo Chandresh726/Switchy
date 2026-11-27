@@ -90,6 +90,7 @@ const companyJobSchema = z.object({
   matchScore: z.number().nullable(),
   matchLegacy: z.boolean().optional(),
   location: z.string().nullable(),
+  sourceLocations: z.array(z.string()).nullable().optional(),
   locationType: z.string().nullable(),
   discoveredAt: dateValueSchema,
   viewedAt: dateValueSchema,

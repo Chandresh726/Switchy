@@ -27,6 +27,21 @@ afterEach(() => {
 });
 
 describe("job query date controls", () => {
+  it("finds secondary locations and exposes the full list through list and detail APIs", async () => {
+    const { database } = harness.createDatabase();
+    mockJobDependencies(database);
+    const company = database.insert(companies).values({ name: "Locations", careersUrl: "https://example.com/locations" }).returning().get();
+    const job = database.insert(jobs).values({ companyId: company.id, title: "Engineer", location: "New Delhi",
+      sourceLocations: ["New Delhi", "Mumbai"], url: "https://example.com/locations/job" }).returning().get();
+    const { GET } = await import("@/app/api/jobs/route");
+    const response = await GET(new NextRequest("http://localhost/api/jobs?locationSearch=Mumbai"));
+    const payload = jobsResponseSchema.parse(await response.json());
+    expect(payload.totalCount).toBe(1);
+    expect(payload.jobs).toMatchObject([{ id: job.id, sourceLocations: ["New Delhi", "Mumbai"] }]);
+    const { getJob } = await import("@/lib/application/jobs-service");
+    expect(await getJob(job.id)).toMatchObject({ sourceLocations: ["New Delhi", "Mumbai"] });
+  });
+
   it("filters every stored activity timestamp and combines dates with status", async () => {
     const { database } = harness.createDatabase();
     mockJobDependencies(database);

@@ -7,6 +7,7 @@ import { normalizeCareersUrl } from "@/lib/companies/normalization";
 
 import type * as databaseSchema from "./schema";
 import { migrateOutdatedScraperSources } from "./scraper-source-migrations";
+import { repairPlaceholderJobLocations } from "./job-location-repair";
 import {
   aiCacheEvents,
   aiGeneratedContent,
@@ -477,6 +478,7 @@ export function migrateLocalDatabase(
   // Source resets rely on foreign-key cascades to remove linked job artifacts.
   migrateOutdatedScraperSources(database);
   backfillCompanyIdentities(database);
+  repairPlaceholderJobLocations(database);
   const foreignKeyViolations = sqlite.pragma("foreign_key_check") as unknown[];
   if (foreignKeyViolations.length > 0) {
     throw new Error(`Migration left ${foreignKeyViolations.length} foreign-key violation(s)`);

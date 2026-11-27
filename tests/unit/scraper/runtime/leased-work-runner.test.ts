@@ -30,9 +30,21 @@ function createRepository(
 }
 
 describe("LocalLeasedWorkRunner", () => {
+  it("starts the rate-limit deadline when work begins rather than while it is waiting in the queue", async () => {
+    const repository = createRepository([createScrapeQueueItem({
+      createdAt: new Date(Date.now() - 60 * 60_000), startedAt: new Date(), attemptCount: 1,
+    })]);
+    const runner = new LocalLeasedWorkRunner(repository, async () => {
+      throw new AIRateLimitError("limited", undefined, 60_000);
+    }, { concurrency: 1, getRateLimitDelayMs, rateLimitMaxAgeMs: 30 * 60_000 });
+    expect(await runner.runAvailable()).toMatchObject({ failed: 0, retried: 1 });
+    expect(repository.defer).toHaveBeenCalled();
+  });
+
   it("ends rate-limit recovery at the configured deadline", async () => {
     const repository = createRepository([createScrapeQueueItem({
-      createdAt: new Date(Date.now() - 6 * 60 * 60_000), attemptCount: 1,
+      createdAt: new Date(Date.now() - 6 * 60 * 60_000),
+      startedAt: new Date(Date.now() - 6 * 60 * 60_000), attemptCount: 1,
     })]);
     const runner = new LocalLeasedWorkRunner(repository, async () => {
       throw new AIRateLimitError("limited", undefined, 60_000);

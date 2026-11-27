@@ -198,6 +198,8 @@ describe("SessionDetail", () => {
       attemptCount: 0, lastError: "Browser challenge", workerId: null })]))));
     renderWithQueryClient(<SessionDetail sessionId={SESSION_ID} />);
     expect(await screen.findByText("Waiting for retry")).toBeTruthy();
+    expect(screen.getByText("Cooling down")).toBeTruthy();
+    expect(screen.getByText("Previous attempt:")).toBeTruthy();
     expect(screen.getByText(/Retry at/)).toBeTruthy();
     expect(screen.queryByText("Not started")).toBeNull();
   });

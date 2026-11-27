@@ -28,6 +28,54 @@ function browserClient(bootstrap = vi.fn(async () => ({
 }
 
 describe("EightfoldScraper", () => {
+  it("uses the longest cooldown from concurrent throttled responses", async () => {
+    const http = createHttpClientStub({ fetch: vi.fn(async (url: string) => {
+      const offset = Number(new URL(url).searchParams.get("start"));
+      return offset === 0 ? createEightfoldSearchResponse(Array.from({ length: 10 }, (_, id) => id + 1), 30)
+        : new Response("limited", { status: 429, headers: { "retry-after": offset === 10 ? "60" : "180" } });
+    }) });
+    const result = await new EightfoldScraper(http, browserClient(), { retries: 0, requestDelayMs: 0 })
+      .scrape("https://nvidia.eightfold.ai/careers");
+    expect(result).toMatchObject({ outcome: "error", error: { code: "rate_limited", retryAfterMs: 180_000 } });
+  });
+
+  it("drains throttled batches, resumes saved pages after restart, and keeps resumed snapshots partial", async () => {
+    const values = new Map<string, unknown>();
+    const state = { get: (key: string) => structuredClone(values.get(key)),
+      set: (key: string, value: unknown) => { values.set(key, structuredClone(value)); },
+      delete: (key: string) => { values.delete(key); } };
+    let releasePage!: () => void;
+    const pagePending = new Promise<void>((resolve) => { releasePage = resolve; });
+    let throttled = false;
+    let delayPage = true;
+    const fetchMock: FetchMock = vi.fn(async (url: string) => {
+      const offset = Number(new URL(url).searchParams.get("start"));
+      if (offset === 10 && delayPage) await pagePending;
+      if (offset === 20 && !throttled) {
+        throttled = true;
+        return new Response("limited", { status: 429, headers: { "retry-after": "120" } });
+      }
+      return createEightfoldSearchResponse(Array.from({ length: 10 }, (_, index) => offset + index + 1), 40);
+    });
+    const http = createHttpClientStub({ fetch: fetchMock });
+    const source = "https://nvidia.eightfold.ai/careers?location=India";
+    const options = { filters: { titleKeywords: ["__skip_details__"] } };
+    const makeScraper = () => new EightfoldScraper(http, browserClient(), { requestDelayMs: 0, retries: 0 }, undefined, state);
+    let settled = false;
+    const first = makeScraper().scrape(source, options).then((result) => { settled = true; return result; });
+    await vi.waitFor(() => expect(throttled).toBe(true));
+    expect(settled).toBe(false);
+    releasePage();
+    expect(await first).toMatchObject({ outcome: "error", error: { code: "rate_limited", retryAfterMs: 120_000 } });
+    delayPage = false;
+    const resumed = await makeScraper().scrape(source, options);
+    expect(resumed).toMatchObject({ outcome: "partial", totalListings: 40, listingCompleteness: "partial" });
+    expect(fetchMock.mock.calls.filter(([url]) => new URL(url).searchParams.get("start") === "10")).toHaveLength(1);
+    expect(values.size).toBe(0);
+    const fresh = await makeScraper().scrape(source, options);
+    expect(fresh).toMatchObject({ outcome: "success", totalListings: 40, listingCompleteness: "complete" });
+  });
+
   it("preserves first-page HTTP status and stage without response bodies", async () => {
     const scraper = new EightfoldScraper(
       createHttpClientStub({ fetch: vi.fn(async () => new Response("sensitive upstream body", { status: 503 })) }),
@@ -76,6 +124,8 @@ describe("EightfoldScraper", () => {
     expect(searchUrl.searchParams.getAll("Codes")).toEqual(["A", "B"]);
     expect(searchUrl.searchParams.has("pid")).toBe(false);
     expect(searchCall?.[1]?.headers).not.toHaveProperty("Cookie");
+    expect(searchCall?.[1]).toMatchObject({ minIntervalMs: 750,
+      adaptivePacing: { maxIntervalMs: 8_000, recoverySuccesses: 10 } });
     const detailCall = fetchMock.mock.calls.find(([url]) =>
       url.includes("position_details")
     );

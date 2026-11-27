@@ -1,5 +1,6 @@
 import type { ScrapedJob, JobFilters } from "@/lib/scraper/types";
 import { COUNTRY_MAPPINGS } from "@/lib/scraper/utils";
+import { formatJobLocation, normalizeJobLocations } from "@/lib/jobs/locations";
 
 export type { JobFilters } from "@/lib/scraper/types";
 
@@ -29,18 +30,15 @@ function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+const GLOBAL_REMOTE_LABELS = new Set(["remote", "remote position", "worldwide", "anywhere"]);
+
 export function matchesPreferredCountry(location: string | undefined, preferredCountry: string): boolean {
   if (!location) return false;
 
   const locationLower = location.toLowerCase().trim();
   const countryLower = preferredCountry.toLowerCase().trim();
 
-  if (
-    locationLower === "remote" ||
-    locationLower === "remote position" ||
-    locationLower === "worldwide" ||
-    locationLower === "anywhere"
-  ) {
+  if (GLOBAL_REMOTE_LABELS.has(locationLower)) {
     return true;
   }
 
@@ -50,6 +48,17 @@ export function matchesPreferredCountry(location: string | undefined, preferredC
     const regex = new RegExp(`\\b${escapeRegExp(variant)}\\b`, "i");
     return regex.test(locationLower);
   });
+}
+
+export function matchesJobCountry(
+  job: Pick<ScrapedJob, "country" | "location" | "locations">,
+  preferredCountry: string
+): boolean {
+  if (matchesPreferredCountry(job.country ?? job.location, preferredCountry)) return true;
+  return normalizeJobLocations(job.location, job.locations).some((location) =>
+    // A generic Remote label cannot override an explicit country restriction.
+    !(job.country && GLOBAL_REMOTE_LABELS.has(location.toLowerCase())) &&
+    matchesPreferredCountry(location, preferredCountry));
 }
 
 export function matchesPreferredCity(location: string | undefined, preferredCity: string): boolean {
@@ -70,11 +79,12 @@ export function matchesTitleKeywords(title: string | undefined, keywords: string
 
 export class DefaultFilterService implements IFilterService {
   matchesFilters(job: ScrapedJob, filters: JobFilters): boolean {
-    if (filters.country && !matchesPreferredCountry(job.country ?? job.location, filters.country)) {
+    const location = formatJobLocation(job.location, job.locations) ?? undefined;
+    if (filters.country && !matchesJobCountry(job, filters.country)) {
       return false;
     }
 
-    if (filters.city && !matchesPreferredCity(job.location, filters.city)) {
+    if (filters.city && !matchesPreferredCity(location, filters.city)) {
       return false;
     }
 
@@ -122,10 +132,11 @@ export class DefaultFilterService implements IFilterService {
     const filtered: ScrapedJob[] = [];
 
     for (const job of jobs) {
+      const location = formatJobLocation(job.location, job.locations) ?? undefined;
       let passed = true;
 
       if (filters.country) {
-        if (matchesPreferredCountry(job.country ?? job.location, filters.country)) {
+        if (matchesJobCountry(job, filters.country)) {
           breakdown.passedCountry++;
         } else {
           breakdown.failedCountry++;
@@ -137,7 +148,7 @@ export class DefaultFilterService implements IFilterService {
       }
 
       if (filters.city) {
-        if (matchesPreferredCity(job.location, filters.city)) {
+        if (matchesPreferredCity(location, filters.city)) {
           breakdown.passedCity++;
         } else {
           breakdown.failedCity++;

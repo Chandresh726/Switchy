@@ -47,7 +47,7 @@ const MANUAL_BOARD_TOKEN_REQUIRED = new Set([
 ]);
 const COMPANY_JOB_SELECTION = {
   id: jobs.id, title: jobs.title, url: jobs.url,
-  status: jobs.status, location: jobs.location, locationType: jobs.locationType,
+  status: jobs.status, location: jobs.location, sourceLocations: jobs.sourceLocations, locationType: jobs.locationType,
   seniorityLevel: jobs.seniorityLevel, department: jobs.department,
   employmentType: jobs.employmentType, salary: jobs.salary,
   discoveredAt: jobs.discoveredAt, viewedAt: jobs.viewedAt,

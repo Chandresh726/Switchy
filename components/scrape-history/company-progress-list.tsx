@@ -196,7 +196,10 @@ function CompanyProgressRow({ progress }: { progress: CompanyProgress }) {
   const latestLog = getLatestLog(progress);
   const queueItem = progress.queueItem;
   const status = getProgressStatus(progress);
-  const statusStyle = STATUS_STYLES[status] ?? DEFAULT_STATUS_STYLE;
+  const retrying = status === "queued" && Boolean(queueItem?.lastError);
+  const coolingDown = retrying && /rate.limit|cooldown|HTTP 429/i.test(queueItem?.lastError ?? "");
+  const baseStyle = STATUS_STYLES[status] ?? DEFAULT_STATUS_STYLE;
+  const statusStyle = retrying ? { ...baseStyle, label: coolingDown ? "Cooling down" : "Waiting for retry" } : baseStyle;
   const StatusIcon = statusStyle.icon;
   const companyName = getCompanyName(progress);
   const logoUrl = latestLog?.companyLogoUrl ?? queueItem?.companyLogoUrl;
@@ -222,6 +225,7 @@ function CompanyProgressRow({ progress }: { progress: CompanyProgress }) {
     queueItem?.lastError &&
     !issueLogs.some((log) => log.errorMessage === queueItem.lastError);
   const queueErrorResolved = queueItem?.status === "completed";
+  const queueErrorHistorical = queueErrorResolved || queueItem?.status === "running" || retrying;
 
   return (
     <article className="relative overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-border/60">
@@ -346,14 +350,14 @@ function CompanyProgressRow({ progress }: { progress: CompanyProgress }) {
               <div
                 className={cn(
                   "flex gap-2 rounded-md border px-3 py-2",
-                  queueErrorResolved
+                  queueErrorHistorical
                     ? "border-amber-500/15 bg-amber-500/5 text-amber-300"
                     : "border-red-500/15 bg-red-500/5 text-red-300"
                 )}
               >
                 <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <p className="min-w-0 break-words font-mono text-xs opacity-90">
-                  {queueErrorResolved && <span>Earlier queue attempt: </span>}
+                  {queueErrorHistorical && <span>Previous attempt: </span>}
                   <span>{queueItem?.lastError}</span>
                 </p>
               </div>
