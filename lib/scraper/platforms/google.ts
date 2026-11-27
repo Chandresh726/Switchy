@@ -11,9 +11,11 @@ import {
   type ApiScraperConfig,
   type SeniorityLevel,
 } from "@/lib/scraper/types";
+
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
 import { fetchPaginatedHtmlByPageParam, resolveUrl } from "./shared/html-pagination";
+import { queryScope } from "./shared/query-optimizer";
 import { selectListingsForHydration } from "./shared/listing-selection";
 
 interface GoogleListingJob {
@@ -86,6 +88,7 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
       }
 
       const listingUrl = this.resolveListingUrl(url);
+      const listingScopeKey = new URL(listingUrl).search ? queryScope(this.platform, listingUrl, { version: 1 }) : undefined;
       const pagedResult = await fetchPaginatedHtmlByPageParam({
         httpClient: this.httpClient,
         startUrl: listingUrl,
@@ -141,6 +144,7 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
           jobs: [],
           totalListings: 0,
           openExternalIds,
+          listingScopeKey,
           listingCompleteness: "complete",
         };
       }
@@ -170,6 +174,7 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
           totalListings: listings.length,
           earlyFiltered: selection.earlyFiltered,
           openExternalIds,
+          listingScopeKey,
           listingCompleteness: listingIsComplete ? "complete" : "partial",
         };
       }
@@ -197,6 +202,7 @@ export class GoogleScraper extends AbstractApiScraper<GoogleConfig> {
         totalListings: listings.length,
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,
+        listingScopeKey,
         listingCompleteness: listingIsComplete ? "complete" : "partial",
       };
     } catch (error) {

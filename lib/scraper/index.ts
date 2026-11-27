@@ -31,6 +31,8 @@ import { DrizzleLocalScrapeQueueRepository } from "./queue/repository";
 import { LocalScrapeQueueService, type LocalScrapeQueueServiceDependencies } from "./queue/service";
 import type { ILocalScrapeQueueRepository } from "./queue/types";
 import { createDeduplicationService, createFilterService, createScraperRegistry } from "./services";
+import type { WorkdayConfigInput } from "./platforms/workday/config";
+import type { ListingQueryPolicies } from "./platforms/shared/query-optimizer";
 import { StoredScrapeSettingsProvider, type ScrapeSettingsProvider } from "./settings/provider";
 
 interface ScrapingModuleConfig {
@@ -48,6 +50,8 @@ interface ScrapingModuleConfig {
   httpClient?: Partial<HttpClientConfig>;
   browserClient?: Partial<BrowserSessionConfig>;
   pipeline?: Partial<ScrapeCompanyPipelineConfig>;
+  workday?: WorkdayConfigInput;
+  queryPolicies?: ListingQueryPolicies;
   repository?: IScraperRepository;
   settingsProvider?: ScrapeSettingsProvider;
 }
@@ -69,7 +73,7 @@ function createScrapingModule(config: ScrapingModuleConfig = {}): ScrapingModule
   const httpClient = config.clients?.http ?? createHttpClient(config.httpClient, fetchState);
   const browserClient = config.clients?.browser ?? createBrowserClient(config.browserClient);
 
-  const registry = createScraperRegistry({ httpClient, browserClient, fetchState });
+  const registry = createScraperRegistry({ httpClient, browserClient, fetchState, workday: config.workday, queryPolicies: config.queryPolicies });
   const deduplicationService = createDeduplicationService();
   const filterService = createFilterService();
 

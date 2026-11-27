@@ -8,6 +8,7 @@ import {
 export interface FilterableItem {
   title?: string;
   location?: string;
+  country?: string;
 }
 
 interface EarlyFilterBreakdown {
@@ -48,7 +49,7 @@ export function applyEarlyFilters<T extends FilterableItem>(
   const filtered: T[] = [];
 
   for (const item of items) {
-    if (safeFilters.country && !matchesPreferredCountry(item.location, safeFilters.country)) {
+    if (safeFilters.country && !matchesPreferredCountry(item.country ?? item.location, safeFilters.country)) {
       breakdown.country++;
       continue;
     }

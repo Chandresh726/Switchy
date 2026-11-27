@@ -6,7 +6,7 @@ import {
   abortableDelay,
   throwIfScrapeAborted,
 } from "@/lib/scraper/infrastructure/cancellation";
-import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
+import { HttpError, type IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import {
   createScraperError,
   parseEmploymentType,
@@ -26,10 +26,11 @@ import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
 import {
   isDetailFailuresTolerable,
 } from "./shared/completeness";
+import { sourceCountryHint } from "./shared/source-fields";
 import { selectListingsForHydration } from "./shared/listing-selection";
-
 import { OracleListingSchema, OracleListingPayloadSchema, OracleDetailPayloadSchema, type OracleListingRecord, type OracleDetailRecord } from "./shared/oracle-api";
-import { createOracleListingUrl, fetchOracleListingPages } from "./shared/oracle-pagination";
+import type { ListingQueryOptimizer } from "./shared/query-optimizer";
+import { createOracleListingUrl, fetchOptimizedOracleListings, type OracleQueryFilters } from "./shared/oracle-pagination";
 
 interface OracleBoard {
   origin: string;
@@ -40,6 +41,7 @@ interface OracleBoard {
 }
 
 interface OracleListing {
+  country?: string;
   id: string;
   title: string;
   url: string;
@@ -115,7 +117,7 @@ function isOracleCareersHost(hostname: string): boolean {
 export class OracleScraper extends AbstractApiScraper<OracleConfig> {
   readonly platform = "oracle" as const;
 
-  constructor(httpClient: IHttpClient, config: Partial<OracleConfig> = {}) {
+  constructor(httpClient: IHttpClient, config: Partial<OracleConfig> = {}, private readonly queries?: ListingQueryOptimizer) {
     super(httpClient, { ...DEFAULT_ORACLE_CONFIG, ...config });
   }
 
@@ -147,7 +149,8 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
         );
       }
       const boardToken = `${board.hostname}/${board.siteNumber}`;
-      const listingResult = await this.fetchAllListings(board);
+      const listingResult = await this.fetchAllListings(board, url, options?.filters?.country);
+      const listingScopeKey = listingResult.listingScopeKey;
       if (listingResult.listings.length === 0) {
         const firstFailure = listingResult.failedOffsets[0];
         if (firstFailure?.status) {
@@ -162,7 +165,9 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
             outcome: "success",
             jobs: [],
             totalListings: 0,
+            advertisedTotal: listingResult.advertisedTotal,
             openExternalIds: [],
+            listingScopeKey,
             listingCompleteness: "complete",
             detectedBoardToken: options?.boardToken ? undefined : boardToken,
           };
@@ -183,6 +188,7 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
         toFilterable: (listing) => ({
           title: listing.title,
           location: listing.location,
+          country: listing.country,
         }),
         getExternalId: (listing) => this.externalId(board, listing.id),
       });
@@ -224,6 +230,7 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
         totalListings: listings.length,
         advertisedTotal: listingResult.advertisedTotal,
         openExternalIds,
+        listingScopeKey,
         listingCompleteness: listingResult.isComplete ? "complete" : "partial",
         earlyFiltered: selection.earlyFiltered,
         detectedBoardToken: options?.boardToken ? undefined : boardToken,
@@ -324,28 +331,24 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
     }
   }
 
-  private async fetchAllListings(board: OracleBoard): Promise<{
-    listings: OracleListing[];
-    advertisedTotal: number;
-    failedOffsets: OraclePageFailure[];
-    invalidListings: number;
-    truncated: boolean;
-    isComplete: boolean;
-  }> {
-    return fetchOracleListingPages({
-      fetchPage: (offset) => this.fetchListingPage(board, offset),
+  private async fetchAllListings(board: OracleBoard, source: string, country?: string) {
+    const pageSize = this.queries?.policy(this.platform, source, `${board.hostname}/${board.siteNumber}`).pageSize ?? this.config.listingPageSize;
+    return fetchOptimizedOracleListings({
+      platform: this.platform, source, board: `${board.hostname}/${board.siteNumber}`, country, queries: this.queries,
+      fetchPage: (offset, filters) => this.fetchListingPage(board, offset, filters, pageSize),
       maxPages: this.config.maxListingPages, overlapRatio: 0.05,
     });
   }
 
   private async fetchListingPage(
     board: OracleBoard,
-    offset: number
+    offset: number, filters?: OracleQueryFilters, pageSize = this.config.listingPageSize
   ): Promise<OraclePageResult> {
     try {
-      const response = await this.fetchResponse(this.createListingUrl(board, offset), {
+      const response = await this.fetchResponse(this.createListingUrl(board, offset, filters, pageSize), {
         headers: this.jsonRequestHeaders(),
       });
+      if (response.status === 429) throw new HttpError(response.status, "Oracle listings were throttled", response.url, response.headers);
       if (!response.ok) return { ok: false, offset, status: response.status };
       const payload = parseExternalPayload(
         OracleListingPayloadSchema,
@@ -362,19 +365,21 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
       return {
         ok: true,
         offset: page.Offset,
-        limit: page.Limit,
+        limit: page.requisitionList.length > 0 && page.TotalJobsCount > page.Limit
+          ? Math.min(page.Limit, 200, Math.max(1, page.requisitionList.length)) : Math.min(page.Limit, 200),
         totalJobs: page.TotalJobsCount,
         listings: parsed.items.map((listing) => this.mapListing(board, listing)),
         invalidListings: parsed.invalidCount,
       };
     } catch (error) {
       throwIfScrapeAborted(error);
+      if (error instanceof HttpError && (error.status === 429 || error.isBrowserChallenge)) throw error;
       return { ok: false, offset, error };
     }
   }
 
-  private createListingUrl(board: OracleBoard, offset: number): string {
-    return createOracleListingUrl(board.apiOrigin, board.siteNumber, this.config.listingPageSize, offset);
+  private createListingUrl(board: OracleBoard, offset: number, filters?: OracleQueryFilters, pageSize = this.config.listingPageSize): string {
+    return createOracleListingUrl(board.apiOrigin, board.siteNumber, pageSize, offset, filters);
   }
 
   private async fetchDetail(
@@ -465,6 +470,7 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
         board.origin
       ).toString(),
       location: this.collectLocations(listing),
+      country: sourceCountryHint([listing.PrimaryLocationCountry], [this.collectLocations(listing) ?? ""]),
       department:
         listing.JobFunction ??
         listing.JobFamily ??
@@ -485,6 +491,7 @@ export class OracleScraper extends AbstractApiScraper<OracleConfig> {
       title: listing.title,
       url: listing.url,
       location: normalizedLocation.location,
+      country: listing.country,
       locationType: this.resolveLocationType(
         listing.workplaceType,
         normalizedLocation.locationType

@@ -1,6 +1,6 @@
 import { containsHtml, processDescription } from "@/lib/jobs/description-processor";
 import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
-import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
+import { HttpError, type IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import {
   createScraperError,
   parseExternalItems,
@@ -11,17 +11,21 @@ import {
   type ScraperResult,
   type SeniorityLevel,
 } from "@/lib/scraper/types";
+
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
 import {
   isDetailFailuresTolerable,
 } from "./shared/completeness";
+import { sourceCountryHint, sourceLocations } from "./shared/source-fields";
 import { selectListingsForHydration } from "./shared/listing-selection";
-
 import { OracleListingSchema as UberListingSchema, OracleListingPayloadSchema as UberListingPayloadSchema, OracleDetailPayloadSchema as UberDetailPayloadSchema, type OracleListingRecord as UberListingRecord, type OracleDetailRecord as UberDetailRecord } from "./shared/oracle-api";
-import { createOracleListingUrl, fetchOracleListingPages } from "./shared/oracle-pagination";
+import type { ListingQueryOptimizer } from "./shared/query-optimizer";
+import { createOracleListingUrl, fetchOptimizedOracleListings, type OracleQueryFilters } from "./shared/oracle-pagination";
 
 interface UberListingJob {
+  country?: string;
+  locations?: string[];
   id: string;
   title: string;
   url: string;
@@ -61,6 +65,7 @@ interface UberListingFetchResult {
   invalidListings: number;
   truncatedByMaxPages: boolean;
   isComplete: boolean;
+  listingScopeKey?: string;
 }
 
 export type UberConfig = ApiScraperConfig & {
@@ -86,7 +91,7 @@ const DEFAULT_UBER_CONFIG: UberConfig = {
 export class UberScraper extends AbstractApiScraper<UberConfig> {
   readonly platform = "uber" as const;
 
-  constructor(httpClient: IHttpClient, config: Partial<UberConfig> = {}) {
+  constructor(httpClient: IHttpClient, config: Partial<UberConfig> = {}, private readonly queries?: ListingQueryOptimizer) {
     super(httpClient, { ...DEFAULT_UBER_CONFIG, ...config });
   }
 
@@ -101,7 +106,8 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
         return this.failure("invalid_url", "Invalid Uber Careers URL.");
       }
 
-      const listingResult = await this.fetchAllListings();
+      const listingResult = await this.fetchAllListings(url, options?.filters?.country);
+      const listingScopeKey = listingResult.listingScopeKey;
       if (listingResult.listings.length === 0) {
         const firstFailure = listingResult.failedOffsets[0];
         if (firstFailure?.status) {
@@ -118,7 +124,9 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
             outcome: "success",
             jobs: [],
             totalListings: 0,
+            advertisedTotal: listingResult.advertisedTotal,
             openExternalIds: [],
+            listingScopeKey,
             listingCompleteness: "complete",
           };
         }
@@ -141,6 +149,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
         toFilterable: (listing) => ({
           title: listing.title,
           location: listing.location,
+          country: listing.country,
         }),
         getExternalId: (listing) =>
           this.generateExternalId(this.platform, listing.id),
@@ -152,8 +161,10 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
           jobs: [],
           listingJobs,
           totalListings: listings.length,
+          advertisedTotal: listingResult.advertisedTotal,
           earlyFiltered: selection.earlyFiltered,
           openExternalIds,
+          listingScopeKey,
           listingCompleteness: listingResult.isComplete ? "complete" : "partial",
           issues: listingResult.isComplete
             ? undefined
@@ -199,6 +210,7 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
         advertisedTotal: listingResult.advertisedTotal,
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,
+        listingScopeKey,
         listingCompleteness: listingResult.isComplete ? "complete" : "partial",
         issues: issues.length > 0 ? issues : undefined,
       };
@@ -207,19 +219,22 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
     }
   }
 
-  private async fetchAllListings(): Promise<UberListingFetchResult> {
-    const result = await fetchOracleListingPages({
-      fetchPage: (offset) => this.fetchListingPage(offset),
+  private async fetchAllListings(source: string, country?: string): Promise<UberListingFetchResult> {
+    const pageSize = this.queries?.policy(this.platform, source, this.config.siteNumber).pageSize ?? this.config.listingPageSize;
+    const result = await fetchOptimizedOracleListings({
+      platform: this.platform, source, board: this.config.siteNumber, country, queries: this.queries,
+      fetchPage: (offset, filters) => this.fetchListingPage(offset, filters, pageSize),
       maxPages: this.config.maxListingPages, overlapRatio: 0,
     });
     return { ...result, truncatedByMaxPages: result.truncated };
   }
 
-  private async fetchListingPage(offset: number): Promise<UberListingPageResult> {
+  private async fetchListingPage(offset: number, filters?: OracleQueryFilters, pageSize = this.config.listingPageSize): Promise<UberListingPageResult> {
     try {
-      const response = await this.fetchResponse(this.createListingApiUrl(offset), {
+      const response = await this.fetchResponse(this.createListingApiUrl(offset, filters, pageSize), {
         headers: this.jsonRequestHeaders(),
       });
+      if (response.status === 429) throw new HttpError(response.status, "Uber listings were throttled", response.url, response.headers);
       if (!response.ok) {
         return { ok: false, offset, status: response.status };
       }
@@ -247,7 +262,8 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
         ok: true,
         offset,
         totalJobs: page.TotalJobsCount,
-        limit: page.Limit,
+        limit: page.requisitionList.length > 0 && page.TotalJobsCount > page.Limit
+          ? Math.min(page.Limit, 200, Math.max(1, page.requisitionList.length)) : Math.min(page.Limit, 200),
         listings: parsedListings.items.map((listing) =>
           this.mapOracleListing(listing)
         ),
@@ -255,20 +271,28 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
       };
     } catch (error) {
       throwIfScrapeAborted(error);
+      if (error instanceof HttpError && (error.status === 429 || error.isBrowserChallenge)) throw error;
       return { ok: false, offset, error };
     }
   }
 
-  private createListingApiUrl(offset: number): string {
-    return createOracleListingUrl(this.config.apiBaseUrl, this.config.siteNumber, this.config.listingPageSize, offset);
+  private createListingApiUrl(offset: number, filters?: OracleQueryFilters, pageSize = this.config.listingPageSize): string {
+    return createOracleListingUrl(this.config.apiBaseUrl, this.config.siteNumber, pageSize, offset, filters);
   }
 
   private mapOracleListing(listing: UberListingRecord): UberListingJob {
+    const locations = sourceLocations([
+      listing.PrimaryLocation,
+      ...(listing.otherWorkLocations ?? []).map((item) => item.LocationName),
+      ...(listing.secondaryLocations ?? []).map((item) => item.LocationName),
+    ]);
     return {
       id: listing.Id,
       title: listing.Title.trim(),
       url: new URL(`/en/jobs/${listing.Id}/`, this.config.baseUrl).toString(),
-      location: listing.PrimaryLocation ?? undefined,
+      location: locations.join(" | ") || undefined,
+      locations,
+      country: sourceCountryHint([listing.PrimaryLocationCountry], locations),
       department:
         listing.Category ?? listing.Department ?? listing.Organization ?? undefined,
       postedDate: this.parseDate(listing.PostedDate),
@@ -360,6 +384,8 @@ export class UberScraper extends AbstractApiScraper<UberConfig> {
       title: listing.title,
       url: listing.url,
       location: normalizedLocation.location,
+      country: listing.country,
+      locations: listing.locations,
       locationType: normalizedLocation.locationType,
       department: listing.department,
       postedDate: listing.postedDate,

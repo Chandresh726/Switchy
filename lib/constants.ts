@@ -18,7 +18,6 @@ export const CUSTOM_SCRAPER_PLATFORMS = [
   "google",
   "atlassian",
   "rippling",
-  "visa",
 ] as const;
 
 const CUSTOM_SCRAPER_PLATFORM_SET = new Set(CUSTOM_SCRAPER_PLATFORMS);

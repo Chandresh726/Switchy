@@ -64,6 +64,8 @@ interface ScraperResultBase<T extends ScrapedJob> {
    * Absent means "unknown", which preserves legacy archival behavior.
    */
   advertisedTotal?: number | null;
+  /** Canonical source query identity used to isolate archival membership. */
+  listingScopeKey?: string;
 }
 
 type ListingContract =

@@ -35,7 +35,8 @@ describe("platform detection", () => {
     ).toBe("custom");
     expect(detectPlatformFromUrl("https://swiggy.mynexthire.com/employer/careers")).toBe("mynexthire");
     expect(detectPlatformFromUrl("https://careers.swiggy.com/#/careers")).toBe("mynexthire");
-    expect(detectPlatformFromUrl("https://www.visa.co.uk/en_gb/jobs/?functions=Technology")).toBe("visa");
+    expect(detectPlatformFromUrl("https://visa.wd5.myworkdayjobs.com/Visa")).toBe("workday");
+    expect(detectPlatformFromUrl("https://www.visa.co.uk/en_gb/jobs/?functions=Technology")).toBe("custom");
     expect(
       detectPlatformFromUrl(
         "https://www.google.com/about/careers/applications/jobs/results?q=software"

@@ -1,4 +1,6 @@
 import type { ScrapeFetchStateStore } from "@/lib/scraper/infrastructure/fetch-state";
+import type { WorkdayConfigInput } from "@/lib/scraper/platforms/workday/config";
+import { ListingQueryOptimizer, type ListingQueryPolicies } from "@/lib/scraper/platforms/shared/query-optimizer";
 
 import { createScraperFailure, type Platform } from "@/lib/scraper/types";
 import type { IScraper, ScraperResult, ScrapeOptions } from "@/lib/scraper/core/types";
@@ -16,7 +18,6 @@ import {
   SmartRecruitersScraper,
   TurboHireScraper,
   MynextHireScraper,
-  VisaScraper,
   UberScraper,
   GoogleScraper,
   AtlassianScraper,
@@ -99,28 +100,30 @@ export interface ScraperRegistryConfig {
   httpClient: IHttpClient;
   browserClient: IBrowserClient;
   fetchState?: ScrapeFetchStateStore;
+  workday?: WorkdayConfigInput;
+  queryPolicies?: ListingQueryPolicies;
 }
 
 export function createScraperRegistry(config: ScraperRegistryConfig): IScraperRegistry {
   const registry = new ScraperRegistry();
+  const queries = new ListingQueryOptimizer(config.fetchState, config.queryPolicies);
 
   registry.register(new GreenhouseScraper(config.httpClient));
-  registry.register(new LeverScraper(config.httpClient));
+  registry.register(new LeverScraper(config.httpClient, {}, queries));
   registry.register(new AshbyScraper(config.httpClient));
-  registry.register(new EightfoldScraper(config.httpClient, config.browserClient));
-  registry.register(new WorkdayScraper(config.httpClient, config.browserClient, {}, config.fetchState));
+  registry.register(new EightfoldScraper(config.httpClient, config.browserClient, {}, queries));
+  registry.register(new WorkdayScraper(config.httpClient, config.browserClient, config.workday, config.fetchState));
   registry.register(new ServiceNowScraper(config.httpClient));
-  registry.register(new SmartRecruitersScraper(config.httpClient));
+  registry.register(new SmartRecruitersScraper(config.httpClient, {}, queries));
   registry.register(new TurboHireScraper(config.httpClient));
   registry.register(new MynextHireScraper(config.httpClient));
-  registry.register(new VisaScraper(config.httpClient));
-  registry.register(new UberScraper(config.httpClient));
+  registry.register(new UberScraper(config.httpClient, {}, queries));
   registry.register(new GoogleScraper(config.httpClient));
   registry.register(new AtlassianScraper(config.httpClient));
-  registry.register(new RipplingScraper(config.httpClient));
+  registry.register(new RipplingScraper(config.httpClient, {}, queries));
   registry.register(new JobviteScraper(config.httpClient));
-  registry.register(new TalentBrewScraper(config.httpClient));
-  registry.register(new OracleScraper(config.httpClient));
+  registry.register(new TalentBrewScraper(config.httpClient, {}, queries));
+  registry.register(new OracleScraper(config.httpClient, {}, queries));
   registry.register(new PhenomScraper(config.httpClient));
 
   return registry;

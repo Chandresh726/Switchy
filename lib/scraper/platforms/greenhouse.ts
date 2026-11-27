@@ -7,8 +7,9 @@ import {
   parseExternalItems,
   parseExternalPayload,
 } from "@/lib/scraper/types";
+
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
-import { parseSourceDate } from "./shared/source-fields";
+import { parseSourceDate, sourceCountryHint, sourceLocations } from "./shared/source-fields";
 import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig } from "../core/types";
 
 interface GreenhouseJob {
@@ -16,6 +17,7 @@ interface GreenhouseJob {
   title: string;
   absolute_url: string;
   location?: { name?: string | null } | null;
+  offices?: { name?: string | null; location?: string | null }[] | null;
   departments?: { name?: string | null }[] | null;
   updated_at?: string | null;
   first_published?: string | null;
@@ -39,6 +41,7 @@ const GreenhouseJobSchema = z
     departments: z
       .array(z.object({ name: z.string().nullish() }).passthrough())
       .nullish(),
+    offices: z.array(z.object({ name: z.string().nullish(), location: z.string().nullish() }).passthrough()).nullish().catch(undefined),
     updated_at: z.string().nullish(),
     first_published: z.string().nullish(),
     content: z.string().nullish(),
@@ -201,8 +204,10 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
           : "";
 
       const originalLocation = job.location?.name || "";
-      const locationParts = [originalLocation, metadataLocation].filter(Boolean);
-      const combinedLocation = locationParts.join(", ");
+      const locationParts = sourceLocations([
+        originalLocation, metadataLocation, ...(job.offices ?? []).map((office) => office.location),
+      ]);
+      const combinedLocation = [originalLocation, metadataLocation].filter(Boolean).join(", ");
 
       const { location, locationType } = this.normalizeLocation(combinedLocation);
 
@@ -227,6 +232,9 @@ export class GreenhouseScraper extends AbstractApiScraper<GreenhouseConfig> {
         title: job.title,
         url: job.absolute_url,
         location,
+        country: /^(remote|remote position|worldwide|anywhere)$/i.test(combinedLocation)
+          ? "Remote" : sourceCountryHint([], locationParts),
+        locations: locationParts.length ? locationParts : undefined,
         locationType,
         department: job.departments?.[0]?.name ?? undefined,
         description,

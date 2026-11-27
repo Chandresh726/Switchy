@@ -1,11 +1,12 @@
 import { z } from "zod";
 
 import { processDescription } from "@/lib/jobs/description-processor";
-import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
+import { HttpError, type IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import { createScraperError, parseEmploymentType, parseExternalItems, parseExternalPayload } from "@/lib/scraper/types";
 
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
-import { formatSalaryRange, parseSourceDate, parseWorkplaceType } from "./shared/source-fields";
+import { formatSalaryRange, parseSourceDate, parseWorkplaceType, sourceCountryHint } from "./shared/source-fields";
+import type { ListingQueryOptimizer } from "./shared/query-optimizer";
 import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig } from "../core/types";
 
 type LeverJob = z.infer<typeof LeverJobSchema>;
@@ -18,6 +19,7 @@ const LeverJobSchema = z
       categories: z
         .object({
           location: z.string().nullish(),
+          allLocations: z.array(z.string()).nullish(),
           team: z.string().nullish(),
           department: z.string().nullish(),
           commitment: z.string().nullish(),
@@ -58,7 +60,8 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
 
   constructor(
     httpClient: IHttpClient,
-    config: Partial<LeverConfig> = {}
+    config: Partial<LeverConfig> = {},
+    private readonly queries?: ListingQueryOptimizer
   ) {
     super(httpClient, { ...DEFAULT_LEVER_CONFIG, ...config });
   }
@@ -87,34 +90,68 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
       }
 
       const apiBase = new URL(url).hostname.endsWith(".eu.lever.co") ? "https://api.eu.lever.co" : this.config.baseUrl;
-      const payload: unknown[] = [];
-      const pageSignatures = new Set<string>();
-      let complete = false;
-      let listingIssue: ReturnType<typeof createScraperError> | undefined;
-      for (let page = 0; page < this.config.maxListingPages; page++) {
-        const apiUrl = `${apiBase}/v0/postings/${encodeURIComponent(companySlug)}?mode=json&limit=${this.config.listingPageSize}&skip=${page * this.config.listingPageSize}`;
-        const response = await this.fetchResponse(apiUrl, { headers: this.jsonRequestHeaders() });
-        if (!response.ok) {
-          const failure = this.failureForResponse(response, `Failed to fetch Lever listings: ${response.status}`);
-          if (page === 0) return failure;
-          listingIssue = failure.error;
-          break;
-        }
-        const entries = parseExternalPayload(z.array(z.unknown()), await response.json(), "Lever");
-        const signature = JSON.stringify(entries.map((entry) => entry && typeof entry === "object" && "id" in entry ? entry.id : entry));
-        if (entries.length > 0 && pageSignatures.has(signature)) break;
-        pageSignatures.add(signature);
-        payload.push(...entries);
-        if (entries.length < this.config.listingPageSize) { complete = true; break; }
-      }
-      const parsed = parseExternalItems(LeverJobSchema, payload, "Lever jobs");
-      const result = this.parseJobs(parsed.items, companySlug, detectedBoardToken, payload.length, parsed.invalidCount);
-      if (result.outcome === "error" || complete) return result;
-      return { ...result, outcome: "partial", listingCompleteness: "partial",
-        issues: [...(result.issues ?? []), listingIssue ?? createScraperError("network_error", "Lever pagination did not reach a confirmed final page.")] };
+      const baseline = async () => {
+        const value = await this.fetchListings(apiBase, companySlug, this.config.listingPageSize, detectedBoardToken);
+        return { value, items: value.jobs, complete: value.listingCompleteness === "complete" };
+      };
+      if (!this.queries) return (await baseline()).value;
+      const policy = this.queries.policy(this.platform, url, companySlug);
+      const pageSize = Number.isFinite(policy.pageSize)
+        ? Math.min(1000, Math.max(1, Math.floor(policy.pageSize!))) : 1000;
+      if (pageSize === this.config.listingPageSize) return (await baseline()).value;
+      const optimized = await this.queries.fetch({
+        platform: this.platform, source: url, board: companySlug,
+        candidateKey: { pageSize, version: 1 }, baseline,
+        candidate: async () => {
+          const value = await this.fetchListings(apiBase, companySlug, pageSize, detectedBoardToken, true);
+          return { value, items: value.jobs, complete: value.listingCompleteness === "complete" };
+        },
+        getId: (job) => job.externalId, toFilterable: (job) => job,
+      });
+      return optimized.value;
     } catch (error) {
       return this.failureFromUnknown(error);
     }
+  }
+
+  private async fetchListings(
+    apiBase: string, companySlug: string, pageSize: number, detectedBoardToken?: string, confirmEnd = false
+  ): Promise<Exclude<ScraperResult, { outcome: "error" }>> {
+    const payload: unknown[] = [];
+    const pageSignatures = new Set<string>();
+    let complete = false;
+    let offset = 0;
+    let listingIssue: ReturnType<typeof createScraperError> | undefined;
+    for (let page = 0; page < this.config.maxListingPages; page++) {
+      const apiUrl = `${apiBase}/v0/postings/${encodeURIComponent(companySlug)}?mode=json&limit=${pageSize}&skip=${offset}`;
+      const response = await this.fetchResponse(apiUrl, { headers: this.jsonRequestHeaders() });
+      if (!response.ok) {
+        const failure = this.failureForResponse(response, `Failed to fetch Lever listings: ${response.status}`);
+        if (page === 0 || response.status === 429) throw new HttpError(response.status, failure.error.message, apiUrl, response.headers);
+        listingIssue = failure.error;
+        break;
+      }
+      const entries = parseExternalPayload(z.array(z.unknown()), await response.json(), "Lever");
+      const signature = JSON.stringify(entries.map((entry) => entry && typeof entry === "object" && "id" in entry ? entry.id : entry));
+      if (entries.length > 0 && pageSignatures.has(signature)) break;
+      pageSignatures.add(signature);
+      payload.push(...entries);
+      offset += entries.length;
+      if (entries.length === 0) { complete = true; break; }
+      if (entries.length < pageSize) {
+        if (!confirmEnd) { complete = true; break; }
+        const tailUrl = `${apiBase}/v0/postings/${encodeURIComponent(companySlug)}?mode=json&limit=1&skip=${offset}`;
+        const tail = await this.fetchResponse(tailUrl, { headers: this.jsonRequestHeaders() });
+        if (!tail.ok) throw new HttpError(tail.status, "Could not confirm Lever pagination", tailUrl, tail.headers);
+        const remaining = parseExternalPayload(z.array(z.unknown()), await tail.json(), "Lever final page");
+        if (remaining.length === 0) { complete = true; break; }
+      }
+    }
+    const parsed = parseExternalItems(LeverJobSchema, payload, "Lever jobs");
+    const result = this.parseJobs(parsed.items, companySlug, detectedBoardToken, payload.length, parsed.invalidCount);
+    if (complete) return result;
+    return { ...result, outcome: "partial", listingCompleteness: "partial",
+      issues: [...(result.issues ?? []), listingIssue ?? createScraperError("network_error", "Lever pagination did not reach a confirmed final page.")] };
   }
 
   private parseJobs(
@@ -123,7 +160,7 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
     detectedBoardToken?: string,
     totalListings = data.length,
     invalidCount = 0
-  ): ScraperResult {
+  ): Exclude<ScraperResult, { outcome: "error" }> {
     const jobs: ScrapedJob[] = data.map((job) => {
       const { location, locationType } = this.normalizeLocation(
         [job.categories?.location, job.country].filter(Boolean).join(", ")
@@ -135,6 +172,8 @@ export class LeverScraper extends AbstractApiScraper<LeverConfig> {
         title: job.text,
         url: job.hostedUrl,
         location,
+        country: sourceCountryHint([job.country], [location ?? "", ...(job.categories?.allLocations ?? []).filter((value) => value !== job.categories?.location)]),
+        locations: [...new Set([job.categories?.location, ...(job.categories?.allLocations ?? [])].filter((value): value is string => Boolean(value)))],
         locationType: parseWorkplaceType(job.workplaceType) ?? locationType,
         salary: formatSalaryRange(job.salaryRange),
         department: job.categories?.team || job.categories?.department || undefined,

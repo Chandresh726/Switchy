@@ -194,6 +194,7 @@ export class TurboHireScraper extends AbstractApiScraper<TurboHireConfig> {
 
       const listingJobs = listings.map((job) => this.mapJob(job, organizationId, origin));
       const selection = selectListingsForHydration({
+        hasCompleteDetails: () => true,
         listings,
         filters: options?.filters,
         existingExternalIds: options?.existingExternalIds,

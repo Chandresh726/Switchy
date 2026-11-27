@@ -9,8 +9,10 @@ import {
   type ScrapedJob,
   type ScraperResult,
 } from "@/lib/scraper/types";
+
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
+import { queryScope } from "./shared/query-optimizer";
 import { selectListingsForHydration } from "./shared/listing-selection";
 
 type AtlassianListingRecord = Record<string, unknown>;
@@ -112,6 +114,7 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
       if (!sourceUrl) {
         return this.failure("invalid_url", "Invalid Atlassian Careers URL.");
       }
+      const listingScopeKey = sourceUrl.search ? queryScope(this.platform, url, { version: 1 }) : undefined;
       const origin = sourceUrl.origin;
       const listingsEndpoint = `${origin}/endpoint/careers/listings`;
       const response = await this.fetchResponse(listingsEndpoint, {
@@ -143,6 +146,7 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
           jobs: [],
           totalListings: 0,
           openExternalIds,
+          listingScopeKey,
           listingCompleteness: "complete",
         };
       }
@@ -150,6 +154,7 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
       const listingJobs = scopedListings.map((listing) => ({ ...this.mapListingToJob(listing, origin), ...this.composeDescription(listing) }));
       const filters = options?.filters;
       const selection = selectListingsForHydration({
+        hasCompleteDetails: (listing) => Boolean(this.composeDescription(listing)?.description),
         listings: scopedListings,
         filters,
         existingExternalIds: options?.existingExternalIds,
@@ -171,6 +176,7 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
           totalListings: scopedListings.length,
           earlyFiltered: selection.earlyFiltered,
           openExternalIds,
+          listingScopeKey,
           listingCompleteness: "complete",
         };
       }
@@ -195,6 +201,7 @@ export class AtlassianScraper extends AbstractApiScraper<AtlassianConfig> {
         totalListings: scopedListings.length,
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,
+        listingScopeKey,
         listingCompleteness: "complete",
       };
     } catch (error) {

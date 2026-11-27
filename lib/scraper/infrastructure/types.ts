@@ -78,6 +78,7 @@ export interface PersistScrapeResultInput {
   companyId: number;
   openExternalIds: string[];
   archiveMissing: boolean;
+  archiveCandidateExternalIds?: string[];
   statusesToArchive: readonly JobStatus[];
   jobsToInsert: Omit<
     NewJob,

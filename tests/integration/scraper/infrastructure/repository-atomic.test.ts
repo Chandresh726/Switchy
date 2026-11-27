@@ -37,6 +37,29 @@ function seedCompanyAndSession(database: ReturnType<typeof createTestDatabase>) 
 }
 
 describe("DrizzleScraperRepository atomic persistence", () => {
+  it("archives only scope members without marking outside jobs seen or reopening them", async () => {
+    const database = createTestDatabase();
+    const company = seedCompanyAndSession(database);
+    const oldSeen = new Date("2026-01-01T00:00:00Z");
+    database.insert(jobs).values([
+      { companyId: company.id, externalId: "india-open", title: "Engineer", url: "https://example.com/in-open", status: "archived", archiveSource: "scraper" },
+      { companyId: company.id, externalId: "india-closed", title: "Engineer", url: "https://example.com/in-closed", status: "new" },
+      { companyId: company.id, externalId: "outside", title: "Engineer", url: "https://example.com/us", status: "new", lastSeenAt: oldSeen },
+    ]).run();
+    const result = await new DrizzleScraperRepository(database).persistScrapeResult({
+      companyId: company.id, openExternalIds: ["india-open"], archiveMissing: true,
+      archiveCandidateExternalIds: ["india-open", "india-closed"],
+      statusesToArchive: ["new", "viewed", "interested", "rejected"], jobsToInsert: [], existingJobUpdates: [],
+      startedAtMs: Date.now(), enableMatching: false,
+      log: { sessionId: "session-1", triggerSource: "manual", platform: "workday", status: "success", jobsFound: 1, jobsFiltered: 0 },
+    });
+    const stored = new Map(database.select().from(jobs).all().map((job) => [job.externalId, job]));
+    expect(result.jobsArchived).toBe(1);
+    expect(stored.get("india-open")?.status).toBe("new");
+    expect(stored.get("india-closed")?.status).toBe("archived");
+    expect(stored.get("outside")).toMatchObject({ status: "new", lastSeenAt: oldSeen });
+  });
+
   it("commits job sync, hydration, company metadata, and audit logging together", async () => {
     const database = createTestDatabase();
     const company = seedCompanyAndSession(database);

@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import type { Page } from "playwright";
 import { z } from "zod";
 
@@ -9,10 +7,9 @@ import type {
   IBrowserClient,
 } from "@/lib/scraper/infrastructure/browser-client";
 import type { ScrapeFetchStateStore } from "@/lib/scraper/infrastructure/fetch-state";
-import { abortableDelay, getActiveScrapeSignal } from "@/lib/scraper/infrastructure/cancellation";
+import { getActiveScrapeSignal, throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 import { createFailureForHttpStatus } from "@/lib/scraper/types/validation";
 import { BrowserSessionBootstrapError } from "@/lib/scraper/infrastructure/browser-session-error";
-import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 import {
   HttpError,
   type IHttpClient,
@@ -24,7 +21,6 @@ import {
   parseExternalItems,
   parseExternalPayload,
   ScraperPayloadError,
-  type BrowserScraperConfig,
   type ScrapeOptions,
   type ScraperError,
   type ScraperErrorResult,
@@ -34,134 +30,32 @@ import {
 import { KeyedExecutionLock } from "@/lib/runtime/keyed-lock";
 import { measureScrapeMetric } from "@/lib/scraper/infrastructure/metrics";
 
-import { AbstractBrowserScraper, DEFAULT_BROWSER_CONFIG } from "../core";
-import {
-  isDetailFailuresTolerable,
-  resolveListingCompleteness,
-} from "./shared/completeness";
+import { AbstractBrowserScraper } from "../core";
+import { matchesPreferredCountry } from "../services/filter-service";
+import { isDetailFailuresTolerable } from "./shared/completeness";
 import { selectListingsForHydration } from "./shared/listing-selection";
 
-type WorkdayJobListItem = {
-  title: string;
-  externalPath: string;
-  locationsText: string;
-  postedOn: string;
-  remoteType: string;
-  bulletFields: string[];
-  listingIdentity?: string;
-};
+import {
+  DEFAULT_WORKDAY_CONFIG,
+  WORKDAY_PAGE_SIZE,
+  type WorkdayConfig,
+  type WorkdayConfigInput,
+} from "./workday/config";
+import {
+  canonicalWorkdayScope, discoverWorkdayCountryPlan, readWorkdayFacets, resolveWorkdayCountryPolicy,
+  type WorkdayCountryPlan,
+} from "./workday/country-filter";
+import { crawlWorkdayListings } from "./workday/listing-crawler";
+import { WorkdayListError } from "./workday/listing-error";
+import {
+  WorkdayJobDetailResponseSchema, WorkdayJobListEnvelopeSchema, WorkdayJobListItemSchema,
+  type WorkdayJobDetailResponse, type WorkdayJobListItem, type WorkdayJobListResponse,
+  type WorkdayListFetchResult, type WorkdaySession, type WorkdaySessionController, type WorkdaySource,
+} from "./workday/payloads";
 
-type WorkdayJobListResponse = {
-  total: number;
-  jobPostings: WorkdayJobListItem[];
-  invalidCount: number;
-  invalidFields: string[];
-};
+export type { WorkdayConfig, WorkdayConfigInput } from "./workday/config";
 
-type WorkdayListFetchResult = {
-  jobs: WorkdayJobListItem[];
-  isComplete: boolean;
-  advertisedCount: number;
-  missingOffsets: number[];
-  unidentifiedCount: number;
-  invalidCount: number;
-  invalidFields: string[];
-  diagnostics: string[];
-  resumed: boolean;
-};
-
-type WorkdayListFetchStage = "bootstrap" | "list-page";
-
-class WorkdayListError extends Error {
-  constructor(
-    readonly stage: WorkdayListFetchStage,
-    readonly offset: number,
-    message: string,
-    readonly status?: number,
-    options?: ErrorOptions
-  ) {
-    super(message, options);
-    this.name = "WorkdayListError";
-  }
-
-  describe(): string {
-    const statusSuffix = this.status !== undefined ? `, HTTP ${this.status}` : "";
-    return `Failed to fetch Workday jobs list (stage=${this.stage}, offset=${this.offset}${statusSuffix}): ${this.message}`;
-  }
-}
-
-type WorkdayJobDetailResponse = {
-  jobPostingInfo: {
-    jobDescription: string;
-    timeType: string;
-    externalUrl: string;
-  };
-};
-
-const WorkdayJobListItemSchema = z
-  .object({
-    title: z.string(),
-    externalPath: z.string(),
-    locationsText: z.string().nullish().transform((value) => value ?? ""),
-    postedOn: z.string().nullish().transform((value) => value ?? ""),
-    remoteType: z.string().nullish().transform((value) => value ?? ""),
-    bulletFields: z.array(z.string()).nullish().transform((value) => value ?? []),
-  })
-  .passthrough();
-
-const WorkdayJobListEnvelopeSchema = z
-  .object({
-    total: z.number(),
-    jobPostings: z.array(z.unknown()),
-  })
-  .passthrough();
-
-const WorkdayJobDetailResponseSchema = z
-  .object({
-    jobPostingInfo: z
-      .object({
-        jobDescription: z.string().default(""),
-        timeType: z.string().default(""),
-        externalUrl: z.string().default(""),
-      })
-      .passthrough(),
-  })
-  .passthrough();
-
-type WorkdaySource = {
-  baseUrl: string;
-  tenant: string;
-  board: string;
-  searchText: string;
-  appliedFacets: Record<string, string[]>;
-};
-
-type WorkdaySession = WorkdaySource & {
-  cookies: string;
-  csrfToken: string;
-};
-
-type WorkdaySessionController = {
-  readonly session: WorkdaySession;
-  readonly requestOptions: HttpRequestOptions;
-  bootstrap(): Promise<WorkdaySession>;
-};
-
-export type WorkdayConfig = BrowserScraperConfig & {
-  parallelListFetches: number;
-  detailBatchSize: number;
-  listDelayMs: number;
-};
-
-const WORKDAY_PAGE_SIZE = 20;
 const workdayLock = new KeyedExecutionLock<string>();
-
-const DEFAULT_WORKDAY_CONFIG: WorkdayConfig = {
-  ...DEFAULT_BROWSER_CONFIG,
-  parallelListFetches: 1,
-  detailBatchSize: 1,
-  listDelayMs: 1_500,
-};
 
 export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
   readonly platform = "workday" as const;
@@ -172,10 +66,21 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
   constructor(
     httpClient: IHttpClient,
     browserClient: IBrowserClient,
-    config: Partial<WorkdayConfig> = {},
+    config: WorkdayConfigInput = {},
     private readonly state?: ScrapeFetchStateStore
   ) {
-    super(httpClient, browserClient, { ...DEFAULT_WORKDAY_CONFIG, ...config });
+    const bounded = (value: number | undefined, fallback: number, minimum: number, maximum: number) =>
+      Number.isFinite(value) ? Math.min(maximum, Math.max(minimum, Math.floor(value!))) : fallback;
+    super(httpClient, browserClient, {
+      ...DEFAULT_WORKDAY_CONFIG, ...config,
+      parallelListFetches: bounded(config.parallelListFetches, DEFAULT_WORKDAY_CONFIG.parallelListFetches, 1, 6),
+      detailBatchSize: bounded(config.detailBatchSize, DEFAULT_WORKDAY_CONFIG.detailBatchSize, 1, 6),
+      listDelayMs: bounded(config.listDelayMs, DEFAULT_WORKDAY_CONFIG.listDelayMs, 0, 60_000),
+      queryResultLimit: bounded(config.queryResultLimit, DEFAULT_WORKDAY_CONFIG.queryResultLimit, 20, 2000),
+      countryFilter: { ...DEFAULT_WORKDAY_CONFIG.countryFilter, ...config.countryFilter,
+        aliases: { ...DEFAULT_WORKDAY_CONFIG.countryFilter.aliases, ...config.countryFilter?.aliases } },
+      adaptivePacing: { ...DEFAULT_WORKDAY_CONFIG.adaptivePacing, ...config.adaptivePacing },
+    });
   }
 
   extractIdentifier(url: string): string | null {
@@ -247,12 +152,13 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       }
 
       const sessionController = this.createSessionController(parsedUrl, page);
-      const listResult = await this.fetchAllJobListItems(sessionController);
+      const listResult = await this.fetchAllJobListItems(sessionController, options);
       if (listResult instanceof WorkdayListError) {
         return this.toListFailure(listResult);
       }
 
       const allJobListItems = listResult.jobs;
+      const listingScopeKey = listResult.scopeKey;
       const openExternalIds = allJobListItems.map((job) =>
         this.generateExternalId(
           this.platform,
@@ -272,13 +178,15 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           outcome: "success",
           jobs: [],
           totalListings: 0,
+          advertisedTotal: listResult.advertisedCount,
           detectedBoardToken,
           openExternalIds,
           listingCompleteness: "complete",
+          listingScopeKey,
         };
       }
 
-      const listingJobs: ScrapedJob[] = allJobListItems.map((item) => this.mapListingFallback(parsedUrl, item));
+      const listingJobs: ScrapedJob[] = allJobListItems.map((item) => this.mapListingFallback(parsedUrl, item, listResult.country));
       const selection = selectListingsForHydration({
         listings: allJobListItems,
         filters: options?.filters,
@@ -289,6 +197,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         toFilterable: (job) => ({
           title: job.title,
           location: job.locationsText,
+          country: listResult.country,
         }),
         getExternalId: (job) => {
           return this.generateExternalId(
@@ -302,7 +211,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
 
       if (jobsToFetch.length === 0) {
         const baseOutcome = listResult.isComplete ? "success" : "partial";
-        const issues = listResult.isComplete
+        const issues = listResult.isComplete && allJobListItems.length >= listResult.advertisedCount
           ? undefined
           : [this.createListIssue(listResult)];
         return {
@@ -310,10 +219,12 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           jobs: [],
           listingJobs,
           totalListings: allJobListItems.length,
+          advertisedTotal: listResult.advertisedCount,
           detectedBoardToken,
           earlyFiltered: selection.earlyFiltered,
           openExternalIds,
           listingCompleteness: listResult.isComplete ? "complete" : "partial",
+          listingScopeKey,
           issues,
         };
       }
@@ -325,7 +236,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         const batch = jobsToFetch.slice(i, i + this.config.detailBatchSize);
         const { jobs: batchJobs, failedJobs } = await this.processJobBatch(
           sessionController,
-          batch
+          batch, listResult.country
         );
         failedDetailJobs.push(...failedJobs);
         scrapedJobs.push(...batchJobs);
@@ -345,7 +256,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
           );
           const retryResult = await this.processJobBatch(
             sessionController,
-            retryBatch
+            retryBatch, listResult.country
           );
           scrapedJobs.push(...retryResult.jobs);
           unresolvedDetailJobs.push(...retryResult.failedJobs);
@@ -354,7 +265,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
 
       scrapedJobs.push(
         ...unresolvedDetailJobs.map((job) =>
-          this.mapListingFallback(parsedUrl, job)
+          this.mapListingFallback(parsedUrl, job, listResult.country)
         )
       );
 
@@ -364,7 +275,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         !listResult.isComplete ||
         !isDetailFailuresTolerable(unresolvedDetailJobs.length, jobsToFetch.length);
       const issues: ScraperError[] = [];
-      if (!listResult.isComplete) issues.push(this.createListIssue(listResult));
+      if (!listResult.isComplete || allJobListItems.length < listResult.advertisedCount) issues.push(this.createListIssue(listResult));
       if (unresolvedDetailJobs.length > 0) {
         issues.push(
           createScraperError(
@@ -383,6 +294,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,
         listingCompleteness: listResult.isComplete ? "complete" : "partial",
+        listingScopeKey,
         issues: issues.length > 0 ? issues : undefined,
       };
     } catch (error) {
@@ -504,7 +416,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
     } : undefined;
 
     return {
-      requestOptions: { transport, minIntervalMs: this.config.listDelayMs },
+      requestOptions: { transport, minIntervalMs: this.config.listDelayMs, adaptivePacing: this.config.adaptivePacing },
       get session() {
         return activeSession;
       },
@@ -591,6 +503,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         jobPostings: parsedItems.items,
         invalidCount: parsedItems.invalidCount,
         invalidFields: parsedItems.invalidFields,
+        facets: readWorkdayFacets(envelope.facets),
       };
     } catch (error) {
       throwIfScrapeAborted(error);
@@ -620,130 +533,91 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
   }
 
   private async fetchAllJobListItems(
-    controller: WorkdaySessionController
+    controller: WorkdaySessionController,
+    options?: ScrapeOptions
   ): Promise<WorkdayListFetchResult | WorkdayListError> {
-    const source = controller.session;
-    const key = `workday-pages:${createHash("sha256").update(JSON.stringify({
-      baseUrl: source.baseUrl, tenant: source.tenant, board: source.board,
-      searchText: source.searchText, appliedFacets: source.appliedFacets,
-    })).digest("hex")}`;
-    const checkpointSchema = z.object({
-      createdAt: z.number(), total: z.number(),
-      pages: z.array(z.tuple([z.number().int().nonnegative(), z.object({
-        total: z.number(), jobPostings: z.array(WorkdayJobListItemSchema),
-        invalidCount: z.number(), invalidFields: z.array(z.string()),
-      })])),
-    });
-    const saved = checkpointSchema.safeParse(this.state?.get(key));
-    const pages = new Map<number, WorkdayJobListResponse>();
-    const diagnostics: string[] = [];
-    const startedAt = Date.now();
-    let firstBatch: WorkdayJobListResponse;
-    try {
-      firstBatch = await this.fetchJobListPage(controller, 0, WORKDAY_PAGE_SIZE);
-    } catch (error) {
+    const run = async (current: WorkdaySessionController, initialPage?: WorkdayJobListResponse) => {
+      const result = await crawlWorkdayListings({
+        source: current.session, state: this.state, initialPage,
+        request: (offset) => this.fetchJobListPage(current, offset),
+        getId: (job) => this.getJobPostingId(job),
+        parallelListFetches: this.config.parallelListFetches,
+        queryResultLimit: this.config.queryResultLimit,
+      });
+      if (!(result instanceof WorkdayListError)) result.scopeKey = canonicalWorkdayScope(current.session);
+      return result;
+    };
+    let first: WorkdayJobListResponse;
+    try { first = await this.fetchJobListPage(controller); }
+    catch (error) {
       if (error instanceof WorkdayListError) return error;
       throw error;
     }
-    const total = firstBatch.total || 0;
-    const checkpoint = saved.success && saved.data.total === total &&
-      startedAt - saved.data.createdAt < 15 * 60_000 ? saved.data : null;
-    if (checkpoint) {
-      for (const [offset, page] of checkpoint.pages) pages.set(offset, page);
+    const policy = resolveWorkdayCountryPolicy(controller.session, this.config.countryFilter, this.config.boardPolicies);
+    const plan = discoverWorkdayCountryPlan(first.facets, options?.filters?.country, controller.session.appliedFacets, policy);
+    if (!plan) return run(controller, first);
+    const scoped = this.withQueryScope(controller, plan);
+    if (canonicalWorkdayScope(scoped.session) === canonicalWorkdayScope(controller.session)) {
+      const result = await run(controller, first);
+      if (!(result instanceof WorkdayListError)) result.country = plan.country;
+      return result;
     }
-    const resumed = pages.size > 0;
-    const createdAt = checkpoint?.createdAt ?? startedAt;
-    pages.set(0, firstBatch);
-    const persist = () => this.state?.set(key, {
-      createdAt, total, pages: Array.from(pages.entries()),
-    }, new Date(createdAt + 15 * 60_000));
-    persist();
+    const cacheKey = `workday-country-validation:${canonicalWorkdayScope(controller.session)}:${plan.country.toLowerCase()}`;
+    const validationSchema = z.object({ fingerprint: z.string(), valid: z.boolean() });
+    let cachedValue: unknown;
+    try { cachedValue = this.state?.get(cacheKey); }
+    catch (error) { console.warn("Could not read Workday country filter validation:", error); }
+    const cached = validationSchema.safeParse(cachedValue);
+    const validated = cached.success && cached.data.fingerprint === plan.fingerprint ? cached.data.valid : undefined;
+    if (validated === false) return run(controller, first);
+    let baseline: WorkdayListFetchResult | undefined;
+    // Inferred location sets must first preserve every country-matching listing
+    // from a complete unfiltered snapshot. Changed facets invalidate that proof.
+    if (plan.kind === "locations" && validated !== true) {
+      const result = await run(controller, first);
+      if (result instanceof WorkdayListError || !result.isComplete || result.jobs.length < result.advertisedCount) return result;
+      baseline = result;
+    }
+    const filtered = await run(scoped);
+    if (filtered instanceof WorkdayListError) {
+      if (filtered.status === 400) {
+        this.saveCountryValidation(cacheKey, plan, false, policy.validationTtlMs);
+        return baseline ?? run(controller, first);
+      }
+      return filtered;
+    }
+    const expected = (baseline?.jobs ?? first.jobPostings)
+      .filter((job) => matchesPreferredCountry(job.locationsText, plan.country));
+    const actual = new Set(filtered.jobs.map((job) => this.getJobPostingId(job)));
+    const preservesKnown = expected.every((job) => actual.has(this.getJobPostingId(job)));
+    const respectsCount = plan.expectedMaximum === null || filtered.advertisedCount <= plan.expectedMaximum;
+    const filteredExact = filtered.isComplete && filtered.jobs.length >= filtered.advertisedCount;
+    if (!preservesKnown || !respectsCount || (baseline && !filteredExact)) {
+      if (filteredExact && (!preservesKnown || !respectsCount)) {
+        this.saveCountryValidation(cacheKey, plan, false, policy.validationTtlMs);
+      }
+      console.warn("Workday country filter failed its coverage check; retaining the configured source query.");
+      return baseline ?? run(controller, first);
+    }
+    if (filteredExact) this.saveCountryValidation(cacheKey, plan, true, policy.validationTtlMs);
+    filtered.country = plan.country;
+    return filtered;
+  }
 
-    const missingOffsets = new Set<number>();
-    for (let offset = 0; offset < total; offset += WORKDAY_PAGE_SIZE) {
-      const page = pages.get(offset);
-      if (!page || page.jobPostings.length < Math.min(WORKDAY_PAGE_SIZE, total - offset)) {
-        missingOffsets.add(offset);
-      }
-    }
-    let consecutiveFailures = 0;
-    // One recovery pass for isolated failures; sustained failures stop the sweep.
-    for (let pass = 0; pass < 2; pass++) {
-      const offsets = [...missingOffsets];
-      let stopped = false;
-      for (let index = 0; index < offsets.length; index += this.config.parallelListFetches) {
-        if (consecutiveFailures >= 3 || Date.now() - startedAt > 15 * 60_000) {
-          diagnostics.push("Listing sweep stopped at its failure or time budget");
-          stopped = true;
-          break;
-        }
-        if (this.config.listDelayMs > 0) {
-          await measureScrapeMetric("pacingWaitMs", () => abortableDelay(this.config.listDelayMs, getActiveScrapeSignal()));
-        }
-        const batch = offsets.slice(index, index + this.config.parallelListFetches);
-        const results = await Promise.all(batch.map(async (offset) => {
-          try {
-            return { offset, page: await this.fetchJobListPage(controller, offset, WORKDAY_PAGE_SIZE) };
-          } catch (error) {
-            throwIfScrapeAborted(error);
-            return { offset, error };
-          }
-        }));
-        // Save successful peers before propagating a throttle or bootstrap error.
-        for (const result of results) {
-          if (result.page) {
-            pages.set(result.offset, result.page);
-            consecutiveFailures = 0;
-            if (result.page.jobPostings.length >= Math.min(WORKDAY_PAGE_SIZE, total - result.offset)) {
-              missingOffsets.delete(result.offset);
-            }
-          } else {
-            consecutiveFailures++;
-            const error = result.error;
-            diagnostics.push(error instanceof WorkdayListError ? error.describe() : "Listing page request failed");
-          }
-        }
-        persist();
-        const fatal = results.find(({ error }) => error instanceof WorkdayListError &&
-          (error.status === 429 || error.stage === "bootstrap" ||
-            (error.cause instanceof HttpError && error.cause.isBrowserChallenge)));
-        if (fatal?.error) {
-          if (fatal.error instanceof WorkdayListError && fatal.error.cause instanceof HttpError &&
-            fatal.error.cause.isBrowserChallenge) throw fatal.error.cause;
-          if (fatal.error instanceof WorkdayListError && fatal.error.status === 429 && this.state) {
-            return fatal.error;
-          }
-          if (fatal.error instanceof WorkdayListError && fatal.error.stage === "bootstrap") throw fatal.error;
-          stopped = true;
-          break;
-        }
-      }
-      if (stopped) break;
-    }
-
-    const jobsById = new Map<string, WorkdayJobListItem>();
-    for (const [offset, page] of pages) {
-      for (const [index, job] of page.jobPostings.entries()) {
-        const id = this.getJobPostingId(job);
-        const identity = id ?? `unkeyed-${offset + index}`;
-        jobsById.set(id ? `id:${id}` : `offset:${offset + index}`, { ...job, listingIdentity: identity });
-      }
-    }
-    const jobs = [...jobsById.values()];
-    const invalidCount = [...pages.values()].reduce((sum, page) => sum + page.invalidCount, 0);
-    const unidentifiedCount = jobs.filter((job) => !this.getJobPostingId(job)).length;
-    const { isComplete: countsComplete } = resolveListingCompleteness(jobs.length, total);
-    // A checkpoint mixes snapshots. Keep archival disabled until a fresh complete sweep.
-    const isComplete = !resumed && missingOffsets.size === 0 && countsComplete &&
-      invalidCount === 0 && unidentifiedCount === 0;
-    if (missingOffsets.size === 0) this.state?.delete(key);
+  private withQueryScope(controller: WorkdaySessionController, plan: WorkdayCountryPlan): WorkdaySessionController {
     return {
-      jobs, isComplete, advertisedCount: total,
-      missingOffsets: [...missingOffsets].sort((a, b) => a - b),
-      unidentifiedCount, invalidCount,
-      invalidFields: [...new Set([...pages.values()].flatMap((page) => page.invalidFields))].slice(0, 3),
-      diagnostics: [...new Set(diagnostics)].slice(0, 3), resumed,
+      get session() { return { ...controller.session, appliedFacets: plan.appliedFacets }; },
+      requestOptions: controller.requestOptions,
+      bootstrap: async () => ({ ...await controller.bootstrap(), appliedFacets: plan.appliedFacets }),
     };
+  }
+
+  private saveCountryValidation(key: string, plan: WorkdayCountryPlan, valid: boolean, ttlMs: number): void {
+    try {
+      this.state?.set(key, { fingerprint: plan.fingerprint, valid }, new Date(Date.now() + ttlMs));
+    } catch (error) {
+      console.warn("Could not cache Workday country filter validation:", error);
+    }
   }
 
   private async fetchJobDetail(
@@ -770,7 +644,8 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
 
   private async processJobBatch(
     controller: WorkdaySessionController,
-    jobs: WorkdayJobListItem[]
+    jobs: WorkdayJobListItem[],
+    country?: string
   ): Promise<{ jobs: ScrapedJob[]; failedJobs: WorkdayJobListItem[] }> {
     const failedJobs: WorkdayJobListItem[] = [];
     const detailPromises = jobs.map(async (job) => {
@@ -797,17 +672,29 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
         const { description, descriptionFormat } = this.processJobDescription(
           detail.jobPostingInfo.jobDescription || ""
         );
+        const additionalLocations = detail.jobPostingInfo.additionalLocations?.map((value) =>
+          typeof value === "string" ? value : value.descriptor
+        ) ?? [];
+        const locations = [...new Set([
+          detail.jobPostingInfo.location, ...additionalLocations,
+        ].filter((value): value is string => Boolean(value)))];
+        // A primary detail country must not exclude another advertised location.
+        const countryHint = country ?? [
+          job.locationsText, detail.jobPostingInfo.country?.descriptor, ...locations,
+        ].filter(Boolean).join(" | ");
 
         return {
           externalId,
           title: job.title,
           url: jobUrl,
-          location: job.locationsText,
+          location: job.locationsText || detail.jobPostingInfo.location || "",
+          country: countryHint || undefined,
+          locations: locations.length ? locations : undefined,
           locationType: this.parseRemoteType(job.remoteType),
           description,
           descriptionFormat,
           employmentType: parseEmploymentType(detail.jobPostingInfo.timeType),
-          postedDate: this.parsePostedDate(job.postedOn),
+          postedDate: this.parsePostedDate(detail.jobPostingInfo.startDate || job.postedOn),
         };
       } catch (error) {
         if (error instanceof BrowserSessionBootstrapError ||
@@ -834,7 +721,8 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
 
   private mapListingFallback(
     session: WorkdaySource,
-    job: WorkdayJobListItem
+    job: WorkdayJobListItem,
+    country?: string
   ): ScrapedJob {
     const jobPostingId = this.getListingIdentity(job);
     return {
@@ -846,6 +734,7 @@ export class WorkdayScraper extends AbstractBrowserScraper<WorkdayConfig> {
       title: job.title,
       url: `${session.baseUrl}/${session.board}${job.externalPath || ""}`,
       location: job.locationsText,
+      country,
       locationType: this.parseRemoteType(job.remoteType),
       postedDate: this.parsePostedDate(job.postedOn),
     };

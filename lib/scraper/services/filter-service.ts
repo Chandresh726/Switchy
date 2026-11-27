@@ -70,7 +70,7 @@ export function matchesTitleKeywords(title: string | undefined, keywords: string
 
 export class DefaultFilterService implements IFilterService {
   matchesFilters(job: ScrapedJob, filters: JobFilters): boolean {
-    if (filters.country && !matchesPreferredCountry(job.location, filters.country)) {
+    if (filters.country && !matchesPreferredCountry(job.country ?? job.location, filters.country)) {
       return false;
     }
 
@@ -125,7 +125,7 @@ export class DefaultFilterService implements IFilterService {
       let passed = true;
 
       if (filters.country) {
-        if (matchesPreferredCountry(job.location, filters.country)) {
+        if (matchesPreferredCountry(job.country ?? job.location, filters.country)) {
           breakdown.passedCountry++;
         } else {
           breakdown.failedCountry++;

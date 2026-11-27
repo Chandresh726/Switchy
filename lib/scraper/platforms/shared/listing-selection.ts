@@ -16,6 +16,8 @@ export interface ListingSelectionOptions<T> {
   existingJobUrls?: ReadonlySet<string>;
   getUrl?: (listing: T) => string;
   detailRefresh?: ScrapeOptions["detailRefresh"];
+  /** Full bodies already returned by the list/feed need no HTTP detail quota. */
+  hasCompleteDetails?: (listing: T) => boolean;
 }
 
 export interface ListingSelection<T> {
@@ -32,15 +34,18 @@ export function selectListingsForHydration<T>({
   existingJobUrls,
   getUrl,
   detailRefresh,
+  hasCompleteDetails,
 }: ListingSelectionOptions<T>): ListingSelection<T> {
   const candidates = listings.map((listing) => ({
     listing,
     ...toFilterable(listing),
   }));
   const filtered = applyEarlyFilters(candidates, filters);
-  const selected = filtered.filtered
-    .map((candidate) => candidate.listing)
+  const eligible = filtered.filtered.map((candidate) => candidate.listing);
+  const supplied = hasCompleteDetails ? eligible.filter(hasCompleteDetails) : [];
+  const selected = eligible
     .filter((listing) => {
+      if (hasCompleteDetails?.(listing)) return false;
       if (getUrl && existingJobUrls?.has(getUrl(listing))) return false;
       if (!existingExternalIds || existingExternalIds.size === 0) {
         return true;
@@ -61,14 +66,16 @@ export function selectListingsForHydration<T>({
   const refreshJobs = selected.filter((listing) => previousFetch(listing) !== undefined)
     .sort((left, right) => previousFetch(left)! - previousFetch(right)!);
   const maintenance = refreshJobs.slice(0, detailRefresh?.limit ?? 0);
-  const allowed = detailRefresh?.reserve?.(maintenance.length) ?? maintenance.length;
+  const allowed = maintenance.length > 0
+    ? detailRefresh?.reserve?.(maintenance.length) ?? maintenance.length
+    : 0;
   recordScrapeMetric("priorityDetailsSelected", detailRefresh ? newJobs.length : selected.length);
   recordScrapeMetric("maintenanceDetailsSelected", detailRefresh ? Math.min(maintenance.length, allowed) : 0);
 
   return {
-    listings: detailRefresh
+    listings: [...supplied, ...(detailRefresh
       ? [...newJobs, ...maintenance.slice(0, allowed)]
-      : selected,
+      : selected)],
     earlyFiltered: toEarlyFilterStats(filtered),
   };
 }

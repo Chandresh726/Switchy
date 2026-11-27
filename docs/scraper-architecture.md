@@ -66,6 +66,154 @@ HTTP execution capacity. Admission constraints live in
 
 Adapter results and pipeline exceptions use the same failure classifier in `lib/scraper/types/validation.ts`. It preserves HTTP status and retry hints, distinguishes cancellation from timeout, and keeps retry decisions consistent with terminal scrape logging.
 
+## Workday query policies
+
+`platforms/workday.ts` coordinates extraction and browser recovery. Its
+`workday/` directory separates request configuration, payload parsing, country
+facet discovery, and checkpointed pagination. Shared HTTP infrastructure owns
+request pacing; the pipeline owns persistence and archival.
+
+The first listing response supplies the board's current facet parameters and
+opaque IDs. Country discovery walks nested groups and recognizes both parameter
+names and country descriptors, including boards whose parameter is simply `a`.
+It preserves the configured search text and other facets, intersecting an
+existing restriction on the same parameter. It never replaces that restriction
+with a broader country query.
+
+When a board exposes only location IDs, automatic mode proposes the locations
+whose labels identify the requested country. Before using this shortcut, it
+fetches a complete, exact baseline and verifies that the proposed query retains
+every country-matching listing. Validation persists for 24 hours in
+`scrape_fetch_state`, keyed by the full source query and country. A change to any
+location ID or label invalidates the proof. Counts may change without forcing a
+new baseline. Subsequent runs still discover current facets, but can skip the
+full baseline. Unknown mappings, rejected parameters, or failed coverage checks
+retain the configured source query. Genuine throttling still defers the run.
+
+`workday/config.ts` defines typed defaults and hostname/board overrides. The
+composition factory and registry accept the same configuration, for example:
+
+```ts
+createLocalScrapeQueueService({
+  workday: {
+    countryFilter: { mode: "auto" },
+    boardPolicies: [
+      {
+        hostname: "example.wd5.myworkdayjobs.com",
+        board: "External",
+        countryFilter: { mode: "country-only", parameter: "custom_country" },
+      },
+      {
+        hostname: "legacy.wd5.myworkdayjobs.com",
+        countryFilter: { mode: "disabled" },
+      },
+    ],
+  },
+});
+```
+
+Host overrides inherit shared defaults; board overrides inherit host policy.
+Aliases and validation TTL are configurable. Overrides identify parameter
+semantics, while the board supplies its current IDs. Adding a company does not
+require a branch in the scraper or a hardcoded country ID.
+
+Workday listing requests remain at 20 jobs because larger limits returned HTTP
+400 on tested boards. Queries that reach the 2,000-result ceiling, repeat a
+listing page, contain malformed identities, or resume mixed snapshots remain
+partial and cannot authorize archival. Query partitioning beyond that ceiling
+is not implemented. Filtering by country can avoid the global ceiling, but a
+country query that still reaches it also remains partial.
+
+The HTTP client coordinates request starts per host. Workday retains a
+1.5-second minimum interval without adding a second delay after each response.
+Real 429s increase the interval up to 12 seconds; five successful responses
+reduce it gradually toward the minimum. Persistent host cooldowns and
+`Retry-After` still apply. Browser challenges remain separate from rate limits.
+Workday company serialization and default listing/detail concurrency stay at
+one. Optional detail country, locations, and publication dates are retained
+when available; malformed optional metadata cannot discard a valid description.
+
+## Query optimization across ATS adapters
+
+The composition factory accepts `queryPolicies` for TalentBrew, Lever, Eightfold,
+Oracle, Uber, SmartRecruiters and Rippling. Each adapter builds its native
+requests. `platforms/shared/query-optimizer.ts` owns policy resolution and
+coverage validation; `services/listing-scope.ts` keeps narrowed snapshots from
+archiving jobs outside their query. Workday retains its facet-specific policy
+under the separate `workday` configuration.
+
+```ts
+createLocalScrapeQueueService({
+  queryPolicies: {
+    platforms: {
+      talentbrew: { pageSize: 100 },
+      lever: { pageSize: 1_000 },
+    },
+    boards: [{
+      platform: "eightfold",
+      hostname: "example.eightfold.ai",
+      board: "example.com",
+      policy: { countryFilter: false },
+    }],
+  },
+});
+```
+
+Board policy inherits hostname policy, which inherits platform defaults. The
+first optimization attempt requires a complete, exact baseline. A country query
+must preserve every ID accepted by the existing country filter, including
+globally eligible remote jobs. A larger unfiltered page size must preserve the
+entire ID set. Validation persists for 24 hours in `scrape_fetch_state`, keyed by
+platform, complete source URL, board, country and request semantics. Changed
+native TalentBrew country facets create a new validation key. Unsupported or
+incomplete paths retain the baseline; a cached query that later becomes partial
+stays partial. Genuine throttling and browser challenges propagate without an
+unfiltered retry. Both successful and unsuccessful proofs expire, allowing
+future capability changes to be checked again.
+
+The initial validation and daily revalidation can still require a full crawl.
+Cached runs use the narrower requests. Automatic country optimization skips
+small boards already returned in one page. `minimumCountryListings` can adjust
+that threshold per platform or board. Filtering that returns the same ID set as
+the full board stays on the original path. Every narrowed result carries its
+own listing scope. Source-filtered Google and Atlassian snapshots also identify
+their scope. Other new country paths require an unfiltered source URL; Eightfold
+preserves its existing query, sort and location constraints.
+
+- TalentBrew discovers native country facet IDs and submits their actual model
+  fields. Country and global-remote facets travel together on every page. Larger
+  pages use the server's returned pagination metadata, with exact unique counts
+  and repeated-page checks. The preferred size is 100.
+- Lever prefers 1,000 where full ID validation succeeds. It advances offsets by
+  returned lengths and verifies the end with a one-item request. A silently
+  clamped page cannot masquerade as the final page.
+- Eightfold stays at ten results per page. It adds the preferred country only
+  when the source has no location and preserves explicit remote/search settings.
+  Narrowed queries cannot use a global sitemap to certify their scope.
+- Oracle and Uber share the native country/location query and remote-workplace
+  union. Requests stay at or below 200. Overlapping discovery pages are merged by
+  ID before coverage validation, and observed server page lengths constrain the
+  pagination stride on larger result sets.
+- SmartRecruiters stays at or below 100 and unions its ISO country query with
+  remote postings. Changing totals, overlapping pages and malformed records stay
+  incomplete.
+- Rippling retains one bulk request for its current small board. Its optional
+  location-facet path includes global remote labels; larger boards can narrow
+  automatically after validation. Raw unique index records are checked against
+  `nbHits`, independently of merged job IDs, so an index pagination ceiling cannot
+  authorize archival. Repeated pages and the local sweep limit stay partial.
+- Phenom keeps its existing extraction path. Larger public widget pages remain
+  disabled because live checks did not establish complete unique-ID coverage.
+
+Descriptions supplied by full feeds do not reserve HTTP detail-maintenance
+quota. ServiceNow and TurboHire pass supplied records directly through selection;
+Atlassian follows its existing listing-description short circuit with the same
+quota rule. New records, filtered records and actual HTTP detail requests keep
+their existing priority and limits. Optional Greenhouse office locations, Ashby
+structured address countries, Lever's `allLocations`, and Uber's secondary work
+locations improve filtering without extra detail requests. A primary country
+cannot exclude an advertised secondary or globally remote location.
+
 ## Reliability guarantees
 
 - Session creation and queue insertion are one SQLite transaction.
@@ -146,6 +294,14 @@ missing set must appear in a second complete snapshot at least one minute later
 and within 24 hours. Confirmation survives restarts in `scrape_fetch_state`;
 incomplete snapshots reset it. A paused archival adds a visible warning.
 
+Workday additionally records membership for each canonical source query. The
+first complete snapshot establishes a baseline after job persistence succeeds.
+Later runs can archive only jobs previously observed in that scope. Jobs outside
+the query receive no synthetic last-seen update or reopen signal. Partial runs
+cannot replace the baseline, and members awaiting disappearance confirmation
+remain eligible for the next confirmation. An expired or unavailable baseline
+disables scoped archival until another complete snapshot establishes it.
+
 Source-closed jobs reopen when they are listed again. Age-archived jobs stay
 hidden when still listed, preventing the age policy and source reconciliation
 from repeatedly reopening and archiving them. Manual archives and application
@@ -202,9 +358,7 @@ adapters, or pass platform names to select checks. Each adapter receives up to
 four HTTP operations and a 20-second deadline. Transport redirects remain
 bounded separately. The checks exclude detail downloads by title filter, use no
 browser or application database, and report compatible samples separately from
-contract failures and inconclusive network/challenge responses. Visa also gets a
-one-request check of its official careers redirect, reported separately from
-legacy-feed compatibility. The weekly
+contract failures and inconclusive network/challenge responses. The weekly
 `Scraper contracts` workflow runs the same checks and can be started manually.
 These probes do not establish full pagination coverage or tenant-wide parity.
 Fixture tests and the dedicated live validation commands complement them.
@@ -215,13 +369,20 @@ requests, Oracle recruitingCE and company careers endpoints depend on observed
 native interfaces and need continued monitoring. Phenom null search bootstrap
 responses receive one bounded reload and cannot become complete empty boards.
 
-Visa's official jobs entry now redirects to
-`https://visa.wd5.myworkdayjobs.com/Visa`. Its older feed still returns listings.
-The new board remained challenged during a bounded direct and browser-backed
-probe. Keep the current source until complete parity and identity mapping can be
-verified. Switching platform or rewriting saved IDs without that evidence would
-risk duplicate jobs and broken application links. No Visa data migration is
-activated in this release.
+Visa now uses the shared Workday adapter at
+`https://visa.wd5.myworkdayjobs.com/Visa` (`visa/Visa`). The November 27 browser
+transport check succeeded after direct requests received a Cloudflare challenge.
+The complete global crawl returned all 937 advertised records. Complete and
+repeat India listing crawls both returned all 96 advertised records.
+The older Visa feed still responded with 52 records, which did not establish
+coverage of the current board. The dedicated legacy adapter has been removed.
+
+Startup source migration deletes legacy `visa` company rows and their linked job
+and matching data, then adds Visa as a new Workday company. This intentional reset
+avoids carrying retired source identities into the new board. An existing Visa
+Workday company is retained unchanged. The transaction runs with foreign keys
+enabled, removes restrictive queued-work references before deletion, and is
+idempotent. No schema change or network request is required during startup.
 
 ## Adding a platform
 

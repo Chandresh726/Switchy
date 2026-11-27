@@ -469,13 +469,14 @@ export function migrateLocalDatabase(
     reconcileDuplicateNonCustomProviders(database);
     migrate(database, { migrationsFolder });
     migrateLegacyScraperCompanies(database);
-    migrateOutdatedScraperSources(database);
-    backfillCompanyIdentities(database);
     backfillAICacheEvents(database);
     backfillWritingEvents(database);
   } finally {
     sqlite.pragma("foreign_keys = ON");
   }
+  // Source resets rely on foreign-key cascades to remove linked job artifacts.
+  migrateOutdatedScraperSources(database);
+  backfillCompanyIdentities(database);
   const foreignKeyViolations = sqlite.pragma("foreign_key_check") as unknown[];
   if (foreignKeyViolations.length > 0) {
     throw new Error(`Migration left ${foreignKeyViolations.length} foreign-key violation(s)`);

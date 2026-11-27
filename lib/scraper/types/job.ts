@@ -10,6 +10,8 @@ export interface ScrapedJob {
   title: string;
   url: string;
   location?: string;
+  /** Source country/location hints for filtering, independent of display text. */
+  country?: string;
   locations?: string[];
   locationType?: LocationType;
   department?: string;

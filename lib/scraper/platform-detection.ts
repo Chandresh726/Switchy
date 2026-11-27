@@ -21,7 +21,6 @@ const matches: Record<Platform, (source: SourceUrl) => boolean> = {
   google: ({ hostname, pathname }) => hostname === "careers.google.com" || (hostIs(hostname, "google.com") && pathname.startsWith("/about/careers")),
   atlassian: ({ hostname, pathname }) => hostIs(hostname, "atlassian.com") && pathname.startsWith("/company/careers"),
   rippling: ({ hostname, pathname }) => hostIs(hostname, "rippling.com") && pathname.includes("career"),
-  visa: ({ hostname, pathname }) => (hostIs(hostname, "visa.com") || hostIs(hostname, "visa.co.uk")) && pathname.includes("/jobs"),
   jobvite: ({ hostname }) => hostname === "jobs.jobvite.com" || hostname === "careers.nutanix.com",
   talentbrew: ({ hostname }) => hostname === "jobs.intuit.com" || hostname === "careers.intuit.com",
   oracle: ({ hostname, pathname }) => (

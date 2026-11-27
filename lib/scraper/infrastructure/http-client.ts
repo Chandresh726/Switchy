@@ -3,6 +3,7 @@ import { HttpError } from "./http-error";
 
 export { HttpError } from "./http-error";
 import { measureScrapeMetric, recordScrapeMetric } from "./metrics";
+import { HostRequestPacer, type AdaptivePacingOptions } from "./host-request-pacer";
 
 import {
   abortableDelay,
@@ -24,6 +25,7 @@ export interface HttpClientConfig {
 export interface HttpRequestOptions extends RequestInit {
   transport?: (url: string, options: RequestInit) => Promise<Response>;
   minIntervalMs?: number;
+  adaptivePacing?: AdaptivePacingOptions;
   timeout?: number;
   retries?: number;
   baseDelay?: number;
@@ -96,7 +98,7 @@ function parseScrapeHost(url: string): string {
 
 export class FetchHttpClient implements IHttpClient {
   private readonly defaultConfig: HttpClientConfig;
-  private readonly lastRequestAt = new Map<string, number>();
+  private readonly pacer = new HostRequestPacer();
   private readonly activeByHost = new Map<string, number>();
   private readonly waitersByHost = new Map<string, HostWaiter[]>();
 
@@ -122,6 +124,7 @@ export class FetchHttpClient implements IHttpClient {
       signal: explicitSignal,
       transport,
       minIntervalMs = 0,
+      adaptivePacing,
       ...fetchOptions
     } = options;
     const signal = explicitSignal ?? getActiveScrapeSignal();
@@ -135,6 +138,7 @@ export class FetchHttpClient implements IHttpClient {
       signal,
       transport,
       minIntervalMs,
+      adaptivePacing,
     });
   }
 
@@ -198,6 +202,7 @@ export class FetchHttpClient implements IHttpClient {
     signal?: AbortSignal;
     transport?: HttpRequestOptions["transport"];
     minIntervalMs: number;
+    adaptivePacing?: AdaptivePacingOptions;
   }): Promise<Response> {
     let attempt = 0;
     let currentUrl = args.url;
@@ -229,10 +234,10 @@ export class FetchHttpClient implements IHttpClient {
 
       try {
         const host = parseScrapeHost(currentUrl);
-        const waitMs = (this.lastRequestAt.get(host) ?? 0) + args.minIntervalMs - Date.now();
-        if (waitMs > 0) await measureScrapeMetric("pacingWaitMs", () => this.delay(waitMs, attemptController.signal));
+        await measureScrapeMetric("pacingWaitMs", () => this.pacer.wait(
+          host, args.minIntervalMs, attemptController.signal, args.adaptivePacing
+        ));
         this.checkCooldown(currentUrl);
-        this.lastRequestAt.set(host, Date.now());
         requestStarted = performance.now();
         recordScrapeMetric("httpRequests");
         const response = await (args.transport ?? fetch)(currentUrl, {
@@ -277,6 +282,7 @@ export class FetchHttpClient implements IHttpClient {
           await this.discardResponse(response);
           throw new HttpError(response.status, "Blocked by browser challenge", currentUrl, response.headers);
         }
+        this.pacer.observe(host, response.status, args.minIntervalMs, args.adaptivePacing);
         if (response.status === 429) recordScrapeMetric("rateLimits");
         if (response.ok && this.state) {
           const key = `cooldown:${host}`;

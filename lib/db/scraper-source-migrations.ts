@@ -1,8 +1,10 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray, or } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
+import { VISA_WORKDAY_BOARD_TOKEN, VISA_WORKDAY_URL } from "@/lib/companies/visa-source";
+
 import type * as schema from "./schema";
-import { companies } from "./schema";
+import { aiWorkItems, companies, matchSessions, scrapeMatchOutbox, scrapingLogs } from "./schema";
 
 interface ScraperSourceMigration {
   previousPlatform: string;
@@ -47,13 +49,32 @@ function sourceIdentity(value: string): string {
   }
 }
 
-/** Only known retired URLs are changed. Job, application and history IDs stay intact. */
+/** Replace retired sources; legacy Visa is intentionally reset as a new company. */
 export function migrateOutdatedScraperSources(
   database: BetterSQLite3Database<typeof schema>
 ): void {
   database.transaction((tx) => {
     const stored = tx.select({ id: companies.id, careersUrl: companies.careersUrl, platform: companies.platform, isActive: companies.isActive }).from(companies).all();
     const now = new Date();
+    const retiredVisa = stored.filter((company) => company.platform === "visa");
+    if (retiredVisa.length) {
+      const ids = retiredVisa.map((company) => company.id);
+      const legacyLogs = tx.select({ id: scrapingLogs.id }).from(scrapingLogs)
+        .where(inArray(scrapingLogs.companyId, ids));
+      // Remove restrictive work references before company/job cascades. Run with
+      // foreign keys enabled so all job artifacts are deleted with their owner.
+      tx.delete(aiWorkItems).where(or(inArray(aiWorkItems.companyId, ids),
+        inArray(aiWorkItems.scrapingLogId, legacyLogs))).run();
+      tx.delete(scrapeMatchOutbox).where(or(inArray(scrapeMatchOutbox.companyId, ids),
+        inArray(scrapeMatchOutbox.scrapingLogId, legacyLogs))).run();
+      tx.delete(matchSessions).where(inArray(matchSessions.companyId, ids)).run();
+      tx.delete(companies).where(inArray(companies.id, ids)).run();
+      const replacement = stored.find((company) => company.platform !== "visa" &&
+        sourceIdentity(company.careersUrl) === sourceIdentity(VISA_WORKDAY_URL));
+      if (!replacement) tx.insert(companies).values({ name: "Visa", careersUrl: VISA_WORKDAY_URL,
+        platform: "workday", boardToken: VISA_WORKDAY_BOARD_TOKEN,
+        logoUrl: "https://cdn-icons-png.flaticon.com/512/5968/5968397.png" }).run();
+    }
     for (const migration of SOURCE_MIGRATIONS) {
       const retired = stored.filter((company) =>
         company.platform === migration.previousPlatform &&

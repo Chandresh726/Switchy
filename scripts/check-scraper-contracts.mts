@@ -43,17 +43,6 @@ for (const target of targets) {
         headers: { "Content-Type": "application/json", ...options?.headers } });
     },
   };
-  let canonicalRedirect: string | undefined;
-  if (target.platform === "visa") {
-    try {
-      const response = await fetch("https://corporate.visa.com/en/jobs/", {
-        redirect: "manual", signal: AbortSignal.timeout(10_000),
-      });
-      const location = response.headers.get("location");
-      canonicalRedirect = location ? new URL(location, response.url).hostname : undefined;
-      await response.body?.cancel();
-    } catch { /* Report a usable feed separately from an unavailable redirect check. */ }
-  }
   const registry = createScraperRegistry({ httpClient: client, browserClient: browser });
   const result = await registry.scrape(target.careersUrl, target.platform, {
     boardToken: target.boardToken, signal: AbortSignal.timeout(20_000),
@@ -64,7 +53,6 @@ for (const target of targets) {
   if (contractFailure) failed = true;
   console.log(JSON.stringify({ platform: target.platform, requests, budgetExhausted,
     status: contractFailure ? "contract_failure" : error ? "inconclusive" : "compatible_sample",
-    ...(canonicalRedirect ? { canonicalRedirect, migrationRequiresParityCheck: true } : {}),
     outcome: result.outcome, listingCompleteness: result.listingCompleteness,
     listings: result.outcome === "error" ? undefined : result.totalListings,
     issueCodes: result.outcome === "error" ? [result.error.code] : [...new Set(result.issues?.map((issue) => issue.code) ?? [])],

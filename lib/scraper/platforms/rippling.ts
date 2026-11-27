@@ -1,11 +1,12 @@
 import { load } from "cheerio";
 import { z } from "zod";
 
+import { matchesPreferredCountry } from "@/lib/scraper/services/filter-service";
 import {
   containsHtml,
   processDescription,
 } from "@/lib/jobs/description-processor";
-import type { IHttpClient } from "@/lib/scraper/infrastructure/http-client";
+import { HttpError, type IHttpClient } from "@/lib/scraper/infrastructure/http-client";
 import { throwIfScrapeAborted } from "@/lib/scraper/infrastructure/cancellation";
 import {
   createScraperError,
@@ -19,6 +20,8 @@ import {
   type ScrapedJob,
   type ScraperResult,
 } from "@/lib/scraper/types";
+
+import type { ListingQueryOptimizer } from "./shared/query-optimizer";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
 import { selectListingsForHydration } from "./shared/listing-selection";
@@ -67,6 +70,9 @@ const RipplingAlgoliaResponseSchema = z
           hits: z.array(z.unknown()),
           page: z.number().int().nonnegative(),
           nbPages: z.number().int().nonnegative(),
+          nbHits: z.number().int().nonnegative().optional(),
+          facets: z.record(z.string(), z.record(z.string(), z.number())).optional().catch(undefined),
+          exhaustiveFacetsCount: z.boolean().optional(),
         })
         .passthrough()
     ),
@@ -112,7 +118,7 @@ const LOCALE_REGEX = /^\/?(?:en-IN|en-US|en-AU|en-CA|en-GB|en-IE|en-SG|de-DE|fr-
 export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
   readonly platform = "rippling" as const;
 
-  constructor(httpClient: IHttpClient, config: Partial<RipplingConfig> = {}) {
+  constructor(httpClient: IHttpClient, config: Partial<RipplingConfig> = {}, private readonly queries?: ListingQueryOptimizer) {
     super(httpClient, { ...DEFAULT_RIPPLING_CONFIG, ...config });
   }
 
@@ -132,7 +138,27 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
       if (!sourceUrl) {
         return this.failure("invalid_url", "Invalid Rippling Careers URL.");
       }
-      const listingResult = await this.fetchAndGroupListings();
+      const requestedSize = this.queries?.policy(this.platform, url, this.config.algoliaIndexName).pageSize ?? this.config.listingPageSize;
+      const pageSize = Number.isFinite(requestedSize) ? Math.min(1000, Math.max(1, Math.floor(requestedSize))) : 1000;
+      const country = options?.filters?.country;
+      const baseline = async () => {
+        const value = await this.fetchAndGroupListings(undefined, pageSize);
+        return { value, items: value.listings, complete: value.isComplete, advertisedTotal: value.isComplete ? value.listings.length : undefined };
+      };
+      const chosen = this.queries && country && !sourceUrl.search ? await this.queries.fetch({
+        platform: this.platform, source: url, board: this.config.algoliaIndexName, country,
+        minimumItems: pageSize + 1, candidateKey: { index: this.config.algoliaIndexName, pageSize, version: 1 }, baseline,
+        candidate: async (previous) => {
+          const facets = previous?.value.locationFacets ?? await this.fetchLocationFacets();
+          const labels = facets.filter((label) => matchesPreferredCountry(label, country));
+          if (!labels.length) return null;
+          const value = await this.fetchAndGroupListings(labels, pageSize);
+          return { value, items: value.listings, complete: value.isComplete, advertisedTotal: value.isComplete ? value.listings.length : undefined };
+        },
+        getId: (job) => job.id, toFilterable: (job) => job,
+      }) : { value: (await baseline()).value, listingScopeKey: undefined };
+      const listingResult = chosen.value;
+      const listingScopeKey = chosen.listingScopeKey;
       const { listings } = listingResult;
       const openExternalIds = listings.map((job) =>
         this.generateExternalId(this.platform, job.id)
@@ -144,6 +170,7 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
           jobs: [],
           totalListings: 0,
           openExternalIds,
+          listingScopeKey,
           listingCompleteness: listingResult.isComplete ? "complete" : "partial",
           issues: listingResult.isComplete
             ? undefined
@@ -175,6 +202,7 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
           totalListings: listings.length,
           earlyFiltered: selection.earlyFiltered,
           openExternalIds,
+          listingScopeKey,
           listingCompleteness: listingResult.isComplete ? "complete" : "partial",
           issues: listingResult.isComplete
             ? undefined
@@ -223,6 +251,7 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
         totalListings: listings.length,
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,
+        listingScopeKey,
         listingCompleteness: listingResult.isComplete ? "complete" : "partial",
         issues: issues.length > 0 ? issues : undefined,
       };
@@ -231,14 +260,27 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
     }
   }
 
-  private async fetchAndGroupListings(): Promise<{
-    listings: RipplingListingJob[];
-    isComplete: boolean;
-  }> {
+  private async fetchLocationFacets(): Promise<string[]> {
+    const payload = await this.post<unknown>(
+      `https://${this.config.algoliaAppId}-dsn.algolia.net/1/indexes/*/queries`,
+      { requests: [{ indexName: this.config.algoliaIndexName, params: new URLSearchParams({
+        hitsPerPage: "0", facets: JSON.stringify(["locationNames"]), maxValuesPerFacet: "1000",
+      }).toString() }] },
+      { headers: this.jsonRequestHeaders({ "x-algolia-application-id": this.config.algoliaAppId, "x-algolia-api-key": this.config.algoliaApiKey }) }
+    );
+    const result = parseExternalPayload(RipplingAlgoliaResponseSchema, payload, "Rippling location facets").results[0];
+    return result?.exhaustiveFacetsCount === false ? [] : Object.keys(result?.facets?.locationNames ?? {});
+  }
+
+  private async fetchAndGroupListings(labels?: string[], pageSize = this.config.listingPageSize) {
     const entries: RipplingJobEntry[] = [];
     let page = 0;
     let totalPages = 1;
     let isComplete = true;
+    let advertised: number | undefined;
+    let locationFacets: string[] = [];
+    const records = new Set<string>();
+    const fingerprints = new Set<string>();
 
     while (page < totalPages) {
       try {
@@ -248,7 +290,11 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
             requests: [
               {
                 indexName: this.config.algoliaIndexName,
-                params: `hitsPerPage=${this.config.listingPageSize}&page=${page}`,
+                params: new URLSearchParams({
+                  hitsPerPage: String(pageSize), page: String(page),
+                  ...(this.queries ? { facets: JSON.stringify(["locationNames"]), maxValuesPerFacet: "1000" } : {}),
+                  ...(labels ? { facetFilters: JSON.stringify([labels.map((label) => `locationNames:${label}`)]) } : {}),
+                }).toString(),
               },
             ],
           },
@@ -268,9 +314,17 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
         if (!result) {
           throw new Error("Rippling Algolia returned no search result.");
         }
-        totalPages = result.nbPages;
+        totalPages = Math.min(result.nbPages, 100);
+        if (result.nbPages > 100) isComplete = false;
+        if (advertised !== undefined && result.nbHits !== undefined && advertised !== result.nbHits) isComplete = false;
+        advertised ??= result.nbHits;
+        if (page === 0 && result.exhaustiveFacetsCount !== false) locationFacets = Object.keys(result.facets?.locationNames ?? {});
         const hits = parseExternalItems(RipplingAlgoliaHitSchema, result.hits, "Rippling hits");
         if (hits.invalidCount > 0) isComplete = false;
+        const fingerprint = JSON.stringify(hits.items.map((hit) => [hit.jobId, hit.locations]).sort());
+        if (hits.items.length && fingerprints.has(fingerprint)) { isComplete = false; break; }
+        fingerprints.add(fingerprint);
+        for (const hit of hits.items) records.add(typeof hit.objectID === "string" ? hit.objectID : JSON.stringify([hit.jobId, hit.locations]));
         entries.push(
           ...hits.items.map((hit) => ({
             id: hit.jobId,
@@ -287,6 +341,7 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
         page++;
       } catch (error) {
         throwIfScrapeAborted(error);
+        if (error instanceof HttpError && (error.status === 429 || error.isBrowserChallenge)) throw error;
         if (page === 0) throw error;
         isComplete = false;
         break;
@@ -295,7 +350,8 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
 
     return {
       listings: this.groupAndMergeLocations(entries),
-      isComplete,
+      locationFacets,
+      isComplete: isComplete && advertised !== undefined && records.size >= advertised,
     };
   }
 
@@ -308,7 +364,7 @@ export class RipplingScraper extends AbstractApiScraper<RipplingConfig> {
       const existing = grouped.get(entry.id);
 
       const location = entry.locations?.[0];
-      const locationName = location?.name ?? "";
+      const locationName = [...new Set(entry.locations?.map((item) => item.name) ?? [])].join(" | ");
       const locationType = this.mapWorkplaceType(location?.workplaceType);
 
       if (!existing) {

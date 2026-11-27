@@ -444,9 +444,10 @@
   },
   {
     "name": "Visa",
-    "careersUrl": "https://www.visa.co.uk/en_gb/jobs/",
+    "careersUrl": "https://visa.wd5.myworkdayjobs.com/Visa",
+    "boardToken": "visa/Visa",
     "logoUrl": "https://cdn-icons-png.flaticon.com/512/5968/5968397.png",
-    "platform": "visa",
+    "platform": "workday",
     "isActive": true
   },
   {

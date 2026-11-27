@@ -89,6 +89,7 @@ export class ServiceNowScraper extends AbstractApiScraper<ServiceNowConfig> {
       }
 
       const selection = selectListingsForHydration({
+        hasCompleteDetails: () => true,
         listings,
         filters: options?.filters,
         existingExternalIds: options?.existingExternalIds,

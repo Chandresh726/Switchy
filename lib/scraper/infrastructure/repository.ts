@@ -168,12 +168,15 @@ export class DrizzleScraperRepository implements IScraperRepository {
         )
         .map((job) => job.id);
       const listedJobIds = new Set(seenJobIds);
+      const archiveCandidates = input.archiveCandidateExternalIds
+        ? new Set(input.archiveCandidateExternalIds) : undefined;
       const jobIdsToArchive = input.archiveMissing
         ? currentJobs
             .filter((job) => {
               if (!job.externalId) return false;
               return (
                 input.statusesToArchive.includes(job.status) &&
+                (!archiveCandidates || archiveCandidates.has(job.externalId)) &&
                 !openExternalIds.has(job.externalId)
               );
             })

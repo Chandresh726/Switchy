@@ -14,5 +14,4 @@ export { ServiceNowScraper } from "./servicenow";
 export { SmartRecruitersScraper } from "./smartrecruiters";
 export { TurboHireScraper } from "./turbohire";
 export { UberScraper } from "./uber";
-export { VisaScraper } from "./visa";
 export { WorkdayScraper } from "./workday";

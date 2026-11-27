@@ -18,6 +18,7 @@ import { ScraperLogger } from "@/lib/scraper/utils/logger";
 
 import { selectFreshJobIdentities } from "../services/job-refresh-policy";
 import { DescriptionRefreshBudget } from "../services/description-refresh-budget";
+import { prepareListingScope } from "../services/listing-scope";
 import { canArchiveMissingJobs } from "../services/listing-reconciliation";
 import type { IDeduplicationService } from "../services/deduplication-service";
 import type { IFilterService, JobFilters } from "../services/filter-service";
@@ -410,9 +411,15 @@ export class ScrapeCompanyPipeline {
     // Unknown totals (field absent) preserve legacy behavior.
     const listingsExact =
       scraperResult.advertisedTotal == null || totalFetched >= scraperResult.advertisedTotal;
+    const completeListing = scraperResult.listingCompleteness === "complete" && listingsExact;
+    const scope = prepareListingScope({
+      companyId, scopeKey: scraperResult.listingScopeKey, existing: existingJobs,
+      openIds: openExternalIds, complete: completeListing,
+      now: this.dependencies.now?.() ?? new Date(), state: this.dependencies.fetchState,
+    });
     const archival = canArchiveMissingJobs({
-      companyId, source: `${platform}:${boardToken}`, existing: existingJobs,
-      complete: scraperResult.listingCompleteness === "complete" && listingsExact,
+      companyId, source: scraperResult.listingScopeKey ?? `${platform}:${boardToken}`, existing: scope.existing,
+      complete: completeListing && scope.canArchive,
       openIds: openExternalIds, now: this.dependencies.now?.() ?? new Date(),
       state: this.dependencies.fetchState,
     });
@@ -441,7 +448,7 @@ export class ScrapeCompanyPipeline {
     // Issues on a success outcome are tolerated gaps (see completeness
     // helper); surface them as warnings instead of dropping them. The
     // error branch above returns early, so only success/partial reach here.
-    const scraperWarnings = [...(scraperResult.issues?.map((issue) => issue.message) ?? []),
+    const scraperWarnings = [ ...(scraperResult.issues?.map((issue) => issue.message) ?? []),
       ...(archival.warning ? [archival.warning] : [])];
     const jobsFiltered = filterResult.filteredOut + (scraperResult.earlyFiltered?.total || 0);
     const persistenceStartedAtMs = Date.now();
@@ -449,6 +456,7 @@ export class ScrapeCompanyPipeline {
       companyId,
       openExternalIds,
       archiveMissing,
+      archiveCandidateExternalIds: scope.candidateExternalIds,
       statusesToArchive: ARCHIVABLE_JOB_STATUSES,
       jobsToInsert: filterResult.filtered.map((job) => ({
         externalId: job.externalId,
@@ -492,6 +500,7 @@ export class ScrapeCompanyPipeline {
       },
     });
 
+    scope.commit(archiveMissing);
     logger.added(persistenceResult.jobsAdded, dedupeResult.duplicates.length);
     if (persistenceResult.matchOutboxId) {
       void this.dependencies.dispatchMatching();

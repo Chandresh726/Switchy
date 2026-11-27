@@ -22,7 +22,8 @@ describe("company scrape support", () => {
     expect(isCompanyScrapeSupported("https://careers.servicenow.com/jobs", "servicenow")).toBe(true);
     expect(isCompanyScrapeSupported("https://www.flipkartcareers.com/flipkart/jobslist", "turbohire")).toBe(true);
     expect(isCompanyScrapeSupported("https://careers.swiggy.com/#/careers", "mynexthire")).toBe(true);
-    expect(isCompanyScrapeSupported("https://www.visa.co.uk/en_gb/jobs/", "visa")).toBe(true);
+    expect(isCompanyScrapeSupported("https://visa.wd5.myworkdayjobs.com/Visa", "workday")).toBe(true);
+    expect(isCompanyScrapeSupported("https://www.visa.co.uk/en_gb/jobs/", "visa")).toBe(false);
     expect(isCompanyScrapeSupported("https://jobs.jobvite.com/nutanix/jobs", "jobvite")).toBe(true);
     expect(isCompanyScrapeSupported("https://jobs.intuit.com/search-jobs", "talentbrew")).toBe(true);
     expect(isCompanyScrapeSupported("https://careers.ti.com/en/sites/CX/jobs", "oracle")).toBe(true);

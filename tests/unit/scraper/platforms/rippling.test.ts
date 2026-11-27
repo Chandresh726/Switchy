@@ -458,7 +458,7 @@ describe("RipplingScraper", () => {
       expect(result.issues?.[0]?.message).toContain("partially fetched");
     });
 
-    it("accepts minimal listings without unused pagination or location metadata", async () => {
+    it("retains minimal listings but cannot certify coverage without the index total", async () => {
       const listings = {
         results: [
           {
@@ -484,9 +484,9 @@ describe("RipplingScraper", () => {
       );
 
       expect(result).toMatchObject({
-        outcome: "success",
+        outcome: "partial",
         totalListings: 1,
-        listingCompleteness: "complete",
+        listingCompleteness: "partial",
       });
     });
 

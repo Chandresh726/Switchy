@@ -17,6 +17,8 @@ import {
   type SeniorityLevel,
 } from "@/lib/scraper/types";
 
+import { sourceCountryHint } from "./shared/source-fields";
+import { countryCode, type ListingQueryOptimizer } from "./shared/query-optimizer";
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
 import { hydrateDetailsInBatches } from "./shared/detail-hydrator";
 import { selectListingsForHydration } from "./shared/listing-selection";
@@ -117,6 +119,7 @@ interface SmartRecruitersHydratedJob {
 }
 
 interface SmartRecruitersListingResult {
+  advertisedTotal: number | null;
   listings: SmartRecruitersListing[];
   isComplete: boolean;
   issues: ScraperError[];
@@ -142,7 +145,8 @@ export class SmartRecruitersScraper extends AbstractApiScraper<SmartRecruitersCo
 
   constructor(
     httpClient: IHttpClient,
-    config: Partial<SmartRecruitersConfig> = {}
+    config: Partial<SmartRecruitersConfig> = {},
+    private readonly queries?: ListingQueryOptimizer
   ) {
     super(httpClient, { ...DEFAULT_SMARTRECRUITERS_CONFIG, ...config });
   }
@@ -169,7 +173,33 @@ export class SmartRecruitersScraper extends AbstractApiScraper<SmartRecruitersCo
       }
 
       const detectedBoardToken = !options?.boardToken ? identifier : undefined;
-      const listingResult = await this.fetchListings(identifier);
+      const policy = this.queries?.policy(this.platform, url, identifier);
+      const requestedSize = policy?.enabled && policy.pageSize !== undefined ? policy.pageSize : this.config.listingPageSize;
+      const pageSize = Number.isFinite(requestedSize) ? Math.min(100, Math.max(1, Math.floor(requestedSize))) : 100;
+      const country = options?.filters?.country;
+      const code = countryCode(country);
+      const baseline = async () => {
+        const value = await this.fetchListings(identifier, {}, pageSize);
+        return { value, items: value.listings, complete: value.isComplete, advertisedTotal: value.advertisedTotal };
+      };
+      const chosen = this.queries && code && !new URL(url).search ? await this.queries.fetch({
+        platform: this.platform, source: url, board: identifier, country, minimumItems: 101,
+        candidateKey: { countryCode: code, remote: true, pageSize, version: 1 }, baseline,
+        candidate: async () => {
+          const results = await Promise.all([
+            this.fetchListings(identifier, { country: code }, pageSize),
+            this.fetchListings(identifier, { locationType: "REMOTE" }, pageSize),
+          ]);
+          const listings = [...new Map(results.flatMap((page) => page.listings).map((job) => [job.id, job])).values()];
+          const complete = results.every((page) => page.isComplete && page.advertisedTotal !== null && page.listings.length >= page.advertisedTotal);
+          const value = { listings, isComplete: complete, issues: results.flatMap((page) => page.issues),
+            advertisedTotal: complete ? listings.length : results.reduce((sum, page) => sum + (page.advertisedTotal ?? 0), 0) };
+          return { value, items: listings, complete, advertisedTotal: value.advertisedTotal };
+        },
+        getId: (job) => job.id, toFilterable: (job) => ({ title: job.name, location: this.locationText(job.location), country: sourceCountryHint([job.location?.country], [this.locationText(job.location) ?? ""]) }),
+      }) : { value: (await baseline()).value, listingScopeKey: undefined };
+      const listingResult = chosen.value;
+      const listingScopeKey = chosen.listingScopeKey;
       const openExternalIds = listingResult.listings.map((listing) =>
         this.externalId(identifier, listing.id)
       );
@@ -182,6 +212,7 @@ export class SmartRecruitersScraper extends AbstractApiScraper<SmartRecruitersCo
         toFilterable: (listing) => ({
           title: listing.name,
           location: this.locationText(listing.location),
+          country: sourceCountryHint([listing.location?.country], [this.locationText(listing.location) ?? ""]),
         }),
         getExternalId: (listing) => this.externalId(identifier, listing.id),
       });
@@ -223,6 +254,8 @@ export class SmartRecruitersScraper extends AbstractApiScraper<SmartRecruitersCo
         detectedBoardToken,
         earlyFiltered: selection.earlyFiltered,
         openExternalIds,
+        listingScopeKey,
+        advertisedTotal: listingResult.advertisedTotal,
         listingCompleteness: listingResult.isComplete ? "complete" : "partial",
         issues: issues.length > 0 ? issues : undefined,
       };
@@ -231,7 +264,7 @@ export class SmartRecruitersScraper extends AbstractApiScraper<SmartRecruitersCo
     }
   }
 
-  private async fetchListings(identifier: string): Promise<SmartRecruitersListingResult> {
+  private async fetchListings(identifier: string, query: { country?: string; locationType?: string } = {}, pageSize = this.config.listingPageSize): Promise<SmartRecruitersListingResult> {
     const listings = new Map<string, SmartRecruitersListing>();
     const issues: ScraperError[] = [];
     let expectedTotal: number | null = null;
@@ -239,7 +272,7 @@ export class SmartRecruitersScraper extends AbstractApiScraper<SmartRecruitersCo
     let isComplete = true;
 
     while (expectedTotal === null || listings.size < expectedTotal) {
-      const url = this.listingUrl(identifier, offset);
+      const url = this.listingUrl(identifier, offset, query, pageSize);
       let response: Response;
       try {
         response = await this.fetchResponse(url, {
@@ -248,6 +281,7 @@ export class SmartRecruitersScraper extends AbstractApiScraper<SmartRecruitersCo
         });
       } catch (error) {
         throwIfScrapeAborted(error);
+        if (error instanceof HttpError && (error.status === 429 || error.isBrowserChallenge)) throw error;
         if (offset === 0) throw error;
         isComplete = false;
         issues.push(this.failureFromUnknown(error).error);
@@ -255,11 +289,11 @@ export class SmartRecruitersScraper extends AbstractApiScraper<SmartRecruitersCo
       }
 
       if (!response.ok) {
-        if (offset === 0) {
+        if (offset === 0 || response.status === 429) {
           throw new HttpError(
             response.status,
             `Failed to fetch SmartRecruiters listings: ${response.status}`,
-            url
+            url, response.headers
           );
         }
         isComplete = false;
@@ -340,7 +374,7 @@ export class SmartRecruitersScraper extends AbstractApiScraper<SmartRecruitersCo
 
       offset += page.content.length;
       if (listings.size >= (expectedTotal ?? 0)) break;
-      if (page.content.length < this.config.listingPageSize || addedItems === 0) {
+      if (page.content.length < pageSize || addedItems === 0) {
         isComplete = false;
         issues.push(
           createScraperError(
@@ -363,7 +397,7 @@ export class SmartRecruitersScraper extends AbstractApiScraper<SmartRecruitersCo
         );
       }
     }
-    return { listings: [...listings.values()], isComplete, issues };
+    return { listings: [...listings.values()], isComplete, issues, advertisedTotal: expectedTotal };
   }
 
   private async fetchAndHydrateJob(
@@ -406,6 +440,7 @@ export class SmartRecruitersScraper extends AbstractApiScraper<SmartRecruitersCo
         listing.postingUrl ||
         this.canonicalPostingUrl(identifier, listing.id),
       location: normalizedLocation.location,
+      country: sourceCountryHint([source.location?.country], [normalizedLocation.location ?? ""]),
       locationType: source.location?.hybrid
         ? "hybrid"
         : source.location?.remote
@@ -504,8 +539,9 @@ export class SmartRecruitersScraper extends AbstractApiScraper<SmartRecruitersCo
     return this.generateExternalId(this.platform, identifier, postingId);
   }
 
-  private listingUrl(identifier: string, offset: number): string {
-    return `${this.config.baseUrl}/${encodeURIComponent(identifier)}/postings?destination=PUBLIC&limit=${this.config.listingPageSize}&offset=${offset}`;
+  private listingUrl(identifier: string, offset: number, query: { country?: string; locationType?: string }, pageSize: number): string {
+    const extra = new URLSearchParams(Object.entries(query).filter(([, value]) => value !== undefined) as [string, string][]);
+    return `${this.config.baseUrl}/${encodeURIComponent(identifier)}/postings?destination=PUBLIC&limit=${pageSize}&offset=${offset}${extra.size ? `&${extra}` : ""}`;
   }
 
   private detailUrl(identifier: string, postingId: string): string {

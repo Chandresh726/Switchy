@@ -8,8 +8,9 @@ import {
   parseExternalPayload,
 } from "@/lib/scraper/types";
 import { processDescription } from "@/lib/jobs/description-processor";
+
 import { AbstractApiScraper, DEFAULT_API_CONFIG } from "../core";
-import { parseSourceDate, parseWorkplaceType, sourceLocations } from "./shared/source-fields";
+import { parseSourceDate, parseWorkplaceType, readAddressCountry, sourceCountryHint, sourceLocations } from "./shared/source-fields";
 import type { ScraperResult, ScrapeOptions, ScrapedJob, ApiScraperConfig } from "../core/types";
 
 type AshbyJob = z.infer<typeof AshbyJobSchema>;
@@ -156,6 +157,10 @@ export class AshbyScraper extends AbstractApiScraper<AshbyConfig> {
   ): ScraperResult {
     const jobs: ScrapedJob[] = data.jobs.filter((job) => job.isListed !== false).map((job) => {
       const locations = sourceLocations([job.location, ...(job.secondaryLocations ?? []).map((item) => item.location)]);
+      const country = sourceCountryHint([
+        readAddressCountry(job.address),
+        ...(job.secondaryLocations ?? []).map((item) => readAddressCountry(item.address)),
+      ], locations);
       const normalized = this.normalizeLocation(locations.join("; ") || (job.isRemote ? "Remote" : undefined));
       const locationType = parseWorkplaceType(job.workplaceType) ?? (job.isRemote ? "remote" : normalized.locationType);
 
@@ -196,6 +201,7 @@ export class AshbyScraper extends AbstractApiScraper<AshbyConfig> {
         title: job.title,
         url: job.jobUrl || job.applyUrl || "",
         location: normalized.location,
+        country,
         locations,
         locationType,
         salary: job.compensation?.scrapeableCompensationSalarySummary || job.compensation?.compensationTierSummary || undefined,
