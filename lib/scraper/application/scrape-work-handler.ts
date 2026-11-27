@@ -3,6 +3,7 @@ import type { CompanyCatalog } from "@/lib/scraper/infrastructure/types";
 import { getCompanyScrapePlatform } from "@/lib/scraper/services/execution-policy";
 import { createScrapeMetrics, recordScrapeMetric, withScrapeMetrics } from "@/lib/scraper/infrastructure/metrics";
 import type { ScrapeSessionProjectionStore } from "@/lib/scraper/queue/projection-store";
+import { canRetryRateLimitInSession } from "@/lib/scraper/queue/rate-limit-policy";
 import type { ILocalScrapeQueueRepository } from "@/lib/scraper/queue/types";
 import {
   getLocalDataOperationGate,
@@ -63,12 +64,18 @@ export class ScrapeWorkHandler {
     signal: AbortSignal
   ): Promise<FetchResult> {
     const metrics = createScrapeMetrics(Date.now() - item.availableAt.getTime());
+    const canDeferRateLimit = (retryAfterMs?: number) => canRetryRateLimitInSession({
+      firstStartedAt: item.startedAt ?? item.createdAt,
+      now: new Date(),
+      retryAfterMs,
+      progressed: metrics.httpSuccesses > 0,
+    });
     return withScrapeMetrics(metrics, async () => {
       const started = performance.now();
       let outcome: string = "error";
       try {
         const result = await this.dataOperationGate.runScrape(item.companyId, signal, (workSignal) =>
-          this.handleWithDataFence(item, workSignal, started)
+          this.handleWithDataFence(item, workSignal, started, canDeferRateLimit)
         );
         outcome = result.outcome;
         return { ...result, metrics };
@@ -82,7 +89,8 @@ export class ScrapeWorkHandler {
   private async handleWithDataFence(
     item: ScrapeQueueItem,
     signal: AbortSignal,
-    admissionStarted: number
+    admissionStarted: number,
+    canDeferRateLimit: (retryAfterMs?: number) => boolean
   ): Promise<FetchResult> {
     const session = await this.projectionStore.getSession(item.sessionId);
     if (
@@ -121,6 +129,7 @@ export class ScrapeWorkHandler {
         signal,
         attemptCount: item.attemptCount,
         maxAttempts: item.maxAttempts,
+        canDeferRateLimit,
       });
       if (result.outcome === "error") {
         throw new RetryableScrapeError(

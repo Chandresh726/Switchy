@@ -284,6 +284,7 @@ export class FetchHttpClient implements IHttpClient {
         }
         this.pacer.observe(host, response.status, args.minIntervalMs, args.adaptivePacing);
         if (response.status === 429) recordScrapeMetric("rateLimits");
+        if (response.ok) recordScrapeMetric("httpSuccesses");
         if (response.ok && this.state) {
           const key = `cooldown:${host}`;
           const previous = this.state.get(key) as { strikes?: number } | undefined;

@@ -32,6 +32,7 @@ import type {
   TriggerSource,
 } from "@/lib/scraper/types";
 
+import { RATE_LIMIT_NEXT_RUN_MESSAGE, SCRAPE_RATE_LIMIT_POLICY } from "./rate-limit-policy";
 import type {
   ILocalScrapeQueueRepository,
   QueueCancellationResult,
@@ -94,8 +95,9 @@ export class LocalScrapeQueueService {
       ),
       {
         workerIdPrefix: "local-scrape",
-        rateLimitMaxAgeMs: 30 * 60_000,
-        rateLimitDeadlineMessage: "Rate-limit recovery exceeded the 30-minute company deadline; will retry in a future scheduled run.",
+        // Backstop only: the work handler applies the logged policy first.
+        rateLimitMaxAgeMs: SCRAPE_RATE_LIMIT_POLICY.maxCompanyWaitMs + 60_000,
+        rateLimitDeadlineMessage: RATE_LIMIT_NEXT_RUN_MESSAGE,
         getRateLimitDelayMs: (error) => {
           const failure = createFailureFromUnknown(error).error;
           return failure.code === "rate_limited" ? failure.retryAfterMs ?? 0 : undefined;

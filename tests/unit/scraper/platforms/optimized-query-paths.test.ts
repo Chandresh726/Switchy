@@ -102,6 +102,30 @@ describe("optimized ATS query paths", () => {
     expect(fetch.mock.calls.every(([url]) => new URL(url).searchParams.get("location") === "Bangalore")).toBe(true);
   });
 
+  it("validates an Eightfold country query from a crawl resumed after a throttle", async () => {
+    let throttle = true;
+    const fetch = vi.fn(async (url: string) => {
+      const p = new URL(url);
+      if (p.searchParams.get("location") === "India") {
+        return Response.json({ status: 200, data: { count: 2, positions: [1, 2].map((id) => ({ id, name: "Engineer", locations: [id === 1 ? "India" : "Remote"] })) } });
+      }
+      const offset = Number(p.searchParams.get("start"));
+      if (offset === 20 && throttle) return new Response("limited", { status: 429, headers: { "retry-after": "60" } });
+      return Response.json({ status: 200, data: { count: 30, positions: Array.from({ length: 10 }, (_, index) => {
+        const id = offset + index + 1;
+        return { id, name: "Engineer", locations: [id === 1 ? "India" : id === 2 ? "Remote" : "USA"] };
+      }) } });
+    });
+    const store = state();
+    const scraper = new EightfoldScraper(createHttpClientStub({ fetch }), browser, { parallelListFetches: 1 }, new ListingQueryOptimizer(store), store);
+    expect(await scraper.scrape("https://acme.eightfold.ai/careers", skipDetails)).toMatchObject({ outcome: "error", error: { code: "rate_limited" } });
+
+    throttle = false;
+    const resumed = await scraper.scrape("https://acme.eightfold.ai/careers", skipDetails);
+    expect(resumed).toMatchObject({ outcome: "success", totalListings: 2, listingCompleteness: "complete" });
+    expect(resumed.listingScopeKey).toBeTruthy();
+  });
+
   it("defers later Eightfold throttles with Retry-After without issuing recovery traffic", async () => {
     const fetch = vi.fn(async (url: string) => {
       const offset = Number(new URL(url).searchParams.get("start"));

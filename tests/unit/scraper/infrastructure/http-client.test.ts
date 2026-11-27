@@ -17,6 +17,7 @@ describe("FetchHttpClient", () => {
     await vi.runAllTimersAsync();
     await pending;
     expect(metrics.httpRequests).toBe(3);
+    expect(metrics.httpSuccesses).toBe(2);
     expect(metrics.retries).toBe(1);
     expect(metrics.retryWaitMs).toBe(100);
     expect(metrics.pacingWaitMs).toBeGreaterThanOrEqual(1500);

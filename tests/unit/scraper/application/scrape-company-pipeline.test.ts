@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Company } from "@/lib/db/schema";
 import type { ExistingJob } from "@/lib/scraper/infrastructure/types";
+import { HttpError } from "@/lib/scraper/infrastructure/http-client";
 import {
   createScraperError,
   type Platform,
@@ -321,6 +322,67 @@ describe("ScrapeCompanyPipeline", () => {
     });
 
     expect(terminal).toMatchObject({ outcome: "error", retryable: true });
+    expect(repository.createScrapingLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("ends a rate limit the queue cannot wait for with one logged, non-retryable failure", async () => {
+    const repository = createRepositoryMock();
+    const registry = createRegistryMock({
+      outcome: "error",
+      jobs: [],
+      listingCompleteness: "unknown",
+      error: createScraperError("rate_limited", "HTTP 429", { retryAfterMs: 960_000 }),
+    });
+    const pipeline = new ScrapeCompanyPipeline(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} },
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => false, dispatchMatching: outboxMocks.dispatchPendingAIWork }
+    );
+    const canDeferRateLimit = vi.fn(() => false);
+
+    const ended = await pipeline.scrape(company.id, {
+      sessionId: "session-rate-limit", triggerSource: "scheduler", attemptCount: 1, maxAttempts: 3, canDeferRateLimit,
+    });
+
+    expect(canDeferRateLimit).toHaveBeenCalledWith(960_000);
+    expect(ended).toMatchObject({ outcome: "error", retryable: false, error: expect.stringContaining("next scheduled run") });
+    expect(repository.createScrapingLog).toHaveBeenCalledWith(expect.objectContaining({
+      status: "error", errorMessage: expect.stringContaining("next scheduled run"),
+    }));
+
+    canDeferRateLimit.mockReturnValue(true);
+    const deferred = await pipeline.scrape(company.id, {
+      sessionId: "session-rate-limit", triggerSource: "scheduler", attemptCount: 1, maxAttempts: 3, canDeferRateLimit,
+    });
+    expect(deferred).toMatchObject({ outcome: "error", retryable: true, error: "HTTP 429" });
+    expect(repository.createScrapingLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies the same rate-limit policy to thrown HTTP 429 errors", async () => {
+    const repository = createRepositoryMock();
+    const registry = createRegistryMock(async () => {
+      throw new HttpError(429, "Failed to fetch jobs: HTTP 429", "https://jobs.example.com", new Headers({ "retry-after": "60" }));
+    });
+    const pipeline = new ScrapeCompanyPipeline(
+      repository,
+      registry,
+      new TitleBasedDeduplicationService(),
+      new DefaultFilterService(),
+      { autoMatchAfterScrape: false, defaultFilters: {} },
+      new StoredScrapeSettingsProvider(repository),
+      { matchingEnabled: async () => false, dispatchMatching: outboxMocks.dispatchPendingAIWork }
+    );
+
+    const result = await pipeline.scrape(company.id, {
+      sessionId: "session-thrown-rate-limit", triggerSource: "scheduler", attemptCount: 1, maxAttempts: 3,
+      canDeferRateLimit: () => false,
+    });
+
+    expect(result).toMatchObject({ outcome: "error", retryable: false });
     expect(repository.createScrapingLog).toHaveBeenCalledTimes(1);
   });
 

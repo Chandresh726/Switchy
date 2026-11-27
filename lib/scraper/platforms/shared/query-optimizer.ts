@@ -34,17 +34,27 @@ type PolicyOverride<P extends QueryPlatform> = Partial<ListingQueryPolicy> & (P 
 
 export interface QuerySnapshot<T, R> {
   items: readonly T[];
+  /** Fresh and complete enough to archive missing jobs. */
   complete: boolean;
+  /** Every page was read, possibly from a recent checkpoint: enough to validate a country filter. */
+  pagesComplete?: boolean;
   advertisedTotal?: number | null;
   value: R;
 }
 
-const validationSchema = z.object({ valid: z.boolean() });
+const validationSchema = z.object({ valid: z.boolean(), count: z.number().int().nonnegative().optional() });
 const DEFAULT_POLICY: ListingQueryPolicy = {
   enabled: true,
   countryFilter: true,
-  validationTtlMs: 24 * 60 * 60_000,
+  validationTtlMs: 7 * 24 * 60 * 60_000,
 };
+const REJECTION_TTL_MS = 24 * 60 * 60_000;
+/** Large boards shift while they are paged, so a country check tolerates a small listing gap. */
+const MIN_BASELINE_COVERAGE = 0.95;
+const MAX_DRIFT_CHECKS = 5;
+/** A proven query whose results collapse is rechecked; small boards swing too much to judge. */
+const REVALIDATE_BELOW_SHARE = 0.5;
+const REVALIDATE_MIN_COUNT = 10;
 
 export function queryScope(platform: Platform, source: string, parameters: unknown): string {
   const url = new URL(source);
@@ -106,27 +116,35 @@ export class ListingQueryOptimizer {
     candidate: (baseline?: QuerySnapshot<T, R>) => Promise<QuerySnapshot<T, R> | null>;
     getId: (item: T) => string | number;
     toFilterable: (item: T) => FilterableItem;
+    /** Whether a job the candidate lacks is still open; undefined when it cannot be determined. */
+    isStillOpen?: (item: T) => Promise<boolean | undefined>;
   }): Promise<{ value: R; listingScopeKey?: string }> {
     const policy = this.policy(input.platform, input.source, input.board);
     const base = async () => (await input.baseline()).value;
     if (!policy.enabled || (input.country && !policy.countryFilter)) return { value: await base() };
     const scope = queryScope(input.platform, input.source, [input.board, input.country, input.candidateKey]);
     const key = `listing-query-validation:${scope}`;
-    let cached: boolean | undefined;
-    try { cached = validationSchema.safeParse(this.state?.get(key)).data?.valid; }
+    let cached: z.infer<typeof validationSchema> | undefined;
+    try { cached = validationSchema.safeParse(this.state?.get(key)).data; }
     catch { /* Revalidate an unavailable optional cache. */ }
-    if (cached === false) return { value: await base() };
-    const save = (valid: boolean) => {
-      try { this.state?.set(key, { valid }, new Date(Date.now() + policy.validationTtlMs)); }
+    if (cached?.valid === false) return { value: await base() };
+    const save = (valid: boolean, count?: number) => {
+      const ttl = valid ? policy.validationTtlMs : Math.min(policy.validationTtlMs, REJECTION_TTL_MS);
+      try { this.state?.set(key, { valid, count }, new Date(Date.now() + ttl)); }
       catch { /* Failure to cache may cost a future validation, never coverage. */ }
     };
-    const exact = (snapshot: QuerySnapshot<T, R>) => snapshot.complete &&
-      new Set(snapshot.items.map(input.getId)).size === snapshot.items.length &&
+    const uniqueIds = (snapshot: QuerySnapshot<T, R>) =>
+      new Set(snapshot.items.map(input.getId)).size === snapshot.items.length;
+    const exact = (snapshot: QuerySnapshot<T, R>) => snapshot.complete && uniqueIds(snapshot) &&
       (snapshot.advertisedTotal == null || snapshot.items.length >= snapshot.advertisedTotal);
+    // Only a country subset tolerates drift; other candidates must match the board ID for ID.
+    const coversBoard = (snapshot: QuerySnapshot<T, R>) => !input.country ? exact(snapshot) :
+      (snapshot.pagesComplete ?? snapshot.complete) && uniqueIds(snapshot) &&
+      (snapshot.advertisedTotal == null || snapshot.items.length >= snapshot.advertisedTotal * MIN_BASELINE_COVERAGE);
     let baseline: QuerySnapshot<T, R> | undefined;
-    if (cached !== true) {
+    if (cached?.valid !== true) {
       baseline = await input.baseline();
-      if (!exact(baseline)) return { value: baseline.value };
+      if (!coversBoard(baseline)) return { value: baseline.value };
       if (baseline.items.length < (policy.minimumCountryListings ?? input.minimumItems ?? 0)) {
         save(false);
         return { value: baseline.value };
@@ -138,21 +156,27 @@ export class ListingQueryOptimizer {
         save(false);
         return { value: baseline?.value ?? await base() };
       }
-      if (baseline) {
-        if (!exact(candidate)) return { value: baseline.value };
-        const actual = new Set(candidate.items.map(input.getId));
-        const expected = input.country ? baseline.items.filter((item) => {
-          const value = input.toFilterable(item);
-          return matchesPreferredCountry(value.country ?? value.location, input.country!);
-        }) : baseline.items;
-        const preserves = expected.every((item) => actual.has(input.getId(item))) &&
-          (Boolean(input.country) || actual.size === new Set(baseline.items.map(input.getId)).size);
-        if (!preserves || (input.country && actual.size >= baseline.items.length)) {
-          save(false);
-          return { value: baseline.value };
+      if (!baseline) {
+        if (cached?.count && cached.count >= REVALIDATE_MIN_COUNT && candidate.complete &&
+            candidate.items.length < cached.count * REVALIDATE_BELOW_SHARE) {
+          try { this.state?.delete(key); } catch { /* The proof still expires on its TTL. */ }
+          return { value: await base() };
         }
-        save(true);
+        return { value: candidate.value, listingScopeKey: input.country ? scope : undefined };
       }
+      if (!exact(candidate)) return { value: baseline.value };
+      const actual = new Set(candidate.items.map(input.getId));
+      const expected = input.country ? baseline.items.filter((item) => {
+        const value = input.toFilterable(item);
+        return matchesPreferredCountry(value.country ?? value.location, input.country!);
+      }) : baseline.items;
+      const narrows = input.country ? actual.size < baseline.items.length
+        : actual.size === new Set(baseline.items.map(input.getId)).size;
+      const missing = expected.filter((item) => !actual.has(input.getId(item)));
+      const verdict = !narrows ? "open" : await this.missingJobsVerdict(missing, input.isStillOpen);
+      if (verdict === "open") save(false);
+      if (verdict !== "closed") return { value: baseline.value };
+      save(true, candidate.items.length);
       return { value: candidate.value, listingScopeKey: input.country ? scope : undefined };
     } catch (error) {
       throwIfScrapeAborted(error);
@@ -161,5 +185,21 @@ export class ListingQueryOptimizer {
       if (error instanceof HttpError && (error.status === 400 || error.status === 404)) save(false);
       return { value: baseline?.value ?? await base() };
     }
+  }
+
+  /** "closed" when every missing job has since closed, so the candidate still covers the board. */
+  private async missingJobsVerdict<T>(
+    missing: T[],
+    isStillOpen?: (item: T) => Promise<boolean | undefined>
+  ): Promise<"closed" | "open" | "unknown"> {
+    if (missing.length === 0) return "closed";
+    if (!isStillOpen || missing.length > MAX_DRIFT_CHECKS) return "open";
+    let unknown = false;
+    for (const item of missing) {
+      const open = await isStillOpen(item);
+      if (open === true) return "open";
+      if (open === undefined) unknown = true;
+    }
+    return unknown ? "unknown" : "closed";
   }
 }

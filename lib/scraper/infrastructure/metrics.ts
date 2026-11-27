@@ -7,7 +7,7 @@ const scope = new AsyncLocalStorage<ScrapeMetrics>();
 export function createScrapeMetrics(readyQueueMs: number): ScrapeMetrics {
   return {
     readyQueueMs: Math.max(0, readyQueueMs), executionWaitMs: 0, platformLockWaitMs: 0,
-    hostSlotWaitMs: 0, httpRequests: 0, httpMs: 0, pacingWaitMs: 0, retryWaitMs: 0,
+    hostSlotWaitMs: 0, httpRequests: 0, httpSuccesses: 0, httpMs: 0, pacingWaitMs: 0, retryWaitMs: 0,
     retries: 0, rateLimits: 0, cooldownBlocks: 0, priorityDetailsSelected: 0, maintenanceDetailsSelected: 0,
   };
 }

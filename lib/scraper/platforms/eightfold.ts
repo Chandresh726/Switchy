@@ -236,7 +236,8 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
       const baseline = async () => {
         const value = await this.fetchAllPositions(parsedUrl.sourceUrl, resolvedDomain, sessionCookies);
         if (!value) throw new EightfoldListError();
-        return { value, items: value.positions, complete: value.isComplete, advertisedTotal: value.advertisedCount };
+        return { value, items: value.positions, complete: value.isComplete,
+          pagesComplete: value.missingOffsets.length === 0, advertisedTotal: value.advertisedCount };
       };
       const country = options?.filters?.country;
       const scopedUrl = new URL(parsedUrl.sourceUrl);
@@ -251,6 +252,11 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
           return { value, items: value.positions, complete: value.isComplete, advertisedTotal: value.advertisedCount };
         },
         getId: (job) => job.id, toFilterable: (job) => ({ title: job.name, location: job.locations.join(" | ") }),
+        isStillOpen: async (job) => {
+          const detail = await this.fetchPositionDetails(baseUrl, resolvedDomain, job.id, sessionCookies);
+          if (detail.position) return true;
+          return detail.status === 404 ? false : undefined;
+        },
       }) : { value: (await baseline()).value, listingScopeKey: undefined };
       const listResult = chosen.value;
       const listingScopeKey = chosen.listingScopeKey;
@@ -921,7 +927,7 @@ export class EightfoldScraper extends AbstractBrowserScraper<EightfoldConfig> {
         "Eightfold detail"
       );
       if (!details.data) {
-        return { position: null, status: response.status };
+        return { position: null, status: details.status === 404 ? 404 : response.status };
       }
 
       return {

@@ -132,6 +132,7 @@ const ScrapeMetricsSchema = z.object({
   platformLockWaitMs: z.number().nonnegative(),
   hostSlotWaitMs: z.number().nonnegative(),
   httpRequests: z.number().nonnegative(),
+  httpSuccesses: z.number().nonnegative().default(0),
   httpMs: z.number().nonnegative(),
   pacingWaitMs: z.number().nonnegative(),
   retryWaitMs: z.number().nonnegative(),

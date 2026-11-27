@@ -714,6 +714,31 @@ describe("LocalScrapeQueueService", () => {
     });
   });
 
+  it("does not let a company that made no progress wait for a rate limit in the session", async () => {
+    const database = createTestDatabase();
+    const company = database
+      .insert(companies)
+      .values({ name: "One", careersUrl: "https://example.com/one" })
+      .returning({ id: companies.id })
+      .get();
+    let canDefer: boolean | undefined;
+    const scrapeCompany = vi.fn<ScrapeCompanyPipeline["scrape"]>(async (_companyId, request) => {
+      canDefer = request.canDeferRateLimit?.(60_000);
+      return {
+        companyId: company.id, companyName: "One", success: false, outcome: "error",
+        jobsFound: 0, jobsAdded: 0, jobsUpdated: 0, jobsFiltered: 0, jobsArchived: 0,
+        platform: "greenhouse", error: "HTTP 429", retryable: false, duration: 10,
+      };
+    });
+    const { service } = createService(database, { pipeline: { scrape: scrapeCompany }, runnerConfig: { concurrency: 1 } });
+
+    await service.scrapeCompanies([company.id], "manual");
+
+    expect(canDefer).toBe(false);
+    expect(scrapeCompany).toHaveBeenCalledTimes(1);
+    expect(database.select().from(scrapeQueueItems).get()).toMatchObject({ status: "failed", attemptCount: 1 });
+  });
+
   it("atomically cancels queued work and stops its scrape session", async () => {
     const database = createTestDatabase();
     const company = database

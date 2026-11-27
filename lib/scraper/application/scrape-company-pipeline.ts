@@ -24,6 +24,7 @@ import { canArchiveMissingJobs } from "../services/listing-reconciliation";
 import type { IDeduplicationService } from "../services/deduplication-service";
 import type { IFilterService, JobFilters } from "../services/filter-service";
 import type { IScraperRegistry } from "../services/registry";
+import { RATE_LIMIT_NEXT_RUN_MESSAGE } from "../queue/rate-limit-policy";
 
 export interface ScrapeCompanyPipelineConfig {
   autoMatchAfterScrape: boolean;
@@ -65,7 +66,11 @@ export interface ScrapeCompanyRequest {
    */
   attemptCount?: number;
   maxAttempts?: number;
+  /** Queue policy for waiting on a rate limit inside the current session. */
+  canDeferRateLimit?: (retryAfterMs?: number) => boolean;
 }
+
+type ScrapeAttemptTracking = Pick<ScrapeCompanyRequest, "attemptCount" | "maxAttempts" | "canDeferRateLimit">;
 
 interface ScrapeExecutionResult {
   outcome: ScrapeOutcome;
@@ -136,13 +141,7 @@ export class ScrapeCompanyPipeline {
     careersUrl: string,
     platform: Platform | null,
     boardToken: string | null,
-    options: {
-      sessionId: string;
-      triggerSource: TriggerSource;
-      signal?: AbortSignal;
-      attemptCount?: number;
-      maxAttempts?: number;
-    }
+    options: ScrapeCompanyRequest
   ): Promise<FetchResult> {
     const startTime = Date.now();
     let fetchStartedAt: number | null = null;
@@ -195,8 +194,7 @@ export class ScrapeCompanyPipeline {
         fetchDuration,
         processingStartedAt,
         logger,
-        attemptCount: options.attemptCount,
-        maxAttempts: options.maxAttempts,
+        tracking: options,
       });
 
       return this.createFetchResult({
@@ -207,15 +205,19 @@ export class ScrapeCompanyPipeline {
         ...executionResult,
       });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      const failure = createFailureFromUnknown(error).error;
+      const endsRateLimitNow = this.endsRateLimitNow(failure, options);
+      const errorMessage = this.withRateLimitOutcome(
+        error instanceof Error ? error.message : "Unknown error", endsRateLimitNow
+      );
       logger.error(errorMessage);
-
-      const { retryable, retryAfterMs } = createFailureFromUnknown(error).error;
+      const retryable = failure.retryable && !endsRateLimitNow;
+      const { retryAfterMs } = failure;
 
       // The queue retries retryable failures, so only the terminal attempt
       // writes an error log. Otherwise every retry leaves its own row and a
       // single outage produces N log rows per company.
-      const terminalAttempt = this.isTerminalAttempt(
+      const terminalAttempt = endsRateLimitNow || this.isTerminalAttempt(
         retryable,
         options.attemptCount,
         options.maxAttempts
@@ -295,6 +297,18 @@ export class ScrapeCompanyPipeline {
     return Math.max(1, attemptCount ?? 1) >= Math.max(1, maxAttempts ?? 1);
   }
 
+  private endsRateLimitNow(
+    failure: { code: string; retryAfterMs?: number },
+    tracking: ScrapeAttemptTracking
+  ): boolean {
+    return failure.code === "rate_limited" && tracking.attemptCount !== undefined &&
+      tracking.canDeferRateLimit !== undefined && !tracking.canDeferRateLimit(failure.retryAfterMs);
+  }
+
+  private withRateLimitOutcome(message: string, endsRateLimitNow: boolean): string {
+    return endsRateLimitNow ? `${message} ${RATE_LIMIT_NEXT_RUN_MESSAGE}` : message;
+  }
+
   private async processScraperResult(params: {
     scraperResult: ScraperResult<ScrapedJob>;
     companyId: number;
@@ -308,8 +322,7 @@ export class ScrapeCompanyPipeline {
     fetchDuration: number;
     processingStartedAt: number;
     logger: ScraperLogger;
-    attemptCount?: number;
-    maxAttempts?: number;
+    tracking: ScrapeAttemptTracking;
   }): Promise<ScrapeExecutionResult> {
     const {
       scraperResult,
@@ -324,24 +337,25 @@ export class ScrapeCompanyPipeline {
       fetchDuration,
       processingStartedAt,
       logger,
-      attemptCount,
-      maxAttempts,
+      tracking,
     } = params;
+    const { attemptCount, maxAttempts } = tracking;
 
     const outcome = this.resolveScrapeOutcome(scraperResult);
 
     if (scraperResult.outcome === "error") {
-      const errorMessage = scraperResult.error.code === "board_not_found"
+      const endsRateLimitNow = this.endsRateLimitNow(scraperResult.error, tracking);
+      const errorMessage = this.withRateLimitOutcome(scraperResult.error.code === "board_not_found"
         ? `Source needs repair: ${scraperResult.error.message}`
-        : scraperResult.error.message;
+        : scraperResult.error.message, endsRateLimitNow);
       logger.error(errorMessage);
 
       // Mirror the catch-block policy: retryable failures before the final
       // attempt leave no log row; the terminal attempt records the outcome.
-      if (
+      if (endsRateLimitNow || (
         !(scraperResult.error.code === "rate_limited" && attemptCount !== undefined) &&
         this.isTerminalAttempt(scraperResult.error.retryable, attemptCount, maxAttempts)
-      ) {
+      )) {
         try {
           await this.repository.createScrapingLog({
             companyId,
@@ -373,7 +387,7 @@ export class ScrapeCompanyPipeline {
         jobsFiltered: 0,
         jobsArchived: 0,
         error: errorMessage,
-        retryable: scraperResult.error.retryable,
+        retryable: scraperResult.error.retryable && !endsRateLimitNow,
         retryAfterMs: scraperResult.error.retryAfterMs,
       };
     }
